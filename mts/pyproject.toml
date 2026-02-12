@@ -20,6 +20,11 @@ dependencies = [
   "uvicorn>=0.35.0",
 ]
 
+[project.optional-dependencies]
+mcp = ["mcp>=1.0.0"]
+agent-sdk = ["claude-agent-sdk>=0.1.0"]
+all = ["mts-control-plane[mcp,agent-sdk]"]
+
 [dependency-groups]
 dev = [
   "mypy>=1.16.0",

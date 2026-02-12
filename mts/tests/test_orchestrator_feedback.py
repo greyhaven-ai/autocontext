@@ -35,9 +35,10 @@ class PromptCapturingClient(LanguageModelClient):
         prompt: str,
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
-        role = self._detect_role(prompt)
-        self.calls.append((role, prompt))
+        detected = self._detect_role(prompt)
+        self.calls.append((detected, prompt))
         return self._inner.generate(model=model, prompt=prompt, max_tokens=max_tokens, temperature=temperature)
 
     def generate_multiturn(
@@ -48,10 +49,11 @@ class PromptCapturingClient(LanguageModelClient):
         messages: list[dict[str, str]],
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
         combined = system + "\n\n" + "\n\n".join(m["content"] for m in messages if m["role"] == "user")
-        role = self._detect_role(combined)
-        self.calls.append((role, combined))
+        detected = self._detect_role(combined)
+        self.calls.append((detected, combined))
         return self._inner.generate_multiturn(
             model=model, system=system, messages=messages, max_tokens=max_tokens, temperature=temperature,
         )

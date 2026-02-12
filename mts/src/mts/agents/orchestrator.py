@@ -42,7 +42,7 @@ class AgentOrchestrator:
             self.curator = KnowledgeCurator(runtime, settings.model_curator)
 
         self._rlm_loader = None
-        if settings.rlm_enabled:
+        if settings.rlm_enabled and settings.agent_provider != "agent_sdk":
             if artifacts is None or sqlite is None:
                 raise ValueError("RLM mode requires artifacts and sqlite stores")
             from mts.rlm.context_loader import ContextLoader
@@ -62,6 +62,11 @@ class AgentOrchestrator:
             client: LanguageModelClient = AnthropicClient(api_key=settings.anthropic_api_key)
         elif settings.agent_provider == "deterministic":
             client = DeterministicDevClient()
+        elif settings.agent_provider == "agent_sdk":
+            from mts.agents.agent_sdk_client import AgentSdkClient, AgentSdkConfig
+
+            sdk_config = AgentSdkConfig(connect_mcp_server=settings.agent_sdk_connect_mcp)
+            client = AgentSdkClient(config=sdk_config)
         else:
             raise ValueError(f"unsupported agent provider: {settings.agent_provider}")
         return cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite)
@@ -81,7 +86,7 @@ class AgentOrchestrator:
         if generation_index % self.settings.architect_every_n_gens != 0:
             architect_prompt += "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
 
-        if self.settings.rlm_enabled and self._rlm_loader is not None:
+        if self.settings.rlm_enabled and self._rlm_loader is not None and self.settings.agent_provider != "agent_sdk":
             analyst_exec, architect_exec = self._run_rlm_roles(
                 run_id, scenario_name, generation_index, strategy, architect_prompt,
             )

@@ -28,6 +28,7 @@ class SubagentRuntime:
             prompt=task.prompt,
             max_tokens=task.max_tokens,
             temperature=task.temperature,
+            role=task.role,
         )
         return RoleExecution(
             role=task.role,

@@ -55,6 +55,8 @@ class AppSettings(BaseModel):
     curator_enabled: bool = Field(default=True)
     curator_consolidate_every_n_gens: int = Field(default=3, ge=1)
     skill_max_lessons: int = Field(default=30, ge=1)
+    agent_sdk_connect_mcp: bool = Field(default=False)
+    sandbox_max_generations: int = Field(default=10, ge=1)
 
 
 def load_settings() -> AppSettings:
@@ -107,4 +109,6 @@ def load_settings() -> AppSettings:
         curator_enabled=os.getenv("MTS_CURATOR_ENABLED", "true").lower() == "true",
         curator_consolidate_every_n_gens=int(os.getenv("MTS_CURATOR_CONSOLIDATE_EVERY_N_GENS", "3")),
         skill_max_lessons=int(os.getenv("MTS_SKILL_MAX_LESSONS", "30")),
+        agent_sdk_connect_mcp=os.getenv("MTS_AGENT_SDK_CONNECT_MCP", "false").lower() == "true",
+        sandbox_max_generations=int(os.getenv("MTS_SANDBOX_MAX_GENERATIONS", "10")),
     )

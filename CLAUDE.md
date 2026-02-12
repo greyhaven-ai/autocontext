@@ -13,10 +13,21 @@ The Python package lives under `mts/` (not the repo root). All `uv`, `pytest`, a
 ```
 mts/                          # Python package root (pyproject.toml lives here)
   src/mts/                    # Source code
-  tests/                      # Pytest tests
-  migrations/                 # SQLite migration SQL files (applied in filename order)
+    agents/                   # LLM agent roles (competitor, analyst, coach, architect, curator)
+    knowledge/                # Knowledge processing (trajectory builder)
+    loop/                     # Generation runner, event emitter
+    prompts/                  # Prompt template assembly
+    config/                   # Pydantic settings from MTS_* env vars
+    storage/                  # SQLiteStore, ArtifactStore
+    scenarios/                # Pluggable game scenarios (grid_ctf, othello)
+    execution/                # Execution supervisor, local/remote executors
+    rlm/                      # REPL-loop mode (optional analyst/architect)
+    mcp/                      # MCP server, tool implementations, sandbox manager
+    server/                   # FastAPI dashboard + WebSocket events
+  tests/                      # Pytest tests (~198 tests)
+  migrations/                 # SQLite migration SQL files (001-004, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
-  knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools
+  knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
   skills/                     # Runtime-generated: operational skill notes per scenario
   runs/                       # Runtime-generated: SQLite DB, event stream, generation artifacts
 infra/                        # Docker, Fly.io config, bootstrap script
@@ -47,6 +58,9 @@ MTS_AGENT_PROVIDER=deterministic uv run mts run --scenario grid_ctf --gens 3 --r
 # Run (live Anthropic mode)
 MTS_AGENT_PROVIDER=anthropic MTS_ANTHROPIC_API_KEY=... uv run mts run --scenario grid_ctf --gens 1
 
+# Run (Agent SDK mode — agents use native tool loops)
+MTS_AGENT_PROVIDER=agent_sdk MTS_ANTHROPIC_API_KEY=... uv run mts run --scenario grid_ctf --gens 3
+
 # Run (RLM mode — REPL-loop agents for analyst/architect)
 MTS_AGENT_PROVIDER=deterministic MTS_RLM_ENABLED=true uv run mts run --scenario grid_ctf --gens 3 --run-id rlm_run
 
@@ -56,6 +70,9 @@ uv run mts status <run_id>                 # generation-level status
 uv run mts replay <run_id> --generation 1  # print replay JSON
 uv run mts benchmark --scenario grid_ctf --runs 5
 uv run mts serve --host 127.0.0.1 --port 8000  # dashboard + API
+
+# MCP server (stdio, for Claude Code integration)
+uv run mts mcp-serve
 
 # Bootstrap + demo from repo root
 bash infra/scripts/bootstrap.sh
@@ -68,24 +85,33 @@ bash scripts/demo.sh
 
 The core loop drives everything. For each generation within a run:
 
-1. **Scenario setup** — Load scenario, create initial state, read accumulated playbook and tool context from the knowledge directory
-2. **Agent orchestration** — `AgentOrchestrator` runs four LLM roles (competitor runs first, then analyst/coach/architect in parallel via `ThreadPoolExecutor`)
-3. **Tournament** — `TournamentRunner` executes N matches (default 3) through `ExecutionSupervisor`, scoring with Elo updates
-4. **Backpressure gate** — `BackpressureGate` decides `advance`/`retry`/`rollback` based on score delta vs threshold (`MTS_BACKPRESSURE_MIN_DELTA`)
-5. **Persistence** — Results, metrics, replays, agent outputs, and recovery markers are saved to SQLite and the filesystem artifact store
+1. **Scenario setup** — Load scenario, create initial state, read accumulated playbook, tool context, hints, and latest analysis from the knowledge directory
+2. **Knowledge injection** — `ScoreTrajectoryBuilder` builds score trajectory and strategy registry tables. Latest advance analysis and persisted hints are loaded. All suppressed when `ablation_no_feedback` is set.
+3. **Agent orchestration** — `AgentOrchestrator` runs five LLM roles (competitor runs first, then analyst/coach/architect in parallel via `ThreadPoolExecutor`, then optional curator post-processing)
+4. **Tournament** — `TournamentRunner` executes N matches (default 3) through `ExecutionSupervisor`, scoring with Elo updates
+5. **Backpressure gate** — `BackpressureGate` decides `advance`/`retry`/`rollback` based on score delta vs threshold (`MTS_BACKPRESSURE_MIN_DELTA`)
+6. **Curator quality gate** — If enabled and gate is `advance`, `KnowledgeCurator` compares current vs proposed playbook and decides `accept`/`reject`/`merge`. Rejected playbooks are not persisted; merged playbooks replace the coach output.
+7. **Persistence** — Results, metrics, replays, versioned playbooks, agent outputs, and recovery markers are saved to SQLite and the filesystem artifact store
+8. **Curator lesson consolidation** — Every N generations (default 3), if lessons exceed `skill_max_lessons`, the curator deduplicates and prunes SKILL.md lessons
+9. **Cross-run snapshot** — On run completion, playbook + hints + skills are snapshotted for inheritance by future runs
 
-Runs are idempotent — `generation_exists()` check skips already-completed generations on resume. Playbook updates only persist on `advance` gate decisions.
+Runs are idempotent — `generation_exists()` check skips already-completed generations on resume. Playbook updates only persist on `advance` gate decisions. Coach hints persist to `hints.md` and survive restarts.
 
 ### Agent Roles (`agents/`)
 
-All roles use `SubagentRuntime` wrapping a `LanguageModelClient` (Anthropic API or `DeterministicDevClient` for offline/CI):
+All roles use `SubagentRuntime` wrapping a `LanguageModelClient` (Anthropic API, `DeterministicDevClient` for offline/CI, or `AgentSdkClient` for Agent SDK mode):
 
 - **Competitor** — Produces a JSON strategy dict matching the scenario's strategy interface. Runs first (sequentially) since its output feeds into tournament scoring.
 - **Analyst** — Produces markdown analysis (Findings, Root Causes, Recommendations)
-- **Coach** — Updates the accumulated playbook (Strategy Updates, Prompt Optimizations, Next Gen Checklist). Output parsed via `<!-- PLAYBOOK_START/END -->` and `<!-- LESSONS_START/END -->` delimiters.
-- **Architect** — Proposes tooling improvements + emits a `{"tools": [...]}` JSON block that gets persisted as Python files in `knowledge/<scenario>/tools/`
+- **Coach** — Updates the accumulated playbook (Strategy Updates, Prompt Optimizations, Next Gen Checklist). Output parsed via `<!-- PLAYBOOK_START/END -->`, `<!-- LESSONS_START/END -->`, and `<!-- COMPETITOR_HINTS_START/END -->` delimiters.
+- **Architect** — Proposes tooling improvements + emits a `{"tools": [...]}` JSON block that gets persisted as Python files in `knowledge/<scenario>/tools/`. Can update existing tools (old versions archived to `tools/_archive/`).
+- **Curator** (`agents/curator.py`) — Opus-level quality gate for playbook updates and lesson consolidation. Runs after tournament on `advance` decisions. Uses `<!-- CURATOR_DECISION: accept|reject|merge -->` and `<!-- CONSOLIDATED_LESSONS_START/END -->` output markers.
 
-The architect only intervenes fully every N generations (`MTS_ARCHITECT_EVERY_N_GENS`, default 3). The `LanguageModelClient` base class provides both single-turn `generate()` and multi-turn `generate_multiturn()` methods.
+The architect only intervenes fully every N generations (`MTS_ARCHITECT_EVERY_N_GENS`, default 3). The curator runs its quality gate on every advance and consolidates lessons every N generations (`MTS_CURATOR_CONSOLIDATE_EVERY_N_GENS`, default 3). The `LanguageModelClient` base class provides both single-turn `generate()` and multi-turn `generate_multiturn()` methods, both accepting an optional `role` parameter used by the Agent SDK client.
+
+### Agent SDK Provider (`agents/agent_sdk_client.py`)
+
+Optional provider (`MTS_AGENT_PROVIDER=agent_sdk`) that uses `claude_agent_sdk.query()` with native tool loops. Each role gets scoped tool permissions via `ROLE_TOOL_CONFIG`: competitor/coach/curator get Read/Glob/Grep, analyst/architect additionally get Bash, translator gets none. The Agent SDK handles multi-turn iteration internally, making RLM mode redundant (automatically skipped when `agent_sdk` provider is active).
 
 ### RLM — REPL-Loop Mode (`rlm/`)
 
@@ -110,26 +136,70 @@ Current scenarios: `grid_ctf`, `othello`. To add a new scenario, implement `Scen
 - **LocalExecutor** — Runs strategy in a subprocess (`ProcessPoolExecutor`) with timeout and memory limits; falls back to `ThreadPoolExecutor` if process semaphores are blocked
 - **PrimeIntellectExecutor** — Runs remotely via PrimeIntellect sandbox SDK (create/wait/execute/delete lifecycle)
 
+### Knowledge System (`knowledge/`, `storage/artifacts.py`)
+
+The knowledge feedback loop ensures agents improve across generations and runs:
+
+```
+knowledge/<scenario>/
+  playbook.md              # Current consolidated strategy playbook
+  playbook_versions/       # Archived prior versions (max N, configurable)
+  hints.md                 # Coach competitor hints (persist across restarts)
+  analysis/gen_N.md        # Per-generation analyst output
+  coach_history.md         # Full coach output audit trail
+  architect/changelog.md   # Architect decisions log
+  tools/                   # Architect-generated Python tools
+  tools/_archive/          # Prior tool versions (archived on update)
+  snapshots/<run_id>/      # Cross-run knowledge snapshots
+```
+
+Key behaviors:
+- **Score trajectory**: `ScoreTrajectoryBuilder` (`knowledge/trajectory.py`) queries SQLite to build markdown tables showing Gen/Mean/Best/Elo/Gate/Delta history. Injected into all agent prompts.
+- **Playbook versioning**: Each overwrite archives the previous version. Rollback support via `rollback_playbook()`. Pruning keeps last N versions.
+- **Hint persistence**: Coach hints saved to `hints.md`, loaded on run start instead of being lost as ephemeral state.
+- **Analysis injection**: Most recent advance-generation analysis injected into all agent prompts.
+- **Tool updates**: Architect can update existing tools by name; old versions archived to `_archive/`.
+- **Lesson consolidation**: Curator periodically deduplicates and prunes SKILL.md lessons to prevent unbounded growth.
+- **Cross-run inheritance**: On run completion, playbook + hints + skills are snapshotted. New runs for the same scenario restore from the best-scoring snapshot if no playbook exists.
+
 ### Storage
 
-- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers. Migrations applied from `migrations/*.sql` in filename order.
-- **ArtifactStore** (`storage/artifacts.py`) — Filesystem persistence: generation metrics/replays under `runs/<run_id>/generations/`, playbooks/analysis/tools under `knowledge/<scenario>/`, skill notes under `skills/`. Syncs skill notes to `.claude/skills/` via symlinks.
+- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers, knowledge snapshots. Migrations applied from `migrations/*.sql` in filename order.
+- **ArtifactStore** (`storage/artifacts.py`) — Filesystem persistence: generation metrics/replays under `runs/<run_id>/generations/`, playbooks/analysis/tools/hints/snapshots under `knowledge/<scenario>/`, skill notes under `skills/`. Syncs skill notes to `.claude/skills/` via symlinks.
 
 ### Dashboard & Events
 
 - **FastAPI server** (`server/app.py`) — REST endpoints (`/api/runs`, `/api/runs/{id}/status`, `/api/runs/{id}/replay/{gen}`) + WebSocket (`/ws/events`) streaming from ndjson event file + `/health` endpoint
 - **EventStreamEmitter** (`loop/events.py`) — Appends ndjson events to `runs/events.ndjson`
 
+### MCP Server (`mcp/`)
+
+Stdio-based MCP server exposing MTS functionality as tools for external Claude Code users:
+
+- **`mcp/tools.py`** — Pure sync tool implementation functions wrapping `ScenarioInterface`, `ArtifactStore`, `SQLiteStore`. Independently testable without MCP protocol.
+- **`mcp/server.py`** — MCP server using `@server.tool()` decorators. Each tool delegates to `tools.py`. Registers scenario tools (list, describe, validate, match, tournament), knowledge tools (playbook, trajectory, hints, skills, analysis, tools), run tools (list, status, replay), and sandbox tools (create, run, status, playbook, list, destroy).
+- **`mcp/sandbox.py`** — `SandboxManager` creates isolated environments with their own SQLite DB, knowledge directory (seeded from main), and run storage. Sandbox runs use `GenerationRunner` with sandbox-scoped `AppSettings`. `MTS_SANDBOX_MAX_GENERATIONS` limits generation count.
+
+CLI entry point: `uv run mts mcp-serve` (requires `mcp` optional dependency).
+
 ## Configuration
 
 All config via `MTS_*` environment variables, loaded in `config/settings.py` into a Pydantic `AppSettings` model. Key settings:
 
-- `MTS_AGENT_PROVIDER`: `deterministic` (offline/CI) or `anthropic` (live)
+- `MTS_AGENT_PROVIDER`: `deterministic` (offline/CI), `anthropic` (live), or `agent_sdk` (Agent SDK with native tools)
 - `MTS_EXECUTOR_MODE`: `local` or `primeintellect`
-- `MTS_MODEL_*`: per-role model selection (competitor, analyst, coach, architect)
+- `MTS_MODEL_*`: per-role model selection (competitor, analyst, coach, architect, curator, translator)
 - `MTS_MATCHES_PER_GENERATION`, `MTS_BACKPRESSURE_MIN_DELTA`, `MTS_MAX_RETRIES`, `MTS_ARCHITECT_EVERY_N_GENS`: loop tuning
+- `MTS_CURATOR_ENABLED`: enable curator quality gate and lesson consolidation (default `true`)
+- `MTS_CURATOR_CONSOLIDATE_EVERY_N_GENS`: lesson consolidation cadence (default `3`)
+- `MTS_SKILL_MAX_LESSONS`: consolidation threshold (default `30`)
+- `MTS_PLAYBOOK_MAX_VERSIONS`: archived playbook versions to keep (default `5`)
+- `MTS_CROSS_RUN_INHERITANCE`: inherit best knowledge across runs (default `true`)
+- `MTS_ABLATION_NO_FEEDBACK`: suppress all feedback injection for A/B testing (default `false`)
 - `MTS_RLM_ENABLED`: enable REPL-loop mode for analyst/architect (default `false`)
 - `MTS_RLM_MAX_TURNS`, `MTS_RLM_MAX_STDOUT_CHARS`, `MTS_RLM_SUB_MODEL`, `MTS_RLM_CODE_TIMEOUT_SECONDS`: RLM tuning
+- `MTS_AGENT_SDK_CONNECT_MCP`: connect Agent SDK agents to MTS MCP server (default `false`)
+- `MTS_SANDBOX_MAX_GENERATIONS`: maximum generations per sandbox run (default `10`)
 
 ## Code Style
 

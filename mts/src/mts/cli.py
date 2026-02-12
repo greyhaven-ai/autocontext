@@ -159,5 +159,17 @@ def serve(
     uvicorn.run("mts.server.app:app", host=host, port=port, reload=False)
 
 
+@app.command("mcp-serve")
+def mcp_serve() -> None:
+    """Start MTS MCP server on stdio for Claude Code integration."""
+
+    try:
+        from mts.mcp.server import run_server
+    except ImportError:
+        console.print("[red]MCP dependencies not installed. Run: uv sync --extra mcp[/red]")
+        raise typer.Exit(code=1) from None
+    run_server()
+
+
 if __name__ == "__main__":
     app()

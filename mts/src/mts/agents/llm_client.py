@@ -23,6 +23,7 @@ class LanguageModelClient:
         prompt: str,
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
         raise NotImplementedError
 
@@ -34,6 +35,7 @@ class LanguageModelClient:
         messages: list[dict[str, str]],
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
         """Multi-turn generation with conversation history.
 
@@ -54,7 +56,9 @@ class AnthropicClient(LanguageModelClient):
         prompt: str,
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
+        del role
         started = time.perf_counter()
         response = self._client.messages.create(
             model=model,
@@ -85,7 +89,9 @@ class AnthropicClient(LanguageModelClient):
         messages: list[dict[str, str]],
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
+        del role
         started = time.perf_counter()
         response = self._client.messages.create(
             model=model,
@@ -127,8 +133,9 @@ class DeterministicDevClient(LanguageModelClient):
         messages: list[dict[str, str]],
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
-        del max_tokens, temperature
+        del max_tokens, temperature, role
         self._rlm_turn_counter += 1
         if self._rlm_turn_counter == 1:
             text = '<code>\nprint(type(answer))\nprint(answer)\n</code>'
@@ -160,8 +167,9 @@ class DeterministicDevClient(LanguageModelClient):
         prompt: str,
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
-        del max_tokens, temperature
+        del max_tokens, temperature, role
         prompt_lower = prompt.lower()
         # --- Translator role: extract JSON from competitor narrative ---
         if "extract the strategy" in prompt_lower:

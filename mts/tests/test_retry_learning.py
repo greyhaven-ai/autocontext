@@ -33,6 +33,7 @@ class PromptCapturingClient(LanguageModelClient):
         prompt: str,
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
         self.captured_prompts.append(prompt)
         return self._inner.generate(
@@ -47,6 +48,7 @@ class PromptCapturingClient(LanguageModelClient):
         messages: list[dict[str, str]],
         max_tokens: int,
         temperature: float,
+        role: str = "",
     ) -> ModelResponse:
         return self._inner.generate_multiturn(
             model=model, system=system, messages=messages,

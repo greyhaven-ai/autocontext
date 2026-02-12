@@ -115,7 +115,7 @@ class _NeverReadyClient(LanguageModelClient):
 
     def generate_multiturn(
         self, *, model: str, system: str, messages: list[dict[str, str]],
-        max_tokens: int, temperature: float,
+        max_tokens: int, temperature: float, role: str = "",
     ) -> ModelResponse:
         return ModelResponse(
             text='<code>\nprint("still working")\n</code>',
