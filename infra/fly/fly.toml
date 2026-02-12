@@ -1,0 +1,22 @@
+app = "mts-control-plane"
+primary_region = "ord"
+
+[build]
+  context = "."
+  dockerfile = "infra/docker/Dockerfile"
+
+[env]
+  MTS_DB_PATH = "/data/runs/mts.sqlite3"
+  MTS_RUNS_ROOT = "/data/runs"
+  MTS_KNOWLEDGE_ROOT = "/data/knowledge"
+  MTS_SKILLS_ROOT = "/data/skills"
+  MTS_EXECUTOR_MODE = "local"
+  MTS_AGENT_PROVIDER = "deterministic"
+
+[[mounts]]
+  source = "mts_data"
+  destination = "/data"
+
+[processes]
+  app = "run --scenario grid_ctf --gens 1"
+  dashboard = "serve --host 0.0.0.0 --port 8000"

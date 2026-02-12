@@ -1,0 +1,1 @@
+/Users/jayscambler/Repositories/MTS/mts/skills/othello_ops.md

@@ -1,0 +1,35 @@
+services:
+  mts:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    environment:
+      MTS_DB_PATH: /workspace/runs/mts.sqlite3
+      MTS_RUNS_ROOT: /workspace/runs
+      MTS_KNOWLEDGE_ROOT: /workspace/knowledge
+      MTS_SKILLS_ROOT: /workspace/skills
+      MTS_EXECUTOR_MODE: local
+      MTS_AGENT_PROVIDER: deterministic
+    volumes:
+      - ../../runs:/workspace/runs
+      - ../../knowledge:/workspace/knowledge
+      - ../../skills:/workspace/skills
+    command: run --scenario grid_ctf --gens 1
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    environment:
+      MTS_DB_PATH: /workspace/runs/mts.sqlite3
+      MTS_RUNS_ROOT: /workspace/runs
+      MTS_KNOWLEDGE_ROOT: /workspace/knowledge
+      MTS_SKILLS_ROOT: /workspace/skills
+      MTS_AGENT_PROVIDER: deterministic
+    volumes:
+      - ../../runs:/workspace/runs
+      - ../../knowledge:/workspace/knowledge
+      - ../../skills:/workspace/skills
+      - ../../mts/dashboard:/workspace/dashboard
+    command: serve --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"

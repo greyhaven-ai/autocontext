@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.python-version
+.venv/
+**/.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS/editor
+.DS_Store
+
+# Runtime outputs
+runs/*
+!runs/.gitkeep
+knowledge/*
+!knowledge/.gitkeep
+skills/*
+!skills/.gitkeep
+mts/runs/
+mts/knowledge/
+
+# Database artifacts
+*.sqlite3
+*.db

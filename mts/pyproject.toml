@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling>=1.26.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mts-control-plane"
+version = "0.1.0"
+description = "MTS control plane for iterative strategy evolution."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=0.66.0",
+  "fastapi>=0.116.1",
+  "httpx>=0.28.1",
+  "prime-sandboxes>=0.2.14",
+  "pydantic>=2.11.0",
+  "pyyaml>=6.0.2",
+  "rich>=13.9.4",
+  "typer>=0.16.0",
+  "uvicorn>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.16.0",
+  "pytest>=8.4.0",
+  "pytest-cov>=6.0.0",
+  "ruff>=0.12.0",
+]
+
+[project.scripts]
+mts = "mts.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --disable-warnings"
+
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_configs = true
+exclude = "(^tests/)|(^migrations/)"

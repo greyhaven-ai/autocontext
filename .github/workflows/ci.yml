@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install
+        run: uv sync --group dev
+      - name: Ruff
+        run: uv run ruff check src tests
+      - name: Mypy
+        run: uv run mypy src
+      - name: Tests
+        run: uv run pytest
+      - name: Migration smoke
+        env:
+          MTS_AGENT_PROVIDER: deterministic
+        run: |
+          uv run python -m mts.cli run --scenario grid_ctf --gens 3 --run-id ci_smoke_grid
+          uv run python -m mts.cli run --scenario othello --gens 1 --run-id ci_smoke_othello
+      - name: Dashboard API smoke
+        env:
+          MTS_AGENT_PROVIDER: deterministic
+        run: |
+          uv run mts serve --host 127.0.0.1 --port 8010 &
+          SERVER_PID=$!
+          sleep 2
+          curl -fsS http://127.0.0.1:8010/health
+          curl -fsS http://127.0.0.1:8010/api/runs
+          kill $SERVER_PID
+
+  primeintellect-live:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mts
+    env:
+      MTS_PRIMEINTELLECT_API_KEY: ${{ secrets.MTS_PRIMEINTELLECT_API_KEY }}
+      MTS_ANTHROPIC_API_KEY: ${{ secrets.MTS_ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install
+        run: uv sync --group dev
+      - name: Skip when secrets missing
+        run: |
+          if [ -z "${MTS_PRIMEINTELLECT_API_KEY:-}" ] || [ -z "${MTS_ANTHROPIC_API_KEY:-}" ]; then
+            echo "PrimeIntellect live verification skipped (missing secrets)."
+            exit 0
+          fi
+      - name: Live PrimeIntellect verification
+        env:
+          MTS_EXECUTOR_MODE: primeintellect
+          MTS_PRIMEINTELLECT_API_BASE: https://api.primeintellect.ai
+          MTS_AGENT_PROVIDER: anthropic
+        run: uv run mts run --scenario grid_ctf --gens 1 --run-id ci_prime_live

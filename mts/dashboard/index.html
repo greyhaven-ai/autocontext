@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MTS Dashboard</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #e2e8f0; }
+      h1, h2 { margin: 0 0 12px 0; }
+      .row { display: flex; gap: 16px; align-items: flex-start; }
+      .card { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 12px; width: 100%; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 6px 8px; border-bottom: 1px solid #1f2937; text-align: left; font-size: 13px; }
+      pre { white-space: pre-wrap; background: #020617; border: 1px solid #1f2937; padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; }
+      button, input { background: #1f2937; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 8px; }
+      .controls { margin-bottom: 10px; display: flex; gap: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>MTS Monitoring Dashboard</h1>
+    <div class="row">
+      <div class="card">
+        <h2>Runs</h2>
+        <div class="controls">
+          <button id="refreshRuns">Refresh</button>
+          <input id="runIdInput" placeholder="run_id for status/replay" />
+          <input id="genInput" type="number" min="1" value="1" />
+          <button id="loadStatus">Load Status</button>
+          <button id="loadReplay">Load Replay</button>
+        </div>
+        <table id="runsTable">
+          <thead><tr><th>Run ID</th><th>Scenario</th><th>Status</th><th>Created</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Run Status</h2>
+        <pre id="statusOut">{}</pre>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px;">
+      <div class="card">
+        <h2>Replay Viewer</h2>
+        <pre id="replayOut">{}</pre>
+      </div>
+      <div class="card">
+        <h2>Live Events</h2>
+        <pre id="eventsOut"></pre>
+      </div>
+    </div>
+    <script>
+      const runsTableBody = document.querySelector("#runsTable tbody");
+      const statusOut = document.getElementById("statusOut");
+      const replayOut = document.getElementById("replayOut");
+      const eventsOut = document.getElementById("eventsOut");
+      const runIdInput = document.getElementById("runIdInput");
+      const genInput = document.getElementById("genInput");
+
+      function appendCell(row, value) {
+        const td = document.createElement("td");
+        td.textContent = String(value ?? "");
+        row.appendChild(td);
+      }
+
+      async function refreshRuns() {
+        const res = await fetch("/api/runs");
+        const data = await res.json();
+        runsTableBody.replaceChildren();
+        for (const row of data) {
+          const tr = document.createElement("tr");
+          appendCell(tr, row.run_id);
+          appendCell(tr, row.scenario);
+          appendCell(tr, row.status);
+          appendCell(tr, row.created_at);
+          tr.addEventListener("click", () => {
+            runIdInput.value = row.run_id;
+          });
+          runsTableBody.appendChild(tr);
+        }
+      }
+
+      async function loadStatus() {
+        if (!runIdInput.value) return;
+        const res = await fetch(`/api/runs/${runIdInput.value}/status`);
+        const data = await res.json();
+        statusOut.textContent = JSON.stringify(data, null, 2);
+      }
+
+      async function loadReplay() {
+        if (!runIdInput.value) return;
+        const gen = Number(genInput.value || "1");
+        const res = await fetch(`/api/runs/${runIdInput.value}/replay/${gen}`);
+        const data = await res.json();
+        replayOut.textContent = JSON.stringify(data, null, 2);
+      }
+
+      function connectWs() {
+        const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/events`);
+        ws.onmessage = (evt) => {
+          eventsOut.textContent += evt.data + "\n";
+          eventsOut.scrollTop = eventsOut.scrollHeight;
+        };
+        ws.onclose = () => setTimeout(connectWs, 1500);
+      }
+
+      document.getElementById("refreshRuns").addEventListener("click", refreshRuns);
+      document.getElementById("loadStatus").addEventListener("click", loadStatus);
+      document.getElementById("loadReplay").addEventListener("click", loadReplay);
+      refreshRuns();
+      connectWs();
+    </script>
+  </body>
+</html>

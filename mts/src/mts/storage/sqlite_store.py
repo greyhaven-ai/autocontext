@@ -1,0 +1,248 @@
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+from typing import Any
+
+
+class SQLiteStore:
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON;")
+        return conn
+
+    def migrate(self, migrations_dir: Path) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                """
+            )
+            for migration in sorted(migrations_dir.glob("*.sql")):
+                applied = conn.execute(
+                    "SELECT version FROM schema_migrations WHERE version = ?",
+                    (migration.name,),
+                ).fetchone()
+                if applied:
+                    continue
+                conn.executescript(migration.read_text(encoding="utf-8"))
+                conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (migration.name,))
+
+    def create_run(self, run_id: str, scenario: str, generations: int, executor_mode: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO runs(run_id, scenario, target_generations, executor_mode, status)
+                VALUES (?, ?, ?, ?, 'running')
+                """,
+                (run_id, scenario, generations, executor_mode),
+            )
+
+    def generation_exists(self, run_id: str, generation_index: int) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM generations WHERE run_id = ? AND generation_index = ?",
+                (run_id, generation_index),
+            ).fetchone()
+            return row is not None
+
+    def upsert_generation(
+        self,
+        run_id: str,
+        generation_index: int,
+        mean_score: float,
+        best_score: float,
+        elo: float,
+        wins: int,
+        losses: int,
+        gate_decision: str,
+        status: str,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO generations(
+                    run_id, generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, generation_index) DO UPDATE SET
+                    mean_score = excluded.mean_score,
+                    best_score = excluded.best_score,
+                    elo = excluded.elo,
+                    wins = excluded.wins,
+                    losses = excluded.losses,
+                    gate_decision = excluded.gate_decision,
+                    status = excluded.status,
+                    updated_at = datetime('now')
+                """,
+                (run_id, generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status),
+            )
+
+    def insert_match(
+        self,
+        run_id: str,
+        generation_index: int,
+        seed: int,
+        score: float,
+        passed_validation: bool,
+        validation_errors: str,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO matches(run_id, generation_index, seed, score, passed_validation, validation_errors)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (run_id, generation_index, seed, score, int(passed_validation), validation_errors),
+            )
+
+    def append_agent_output(self, run_id: str, generation_index: int, role: str, content: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_outputs(run_id, generation_index, role, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                (run_id, generation_index, role, content),
+            )
+
+    def append_agent_role_metric(
+        self,
+        run_id: str,
+        generation_index: int,
+        role: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        latency_ms: int,
+        subagent_id: str,
+        status: str,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_role_metrics(
+                    run_id, generation_index, role, model, input_tokens, output_tokens, latency_ms, subagent_id, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    generation_index,
+                    role,
+                    model,
+                    input_tokens,
+                    output_tokens,
+                    latency_ms,
+                    subagent_id,
+                    status,
+                ),
+            )
+
+    def append_recovery_marker(
+        self,
+        run_id: str,
+        generation_index: int,
+        decision: str,
+        reason: str,
+        retry_count: int,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO generation_recovery(run_id, generation_index, decision, reason, retry_count)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (run_id, generation_index, decision, reason, retry_count),
+            )
+
+    def get_matches_for_run(self, run_id: str) -> list[dict[str, Any]]:
+        """Return all match records for a run, ordered by generation and seed."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM matches WHERE run_id = ? ORDER BY generation_index, seed",
+                (run_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_generation_metrics(self, run_id: str) -> list[dict[str, Any]]:
+        """Return all generation records for a run, ordered by generation index."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM generations WHERE run_id = ? ORDER BY generation_index",
+                (run_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_generation_trajectory(self, run_id: str) -> list[dict[str, Any]]:
+        """Return generation trajectory with score deltas."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT generation_index, mean_score, best_score, elo, gate_decision
+                FROM generations
+                WHERE run_id = ? AND status = 'completed'
+                ORDER BY generation_index
+                """,
+                (run_id,),
+            ).fetchall()
+            result = []
+            prev_best = 0.0
+            for row in rows:
+                d = dict(row)
+                d["delta"] = round(d["best_score"] - prev_best, 6)
+                prev_best = d["best_score"]
+                result.append(d)
+            return result
+
+    def get_strategy_score_history(self, run_id: str) -> list[dict[str, Any]]:
+        """Return strategy content with scores, joining agent_outputs and generations."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT ao.generation_index, ao.content, g.best_score, g.gate_decision
+                FROM agent_outputs ao
+                JOIN generations g ON ao.run_id = g.run_id AND ao.generation_index = g.generation_index
+                WHERE ao.run_id = ? AND ao.role = 'competitor' AND g.status = 'completed'
+                ORDER BY ao.generation_index
+                """,
+                (run_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def save_knowledge_snapshot(
+        self, scenario: str, run_id: str, best_score: float, best_elo: float, playbook_hash: str,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO knowledge_snapshots(scenario, run_id, best_score, best_elo, playbook_hash)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (scenario, run_id, best_score, best_elo, playbook_hash),
+            )
+
+    def get_best_knowledge_snapshot(self, scenario: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT scenario, run_id, best_score, best_elo, playbook_hash, created_at
+                FROM knowledge_snapshots
+                WHERE scenario = ?
+                ORDER BY best_score DESC
+                LIMIT 1
+                """,
+                (scenario,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def mark_run_completed(self, run_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute("UPDATE runs SET status = 'completed', updated_at = datetime('now') WHERE run_id = ?", (run_id,))
