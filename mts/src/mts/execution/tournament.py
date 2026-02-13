@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +33,7 @@ class TournamentRunner:
         matches: int,
         limits: ExecutionLimits,
         challenger_elo: float,
+        on_match: Callable[[int, float], None] | None = None,
     ) -> TournamentSummary:
         outputs: list[ExecutionOutput] = []
         elo = challenger_elo
@@ -48,6 +50,8 @@ class TournamentRunner:
             wins += int(actual == 1.0)
             losses += int(actual == 0.0)
             elo = update_elo(elo, self.opponent_elo, actual)
+            if on_match:
+                on_match(offset, score)
         mean_score = sum(scores) / len(scores)
         return TournamentSummary(
             mean_score=mean_score,

@@ -110,6 +110,79 @@ from mts.agents.llm_client import LanguageModelClient, ModelResponse  # noqa: E4
 from mts.agents.types import RoleUsage  # noqa: E402
 
 
+class TestRlmSessionExecutionHistory:
+    def test_session_tracks_execution_history(self) -> None:
+        client = DeterministicDevClient()
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client, worker=worker, role="analyst",
+            model="m", system_prompt="s", max_turns=5,
+        )
+        session.run()
+        assert len(session.execution_history) == 2
+        assert session.execution_history[0].turn == 1
+        assert session.execution_history[1].turn == 2
+        assert session.execution_history[1].answer_ready is True
+
+    def test_session_history_includes_errors(self) -> None:
+        client = _ErrorThenReadyClient()
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client, worker=worker, role="analyst",
+            model="m", system_prompt="s", max_turns=5,
+        )
+        session.run()
+        assert len(session.execution_history) == 2
+        assert session.execution_history[0].error is not None
+        assert "ZeroDivisionError" in session.execution_history[0].error
+        assert session.execution_history[1].error is None
+
+    def test_session_history_available_after_run(self) -> None:
+        client = DeterministicDevClient()
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client, worker=worker, role="analyst",
+            model="m", system_prompt="s", max_turns=5,
+        )
+        result = session.run()
+        assert result.status == "completed"
+        # History should be accessible after run completes
+        for rec in session.execution_history:
+            assert isinstance(rec.code, str)
+            assert isinstance(rec.stdout, str)
+
+    def test_session_history_count_matches_turns(self) -> None:
+        client = _NeverReadyClient()
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client, worker=worker, role="analyst",
+            model="m", system_prompt="s", max_turns=3,
+        )
+        session.run()
+        assert len(session.execution_history) == 3
+
+
+class _ErrorThenReadyClient(LanguageModelClient):
+    """First turn errors, second sets ready."""
+
+    def __init__(self) -> None:
+        self._turn = 0
+
+    def generate_multiturn(
+        self, *, model: str, system: str, messages: list[dict[str, str]],
+        max_tokens: int, temperature: float, role: str = "",
+    ) -> ModelResponse:
+        self._turn += 1
+        if self._turn == 1:
+            text = '<code>\n1 / 0\n</code>'
+        else:
+            text = '<code>\nanswer["content"] = "recovered"\nanswer["ready"] = True\n</code>'
+        return ModelResponse(
+            text=text,
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
+        )
+
+
 class _NeverReadyClient(LanguageModelClient):
     """Always returns code that prints but never sets answer['ready']."""
 

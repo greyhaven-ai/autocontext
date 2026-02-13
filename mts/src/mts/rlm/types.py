@@ -21,6 +21,17 @@ class ReplResult:
 
 
 @dataclass(slots=True)
+class ExecutionRecord:
+    """Record of a single code execution within an RLM session."""
+
+    turn: int
+    code: str
+    stdout: str
+    error: str | None
+    answer_ready: bool
+
+
+@dataclass(slots=True)
 class RlmContext:
     """Data prepared for injection into a REPL namespace."""
 

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
+import subprocess
+import threading
 from pathlib import Path
 
 import typer
@@ -29,25 +33,47 @@ def run(
     scenario: str = typer.Option("grid_ctf", "--scenario"),
     gens: int = typer.Option(1, "--gens", min=1),
     run_id: str | None = typer.Option(None, "--run-id"),
+    serve: bool = typer.Option(False, "--serve", help="Start interactive server alongside generation loop"),
+    port: int = typer.Option(8000, "--port", help="Server port (only used with --serve)"),
 ) -> None:
     """Run generation loop."""
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
-    table = Table(title="MTS Run Summary")
-    table.add_column("Run ID")
-    table.add_column("Scenario")
-    table.add_column("Generations")
-    table.add_column("Best Score")
-    table.add_column("Elo")
-    table.add_row(
-        summary.run_id,
-        summary.scenario,
-        str(summary.generations_executed),
-        f"{summary.best_score:.4f}",
-        f"{summary.current_elo:.2f}",
-    )
-    console.print(table)
+
+    if serve:
+        from mts.loop.controller import LoopController
+        from mts.server.app import create_app
+
+        runner = _runner()
+        controller = LoopController()
+        runner.controller = controller
+
+        def _loop_target() -> None:
+            runner.run(scenario_name=scenario, generations=gens, run_id=run_id)
+
+        loop_thread = threading.Thread(target=_loop_target, daemon=True)
+        loop_thread.start()
+
+        interactive_app = create_app(controller=controller, events=runner.events)
+        console.print(f"[green]Interactive server started on port {port}[/green]")
+        console.print(f"[dim]Connect TUI: cd tui && bun run start -- --url ws://localhost:{port}/ws/interactive[/dim]")
+        uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
+    else:
+        summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
+        table = Table(title="MTS Run Summary")
+        table.add_column("Run ID")
+        table.add_column("Scenario")
+        table.add_column("Generations")
+        table.add_column("Best Score")
+        table.add_column("Elo")
+        table.add_row(
+            summary.run_id,
+            summary.scenario,
+            str(summary.generations_executed),
+            f"{summary.best_score:.4f}",
+            f"{summary.current_elo:.2f}",
+        )
+        console.print(table)
 
 
 @app.command()
@@ -212,6 +238,61 @@ def ecosystem(
     for run_id, score in trajectory:
         traj_table.add_row(run_id, f"{score:.4f}")
     console.print(traj_table)
+
+
+@app.command()
+def tui(
+    port: int = typer.Option(8000, "--port", help="Server port"),
+) -> None:
+    """Launch interactive TUI (starts server + Ink terminal UI)."""
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    from mts.loop.controller import LoopController
+    from mts.loop.events import EventStreamEmitter
+    from mts.server.app import create_app
+    from mts.server.run_manager import RunManager
+
+    settings = load_settings()
+    controller = LoopController()
+    events = EventStreamEmitter(settings.event_stream_path)
+    run_manager = RunManager(controller, events, settings)
+
+    interactive_app = create_app(controller=controller, events=events, run_manager=run_manager)
+
+    # Locate the TUI directory
+    tui_dir = Path(__file__).resolve().parents[3] / "tui"
+    bun_path = shutil.which("bun")
+    has_tui = tui_dir.exists() and (tui_dir / "package.json").exists() and bun_path is not None
+
+    if has_tui and bun_path is not None:
+        # Start Ink TUI as a child process inheriting the TTY
+        ws_url = f"ws://localhost:{port}/ws/interactive"
+        tui_proc = subprocess.Popen(
+            [bun_path, "run", "start", "--", "--url", ws_url],
+            cwd=str(tui_dir),
+            stdin=None,
+            stdout=None,
+            stderr=None,
+            env={**os.environ},
+        )
+        console.print(f"[green]TUI started (PID {tui_proc.pid})[/green]")
+    else:
+        tui_proc = None
+        if not tui_dir.exists():
+            console.print("[yellow]TUI directory not found. Starting server only.[/yellow]")
+        elif not bun_path:
+            console.print("[yellow]bun not found. Starting server only.[/yellow]")
+        console.print(f"[dim]Connect manually: cd tui && bun run start -- --url ws://localhost:{port}/ws/interactive[/dim]")
+
+    console.print(f"[green]Interactive server on port {port}[/green]")
+    console.print("[dim]Use /run <scenario> <gens> in the TUI to start a run[/dim]")
+
+    try:
+        uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
+    finally:
+        if tui_proc and tui_proc.poll() is None:
+            tui_proc.terminate()
 
 
 @app.command("mcp-serve")

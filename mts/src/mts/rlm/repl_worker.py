@@ -19,6 +19,79 @@ _SAFE_MODULES = {
     "time": __import__("time"),
 }
 
+def _peek(text: str, start: int = 0, length: int = 2000) -> str:
+    """Return a slice of text starting at *start* for *length* chars."""
+    return text[start : start + length]
+
+
+def _grep(text: str, pattern: str, *, context: int = 0) -> list[str]:
+    """Return lines matching *pattern* (case-insensitive). *context*=N includes surrounding lines."""
+    import re as _re
+
+    lines = text.splitlines()
+    pat = _re.compile(_re.escape(pattern), _re.IGNORECASE)
+    hits: list[str] = []
+    for idx, line in enumerate(lines):
+        if pat.search(line):
+            lo = max(0, idx - context)
+            hi = min(len(lines), idx + context + 1)
+            hits.append("\n".join(lines[lo:hi]))
+    return hits
+
+
+def _chunk_by_size(text: str, size: int = 4000, overlap: int = 0) -> list[str]:
+    """Split text into fixed-size chunks with optional overlap."""
+    if not text:
+        return []
+    if size <= 0:
+        raise ValueError("size must be positive")
+    if overlap < 0 or overlap >= size:
+        raise ValueError("overlap must be non-negative and less than size")
+    chunks: list[str] = []
+    step = size - overlap
+    for start in range(0, len(text), step):
+        chunk = text[start : start + size]
+        if chunk:
+            chunks.append(chunk)
+        if start + size >= len(text):
+            break
+    return chunks
+
+
+def _chunk_by_headers(text: str, pattern: str = r"^#{1,3} ") -> list[dict[str, str]]:
+    """Split text at markdown header boundaries. Returns list of {header, content}."""
+    import re as _re
+
+    if not text:
+        return []
+    compiled = _re.compile(pattern, _re.MULTILINE)
+    matches = list(compiled.finditer(text))
+    if not matches:
+        return [{"header": "", "content": text.strip()}]
+    parts: list[dict[str, str]] = []
+    if matches[0].start() > 0:
+        preamble = text[: matches[0].start()].strip()
+        if preamble:
+            parts.append({"header": "", "content": preamble})
+    for i, match in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        section = text[match.start() : end]
+        nl = section.find("\n")
+        if nl == -1:
+            header, content = section.strip(), ""
+        else:
+            header, content = section[:nl].strip(), section[nl + 1 :].strip()
+        parts.append({"header": header, "content": content})
+    return parts
+
+
+_TEXT_HELPERS: dict[str, Any] = {
+    "peek": _peek,
+    "grep": _grep,
+    "chunk_by_size": _chunk_by_size,
+    "chunk_by_headers": _chunk_by_headers,
+}
+
 _BLOCKED_NAMES = frozenset({
     "open",
     "os",
@@ -82,6 +155,7 @@ class ReplWorker:
             "__builtins__": _build_restricted_builtins(),
         }
         self._namespace.update(_SAFE_MODULES)
+        self._namespace.update(_TEXT_HELPERS)
         self._namespace["answer"] = {"content": "", "ready": False}
 
         if namespace:

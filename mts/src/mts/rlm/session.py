@@ -6,11 +6,12 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from mts.agents.llm_client import LanguageModelClient
 from mts.agents.types import RoleExecution, RoleUsage
 from mts.rlm.repl_worker import ReplWorker
-from mts.rlm.types import ReplCommand
+from mts.rlm.types import ExecutionRecord, ReplCommand
 
 LOGGER = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class RlmSession:
         max_turns: int = 15,
         max_tokens_per_turn: int = 2048,
         temperature: float = 0.2,
+        on_turn: Callable[[int, int, bool], None] | None = None,
     ) -> None:
         self._client = client
         self._worker = worker
@@ -76,6 +78,8 @@ class RlmSession:
         self._max_turns = max_turns
         self._max_tokens = max_tokens_per_turn
         self._temperature = temperature
+        self._on_turn = on_turn
+        self.execution_history: list[ExecutionRecord] = []
 
     def run(self) -> RoleExecution:
         """Execute the full REPL loop and return a RoleExecution."""
@@ -84,6 +88,19 @@ class RlmSession:
         total_input = 0
         total_output = 0
         status = "completed"
+
+        def _get_history() -> list[dict[str, Any]]:
+            return [
+                {
+                    "turn": r.turn,
+                    "code_preview": r.code[:200],
+                    "stdout_preview": r.stdout[:200],
+                    "error": r.error,
+                }
+                for r in self.execution_history
+            ]
+
+        self._worker.namespace["get_history"] = _get_history
 
         for turn in range(1, self._max_turns + 1):
             response = self._client.generate_multiturn(
@@ -104,6 +121,14 @@ class RlmSession:
                 code = code_match.group(1).strip()
                 result = self._worker.run_code(ReplCommand(code))
 
+                self.execution_history.append(ExecutionRecord(
+                    turn=turn,
+                    code=code,
+                    stdout=result.stdout,
+                    error=result.error,
+                    answer_ready=result.answer.get("ready", False),
+                ))
+
                 # Build user feedback message
                 parts: list[str] = []
                 if result.stdout:
@@ -115,6 +140,9 @@ class RlmSession:
 
                 feedback = "\n\n".join(parts)
                 messages.append({"role": "user", "content": feedback})
+
+                if self._on_turn:
+                    self._on_turn(turn, self._max_turns, result.answer.get("ready", False))
 
                 if result.answer.get("ready"):
                     LOGGER.debug("RLM %s finished on turn %d", self._role, turn)

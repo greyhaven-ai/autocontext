@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -79,30 +80,51 @@ class AgentOrchestrator:
         run_id: str = "",
         scenario_name: str = "",
         strategy_interface: str = "",
+        on_role_event: Callable[[str, str], None] | None = None,
     ) -> AgentOutputs:
+        def _notify(role: str, status: str) -> None:
+            if on_role_event:
+                on_role_event(role, status)
+
+        _notify("competitor", "started")
         raw_text, competitor_exec = self.competitor.run(prompts.competitor, tool_context=tool_context)
+        _notify("competitor", "completed")
+        _notify("translator", "started")
         strategy, translator_exec = self.translator.translate(raw_text, strategy_interface)
+        _notify("translator", "completed")
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
             architect_prompt += "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
 
         if self.settings.rlm_enabled and self._rlm_loader is not None and self.settings.agent_provider != "agent_sdk":
+            _notify("analyst", "started")
+            _notify("architect", "started")
             analyst_exec, architect_exec = self._run_rlm_roles(
                 run_id, scenario_name, generation_index, strategy, architect_prompt,
             )
+            _notify("analyst", "completed")
+            _notify("architect", "completed")
+            _notify("coach", "started")
             enriched_coach_prompt = self._enrich_coach_prompt(prompts.coach, analyst_exec.content)
             with ThreadPoolExecutor(max_workers=1) as pool:
                 coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
                 coach_exec = coach_future.result()
+            _notify("coach", "completed")
         else:
             # Analyst runs first; its output enriches the coach prompt
+            _notify("analyst", "started")
             analyst_exec = self.analyst.run(prompts.analyst)
+            _notify("analyst", "completed")
             enriched_coach_prompt = self._enrich_coach_prompt(prompts.coach, analyst_exec.content)
+            _notify("coach", "started")
+            _notify("architect", "started")
             with ThreadPoolExecutor(max_workers=2) as pool:
                 coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
                 architect_future = pool.submit(self.architect.run, architect_prompt)
                 coach_exec = coach_future.result()
+                _notify("coach", "completed")
                 architect_exec = architect_future.result()
+                _notify("architect", "completed")
 
         tools = parse_architect_tool_specs(architect_exec.content)
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)

@@ -16,6 +16,7 @@ from mts.execution import ExecutionSupervisor, TournamentRunner
 from mts.execution.executors import LocalExecutor, PrimeIntellectExecutor
 from mts.integrations.primeintellect import PrimeIntellectClient
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
+from mts.loop.controller import LoopController
 from mts.loop.events import EventStreamEmitter
 from mts.prompts.templates import build_prompt_bundle
 from mts.scenarios import SCENARIO_REGISTRY
@@ -81,6 +82,7 @@ class GenerationRunner:
             self.executor = ExecutionSupervisor(executor=LocalExecutor())
         self.tournament = TournamentRunner(self.executor)
         self.events = EventStreamEmitter(settings.event_stream_path)
+        self.controller: LoopController | None = None
 
     def migrate(self, migrations_dir: Path) -> None:
         self.sqlite.migrate(migrations_dir)
@@ -91,6 +93,26 @@ class GenerationRunner:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario_name}'. Supported: {supported}")
         return cls()
+
+    def _chat_with_agent(self, role: str, message: str, prompts: object, tool_context: str) -> str:
+        """One-shot chat with a specific agent role using current context."""
+        try:
+            if role == "competitor":
+                text, _ = self.agents.competitor.run(message, tool_context=tool_context)
+                return text
+            elif role == "analyst":
+                exec_result = self.agents.analyst.run(message)
+                return exec_result.content
+            elif role == "coach":
+                exec_result = self.agents.coach.run(message)
+                return exec_result.content
+            elif role == "architect":
+                exec_result = self.agents.architect.run(message)
+                return exec_result.content
+            else:
+                return f"Unknown agent role: {role}"
+        except Exception as exc:
+            return f"Error chatting with {role}: {exc}"
 
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)
@@ -139,6 +161,11 @@ class GenerationRunner:
                         )
 
         for generation in range(1, generations + 1):
+            if self.controller:
+                self.controller.wait_if_paused()
+                hint = self.controller.take_hint()
+                if hint:
+                    coach_competitor_hints += f"\n\n[User guidance]: {hint}"
             if self.sqlite.generation_exists(active_run_id, generation):
                 LOGGER.info("generation %s already exists for run %s, skipping for idempotency", generation, active_run_id)
                 continue
@@ -191,6 +218,18 @@ class GenerationRunner:
                         {"run_id": active_run_id, "generation": generation, **warm_state},
                     )
                 strategy_interface = scenario.describe_strategy_interface()
+                roles = ["competitor", "analyst", "coach", "architect"]
+                if self.agents.curator is not None:
+                    roles.append("curator")
+                self.events.emit("agents_started", {
+                    "run_id": active_run_id, "generation": generation, "roles": roles,
+                })
+
+                def _on_role_event(role: str, status: str, _gen: int = generation) -> None:
+                    self.events.emit("role_event", {
+                        "run_id": active_run_id, "generation": _gen, "role": role, "status": status,
+                    })
+
                 outputs = self.agents.run_generation(
                     prompts,
                     generation_index=generation,
@@ -198,7 +237,17 @@ class GenerationRunner:
                     run_id=active_run_id,
                     scenario_name=scenario_name,
                     strategy_interface=strategy_interface,
+                    on_role_event=_on_role_event,
                 )
+                for role_exec in outputs.role_executions:
+                    self.events.emit("role_completed", {
+                        "run_id": active_run_id,
+                        "generation": generation,
+                        "role": role_exec.role,
+                        "latency_ms": role_exec.usage.latency_ms,
+                        "tokens": role_exec.usage.input_tokens + role_exec.usage.output_tokens,
+                    })
+
                 valid, reason = scenario.validate_actions(state, "challenger", outputs.strategy)
                 if not valid:
                     raise ValueError(f"competitor strategy validation failed: {reason}")
@@ -225,11 +274,31 @@ class GenerationRunner:
                     )
                 created_tools = self.artifacts.persist_tools(scenario_name, generation, outputs.architect_tools)
 
+                # Controller checkpoint: agent chat
+                if self.controller:
+                    chat_request = self.controller.poll_chat()
+                    if chat_request:
+                        role, message = chat_request
+                        response = self._chat_with_agent(role, message, prompts, tool_context)
+                        self.controller.respond_chat(role, response)
+
                 attempt = 0
                 gate_decision = "rollback"
                 tournament = None
                 current_strategy = outputs.strategy
                 while True:
+                    self.events.emit("tournament_started", {
+                        "run_id": active_run_id,
+                        "generation": generation,
+                        "matches": self.settings.matches_per_generation,
+                    })
+
+                    def _on_match(match_index: int, score: float, _gen: int = generation) -> None:
+                        self.events.emit("match_completed", {
+                            "run_id": active_run_id, "generation": _gen,
+                            "match_index": match_index, "score": score,
+                        })
+
                     try:
                         tournament = self.tournament.run(
                             scenario=scenario,
@@ -238,6 +307,7 @@ class GenerationRunner:
                             matches=self.settings.matches_per_generation,
                             limits=ExecutionLimits(),
                             challenger_elo=challenger_elo,
+                            on_match=_on_match,
                         )
                     except Exception:  # pragma: no cover
                         attempt += 1
@@ -296,6 +366,22 @@ class GenerationRunner:
                     break
 
                 assert tournament is not None
+                self.events.emit("tournament_completed", {
+                    "run_id": active_run_id, "generation": generation,
+                    "mean_score": tournament.mean_score, "best_score": tournament.best_score,
+                    "wins": tournament.wins, "losses": tournament.losses,
+                })
+                gate_delta = round(tournament.best_score - previous_best, 6)
+                self.events.emit("gate_decided", {
+                    "run_id": active_run_id, "generation": generation,
+                    "decision": gate_decision, "delta": gate_delta,
+                })
+
+                # Controller checkpoint: gate override
+                if self.controller:
+                    override = self.controller.take_gate_override()
+                    if override:
+                        gate_decision = override
                 # Generate replay narrative from best match for next generation
                 best_output = max(tournament.outputs, key=lambda o: o.result.score)
                 replay_narrative = scenario.replay_to_narrative(best_output.result.replay)
@@ -306,7 +392,6 @@ class GenerationRunner:
                 score_history.append(tournament.best_score)
                 gate_decision_history.append(gate_decision)
 
-                gate_delta = round(tournament.best_score - previous_best, 6)
                 if gate_decision == "advance":
                     previous_best = max(previous_best, tournament.best_score)
                     challenger_elo = tournament.elo_after
@@ -320,6 +405,9 @@ class GenerationRunner:
                 ):
                     current_pb = self.artifacts.read_playbook(scenario_name)
                     if current_pb and current_pb != "No playbook yet. Start from scenario rules and observation.":
+                        self.events.emit("curator_started", {
+                            "run_id": active_run_id, "generation": generation,
+                        })
                         curator_trajectory = self.trajectory_builder.build_trajectory(active_run_id)
                         curator_analysis = self.artifacts.read_latest_advance_analysis(scenario_name, generation)
                         curator_decision, curator_exec = self.agents.curator.assess_playbook_quality(
@@ -341,6 +429,10 @@ class GenerationRunner:
                         elif curator_decision.decision == "merge" and curator_decision.playbook:
                             outputs = dataclasses.replace(outputs, coach_playbook=curator_decision.playbook)
                         # "accept" → no change to outputs
+                        self.events.emit("curator_completed", {
+                            "run_id": active_run_id, "generation": generation,
+                            "decision": curator_decision.decision,
+                        })
 
                 metrics = {
                     "generation_index": generation,
