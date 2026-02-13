@@ -107,6 +107,7 @@ knowledge/<scenario>/
   tools/                   # Architect-generated Python tools
   tools/_archive/          # Prior tool versions
   snapshots/<run_id>/      # Cross-run knowledge snapshots (playbook + hints + skills)
+  _custom_scenarios/<name>/ # Persisted custom scenarios (scenario.py + spec.json)
 ```
 
 **What agents see each generation:**
@@ -123,7 +124,26 @@ knowledge/<scenario>/
 
 ### Scenarios
 
-Pluggable via `SCENARIO_REGISTRY`. Current scenarios: `grid_ctf`, `othello`. Implement `ScenarioInterface` and register to add new ones.
+Pluggable via `SCENARIO_REGISTRY`. Built-in scenarios: `grid_ctf`, `othello`. Implement `ScenarioInterface` and register to add new ones manually.
+
+#### Custom scenario creation
+
+Create scenarios from natural language via the TUI or WebSocket API:
+
+```bash
+# In the TUI:
+/scenario create A tower defense game where you balance economy vs firepower
+
+# Review the generated spec preview, then:
+#   Enter → confirm    r → revise with feedback    Esc → cancel
+
+# Once confirmed:
+/run tower_defense 5
+```
+
+The pipeline: LLM generates a `ScenarioSpec` JSON → template codegen produces a `ScenarioInterface` class → 3-stage validation (spec, AST, execution) → persisted to `knowledge/_custom_scenarios/{name}/` → registered in `SCENARIO_REGISTRY`. Custom scenarios are auto-loaded on server startup.
+
+Custom scenarios use local executor only (PrimeIntellect excluded).
 
 ## Configuration
 

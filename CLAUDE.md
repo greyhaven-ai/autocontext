@@ -19,7 +19,8 @@ mts/                          # Python package root (pyproject.toml lives here)
     prompts/                  # Prompt template assembly
     config/                   # Pydantic settings from MTS_* env vars
     storage/                  # SQLiteStore, ArtifactStore
-    scenarios/                # Pluggable game scenarios (grid_ctf, othello)
+    scenarios/                # Pluggable game scenarios (grid_ctf, othello, custom/)
+      custom/               # Natural-language → generated scenario pipeline (spec, codegen, validation, loading)
     execution/                # Execution supervisor, local/remote executors
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
@@ -132,7 +133,23 @@ When RLM is enabled, `AgentOrchestrator._run_rlm_roles()` runs analyst and archi
 
 Pluggable via `SCENARIO_REGISTRY` dict in `scenarios/__init__.py`. Each scenario implements `ScenarioInterface` (ABC) with methods: `initial_state`, `get_observation`, `validate_actions`, `step`, `is_terminal`, `get_result`, `execute_match`, etc.
 
-Current scenarios: `grid_ctf`, `othello`. To add a new scenario, implement `ScenarioInterface` and register it in `SCENARIO_REGISTRY`.
+Built-in scenarios: `grid_ctf`, `othello`. To add a scenario manually, implement `ScenarioInterface` and register it in `SCENARIO_REGISTRY`.
+
+### Custom Scenario Creation (`scenarios/custom/`)
+
+Users can create scenarios from natural language via the TUI (`/scenario create <description>`) or WebSocket API (`create_scenario` message). The pipeline:
+
+1. **Designer prompt** (`custom/designer.py`) — LLM generates a `ScenarioSpec` JSON between `<!-- SCENARIO_SPEC_START/END -->` delimiters
+2. **ScenarioSpec** (`custom/spec.py`) — Dataclass defining strategy params, constraints, environment variables, scoring components, weights, and win threshold
+3. **Codegen** (`custom/codegen.py`) — `generate_scenario_class(spec)` produces a full Python `ScenarioInterface` module with deterministic weighted scoring
+4. **Validation** (`custom/validator.py`) — Three stages: spec structural validation, `ast.parse()`, and execution validation (3 test matches with default params)
+5. **Loading** (`custom/loader.py`) — Dynamic import via `importlib.util`, registered in `sys.modules` as `mts.scenarios.custom.generated.{name}` for `LocalExecutor` subprocess compatibility
+6. **Persistence** — Saved to `knowledge/_custom_scenarios/{name}/scenario.py` + `spec.json`, auto-loaded on startup via `custom/registry.py`
+7. **Registration** — Added to `SCENARIO_REGISTRY`, immediately available for `/run`
+
+The `ScenarioCreator` (`custom/creator.py`) orchestrates the full pipeline and supports iterative revision via LLM feedback loops. `DeterministicDevClient` includes a fixed scenario designer response for offline/CI testing.
+
+WebSocket protocol for interactive creation: `create_scenario` → `scenario_generating` → `scenario_preview` → `confirm_scenario` → `scenario_ready`. Supports `revise_scenario` (with feedback) and `cancel_scenario`.
 
 ### Execution (`execution/`)
 
@@ -155,6 +172,7 @@ knowledge/<scenario>/
   tools/                   # Architect-generated Python tools
   tools/_archive/          # Prior tool versions (archived on update)
   snapshots/<run_id>/      # Cross-run knowledge snapshots
+  _custom_scenarios/<name>/  # Persisted custom scenarios (scenario.py + spec.json)
 ```
 
 Key behaviors:
@@ -173,7 +191,7 @@ Key behaviors:
 
 ### Dashboard & Events
 
-- **FastAPI server** (`server/app.py`) — REST endpoints (`/api/runs`, `/api/runs/{id}/status`, `/api/runs/{id}/replay/{gen}`) + WebSocket (`/ws/events`) streaming from ndjson event file + `/health` endpoint
+- **FastAPI server** (`server/app.py`) — REST endpoints (`/api/runs`, `/api/runs/{id}/status`, `/api/runs/{id}/replay/{gen}`) + WebSocket (`/ws/events`) streaming from ndjson event file + `/health` endpoint. The `/ws/interactive` WebSocket also handles custom scenario creation (`create_scenario`, `confirm_scenario`, `revise_scenario`, `cancel_scenario`).
 - **EventStreamEmitter** (`loop/events.py`) — Appends ndjson events to `runs/events.ndjson`
 
 ### Ecosystem Loop (`loop/ecosystem_runner.py`)
