@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from mts.rlm.repl_worker import CodeTimeout, ReplWorker
+from mts.rlm.repl_worker import (
+    CodeTimeout,
+    ReplWorker,
+    _chunk_by_headers,
+    _chunk_by_size,
+    _grep,
+    _peek,
+)
 from mts.rlm.types import ReplCommand
 
 
@@ -125,3 +132,89 @@ class TestReplWorkerTimeout:
         # (tight `while True: pass` can't be interrupted from a daemon thread).
         with pytest.raises(CodeTimeout):
             worker.run_code(ReplCommand("while True: time.sleep(0.01)"))
+
+
+class TestPeek:
+    def test_returns_substring(self) -> None:
+        assert _peek("abcdefghij", start=2, length=5) == "cdefg"
+
+    def test_default_offset(self) -> None:
+        text = "x" * 3000
+        result = _peek(text)
+        assert len(result) == 2000
+        assert result == "x" * 2000
+
+    def test_beyond_bounds(self) -> None:
+        assert _peek("short", start=3, length=100) == "rt"
+
+
+class TestGrep:
+    def test_finds_matching_lines(self) -> None:
+        text = "alpha\nbeta\ngamma\nbeta2"
+        assert _grep(text, "beta") == ["beta", "beta2"]
+
+    def test_case_insensitive(self) -> None:
+        text = "Hello\nhello\nHELLO"
+        assert len(_grep(text, "hello")) == 3
+
+    def test_with_context_lines(self) -> None:
+        text = "line1\nline2\nTARGET\nline4\nline5"
+        hits = _grep(text, "TARGET", context=1)
+        assert len(hits) == 1
+        assert "line2" in hits[0]
+        assert "TARGET" in hits[0]
+        assert "line4" in hits[0]
+
+    def test_no_matches(self) -> None:
+        assert _grep("abc\ndef", "zzz") == []
+
+
+class TestChunkBySize:
+    def test_basic(self) -> None:
+        text = "a" * 10
+        chunks = _chunk_by_size(text, size=4)
+        assert chunks == ["aaaa", "aaaa", "aa"]
+
+    def test_with_overlap(self) -> None:
+        text = "abcdefghij"
+        chunks = _chunk_by_size(text, size=5, overlap=2)
+        # step=3: [0:5]="abcde", [3:8]="defgh", [6:11]="ghij"
+        assert chunks == ["abcde", "defgh", "ghij"]
+
+    def test_empty(self) -> None:
+        assert _chunk_by_size("") == []
+
+
+class TestChunkByHeaders:
+    def test_markdown(self) -> None:
+        text = "# Title\nContent here.\n## Sub\nMore content."
+        parts = _chunk_by_headers(text)
+        assert len(parts) == 2
+        assert parts[0]["header"] == "# Title"
+        assert "Content here." in parts[0]["content"]
+        assert parts[1]["header"] == "## Sub"
+        assert "More content." in parts[1]["content"]
+
+    def test_no_headers(self) -> None:
+        text = "Just plain text\nwith no headers."
+        parts = _chunk_by_headers(text)
+        assert len(parts) == 1
+        assert parts[0]["header"] == ""
+        assert "Just plain text" in parts[0]["content"]
+
+
+class TestHelpersInNamespace:
+    def test_helpers_available_in_namespace(self) -> None:
+        worker = ReplWorker()
+        result = worker.run_code(ReplCommand('print(peek("hello world", 0, 5))'))
+        assert "hello" in result.stdout
+        assert result.error is None
+
+        result2 = worker.run_code(ReplCommand('print(grep("a\\nb\\nc", "b"))'))
+        assert "b" in result2.stdout
+
+        result3 = worker.run_code(ReplCommand('print(len(chunk_by_size("x" * 10, 4)))'))
+        assert "3" in result3.stdout
+
+        result4 = worker.run_code(ReplCommand('print(len(chunk_by_headers("# H1\\ntext\\n## H2\\nmore")))'))
+        assert "2" in result4.stdout

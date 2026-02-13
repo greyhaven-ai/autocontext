@@ -171,8 +171,11 @@ class DeterministicDevClient(LanguageModelClient):
     ) -> ModelResponse:
         del max_tokens, temperature, role
         prompt_lower = prompt.lower()
+        # --- Scenario designer role ---
+        if "scenario designer" in prompt_lower or "scenariospec" in prompt_lower:
+            text = self._scenario_designer_response()
         # --- Translator role: extract JSON from competitor narrative ---
-        if "extract the strategy" in prompt_lower:
+        elif "extract the strategy" in prompt_lower:
             text = self._translator_response(prompt_lower)
         # --- Competitor role: natural language strategy reasoning ---
         elif "describe your strategy" in prompt_lower:
@@ -261,6 +264,81 @@ class DeterministicDevClient(LanguageModelClient):
             "- Balance aggression with defense for consistent scoring.\n"
             "<!-- CONSOLIDATED_LESSONS_END -->\n"
             "<!-- LESSONS_REMOVED: 3 -->\n"
+        )
+
+    @staticmethod
+    def _scenario_designer_response() -> str:
+        spec = {
+            "name": "resource_balance",
+            "display_name": "Resource Balance",
+            "description": (
+                "A resource management scenario where agents balance mining, "
+                "defense, and trade to maximize colony growth."
+            ),
+            "strategy_interface_description": (
+                "Return JSON object with keys `mining`, `defense`, and `trade`, all floats in [0,1]. "
+                "Constraint: mining + defense + trade <= 2.0."
+            ),
+            "evaluation_criteria": (
+                "Optimize colony growth through efficient resource "
+                "allocation across mining, defense, and trade."
+            ),
+            "strategy_params": [
+                {
+                    "name": "mining", "description": "Investment in resource extraction",
+                    "min_value": 0.0, "max_value": 1.0, "default": 0.5,
+                },
+                {
+                    "name": "defense", "description": "Investment in colony protection",
+                    "min_value": 0.0, "max_value": 1.0, "default": 0.4,
+                },
+                {
+                    "name": "trade", "description": "Investment in trade routes",
+                    "min_value": 0.0, "max_value": 1.0, "default": 0.5,
+                },
+            ],
+            "constraints": [
+                {
+                    "expression": "mining + defense + trade", "operator": "<=",
+                    "threshold": 2.0, "description": "total allocation must be <= 2.0",
+                },
+            ],
+            "environment_variables": [
+                {"name": "resource_richness", "description": "Abundance of natural resources", "low": 0.2, "high": 0.8},
+                {"name": "threat_level", "description": "External threat intensity", "low": 0.1, "high": 0.7},
+            ],
+            "scoring_components": [
+                {
+                    "name": "extraction_yield",
+                    "description": "Mining output effectiveness",
+                    "formula_terms": {"mining": 0.6, "trade": 0.4},
+                    "noise_range": [-0.05, 0.05],
+                },
+                {
+                    "name": "colony_safety",
+                    "description": "Colony survival and protection",
+                    "formula_terms": {"defense": 0.7, "mining": 0.3},
+                    "noise_range": [-0.04, 0.04],
+                },
+                {
+                    "name": "trade_profit",
+                    "description": "Revenue from trade networks",
+                    "formula_terms": {"trade": 0.55, "defense": 0.45},
+                    "noise_range": [-0.03, 0.03],
+                },
+            ],
+            "final_score_weights": {"extraction_yield": 0.4, "colony_safety": 0.35, "trade_profit": 0.25},
+            "win_threshold": 0.55,
+            "observation_constraints": [
+                "Balance mining with defense to avoid vulnerability.",
+                "Trade routes require baseline defense for security.",
+            ],
+        }
+        return (
+            "Here is the generated scenario spec:\n\n"
+            "<!-- SCENARIO_SPEC_START -->\n"
+            f"{json.dumps(spec, indent=2)}\n"
+            "<!-- SCENARIO_SPEC_END -->"
         )
 
     @staticmethod
