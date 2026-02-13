@@ -143,9 +143,15 @@ class KnowledgeCurator:
                 role="curator",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=2000,
+                max_tokens=4000,
                 temperature=0.3,
             )
         )
         result = parse_curator_lesson_result(exec_result.content)
+        if not result.consolidated_lessons:
+            result = CuratorLessonResult(
+                consolidated_lessons=existing_lessons[:max_lessons],
+                removed_count=max(0, len(existing_lessons) - max_lessons),
+                reasoning="Consolidation produced no parseable output; hard-truncated to max_lessons.",
+            )
         return result, exec_result

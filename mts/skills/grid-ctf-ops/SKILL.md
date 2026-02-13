@@ -11,55 +11,26 @@ Accumulated knowledge from MTS strategy evolution.
 
 Prescriptive rules derived from what worked and what failed:
 
-- When aggression exceeds 0.7 without proportional defense, win rate drops.
-- Defensive anchor above 0.5 stabilizes Elo across generations.
-- When aggression exceeds 0.7 without defense ≥ 0.45, win rate drops significantly. Keep aggression ≤ 0.68 unless defense is proportionally high.
-- Defensive anchor below 0.40 violates the "at least one defender near base" constraint and risks instant loss.
-- Defensive anchor above 0.55 starves capture progress and leads to zero score (primary objective failure).
-- A score of 0.0000 indicates the strategy is too passive—aggression must be high enough to generate any capture progress at all.
-- When resource_density < 0.2, total commitment (aggression + defense) should not exceed ~1.10; energy starvation causes mid-game collapse.
-- Ignoring enemy_spawn_bias wastes forces against concentrated defenses. Always bias path toward the enemy's weaker lane.
-- Path_bias formula: set to min(1.0, (1 - enemy_spawn_bias) + 0.2) to exploit asymmetric enemy positioning.
-- Tools (threat_assessor, stability_analyzer) must be actively used to validate parameters before deployment—untested strategies fail silently.
-- Balanced/mirrored force distribution against an asymmetric enemy is suboptimal; asymmetric response is required.
-- Defensive anchor above 0.55 starves capture progress and leads to score stagnation or decline.
-- A balanced strategy (aggression=0.58, defense=0.57, path_bias=0.55) achieved 0.7615 with perfect defender survival and 0.88 energy efficiency—proving that moderate, balanced parameters outperform extremes.
-- Total commitment (aggression + defense) near 1.15 is effective when resource_density is moderate (~0.4). Higher commitment is sustainable with more resources.
-- When resource_density < 0.2, total commitment (aggression + defense) should not exceed ~1.05; energy starvation causes mid-game collapse.
-- When enemy_spawn_bias is near 0.5 (balanced), over-biasing path_bias (>0.65) wastes forces by concentrating against an evenly distributed enemy. Keep path_bias in [0.52, 0.62].
-- When enemy_spawn_bias > 0.6, exploit the weaker lane with path_bias = min(1.0, (1 - enemy_spawn_bias) + 0.2).
-- Capture progress of 0.63 with aggression=0.58 suggests headroom exists—incremental aggression increases (+0.05 to +0.07) should improve capture without destabilizing defense.
-- Perfect defender survival (1.00) with defense=0.57 indicates defense can be safely reduced by 0.03–0.05 to fund more aggression, as long as it stays above 0.45.
-- Incremental parameter changes (±0.03 to ±0.07) from a proven baseline are safer and more informative than large jumps.
-- Energy efficiency of 0.88 confirms the strategy is not over-committing resources; slight increases in total commitment are viable.
-- Generation 3 ROLLBACK after 2 retries (score=0.7486, delta=-0.0333, threshold=0.005). Strategy: {"aggression": 0.67, "defense": 0.52, "path_bias": 0.6}. Narrative: Capture phase ended with progress 0.64, defender survival 0.94, and energy efficiency 0.85.. Avoid this approach.
-- When resource_density < 0.2, total commitment (aggression + defense) MUST stay at or below 1.05. The previous generation's zero score is almost certainly caused by energy starvation from over-commitment in a scarce environment.
-- A score of 0.0000 means the strategy failed completely — either no capture progress was generated, the defender died, or mid-game energy collapse occurred. Recovery requires conservative parameters, not incremental tweaks from an aggressive baseline.
-- The proven baseline (aggression=0.58, defense=0.57, score=0.7615) was validated at resource_density≈0.437. Applying moderate-resource parameters to a low-resource environment (0.147) causes catastrophic failure.
-- Defensive anchor above 0.55 starves capture progress and leads to zero or declining score.
-- When enemy_spawn_bias > 0.6, exploit the weaker lane with path_bias formula: min(1.0, (1 - enemy_spawn_bias) + 0.2). But in low-resource environments, reduce path_bias by 0.05–0.10 because concentrated force projection is energy-expensive.
-- Generation 3 rollback (aggression=0.67, defense=0.52, path_bias=0.6, score=0.7486) demonstrated that pushing aggression too high while reducing defense causes defender survival to drop (0.94) and energy efficiency to decline (0.85). Avoid this configuration.
-- Energy efficiency of 0.88 in the best generation confirms that moderate commitment (sum≈1.15) is sustainable in moderate-resource environments, but NOT in low-resource ones.
-- Incremental parameter changes (±0.02 to ±0.05) from a proven baseline are safer than large jumps. After a zero-score failure, return to the most conservative viable configuration.
-- Path_bias over-concentration (>0.60) against any enemy is wasteful when resources are scarce. Conserve forces with path_bias ≤ 0.50 in low-resource environments.
-- Tools (threat_assessor, stability_analyzer) must be run before every deployment. A risk > 0.65 or stability < 0.45 predicts poor performance.
-- When recovering from a zero score, the priority order is: (1) ensure non-zero capture progress, (2) ensure defender survival, (3) ensure energy sustainability, (4) optimize for higher capture progress.
-- Generation 2 ROLLBACK after 2 retries (score=0.7369, delta=-0.0461, threshold=0.005). Strategy: {"aggression": 0.62, "defense": 0.52, "path_bias": 0.58}. Narrative: Capture phase ended with progress 0.61, defender survival 0.96, and energy efficiency 0.87.. Avoid this approach.
-- When resource_density < 0.2, total commitment (aggression + defense) MUST stay at or below 1.05. Exceeding this causes energy starvation and mid-game collapse, producing zero scores.
-- The proven baseline (aggression=0.58, defense=0.57, sum=1.15, score=0.7615) was validated at resource_density≈0.437. Applying moderate-resource parameters to low-resource environments (0.147) causes catastrophic failure.
-- A score of 0.0000 means complete strategy failure—either no capture progress, defender death, or energy collapse. Recovery requires conservative parameters, not incremental tweaks from an aggressive baseline.
-- Defense below 0.40 violates the "at least one defender near base" constraint and risks instant base loss.
-- Defense above 0.55 starves capture progress and leads to zero or declining score (primary objective failure).
-- Aggression below 0.45 risks generating zero capture progress, which is primary objective failure.
-- Path_bias over 0.60 is wasteful when resources are scarce. In low-resource environments, keep path_bias ≤ 0.50.
-- When enemy_spawn_bias > 0.6, exploit the weaker lane but reduce path_bias by 0.05–0.10 in low-resource environments because concentrated force projection is energy-expensive.
-- Generation 3 rollback (aggression=0.67, defense=0.52, path_bias=0.6, score=0.7486): pushing aggression too high while reducing defense causes defender survival drop (0.94) and energy efficiency decline (0.85).
-- Generation 2 rollback (aggression=0.62, defense=0.52, path_bias=0.58, score=0.7369): still over-committed for low-resource environments.
-- Tools (threat_assessor, stability_analyzer) MUST be run before every deployment. Risk > 0.65 or stability < 0.45 predicts poor performance.
-- Incremental parameter changes (±0.03 to ±0.05) from a proven baseline are safer than large jumps. After a zero-score failure, return to the most conservative viable configuration.
-- Energy efficiency of 0.88 in the best generation confirms moderate commitment (sum≈1.15) is sustainable in moderate-resource environments but NOT in low-resource ones.
-- When recovering from a zero score, priority order is: (1) ensure non-zero capture progress, (2) ensure defender survival, (3) ensure energy sustainability, (4) optimize for higher capture progress.
-- Balanced/mirrored force distribution against an asymmetric enemy is suboptimal, but asymmetric response must be tempered by resource availability.
+- Cross-tier parameter transfer is the #1 catastrophic failure mode. Parameters validated at one resource_density tier produce zero scores at different tiers. ALWAYS verify tier before parameter selection.
+- When resource_density < 0.20 (critical_low), total commitment (aggression + defense) MUST stay ≤ 1.05. Target ≤ 1.00 for a 5% safety buffer. Exceeding by even 10% causes energy starvation and zero scores.
+- When resource_density is moderate (0.40–0.60), total commitment ceiling is 1.20. Target 4–6% buffer (≤ 1.15). A 16% buffer wastes capacity.
+- Defense must stay in [0.45, 0.55]. Below 0.45 risks base loss; above 0.55 starves capture progress.
+- Aggression must be ≥ 0.48 to generate meaningful capture progress. Zero capture = zero score.
+- The scoring formula (score ≈ capture + (efficiency - 0.5) × 0.39) makes efficiency extremely valuable. Losing 4% efficiency costs ~1.5 score points.
+- Balanced strategy (agg=0.58, def=0.57, pb=0.55) achieved 0.7615 at density≈0.437, bias≈0.51 — moderate balanced parameters outperform extremes within the correct tier.
+- Conservative baseline (agg=0.50, def=0.50, pb=0.48) scored 0.7198 at density≈0.147, bias≈0.648 — proven viable in critical_low tier.
+- Over-aggression (agg ≥ 0.65) without proportional defense (≥ 0.52) causes defender survival drops and energy efficiency decline. Optimal moderate-tier aggression is [0.56, 0.60].
+- Generation 3 rollback (agg=0.67, def=0.52, pb=0.60, score=0.7486) and Gen 2 rollback (agg=0.62, def=0.52, pb=0.58, score=0.7369) both confirm over-commitment underperforms.
+- Perfect defender survival (1.00) signals defensive over-allocation. Optimal target is 0.95–0.99, freeing resources for capture.
+- Incremental changes (±0.02 to ±0.05) from a proven baseline within the same resource tier are the only validated safe optimization method. Large jumps (±0.09+) led to rollbacks.
+- After a zero score, RESET to the proven baseline for the current tier. Do NOT incrementally tweak failed parameters.
+- Path_bias in low-resource environments: cap at 0.50. Concentrated force projection is energy-expensive.
+- Path_bias for balanced enemy (bias ≤ 0.55): use [0.50, 0.55]. For asymmetric enemy (bias > 0.6): use [0.45, 0.50].
+- Energy efficiency of 0.90 at commitment=1.00 in critical_low confirms the ceiling is accurate; incremental increases to 1.01–1.03 are viable.
+- All validation tools (config_constants, energy_budget_validator, stability_analyzer, threat_assessor) MUST be run before deployment. Risk > 0.65 or stability < 0.45 predicts poor performance.
+- Recovery priority after zero score: (1) non-zero capture, (2) defender survival, (3) energy sustainability, (4) optimize capture progress.
+- The observation narrative is the authoritative source for environment data. Always read resource_density and enemy_spawn_bias from the actual observation state.
+- When conditions exactly match a proven baseline, deploy it directly rather than converging incrementally.
 
 ## Bundled Resources
 

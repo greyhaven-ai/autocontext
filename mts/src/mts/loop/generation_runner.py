@@ -405,10 +405,12 @@ class GenerationRunner:
                     lessons=skill_lessons,
                 )
                 # Curator lesson consolidation
+                existing_lessons_check = self.artifacts.read_skill_lessons_raw(scenario_name)
+                severely_over = len(existing_lessons_check) > self.settings.skill_max_lessons * 2
                 if (
                     self.agents.curator is not None
                     and self.settings.curator_enabled
-                    and generation % self.settings.curator_consolidate_every_n_gens == 0
+                    and (generation % self.settings.curator_consolidate_every_n_gens == 0 or severely_over)
                     and not self.settings.ablation_no_feedback
                 ):
                     existing_lessons = self.artifacts.read_skill_lessons_raw(scenario_name)

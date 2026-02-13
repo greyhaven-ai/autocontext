@@ -45,7 +45,7 @@ class AppSettings(BaseModel):
     local_sandbox_hardened: bool = Field(default=True)
     ablation_no_feedback: bool = Field(default=False)
     rlm_enabled: bool = Field(default=False)
-    rlm_max_turns: int = Field(default=15, ge=1, le=50)
+    rlm_max_turns: int = Field(default=25, ge=1, le=50)
     rlm_max_stdout_chars: int = Field(default=8192, ge=1024)
     rlm_sub_model: str = Field(default="claude-haiku-4-5-20251001")
     rlm_code_timeout_seconds: float = Field(default=10.0, ge=1.0)
@@ -99,7 +99,7 @@ def load_settings() -> AppSettings:
         local_sandbox_hardened=os.getenv("MTS_LOCAL_SANDBOX_HARDENED", "true").lower() == "true",
         ablation_no_feedback=os.getenv("MTS_ABLATION_NO_FEEDBACK", "false").lower() == "true",
         rlm_enabled=os.getenv("MTS_RLM_ENABLED", "false").lower() == "true",
-        rlm_max_turns=int(os.getenv("MTS_RLM_MAX_TURNS", "15")),
+        rlm_max_turns=int(os.getenv("MTS_RLM_MAX_TURNS", "25")),
         rlm_max_stdout_chars=int(os.getenv("MTS_RLM_MAX_STDOUT_CHARS", "8192")),
         rlm_sub_model=os.getenv("MTS_RLM_SUB_MODEL", "claude-haiku-4-5-20251001"),
         rlm_code_timeout_seconds=float(os.getenv("MTS_RLM_CODE_TIMEOUT_SECONDS", "10.0")),
