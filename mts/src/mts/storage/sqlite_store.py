@@ -265,6 +265,32 @@ class SQLiteStore:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def get_best_competitor_output(self, scenario: str) -> str | None:
+        """Return the competitor output from the best-scoring generation across all runs for a scenario."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT ao.content
+                FROM agent_outputs ao
+                JOIN generations g ON ao.run_id = g.run_id AND ao.generation_index = g.generation_index
+                JOIN runs r ON g.run_id = r.run_id
+                WHERE r.scenario = ? AND ao.role = 'competitor' AND g.status = 'completed'
+                ORDER BY g.best_score DESC
+                LIMIT 1
+                """,
+                (scenario,),
+            ).fetchone()
+            return row["content"] if row else None
+
+    def count_completed_runs(self, scenario: str) -> int:
+        """Return count of completed runs for a scenario."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM runs WHERE scenario = ? AND status = 'completed'",
+                (scenario,),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
     def mark_run_completed(self, run_id: str) -> None:
         with self.connect() as conn:
             conn.execute("UPDATE runs SET status = 'completed', updated_at = datetime('now') WHERE run_id = ?", (run_id,))

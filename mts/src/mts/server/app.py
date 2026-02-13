@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from mts.config import load_settings
 from mts.loop.controller import LoopController
 from mts.loop.events import EventStreamEmitter
+from mts.server.knowledge_api import router as knowledge_router
 from mts.server.run_manager import RunManager
 from mts.storage import SQLiteStore
 
@@ -57,6 +58,7 @@ def create_app(
 ) -> FastAPI:
     """Factory that creates the FastAPI app, optionally wired to a LoopController."""
     application = FastAPI(title="MTS Dashboard API", version="0.1.0")
+    application.include_router(knowledge_router)
     app_settings = load_settings()
     store = SQLiteStore(app_settings.db_path)
     scenario_creator = _build_scenario_creator(app_settings)

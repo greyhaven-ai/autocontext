@@ -14,7 +14,7 @@ The Python package lives under `mts/` (not the repo root). All `uv`, `pytest`, a
 mts/                          # Python package root (pyproject.toml lives here)
   src/mts/                    # Source code
     agents/                   # LLM agent roles (competitor, analyst, coach, architect, curator)
-    knowledge/                # Knowledge processing (trajectory builder)
+    knowledge/                # Knowledge processing (trajectory builder, skill export, search, solve-on-demand)
     loop/                     # Generation runner, event emitter
     prompts/                  # Prompt template assembly
     config/                   # Pydantic settings from MTS_* env vars
@@ -25,7 +25,7 @@ mts/                          # Python package root (pyproject.toml lives here)
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
     server/                   # FastAPI dashboard + WebSocket events
-  tests/                      # Pytest tests (~198 tests)
+  tests/                      # Pytest tests (~330 tests)
   migrations/                 # SQLite migration SQL files (001-004, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
@@ -184,14 +184,26 @@ Key behaviors:
 - **Lesson consolidation**: Curator periodically deduplicates and prunes SKILL.md lessons to prevent unbounded growth.
 - **Cross-run inheritance**: On run completion, playbook + hints + skills are snapshotted. New runs for the same scenario restore from the best-scoring snapshot if no playbook exists.
 
+### Strategy Knowledge API (`knowledge/export.py`, `knowledge/search.py`, `knowledge/solver.py`)
+
+Framework-agnostic knowledge service that lets any autonomous agent query MTS for solved strategies, search for relevant tactics, and submit new problems for on-demand solving. Consumers receive portable markdown+JSON skill packages they can drop into any agent skill directory.
+
+- **Skill Export** (`knowledge/export.py`) — `SkillPackage` dataclass assembles playbook, cleaned lessons, best strategy JSON, hints, and metadata into a portable bundle. `export_skill_package(ctx, scenario_name)` reads from `ArtifactStore` and `SQLiteStore`. `list_solved_scenarios(ctx)` returns metadata for scenarios with completed runs. `_clean_lessons()` strips MTS-internal noise (rollback logs, raw JSON blobs, score parentheticals) from lesson bullets.
+- **Strategy Search** (`knowledge/search.py`) — `search_strategies(ctx, query, top_k)` builds a search index over solved scenarios and scores with TF-IDF-style keyword matching across name, description, strategy interface, evaluation criteria, lessons, playbook excerpt, and hints. Weighted fields (name ×3, description ×2, lessons ×1.5, playbook ×1) with multi-term coverage boost.
+- **Solve-on-Demand** (`knowledge/solver.py`) — `SolveManager` accepts natural-language problem descriptions and runs background threads that: create a scenario via `ScenarioCreator`, run N generations via `GenerationRunner`, and export the resulting `SkillPackage`. Jobs are in-memory with polling via `get_status(job_id)` and `get_result(job_id)`.
+
+Access paths:
+- **MCP tools**: `mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`
+- **REST API**: `GET /api/knowledge/scenarios`, `GET /api/knowledge/export/{name}`, `POST /api/knowledge/search`, `POST /api/knowledge/solve`, `GET /api/knowledge/solve/{job_id}`
+
 ### Storage
 
-- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers, knowledge snapshots. Migrations applied from `migrations/*.sql` in filename order.
+- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers, knowledge snapshots. Includes `get_best_competitor_output(scenario)` and `count_completed_runs(scenario)` for the knowledge API. Migrations applied from `migrations/*.sql` in filename order.
 - **ArtifactStore** (`storage/artifacts.py`) — Filesystem persistence: generation metrics/replays under `runs/<run_id>/generations/`, playbooks/analysis/tools/hints/snapshots under `knowledge/<scenario>/`, skill notes under `skills/`. Syncs skill notes to `.claude/skills/` via symlinks.
 
 ### Dashboard & Events
 
-- **FastAPI server** (`server/app.py`) — REST endpoints (`/api/runs`, `/api/runs/{id}/status`, `/api/runs/{id}/replay/{gen}`) + WebSocket (`/ws/events`) streaming from ndjson event file + `/health` endpoint. The `/ws/interactive` WebSocket also handles custom scenario creation (`create_scenario`, `confirm_scenario`, `revise_scenario`, `cancel_scenario`).
+- **FastAPI server** (`server/app.py`) — REST endpoints (`/api/runs`, `/api/runs/{id}/status`, `/api/runs/{id}/replay/{gen}`) + Knowledge API router (`/api/knowledge/scenarios`, `/api/knowledge/export/{name}`, `/api/knowledge/search`, `/api/knowledge/solve`, `/api/knowledge/solve/{job_id}`) + WebSocket (`/ws/events`) streaming from ndjson event file + `/health` endpoint. The `/ws/interactive` WebSocket also handles custom scenario creation (`create_scenario`, `confirm_scenario`, `revise_scenario`, `cancel_scenario`).
 - **EventStreamEmitter** (`loop/events.py`) — Appends ndjson events to `runs/events.ndjson`
 
 ### Ecosystem Loop (`loop/ecosystem_runner.py`)
@@ -209,8 +221,8 @@ The ecosystem loop alternates between provider modes across sequential runs, wit
 
 Stdio-based MCP server exposing MTS functionality as tools for external Claude Code users:
 
-- **`mcp/tools.py`** — Pure sync tool implementation functions wrapping `ScenarioInterface`, `ArtifactStore`, `SQLiteStore`. Independently testable without MCP protocol.
-- **`mcp/server.py`** — MCP server using `@server.tool()` decorators. Each tool delegates to `tools.py`. Registers scenario tools (list, describe, validate, match, tournament), knowledge tools (playbook, trajectory, hints, skills, analysis, tools), run tools (list, status, replay), and sandbox tools (create, run, status, playbook, list, destroy).
+- **`mcp/tools.py`** — Pure sync tool implementation functions wrapping `ScenarioInterface`, `ArtifactStore`, `SQLiteStore`. Independently testable without MCP protocol. Includes knowledge API wrappers (`export_skill`, `list_solved`, `search_strategies`).
+- **`mcp/server.py`** — MCP server using `@server.tool()` decorators. Each tool delegates to `tools.py`. Registers scenario tools (list, describe, validate, match, tournament), knowledge tools (playbook, trajectory, hints, skills, analysis, tools), run tools (list, status, replay), sandbox tools (create, run, status, playbook, list, destroy), and knowledge API tools (`mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`).
 - **`mcp/sandbox.py`** — `SandboxManager` creates isolated environments with their own SQLite DB, knowledge directory (seeded from main), and run storage. Sandbox runs use `GenerationRunner` with sandbox-scoped `AppSettings`. `MTS_SANDBOX_MAX_GENERATIONS` limits generation count.
 
 CLI entry point: `uv run mts mcp-serve` (requires `mcp` optional dependency).

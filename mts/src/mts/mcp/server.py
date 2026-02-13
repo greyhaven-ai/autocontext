@@ -13,6 +13,7 @@ from mts.mcp.sandbox import SandboxManager
 mcp = FastMCP("mts")
 _ctx: tools.MtsToolContext | None = None
 _sandbox_mgr: SandboxManager | None = None
+_solve_mgr: object | None = None
 
 
 def _get_ctx() -> tools.MtsToolContext:
@@ -27,6 +28,15 @@ def _get_sandbox_mgr() -> SandboxManager:
     if _sandbox_mgr is None:
         _sandbox_mgr = SandboxManager(_get_ctx().settings)
     return _sandbox_mgr
+
+
+def _get_solve_mgr() -> object:
+    from mts.knowledge.solver import SolveManager
+
+    global _solve_mgr
+    if _solve_mgr is None:
+        _solve_mgr = SolveManager(_get_ctx().settings)
+    return _solve_mgr
 
 
 # -- Scenario exploration tools --
@@ -168,6 +178,62 @@ def mts_sandbox_destroy(sandbox_id: str) -> str:
     mgr = _get_sandbox_mgr()
     destroyed = mgr.destroy(sandbox_id)
     return json.dumps({"destroyed": destroyed, "sandbox_id": sandbox_id})
+
+
+# -- Knowledge API tools --
+
+
+@mcp.tool()
+def mts_export_skill(scenario_name: str) -> str:
+    """Export a portable skill package (playbook + lessons + strategy) for a solved scenario.
+    Returns markdown + JSON that can be dropped into any agent's skill directory."""
+    return json.dumps(tools.export_skill(_get_ctx(), scenario_name))
+
+
+@mcp.tool()
+def mts_list_solved() -> str:
+    """List all scenarios with solved strategies, including best scores and run counts."""
+    return json.dumps(tools.list_solved(_get_ctx()))
+
+
+@mcp.tool()
+def mts_search_strategies(query: str, top_k: int = 5) -> str:
+    """Search solved scenarios by natural language query.
+    Returns ranked results with relevance scores."""
+    return json.dumps(tools.search_strategies(_get_ctx(), query, top_k))
+
+
+@mcp.tool()
+def mts_solve_scenario(description: str, generations: int = 5) -> str:
+    """Submit a new problem for on-demand solving. MTS creates a scenario from the
+    description, runs strategy evolution, and produces a skill package.
+    Returns a job_id for polling status."""
+    from mts.knowledge.solver import SolveManager
+
+    mgr: SolveManager = _get_solve_mgr()  # type: ignore[assignment]
+    job_id = mgr.submit(description, generations)
+    return json.dumps({"job_id": job_id, "status": "pending"})
+
+
+@mcp.tool()
+def mts_solve_status(job_id: str) -> str:
+    """Check status of a solve-on-demand job."""
+    from mts.knowledge.solver import SolveManager
+
+    mgr: SolveManager = _get_solve_mgr()  # type: ignore[assignment]
+    return json.dumps(mgr.get_status(job_id))
+
+
+@mcp.tool()
+def mts_solve_result(job_id: str) -> str:
+    """Get the skill package result of a completed solve job."""
+    from mts.knowledge.solver import SolveManager
+
+    mgr: SolveManager = _get_solve_mgr()  # type: ignore[assignment]
+    pkg = mgr.get_result(job_id)
+    if pkg is None:
+        return json.dumps({"error": "Job not completed or not found"})
+    return json.dumps(pkg.to_dict())
 
 
 def run_server() -> None:

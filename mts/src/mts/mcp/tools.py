@@ -144,3 +144,40 @@ def run_replay(ctx: MtsToolContext, run_id: str, generation: int) -> dict[str, o
     if not replay_files:
         return {"error": f"no replay files under {replay_dir}"}
     return json.loads(replay_files[0].read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+
+# -- Knowledge API --
+
+
+def export_skill(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]:
+    """Export a portable skill package for a solved scenario."""
+    from mts.knowledge.export import export_skill_package
+
+    pkg = export_skill_package(ctx, scenario_name)
+    return pkg.to_dict()
+
+
+def list_solved(ctx: MtsToolContext) -> list[dict[str, object]]:
+    """List scenarios with solved strategies."""
+    from mts.knowledge.export import list_solved_scenarios
+
+    return list_solved_scenarios(ctx)
+
+
+def search_strategies(ctx: MtsToolContext, query: str, top_k: int = 5) -> list[dict[str, object]]:
+    """Search solved scenarios by query."""
+    from mts.knowledge.search import search_strategies as _search
+
+    results = _search(ctx, query, top_k)
+    return [
+        {
+            "scenario": r.scenario_name,
+            "display_name": r.display_name,
+            "description": r.description,
+            "relevance": r.relevance_score,
+            "best_score": r.best_score,
+            "best_elo": r.best_elo,
+            "match_reason": r.match_reason,
+        }
+        for r in results
+    ]
