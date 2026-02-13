@@ -1,51 +1,99 @@
 ## Strategy Updates
 
-- **Primary Objective is Capture Progress**: Capture progress is the dominant scoring factor. A purely defensive posture guarantees failure. Always allocate enough aggression to advance toward the enemy flag.
-- **Proven Baseline**: The best-scoring strategy so far is `{"aggression": 0.58, "defense": 0.57, "path_bias": 0.55}` (score 0.7615, capture progress 0.63, defender survival 1.00, energy efficiency 0.88). Any new strategy should be an incremental improvement from this anchor, not a radical departure.
-- **Environment-Adaptive Tuning**: Current observation is enemy_spawn_bias=0.51 (nearly symmetric) and resource_density=0.437 (moderate). Adjust parameters to match:
-  - With balanced enemy spawn, do NOT over-bias path. Keep path_bias in [0.52, 0.62].
-  - With moderate resources, total commitment (aggression + defense) can safely reach 1.15–1.25 without energy starvation.
-- **Aggression Sweet Spot**: Target aggression in [0.58, 0.68]. Below 0.55 yields insufficient capture progress. Above 0.70 without defense ≥ 0.45 causes win-rate collapse.
-- **Minimum Viable Defense**: Always maintain defense ≥ 0.40 (hard constraint: at least one defender near base). Ideal range is [0.45, 0.55]. Above 0.55 starves capture progress. Below 0.40 risks instant loss.
-- **Path Bias Rules**:
-  - When enemy_spawn_bias > 0.6: set path_bias to min(1.0, (1 - enemy_spawn_bias) + 0.2) to exploit the weaker lane.
-  - When enemy_spawn_bias is near 0.5 (balanced): set path_bias in [0.52, 0.62]. Over-biasing against a symmetric enemy wastes forces.
-- **Resource-Aware Commitment**:
-  - When resource_density < 0.2: cap aggression + defense at ~1.05.
-  - When resource_density is 0.3–0.5: allow aggression + defense up to ~1.20.
-  - When resource_density > 0.5: allow aggression + defense up to ~1.30.
-- **Recommended Parameters for Current Observation** (enemy_spawn_bias=0.51, resource_density=0.437):
-  ```json
-  {
-    "aggression": 0.65,
-    "defense": 0.52,
-    "path_bias": 0.58
-  }
-  ```
-  - Sum: 0.65 + 0.52 = 1.17 ≤ 1.4 ✓
-  - Defense ≥ 0.40 ✓
-  - Aggression in sweet spot ✓
-  - Path bias appropriate for near-symmetric enemy ✓
-  - Increased aggression (+0.07) to push capture progress beyond 0.63
-  - Slight defense reduction (-0.05) is safe given perfect defender survival last round
+### Core Principles
+- **Resource-adaptive commitment**: Total commitment (aggression + defense) ceiling scales with resource_density. See commitment ceiling table below.
+- **Defensive anchor is non-negotiable**: Defense must remain in [0.45, 0.55]. Below 0.45 risks base loss; above 0.55 starves capture progress.
+- **Primary objective is capture progress**: Aggression must be ≥ 0.48 to generate meaningful capture.
+- **Energy conservation in scarce environments**: When resource_density < 0.2, total commitment MUST stay ≤ 1.05. Energy starvation causes mid-game collapse and zero scores. This is the #1 failure mode.
+- **Enemy symmetry awareness**: Adapt path_bias to enemy_spawn_bias using the selection table below.
+- **Incremental improvement from proven baselines**: Change parameters by ±0.03 to ±0.06 per generation. Large jumps risk regressions.
+
+### Resource-Adaptive Commitment Ceilings
+| resource_density | Max total commitment | Aggression range | Defense range | Notes |
+|-----------------|---------------------|-----------------|--------------|-------|
+| < 0.20          | **1.05**            | 0.48–0.53       | 0.45–0.52    | CRITICAL: Energy starvation zone. Conservative only. |
+| 0.20–0.40       | 1.15                | 0.50–0.60       | 0.45–0.55    | |
+| 0.40–0.60       | 1.20                | 0.52–0.65       | 0.48–0.55    | |
+| > 0.60          | 1.35                | 0.55–0.70       | 0.50–0.55    | |
+
+### Path_bias Selection by Enemy Spawn Bias
+| enemy_spawn_bias | path_bias range | Notes |
+|-----------------|----------------|-------|
+| 0.45–0.55 (balanced) | 0.50–0.55 | No asymmetric exploitation needed |
+| 0.55–0.65 (moderate) | 0.45–0.55 | Slight bias toward weaker lane; reduce by 0.05 if resource_density < 0.2 |
+| > 0.65 (strong)       | 0.45–0.60 | Exploit weak lane cautiously; cap at 0.50 if resource_density < 0.2 |
+
+### Proven Baselines
+| Conditions | Parameters | Score | Notes |
+|-----------|-----------|-------|-------|
+| resource_density≈0.437, enemy_spawn_bias≈0.51 | aggression=0.52, defense=0.50, path_bias=0.52 | 0.7343 | Capture: 0.59, Defender survival: 0.99, Energy efficiency: 0.89 |
+| resource_density≈0.147, enemy_spawn_bias≈0.648 | aggression=0.48, defense=0.52, path_bias=0.45 | Untested (recovery) | Conservative low-resource baseline |
+
+### Recommended Strategy by Environment
+**For resource_density ≈ 0.437, enemy_spawn_bias ≈ 0.51:**
+```json
+{
+  "aggression": 0.58,
+  "defense": 0.52,
+  "path_bias": 0.52
+}
+```
+- Total commitment: 1.10 (within 1.20 ceiling)
+- Rationale: Push capture progress from 0.59 toward 0.63-0.65
+
+**For resource_density < 0.20 (e.g., 0.147), enemy_spawn_bias ≈ 0.648:**
+```json
+{
+  "aggression": 0.48,
+  "defense": 0.52,
+  "path_bias": 0.45
+}
+```
+- Total commitment: 1.00 (safely below 1.05 ceiling)
+- Threat risk ≈ 0.487 (below 0.65 threshold)
+- Rationale: Prevent energy starvation; slight path bias toward enemy's weaker lane without over-concentration
+
+### Recovery Priority Order (Low-Resource: resource_density < 0.2)
+1. **Ensure non-zero capture progress**: Aggression must be ≥ 0.45
+2. **Guarantee defender survival**: Defense must be ≥ 0.45 (preferably ≥ 0.50)
+3. **Maintain energy sustainability**: Total commitment ≤ 1.05
+4. **Exploit enemy weakness cautiously**: Path_bias in [0.40, 0.50]
+
+### Adjustment Protocol
+- **If score improves**: Increment aggression by +0.03 to +0.05; keep defense stable
+- **If score stagnates (within ±0.01)**: Try path_bias ±0.03 or defense ±0.02
+- **If score drops by > 0.03**: Rollback to previous best; reduce change magnitude to ±0.02
+- **If score drops to zero (EMERGENCY)**: 
+  - Immediately check resource_density and apply appropriate commitment ceiling
+  - Reset to conservative parameters for current resource level
+  - If resource_density < 0.2: aggression=0.48, defense=0.52, path_bias=0.50, total=1.00
+  - If resource_density ≥ 0.2: aggression=0.50, defense=0.50, path_bias=0.50, total=1.00
+  - Run threat_assessor and stability_analyzer before redeployment
+
+### Critical Lesson (Gen 4 Failure)
+Applying moderate-resource parameters (validated at resource_density≈0.437) to a low-resource environment (resource_density=0.147) caused catastrophic energy starvation and a zero score. **Always read resource_density first and select commitment ceiling accordingly.** Never assume previous parameters transfer across resource regimes.
 
 ## Prompt Optimizations
 
-- Return concise JSON with exactly three keys: `aggression`, `defense`, `path_bias`, all floats in [0,1].
-- Validate constraint: aggression + defense ≤ 1.4 before submission.
-- Use threat_assessor tool with the proposed aggression, defense, path_bias values. Reject if risk > 0.65.
-- Use stability_analyzer tool with mobility_weight=aggression, corner_weight=path_bias, stability_weight=defense. Target stability_score ≥ 0.45.
-- Always cross-reference proposed parameters against the strategy-score registry to ensure incremental improvement.
+- Return concise JSON with exactly three keys: `aggression`, `defense`, `path_bias`
+- **Always read current `resource_density` and `enemy_spawn_bias` FIRST** before selecting parameters
+- Use resource-adaptive commitment ceiling table to set total commitment bounds
+- Use path_bias selection table based on enemy_spawn_bias
+- Validate with threat_assessor (risk < 0.65) and stability_analyzer (stability > 0.45) before deployment
+- Constraint: aggression + defense ≤ 1.4 (hard system limit); practical ceiling from resource table
 
 ## Next Generation Checklist
 
-- [ ] Verify capture progress improves beyond 0.63 (primary objective).
-- [ ] Verify defender survival remains at 1.00 (hard constraint).
-- [ ] Run threat_assessor: expected risk = 0.576 (< 0.65 ✓). Reject if > 0.65.
-- [ ] Run stability_analyzer: expected score = 0.65*0.3 + 0.58*0.4 + 0.52*0.3 = 0.195 + 0.232 + 0.156 = 0.583 (≥ 0.45 ✓).
-- [ ] If capture progress improves and defender survives, lock parameters and iterate ±0.03 for fine-tuning.
-- [ ] If capture progress stalls, increase aggression by +0.03 (max 0.68) and decrease defense by -0.02 (min 0.45).
-- [ ] If defender dies, increase defense by +0.05 and decrease aggression by -0.03.
-- [ ] Test aggressive variant: aggression=0.68, defense=0.48, path_bias=0.58 (max push within safe bounds).
-- [ ] Test conservative variant: aggression=0.60, defense=0.55, path_bias=0.55 (closer to proven baseline).
-- [ ] If enemy_spawn_bias shifts above 0.6 in future observations, re-engage asymmetric path_bias formula.
+1. Read observation state: resource_density and enemy_spawn_bias
+2. Look up commitment ceiling from resource-adaptive table
+3. Select appropriate proven baseline for current conditions (or nearest match)
+4. Propose parameters within allowed ranges for current resource tier
+5. Run threat_assessor: abort if risk > 0.65
+6. Run stability_analyzer: abort if stability < 0.45
+7. Verify defense ∈ [0.45, 0.55]
+8. Verify aggression ≥ 0.48 (minimum for capture progress)
+9. Verify total commitment ≤ resource-adaptive ceiling
+10. Verify path_bias matches enemy_spawn_bias table
+11. If improving from a proven baseline, change by ±0.03 to ±0.06 only
+12. If score was zero in previous generation, use emergency reset protocol
+13. Record strategy, conditions, and score in baselines table for future reference

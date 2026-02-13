@@ -31,6 +31,11 @@ MTS_AGENT_PROVIDER=agent_sdk MTS_ANTHROPIC_API_KEY=... uv run mts run --scenario
 # RLM mode (REPL-loop agents for analyst/architect)
 MTS_AGENT_PROVIDER=deterministic MTS_RLM_ENABLED=true uv run mts run --scenario grid_ctf --gens 3
 
+# Ecosystem mode (alternate providers across cycles)
+MTS_AGENT_PROVIDER=deterministic uv run mts ecosystem \
+  --scenario grid_ctf --cycles 3 --gens-per-cycle 2 \
+  --provider-a anthropic --provider-b agent_sdk --rlm-a --no-rlm-b
+
 # Other CLI commands
 uv run mts list                            # list recent runs
 uv run mts status <run_id>                 # generation-level status
@@ -230,6 +235,33 @@ When `agent_sdk` is active, RLM mode is automatically bypassed since the Agent S
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MTS_AGENT_SDK_CONNECT_MCP` | `false` | Connect agents to the MTS MCP server |
+
+## Ecosystem mode
+
+The ecosystem loop alternates between provider modes across sequential runs, with the shared `knowledge/<scenario>/` directory connecting them. Each cycle runs Phase A then Phase B, creating a feedback loop where different provider capabilities build on each other's knowledge artifacts.
+
+```
+mts ecosystem --scenario grid_ctf --cycles 5 --gens-per-cycle 3
+
+Cycle 1:
+  Phase A: anthropic + RLM    -> reads/writes knowledge/grid_ctf/
+  Phase B: agent_sdk           -> reads/writes knowledge/grid_ctf/
+Cycle 2:  (inherits all knowledge from cycle 1)
+  Phase A: anthropic + RLM    -> reads/writes knowledge/grid_ctf/
+  Phase B: agent_sdk           -> reads/writes knowledge/grid_ctf/
+```
+
+No special cross-phase transfer logic is needed — the `knowledge/<scenario>/` directory (playbook, hints, tools, analysis, skills) is the shared mutable state. Provider metadata is tracked in the database for each run and knowledge snapshot.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--scenario` | `grid_ctf` | Scenario to run |
+| `--cycles` | `3` | Number of full A+B cycles |
+| `--gens-per-cycle` | `3` | Generations per phase |
+| `--provider-a` | `anthropic` | Provider for Phase A |
+| `--provider-b` | `agent_sdk` | Provider for Phase B |
+| `--rlm-a/--no-rlm-a` | `--rlm-a` | Enable RLM for Phase A |
+| `--rlm-b/--no-rlm-b` | `--no-rlm-b` | Enable RLM for Phase B |
 
 ## Sandboxed play
 

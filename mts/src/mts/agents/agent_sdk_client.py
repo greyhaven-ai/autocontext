@@ -19,12 +19,30 @@ ROLE_TOOL_CONFIG: dict[str, list[str]] = {
     "curator": ["Read", "Glob", "Grep"],
 }
 
+# Map full model IDs to the short names the Agent SDK expects
+_MODEL_SHORT_NAMES: dict[str, str] = {
+    "claude-opus-4-6": "opus",
+    "claude-sonnet-4-5-20250929": "sonnet",
+    "claude-haiku-4-5-20251001": "haiku",
+}
+
+
+def _resolve_model(model: str) -> str:
+    """Convert a full model ID to the short name the Agent SDK expects."""
+    if model in _MODEL_SHORT_NAMES:
+        return _MODEL_SHORT_NAMES[model]
+    # Already a short name or unknown — pass through
+    for short in ("opus", "sonnet", "haiku"):
+        if short in model:
+            return short
+    return "sonnet"  # safe default
+
 
 @dataclass(slots=True)
 class AgentSdkConfig:
     """Configuration for Agent SDK client."""
 
-    working_directory: str = ""
+    cwd: str = ""
     connect_mcp_server: bool = False
 
 
@@ -43,8 +61,9 @@ class AgentSdkClient(LanguageModelClient):
         temperature: float,
         role: str = "competitor",
     ) -> ModelResponse:
+        del max_tokens, temperature  # Agent SDK manages these internally
         started = time.perf_counter()
-        result_text = asyncio.run(self._query(prompt, model, max_tokens, role))
+        result_text = asyncio.run(self._query(prompt, model, role))
         elapsed = int((time.perf_counter() - started) * 1000)
         usage = RoleUsage(
             input_tokens=max(1, len(prompt) // 4),
@@ -54,20 +73,24 @@ class AgentSdkClient(LanguageModelClient):
         )
         return ModelResponse(text=result_text, usage=usage)
 
-    async def _query(self, prompt: str, model: str, max_tokens: int, role: str) -> str:
-        from claude_agent_sdk import ClaudeAgentOptions, query  # type: ignore[import-not-found]
+    async def _query(self, prompt: str, model: str, role: str, system_prompt: str = "") -> str:
+        from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query  # type: ignore[import-not-found]
 
         tool_list = ROLE_TOOL_CONFIG.get(role, ROLE_TOOL_CONFIG["competitor"])
         options = ClaudeAgentOptions(
-            model=model,
-            max_tokens=max_tokens,
+            model=_resolve_model(model),
             allowed_tools=tool_list,
             permission_mode="bypassPermissions",
+            max_turns=25,
         )
+        if system_prompt:
+            options.system_prompt = system_prompt
+        if self._config.cwd:
+            options.cwd = self._config.cwd
 
         result_text = ""
         async for message in query(prompt=prompt, options=options):
-            if hasattr(message, "result"):
+            if isinstance(message, ResultMessage) and message.result:
                 result_text = message.result
         return result_text.strip()
 
@@ -82,11 +105,20 @@ class AgentSdkClient(LanguageModelClient):
         role: str = "analyst",
     ) -> ModelResponse:
         """Agent SDK handles multi-turn natively via its tool loop."""
-        combined = system + "\n\n" + "\n\n".join(f"[{m['role']}]: {m['content']}" for m in messages)
-        return self.generate(
+        del max_tokens, temperature  # Agent SDK manages these internally
+        last_user_msg = ""
+        for m in reversed(messages):
+            if m["role"] == "user":
+                last_user_msg = m["content"]
+                break
+        prompt = last_user_msg or "\n\n".join(f"[{m['role']}]: {m['content']}" for m in messages)
+        started = time.perf_counter()
+        result_text = asyncio.run(self._query(prompt, model, role, system_prompt=system))
+        elapsed = int((time.perf_counter() - started) * 1000)
+        usage = RoleUsage(
+            input_tokens=max(1, len(system + prompt) // 4),
+            output_tokens=max(1, len(result_text) // 4),
+            latency_ms=elapsed,
             model=model,
-            prompt=combined,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            role=role,
         )
+        return ModelResponse(text=result_text, usage=usage)

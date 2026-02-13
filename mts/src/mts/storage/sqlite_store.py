@@ -36,14 +36,14 @@ class SQLiteStore:
                 conn.executescript(migration.read_text(encoding="utf-8"))
                 conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (migration.name,))
 
-    def create_run(self, run_id: str, scenario: str, generations: int, executor_mode: str) -> None:
+    def create_run(self, run_id: str, scenario: str, generations: int, executor_mode: str, agent_provider: str = "") -> None:
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO runs(run_id, scenario, target_generations, executor_mode, status)
-                VALUES (?, ?, ?, ?, 'running')
+                INSERT OR IGNORE INTO runs(run_id, scenario, target_generations, executor_mode, status, agent_provider)
+                VALUES (?, ?, ?, ?, 'running', ?)
                 """,
-                (run_id, scenario, generations, executor_mode),
+                (run_id, scenario, generations, executor_mode, agent_provider),
             )
 
     def generation_exists(self, run_id: str, generation_index: int) -> bool:
@@ -218,15 +218,23 @@ class SQLiteStore:
             return [dict(row) for row in rows]
 
     def save_knowledge_snapshot(
-        self, scenario: str, run_id: str, best_score: float, best_elo: float, playbook_hash: str,
+        self,
+        scenario: str,
+        run_id: str,
+        best_score: float,
+        best_elo: float,
+        playbook_hash: str,
+        agent_provider: str = "",
+        rlm_enabled: bool = False,
     ) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO knowledge_snapshots(scenario, run_id, best_score, best_elo, playbook_hash)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO knowledge_snapshots(
+                    scenario, run_id, best_score, best_elo, playbook_hash, agent_provider, rlm_enabled
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (scenario, run_id, best_score, best_elo, playbook_hash),
+                (scenario, run_id, best_score, best_elo, playbook_hash, agent_provider, int(rlm_enabled)),
             )
 
     def get_best_knowledge_snapshot(self, scenario: str) -> dict[str, Any] | None:
@@ -242,6 +250,20 @@ class SQLiteStore:
                 (scenario,),
             ).fetchone()
             return dict(row) if row else None
+
+    def get_ecosystem_snapshots(self, scenario: str) -> list[dict[str, Any]]:
+        """Return all knowledge snapshots for a scenario with provider info, ordered by created_at ASC."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT scenario, run_id, best_score, best_elo, playbook_hash, agent_provider, rlm_enabled, created_at
+                FROM knowledge_snapshots
+                WHERE scenario = ?
+                ORDER BY id ASC
+                """,
+                (scenario,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def mark_run_completed(self, run_id: str) -> None:
         with self.connect() as conn:

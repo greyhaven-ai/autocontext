@@ -8,12 +8,12 @@ import pytest
 
 pytest.importorskip("mcp", reason="MCP not installed")
 
-from mts.mcp.server import server  # noqa: E402
+from mts.mcp.server import mcp  # noqa: E402
 
 
 def test_server_has_tools() -> None:
     """Server registers expected tool names."""
-    tool_names = [t.name for t in server._tools.values()]
+    tool_names = list(mcp._tool_manager._tools.keys())
     expected = [
         "mts_list_scenarios",
         "mts_describe_scenario",
@@ -31,27 +31,25 @@ def test_server_has_tools() -> None:
 
 def test_tool_count() -> None:
     """At least 10 tools registered."""
-    assert len(server._tools) >= 10
+    assert len(mcp._tool_manager._tools) >= 10
 
 
-@pytest.mark.asyncio
-async def test_list_scenarios_tool() -> None:
+def test_list_scenarios_tool() -> None:
     """Tool invocation returns valid JSON."""
     from mts.mcp.server import mts_list_scenarios
 
-    result = await mts_list_scenarios()
+    result = mts_list_scenarios()
     parsed = json.loads(result)
     assert isinstance(parsed, list)
     assert len(parsed) >= 2
 
 
-@pytest.mark.asyncio
-async def test_run_match_tool() -> None:
+def test_run_match_tool() -> None:
     """Tool invocation returns result with score."""
     from mts.mcp.server import mts_run_match
 
     strategy = json.dumps({"aggression": 0.5, "defense": 0.5, "path_bias": 0.5})
-    result = await mts_run_match(scenario_name="grid_ctf", strategy=strategy, seed=42)
+    result = mts_run_match(scenario_name="grid_ctf", strategy=strategy, seed=42)
     parsed = json.loads(result)
     assert "score" in parsed
     assert isinstance(parsed["score"], float)

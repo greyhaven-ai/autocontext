@@ -159,6 +159,61 @@ def serve(
     uvicorn.run("mts.server.app:app", host=host, port=port, reload=False)
 
 
+@app.command()
+def ecosystem(
+    scenario: str = typer.Option("grid_ctf", "--scenario"),
+    cycles: int = typer.Option(3, "--cycles", min=1),
+    gens_per_cycle: int = typer.Option(3, "--gens-per-cycle", min=1),
+    provider_a: str = typer.Option("anthropic", "--provider-a"),
+    provider_b: str = typer.Option("agent_sdk", "--provider-b"),
+    rlm_a: bool = typer.Option(True, "--rlm-a/--no-rlm-a"),
+    rlm_b: bool = typer.Option(False, "--rlm-b/--no-rlm-b"),
+) -> None:
+    """Run ecosystem loop alternating provider modes across cycles."""
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    from mts.loop.ecosystem_runner import EcosystemConfig, EcosystemPhase, EcosystemRunner
+
+    settings = load_settings()
+    phases = [
+        EcosystemPhase(provider=provider_a, rlm_enabled=rlm_a, generations=gens_per_cycle),
+        EcosystemPhase(provider=provider_b, rlm_enabled=rlm_b, generations=gens_per_cycle),
+    ]
+    config = EcosystemConfig(scenario=scenario, cycles=cycles, gens_per_cycle=gens_per_cycle, phases=phases)
+    runner = EcosystemRunner(settings, config)
+    runner.migrate(Path(__file__).resolve().parents[2] / "migrations")
+    summary = runner.run()
+
+    table = Table(title="Ecosystem Summary")
+    table.add_column("Run ID")
+    table.add_column("Scenario")
+    table.add_column("Provider")
+    table.add_column("Gens")
+    table.add_column("Best Score")
+    table.add_column("Elo")
+    for rs in summary.run_summaries:
+        with SQLiteStore(settings.db_path).connect() as conn:
+            row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = ?", (rs.run_id,)).fetchone()
+        provider_label = row["agent_provider"] if row else "?"
+        table.add_row(
+            rs.run_id,
+            rs.scenario,
+            provider_label,
+            str(rs.generations_executed),
+            f"{rs.best_score:.4f}",
+            f"{rs.current_elo:.2f}",
+        )
+    console.print(table)
+
+    trajectory = summary.score_trajectory()
+    traj_table = Table(title="Score Trajectory")
+    traj_table.add_column("Run ID")
+    traj_table.add_column("Best Score")
+    for run_id, score in trajectory:
+        traj_table.add_row(run_id, f"{score:.4f}")
+    console.print(traj_table)
+
+
 @app.command("mcp-serve")
 def mcp_serve() -> None:
     """Start MTS MCP server on stdio for Claude Code integration."""

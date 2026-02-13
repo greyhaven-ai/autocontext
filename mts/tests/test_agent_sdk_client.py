@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from mts.agents.agent_sdk_client import ROLE_TOOL_CONFIG, AgentSdkClient
+from mts.agents.agent_sdk_client import ROLE_TOOL_CONFIG, AgentSdkClient, _resolve_model
 
 
 def test_role_tool_config_complete() -> None:
@@ -27,13 +27,7 @@ def test_generate_calls_query() -> None:
     """Mock claude_agent_sdk.query() and verify ModelResponse returned."""
     client = AgentSdkClient()
 
-    mock_message = MagicMock()
-    mock_message.result = "test response text"
-
-    async def mock_query(**kwargs):  # type: ignore[no-untyped-def]
-        yield mock_message
-
-    with patch("mts.agents.agent_sdk_client.AgentSdkClient._query", new_callable=AsyncMock, return_value="test response text"):
+    with patch.object(client, "_query", new_callable=AsyncMock, return_value="test response text"):
         response = client.generate(
             model="claude-sonnet-4-5-20250929",
             prompt="test prompt",
@@ -51,7 +45,7 @@ def test_generate_passes_role_tools() -> None:
 
     captured_tools: list[str] = []
 
-    async def mock_query(prompt: str, model: str, max_tokens: int, role: str) -> str:
+    async def mock_query(prompt: str, model: str, role: str, system_prompt: str = "") -> str:
         captured_tools.extend(ROLE_TOOL_CONFIG.get(role, []))
         return "result"
 
@@ -67,13 +61,13 @@ def test_generate_passes_role_tools() -> None:
     assert "Read" in captured_tools
 
 
-def test_generate_multiturn_combines() -> None:
-    """System + messages combined into single prompt string."""
+def test_generate_multiturn_uses_system_prompt() -> None:
+    """System prompt passed separately to _query, last user message used as prompt."""
     client = AgentSdkClient()
-    captured_prompts: list[str] = []
+    captured_args: list[dict[str, str]] = []
 
-    async def mock_query(prompt: str, model: str, max_tokens: int, role: str) -> str:
-        captured_prompts.append(prompt)
+    async def mock_query(prompt: str, model: str, role: str, system_prompt: str = "") -> str:
+        captured_args.append({"prompt": prompt, "system_prompt": system_prompt})
         return "result"
 
     with patch.object(client, "_query", side_effect=mock_query):
@@ -83,15 +77,15 @@ def test_generate_multiturn_combines() -> None:
             messages=[
                 {"role": "user", "content": "hello"},
                 {"role": "assistant", "content": "hi"},
+                {"role": "user", "content": "final question"},
             ],
             max_tokens=1024,
             temperature=0.7,
             role="analyst",
         )
-    assert len(captured_prompts) == 1
-    assert "system instructions" in captured_prompts[0]
-    assert "[user]: hello" in captured_prompts[0]
-    assert "[assistant]: hi" in captured_prompts[0]
+    assert len(captured_args) == 1
+    assert captured_args[0]["system_prompt"] == "system instructions"
+    assert captured_args[0]["prompt"] == "final question"
 
 
 def test_usage_estimated() -> None:
@@ -114,3 +108,19 @@ def test_usage_estimated() -> None:
 def test_unknown_role_defaults_to_competitor() -> None:
     """Fallback to competitor tool config for unknown roles."""
     assert ROLE_TOOL_CONFIG.get("unknown_role", ROLE_TOOL_CONFIG["competitor"]) == ROLE_TOOL_CONFIG["competitor"]
+
+
+def test_resolve_model_full_ids() -> None:
+    """Full model IDs are mapped to short names."""
+    assert _resolve_model("claude-opus-4-6") == "opus"
+    assert _resolve_model("claude-sonnet-4-5-20250929") == "sonnet"
+    assert _resolve_model("claude-haiku-4-5-20251001") == "haiku"
+
+
+def test_resolve_model_short_names() -> None:
+    """Short names and substrings resolve correctly."""
+    assert _resolve_model("sonnet") == "sonnet"
+    assert _resolve_model("opus") == "opus"
+    assert _resolve_model("haiku") == "haiku"
+    # Unknown falls back to sonnet
+    assert _resolve_model("unknown-model") == "sonnet"

@@ -95,7 +95,10 @@ class GenerationRunner:
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
-        self.sqlite.create_run(active_run_id, scenario_name, generations, self.settings.executor_mode)
+        self.sqlite.create_run(
+            active_run_id, scenario_name, generations, self.settings.executor_mode,
+            agent_provider=self.settings.agent_provider,
+        )
         previous_best = 0.0
         challenger_elo = 1000.0
         completed = 0
@@ -468,6 +471,8 @@ class GenerationRunner:
                 best_score=previous_best,
                 best_elo=challenger_elo,
                 playbook_hash=playbook_hash,
+                agent_provider=self.settings.agent_provider,
+                rlm_enabled=self.settings.rlm_enabled,
             )
 
         self.events.emit("run_completed", {"run_id": active_run_id, "completed_generations": completed})

@@ -64,6 +64,10 @@ MTS_AGENT_PROVIDER=agent_sdk MTS_ANTHROPIC_API_KEY=... uv run mts run --scenario
 # Run (RLM mode — REPL-loop agents for analyst/architect)
 MTS_AGENT_PROVIDER=deterministic MTS_RLM_ENABLED=true uv run mts run --scenario grid_ctf --gens 3 --run-id rlm_run
 
+# Ecosystem mode (alternate providers across cycles, shared knowledge directory)
+uv run mts ecosystem --scenario grid_ctf --cycles 3 --gens-per-cycle 2 \
+  --provider-a anthropic --provider-b agent_sdk --rlm-a --no-rlm-b
+
 # Other CLI commands
 uv run mts list                            # list recent runs
 uv run mts status <run_id>                 # generation-level status
@@ -171,6 +175,17 @@ Key behaviors:
 
 - **FastAPI server** (`server/app.py`) — REST endpoints (`/api/runs`, `/api/runs/{id}/status`, `/api/runs/{id}/replay/{gen}`) + WebSocket (`/ws/events`) streaming from ndjson event file + `/health` endpoint
 - **EventStreamEmitter** (`loop/events.py`) — Appends ndjson events to `runs/events.ndjson`
+
+### Ecosystem Loop (`loop/ecosystem_runner.py`)
+
+The ecosystem loop alternates between provider modes across sequential runs, with the shared `knowledge/<scenario>/` directory as the connection point. Each cycle runs Phase A (default: anthropic + RLM) then Phase B (default: agent_sdk), creating a feedback loop.
+
+- **`EcosystemPhase`** — Dataclass defining a phase's provider, rlm_enabled, and generation count
+- **`EcosystemConfig`** — Scenario, cycles, gens_per_cycle, and phase list (defaults to anthropic+RLM / agent_sdk two-phase)
+- **`EcosystemRunner`** — Creates a fresh `GenerationRunner` per phase with `model_copy(update={...})` to swap provider/rlm settings while preserving shared storage roots. Emits lifecycle events on `channel="ecosystem"`.
+- **`EcosystemSummary`** — Collects `RunSummary` from each phase; `score_trajectory()` returns `(run_id, best_score)` pairs.
+- **Run ID pattern** — `eco_{scenario}_c{cycle}_p{phase}_{uuid8}` for traceability
+- **Provider tracking** — `agent_provider` column on `runs` and `knowledge_snapshots` tables (migration 005)
 
 ### MCP Server (`mcp/`)
 
