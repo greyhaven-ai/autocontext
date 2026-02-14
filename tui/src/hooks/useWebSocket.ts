@@ -11,6 +11,7 @@ interface UseWebSocketReturn {
 
 const MAX_RECONNECT_DELAY = 5000;
 const INITIAL_RECONNECT_DELAY = 500;
+const EXPECTED_PROTOCOL_VERSION = 1;
 
 export function useWebSocket(url: string): UseWebSocketReturn {
   const [connected, setConnected] = useState(false);
@@ -39,6 +40,15 @@ export function useWebSocket(url: string): UseWebSocketReturn {
       const raw = typeof data === "string" ? data : data.toString();
       const parsed = parseServerMessage(raw);
       if (parsed) {
+        // Consume hello message for version check; don't propagate to state reducer
+        if (parsed.type === "hello") {
+          if (parsed.protocol_version !== EXPECTED_PROTOCOL_VERSION) {
+            console.error(
+              `Protocol mismatch: server=${parsed.protocol_version}, client=${EXPECTED_PROTOCOL_VERSION}`,
+            );
+          }
+          return;
+        }
         setLastMessage(parsed);
       }
     });

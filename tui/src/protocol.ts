@@ -2,6 +2,11 @@ import { z } from "zod";
 
 // --- Server -> Client schemas ---
 
+export const ServerHelloSchema = z.object({
+  type: z.literal("hello"),
+  protocol_version: z.number().int(),
+});
+
 export const ServerEventSchema = z.object({
   type: z.literal("event"),
   event: z.string(),
@@ -95,6 +100,7 @@ export const ServerScenarioErrorSchema = z.object({
 });
 
 export const ServerMessageSchema = z.discriminatedUnion("type", [
+  ServerHelloSchema,
   ServerEventSchema,
   ServerStateSchema,
   ServerChatResponseSchema,

@@ -94,6 +94,12 @@ export interface RunState {
 
 // --- WebSocket message types ---
 
+/** Server -> Client: protocol version handshake. */
+export interface ServerHello {
+  type: "hello";
+  protocol_version: number;
+}
+
 /** Server -> Client event message. */
 export interface ServerEventMessage {
   type: "event";
@@ -198,6 +204,7 @@ export interface ServerError {
 }
 
 export type ServerMessage =
+  | ServerHello
   | ServerEventMessage
   | ServerStateMessage
   | ServerChatResponse
