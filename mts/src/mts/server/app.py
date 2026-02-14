@@ -9,11 +9,40 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 
 from mts.config import load_settings
 from mts.loop.controller import LoopController
 from mts.loop.events import EventStreamEmitter
 from mts.server.knowledge_api import router as knowledge_router
+from mts.server.protocol import (
+    AckMsg,
+    CancelScenarioCmd,
+    ChatAgentCmd,
+    ChatResponseMsg,
+    ConfirmScenarioCmd,
+    CreateScenarioCmd,
+    EnvironmentsMsg,
+    ErrorMsg,
+    EventMsg,
+    HelloMsg,
+    InjectHintCmd,
+    ListScenariosCmd,
+    OverrideGateCmd,
+    PauseCmd,
+    ResumeCmd,
+    ReviseScenarioCmd,
+    RunAcceptedMsg,
+    ScenarioErrorMsg,
+    ScenarioGeneratingMsg,
+    ScenarioPreviewMsg,
+    ScenarioReadyMsg,
+    ScoringComponent,
+    StartRunCmd,
+    StateMsg,
+    StrategyParam,
+    parse_client_message,
+)
 from mts.server.run_manager import RunManager
 from mts.storage import SQLiteStore
 
@@ -49,6 +78,34 @@ def _build_scenario_creator(app_settings: object) -> object | None:
     except Exception:
         LOGGER.warning("failed to initialize ScenarioCreator", exc_info=True)
         return None
+
+
+def _build_environments_msg(env_info: dict[str, object]) -> EnvironmentsMsg:
+    """Convert the raw dict from RunManager.get_environment_info() into a typed model."""
+    return EnvironmentsMsg(**env_info)  # type: ignore[arg-type]
+
+
+def _build_scenario_preview_msg(spec: Any) -> ScenarioPreviewMsg:
+    """Build a ScenarioPreviewMsg from a ScenarioSpec object."""
+    params = [StrategyParam(name=p.name, description=p.description) for p in spec.strategy_params]
+    scoring = [
+        ScoringComponent(
+            name=s.name,
+            description=s.description,
+            weight=spec.final_score_weights.get(s.name, 0.0),
+        )
+        for s in spec.scoring_components
+    ]
+    constraints = [f"{c.expression} {c.operator} {c.threshold}" for c in spec.constraints]
+    return ScenarioPreviewMsg(
+        name=spec.name,
+        display_name=spec.display_name,
+        description=spec.description,
+        strategy_params=params,
+        scoring_components=scoring,
+        constraints=constraints,
+        win_threshold=spec.win_threshold,
+    )
 
 
 def create_app(
@@ -124,28 +181,25 @@ def create_app(
     async def ws_interactive(websocket: WebSocket) -> None:
         await websocket.accept()
 
+        # Protocol version handshake — always first message
+        await websocket.send_json(HelloMsg().model_dump())
+
         if controller is None or events is None:
-            await websocket.send_json({
-                "type": "error",
-                "message": "Interactive mode not available. Start with 'mts tui'.",
-            })
+            await websocket.send_json(ErrorMsg(message="Interactive mode not available. Start with 'mts tui'.").model_dump())
             await websocket.close()
             return
 
         # Send environment info on connect (scenarios, executors, provider)
         if run_manager:
             env_info = run_manager.get_environment_info()
-            await websocket.send_json({
-                "type": "environments",
-                **env_info,
-            })
+            await websocket.send_json(_build_environments_msg(env_info).model_dump())
 
         send_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
         event_loop = asyncio.get_event_loop()
 
         def _on_event(event: str, payload: dict[str, object]) -> None:
-            msg: dict[str, object] = {"type": "event", "event": event, "payload": payload}
-            event_loop.call_soon_threadsafe(send_queue.put_nowait, msg)
+            msg = EventMsg(event=event, payload=payload)
+            event_loop.call_soon_threadsafe(send_queue.put_nowait, msg.model_dump())
 
         events.subscribe(_on_event)
 
@@ -165,183 +219,152 @@ def create_app(
             try:
                 while True:
                     data = await websocket.receive_json()
-                    msg_type = data.get("type", "")
 
-                    if msg_type == "pause":
-                        controller.pause()
-                        await websocket.send_json({"type": "state", "paused": True})
-                    elif msg_type == "resume":
-                        controller.resume()
-                        await websocket.send_json({"type": "state", "paused": False})
-                    elif msg_type == "inject_hint":
-                        text = data.get("text", "")
-                        if text:
-                            controller.inject_hint(text)
-                            await websocket.send_json({"type": "ack", "action": "inject_hint"})
-                    elif msg_type == "override_gate":
-                        decision = data.get("decision", "")
-                        if decision in ("advance", "retry", "rollback"):
+                    try:
+                        cmd = parse_client_message(data)
+                    except ValidationError:
+                        await websocket.send_json(
+                            ErrorMsg(message=f"Unknown or invalid message type: {data.get('type', '?')}").model_dump()
+                        )
+                        continue
+
+                    match cmd:
+                        case PauseCmd():
+                            controller.pause()
+                            await websocket.send_json(StateMsg(paused=True).model_dump())
+
+                        case ResumeCmd():
+                            controller.resume()
+                            await websocket.send_json(StateMsg(paused=False).model_dump())
+
+                        case InjectHintCmd(text=text):
+                            if text:
+                                controller.inject_hint(text)
+                                await websocket.send_json(AckMsg(action="inject_hint").model_dump())
+
+                        case OverrideGateCmd(decision=decision):
                             controller.set_gate_override(decision)
-                            await websocket.send_json({"type": "ack", "action": "override_gate", "decision": decision})
-                    elif msg_type == "chat_agent":
-                        role = data.get("role", "")
-                        message = data.get("message", "")
-                        if role and message:
-                            response = await asyncio.to_thread(controller.submit_chat, role, message)
-                            await websocket.send_json({"type": "chat_response", "role": role, "text": response})
-                    elif msg_type == "start_run":
-                        if run_manager is None:
-                            await websocket.send_json({
-                                "type": "error", "message": "Run manager not available.",
-                            })
-                        elif run_manager.is_active:
-                            await websocket.send_json({
-                                "type": "error", "message": "A run is already active.",
-                            })
-                        else:
-                            scenario = data.get("scenario", "grid_ctf")
-                            generations = int(data.get("generations", 5))
-                            try:
-                                rid = run_manager.start_run(scenario, generations)
-                                await websocket.send_json({
-                                    "type": "run_accepted",
-                                    "run_id": rid,
-                                    "scenario": scenario,
-                                    "generations": generations,
-                                })
-                            except (ValueError, RuntimeError) as exc:
-                                await websocket.send_json({"type": "error", "message": str(exc)})
-                    elif msg_type == "list_scenarios":
-                        if run_manager:
-                            env_info = run_manager.get_environment_info()
-                            await websocket.send_json({"type": "environments", **env_info})
-                        else:
-                            await websocket.send_json({"type": "environments", "scenarios": [], "executors": []})
+                            await websocket.send_json(AckMsg(action="override_gate", decision=decision).model_dump())
 
-                    # --- Custom scenario creation handlers ---
-                    elif msg_type == "create_scenario":
-                        if scenario_creator is None:
-                            await websocket.send_json({
-                                "type": "scenario_error", "message": "Scenario creator not available.", "stage": "generation",
-                            })
-                            continue
-                        description = data.get("description", "")
-                        if not description:
-                            await websocket.send_json({
-                                "type": "scenario_error", "message": "Description is required.", "stage": "generation",
-                            })
-                            continue
+                        case ChatAgentCmd(role=role, message=message):
+                            if role and message:
+                                response = await asyncio.to_thread(controller.submit_chat, role, message)
+                                await websocket.send_json(ChatResponseMsg(role=role, text=response).model_dump())
 
-                        from mts.scenarios.custom.creator import ScenarioCreator
-                        creator: ScenarioCreator = scenario_creator  # type: ignore[assignment]
-                        name = creator.derive_name(description)
-                        await websocket.send_json({"type": "scenario_generating", "name": name})
+                        case StartRunCmd(scenario=scenario, generations=generations):
+                            if run_manager is None:
+                                await websocket.send_json(ErrorMsg(message="Run manager not available.").model_dump())
+                            elif run_manager.is_active:
+                                await websocket.send_json(ErrorMsg(message="A run is already active.").model_dump())
+                            else:
+                                try:
+                                    rid = run_manager.start_run(scenario, generations)
+                                    await websocket.send_json(
+                                        RunAcceptedMsg(run_id=rid, scenario=scenario, generations=generations).model_dump()
+                                    )
+                                except (ValueError, RuntimeError) as exc:
+                                    await websocket.send_json(ErrorMsg(message=str(exc)).model_dump())
 
-                        try:
-                            spec = await asyncio.to_thread(creator.generate_spec, description)
-                            pending_spec["current"] = spec
-                            params = [{"name": p.name, "description": p.description} for p in spec.strategy_params]
-                            scoring = [
-                                {
-                                    "name": s.name, "description": s.description,
-                                    "weight": spec.final_score_weights.get(s.name, 0.0),
-                                }
-                                for s in spec.scoring_components
-                            ]
-                            constraints = [f"{c.expression} {c.operator} {c.threshold}" for c in spec.constraints]
-                            await websocket.send_json({
-                                "type": "scenario_preview",
-                                "name": spec.name,
-                                "display_name": spec.display_name,
-                                "description": spec.description,
-                                "strategy_params": params,
-                                "scoring_components": scoring,
-                                "constraints": constraints,
-                                "win_threshold": spec.win_threshold,
-                            })
-                        except Exception as exc:
-                            LOGGER.warning("scenario generation failed", exc_info=True)
-                            await websocket.send_json({
-                                "type": "scenario_error", "message": str(exc), "stage": "generation",
-                            })
-
-                    elif msg_type == "confirm_scenario":
-                        current_spec = pending_spec.get("current")
-                        if current_spec is None:
-                            await websocket.send_json({
-                                "type": "scenario_error", "message": "No pending scenario to confirm.", "stage": "validation",
-                            })
-                            continue
-
-                        from mts.scenarios import SCENARIO_REGISTRY
-                        from mts.scenarios.custom.creator import ScenarioCreator
-                        creator = scenario_creator  # type: ignore[assignment]
-
-                        try:
-                            build_result = await asyncio.to_thread(creator.build_and_validate, current_spec)
-                            SCENARIO_REGISTRY[current_spec.name] = build_result.scenario_class
-                            pending_spec.clear()
-
-                            await websocket.send_json({
-                                "type": "scenario_ready",
-                                "name": current_spec.name,
-                                "test_scores": build_result.test_scores,
-                            })
-
+                        case ListScenariosCmd():
                             if run_manager:
                                 env_info = run_manager.get_environment_info()
-                                await websocket.send_json({"type": "environments", **env_info})
-                        except Exception as exc:
-                            LOGGER.warning("scenario build/validate failed", exc_info=True)
-                            await websocket.send_json({
-                                "type": "scenario_error", "message": str(exc), "stage": "validation",
-                            })
+                                await websocket.send_json(_build_environments_msg(env_info).model_dump())
+                            else:
+                                await websocket.send_json(
+                                    EnvironmentsMsg(
+                                        scenarios=[], executors=[], current_executor="", agent_provider=""
+                                    ).model_dump()
+                                )
 
-                    elif msg_type == "revise_scenario":
-                        current_spec = pending_spec.get("current")
-                        if current_spec is None:
-                            await websocket.send_json({
-                                "type": "scenario_error", "message": "No pending scenario to revise.", "stage": "generation",
-                            })
-                            continue
+                        # --- Custom scenario creation handlers ---
 
-                        feedback = data.get("feedback", "")
-                        if not feedback:
-                            continue
+                        case CreateScenarioCmd(description=description):
+                            if scenario_creator is None:
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message="Scenario creator not available.", stage="generation").model_dump()
+                                )
+                                continue
+                            if not description:
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message="Description is required.", stage="generation").model_dump()
+                                )
+                                continue
 
-                        from mts.scenarios.custom.creator import ScenarioCreator
-                        creator = scenario_creator  # type: ignore[assignment]
+                            from mts.scenarios.custom.creator import ScenarioCreator
+                            creator: ScenarioCreator = scenario_creator  # type: ignore[assignment]
+                            name = creator.derive_name(description)
+                            await websocket.send_json(ScenarioGeneratingMsg(name=name).model_dump())
 
-                        try:
-                            revised = await asyncio.to_thread(creator.revise_spec, current_spec, feedback)
-                            pending_spec["current"] = revised
-                            params = [{"name": p.name, "description": p.description} for p in revised.strategy_params]
-                            scoring = [
-                                {
-                                    "name": s.name, "description": s.description,
-                                    "weight": revised.final_score_weights.get(s.name, 0.0),
-                                }
-                                for s in revised.scoring_components
-                            ]
-                            constraints = [f"{c.expression} {c.operator} {c.threshold}" for c in revised.constraints]
-                            await websocket.send_json({
-                                "type": "scenario_preview",
-                                "name": revised.name,
-                                "display_name": revised.display_name,
-                                "description": revised.description,
-                                "strategy_params": params,
-                                "scoring_components": scoring,
-                                "constraints": constraints,
-                                "win_threshold": revised.win_threshold,
-                            })
-                        except Exception as exc:
-                            LOGGER.warning("scenario revision failed", exc_info=True)
-                            await websocket.send_json({
-                                "type": "scenario_error", "message": str(exc), "stage": "generation",
-                            })
+                            try:
+                                spec = await asyncio.to_thread(creator.generate_spec, description)
+                                pending_spec["current"] = spec
+                                await websocket.send_json(_build_scenario_preview_msg(spec).model_dump())
+                            except Exception as exc:
+                                LOGGER.warning("scenario generation failed", exc_info=True)
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
+                                )
 
-                    elif msg_type == "cancel_scenario":
-                        pending_spec.clear()
+                        case ConfirmScenarioCmd():
+                            current_spec = pending_spec.get("current")
+                            if current_spec is None:
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(
+                                        message="No pending scenario to confirm.", stage="validation"
+                                    ).model_dump()
+                                )
+                                continue
+
+                            from mts.scenarios import SCENARIO_REGISTRY
+                            from mts.scenarios.custom.creator import ScenarioCreator
+                            creator = scenario_creator  # type: ignore[assignment]
+
+                            try:
+                                build_result = await asyncio.to_thread(creator.build_and_validate, current_spec)
+                                SCENARIO_REGISTRY[current_spec.name] = build_result.scenario_class
+                                pending_spec.clear()
+
+                                await websocket.send_json(
+                                    ScenarioReadyMsg(name=current_spec.name, test_scores=build_result.test_scores).model_dump()
+                                )
+
+                                if run_manager:
+                                    env_info = run_manager.get_environment_info()
+                                    await websocket.send_json(_build_environments_msg(env_info).model_dump())
+                            except Exception as exc:
+                                LOGGER.warning("scenario build/validate failed", exc_info=True)
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message=str(exc), stage="validation").model_dump()
+                                )
+
+                        case ReviseScenarioCmd(feedback=feedback):
+                            current_spec = pending_spec.get("current")
+                            if current_spec is None:
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(
+                                        message="No pending scenario to revise.", stage="generation"
+                                    ).model_dump()
+                                )
+                                continue
+
+                            if not feedback:
+                                continue
+
+                            from mts.scenarios.custom.creator import ScenarioCreator
+                            creator = scenario_creator  # type: ignore[assignment]
+
+                            try:
+                                revised = await asyncio.to_thread(creator.revise_spec, current_spec, feedback)
+                                pending_spec["current"] = revised
+                                await websocket.send_json(_build_scenario_preview_msg(revised).model_dump())
+                            except Exception as exc:
+                                LOGGER.warning("scenario revision failed", exc_info=True)
+                                await websocket.send_json(
+                                    ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
+                                )
+
+                        case CancelScenarioCmd():
+                            pending_spec.clear()
 
             except WebSocketDisconnect:
                 pass

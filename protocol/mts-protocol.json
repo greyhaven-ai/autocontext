@@ -1,0 +1,802 @@
+{
+  "protocol_version": 1,
+  "server_messages": {
+    "$defs": {
+      "AckMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "ack",
+            "default": "ack",
+            "title": "Type",
+            "type": "string"
+          },
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decision"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "AckMsg",
+        "type": "object"
+      },
+      "ChatResponseMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "chat_response",
+            "default": "chat_response",
+            "title": "Type",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text"
+        ],
+        "title": "ChatResponseMsg",
+        "type": "object"
+      },
+      "EnvironmentsMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "environments",
+            "default": "environments",
+            "title": "Type",
+            "type": "string"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/$defs/ScenarioInfo"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "executors": {
+            "items": {
+              "$ref": "#/$defs/ExecutorInfo"
+            },
+            "title": "Executors",
+            "type": "array"
+          },
+          "current_executor": {
+            "title": "Current Executor",
+            "type": "string"
+          },
+          "agent_provider": {
+            "title": "Agent Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenarios",
+          "executors",
+          "current_executor",
+          "agent_provider"
+        ],
+        "title": "EnvironmentsMsg",
+        "type": "object"
+      },
+      "ErrorMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ErrorMsg",
+        "type": "object"
+      },
+      "EventMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "event",
+            "default": "event",
+            "title": "Type",
+            "type": "string"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "event",
+          "payload"
+        ],
+        "title": "EventMsg",
+        "type": "object"
+      },
+      "ExecutorInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "resources": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ExecutorResources"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "mode",
+          "available",
+          "description"
+        ],
+        "title": "ExecutorInfo",
+        "type": "object"
+      },
+      "ExecutorResources": {
+        "additionalProperties": false,
+        "properties": {
+          "docker_image": {
+            "title": "Docker Image",
+            "type": "string"
+          },
+          "cpu_cores": {
+            "title": "Cpu Cores",
+            "type": "integer"
+          },
+          "memory_gb": {
+            "title": "Memory Gb",
+            "type": "integer"
+          },
+          "disk_gb": {
+            "title": "Disk Gb",
+            "type": "integer"
+          },
+          "timeout_minutes": {
+            "title": "Timeout Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "docker_image",
+          "cpu_cores",
+          "memory_gb",
+          "disk_gb",
+          "timeout_minutes"
+        ],
+        "title": "ExecutorResources",
+        "type": "object"
+      },
+      "HelloMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "hello",
+            "default": "hello",
+            "title": "Type",
+            "type": "string"
+          },
+          "protocol_version": {
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          }
+        },
+        "title": "HelloMsg",
+        "type": "object"
+      },
+      "RunAcceptedMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "run_accepted",
+            "default": "run_accepted",
+            "title": "Type",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "generations": {
+            "title": "Generations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "scenario",
+          "generations"
+        ],
+        "title": "RunAcceptedMsg",
+        "type": "object"
+      },
+      "ScenarioErrorMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "scenario_error",
+            "default": "scenario_error",
+            "title": "Type",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "stage"
+        ],
+        "title": "ScenarioErrorMsg",
+        "type": "object"
+      },
+      "ScenarioGeneratingMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "scenario_generating",
+            "default": "scenario_generating",
+            "title": "Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ScenarioGeneratingMsg",
+        "type": "object"
+      },
+      "ScenarioInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "ScenarioInfo",
+        "type": "object"
+      },
+      "ScenarioPreviewMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "scenario_preview",
+            "default": "scenario_preview",
+            "title": "Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "strategy_params": {
+            "items": {
+              "$ref": "#/$defs/StrategyParam"
+            },
+            "title": "Strategy Params",
+            "type": "array"
+          },
+          "scoring_components": {
+            "items": {
+              "$ref": "#/$defs/ScoringComponent"
+            },
+            "title": "Scoring Components",
+            "type": "array"
+          },
+          "constraints": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "win_threshold": {
+            "title": "Win Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "description",
+          "strategy_params",
+          "scoring_components",
+          "constraints",
+          "win_threshold"
+        ],
+        "title": "ScenarioPreviewMsg",
+        "type": "object"
+      },
+      "ScenarioReadyMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "scenario_ready",
+            "default": "scenario_ready",
+            "title": "Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "test_scores": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Test Scores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "test_scores"
+        ],
+        "title": "ScenarioReadyMsg",
+        "type": "object"
+      },
+      "ScoringComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "weight"
+        ],
+        "title": "ScoringComponent",
+        "type": "object"
+      },
+      "StateMsg": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "state",
+            "default": "state",
+            "title": "Type",
+            "type": "string"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "generation": {
+            "default": 0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "phase": {
+            "default": "",
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "paused"
+        ],
+        "title": "StateMsg",
+        "type": "object"
+      },
+      "StrategyParam": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "StrategyParam",
+        "type": "object"
+      }
+    },
+    "discriminator": {
+      "mapping": {
+        "ack": "#/$defs/AckMsg",
+        "chat_response": "#/$defs/ChatResponseMsg",
+        "environments": "#/$defs/EnvironmentsMsg",
+        "error": "#/$defs/ErrorMsg",
+        "event": "#/$defs/EventMsg",
+        "hello": "#/$defs/HelloMsg",
+        "run_accepted": "#/$defs/RunAcceptedMsg",
+        "scenario_error": "#/$defs/ScenarioErrorMsg",
+        "scenario_generating": "#/$defs/ScenarioGeneratingMsg",
+        "scenario_preview": "#/$defs/ScenarioPreviewMsg",
+        "scenario_ready": "#/$defs/ScenarioReadyMsg",
+        "state": "#/$defs/StateMsg"
+      },
+      "propertyName": "type"
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/HelloMsg"
+      },
+      {
+        "$ref": "#/$defs/EventMsg"
+      },
+      {
+        "$ref": "#/$defs/StateMsg"
+      },
+      {
+        "$ref": "#/$defs/ChatResponseMsg"
+      },
+      {
+        "$ref": "#/$defs/EnvironmentsMsg"
+      },
+      {
+        "$ref": "#/$defs/RunAcceptedMsg"
+      },
+      {
+        "$ref": "#/$defs/AckMsg"
+      },
+      {
+        "$ref": "#/$defs/ErrorMsg"
+      },
+      {
+        "$ref": "#/$defs/ScenarioGeneratingMsg"
+      },
+      {
+        "$ref": "#/$defs/ScenarioPreviewMsg"
+      },
+      {
+        "$ref": "#/$defs/ScenarioReadyMsg"
+      },
+      {
+        "$ref": "#/$defs/ScenarioErrorMsg"
+      }
+    ]
+  },
+  "client_messages": {
+    "$defs": {
+      "CancelScenarioCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "cancel_scenario",
+            "default": "cancel_scenario",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "CancelScenarioCmd",
+        "type": "object"
+      },
+      "ChatAgentCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "chat_agent",
+            "default": "chat_agent",
+            "title": "Type",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "message"
+        ],
+        "title": "ChatAgentCmd",
+        "type": "object"
+      },
+      "ConfirmScenarioCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "confirm_scenario",
+            "default": "confirm_scenario",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ConfirmScenarioCmd",
+        "type": "object"
+      },
+      "CreateScenarioCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "create_scenario",
+            "default": "create_scenario",
+            "title": "Type",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "title": "CreateScenarioCmd",
+        "type": "object"
+      },
+      "InjectHintCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "inject_hint",
+            "default": "inject_hint",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "InjectHintCmd",
+        "type": "object"
+      },
+      "ListScenariosCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "list_scenarios",
+            "default": "list_scenarios",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ListScenariosCmd",
+        "type": "object"
+      },
+      "OverrideGateCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "override_gate",
+            "default": "override_gate",
+            "title": "Type",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "advance",
+              "retry",
+              "rollback"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "OverrideGateCmd",
+        "type": "object"
+      },
+      "PauseCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "pause",
+            "default": "pause",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "PauseCmd",
+        "type": "object"
+      },
+      "ResumeCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "resume",
+            "default": "resume",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ResumeCmd",
+        "type": "object"
+      },
+      "ReviseScenarioCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "revise_scenario",
+            "default": "revise_scenario",
+            "title": "Type",
+            "type": "string"
+          },
+          "feedback": {
+            "title": "Feedback",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feedback"
+        ],
+        "title": "ReviseScenarioCmd",
+        "type": "object"
+      },
+      "StartRunCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "start_run",
+            "default": "start_run",
+            "title": "Type",
+            "type": "string"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "generations": {
+            "title": "Generations",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scenario",
+          "generations"
+        ],
+        "title": "StartRunCmd",
+        "type": "object"
+      }
+    },
+    "discriminator": {
+      "mapping": {
+        "cancel_scenario": "#/$defs/CancelScenarioCmd",
+        "chat_agent": "#/$defs/ChatAgentCmd",
+        "confirm_scenario": "#/$defs/ConfirmScenarioCmd",
+        "create_scenario": "#/$defs/CreateScenarioCmd",
+        "inject_hint": "#/$defs/InjectHintCmd",
+        "list_scenarios": "#/$defs/ListScenariosCmd",
+        "override_gate": "#/$defs/OverrideGateCmd",
+        "pause": "#/$defs/PauseCmd",
+        "resume": "#/$defs/ResumeCmd",
+        "revise_scenario": "#/$defs/ReviseScenarioCmd",
+        "start_run": "#/$defs/StartRunCmd"
+      },
+      "propertyName": "type"
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/PauseCmd"
+      },
+      {
+        "$ref": "#/$defs/ResumeCmd"
+      },
+      {
+        "$ref": "#/$defs/InjectHintCmd"
+      },
+      {
+        "$ref": "#/$defs/OverrideGateCmd"
+      },
+      {
+        "$ref": "#/$defs/ChatAgentCmd"
+      },
+      {
+        "$ref": "#/$defs/StartRunCmd"
+      },
+      {
+        "$ref": "#/$defs/ListScenariosCmd"
+      },
+      {
+        "$ref": "#/$defs/CreateScenarioCmd"
+      },
+      {
+        "$ref": "#/$defs/ConfirmScenarioCmd"
+      },
+      {
+        "$ref": "#/$defs/ReviseScenarioCmd"
+      },
+      {
+        "$ref": "#/$defs/CancelScenarioCmd"
+      }
+    ]
+  }
+}
