@@ -50,9 +50,9 @@ flowchart LR
 
 Primary files/paths involved:
 
-- `[/Users/jayscambler/Repositories/MTS/mts/src/mts/cli.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/cli.py)`
-- `[/Users/jayscambler/Repositories/MTS/runs/](/Users/jayscambler/Repositories/MTS/runs/)`
-- `[/Users/jayscambler/Repositories/MTS/knowledge/](/Users/jayscambler/Repositories/MTS/knowledge/)`
+- `[mts/src/mts/cli.py](mts/src/mts/cli.py)`
+- `[runs/](runs/)`
+- `[knowledge/](knowledge/)`
 
 ## 2) Artifact Quality Audit
 
@@ -65,9 +65,9 @@ Primary files/paths involved:
 
 Primary paths:
 
-- `[/Users/jayscambler/Repositories/MTS/knowledge/grid_ctf/](/Users/jayscambler/Repositories/MTS/knowledge/grid_ctf/)`
-- `[/Users/jayscambler/Repositories/MTS/knowledge/othello/](/Users/jayscambler/Repositories/MTS/knowledge/othello/)`
-- `[/Users/jayscambler/Repositories/MTS/skills/](/Users/jayscambler/Repositories/MTS/skills/)`
+- `[knowledge/grid_ctf/](knowledge/grid_ctf/)`
+- `[knowledge/othello/](knowledge/othello/)`
+- `[skills/](skills/)`
 
 ## 3) PrimeIntellect Contract Hardening
 
@@ -78,10 +78,10 @@ Primary paths:
 
 Primary files:
 
-- `[/Users/jayscambler/Repositories/MTS/mts/src/mts/integrations/primeintellect/client.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/integrations/primeintellect/client.py)`
-- `[/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/primeintellect.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/primeintellect.py)`
-- `[/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py)`
-- `[/Users/jayscambler/Repositories/MTS/mts/tests/](/Users/jayscambler/Repositories/MTS/mts/tests/)`
+- `[mts/src/mts/integrations/primeintellect/client.py](mts/src/mts/integrations/primeintellect/client.py)`
+- `[mts/src/mts/execution/executors/primeintellect.py](mts/src/mts/execution/executors/primeintellect.py)`
+- `[mts/src/mts/loop/generation_runner.py](mts/src/mts/loop/generation_runner.py)`
+- `[mts/tests/](mts/tests/)`
 
 ## 4) Dashboard and Stream E2E Validation
 
@@ -91,9 +91,9 @@ Primary files:
 
 Primary files:
 
-- `[/Users/jayscambler/Repositories/MTS/mts/src/mts/server/app.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/server/app.py)`
-- `[/Users/jayscambler/Repositories/MTS/mts/dashboard/index.html](/Users/jayscambler/Repositories/MTS/mts/dashboard/index.html)`
-- `[/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/events.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/events.py)`
+- `[mts/src/mts/server/app.py](mts/src/mts/server/app.py)`
+- `[mts/dashboard/index.html](mts/dashboard/index.html)`
+- `[mts/src/mts/loop/events.py](mts/src/mts/loop/events.py)`
 
 ## 5) Demo Runbook Finalization
 
@@ -103,9 +103,9 @@ Primary files:
 
 Primary files:
 
-- `[/Users/jayscambler/Repositories/MTS/scripts/demo.sh](/Users/jayscambler/Repositories/MTS/scripts/demo.sh)`
-- `[/Users/jayscambler/Repositories/MTS/mts/README.md](/Users/jayscambler/Repositories/MTS/mts/README.md)`
-- `[/Users/jayscambler/Repositories/MTS/.github/workflows/ci.yml](/Users/jayscambler/Repositories/MTS/.github/workflows/ci.yml)`
+- `[scripts/demo.sh](scripts/demo.sh)`
+- `[mts/README.md](mts/README.md)`
+- `[.github/workflows/ci.yml](.github/workflows/ci.yml)`
 
 ## Completion Gates
 

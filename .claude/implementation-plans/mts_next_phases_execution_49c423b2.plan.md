@@ -49,15 +49,15 @@ Replace deterministic mock orchestration with real role runners and model tierin
 ### Implementation
 
 - Add Agent SDK adapters and role clients:
-  - [mts/src/mts/agents/orchestrator.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/orchestrator.py)
-  - New files: [mts/src/mts/agents/competitor.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/competitor.py), [mts/src/mts/agents/analyst.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/analyst.py), [mts/src/mts/agents/coach.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/coach.py), [mts/src/mts/agents/architect.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/architect.py).
+  - [mts/src/mts/agents/orchestrator.py](mts/src/mts/agents/orchestrator.py)
+  - New files: [mts/src/mts/agents/competitor.py](mts/src/mts/agents/competitor.py), [mts/src/mts/agents/analyst.py](mts/src/mts/agents/analyst.py), [mts/src/mts/agents/coach.py](mts/src/mts/agents/coach.py), [mts/src/mts/agents/architect.py](mts/src/mts/agents/architect.py).
 - Expand prompt assembly and runtime injection:
-  - [mts/src/mts/prompts/templates.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/prompts/templates.py)
+  - [mts/src/mts/prompts/templates.py](mts/src/mts/prompts/templates.py)
 - Add model/config controls:
-  - [mts/src/mts/config/settings.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/config/settings.py)
+  - [mts/src/mts/config/settings.py](mts/src/mts/config/settings.py)
 - Persist per-role token/cost/latency metadata:
-  - [mts/src/mts/storage/sqlite_store.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/storage/sqlite_store.py)
-  - [mts/migrations/001_initial.sql](/Users/jayscambler/Repositories/MTS/mts/migrations/001_initial.sql) (or new migration)
+  - [mts/src/mts/storage/sqlite_store.py](mts/src/mts/storage/sqlite_store.py)
+  - [mts/migrations/001_initial.sql](mts/migrations/001_initial.sql) (or new migration)
 
 ### Acceptance Criteria
 
@@ -79,15 +79,15 @@ Adopt blueprint-compatible scenario abstraction and measurable competition outco
 ### Implementation
 
 - Upgrade scenario interface to blueprint shape (rules, strategy interface, eval criteria, state loop, replay narrative):
-  - [mts/src/mts/scenarios/base.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/scenarios/base.py)
+  - [mts/src/mts/scenarios/base.py](mts/src/mts/scenarios/base.py)
 - Refactor scenarios to implement full contract:
-  - [mts/src/mts/scenarios/grid_ctf/scenario.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/scenarios/grid_ctf/scenario.py)
-  - [mts/src/mts/scenarios/othello.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/scenarios/othello.py)
+  - [mts/src/mts/scenarios/grid_ctf/scenario.py](mts/src/mts/scenarios/grid_ctf/scenario.py)
+  - [mts/src/mts/scenarios/othello.py](mts/src/mts/scenarios/othello.py)
 - Add tournament runner + Elo computation:
-  - New files: [mts/src/mts/execution/tournament.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/tournament.py), [mts/src/mts/execution/elo.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/elo.py)
+  - New files: [mts/src/mts/execution/tournament.py](mts/src/mts/execution/tournament.py), [mts/src/mts/execution/elo.py](mts/src/mts/execution/elo.py)
 - Inject narrative observations into COMPETE/ANALYZE prompts:
-  - [mts/src/mts/loop/generation_runner.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py)
-  - [mts/src/mts/prompts/templates.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/prompts/templates.py)
+  - [mts/src/mts/loop/generation_runner.py](mts/src/mts/loop/generation_runner.py)
+  - [mts/src/mts/prompts/templates.py](mts/src/mts/prompts/templates.py)
 - Persist generation-level metrics (Elo, W/L, confidence intervals).
 
 ### Acceptance Criteria
@@ -110,13 +110,13 @@ Make strategy execution safely isolated and pluggable (`local` vs `primeintellec
 ### Implementation
 
 - Introduce executor interface and implementations:
-  - New files: [mts/src/mts/execution/executors/base.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/base.py), [mts/src/mts/execution/executors/local.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/local.py), [mts/src/mts/execution/executors/primeintellect.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/primeintellect.py)
+  - New files: [mts/src/mts/execution/executors/base.py](mts/src/mts/execution/executors/base.py), [mts/src/mts/execution/executors/local.py](mts/src/mts/execution/executors/local.py), [mts/src/mts/execution/executors/primeintellect.py](mts/src/mts/execution/executors/primeintellect.py)
 - Enforce timeout/memory/network policy at execution boundary:
-  - [mts/src/mts/execution/supervisor.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/supervisor.py)
+  - [mts/src/mts/execution/supervisor.py](mts/src/mts/execution/supervisor.py)
 - Implement real PrimeIntellect lifecycle client (warm provisioning during EVOLVE):
-  - [mts/src/mts/integrations/primeintellect/client.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/integrations/primeintellect/client.py)
+  - [mts/src/mts/integrations/primeintellect/client.py](mts/src/mts/integrations/primeintellect/client.py)
 - Add failure recovery markers + idempotent retry semantics:
-  - [mts/src/mts/loop/generation_runner.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py)
+  - [mts/src/mts/loop/generation_runner.py](mts/src/mts/loop/generation_runner.py)
 
 ### Acceptance Criteria
 
@@ -138,12 +138,12 @@ Turn gate decisions into real control actions and accumulate shared intelligence
 ### Implementation
 
 - Backpressure branch behavior (`advance`, `retry`, `rollback`) with thresholds and cooldowns:
-  - [mts/src/mts/backpressure/gate.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/backpressure/gate.py)
-  - [mts/src/mts/loop/generation_runner.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py)
+  - [mts/src/mts/backpressure/gate.py](mts/src/mts/backpressure/gate.py)
+  - [mts/src/mts/loop/generation_runner.py](mts/src/mts/loop/generation_runner.py)
 - Move from overwrite to append/merge knowledge artifacts:
-  - [mts/src/mts/storage/artifacts.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/storage/artifacts.py)
+  - [mts/src/mts/storage/artifacts.py](mts/src/mts/storage/artifacts.py)
 - Architect cadence (every 3rd gen) and measured tool impact over rolling window.
-- Skill writeback workflow for operational learnings under [skills/](/Users/jayscambler/Repositories/MTS/skills/).
+- Skill writeback workflow for operational learnings under [skills/](skills/).
 
 ### Acceptance Criteria
 
@@ -165,15 +165,15 @@ Deliver a compelling live demo with real-time visibility and robust deployment p
 ### Implementation
 
 - Promote NDJSON events to stream-ready schema for dashboard/websocket consumer:
-  - [mts/src/mts/loop/events.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/events.py)
+  - [mts/src/mts/loop/events.py](mts/src/mts/loop/events.py)
 - Add minimal dashboard backend adapter and replay viewer API surface.
 - Harden infra parity and deployment docs:
-  - [infra/docker/Dockerfile](/Users/jayscambler/Repositories/MTS/infra/docker/Dockerfile)
-  - [infra/docker/docker-compose.yml](/Users/jayscambler/Repositories/MTS/infra/docker/docker-compose.yml)
-  - [infra/fly/fly.toml](/Users/jayscambler/Repositories/MTS/infra/fly/fly.toml)
-  - [infra/scripts/bootstrap.sh](/Users/jayscambler/Repositories/MTS/infra/scripts/bootstrap.sh)
+  - [infra/docker/Dockerfile](infra/docker/Dockerfile)
+  - [infra/docker/docker-compose.yml](infra/docker/docker-compose.yml)
+  - [infra/fly/fly.toml](infra/fly/fly.toml)
+  - [infra/scripts/bootstrap.sh](infra/scripts/bootstrap.sh)
 - Expand CI to include both scenarios and multi-generation smoke checks:
-  - [.github/workflows/ci.yml](/Users/jayscambler/Repositories/MTS/.github/workflows/ci.yml)
+  - [.github/workflows/ci.yml](.github/workflows/ci.yml)
 
 ### Acceptance Criteria
 

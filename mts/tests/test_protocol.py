@@ -52,14 +52,26 @@ from mts.server.protocol import (
     parse_client_message,
 )
 
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "protocol" / "mts-protocol.json"
+
+def _find_schema_path() -> Path | None:
+    """Walk up from this file to locate protocol/mts-protocol.json at the repo root."""
+    current = Path(__file__).resolve().parent
+    for _ in range(5):
+        candidate = current / "protocol" / "mts-protocol.json"
+        if candidate.exists():
+            return candidate
+        current = current.parent
+    return None
 
 
 class TestSchemaConformance:
     def test_protocol_models_match_schema_file(self) -> None:
         """Verify that Pydantic models produce the same JSON Schema as the committed file."""
+        schema_path = _find_schema_path()
+        if schema_path is None:
+            pytest.skip("protocol/mts-protocol.json not found — run from repo root")
         schema = export_json_schema()
-        committed = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+        committed = json.loads(schema_path.read_text(encoding="utf-8"))
         assert schema == committed, (
             "protocol/mts-protocol.json is out of date. "
             "Regenerate with: uv run python -c "

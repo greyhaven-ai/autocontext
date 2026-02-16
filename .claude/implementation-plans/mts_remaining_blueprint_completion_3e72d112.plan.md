@@ -48,15 +48,15 @@ Replace role-level plain API calls with Agent SDK subagent orchestration and con
 ### Changes
 
 - Refactor orchestration and role execution:
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/orchestrator.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/orchestrator.py)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/llm_client.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/llm_client.py)`
+  - `[mts/src/mts/agents/orchestrator.py](mts/src/mts/agents/orchestrator.py)`
+  - `[mts/src/mts/agents/llm_client.py](mts/src/mts/agents/llm_client.py)`
 - Keep competitor first; run analyst/coach/architect in parallel after strategy finalization.
 - Add explicit subagent lifecycle metadata persistence:
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/storage/sqlite_store.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/storage/sqlite_store.py)`
-  - New migration in `[/Users/jayscambler/Repositories/MTS/mts/migrations/](/Users/jayscambler/Repositories/MTS/mts/migrations/)`
+  - `[mts/src/mts/storage/sqlite_store.py](mts/src/mts/storage/sqlite_store.py)`
+  - New migration in `[mts/migrations/](mts/migrations/)`
 - Add/validate SDK dependency and config surface:
-  - `[/Users/jayscambler/Repositories/MTS/mts/pyproject.toml](/Users/jayscambler/Repositories/MTS/mts/pyproject.toml)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/config/settings.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/config/settings.py)`
+  - `[mts/pyproject.toml](mts/pyproject.toml)`
+  - `[mts/src/mts/config/settings.py](mts/src/mts/config/settings.py)`
 
 ### Acceptance
 
@@ -71,15 +71,15 @@ Turn architect output into executable tools used by competitors and operationali
 ### Changes
 
 - Architect emits structured tool specs and code artifacts (not only markdown):
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/architect.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/architect.py)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/prompts/templates.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/prompts/templates.py)`
+  - `[mts/src/mts/agents/architect.py](mts/src/mts/agents/architect.py)`
+  - `[mts/src/mts/prompts/templates.py](mts/src/mts/prompts/templates.py)`
 - Persist/version tools and load for competitor use:
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/storage/artifacts.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/storage/artifacts.py)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/competitor.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/agents/competitor.py)`
+  - `[mts/src/mts/storage/artifacts.py](mts/src/mts/storage/artifacts.py)`
+  - `[mts/src/mts/loop/generation_runner.py](mts/src/mts/loop/generation_runner.py)`
+  - `[mts/src/mts/agents/competitor.py](mts/src/mts/agents/competitor.py)`
 - Implement skills symlink inheritance into `.claude/skills`:
-  - `[/Users/jayscambler/Repositories/MTS/infra/scripts/bootstrap.sh](/Users/jayscambler/Repositories/MTS/infra/scripts/bootstrap.sh)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/config/settings.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/config/settings.py)`
+  - `[infra/scripts/bootstrap.sh](infra/scripts/bootstrap.sh)`
+  - `[mts/src/mts/config/settings.py](mts/src/mts/config/settings.py)`
 
 ### Acceptance
 
@@ -95,12 +95,12 @@ Deliver resilient live remote execution with strict failure handling and hardene
 ### Changes
 
 - Add retries/backoff and explicit recovery policy for remote calls:
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/integrations/primeintellect/client.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/integrations/primeintellect/client.py)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/primeintellect.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/primeintellect.py)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/loop/generation_runner.py)`
+  - `[mts/src/mts/integrations/primeintellect/client.py](mts/src/mts/integrations/primeintellect/client.py)`
+  - `[mts/src/mts/execution/executors/primeintellect.py](mts/src/mts/execution/executors/primeintellect.py)`
+  - `[mts/src/mts/loop/generation_runner.py](mts/src/mts/loop/generation_runner.py)`
 - Tighten local execution policy and limits docs:
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/local.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/execution/executors/local.py)`
-  - New docs file `[/Users/jayscambler/Repositories/MTS/mts/docs/sandbox.md](/Users/jayscambler/Repositories/MTS/mts/docs/sandbox.md)`
+  - `[mts/src/mts/execution/executors/local.py](mts/src/mts/execution/executors/local.py)`
+  - New docs file `[mts/docs/sandbox.md](mts/docs/sandbox.md)`
 
 ### Acceptance
 
@@ -116,12 +116,12 @@ Provide live observability and replay UX for demo.
 ### Changes
 
 - Build server endpoints for runs/status/replay + WebSocket event stream:
-  - New package `[/Users/jayscambler/Repositories/MTS/mts/src/mts/server/](/Users/jayscambler/Repositories/MTS/mts/src/mts/server/)`
-  - New app file `[/Users/jayscambler/Repositories/MTS/mts/src/mts/server/app.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/server/app.py)`
+  - New package `[mts/src/mts/server/](mts/src/mts/server/)`
+  - New app file `[mts/src/mts/server/app.py](mts/src/mts/server/app.py)`
 - Add replay viewer frontend:
-  - New dashboard app under `[/Users/jayscambler/Repositories/MTS/mts/dashboard/](/Users/jayscambler/Repositories/MTS/mts/dashboard/)`
+  - New dashboard app under `[mts/dashboard/](mts/dashboard/)`
 - Add CLI serve command:
-  - `[/Users/jayscambler/Repositories/MTS/mts/src/mts/cli.py](/Users/jayscambler/Repositories/MTS/mts/src/mts/cli.py)`
+  - `[mts/src/mts/cli.py](mts/src/mts/cli.py)`
 
 ### Acceptance
 
@@ -137,14 +137,14 @@ Ship a one-command demo path with robust verification and deployment parity.
 ### Changes
 
 - Add reproducible demo script and seeded demo data:
-  - New `[/Users/jayscambler/Repositories/MTS/scripts/demo.sh](/Users/jayscambler/Repositories/MTS/scripts/demo.sh)`
-  - New `[/Users/jayscambler/Repositories/MTS/mts/demo_data/](/Users/jayscambler/Repositories/MTS/mts/demo_data/)`
+  - New `[scripts/demo.sh](scripts/demo.sh)`
+  - New `[mts/demo_data/](mts/demo_data/)`
 - Update infra and docs for full runbook:
-  - `[/Users/jayscambler/Repositories/MTS/infra/docker/docker-compose.yml](/Users/jayscambler/Repositories/MTS/infra/docker/docker-compose.yml)`
-  - `[/Users/jayscambler/Repositories/MTS/infra/fly/fly.toml](/Users/jayscambler/Repositories/MTS/infra/fly/fly.toml)`
-  - `[/Users/jayscambler/Repositories/MTS/mts/README.md](/Users/jayscambler/Repositories/MTS/mts/README.md)`
+  - `[infra/docker/docker-compose.yml](infra/docker/docker-compose.yml)`
+  - `[infra/fly/fly.toml](infra/fly/fly.toml)`
+  - `[mts/README.md](mts/README.md)`
 - Expand CI gates:
-  - `[/Users/jayscambler/Repositories/MTS/.github/workflows/ci.yml](/Users/jayscambler/Repositories/MTS/.github/workflows/ci.yml)`
+  - `[.github/workflows/ci.yml](.github/workflows/ci.yml)`
 
 ### Acceptance
 
