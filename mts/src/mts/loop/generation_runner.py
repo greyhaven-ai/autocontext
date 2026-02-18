@@ -182,6 +182,41 @@ class GenerationRunner:
                 status="running",
             )
             try:
+                if self.settings.use_generation_pipeline:
+                    from mts.loop.generation_pipeline import GenerationPipeline
+                    from mts.loop.stage_types import GenerationContext
+
+                    pipeline = GenerationPipeline(
+                        orchestrator=self.agents,
+                        tournament_runner=self.tournament,
+                        gate=self.gate,
+                        artifacts=self.artifacts,
+                        sqlite=self.sqlite,
+                        trajectory_builder=self.trajectory_builder,
+                        events=self.events,
+                        curator=self.agents.curator,
+                    )
+                    ctx = GenerationContext(
+                        run_id=active_run_id,
+                        scenario_name=scenario_name,
+                        scenario=scenario,
+                        generation=generation,
+                        settings=self.settings,
+                        previous_best=previous_best,
+                        challenger_elo=challenger_elo,
+                        score_history=score_history,
+                        gate_decision_history=gate_decision_history,
+                        coach_competitor_hints=coach_competitor_hints,
+                        replay_narrative=replay_narrative,
+                    )
+                    ctx = pipeline.run_generation(ctx)
+                    # Sync state back from pipeline context
+                    previous_best = ctx.previous_best
+                    challenger_elo = ctx.challenger_elo
+                    replay_narrative = ctx.replay_narrative
+                    coach_competitor_hints = ctx.coach_competitor_hints
+                    completed += 1
+                    continue  # Skip the monolithic code below
                 summary_text = f"best score so far: {previous_best:.4f}"
                 state = scenario.initial_state(seed=self.settings.seed_base + generation)
                 observation = scenario.get_observation(state, player_id="challenger")
