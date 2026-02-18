@@ -57,6 +57,7 @@ class AppSettings(BaseModel):
     skill_max_lessons: int = Field(default=30, ge=1)
     agent_sdk_connect_mcp: bool = Field(default=False)
     sandbox_max_generations: int = Field(default=10, ge=1)
+    use_pipeline_engine: bool = Field(default=False)
 
 
 def load_settings() -> AppSettings:
@@ -111,4 +112,5 @@ def load_settings() -> AppSettings:
         skill_max_lessons=int(os.getenv("MTS_SKILL_MAX_LESSONS", "30")),
         agent_sdk_connect_mcp=os.getenv("MTS_AGENT_SDK_CONNECT_MCP", "false").lower() == "true",
         sandbox_max_generations=int(os.getenv("MTS_SANDBOX_MAX_GENERATIONS", "10")),
+        use_pipeline_engine=os.getenv("MTS_USE_PIPELINE_ENGINE", "false").lower() == "true",
     )

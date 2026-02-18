@@ -82,6 +82,14 @@ class AgentOrchestrator:
         strategy_interface: str = "",
         on_role_event: Callable[[str, str], None] | None = None,
     ) -> AgentOutputs:
+        # Feature-gated pipeline codepath (skips RLM path when active)
+        if self.settings.use_pipeline_engine and not (
+            self.settings.rlm_enabled and self._rlm_loader is not None
+        ):
+            return self._run_via_pipeline(
+                prompts, generation_index, tool_context, strategy_interface, on_role_event,
+            )
+
         def _notify(role: str, status: str) -> None:
             if on_role_event:
                 on_role_event(role, status)
@@ -138,6 +146,66 @@ class AgentOrchestrator:
             architect_markdown=architect_exec.content,
             architect_tools=tools,
             role_executions=[competitor_exec, translator_exec, analyst_exec, coach_exec, architect_exec],
+        )
+
+    def _run_via_pipeline(
+        self,
+        prompts: PromptBundle,
+        generation_index: int,
+        tool_context: str,
+        strategy_interface: str,
+        on_role_event: Callable[[str, str], None] | None,
+    ) -> AgentOutputs:
+        """Execute the 5-role generation via PipelineEngine."""
+        import json as _json
+
+        from mts.agents.pipeline_adapter import build_mts_dag, build_role_handler
+        from mts.harness.orchestration.engine import PipelineEngine
+
+        dag = build_mts_dag()
+
+        architect_prompt = prompts.architect
+        if generation_index % self.settings.architect_every_n_gens != 0:
+            architect_prompt += (
+                "\n\nArchitect cadence note: no major intervention; "
+                "return minimal status + empty tools array."
+            )
+
+        prompt_map = {
+            "competitor": prompts.competitor,
+            "translator": "",  # translator uses competitor output, not a prompt
+            "analyst": prompts.analyst,
+            "architect": architect_prompt,
+            "coach": prompts.coach,
+        }
+
+        handler = build_role_handler(self, tool_context=tool_context, strategy_interface=strategy_interface)
+        engine = PipelineEngine(dag, handler, max_workers=2)
+        results = engine.execute(prompt_map, on_role_event=on_role_event)
+
+        # Extract strategy from translator result
+        from mts.harness.core.output_parser import strip_json_fences
+
+        try:
+            strategy = _json.loads(strip_json_fences(results["translator"].content))
+        except (_json.JSONDecodeError, TypeError):
+            strategy = {}
+
+        tools = parse_architect_tool_specs(results["architect"].content)
+        coach_playbook, coach_lessons, coach_hints = parse_coach_sections(results["coach"].content)
+
+        return AgentOutputs(
+            strategy=strategy,
+            analysis_markdown=results["analyst"].content,
+            coach_markdown=results["coach"].content,
+            coach_playbook=coach_playbook,
+            coach_lessons=coach_lessons,
+            coach_competitor_hints=coach_hints,
+            architect_markdown=results["architect"].content,
+            architect_tools=tools,
+            role_executions=[
+                results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]
+            ],
         )
 
     def _enrich_coach_prompt(self, base_prompt: str, analyst_content: str) -> str:
