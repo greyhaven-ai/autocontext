@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from typing import Any
 
 from mts.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from mts.agents.types import RoleExecution
-
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+from mts.harness.core.output_parser import strip_json_fences as _harness_strip_fences
 
 
 class StrategyTranslator:
@@ -23,10 +21,7 @@ class StrategyTranslator:
     @staticmethod
     def _strip_fences(text: str) -> str:
         """Strip markdown code fences if present, returning the inner content."""
-        match = _JSON_FENCE_RE.search(text)
-        if match:
-            return match.group(1).strip()
-        return text.strip()
+        return _harness_strip_fences(text)
 
     def translate(self, raw_output: str, strategy_interface: str) -> tuple[dict[str, Any], RoleExecution]:
         prompt = (
