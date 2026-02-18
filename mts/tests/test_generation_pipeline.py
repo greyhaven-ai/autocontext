@@ -11,9 +11,9 @@ from mts.loop.generation_runner import GenerationRunner
 
 
 class TestGenerationPipelineFlag:
-    def test_flag_default_off(self) -> None:
+    def test_flag_default_on(self) -> None:
         settings = AppSettings(agent_provider="deterministic")
-        assert settings.use_generation_pipeline is False
+        assert settings.use_generation_pipeline is True
 
     def test_flag_enabled(self) -> None:
         settings = AppSettings(agent_provider="deterministic", use_generation_pipeline=True)

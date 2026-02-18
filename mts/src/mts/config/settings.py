@@ -58,7 +58,7 @@ class AppSettings(BaseModel):
     agent_sdk_connect_mcp: bool = Field(default=False)
     sandbox_max_generations: int = Field(default=10, ge=1)
     use_pipeline_engine: bool = Field(default=False)
-    use_generation_pipeline: bool = Field(default=False)
+    use_generation_pipeline: bool = Field(default=True)
 
 
 def load_settings() -> AppSettings:
