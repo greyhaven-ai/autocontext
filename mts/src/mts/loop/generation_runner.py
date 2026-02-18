@@ -186,6 +186,16 @@ class GenerationRunner:
                     from mts.loop.generation_pipeline import GenerationPipeline
                     from mts.loop.stage_types import GenerationContext
 
+                    warm_fn = None
+                    if self.settings.executor_mode == "primeintellect":
+                        def _warm(ctx_arg: object, _gen: int = generation) -> dict:
+                            return self.remote.warm_provision(
+                                environment_name=f"{scenario_name}-gen-{_gen}",
+                                max_retries=self.settings.primeintellect_max_retries,
+                                backoff_seconds=self.settings.primeintellect_backoff_seconds,
+                            )
+                        warm_fn = _warm
+
                     pipeline = GenerationPipeline(
                         orchestrator=self.agents,
                         tournament_runner=self.tournament,
@@ -195,6 +205,9 @@ class GenerationRunner:
                         trajectory_builder=self.trajectory_builder,
                         events=self.events,
                         curator=self.agents.curator,
+                        controller=self.controller,
+                        warm_provision_fn=warm_fn,
+                        chat_with_agent_fn=self._chat_with_agent,
                     )
                     ctx = GenerationContext(
                         run_id=active_run_id,

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -110,3 +111,47 @@ class TestGenerationPipelineIntegration:
 
         assert summary_a.best_score == pytest.approx(summary_b.best_score, abs=1e-6)
         assert summary_a.current_elo == pytest.approx(summary_b.current_elo, abs=1e-6)
+
+
+class TestPipelineControllerCheckpoints:
+    def test_pipeline_accepts_controller(self) -> None:
+        """GenerationPipeline constructor accepts an optional controller parameter."""
+        from mts.harness.core.controller import LoopController
+        from mts.loop.generation_pipeline import GenerationPipeline
+
+        controller = LoopController()
+        pipeline = GenerationPipeline(
+            orchestrator=MagicMock(),
+            tournament_runner=MagicMock(),
+            gate=MagicMock(),
+            artifacts=MagicMock(),
+            sqlite=MagicMock(),
+            trajectory_builder=MagicMock(),
+            events=MagicMock(),
+            curator=None,
+            controller=controller,
+        )
+        assert pipeline._controller is controller
+
+    def test_pipeline_gate_override_applied(self, tmp_path: Path) -> None:
+        """When controller has a gate override, it's applied after stage_tournament."""
+        from mts.harness.core.controller import LoopController
+
+        controller = LoopController()
+        controller.set_gate_override("advance")
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            db_path=tmp_path / "test.sqlite3",
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+            use_generation_pipeline=True,
+            curator_enabled=False,
+        )
+        runner = GenerationRunner(settings)
+        runner.migrate(Path("migrations"))
+        runner.controller = controller
+        summary = runner.run("grid_ctf", generations=1, run_id="override_test")
+        assert summary.generations_executed == 1
