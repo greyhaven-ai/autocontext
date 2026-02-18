@@ -789,3 +789,182 @@ class TestStagePersistence:
         )
 
         assert result.coach_competitor_hints == "updated hints from coach"
+
+
+# ---------- TestStageTournamentAttempt ----------
+
+
+class TestStageTournamentAttempt:
+    def test_stage_tournament_stores_attempt_on_context(self) -> None:
+        """Verify ctx.attempt is populated as an int >= 0 after stage_tournament."""
+        ctx = _make_tournament_ctx()
+        supervisor = _make_inline_supervisor()
+        tournament_runner = TournamentRunner(supervisor=supervisor)
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="advance", reason="improved")
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+
+        result = stage_tournament(
+            ctx,
+            tournament_runner=tournament_runner,
+            gate=gate,
+            events=events,
+            sqlite=sqlite,
+            artifacts=artifacts,
+            agents=None,
+        )
+        assert isinstance(result.attempt, int)
+        assert result.attempt >= 0
+
+
+# ---------- TestStageAgentGenerationEvents ----------
+
+
+class TestStageAgentGenerationEvents:
+    def _make_stage2_ctx(self) -> tuple[GenerationContext, AgentOrchestrator]:
+        settings = _make_settings()
+        client = DeterministicDevClient()
+        orch = AgentOrchestrator(client=client, settings=settings)
+        scenario = _make_scenario_mock()
+        ctx = _make_ctx(settings=settings, scenario=scenario)
+
+        from mts.prompts.templates import build_prompt_bundle
+
+        ctx.prompts = build_prompt_bundle(
+            scenario_rules="Test",
+            strategy_interface='{"aggression": float}',
+            evaluation_criteria="Score",
+            previous_summary="best: 0.0",
+            observation=scenario.get_observation(None, "challenger"),
+            current_playbook="",
+            available_tools="",
+        )
+        ctx.strategy_interface = '{"aggression": float}'
+        return ctx, orch
+
+    def test_stage_agent_generation_emits_agents_started(self) -> None:
+        """Verify agents_started event is emitted when events is provided."""
+        ctx, orch = self._make_stage2_ctx()
+        artifacts = MagicMock()
+        artifacts.persist_tools.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+
+        stage_agent_generation(ctx, orchestrator=orch, artifacts=artifacts, sqlite=sqlite, events=events)
+
+        emit_calls = events.emit.call_args_list
+        agents_started_calls = [c for c in emit_calls if c[0][0] == "agents_started"]
+        assert len(agents_started_calls) == 1
+        payload = agents_started_calls[0][0][1]
+        assert payload["run_id"] == ctx.run_id
+        assert payload["generation"] == ctx.generation
+        assert "competitor" in payload["roles"]
+        assert "analyst" in payload["roles"]
+        assert "coach" in payload["roles"]
+        assert "architect" in payload["roles"]
+
+    def test_stage_agent_generation_emits_role_completed(self) -> None:
+        """Verify role_completed events are emitted for each role execution."""
+        ctx, orch = self._make_stage2_ctx()
+        artifacts = MagicMock()
+        artifacts.persist_tools.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+
+        stage_agent_generation(ctx, orchestrator=orch, artifacts=artifacts, sqlite=sqlite, events=events)
+
+        emit_calls = events.emit.call_args_list
+        role_completed_calls = [c for c in emit_calls if c[0][0] == "role_completed"]
+        # DeterministicDevClient produces 5 role_executions
+        assert len(role_completed_calls) == 5
+        for call in role_completed_calls:
+            payload = call[0][1]
+            assert "run_id" in payload
+            assert "generation" in payload
+            assert "role" in payload
+            assert "latency_ms" in payload
+            assert "tokens" in payload
+
+
+# ---------- TestStagePersistenceCreatedTools ----------
+
+
+class TestStagePersistenceCreatedTools:
+    def test_stage_persistence_emits_created_tools(self) -> None:
+        """Verify generation_completed event includes created_tools."""
+        ctx = _make_persistence_ctx(gate_decision="advance")
+        ctx.created_tools = ["recon_tool.py", "scout_tool.py"]
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        emit_calls = events.emit.call_args_list
+        gen_completed_calls = [c for c in emit_calls if c[0][0] == "generation_completed"]
+        assert len(gen_completed_calls) == 1
+        payload = gen_completed_calls[0][0][1]
+        assert payload["created_tools"] == ["recon_tool.py", "scout_tool.py"]
+
+
+# ---------- TestStagePersistenceRollbackRetryNote ----------
+
+
+class TestStagePersistenceRollbackRetryNote:
+    def test_stage_persistence_rollback_includes_retry_note(self) -> None:
+        """Verify rollback lesson includes 'after N retries' when attempt > 0."""
+        ctx = _make_persistence_ctx(gate_decision="rollback")
+        ctx.attempt = 3
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        skill_call = artifacts.persist_skill_note.call_args
+        lessons = skill_call[1]["lessons"]
+        assert "ROLLBACK after 3 retries" in lessons
+
+    def test_stage_persistence_rollback_no_retry_note_when_zero(self) -> None:
+        """Verify rollback lesson does NOT include retry note when attempt == 0."""
+        ctx = _make_persistence_ctx(gate_decision="rollback")
+        ctx.attempt = 0
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        skill_call = artifacts.persist_skill_note.call_args
+        lessons = skill_call[1]["lessons"]
+        assert "ROLLBACK " in lessons
+        assert "after" not in lessons.split("ROLLBACK")[1].split("(")[0]

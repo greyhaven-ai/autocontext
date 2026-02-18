@@ -40,6 +40,7 @@ class GenerationContext:
     gate_delta: float = 0.0
     current_strategy: dict[str, Any] = field(default_factory=dict)
     created_tools: list[str] = field(default_factory=list)
+    attempt: int = 0
     strategy_interface: str = ""
     tool_context: str = ""
 

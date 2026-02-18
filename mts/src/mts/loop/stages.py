@@ -77,9 +77,18 @@ def stage_agent_generation(
     artifacts: ArtifactStore,
     sqlite: SQLiteStore,
     on_role_event: Any | None = None,
+    events: EventStreamEmitter | None = None,
 ) -> GenerationContext:
     """Stage 2: Run agent orchestration and validate strategy."""
     assert ctx.prompts is not None, "stage_knowledge_setup must run first"
+
+    if events is not None:
+        roles = ["competitor", "analyst", "coach", "architect"]
+        if orchestrator.curator is not None:
+            roles.append("curator")
+        events.emit("agents_started", {
+            "run_id": ctx.run_id, "generation": ctx.generation, "roles": roles,
+        })
 
     outputs = orchestrator.run_generation(
         ctx.prompts,
@@ -112,6 +121,15 @@ def stage_agent_generation(
             role_execution.subagent_id,
             role_execution.status,
         )
+    if events is not None:
+        for role_execution in outputs.role_executions:
+            events.emit("role_completed", {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "role": role_execution.role,
+                "latency_ms": role_execution.usage.latency_ms,
+                "tokens": role_execution.usage.input_tokens + role_execution.usage.output_tokens,
+            })
     created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
 
     ctx.outputs = outputs
@@ -258,6 +276,7 @@ def stage_tournament(
     ctx.gate_delta = gate_delta
     ctx.replay_narrative = replay_narrative
     ctx.current_strategy = current_strategy
+    ctx.attempt = attempt
     return ctx
 
 
@@ -396,8 +415,9 @@ def stage_persistence(
     if gate_decision == "advance":
         skill_lessons = outputs.coach_lessons
     else:
+        retry_note = f" after {ctx.attempt} retries" if ctx.attempt > 0 else ""
         skill_lessons = (
-            f"- Generation {generation} ROLLBACK "
+            f"- Generation {generation} ROLLBACK{retry_note} "
             f"(score={tournament.best_score:.4f}, "
             f"delta={gate_delta:+.4f}, threshold={settings.backpressure_min_delta}). "
             f"Strategy: {json.dumps(ctx.current_strategy, sort_keys=True)[:200]}. "
@@ -451,6 +471,7 @@ def stage_persistence(
         "elo": ctx.challenger_elo,
         "gate_decision": gate_decision,
         "gate_delta": gate_delta,
+        "created_tools": ctx.created_tools,
     })
 
     return ctx

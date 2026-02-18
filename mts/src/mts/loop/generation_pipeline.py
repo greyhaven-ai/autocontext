@@ -70,6 +70,7 @@ class GenerationPipeline:
             artifacts=self._artifacts,
             sqlite=self._sqlite,
             on_role_event=_on_role_event,
+            events=self._events,
         )
 
         # Stage 3: Tournament + gate
