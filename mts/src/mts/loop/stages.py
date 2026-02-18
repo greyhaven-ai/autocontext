@@ -319,3 +319,138 @@ def stage_curator_gate(
     })
 
     return ctx
+
+
+def stage_persistence(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+    sqlite: SQLiteStore,
+    trajectory_builder: ScoreTrajectoryBuilder,
+    events: EventStreamEmitter,
+    curator: KnowledgeCurator | None,
+) -> GenerationContext:
+    """Stage 5: Persist generation results, metrics, and knowledge artifacts."""
+    assert ctx.tournament is not None, "stage_tournament must run first"
+    assert ctx.outputs is not None, "stage_agent_generation must run first"
+
+    tournament = ctx.tournament
+    outputs = ctx.outputs
+    generation = ctx.generation
+    settings = ctx.settings
+    scenario_name = ctx.scenario_name
+    run_id = ctx.run_id
+    gate_decision = ctx.gate_decision
+    gate_delta = ctx.gate_delta
+
+    # 1. Build metrics dict
+    metrics = {
+        "generation_index": generation,
+        "mean_score": tournament.mean_score,
+        "best_score": ctx.previous_best,
+        "elo": ctx.challenger_elo,
+        "wins": tournament.wins,
+        "losses": tournament.losses,
+        "runs": settings.matches_per_generation,
+        "gate_decision": gate_decision,
+        "gate_delta": gate_delta,
+        "gate_threshold": settings.backpressure_min_delta,
+    }
+
+    # 2. Insert matches into sqlite
+    for idx, match_output in enumerate(tournament.outputs):
+        sqlite.insert_match(
+            run_id, generation,
+            settings.seed_base + (generation * 100) + idx,
+            match_output.result.score,
+            match_output.result.passed_validation,
+            json.dumps(match_output.result.validation_errors),
+        )
+
+    # 3. Upsert generation
+    sqlite.upsert_generation(
+        run_id, generation,
+        mean_score=tournament.mean_score,
+        best_score=ctx.previous_best,
+        elo=ctx.challenger_elo,
+        wins=tournament.wins,
+        losses=tournament.losses,
+        gate_decision=gate_decision,
+        status="completed",
+    )
+
+    # 4. Persist generation artifacts
+    artifacts.persist_generation(
+        run_id=run_id,
+        generation_index=generation,
+        metrics=metrics,
+        replay_payload=tournament.outputs[0].replay.model_dump(),
+        analysis_md=outputs.analysis_markdown,
+        coach_md=outputs.coach_markdown,
+        architect_md=outputs.architect_markdown,
+        scenario_name=scenario_name,
+        coach_playbook=outputs.coach_playbook if gate_decision == "advance" else "",
+    )
+
+    # 5. Write skill note
+    if gate_decision == "advance":
+        skill_lessons = outputs.coach_lessons
+    else:
+        skill_lessons = (
+            f"- Generation {generation} ROLLBACK "
+            f"(score={tournament.best_score:.4f}, "
+            f"delta={gate_delta:+.4f}, threshold={settings.backpressure_min_delta}). "
+            f"Strategy: {json.dumps(ctx.current_strategy, sort_keys=True)[:200]}. "
+            f"Narrative: {ctx.replay_narrative[:150]}. "
+            f"Avoid this approach."
+        )
+    artifacts.persist_skill_note(
+        scenario_name=scenario_name,
+        generation_index=generation,
+        decision=gate_decision,
+        lessons=skill_lessons,
+    )
+
+    # 6. Curator lesson consolidation
+    existing_lessons_check = artifacts.read_skill_lessons_raw(scenario_name)
+    severely_over = len(existing_lessons_check) > settings.skill_max_lessons * 2
+    if (
+        curator is not None
+        and settings.curator_enabled
+        and (generation % settings.curator_consolidate_every_n_gens == 0 or severely_over)
+        and not settings.ablation_no_feedback
+    ):
+        existing_lessons = artifacts.read_skill_lessons_raw(scenario_name)
+        if len(existing_lessons) > settings.skill_max_lessons:
+            consolidation_trajectory = trajectory_builder.build_trajectory(run_id)
+            lesson_result, lesson_exec = curator.consolidate_lessons(
+                existing_lessons, settings.skill_max_lessons, consolidation_trajectory,
+            )
+            artifacts.replace_skill_lessons(scenario_name, lesson_result.consolidated_lessons)
+            sqlite.append_agent_output(
+                run_id, generation, "curator_consolidation", lesson_exec.content,
+            )
+            sqlite.append_agent_role_metric(
+                run_id, generation, lesson_exec.role, lesson_exec.usage.model,
+                lesson_exec.usage.input_tokens, lesson_exec.usage.output_tokens,
+                lesson_exec.usage.latency_ms, lesson_exec.subagent_id, lesson_exec.status,
+            )
+
+    # 7. Carry forward coach hints
+    coach_competitor_hints = outputs.coach_competitor_hints
+    ctx.coach_competitor_hints = coach_competitor_hints
+    if gate_decision == "advance" and coach_competitor_hints:
+        artifacts.write_hints(scenario_name, coach_competitor_hints)
+
+    # 8. Emit generation_completed event
+    events.emit("generation_completed", {
+        "run_id": run_id,
+        "generation": generation,
+        "mean_score": tournament.mean_score,
+        "best_score": ctx.previous_best,
+        "elo": ctx.challenger_elo,
+        "gate_decision": gate_decision,
+        "gate_delta": gate_delta,
+    })
+
+    return ctx

@@ -19,6 +19,7 @@ from mts.loop.stages import (
     stage_agent_generation,
     stage_curator_gate,
     stage_knowledge_setup,
+    stage_persistence,
     stage_tournament,
 )
 from mts.scenarios.base import (
@@ -559,3 +560,232 @@ class TestStageCuratorGate:
             events=MagicMock(),
         )
         curator.assess_playbook_quality.assert_not_called()
+
+
+# ---------- Helpers for persistence stage tests ----------
+
+
+def _make_persistence_ctx(
+    gate_decision: str = "advance",
+    coach_playbook: str = "Updated playbook",
+    coach_lessons: str = "- Lesson one\n- Lesson two",
+    coach_competitor_hints: str = "try aggression=0.9",
+    replay_narrative: str = "Player captured the flag at step 5",
+    current_strategy: dict | None = None,
+    generation: int = 3,
+    ablation: bool = False,
+    curator_enabled: bool = False,
+) -> GenerationContext:
+    """Build a GenerationContext pre-populated for persistence stage tests."""
+    settings = AppSettings(
+        agent_provider="deterministic",
+        ablation_no_feedback=ablation,
+        curator_enabled=curator_enabled,
+    )
+    outputs = MagicMock(spec=AgentOutputs)
+    outputs.analysis_markdown = "## Analysis output"
+    outputs.coach_markdown = "## Coach output"
+    outputs.coach_playbook = coach_playbook
+    outputs.coach_lessons = coach_lessons
+    outputs.coach_competitor_hints = coach_competitor_hints
+    outputs.architect_markdown = "## Architect output"
+
+    # Build mock tournament with 2 match outputs
+    match_result_1 = MagicMock()
+    match_result_1.result.score = 0.75
+    match_result_1.result.passed_validation = True
+    match_result_1.result.validation_errors = []
+    match_result_1.replay.model_dump.return_value = {"scenario": "test", "seed": 1001, "timeline": []}
+
+    match_result_2 = MagicMock()
+    match_result_2.result.score = 0.82
+    match_result_2.result.passed_validation = True
+    match_result_2.result.validation_errors = []
+    match_result_2.replay.model_dump.return_value = {"scenario": "test", "seed": 1002, "timeline": []}
+
+    tournament = MagicMock()
+    tournament.mean_score = 0.785
+    tournament.best_score = 0.82
+    tournament.wins = 2
+    tournament.losses = 0
+    tournament.elo_after = 1020.0
+    tournament.outputs = [match_result_1, match_result_2]
+
+    strategy = current_strategy or {"aggression": 0.8}
+
+    return GenerationContext(
+        run_id="run_persist",
+        scenario_name="test_scenario",
+        scenario=MagicMock(),
+        generation=generation,
+        settings=settings,
+        previous_best=0.7,
+        challenger_elo=1010.0,
+        score_history=[0.5, 0.7],
+        gate_decision_history=["advance", "advance"],
+        coach_competitor_hints="old hints",
+        replay_narrative=replay_narrative,
+        gate_decision=gate_decision,
+        gate_delta=0.12,
+        current_strategy=strategy,
+        outputs=outputs,
+        tournament=tournament,
+    )
+
+
+# ---------- TestStagePersistence ----------
+
+
+class TestStagePersistence:
+    def test_upserts_generation_and_persists_artifacts(self) -> None:
+        """Verify sqlite.upsert_generation, artifacts.persist_generation, and persist_skill_note are called."""
+        ctx = _make_persistence_ctx()
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        sqlite.upsert_generation.assert_called_once()
+        call_kwargs = sqlite.upsert_generation.call_args
+        assert call_kwargs[1]["status"] == "completed"
+        assert call_kwargs[1]["gate_decision"] == "advance"
+
+        artifacts.persist_generation.assert_called_once()
+        artifacts.persist_skill_note.assert_called_once()
+
+    def test_advance_passes_coach_playbook(self) -> None:
+        """On advance, persist_generation receives the non-empty coach_playbook."""
+        ctx = _make_persistence_ctx(gate_decision="advance", coach_playbook="My awesome playbook")
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        persist_call = artifacts.persist_generation.call_args
+        assert persist_call[1]["coach_playbook"] == "My awesome playbook"
+
+    def test_rollback_generates_rollback_lesson(self) -> None:
+        """On rollback, persist_skill_note receives a lesson containing 'ROLLBACK'."""
+        ctx = _make_persistence_ctx(gate_decision="rollback")
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        skill_call = artifacts.persist_skill_note.call_args
+        assert skill_call[1]["decision"] == "rollback"
+        assert "ROLLBACK" in skill_call[1]["lessons"]
+
+    def test_advance_writes_hints(self) -> None:
+        """On advance with coach_competitor_hints, artifacts.write_hints is called."""
+        ctx = _make_persistence_ctx(gate_decision="advance", coach_competitor_hints="new hints")
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        artifacts.write_hints.assert_called_once_with("test_scenario", "new hints")
+
+    def test_inserts_matches(self) -> None:
+        """sqlite.insert_match is called once per tournament output."""
+        ctx = _make_persistence_ctx()
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        # Tournament has 2 outputs, so insert_match should be called twice
+        assert sqlite.insert_match.call_count == 2
+
+    def test_emits_generation_completed(self) -> None:
+        """events.emit is called with 'generation_completed'."""
+        ctx = _make_persistence_ctx()
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        # Find the generation_completed emit call
+        emit_calls = events.emit.call_args_list
+        gen_completed_calls = [c for c in emit_calls if c[0][0] == "generation_completed"]
+        assert len(gen_completed_calls) == 1
+
+    def test_carries_forward_coach_hints(self) -> None:
+        """ctx.coach_competitor_hints is updated from outputs."""
+        ctx = _make_persistence_ctx(coach_competitor_hints="updated hints from coach")
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        result = stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        assert result.coach_competitor_hints == "updated hints from coach"
