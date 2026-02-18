@@ -3,22 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
-@dataclass(slots=True)
-class RoleUsage:
-    input_tokens: int
-    output_tokens: int
-    latency_ms: int
-    model: str
-
-
-@dataclass(slots=True)
-class RoleExecution:
-    role: str
-    content: str
-    usage: RoleUsage
-    subagent_id: str
-    status: str
+from mts.harness.core.types import RoleExecution, RoleUsage
 
 
 @dataclass(slots=True)
@@ -32,3 +17,6 @@ class AgentOutputs:
     architect_markdown: str
     architect_tools: list[dict[str, Any]]
     role_executions: list[RoleExecution]
+
+
+__all__ = ["RoleUsage", "RoleExecution", "AgentOutputs"]

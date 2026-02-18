@@ -2,47 +2,11 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
 
 from anthropic import Anthropic
 
-from mts.agents.types import RoleUsage
-
-
-@dataclass(slots=True)
-class ModelResponse:
-    text: str
-    usage: RoleUsage
-
-
-class LanguageModelClient:
-    def generate(
-        self,
-        *,
-        model: str,
-        prompt: str,
-        max_tokens: int,
-        temperature: float,
-        role: str = "",
-    ) -> ModelResponse:
-        raise NotImplementedError
-
-    def generate_multiturn(
-        self,
-        *,
-        model: str,
-        system: str,
-        messages: list[dict[str, str]],
-        max_tokens: int,
-        temperature: float,
-        role: str = "",
-    ) -> ModelResponse:
-        """Multi-turn generation with conversation history.
-
-        Default implementation concatenates into a single-turn call for backwards compat.
-        """
-        combined = system + "\n\n" + "\n\n".join(m["content"] for m in messages if m["role"] == "user")
-        return self.generate(model=model, prompt=combined, max_tokens=max_tokens, temperature=temperature)
+from mts.harness.core.llm_client import LanguageModelClient
+from mts.harness.core.types import ModelResponse, RoleUsage
 
 
 class AnthropicClient(LanguageModelClient):
@@ -405,3 +369,6 @@ class DeterministicDevClient(LanguageModelClient):
         if "threat assessment" in prompt_lower:
             return json.dumps({"aggression": 0.6, "defense": 0.56, "path_bias": 0.62})
         return json.dumps({"aggression": 0.58, "defense": 0.57, "path_bias": 0.54})
+
+
+__all__ = ["LanguageModelClient", "ModelResponse", "AnthropicClient", "DeterministicDevClient"]

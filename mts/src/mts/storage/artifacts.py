@@ -6,6 +6,8 @@ import logging
 import os
 from pathlib import Path
 
+from mts.harness.storage.versioned_store import VersionedFileStore
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -23,6 +25,19 @@ class ArtifactStore:
         self.skills_root = skills_root
         self.claude_skills_path = claude_skills_path
         self._max_playbook_versions = max_playbook_versions
+        self._playbook_stores: dict[str, VersionedFileStore] = {}
+
+    def _playbook_store(self, scenario_name: str) -> VersionedFileStore:
+        """Lazily create a per-scenario VersionedFileStore with legacy naming."""
+        if scenario_name not in self._playbook_stores:
+            self._playbook_stores[scenario_name] = VersionedFileStore(
+                root=self.knowledge_root / scenario_name,
+                max_versions=self._max_playbook_versions,
+                versions_dir_name="playbook_versions",
+                version_prefix="playbook_v",
+                version_suffix=".md",
+            )
+        return self._playbook_stores[scenario_name]
 
     def generation_dir(self, run_id: str, generation_index: int) -> Path:
         return self.runs_root / run_id / "generations" / f"gen_{generation_index}"
@@ -45,61 +60,33 @@ class ArtifactStore:
         path.write_text(chunk.lstrip("\n"), encoding="utf-8")
 
     def read_playbook(self, scenario_name: str) -> str:
-        playbook_path = self.knowledge_root / scenario_name / "playbook.md"
-        if not playbook_path.exists():
+        content = self._playbook_store(scenario_name).read("playbook.md")
+        if not content:
             return "No playbook yet. Start from scenario rules and observation."
-        return playbook_path.read_text(encoding="utf-8")
+        return content
 
     def write_playbook(self, scenario_name: str, content: str) -> None:
         """Overwrite the playbook, archiving current version first."""
-        playbook_path = self.knowledge_root / scenario_name / "playbook.md"
-        versions_dir = self.knowledge_root / scenario_name / "playbook_versions"
-        if playbook_path.exists():
-            versions_dir.mkdir(parents=True, exist_ok=True)
-            existing = playbook_path.read_text(encoding="utf-8")
-            existing_versions = sorted(versions_dir.glob("playbook_v*.md"))
-            next_num = len(existing_versions) + 1
-            (versions_dir / f"playbook_v{next_num:04d}.md").write_text(existing, encoding="utf-8")
-            self._prune_playbook_versions(versions_dir)
-        self.write_markdown(playbook_path, content)
+        # Ensure parent directory exists (VersionedFileStore.write handles the file,
+        # but the scenario directory itself may not exist yet).
+        (self.knowledge_root / scenario_name).mkdir(parents=True, exist_ok=True)
+        self._playbook_store(scenario_name).write("playbook.md", content.strip() + "\n")
 
     def _prune_playbook_versions(self, versions_dir: Path) -> None:
-        """Keep only the most recent N versions."""
-        versions = sorted(versions_dir.glob("playbook_v*.md"))
-        while len(versions) > self._max_playbook_versions:
-            versions[0].unlink()
-            versions.pop(0)
+        """No-op: pruning is now handled internally by VersionedFileStore."""
+        pass
 
     def rollback_playbook(self, scenario_name: str) -> bool:
         """Restore most recent archived version as current playbook."""
-        versions_dir = self.knowledge_root / scenario_name / "playbook_versions"
-        if not versions_dir.exists():
-            return False
-        versions = sorted(versions_dir.glob("playbook_v*.md"))
-        if not versions:
-            return False
-        latest = versions[-1]
-        self.write_markdown(
-            self.knowledge_root / scenario_name / "playbook.md",
-            latest.read_text(encoding="utf-8"),
-        )
-        latest.unlink()
-        return True
+        return self._playbook_store(scenario_name).rollback("playbook.md")
 
     def playbook_version_count(self, scenario_name: str) -> int:
         """Return number of archived playbook versions."""
-        versions_dir = self.knowledge_root / scenario_name / "playbook_versions"
-        if not versions_dir.exists():
-            return 0
-        return len(list(versions_dir.glob("playbook_v*.md")))
+        return self._playbook_store(scenario_name).version_count("playbook.md")
 
     def read_playbook_version(self, scenario_name: str, version_num: int) -> str:
         """Read a specific playbook version by number."""
-        versions_dir = self.knowledge_root / scenario_name / "playbook_versions"
-        path = versions_dir / f"playbook_v{version_num:04d}.md"
-        if not path.exists():
-            return ""
-        return path.read_text(encoding="utf-8")
+        return self._playbook_store(scenario_name).read_version("playbook.md", version_num)
 
     def append_coach_history(self, scenario_name: str, generation_index: int, raw_content: str) -> None:
         """Append raw coach output to history file for audit trail."""
