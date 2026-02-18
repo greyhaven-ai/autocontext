@@ -58,6 +58,7 @@ class AppSettings(BaseModel):
     agent_sdk_connect_mcp: bool = Field(default=False)
     sandbox_max_generations: int = Field(default=10, ge=1)
     use_pipeline_engine: bool = Field(default=False)
+    use_generation_pipeline: bool = Field(default=False)
 
 
 def load_settings() -> AppSettings:
@@ -113,4 +114,5 @@ def load_settings() -> AppSettings:
         agent_sdk_connect_mcp=os.getenv("MTS_AGENT_SDK_CONNECT_MCP", "false").lower() == "true",
         sandbox_max_generations=int(os.getenv("MTS_SANDBOX_MAX_GENERATIONS", "10")),
         use_pipeline_engine=os.getenv("MTS_USE_PIPELINE_ENGINE", "false").lower() == "true",
+        use_generation_pipeline=os.getenv("MTS_USE_GENERATION_PIPELINE", "false").lower() == "true",
     )
