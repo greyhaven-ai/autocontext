@@ -329,10 +329,7 @@ class ArtifactStore:
         restored = False
         pb_snapshot = snapshot_dir / "playbook.md"
         if pb_snapshot.exists():
-            self.write_markdown(
-                self.knowledge_root / scenario_name / "playbook.md",
-                pb_snapshot.read_text(encoding="utf-8"),
-            )
+            self.write_playbook(scenario_name, pb_snapshot.read_text(encoding="utf-8"))
             restored = True
 
         hints_snapshot = snapshot_dir / "hints.md"
