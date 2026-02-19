@@ -100,6 +100,17 @@ class TestScenarioEvaluator:
         result = evaluator.evaluate({}, seed=1, limits=EvaluationLimits())
         assert "scenario" in result.replay_data
 
+    def test_evaluate_preserves_execution_output(self) -> None:
+        """EvaluationResult.metadata contains the full ExecutionOutput."""
+        evaluator = ScenarioEvaluator(FakeScenario(), FakeSupervisor(score=0.75))
+        result = evaluator.evaluate({"aggression": 0.7}, seed=42, limits=EvaluationLimits())
+        assert "execution_output" in result.metadata
+        output = result.metadata["execution_output"]
+        # Duck-typed check: the stored object must expose .result and .replay
+        assert hasattr(output, "result")
+        assert hasattr(output, "replay")
+        assert output.result.score == result.score
+
     def test_works_with_evaluation_runner(self) -> None:
         from mts.harness.evaluation.runner import EvaluationRunner
         evaluator = ScenarioEvaluator(FakeScenario(), FakeSupervisor(score=0.7))

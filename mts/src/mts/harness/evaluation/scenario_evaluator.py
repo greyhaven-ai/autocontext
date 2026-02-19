@@ -38,6 +38,9 @@ class ScenarioEvaluator:
             score=output.result.score,
             passed=output.result.passed_validation,
             errors=list(output.result.validation_errors),
-            metadata=dict(output.result.metrics) if hasattr(output.result, "metrics") else {},
+            metadata={
+                "metrics": dict(output.result.metrics) if hasattr(output.result, "metrics") else {},
+                "execution_output": output,
+            },
             replay_data=output.replay.model_dump() if hasattr(output.replay, "model_dump") else {},
         )
