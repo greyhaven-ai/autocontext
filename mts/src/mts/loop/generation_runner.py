@@ -8,7 +8,7 @@ from pathlib import Path
 from mts.agents import AgentOrchestrator
 from mts.backpressure import BackpressureGate, TrendAwareGate
 from mts.config import AppSettings
-from mts.execution import ExecutionSupervisor, TournamentRunner
+from mts.execution import ExecutionSupervisor
 from mts.execution.executors import LocalExecutor, PrimeIntellectExecutor
 from mts.integrations.primeintellect import PrimeIntellectClient
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
@@ -75,7 +75,6 @@ class GenerationRunner:
             )
         else:
             self.executor = ExecutionSupervisor(executor=LocalExecutor())
-        self.tournament = TournamentRunner(self.executor)
         self.events = EventStreamEmitter(settings.event_stream_path)
         self.controller: LoopController | None = None
 
@@ -192,7 +191,7 @@ class GenerationRunner:
 
                 pipeline = GenerationPipeline(
                     orchestrator=self.agents,
-                    tournament_runner=self.tournament,
+                    supervisor=self.executor,
                     gate=self.gate,
                     artifacts=self.artifacts,
                     sqlite=self.sqlite,

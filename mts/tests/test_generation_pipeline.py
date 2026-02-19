@@ -52,7 +52,7 @@ class TestPipelineControllerCheckpoints:
         controller = LoopController()
         pipeline = GenerationPipeline(
             orchestrator=MagicMock(),
-            tournament_runner=MagicMock(),
+            supervisor=MagicMock(),
             gate=MagicMock(),
             artifacts=MagicMock(),
             sqlite=MagicMock(),

@@ -9,15 +9,18 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from mts.backpressure.trend_gate import ScoreHistory, TrendAwareGate
+from mts.harness.evaluation.runner import EvaluationRunner
+from mts.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
+from mts.harness.evaluation.types import EvaluationResult
 from mts.loop.stage_types import GenerationContext
 from mts.prompts.templates import build_prompt_bundle
-from mts.scenarios.base import ExecutionLimits
 
 if TYPE_CHECKING:
     from mts.agents.curator import KnowledgeCurator
     from mts.agents.orchestrator import AgentOrchestrator
     from mts.backpressure import BackpressureGate
-    from mts.execution.tournament import TournamentRunner
+    from mts.execution.supervisor import ExecutionSupervisor
     from mts.knowledge.trajectory import ScoreTrajectoryBuilder
     from mts.loop.events import EventStreamEmitter
     from mts.storage import ArtifactStore, SQLiteStore
@@ -141,7 +144,7 @@ def stage_agent_generation(
 def stage_tournament(
     ctx: GenerationContext,
     *,
-    tournament_runner: TournamentRunner,
+    supervisor: ExecutionSupervisor,
     gate: BackpressureGate | TrendAwareGate,
     events: EventStreamEmitter,
     sqlite: SQLiteStore,
@@ -172,14 +175,20 @@ def stage_tournament(
             })
 
         try:
-            tournament = tournament_runner.run(
-                scenario=scenario,
-                strategy=current_strategy,
+            evaluator = ScenarioEvaluator(scenario, supervisor)
+            harness_limits = HarnessLimits()
+
+            def _on_result(idx: int, result: EvaluationResult) -> None:
+                _on_match(idx, result.score)
+
+            runner = EvaluationRunner(evaluator)
+            tournament = runner.run(
+                candidate=current_strategy,
                 seed_base=settings.seed_base + (ctx.generation * 100) + (attempt * 10),
-                matches=settings.matches_per_generation,
-                limits=ExecutionLimits(),
+                trials=settings.matches_per_generation,
+                limits=harness_limits,
                 challenger_elo=ctx.challenger_elo,
-                on_match=_on_match,
+                on_result=_on_result,
             )
         except Exception:
             attempt += 1
@@ -189,8 +198,9 @@ def stage_tournament(
             continue
 
         if isinstance(gate, TrendAwareGate):
-            best_result = max(tournament.outputs, key=lambda o: o.result.score)
-            custom_metrics = scenario.custom_backpressure(best_result.result)
+            best_eval = max(tournament.results, key=lambda r: r.score)
+            best_exec = best_eval.metadata["execution_output"]
+            custom_metrics = scenario.custom_backpressure(best_exec.result)
             gate_result = gate.evaluate(
                 ctx.previous_best,
                 tournament.best_score,
@@ -258,8 +268,9 @@ def stage_tournament(
     })
 
     # Generate replay narrative from best match for next generation
-    best_output = max(tournament.outputs, key=lambda o: o.result.score)
-    replay_narrative = scenario.replay_to_narrative(best_output.result.replay)
+    best_eval = max(tournament.results, key=lambda r: r.score)
+    best_exec = best_eval.metadata["execution_output"]
+    replay_narrative = scenario.replay_to_narrative(best_exec.result.replay)
     gen_dir = artifacts.generation_dir(ctx.run_id, ctx.generation)
     artifacts.write_markdown(gen_dir / "narrative.md", replay_narrative)
 
@@ -377,7 +388,8 @@ def stage_persistence(
     }
 
     # 2. Insert matches into sqlite
-    for idx, match_output in enumerate(tournament.outputs):
+    for idx, eval_result in enumerate(tournament.results):
+        match_output = eval_result.metadata["execution_output"]
         sqlite.insert_match(
             run_id, generation,
             settings.seed_base + (generation * 100) + idx,
@@ -403,7 +415,7 @@ def stage_persistence(
         run_id=run_id,
         generation_index=generation,
         metrics=metrics,
-        replay_payload=tournament.outputs[0].replay.model_dump(),
+        replay_payload=tournament.results[0].metadata["execution_output"].replay.model_dump(),
         analysis_md=outputs.analysis_markdown,
         coach_md=outputs.coach_markdown,
         architect_md=outputs.architect_markdown,

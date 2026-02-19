@@ -123,27 +123,28 @@ def test_retry_varies_seeds(tmp_path: Path) -> None:
     )
     runner = _make_runner(settings)
 
-    # Capture seed_base values passed to tournament.run
-    seed_bases_seen: list[int] = []
-    original_run = runner.tournament.run
+    # Capture seed values passed to supervisor.run (via ExecutionInput payloads)
+    seeds_seen: list[int] = []
+    original_run = runner.executor.run
 
-    def capturing_tournament_run(**kwargs: Any) -> Any:
-        seed_bases_seen.append(kwargs["seed_base"])
-        return original_run(**kwargs)
+    def capturing_supervisor_run(scenario: Any, payload: Any) -> Any:
+        seeds_seen.append(payload.seed)
+        return original_run(scenario, payload)
 
-    runner.tournament.run = capturing_tournament_run  # type: ignore[assignment]
+    runner.executor.run = capturing_supervisor_run  # type: ignore[assignment]
 
     runner.run(scenario_name="grid_ctf", generations=2, run_id="seed_test")
 
     # Gen 1 always runs once (advances from 0.0). Gen 2 should have at least 2 attempts
-    # (original + 1 retry) with different seed_base values.
-    # There should be multiple tournament runs for gen 2, and the retry should have a different seed
-    assert len(seed_bases_seen) >= 3, f"Expected at least 3 tournament runs, got {len(seed_bases_seen)}: {seed_bases_seen}"
-    # The gen 2 retry seed should differ from the gen 2 initial seed
-    gen2_initial = settings.seed_base + (2 * 100)  # attempt=0
-    gen2_retry = settings.seed_base + (2 * 100) + 10  # attempt=1
-    assert gen2_initial in seed_bases_seen, f"Gen 2 initial seed {gen2_initial} not found in {seed_bases_seen}"
-    assert gen2_retry in seed_bases_seen, f"Gen 2 retry seed {gen2_retry} not found in {seed_bases_seen}"
+    # (original + 1 retry) with different seed values.
+    # Each tournament attempt runs matches_per_generation=2 matches.
+    # So gen 1 = 2 seeds, gen 2 first attempt = 2 seeds, gen 2 retry = 2 seeds => >= 6 total
+    assert len(seeds_seen) >= 6, f"Expected at least 6 match seeds, got {len(seeds_seen)}: {seeds_seen}"
+    # The gen 2 retry seeds should differ from the gen 2 initial seeds
+    gen2_initial_base = settings.seed_base + (2 * 100)  # attempt=0
+    gen2_retry_base = settings.seed_base + (2 * 100) + 10  # attempt=1
+    assert gen2_initial_base in seeds_seen, f"Gen 2 initial seed {gen2_initial_base} not found in {seeds_seen}"
+    assert gen2_retry_base in seeds_seen, f"Gen 2 retry seed {gen2_retry_base} not found in {seeds_seen}"
 
 
 # ---- Test 3: Retry re-invokes competitor with RETRY ATTEMPT prompt ----
@@ -188,32 +189,41 @@ def test_retry_uses_revised_strategy(tmp_path: Path) -> None:
     runner = _make_runner(settings)
 
     calls: list[dict[str, Any]] = []
-    original_run = runner.tournament.run
+    original_run = runner.executor.run
 
-    def capturing_tournament_run(**kwargs: Any) -> Any:
-        calls.append({"strategy": dict(kwargs["strategy"]), "seed_base": kwargs["seed_base"]})
-        return original_run(**kwargs)
+    def capturing_supervisor_run(scenario: Any, payload: Any) -> Any:
+        calls.append({"strategy": dict(payload.strategy), "seed": payload.seed})
+        return original_run(scenario, payload)
 
-    runner.tournament.run = capturing_tournament_run  # type: ignore[assignment]
+    runner.executor.run = capturing_supervisor_run  # type: ignore[assignment]
 
     runner.run(scenario_name="grid_ctf", generations=2, run_id="strategy_test")
 
-    # With min_delta=0.99 and max_retries=1, each generation gets 2 tournament runs
-    # (initial + 1 retry), so we expect 4 total.
-    assert len(calls) >= 4, (
-        f"Expected at least 4 tournament runs (2 gens x 2 attempts), got {len(calls)}"
+    # With min_delta=0.99, max_retries=1, and matches_per_generation=2:
+    # Gen 1 = 1 attempt x 2 matches = 2 calls (advances from 0.0)
+    # Gen 2 = 2 attempts x 2 matches = 4 calls (initial + retry)
+    # Total >= 6
+    assert len(calls) >= 6, (
+        f"Expected at least 6 supervisor.run calls (2 gens, gen2 retried, 2 matches each), got {len(calls)}"
     )
 
-    # Group by seed_base prefix to identify generation boundaries.
+    # Group by seed range to identify generation boundaries.
     # Gen 1 seeds start at 2000 + 100 = 2100, gen 2 at 2000 + 200 = 2200.
-    gen2_calls = [c for c in calls if c["seed_base"] >= settings.seed_base + 200]
-    assert len(gen2_calls) >= 2, f"Expected at least 2 gen-2 tournament runs, got {len(gen2_calls)}"
+    gen2_calls = [c for c in calls if c["seed"] >= settings.seed_base + 200]
+    assert len(gen2_calls) >= 4, f"Expected at least 4 gen-2 match calls, got {len(gen2_calls)}"
 
-    gen2_initial_strategy = gen2_calls[0]["strategy"]
-    gen2_retry_strategy = gen2_calls[1]["strategy"]
-    assert gen2_initial_strategy != gen2_retry_strategy, (
+    # Gen 2 initial attempt seeds: 2200, 2201; retry attempt seeds: 2210, 2211
+    gen2_initial_strategies = {
+        frozenset(c["strategy"].items()) for c in gen2_calls if c["seed"] < settings.seed_base + 200 + 10
+    }
+    gen2_retry_strategies = {
+        frozenset(c["strategy"].items()) for c in gen2_calls if c["seed"] >= settings.seed_base + 200 + 10
+    }
+    assert len(gen2_initial_strategies) >= 1
+    assert len(gen2_retry_strategies) >= 1
+    assert gen2_initial_strategies != gen2_retry_strategies, (
         f"Gen 2 retry strategy should differ from initial within same generation: "
-        f"{gen2_initial_strategy} vs {gen2_retry_strategy}"
+        f"{gen2_initial_strategies} vs {gen2_retry_strategies}"
     )
 
 

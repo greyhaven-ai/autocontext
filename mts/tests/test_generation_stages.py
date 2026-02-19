@@ -13,7 +13,7 @@ from mts.agents.orchestrator import AgentOrchestrator
 from mts.agents.types import AgentOutputs
 from mts.config.settings import AppSettings
 from mts.execution.supervisor import ExecutionSupervisor
-from mts.execution.tournament import TournamentRunner
+from mts.harness.evaluation.types import EvaluationResult, EvaluationSummary
 from mts.loop.stage_types import GenerationContext, StageResult
 from mts.loop.stages import (
     stage_agent_generation,
@@ -419,7 +419,6 @@ class TestStageTournament:
     ) -> GenerationContext:
         ctx = ctx or _make_tournament_ctx()
         supervisor = _make_inline_supervisor()
-        tournament_runner = TournamentRunner(supervisor=supervisor)
         gate = MagicMock()
         gate.evaluate.return_value = MagicMock(decision=gate_decision, reason=gate_reason)
         events = MagicMock()
@@ -427,7 +426,7 @@ class TestStageTournament:
         artifacts = MagicMock()
         return stage_tournament(
             ctx,
-            tournament_runner=tournament_runner,
+            supervisor=supervisor,
             gate=gate,
             events=events,
             sqlite=sqlite,
@@ -590,26 +589,41 @@ def _make_persistence_ctx(
     outputs.coach_competitor_hints = coach_competitor_hints
     outputs.architect_markdown = "## Architect output"
 
-    # Build mock tournament with 2 match outputs
-    match_result_1 = MagicMock()
-    match_result_1.result.score = 0.75
-    match_result_1.result.passed_validation = True
-    match_result_1.result.validation_errors = []
-    match_result_1.replay.model_dump.return_value = {"scenario": "test", "seed": 1001, "timeline": []}
+    # Build mock execution outputs for backward-compatible access via metadata
+    exec_output_1 = MagicMock()
+    exec_output_1.result.score = 0.75
+    exec_output_1.result.passed_validation = True
+    exec_output_1.result.validation_errors = []
+    exec_output_1.replay.model_dump.return_value = {"scenario": "test", "seed": 1001, "timeline": []}
 
-    match_result_2 = MagicMock()
-    match_result_2.result.score = 0.82
-    match_result_2.result.passed_validation = True
-    match_result_2.result.validation_errors = []
-    match_result_2.replay.model_dump.return_value = {"scenario": "test", "seed": 1002, "timeline": []}
+    exec_output_2 = MagicMock()
+    exec_output_2.result.score = 0.82
+    exec_output_2.result.passed_validation = True
+    exec_output_2.result.validation_errors = []
+    exec_output_2.replay.model_dump.return_value = {"scenario": "test", "seed": 1002, "timeline": []}
 
-    tournament = MagicMock()
-    tournament.mean_score = 0.785
-    tournament.best_score = 0.82
-    tournament.wins = 2
-    tournament.losses = 0
-    tournament.elo_after = 1020.0
-    tournament.outputs = [match_result_1, match_result_2]
+    # Build EvaluationResult objects wrapping the execution outputs
+    eval_result_1 = EvaluationResult(
+        score=0.75,
+        passed=True,
+        errors=[],
+        metadata={"execution_output": exec_output_1},
+    )
+    eval_result_2 = EvaluationResult(
+        score=0.82,
+        passed=True,
+        errors=[],
+        metadata={"execution_output": exec_output_2},
+    )
+
+    tournament = EvaluationSummary(
+        mean_score=0.785,
+        best_score=0.82,
+        wins=2,
+        losses=0,
+        elo_after=1020.0,
+        results=[eval_result_1, eval_result_2],
+    )
 
     strategy = current_strategy or {"aggression": 0.8}
 
@@ -799,7 +813,6 @@ class TestStageTournamentAttempt:
         """Verify ctx.attempt is populated as an int >= 0 after stage_tournament."""
         ctx = _make_tournament_ctx()
         supervisor = _make_inline_supervisor()
-        tournament_runner = TournamentRunner(supervisor=supervisor)
         gate = MagicMock()
         gate.evaluate.return_value = MagicMock(decision="advance", reason="improved")
         events = MagicMock()
@@ -808,7 +821,7 @@ class TestStageTournamentAttempt:
 
         result = stage_tournament(
             ctx,
-            tournament_runner=tournament_runner,
+            supervisor=supervisor,
             gate=gate,
             events=events,
             sqlite=sqlite,

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from mts.agents.orchestrator import AgentOrchestrator
     from mts.backpressure import BackpressureGate
     from mts.backpressure.trend_gate import TrendAwareGate
-    from mts.execution.tournament import TournamentRunner
+    from mts.execution.supervisor import ExecutionSupervisor
     from mts.harness.core.controller import LoopController
     from mts.knowledge.trajectory import ScoreTrajectoryBuilder
     from mts.loop.events import EventStreamEmitter
@@ -32,7 +32,7 @@ class GenerationPipeline:
         self,
         *,
         orchestrator: AgentOrchestrator,
-        tournament_runner: TournamentRunner,
+        supervisor: ExecutionSupervisor,
         gate: BackpressureGate | TrendAwareGate,
         artifacts: ArtifactStore,
         sqlite: SQLiteStore,
@@ -44,7 +44,7 @@ class GenerationPipeline:
         chat_with_agent_fn: Callable[[str, str, object, str], str] | None = None,
     ) -> None:
         self._orchestrator = orchestrator
-        self._tournament_runner = tournament_runner
+        self._supervisor = supervisor
         self._gate = gate
         self._artifacts = artifacts
         self._sqlite = sqlite
@@ -99,7 +99,7 @@ class GenerationPipeline:
         # Stage 3: Tournament + gate
         ctx = stage_tournament(
             ctx,
-            tournament_runner=self._tournament_runner,
+            supervisor=self._supervisor,
             gate=self._gate,
             events=self._events,
             sqlite=self._sqlite,

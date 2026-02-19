@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from mts.agents.types import AgentOutputs
     from mts.config.settings import AppSettings
-    from mts.execution.tournament import TournamentSummary
+    from mts.harness.evaluation.types import EvaluationSummary
     from mts.prompts.templates import PromptBundle
     from mts.scenarios.base import ScenarioInterface
 
@@ -35,7 +35,7 @@ class GenerationContext:
     # Stage outputs (populated progressively by stages)
     prompts: PromptBundle | None = None
     outputs: AgentOutputs | None = None
-    tournament: TournamentSummary | None = None
+    tournament: EvaluationSummary | None = None
     gate_decision: str = ""
     gate_delta: float = 0.0
     current_strategy: dict[str, Any] = field(default_factory=dict)
