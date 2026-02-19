@@ -72,10 +72,6 @@ class ArtifactStore:
         (self.knowledge_root / scenario_name).mkdir(parents=True, exist_ok=True)
         self._playbook_store(scenario_name).write("playbook.md", content.strip() + "\n")
 
-    def _prune_playbook_versions(self, versions_dir: Path) -> None:
-        """No-op: pruning is now handled internally by VersionedFileStore."""
-        pass
-
     def rollback_playbook(self, scenario_name: str) -> bool:
         """Restore most recent archived version as current playbook."""
         return self._playbook_store(scenario_name).rollback("playbook.md")
