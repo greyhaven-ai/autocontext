@@ -72,18 +72,6 @@ class ArtifactStore:
         (self.knowledge_root / scenario_name).mkdir(parents=True, exist_ok=True)
         self._playbook_store(scenario_name).write("playbook.md", content.strip() + "\n")
 
-    def rollback_playbook(self, scenario_name: str) -> bool:
-        """Restore most recent archived version as current playbook."""
-        return self._playbook_store(scenario_name).rollback("playbook.md")
-
-    def playbook_version_count(self, scenario_name: str) -> int:
-        """Return number of archived playbook versions."""
-        return self._playbook_store(scenario_name).version_count("playbook.md")
-
-    def read_playbook_version(self, scenario_name: str, version_num: int) -> str:
-        """Read a specific playbook version by number."""
-        return self._playbook_store(scenario_name).read_version("playbook.md", version_num)
-
     def append_coach_history(self, scenario_name: str, generation_index: int, raw_content: str) -> None:
         """Append raw coach output to history file for audit trail."""
         history_path = self.knowledge_root / scenario_name / "coach_history.md"
