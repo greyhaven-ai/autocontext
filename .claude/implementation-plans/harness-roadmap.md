@@ -26,50 +26,36 @@ Decomposed the 580-line `GenerationRunner.run()` monolith:
 - `stage_types.py` — GenerationContext + StageResult
 - `stages.py` — 5 stage functions (knowledge_setup, agent_generation, tournament, curator_gate, persistence)
 - `generation_pipeline.py` — orchestrator sequencing all stages
-- `eval_adapter.py` — TournamentEvalAdapter bridging EvaluationRunner → TournamentSummary
 - Feature-gated behind `MTS_USE_GENERATION_PIPELINE=false`
 
----
+### Phase 5: Pipeline Parity + Monolith Deletion (593 tests → commit caddf0e)
+Closed 6 pipeline parity gaps, flipped flag to default=True, deleted ~364 lines of monolithic code:
+- Controller chat checkpoint, gate override, PrimeIntellect warm provisioning
+- `agents_started` + `role_completed` events, `created_tools` payload, rollback retry_note
+- Feature flag removed entirely — pipeline is sole execution path
 
-## Direction 1: Close Pipeline Gaps + Delete Monolith — **HIGH PRIORITY**
+### Direction 2: ArtifactStore Dead Code Cleanup (580 tests → commit 8113932)
+- Deleted `_prune_playbook_versions` no-op (0 callers)
+- Deleted 3 dead facade methods: `rollback_playbook`, `playbook_version_count`, `read_playbook_version` (0 production callers)
+- Fixed `restore_knowledge_snapshot` versioning bypass — now uses `write_playbook()` for proper archiving
 
-**Status**: Planning (see `2026-02-18-phase5-pipeline-parity.md`)
-
-The pipeline path silently drops 5 behaviors present in the monolith:
-1. **Controller chat checkpoint** — interactive agent chat between agent gen and tournament
-2. **Controller gate override** — operators can force advance/rollback after tournament
-3. **PrimeIntellect warm provisioning** — remote executor pre-warm before tournament
-4. **`agents_started` + `role_completed` events** — dashboard/WebSocket consumers
-5. **`created_tools` in `generation_completed` event** — event payload mismatch
-6. **Rollback retry_note** — `attempt` count missing from rollback skill lesson
-
-Once fixed: flip the flag to default=True, validate, then delete ~355 lines of duplicate monolithic code.
-
----
-
-## Direction 2: ArtifactStore Dead Code Cleanup — **LOW PRIORITY**
-
-**Status**: Deferred (near-zero duplication remaining)
-
-The ArtifactStore → VersionedFileStore delegation was already completed in Phase 3.
-Remaining cleanup:
-- Delete `_prune_playbook_versions` no-op (3 lines, 0 callers)
-- Consider removing unused facade methods: `rollback_playbook`, `playbook_version_count`, `read_playbook_version` (0 production callers, ~14 test call sites)
-- Fix `restore_knowledge_snapshot` to go through `write_playbook()` for versioning consistency
-
-**Estimated effort**: 30 minutes. Can be done opportunistically.
+### Direction 3: TournamentRunner → EvaluationRunner (575 tests → commit 10d3838)
+Replaced `TournamentRunner` with `EvaluationRunner` as the production execution path:
+- Fixed ScenarioEvaluator to preserve `ExecutionOutput` in `EvaluationResult.metadata["execution_output"]`
+- Refactored `stage_tournament` to use `ScenarioEvaluator` + `EvaluationRunner` directly
+- Eliminated the double-execution bug in `TournamentEvalAdapter` (ran 2N matches instead of N)
+- Deleted `TournamentRunner` (63 lines), `TournamentEvalAdapter` (70 lines), and adapter tests (248 lines)
+- All tournament scoring now flows through the domain-agnostic harness `EvaluationRunner`
 
 ---
 
-## Direction 3: TournamentRunner → EvaluationRunner — **NOT YET**
+## All Planned Directions Complete
 
-**Status**: Blocked on two prerequisite fixes
-
-Three blockers prevent clean replacement:
-1. **ScenarioEvaluator replay type mismatch** — stores `dict` via `.model_dump()`, but `replay_to_narrative()` needs typed model. Fix: preserve typed replay in `metadata["replay_object"]`.
-2. **TournamentEvalAdapter double-execution bug** — runs 2N matches (once for ExecutionOutputs, once via EvaluationRunner). Fix: rewrite adapter to collect outputs in a single pass.
-3. **9 files would change** with moderate blast radius.
-
-TournamentRunner is only 64 lines with 1 production instantiation. Cost of keeping it is near-zero.
-
-**Recommended sequence**: Fix bugs #1 and #2 as isolated changes (unblocks eventual migration), then do the full replacement in a future phase.
+The harness extraction is fully done. All MTS-domain execution flows through harness abstractions:
+- **Scoring**: `harness/scoring/elo.py`
+- **Evaluation**: `harness/evaluation/runner.py` + `ScenarioEvaluator` adapter
+- **Output parsing**: `harness/core/output_parser.py`
+- **Versioned storage**: `harness/storage/versioned_store.py`
+- **Orchestration**: `harness/orchestration/engine.py` + `RoleDAG`
+- **Pipeline control**: `harness/pipeline/gate.py`, `trend_gate.py`, `retry_context.py`
+- **REPL**: `harness/repl/session.py`, `worker.py`
