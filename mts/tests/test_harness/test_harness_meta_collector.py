@@ -105,8 +105,6 @@ def test_collector_thread_safe() -> None:
     for t in threads:
         t.join()
 
-    # 50 observations across 10 generations
-    total = sum(len(c.for_role("competitor")) for _ in [None])
     # All observations are for "competitor" (default in _metric)
     assert len(c.for_role("competitor")) == 50
     assert c.generation_count() == 10

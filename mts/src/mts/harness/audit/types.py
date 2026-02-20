@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 
-class AuditCategory(str, enum.Enum):
+class AuditCategory(enum.StrEnum):
     LLM_CALL = "llm_call"
     GATE_DECISION = "gate_decision"
     COST_EVENT = "cost_event"

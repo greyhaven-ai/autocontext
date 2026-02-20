@@ -74,7 +74,10 @@ def test_advisor_no_downgrade_when_advance_rate_low() -> None:
         current_config={"model_competitor": "claude-opus-4-6"},
     )
     recs = advisor.recommend()
-    downgrade_recs = [r for r in recs if r.parameter == "model" and "cheaper" in r.rationale.lower() or "cheaper model" in r.rationale.lower()]
+    downgrade_recs = [
+        r for r in recs
+        if r.parameter == "model" and "cheaper" in r.rationale.lower()
+    ]
     # Should not have a downgrade recommendation
     assert len(downgrade_recs) == 0
 
