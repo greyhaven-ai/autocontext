@@ -43,6 +43,42 @@ class TestGenerationPipelineIntegration:
         assert summary.generations_executed == 2
 
 
+class TestPipelineMetaOptimizer:
+    def test_pipeline_accepts_meta_optimizer(self) -> None:
+        """GenerationPipeline constructor accepts an optional meta_optimizer parameter."""
+        from mts.loop.generation_pipeline import GenerationPipeline
+
+        meta = MagicMock()
+        pipeline = GenerationPipeline(
+            orchestrator=MagicMock(),
+            supervisor=MagicMock(),
+            gate=MagicMock(),
+            artifacts=MagicMock(),
+            sqlite=MagicMock(),
+            trajectory_builder=MagicMock(),
+            events=MagicMock(),
+            curator=None,
+            meta_optimizer=meta,
+        )
+        assert pipeline._meta_optimizer is meta
+
+    def test_pipeline_meta_optimizer_defaults_none(self) -> None:
+        """MetaOptimizer defaults to None when not provided."""
+        from mts.loop.generation_pipeline import GenerationPipeline
+
+        pipeline = GenerationPipeline(
+            orchestrator=MagicMock(),
+            supervisor=MagicMock(),
+            gate=MagicMock(),
+            artifacts=MagicMock(),
+            sqlite=MagicMock(),
+            trajectory_builder=MagicMock(),
+            events=MagicMock(),
+            curator=None,
+        )
+        assert pipeline._meta_optimizer is None
+
+
 class TestPipelineControllerCheckpoints:
     def test_pipeline_accepts_controller(self) -> None:
         """GenerationPipeline constructor accepts an optional controller parameter."""

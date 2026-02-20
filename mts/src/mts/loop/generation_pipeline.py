@@ -1,6 +1,7 @@
 """GenerationPipeline — composed stage orchestrator for the generation loop."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -20,9 +21,12 @@ if TYPE_CHECKING:
     from mts.backpressure.trend_gate import TrendAwareGate
     from mts.execution.supervisor import ExecutionSupervisor
     from mts.harness.core.controller import LoopController
+    from mts.harness.meta_optimizer import MetaOptimizer
     from mts.knowledge.trajectory import ScoreTrajectoryBuilder
     from mts.loop.events import EventStreamEmitter
     from mts.storage import ArtifactStore, SQLiteStore
+
+LOGGER = logging.getLogger(__name__)
 
 
 class GenerationPipeline:
@@ -42,6 +46,7 @@ class GenerationPipeline:
         controller: LoopController | None = None,
         warm_provision_fn: Callable[..., dict] | None = None,
         chat_with_agent_fn: Callable[[str, str, object, str], str] | None = None,
+        meta_optimizer: MetaOptimizer | None = None,
     ) -> None:
         self._orchestrator = orchestrator
         self._supervisor = supervisor
@@ -54,6 +59,7 @@ class GenerationPipeline:
         self._controller = controller
         self._warm_provision_fn = warm_provision_fn
         self._chat_with_agent_fn = chat_with_agent_fn
+        self._meta_optimizer = meta_optimizer
 
     def run_generation(self, ctx: GenerationContext) -> GenerationContext:
         """Execute all stages for a single generation."""
@@ -88,6 +94,14 @@ class GenerationPipeline:
             events=self._events,
         )
 
+        # Meta-optimization: record LLM calls
+        if self._meta_optimizer is not None and ctx.outputs is not None:
+            try:
+                for role_exec in ctx.outputs.role_executions:
+                    self._meta_optimizer.record_llm_call(role_exec.role, role_exec.usage, ctx.generation)
+            except Exception:
+                LOGGER.debug("meta_optimizer.record_llm_call failed", exc_info=True)
+
         # Hook: Controller chat checkpoint
         if self._controller is not None and self._chat_with_agent_fn is not None:
             chat_request = self._controller.poll_chat()
@@ -113,6 +127,15 @@ class GenerationPipeline:
             if override:
                 ctx.gate_decision = override
 
+        # Meta-optimization: record gate decision
+        if self._meta_optimizer is not None:
+            try:
+                self._meta_optimizer.record_gate_decision(
+                    ctx.gate_decision, ctx.gate_delta, ctx.generation,
+                )
+            except Exception:
+                LOGGER.debug("meta_optimizer.record_gate_decision failed", exc_info=True)
+
         # Stage 4: Curator quality gate
         ctx = stage_curator_gate(
             ctx,
@@ -132,5 +155,18 @@ class GenerationPipeline:
             events=self._events,
             curator=self._curator,
         )
+
+        # Meta-optimization: record full generation metrics
+        if self._meta_optimizer is not None and ctx.outputs is not None:
+            try:
+                role_usages = {role_exec.role: role_exec.usage for role_exec in ctx.outputs.role_executions}
+                self._meta_optimizer.record_generation(
+                    generation=ctx.generation,
+                    role_usages=role_usages,
+                    gate_decision=ctx.gate_decision,
+                    score_delta=ctx.gate_delta,
+                )
+            except Exception:
+                LOGGER.debug("meta_optimizer.record_generation failed", exc_info=True)
 
         return ctx
