@@ -58,6 +58,14 @@ class AppSettings(BaseModel):
     agent_sdk_connect_mcp: bool = Field(default=False)
     sandbox_max_generations: int = Field(default=10, ge=1)
     use_pipeline_engine: bool = Field(default=False)
+    # Meta-optimization
+    audit_enabled: bool = Field(default=True)
+    audit_log_path: Path = Field(default=Path("runs/audit.ndjson"))
+    cost_tracking_enabled: bool = Field(default=True)
+    cost_budget_limit: float | None = Field(default=None)
+    meta_profiling_enabled: bool = Field(default=False)
+    meta_profile_path: Path = Field(default=Path("runs/meta_profiles.json"))
+    meta_min_observations: int = Field(default=5, ge=1)
 
 
 def load_settings() -> AppSettings:
@@ -113,4 +121,11 @@ def load_settings() -> AppSettings:
         agent_sdk_connect_mcp=os.getenv("MTS_AGENT_SDK_CONNECT_MCP", "false").lower() == "true",
         sandbox_max_generations=int(os.getenv("MTS_SANDBOX_MAX_GENERATIONS", "10")),
         use_pipeline_engine=os.getenv("MTS_USE_PIPELINE_ENGINE", "false").lower() == "true",
+        audit_enabled=os.getenv("MTS_AUDIT_ENABLED", "true").lower() == "true",
+        audit_log_path=Path(os.getenv("MTS_AUDIT_LOG_PATH", "runs/audit.ndjson")),
+        cost_tracking_enabled=os.getenv("MTS_COST_TRACKING_ENABLED", "true").lower() == "true",
+        cost_budget_limit=float(os.getenv("MTS_COST_BUDGET_LIMIT", "0")) or None,
+        meta_profiling_enabled=os.getenv("MTS_META_PROFILING_ENABLED", "false").lower() == "true",
+        meta_profile_path=Path(os.getenv("MTS_META_PROFILE_PATH", "runs/meta_profiles.json")),
+        meta_min_observations=int(os.getenv("MTS_META_MIN_OBSERVATIONS", "5")),
     )
