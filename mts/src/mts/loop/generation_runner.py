@@ -10,6 +10,7 @@ from mts.backpressure import BackpressureGate, TrendAwareGate
 from mts.config import AppSettings
 from mts.execution import ExecutionSupervisor
 from mts.execution.executors import LocalExecutor, PrimeIntellectExecutor
+from mts.harness.meta_optimizer import MetaOptimizer
 from mts.integrations.primeintellect import PrimeIntellectClient
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
 from mts.loop.controller import LoopController
@@ -77,6 +78,7 @@ class GenerationRunner:
             self.executor = ExecutionSupervisor(executor=LocalExecutor())
         self.events = EventStreamEmitter(settings.event_stream_path)
         self.controller: LoopController | None = None
+        self._meta_optimizer = MetaOptimizer.from_settings(settings)
 
     def migrate(self, migrations_dir: Path) -> None:
         self.sqlite.migrate(migrations_dir)
@@ -201,6 +203,7 @@ class GenerationRunner:
                     controller=self.controller,
                     warm_provision_fn=warm_fn,
                     chat_with_agent_fn=self._chat_with_agent,
+                    meta_optimizer=self._meta_optimizer,
                 )
                 ctx = GenerationContext(
                     run_id=active_run_id,
