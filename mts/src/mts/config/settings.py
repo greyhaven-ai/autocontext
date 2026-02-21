@@ -76,6 +76,14 @@ class AppSettings(BaseModel):
     heartbeat_stall_timeout_seconds: float = Field(default=300.0, ge=10.0)
     heartbeat_escalation_interval_seconds: float = Field(default=60.0, ge=10.0)
     heartbeat_max_restart_attempts: int = Field(default=2, ge=0)
+    # Phase 8: Trust layer
+    trust_enabled: bool = Field(default=False)
+    trust_min_observations: int = Field(default=5, ge=1)
+    trust_confidence_saturation: int = Field(default=20, ge=5)
+    trust_decay_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+    # Phase 9: Agent identity
+    identity_enabled: bool = Field(default=False)
+    identity_dir: Path = Field(default=Path("knowledge/_identities"))
 
 
 def load_settings() -> AppSettings:
@@ -146,4 +154,10 @@ def load_settings() -> AppSettings:
         heartbeat_stall_timeout_seconds=float(os.getenv("MTS_HEARTBEAT_STALL_TIMEOUT_SECONDS", "300.0")),
         heartbeat_escalation_interval_seconds=float(os.getenv("MTS_HEARTBEAT_ESCALATION_INTERVAL_SECONDS", "60.0")),
         heartbeat_max_restart_attempts=int(os.getenv("MTS_HEARTBEAT_MAX_RESTART_ATTEMPTS", "2")),
+        trust_enabled=os.getenv("MTS_TRUST_ENABLED", "false").lower() == "true",
+        trust_min_observations=int(os.getenv("MTS_TRUST_MIN_OBSERVATIONS", "5")),
+        trust_confidence_saturation=int(os.getenv("MTS_TRUST_CONFIDENCE_SATURATION", "20")),
+        trust_decay_rate=float(os.getenv("MTS_TRUST_DECAY_RATE", "0.05")),
+        identity_enabled=os.getenv("MTS_IDENTITY_ENABLED", "false").lower() == "true",
+        identity_dir=Path(os.getenv("MTS_IDENTITY_DIR", "knowledge/_identities")),
     )
