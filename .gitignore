@@ -22,6 +22,9 @@ node_modules/
 # OS/editor
 .DS_Store
 
+# Worktrees
+.worktrees/
+
 # Runtime outputs
 runs/*
 !runs/.gitkeep
