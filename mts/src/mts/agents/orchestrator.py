@@ -226,7 +226,12 @@ class AgentOrchestrator:
         strategy: dict[str, Any],
         architect_prompt: str,
     ) -> tuple[RoleExecution, RoleExecution]:
-        """Run Analyst and Architect via RLM sessions."""
+        """Run Analyst and Architect via RLM sessions.
+
+        Selects worker class and prompt templates based on settings.rlm_backend:
+        - 'exec': ReplWorker with exec-based REPL (variables persist directly)
+        - 'monty': MontyReplWorker with Monty sandbox (state["key"] persistence)
+        """
         from mts.rlm.session import RlmSession, make_llm_batch
 
         assert self._rlm_loader is not None

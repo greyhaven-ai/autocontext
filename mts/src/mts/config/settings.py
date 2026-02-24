@@ -49,7 +49,7 @@ class AppSettings(BaseModel):
     rlm_max_stdout_chars: int = Field(default=8192, ge=1024)
     rlm_sub_model: str = Field(default="claude-haiku-4-5-20251001")
     rlm_code_timeout_seconds: float = Field(default=10.0, ge=1.0)
-    rlm_backend: str = Field(default="exec")
+    rlm_backend: str = Field(default="exec", description="RLM REPL backend: 'exec' (default) or 'monty' (Monty sandbox)")
     playbook_max_versions: int = Field(default=5, ge=1)
     cross_run_inheritance: bool = Field(default=True)
     model_curator: str = Field(default="claude-opus-4-6")
@@ -60,10 +60,16 @@ class AppSettings(BaseModel):
     sandbox_max_generations: int = Field(default=10, ge=1)
     use_pipeline_engine: bool = Field(default=False)
     # Monty sandbox executor
-    monty_max_execution_time_seconds: float = Field(default=30.0, ge=1.0)
-    monty_max_external_calls: int = Field(default=100, ge=10)
+    monty_max_execution_time_seconds: float = Field(
+        default=30.0, ge=1.0, description="Max wall-clock seconds for Monty sandbox execution",
+    )
+    monty_max_external_calls: int = Field(
+        default=100, ge=10, description="Max external function calls per Monty execution",
+    )
     # Code strategies (Phase 2)
-    code_strategies_enabled: bool = Field(default=False)
+    code_strategies_enabled: bool = Field(
+        default=False, description="Competitor emits Python code instead of JSON params",
+    )
     # Meta-optimization
     audit_enabled: bool = Field(default=True)
     audit_log_path: Path = Field(default=Path("runs/audit.ndjson"))
