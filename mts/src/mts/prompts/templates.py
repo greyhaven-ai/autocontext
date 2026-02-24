@@ -115,3 +115,29 @@ def build_prompt_bundle(
             " You may CREATE new tools or UPDATE existing tools by using the same name."
         ),
     )
+
+
+def code_strategy_competitor_suffix(strategy_interface: str) -> str:
+    """Return competitor prompt suffix for code strategy mode."""
+    return (
+        "\n\n--- CODE STRATEGY MODE ---\n"
+        "Instead of returning parameter values, write a Python function body that "
+        "computes actions dynamically based on the game state.\n\n"
+        "Available external functions you can call:\n"
+        "- `get_observation(state)` \u2192 dict with keys: narrative, state, constraints\n"
+        "- `initial_state(seed)` \u2192 dict with the initial game state\n\n"
+        "Your code receives two variables:\n"
+        "- `state`: the current game state dict\n"
+        "- `observation`: the observation dict from get_observation(state)\n\n"
+        f"Strategy interface for reference:\n{strategy_interface}\n\n"
+        "Your code MUST assign to `result` \u2014 a dict matching the strategy interface.\n\n"
+        "Wrap your code in a ```python code fence.\n"
+        "Example:\n"
+        "```python\n"
+        "obs = observation\n"
+        "if obs['state'].get('resource_density', 0) > 0.5:\n"
+        "    result = {'aggression': 0.8, 'defense': 0.4}\n"
+        "else:\n"
+        "    result = {'aggression': 0.5, 'defense': 0.7}\n"
+        "```"
+    )

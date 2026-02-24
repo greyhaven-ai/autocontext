@@ -12,8 +12,7 @@ from typing import Any
 
 from mts.harness.core.llm_client import LanguageModelClient
 from mts.harness.core.types import RoleExecution, RoleUsage
-from mts.harness.repl.types import ExecutionRecord, ReplCommand
-from mts.harness.repl.worker import ReplWorker
+from mts.harness.repl.types import ExecutionRecord, ReplCommand, ReplWorkerProtocol
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ class RlmSession:
     def __init__(
         self,
         client: LanguageModelClient,
-        worker: ReplWorker,
+        worker: ReplWorkerProtocol,
         role: str,
         model: str,
         system_prompt: str,

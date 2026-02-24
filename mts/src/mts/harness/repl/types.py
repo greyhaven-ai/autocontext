@@ -3,7 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class ReplWorkerProtocol(Protocol):
+    """Duck-typed protocol for REPL workers (exec-based and Monty-based)."""
+
+    @property
+    def namespace(self) -> dict[str, Any]: ...
+
+    def run_code(self, command: ReplCommand) -> ReplResult: ...
 
 
 @dataclass(slots=True)

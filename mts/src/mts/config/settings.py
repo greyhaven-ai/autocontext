@@ -49,6 +49,7 @@ class AppSettings(BaseModel):
     rlm_max_stdout_chars: int = Field(default=8192, ge=1024)
     rlm_sub_model: str = Field(default="claude-haiku-4-5-20251001")
     rlm_code_timeout_seconds: float = Field(default=10.0, ge=1.0)
+    rlm_backend: str = Field(default="exec")
     playbook_max_versions: int = Field(default=5, ge=1)
     cross_run_inheritance: bool = Field(default=True)
     model_curator: str = Field(default="claude-opus-4-6")
@@ -58,6 +59,11 @@ class AppSettings(BaseModel):
     agent_sdk_connect_mcp: bool = Field(default=False)
     sandbox_max_generations: int = Field(default=10, ge=1)
     use_pipeline_engine: bool = Field(default=False)
+    # Monty sandbox executor
+    monty_max_execution_time_seconds: float = Field(default=30.0, ge=1.0)
+    monty_max_external_calls: int = Field(default=100, ge=10)
+    # Code strategies (Phase 2)
+    code_strategies_enabled: bool = Field(default=False)
     # Meta-optimization
     audit_enabled: bool = Field(default=True)
     audit_log_path: Path = Field(default=Path("runs/audit.ndjson"))
@@ -130,6 +136,7 @@ def load_settings() -> AppSettings:
         rlm_max_stdout_chars=int(os.getenv("MTS_RLM_MAX_STDOUT_CHARS", "8192")),
         rlm_sub_model=os.getenv("MTS_RLM_SUB_MODEL", "claude-haiku-4-5-20251001"),
         rlm_code_timeout_seconds=float(os.getenv("MTS_RLM_CODE_TIMEOUT_SECONDS", "10.0")),
+        rlm_backend=os.getenv("MTS_RLM_BACKEND", "exec"),
         playbook_max_versions=int(os.getenv("MTS_PLAYBOOK_MAX_VERSIONS", "5")),
         cross_run_inheritance=os.getenv("MTS_CROSS_RUN_INHERITANCE", "true").lower() == "true",
         model_curator=os.getenv("MTS_MODEL_CURATOR", "claude-opus-4-6"),
@@ -139,6 +146,9 @@ def load_settings() -> AppSettings:
         agent_sdk_connect_mcp=os.getenv("MTS_AGENT_SDK_CONNECT_MCP", "false").lower() == "true",
         sandbox_max_generations=int(os.getenv("MTS_SANDBOX_MAX_GENERATIONS", "10")),
         use_pipeline_engine=os.getenv("MTS_USE_PIPELINE_ENGINE", "false").lower() == "true",
+        monty_max_execution_time_seconds=float(os.getenv("MTS_MONTY_MAX_EXECUTION_TIME_SECONDS", "30.0")),
+        monty_max_external_calls=int(os.getenv("MTS_MONTY_MAX_EXTERNAL_CALLS", "100")),
+        code_strategies_enabled=os.getenv("MTS_CODE_STRATEGIES_ENABLED", "false").lower() == "true",
         audit_enabled=os.getenv("MTS_AUDIT_ENABLED", "true").lower() == "true",
         audit_log_path=Path(os.getenv("MTS_AUDIT_LOG_PATH", "runs/audit.ndjson")),
         cost_tracking_enabled=os.getenv("MTS_COST_TRACKING_ENABLED", "true").lower() == "true",

@@ -103,10 +103,11 @@ def stage_agent_generation(
         on_role_event=on_role_event,
     )
 
-    state = ctx.scenario.initial_state(seed=ctx.settings.seed_base + ctx.generation)
-    valid, reason = ctx.scenario.validate_actions(state, "challenger", outputs.strategy)
-    if not valid:
-        raise ValueError(f"competitor strategy validation failed: {reason}")
+    if "__code__" not in outputs.strategy:
+        state = ctx.scenario.initial_state(seed=ctx.settings.seed_base + ctx.generation)
+        valid, reason = ctx.scenario.validate_actions(state, "challenger", outputs.strategy)
+        if not valid:
+            raise ValueError(f"competitor strategy validation failed: {reason}")
 
     sqlite.append_agent_output(ctx.run_id, ctx.generation, "competitor", json.dumps(outputs.strategy, sort_keys=True))
     sqlite.append_agent_output(ctx.run_id, ctx.generation, "analyst", outputs.analysis_markdown)
@@ -230,20 +231,35 @@ def stage_tournament(
                 break
             # Retry learning: re-invoke competitor with failure context
             if agents is not None and ctx.prompts is not None:
+                is_code_strategy = "__code__" in current_strategy
                 retry_prompt = (
                     ctx.prompts.competitor
                     + f"\n\n--- RETRY ATTEMPT {attempt} ---\n"
                     f"Your previous strategy scored {tournament.best_score:.4f} "
                     f"but needed delta >= {settings.backpressure_min_delta} over {ctx.previous_best:.4f}.\n"
-                    f"Previous strategy: {json.dumps(current_strategy, sort_keys=True)}\n"
-                    f"Adjust your strategy to improve. Do not repeat the same approach.\n"
                 )
+                if is_code_strategy:
+                    retry_prompt += "Adjust your code to improve. Do not repeat the same approach.\n"
+                    if settings.code_strategies_enabled:
+                        from mts.prompts.templates import code_strategy_competitor_suffix
+                        retry_prompt += code_strategy_competitor_suffix(ctx.strategy_interface)
+                else:
+                    retry_prompt += (
+                        f"Previous strategy: {json.dumps(current_strategy, sort_keys=True)}\n"
+                        f"Adjust your strategy to improve. Do not repeat the same approach.\n"
+                    )
                 try:
                     raw_text, _ = agents.competitor.run(retry_prompt, tool_context=ctx.tool_context)
-                    revised_strategy, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
-                    state = scenario.initial_state(seed=settings.seed_base + ctx.generation)
-                    valid, reason = scenario.validate_actions(state, "challenger", revised_strategy)
-                    if valid:
+                    if is_code_strategy:
+                        revised_strategy, _ = agents.translator.translate_code(raw_text)
+                    else:
+                        revised_strategy, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
+                    if "__code__" not in revised_strategy:
+                        state = scenario.initial_state(seed=settings.seed_base + ctx.generation)
+                        valid, reason = scenario.validate_actions(state, "challenger", revised_strategy)
+                        if valid:
+                            current_strategy = revised_strategy
+                    else:
                         current_strategy = revised_strategy
                 except Exception:
                     pass  # Fall back to current strategy

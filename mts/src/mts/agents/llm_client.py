@@ -138,6 +138,9 @@ class DeterministicDevClient(LanguageModelClient):
         # --- Scenario designer role ---
         if "scenario designer" in prompt_lower or "scenariospec" in prompt_lower:
             text = self._scenario_designer_response()
+        # --- Code strategy competitor role ---
+        elif "code strategy mode" in prompt_lower:
+            text = self._code_strategy_response(prompt_lower)
         # --- Translator role: extract JSON from competitor narrative ---
         elif "extract the strategy" in prompt_lower:
             text = self._translator_response(prompt_lower)
@@ -303,6 +306,34 @@ class DeterministicDevClient(LanguageModelClient):
             "<!-- SCENARIO_SPEC_START -->\n"
             f"{json.dumps(spec, indent=2)}\n"
             "<!-- SCENARIO_SPEC_END -->"
+        )
+
+    def _code_strategy_response(self, prompt_lower: str) -> str:
+        """Return a code strategy wrapped in python fences."""
+        if self._is_othello(prompt_lower):
+            return (
+                "Based on the observation, I'll dynamically weight the parameters:\n\n"
+                "```python\n"
+                "obs = observation\n"
+                "density = obs['state'].get('resource_density', 0.5)\n"
+                "result = {\n"
+                "    'mobility_weight': 0.55 + density * 0.1,\n"
+                "    'corner_weight': 0.62,\n"
+                "    'stability_weight': 0.52 + (1.0 - density) * 0.1,\n"
+                "}\n"
+                "```"
+            )
+        return (
+            "I'll adapt my strategy based on the game state:\n\n"
+            "```python\n"
+            "obs = observation\n"
+            "density = obs['state'].get('resource_density', 0.5)\n"
+            "result = {\n"
+            "    'aggression': 0.58 + density * 0.1,\n"
+            "    'defense': 0.57 - density * 0.05,\n"
+            "    'path_bias': 0.54,\n"
+            "}\n"
+            "```"
         )
 
     @staticmethod

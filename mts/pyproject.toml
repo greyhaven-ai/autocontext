@@ -24,7 +24,8 @@ dependencies = [
 [project.optional-dependencies]
 mcp = ["mcp>=1.0.0"]
 agent-sdk = ["claude-agent-sdk>=0.1.0"]
-all = ["mts-control-plane[mcp,agent-sdk]"]
+monty = ["pydantic-monty>=0.0.7"]
+all = ["mts-control-plane[mcp,agent-sdk,monty]"]
 
 [dependency-groups]
 dev = [
@@ -43,6 +44,9 @@ packages = ["src/mts"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --disable-warnings"
+markers = [
+    "monty: tests requiring pydantic-monty to be installed",
+]
 
 [tool.ruff]
 line-length = 130

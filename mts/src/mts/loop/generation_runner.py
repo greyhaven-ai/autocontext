@@ -54,24 +54,33 @@ class GenerationRunner:
             )
         else:
             self.gate = BackpressureGate(min_delta=settings.backpressure_min_delta)
-        self.remote = PrimeIntellectClient(
-            api_key=settings.primeintellect_api_key or "",
-            docker_image=settings.primeintellect_docker_image,
-            cpu_cores=settings.primeintellect_cpu_cores,
-            memory_gb=settings.primeintellect_memory_gb,
-            disk_size_gb=settings.primeintellect_disk_size_gb,
-            timeout_minutes=settings.primeintellect_timeout_minutes,
-            max_wait_attempts=settings.primeintellect_wait_attempts,
-            allow_fallback=settings.allow_primeintellect_fallback,
-        )
+        self.remote: PrimeIntellectClient | None = None
         if settings.executor_mode == "primeintellect":
             if not settings.primeintellect_api_key:
                 raise ValueError("MTS_PRIMEINTELLECT_API_KEY is required for primeintellect executor mode")
+            self.remote = PrimeIntellectClient(
+                api_key=settings.primeintellect_api_key or "",
+                docker_image=settings.primeintellect_docker_image,
+                cpu_cores=settings.primeintellect_cpu_cores,
+                memory_gb=settings.primeintellect_memory_gb,
+                disk_size_gb=settings.primeintellect_disk_size_gb,
+                timeout_minutes=settings.primeintellect_timeout_minutes,
+                max_wait_attempts=settings.primeintellect_wait_attempts,
+                allow_fallback=settings.allow_primeintellect_fallback,
+            )
             self.executor = ExecutionSupervisor(
                 executor=PrimeIntellectExecutor(
                     self.remote,
                     max_retries=settings.primeintellect_max_retries,
                     backoff_seconds=settings.primeintellect_backoff_seconds,
+                )
+            )
+        elif settings.executor_mode == "monty":
+            from mts.execution.executors.monty import MontyExecutor
+            self.executor = ExecutionSupervisor(
+                executor=MontyExecutor(
+                    max_execution_time_seconds=settings.monty_max_execution_time_seconds,
+                    max_external_calls=settings.monty_max_external_calls,
                 )
             )
         else:
@@ -182,8 +191,9 @@ class GenerationRunner:
                 from mts.loop.stage_types import GenerationContext
 
                 warm_fn = None
-                if self.settings.executor_mode == "primeintellect":
+                if self.settings.executor_mode == "primeintellect" and self.remote is not None:
                     def _warm(ctx_arg: object, _gen: int = generation) -> dict:
+                        assert self.remote is not None
                         return self.remote.warm_provision(
                             environment_name=f"{scenario_name}-gen-{_gen}",
                             max_retries=self.settings.primeintellect_max_retries,

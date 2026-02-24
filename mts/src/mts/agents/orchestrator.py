@@ -95,10 +95,17 @@ class AgentOrchestrator:
                 on_role_event(role, status)
 
         _notify("competitor", "started")
-        raw_text, competitor_exec = self.competitor.run(prompts.competitor, tool_context=tool_context)
+        competitor_prompt = prompts.competitor
+        if self.settings.code_strategies_enabled:
+            from mts.prompts.templates import code_strategy_competitor_suffix
+            competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
+        raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
         _notify("competitor", "completed")
         _notify("translator", "started")
-        strategy, translator_exec = self.translator.translate(raw_text, strategy_interface)
+        if self.settings.code_strategies_enabled:
+            strategy, translator_exec = self.translator.translate_code(raw_text)
+        else:
+            strategy, translator_exec = self.translator.translate(raw_text, strategy_interface)
         _notify("translator", "completed")
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
@@ -220,12 +227,26 @@ class AgentOrchestrator:
         architect_prompt: str,
     ) -> tuple[RoleExecution, RoleExecution]:
         """Run Analyst and Architect via RLM sessions."""
-        from mts.rlm.prompts import ANALYST_RLM_SYSTEM, ARCHITECT_RLM_SYSTEM
-        from mts.rlm.repl_worker import ReplWorker
         from mts.rlm.session import RlmSession, make_llm_batch
 
         assert self._rlm_loader is not None
         settings = self.settings
+
+        # Select worker class and prompt templates based on rlm_backend
+        if settings.rlm_backend == "monty":
+            from mts.harness.repl.monty_worker import MontyReplWorker
+            from mts.rlm.prompts import ANALYST_MONTY_RLM_SYSTEM, ARCHITECT_MONTY_RLM_SYSTEM
+
+            analyst_system_tpl = ANALYST_MONTY_RLM_SYSTEM
+            architect_system_tpl = ARCHITECT_MONTY_RLM_SYSTEM
+            worker_cls: type = MontyReplWorker
+        else:
+            from mts.rlm.prompts import ANALYST_RLM_SYSTEM, ARCHITECT_RLM_SYSTEM
+            from mts.rlm.repl_worker import ReplWorker
+
+            analyst_system_tpl = ANALYST_RLM_SYSTEM
+            architect_system_tpl = ARCHITECT_RLM_SYSTEM
+            worker_cls = ReplWorker
 
         # Reset deterministic client turn counter if applicable
         if hasattr(self.client, "reset_rlm_turns"):
@@ -238,12 +259,12 @@ class AgentOrchestrator:
         )
         analyst_ns = dict(analyst_ctx.variables)
         analyst_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
-        analyst_worker = ReplWorker(
+        analyst_worker = worker_cls(
             namespace=analyst_ns,
             max_stdout_chars=settings.rlm_max_stdout_chars,
             timeout_seconds=settings.rlm_code_timeout_seconds,
         )
-        analyst_system = ANALYST_RLM_SYSTEM.format(
+        analyst_system = analyst_system_tpl.format(
             max_stdout_chars=settings.rlm_max_stdout_chars,
             max_turns=settings.rlm_max_turns,
             variable_summary=analyst_ctx.summary,
@@ -268,12 +289,12 @@ class AgentOrchestrator:
         )
         architect_ns = dict(architect_ctx.variables)
         architect_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
-        architect_worker = ReplWorker(
+        architect_worker = worker_cls(
             namespace=architect_ns,
             max_stdout_chars=settings.rlm_max_stdout_chars,
             timeout_seconds=settings.rlm_code_timeout_seconds,
         )
-        architect_system = ARCHITECT_RLM_SYSTEM.format(
+        architect_system = architect_system_tpl.format(
             max_stdout_chars=settings.rlm_max_stdout_chars,
             max_turns=settings.rlm_max_turns,
             variable_summary=architect_ctx.summary,

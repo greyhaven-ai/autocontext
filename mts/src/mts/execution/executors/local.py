@@ -35,6 +35,15 @@ class LocalExecutor:
         seed: int,
         limits: ExecutionLimits,
     ) -> tuple[Result, ReplayEnvelope]:
+        if "__code__" in strategy:
+            from mts.execution.executors.monty import MontyExecutor
+            monty_exec = MontyExecutor()
+            return monty_exec.execute_code_strategy(
+                scenario=scenario,
+                code=str(strategy["__code__"]),
+                seed=seed,
+                limits=limits,
+            )
         try:
             with ProcessPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(
