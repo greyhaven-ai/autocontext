@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import ast
+import importlib.util
+import sys
+import tempfile
+from pathlib import Path
+
+from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+
+_VALID_OUTPUT_FORMATS = {"free_text", "json_schema", "code"}
+
+
+def validate_spec(spec: AgentTaskSpec) -> list[str]:
+    """Validate an AgentTaskSpec for completeness and correctness."""
+    errors: list[str] = []
+
+    if not spec.task_prompt or not spec.task_prompt.strip():
+        errors.append("task_prompt must not be empty")
+
+    if not spec.judge_rubric or not spec.judge_rubric.strip():
+        errors.append("judge_rubric must not be empty")
+
+    if spec.output_format not in _VALID_OUTPUT_FORMATS:
+        errors.append(
+            f"output_format '{spec.output_format}' not in {_VALID_OUTPUT_FORMATS}"
+        )
+
+    if not spec.judge_model or not spec.judge_model.strip():
+        errors.append("judge_model must not be empty")
+
+    return errors
+
+
+def validate_syntax(source: str) -> list[str]:
+    """Validate that generated source code parses without syntax errors."""
+    errors: list[str] = []
+    try:
+        ast.parse(source)
+    except SyntaxError as exc:
+        errors.append(f"syntax error at line {exc.lineno}: {exc.msg}")
+    return errors
+
+
+def validate_execution(source: str) -> list[str]:
+    """Validate by importing and instantiating the generated class."""
+    errors: list[str] = []
+
+    with tempfile.TemporaryDirectory() as tmp:
+        mod_path = Path(tmp) / "agent_task_mod.py"
+        mod_path.write_text(source, encoding="utf-8")
+
+        mod_name = f"_agent_task_validation_{id(source)}"
+        spec = importlib.util.spec_from_file_location(mod_name, str(mod_path))
+        if spec is None or spec.loader is None:
+            errors.append("could not create module spec from source")
+            return errors
+
+        mod = importlib.util.module_from_spec(spec)
+        try:
+            sys.modules[mod_name] = mod
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        except Exception as exc:
+            errors.append(f"import failed: {exc}")
+            return errors
+        finally:
+            sys.modules.pop(mod_name, None)
+
+        # Find the AgentTaskInterface subclass
+        from mts.scenarios.agent_task import AgentTaskInterface
+
+        found_cls = None
+        for attr_name in dir(mod):
+            attr = getattr(mod, attr_name)
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, AgentTaskInterface)
+                and attr is not AgentTaskInterface
+            ):
+                found_cls = attr
+                break
+
+        if found_cls is None:
+            errors.append("no AgentTaskInterface subclass found in generated code")
+            return errors
+
+        try:
+            instance = found_cls()
+        except Exception as exc:
+            errors.append(f"instantiation failed: {exc}")
+            return errors
+
+        try:
+            prompt = instance.get_task_prompt({})
+            if not prompt:
+                errors.append("get_task_prompt() returned empty string")
+        except Exception as exc:
+            errors.append(f"get_task_prompt() raised: {exc}")
+
+        try:
+            rubric = instance.get_rubric()
+            if not rubric:
+                errors.append("get_rubric() returned empty string")
+        except Exception as exc:
+            errors.append(f"get_rubric() raised: {exc}")
+
+    return errors
