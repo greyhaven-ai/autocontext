@@ -31,9 +31,13 @@ class SkillPackage:
     best_elo: float
     hints: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    task_prompt: str | None = None
+    judge_rubric: str | None = None
+    example_outputs: list[dict] | None = None
+    output_format: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "scenario_name": self.scenario_name,
             "display_name": self.display_name,
             "description": self.description,
@@ -45,6 +49,15 @@ class SkillPackage:
             "hints": self.hints,
             "metadata": self.metadata,
         }
+        if self.task_prompt is not None:
+            d["task_prompt"] = self.task_prompt
+        if self.judge_rubric is not None:
+            d["judge_rubric"] = self.judge_rubric
+        if self.example_outputs is not None:
+            d["example_outputs"] = self.example_outputs
+        if self.output_format is not None:
+            d["output_format"] = self.output_format
+        return d
 
     def to_skill_markdown(self) -> str:
         """Render as a portable SKILL.md suitable for any agent's skill directory."""
@@ -56,6 +69,10 @@ class SkillPackage:
                 f"```json\n{json.dumps(self.best_strategy, indent=2)}\n```\n"
                 f"\nBest score: {self.best_score:.4f} | Best Elo: {self.best_elo:.1f}\n"
             )
+        # Agent task rendering path
+        if self.task_prompt is not None:
+            return self._render_agent_task_markdown(lessons_block)
+
         return (
             f"---\nname: {self.scenario_name.replace('_', '-')}-knowledge\n"
             f"description: {self.description[:200]}\n---\n\n"
@@ -67,6 +84,56 @@ class SkillPackage:
             "## Playbook\n\n"
             f"{self.playbook}\n"
         )
+
+    def _render_agent_task_markdown(self, lessons_block: str) -> str:
+        """Render markdown for agent task skill packages."""
+        parts: list[str] = [
+            f"---\nname: {self.scenario_name.replace('_', '-')}-knowledge\n"
+            f"description: {self.description[:200]}\n---\n\n"
+            f"# {self.display_name}\n\n"
+            f"{self.description}\n\n"
+            f"## Task\n\n"
+            f"{self.task_prompt}\n",
+        ]
+
+        if self.judge_rubric:
+            parts.append(
+                f"\n## Evaluation Criteria\n\n"
+                f"{self.judge_rubric}\n"
+            )
+
+        if self.example_outputs:
+            parts.append("\n## Example Outputs\n")
+            for i, ex in enumerate(self.example_outputs[:3], 1):
+                score = ex.get("score", 0.0)
+                reasoning = ex.get("reasoning", "")
+                output = ex.get("output", "")
+                parts.append(
+                    f"\n<details>\n<summary>Example {i} (score: {score:.2f})</summary>\n\n"
+                    f"**Output:**\n\n{output}\n\n"
+                    f"**Reasoning:** {reasoning}\n\n"
+                    f"</details>\n"
+                )
+
+        parts.append(
+            f"\n## Operational Lessons\n\n"
+            f"{lessons_block}\n"
+        )
+
+        if self.best_strategy:
+            strategy_text = json.dumps(self.best_strategy, indent=2)
+            parts.append(
+                f"\n## Best Known Strategy\n\n"
+                f"```\n{strategy_text}\n```\n"
+                f"\nBest score: {self.best_score:.4f} | Best Elo: {self.best_elo:.1f}\n"
+            )
+
+        parts.append(
+            f"\n## Playbook\n\n"
+            f"{self.playbook}\n"
+        )
+
+        return "".join(parts)
 
 
 def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackage:
@@ -134,6 +201,35 @@ def list_solved_scenarios(ctx: MtsToolContext) -> list[dict[str, Any]]:
             "completed_runs": completed,
         })
     return results
+
+
+def export_agent_task_skill(
+    scenario_name: str,
+    task_prompt: str,
+    judge_rubric: str,
+    output_format: str,
+    playbook: str,
+    lessons: list[str],
+    best_outputs: list[dict],
+    hints: str | None = None,
+) -> SkillPackage:
+    """Convenience builder for agent-task skill packages."""
+    display_name = scenario_name.replace("_", " ").title()
+    return SkillPackage(
+        scenario_name=scenario_name,
+        display_name=display_name,
+        description=f"Agent task: {display_name}",
+        playbook=playbook,
+        lessons=lessons,
+        best_strategy=None,
+        best_score=best_outputs[0]["score"] if best_outputs else 0.0,
+        best_elo=1500.0,
+        hints=hints or "",
+        task_prompt=task_prompt,
+        judge_rubric=judge_rubric,
+        example_outputs=best_outputs or None,
+        output_format=output_format,
+    )
 
 
 def _clean_lessons(raw_bullets: list[str]) -> list[str]:
