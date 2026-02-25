@@ -53,6 +53,7 @@ class ScenarioSpec:
     final_score_weights: dict[str, float] = field(default_factory=dict)
     win_threshold: float = 0.55
     observation_constraints: list[str] = field(default_factory=list)
+    scenario_type: str = "parametric"  # "parametric" | "agent_task"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -86,6 +87,7 @@ class ScenarioSpec:
             "final_score_weights": self.final_score_weights,
             "win_threshold": self.win_threshold,
             "observation_constraints": self.observation_constraints,
+            "scenario_type": self.scenario_type,
         }
 
     @classmethod
@@ -126,6 +128,7 @@ class ScenarioSpec:
             final_score_weights=data.get("final_score_weights", {}),
             win_threshold=data.get("win_threshold", 0.55),
             observation_constraints=data.get("observation_constraints", []),
+            scenario_type=data.get("scenario_type", "parametric"),
         )
 
     def save(self, directory: Path) -> Path:
