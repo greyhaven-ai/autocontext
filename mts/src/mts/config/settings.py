@@ -96,6 +96,10 @@ class AppSettings(BaseModel):
     # Phase 9: Agent identity
     identity_enabled: bool = Field(default=False)
     identity_dir: Path = Field(default=Path("knowledge/_identities"))
+    # Agent task judge settings
+    judge_model: str = Field(default="claude-sonnet-4-20250514")
+    judge_samples: int = Field(default=1, ge=1)
+    judge_temperature: float = Field(default=0.0, ge=0.0)
 
 
 def load_settings() -> AppSettings:
@@ -176,4 +180,7 @@ def load_settings() -> AppSettings:
         trust_decay_rate=float(os.getenv("MTS_TRUST_DECAY_RATE", "0.05")),
         identity_enabled=os.getenv("MTS_IDENTITY_ENABLED", "false").lower() == "true",
         identity_dir=Path(os.getenv("MTS_IDENTITY_DIR", "knowledge/_identities")),
+        judge_model=os.getenv("MTS_JUDGE_MODEL", "claude-sonnet-4-20250514"),
+        judge_samples=int(os.getenv("MTS_JUDGE_SAMPLES", "1")),
+        judge_temperature=float(os.getenv("MTS_JUDGE_TEMPERATURE", "0.0")),
     )
