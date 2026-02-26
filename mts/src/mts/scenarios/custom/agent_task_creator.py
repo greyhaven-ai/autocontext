@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
 import re
 import sys
@@ -79,7 +80,6 @@ class AgentTaskCreator:
         scenario_file.write_text(source, encoding="utf-8")
 
         spec_file = scenario_dir / "agent_task_spec.json"
-        import json
         spec_file.write_text(json.dumps({
             "task_prompt": spec.task_prompt,
             "judge_rubric": spec.judge_rubric,

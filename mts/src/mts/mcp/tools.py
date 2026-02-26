@@ -64,6 +64,8 @@ def describe_scenario(name: str) -> dict[str, str]:
 def validate_strategy(name: str, strategy: dict[str, object]) -> dict[str, object]:
     """Validate a strategy dict against scenario constraints."""
     scenario = SCENARIO_REGISTRY[name]()
+    if not hasattr(scenario, "validate_actions"):
+        return {"valid": True, "reason": "Agent task scenarios use judge evaluation, not action validation"}
     state = scenario.initial_state(seed=42)
     valid, reason = scenario.validate_actions(state, "challenger", strategy)
     return {"valid": valid, "reason": reason}
@@ -72,6 +74,8 @@ def validate_strategy(name: str, strategy: dict[str, object]) -> dict[str, objec
 def run_match(name: str, strategy: dict[str, object], seed: int) -> dict[str, object]:
     """Execute a single match, return Result as dict."""
     scenario = SCENARIO_REGISTRY[name]()
+    if not hasattr(scenario, "execute_match"):
+        return {"error": "Agent task scenarios use judge evaluation; use evaluate_output() instead"}
     result = scenario.execute_match(strategy, seed)
     return result.model_dump()
 
@@ -79,6 +83,8 @@ def run_match(name: str, strategy: dict[str, object], seed: int) -> dict[str, ob
 def run_tournament(name: str, strategy: dict[str, object], matches: int, seed_base: int) -> dict[str, object]:
     """Run N matches, return aggregate stats."""
     scenario = SCENARIO_REGISTRY[name]()
+    if not hasattr(scenario, "execute_match"):
+        return {"error": "Agent task scenarios use judge evaluation; use evaluate_output() instead"}
     scores: list[float] = []
     for i in range(matches):
         result = scenario.execute_match(strategy, seed_base + i)
