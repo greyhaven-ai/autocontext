@@ -78,6 +78,20 @@ class TestGenerateAgentTaskClass:
         errors = validate_syntax(source)
         assert errors == [], f"Syntax errors: {errors}"
 
+    def test_generates_with_reference_context(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Write about RLMs",
+            judge_rubric="Check accuracy",
+            reference_context="RLM = Recursive Language Model",
+            required_concepts=["context folding"],
+        )
+        source = generate_agent_task_class(spec, name="rlm_task")
+        errors = validate_syntax(source)
+        assert errors == [], f"Syntax errors: {errors}"
+        assert "_reference_context" in source
+        assert "_required_concepts" in source
+        assert "RLM = Recursive Language Model" in source
+
     def test_contains_class_and_methods(self) -> None:
         source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")
         assert "class HaikuTaskAgentTask" in source
@@ -122,6 +136,43 @@ class TestValidateSpec:
         )
         errors = validate_spec(spec)
         assert any("output_format" in e for e in errors)
+
+    def test_empty_reference_context(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Do something",
+            judge_rubric="Some rubric",
+            reference_context="",  # empty string should fail
+        )
+        errors = validate_spec(spec)
+        assert any("reference_context" in e for e in errors)
+
+    def test_valid_reference_context(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Do something",
+            judge_rubric="Some rubric",
+            reference_context="Domain knowledge here",
+            required_concepts=["concept1"],
+        )
+        errors = validate_spec(spec)
+        assert errors == []
+
+    def test_empty_required_concepts_list(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Do something",
+            judge_rubric="Some rubric",
+            required_concepts=[],
+        )
+        errors = validate_spec(spec)
+        assert any("required_concepts" in e for e in errors)
+
+    def test_required_concepts_with_empty_string(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Do something",
+            judge_rubric="Some rubric",
+            required_concepts=["valid", ""],
+        )
+        errors = validate_spec(spec)
+        assert any("required_concepts[1]" in e for e in errors)
 
     def test_empty_judge_model(self) -> None:
         spec = AgentTaskSpec(

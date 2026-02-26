@@ -193,6 +193,39 @@ class TestExportAgentTaskSkill:
         assert "## Example Outputs" in md
 
 
+class TestReferenceContextExport:
+    def test_reference_context_in_markdown(self) -> None:
+        pkg = _make_agent_task_package(reference_context="RLM means Recursive Language Model")
+        md = pkg.to_skill_markdown()
+        assert "## Reference Context" in md
+        assert "RLM means Recursive Language Model" in md
+
+    def test_reference_context_in_dict(self) -> None:
+        pkg = _make_agent_task_package(reference_context="Some context")
+        d = pkg.to_dict()
+        assert d["reference_context"] == "Some context"
+
+    def test_no_reference_context_not_in_dict(self) -> None:
+        pkg = _make_agent_task_package()
+        d = pkg.to_dict()
+        assert "reference_context" not in d
+
+    def test_export_agent_task_skill_with_reference_context(self) -> None:
+        pkg = export_agent_task_skill(
+            scenario_name="ref_test",
+            task_prompt="Write about X",
+            judge_rubric="Check X",
+            output_format="free_text",
+            playbook="Be accurate",
+            lessons=[],
+            best_outputs=[],
+            reference_context="X is a specific thing",
+        )
+        assert pkg.reference_context == "X is a specific thing"
+        md = pkg.to_skill_markdown()
+        assert "## Reference Context" in md
+
+
 class TestSearchIndexAgentTaskFields:
     def test_keyword_score_includes_task_fields(self) -> None:
         """Verify the search scorer weights task_prompt and judge_rubric fields."""
