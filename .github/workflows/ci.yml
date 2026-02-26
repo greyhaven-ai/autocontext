@@ -59,13 +59,8 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Install
         run: uv sync --group dev
-      - name: Skip when secrets missing
-        run: |
-          if [ -z "${MTS_PRIMEINTELLECT_API_KEY:-}" ] || [ -z "${MTS_ANTHROPIC_API_KEY:-}" ]; then
-            echo "PrimeIntellect live verification skipped (missing secrets)."
-            exit 0
-          fi
       - name: Live PrimeIntellect verification
+        if: ${{ env.MTS_PRIMEINTELLECT_API_KEY != '' && env.MTS_ANTHROPIC_API_KEY != '' }}
         env:
           MTS_EXECUTOR_MODE: primeintellect
           MTS_PRIMEINTELLECT_API_BASE: https://api.primeintellect.ai
