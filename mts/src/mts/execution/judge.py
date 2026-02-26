@@ -65,7 +65,7 @@ class LLMJudge:
         # Average dimension scores
         avg_dims: dict[str, float] = {}
         if all_dims:
-            all_keys = set()
+            all_keys: set[str] = set()
             for d in all_dims:
                 all_keys.update(d.keys())
             for key in all_keys:

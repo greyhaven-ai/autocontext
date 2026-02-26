@@ -159,22 +159,28 @@ class TestAgentTaskCreator:
         def mock_llm(system: str, user: str) -> str:
             return response_text
 
+        from mts.scenarios import SCENARIO_REGISTRY
+
         with tempfile.TemporaryDirectory() as tmp:
             creator = AgentTaskCreator(
                 llm_fn=mock_llm,
                 knowledge_root=Path(tmp),
             )
             instance = creator.create("Write a haiku about testing software")
+            registered_name = creator.derive_name("Write a haiku about testing software")
 
-            assert instance.get_task_prompt({}) == SAMPLE_SPEC.task_prompt
-            assert instance.get_rubric() == SAMPLE_SPEC.judge_rubric
+            try:
+                assert instance.get_task_prompt({}) == SAMPLE_SPEC.task_prompt
+                assert instance.get_rubric() == SAMPLE_SPEC.judge_rubric
 
-            # Check files were saved
-            custom_dir = Path(tmp) / "_custom_scenarios"
-            dirs = list(custom_dir.iterdir())
-            assert len(dirs) == 1
-            scenario_dir = dirs[0]
-            assert (scenario_dir / "agent_task.py").exists()
-            assert (scenario_dir / "agent_task_spec.json").exists()
-            assert (scenario_dir / "scenario_type.txt").exists()
-            assert (scenario_dir / "scenario_type.txt").read_text() == "agent_task"
+                # Check files were saved
+                custom_dir = Path(tmp) / "_custom_scenarios"
+                dirs = list(custom_dir.iterdir())
+                assert len(dirs) == 1
+                scenario_dir = dirs[0]
+                assert (scenario_dir / "agent_task.py").exists()
+                assert (scenario_dir / "agent_task_spec.json").exists()
+                assert (scenario_dir / "scenario_type.txt").exists()
+                assert (scenario_dir / "scenario_type.txt").read_text() == "agent_task"
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
