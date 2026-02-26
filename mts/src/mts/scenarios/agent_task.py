@@ -42,3 +42,18 @@ class AgentTaskInterface(ABC):
     @abstractmethod
     def describe_task(self) -> str:
         """Return a human-readable description of the task."""
+
+    def prepare_context(self, state: dict) -> dict:
+        """Optional: gather/validate context before generation.
+
+        Returns updated state with context included. Default is no-op.
+        Override to add research steps, document loading, etc.
+        """
+        return state
+
+    def validate_context(self, state: dict) -> list[str]:
+        """Optional: check that required context is present in state.
+
+        Returns list of validation errors. Empty list means valid.
+        """
+        return []

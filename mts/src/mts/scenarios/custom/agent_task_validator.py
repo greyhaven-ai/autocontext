@@ -52,6 +52,19 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
                 if not isinstance(source, str) or not source.strip():
                     errors.append(f"reference_sources[{i}] must be a non-empty string")
 
+    if spec.context_preparation is not None and not spec.context_preparation.strip():
+        errors.append("context_preparation, if provided, must not be empty")
+
+    if spec.required_context_keys is not None:
+        if not isinstance(spec.required_context_keys, list):
+            errors.append("required_context_keys must be a list of strings")
+        elif not spec.required_context_keys:
+            errors.append("required_context_keys, if provided, must not be empty")
+        else:
+            for i, key in enumerate(spec.required_context_keys):
+                if not isinstance(key, str) or not key.strip():
+                    errors.append(f"required_context_keys[{i}] must be a non-empty string")
+
     return errors
 
 
@@ -126,5 +139,23 @@ def validate_execution(source: str) -> list[str]:
                 errors.append("get_rubric() returned empty string")
         except Exception as exc:
             errors.append(f"get_rubric() raised: {exc}")
+
+        # Validate prepare_context and validate_context if present
+        prepared: dict = {}
+        try:
+            state = instance.initial_state()
+            prepared = instance.prepare_context(state)
+            if not isinstance(prepared, dict):
+                errors.append("prepare_context() must return a dict")
+                prepared = {}
+        except Exception as exc:
+            errors.append(f"prepare_context() raised: {exc}")
+
+        try:
+            ctx_errors = instance.validate_context(prepared)
+            if not isinstance(ctx_errors, list):
+                errors.append("validate_context() must return a list")
+        except Exception as exc:
+            errors.append(f"validate_context() raised: {exc}")
 
     return errors
