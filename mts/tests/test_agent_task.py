@@ -14,6 +14,7 @@ class ConcreteAgentTask(AgentTaskInterface):
         state: dict,
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
     ) -> AgentTaskResult:
         score = 0.8 if "test" in output.lower() else 0.3
         return AgentTaskResult(score=score, reasoning="Evaluated", dimension_scores={"relevance": score})

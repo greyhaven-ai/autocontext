@@ -62,6 +62,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                 state: dict,
                 reference_context: str | None = None,
                 required_concepts: list[str] | None = None,
+                calibration_examples: list[dict] | None = None,
             ) -> AgentTaskResult:
                 def llm_fn(system: str, user: str) -> str:
                     raise NotImplementedError("llm_fn must be injected at runtime")
@@ -79,6 +80,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                     output,
                     reference_context=ref_ctx,
                     required_concepts=req_con,
+                    calibration_examples=calibration_examples,
                 )
                 return AgentTaskResult(
                     score=result.score,

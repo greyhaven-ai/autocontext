@@ -82,6 +82,7 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
         reference_context=data.get("reference_context"),
         reference_sources=data.get("reference_sources"),
         required_concepts=data.get("required_concepts"),
+        calibration_examples=data.get("calibration_examples"),
     )
 
 

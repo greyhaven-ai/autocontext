@@ -15,3 +15,4 @@ class AgentTaskSpec:
     reference_context: str | None = None
     reference_sources: list[str] | None = None
     required_concepts: list[str] | None = None
+    calibration_examples: list[dict] | None = None
