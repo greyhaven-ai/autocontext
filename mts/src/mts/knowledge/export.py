@@ -176,6 +176,20 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
     description = describe_fn() if describe_fn else ""
     display_name = scenario_name.replace("_", " ").title()
 
+    # Populate agent task fields if applicable
+    task_prompt: str | None = None
+    judge_rubric: str | None = None
+    output_format: str | None = None
+    reference_context: str | None = None
+    if hasattr(scenario, "get_task_prompt") and hasattr(scenario, "get_rubric"):
+        try:
+            task_prompt = scenario.get_task_prompt(scenario.initial_state())
+            judge_rubric = scenario.get_rubric()
+            output_format = getattr(scenario, "_output_format", None)
+            reference_context = getattr(scenario, "_reference_context", None)
+        except Exception:
+            pass
+
     return SkillPackage(
         scenario_name=scenario_name,
         display_name=display_name,
@@ -190,6 +204,10 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
             "completed_runs": completed_runs,
             "has_snapshot": snapshot is not None,
         },
+        task_prompt=task_prompt,
+        judge_rubric=judge_rubric,
+        output_format=output_format,
+        reference_context=reference_context,
     )
 
 

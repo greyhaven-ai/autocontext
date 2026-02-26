@@ -35,7 +35,7 @@ class AgentTaskInterface(ABC):
         """Return the evaluation rubric."""
 
     @abstractmethod
-    def initial_state(self) -> dict:
+    def initial_state(self, seed: int | None = None) -> dict:
         """Return the initial state for this task."""
 
     @abstractmethod

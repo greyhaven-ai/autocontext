@@ -36,13 +36,19 @@ SAMPLE_SPEC = AgentTaskSpec(
 
 
 def _mock_llm_response(spec: AgentTaskSpec) -> str:
-    data = {
+    data: dict[str, object] = {
         "task_prompt": spec.task_prompt,
         "judge_rubric": spec.judge_rubric,
         "output_format": spec.output_format,
         "judge_model": spec.judge_model,
         "difficulty_tiers": spec.difficulty_tiers,
     }
+    if spec.reference_context is not None:
+        data["reference_context"] = spec.reference_context
+    if spec.reference_sources is not None:
+        data["reference_sources"] = spec.reference_sources
+    if spec.required_concepts is not None:
+        data["required_concepts"] = spec.required_concepts
     return f"Here is the spec:\n{SPEC_START}\n{json.dumps(data, indent=2)}\n{SPEC_END}\n"
 
 
@@ -174,6 +180,33 @@ class TestValidateSpec:
         errors = validate_spec(spec)
         assert any("required_concepts[1]" in e for e in errors)
 
+    def test_empty_reference_sources_list(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Do something",
+            judge_rubric="Some rubric",
+            reference_sources=[],
+        )
+        errors = validate_spec(spec)
+        assert any("reference_sources" in e for e in errors)
+
+    def test_reference_sources_with_empty_string(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Do something",
+            judge_rubric="Some rubric",
+            reference_sources=["https://example.com", ""],
+        )
+        errors = validate_spec(spec)
+        assert any("reference_sources[1]" in e for e in errors)
+
+    def test_valid_reference_sources(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Do something",
+            judge_rubric="Some rubric",
+            reference_sources=["https://example.com/docs"],
+        )
+        errors = validate_spec(spec)
+        assert errors == []
+
     def test_empty_judge_model(self) -> None:
         spec = AgentTaskSpec(
             task_prompt="Do something",
@@ -233,5 +266,40 @@ class TestAgentTaskCreator:
                 assert (scenario_dir / "agent_task_spec.json").exists()
                 assert (scenario_dir / "scenario_type.txt").exists()
                 assert (scenario_dir / "scenario_type.txt").read_text() == "agent_task"
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
+    def test_end_to_end_with_reference_context(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Write about RLMs",
+            judge_rubric="Check accuracy",
+            reference_context="RLM = Recursive Language Model",
+            reference_sources=["https://example.com/rlm"],
+            required_concepts=["context folding"],
+        )
+        response_text = _mock_llm_response(spec)
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        from mts.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            creator.create("Write about recursive language models")
+            registered_name = creator.derive_name("Write about recursive language models")
+
+            try:
+                # Check spec JSON persists new fields
+                custom_dir = Path(tmp) / "_custom_scenarios"
+                dirs = list(custom_dir.iterdir())
+                scenario_dir = dirs[0]
+                spec_data = json.loads((scenario_dir / "agent_task_spec.json").read_text())
+                assert spec_data["reference_context"] == "RLM = Recursive Language Model"
+                assert spec_data["reference_sources"] == ["https://example.com/rlm"]
+                assert spec_data["required_concepts"] == ["context folding"]
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)

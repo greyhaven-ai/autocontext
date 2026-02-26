@@ -8,14 +8,20 @@ class ConcreteAgentTask(AgentTaskInterface):
     def get_task_prompt(self, state: dict) -> str:
         return "Write a haiku about testing."
 
-    def evaluate_output(self, output: str, state: dict, reference_context: str | None = None, required_concepts: list[str] | None = None) -> AgentTaskResult:
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+    ) -> AgentTaskResult:
         score = 0.8 if "test" in output.lower() else 0.3
         return AgentTaskResult(score=score, reasoning="Evaluated", dimension_scores={"relevance": score})
 
     def get_rubric(self) -> str:
         return "Must be a haiku about testing."
 
-    def initial_state(self) -> dict:
+    def initial_state(self, seed: int | None = None) -> dict:
         return {"topic": "testing"}
 
     def describe_task(self) -> str:

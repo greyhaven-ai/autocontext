@@ -80,13 +80,20 @@ class AgentTaskCreator:
         scenario_file.write_text(source, encoding="utf-8")
 
         spec_file = scenario_dir / "agent_task_spec.json"
-        spec_file.write_text(json.dumps({
+        spec_data: dict[str, object] = {
             "task_prompt": spec.task_prompt,
             "judge_rubric": spec.judge_rubric,
             "output_format": spec.output_format,
             "judge_model": spec.judge_model,
             "difficulty_tiers": spec.difficulty_tiers,
-        }, indent=2), encoding="utf-8")
+        }
+        if spec.reference_context is not None:
+            spec_data["reference_context"] = spec.reference_context
+        if spec.reference_sources is not None:
+            spec_data["reference_sources"] = spec.reference_sources
+        if spec.required_concepts is not None:
+            spec_data["required_concepts"] = spec.required_concepts
+        spec_file.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
 
         # Mark as agent_task type
         type_file = scenario_dir / "scenario_type.txt"
