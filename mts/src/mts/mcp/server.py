@@ -236,6 +236,29 @@ def mts_solve_result(job_id: str) -> str:
     return json.dumps(pkg.to_dict())
 
 
+# -- Human feedback tools --
+
+
+@mcp.tool()
+def mts_record_feedback(
+    scenario_name: str,
+    agent_output: str,
+    human_score: float | None = None,
+    human_notes: str = "",
+    generation_id: str | None = None,
+) -> str:
+    """Record human feedback on an agent task output. Score should be 0.0–1.0."""
+    return json.dumps(tools.record_feedback(
+        _get_ctx(), scenario_name, agent_output, human_score, human_notes, generation_id
+    ))
+
+
+@mcp.tool()
+def mts_get_feedback(scenario_name: str, limit: int = 10) -> str:
+    """Get recent human feedback for a scenario."""
+    return json.dumps(tools.get_feedback(_get_ctx(), scenario_name, limit))
+
+
 def run_server() -> None:
     """Synchronous entry point for the MCP server."""
     mcp.run(transport="stdio")

@@ -213,6 +213,10 @@ def record_feedback(
     generation_id: str | None = None,
 ) -> dict[str, object]:
     """Record human feedback on an agent task output."""
+    if not agent_output.strip():
+        return {"error": "agent_output cannot be empty"}
+    if human_score is not None and not (0.0 <= human_score <= 1.0):
+        return {"error": f"human_score must be in [0.0, 1.0], got {human_score}"}
     row_id = ctx.sqlite.insert_human_feedback(
         scenario_name=scenario_name,
         agent_output=agent_output,

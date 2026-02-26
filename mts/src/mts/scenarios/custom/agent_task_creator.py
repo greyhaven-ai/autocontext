@@ -93,6 +93,8 @@ class AgentTaskCreator:
             spec_data["reference_sources"] = spec.reference_sources
         if spec.required_concepts is not None:
             spec_data["required_concepts"] = spec.required_concepts
+        if spec.calibration_examples is not None:
+            spec_data["calibration_examples"] = spec.calibration_examples
         spec_file.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
 
         # Mark as agent_task type
