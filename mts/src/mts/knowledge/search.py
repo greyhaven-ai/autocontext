@@ -86,6 +86,8 @@ def _keyword_score(terms: list[str], entry: dict[str, Any]) -> tuple[float, list
         ("lessons", 1.5),
         ("playbook_excerpt", 1.0),
         ("hints", 1.0),
+        ("task_prompt", 2.0),
+        ("judge_rubric", 1.5),
     ]
 
     total = 0.0
@@ -117,6 +119,12 @@ def _keyword_score(terms: list[str], entry: dict[str, Any]) -> tuple[float, list
     return total, reasons
 
 
+def _scenario_description(scenario: object) -> str:
+    """Get description from either ScenarioInterface or AgentTaskInterface."""
+    fn = getattr(scenario, "describe_rules", None) or getattr(scenario, "describe_task", None)
+    return fn() if fn else ""
+
+
 def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
     """Build searchable entries for all scenarios with completed runs."""
     entries: list[dict[str, Any]] = []
@@ -144,15 +152,28 @@ def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
         except Exception:
             pass
 
+        # Extract agent task fields if available
+        task_prompt = ""
+        judge_rubric = ""
+        try:
+            if hasattr(scenario, "get_task_prompt"):
+                task_prompt = scenario.get_task_prompt(scenario.initial_state())
+            if hasattr(scenario, "get_rubric"):
+                judge_rubric = scenario.get_rubric()
+        except Exception:
+            pass
+
         entries.append({
             "name": name,
             "display_name": name.replace("_", " ").title(),
-            "description": scenario.describe_rules(),
+            "description": _scenario_description(scenario),
             "strategy_interface": strategy_interface,
             "evaluation_criteria": evaluation_criteria,
             "lessons": lessons_text,
             "playbook_excerpt": playbook_excerpt,
             "hints": hints,
+            "task_prompt": task_prompt,
+            "judge_rubric": judge_rubric,
             "best_score": snapshot["best_score"] if snapshot else 0.0,
             "best_elo": snapshot["best_elo"] if snapshot else 1500.0,
             "completed_runs": completed,
