@@ -199,3 +199,34 @@ def search_strategies(ctx: MtsToolContext, query: str, top_k: int = 5) -> list[d
         }
         for r in results
     ]
+
+
+# -- Human feedback --
+
+
+def record_feedback(
+    ctx: MtsToolContext,
+    scenario_name: str,
+    agent_output: str,
+    human_score: float | None = None,
+    human_notes: str = "",
+    generation_id: str | None = None,
+) -> dict[str, object]:
+    """Record human feedback on an agent task output."""
+    row_id = ctx.sqlite.insert_human_feedback(
+        scenario_name=scenario_name,
+        agent_output=agent_output,
+        human_score=human_score,
+        human_notes=human_notes,
+        generation_id=generation_id,
+    )
+    return {"id": row_id, "scenario_name": scenario_name, "status": "recorded"}
+
+
+def get_feedback(
+    ctx: MtsToolContext,
+    scenario_name: str,
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    """Get recent human feedback for a scenario."""
+    return ctx.sqlite.get_human_feedback(scenario_name, limit=limit)  # type: ignore[return-value]

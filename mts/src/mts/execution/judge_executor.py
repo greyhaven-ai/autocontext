@@ -15,6 +15,7 @@ class JudgeExecutor:
         state: dict,
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
     ) -> AgentTaskResult:
         """Evaluate agent output using the task's evaluate_output method."""
         return self.task.evaluate_output(
@@ -22,4 +23,5 @@ class JudgeExecutor:
             state,
             reference_context=reference_context,
             required_concepts=required_concepts,
+            calibration_examples=calibration_examples,
         )

@@ -141,6 +141,7 @@ class ConcreteTask(AgentTaskInterface):
         state: dict,
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
     ) -> AgentTaskResult:
         return AgentTaskResult(score=0.9, reasoning="Great", dimension_scores={"quality": 0.9})
 

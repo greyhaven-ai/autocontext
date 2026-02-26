@@ -43,6 +43,7 @@ class LLMJudge:
         agent_output: str,
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
     ) -> JudgeResult:
         """Evaluate agent output by calling llm_fn N times and averaging."""
         system_prompt = (
@@ -61,7 +62,7 @@ class LLMJudge:
             'containing JSON: {"score": 0.0-1.0, "reasoning": "...", "dimensions": {"dim1": 0.0-1.0, ...}}'
         )
         user_prompt = self._build_judge_prompt(
-            task_prompt, agent_output, reference_context, required_concepts
+            task_prompt, agent_output, reference_context, required_concepts, calibration_examples
         )
 
         scores: list[float] = []
@@ -108,6 +109,7 @@ class LLMJudge:
         agent_output: str,
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
     ) -> str:
         parts = [
             f"## Rubric\n{self.rubric}\n",
@@ -121,6 +123,22 @@ class LLMJudge:
             parts.append(
                 f"\n## Required Concepts\nThe output MUST correctly address these concepts: {concepts_list}\n"
             )
+        if calibration_examples:
+            cal_lines = ["\n## Calibration Examples (Human-Scored)\n"]
+            cal_lines.append(
+                "The following are real outputs scored by a human reviewer. "
+                "Use these to calibrate your scoring — match the human's standards.\n"
+            )
+            for i, ex in enumerate(calibration_examples, 1):
+                score = ex.get("human_score", "N/A")
+                notes = ex.get("human_notes", "")
+                output_snippet = ex.get("agent_output", "")[:200]
+                cal_lines.append(
+                    f"**Example {i}** — Score: {score}\n"
+                    f"Human notes: {notes}\n"
+                    f"Output snippet: {output_snippet}...\n"
+                )
+            parts.append("\n".join(cal_lines))
         parts.append(f"\n## Task Prompt\n{task_prompt}\n")
         parts.append(f"\n## Agent Output\n{agent_output}\n")
         parts.append(
