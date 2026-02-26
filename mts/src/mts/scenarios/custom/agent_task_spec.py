@@ -16,3 +16,5 @@ class AgentTaskSpec:
     reference_sources: list[str] | None = None
     required_concepts: list[str] | None = None
     calibration_examples: list[dict] | None = None
+    context_preparation: str | None = None  # Instructions for context gathering
+    required_context_keys: list[str] | None = None  # Keys that must be in state after prepare_context
