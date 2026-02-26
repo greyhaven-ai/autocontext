@@ -163,7 +163,8 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
 
     completed_runs = ctx.sqlite.count_completed_runs(scenario_name)
 
-    description = scenario.describe_rules()
+    describe_fn = getattr(scenario, "describe_rules", None) or getattr(scenario, "describe_task", None)
+    description = describe_fn() if describe_fn else ""
     display_name = scenario_name.replace("_", " ").title()
 
     return SkillPackage(
@@ -195,7 +196,7 @@ def list_solved_scenarios(ctx: MtsToolContext) -> list[dict[str, Any]]:
         results.append({
             "name": name,
             "display_name": name.replace("_", " ").title(),
-            "description": scenario.describe_rules()[:200],
+            "description": _scenario_description(scenario)[:200],
             "best_score": snapshot["best_score"] if snapshot else 0.0,
             "best_elo": snapshot["best_elo"] if snapshot else 1500.0,
             "completed_runs": completed,
@@ -230,6 +231,12 @@ def export_agent_task_skill(
         example_outputs=best_outputs or None,
         output_format=output_format,
     )
+
+
+def _scenario_description(scenario: object) -> str:
+    """Get description from either ScenarioInterface or AgentTaskInterface."""
+    fn = getattr(scenario, "describe_rules", None) or getattr(scenario, "describe_task", None)
+    return fn() if fn else ""
 
 
 def _clean_lessons(raw_bullets: list[str]) -> list[str]:

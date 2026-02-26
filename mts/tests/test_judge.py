@@ -108,8 +108,7 @@ class ConcreteTask(AgentTaskInterface):
 class TestJudgeExecutor:
     def test_execute(self) -> None:
         task = ConcreteTask()
-        judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
-        executor = JudgeExecutor(task=task, judge=judge)
+        executor = JudgeExecutor(task=task)
         result = executor.execute("my output", {})
         assert result.score == 0.9
         assert result.reasoning == "Great"

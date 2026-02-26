@@ -28,8 +28,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
     cls_name = _class_name(name)
     safe_name = _safe_identifier(name)
 
-    task_prompt = spec.task_prompt.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
-    rubric = spec.judge_rubric.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    task_prompt_repr = repr(spec.task_prompt)
+    rubric_repr = repr(spec.judge_rubric)
 
     source = textwrap.dedent(f'''\
         from __future__ import annotations
@@ -42,8 +42,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
             """Generated agent task: {safe_name}."""
 
             name = "{safe_name}"
-            _task_prompt = """{task_prompt}"""
-            _rubric = """{rubric}"""
+            _task_prompt = {task_prompt_repr}
+            _rubric = {rubric_repr}
             _output_format = "{spec.output_format}"
             _judge_model = "{spec.judge_model}"
 

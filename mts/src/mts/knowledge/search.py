@@ -119,6 +119,12 @@ def _keyword_score(terms: list[str], entry: dict[str, Any]) -> tuple[float, list
     return total, reasons
 
 
+def _scenario_description(scenario: object) -> str:
+    """Get description from either ScenarioInterface or AgentTaskInterface."""
+    fn = getattr(scenario, "describe_rules", None) or getattr(scenario, "describe_task", None)
+    return fn() if fn else ""
+
+
 def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
     """Build searchable entries for all scenarios with completed runs."""
     entries: list[dict[str, Any]] = []
@@ -160,7 +166,7 @@ def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
         entries.append({
             "name": name,
             "display_name": name.replace("_", " ").title(),
-            "description": scenario.describe_rules(),
+            "description": _scenario_description(scenario),
             "strategy_interface": strategy_interface,
             "evaluation_criteria": evaluation_criteria,
             "lessons": lessons_text,
