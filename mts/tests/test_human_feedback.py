@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -74,6 +73,20 @@ class TestFeedbackStorage:
             store.insert_human_feedback("s1", f"out{i}", human_score=0.5, human_notes=f"note{i}")
         items = store.get_human_feedback("s1", limit=5)
         assert len(items) == 5
+
+    def test_rejects_score_above_one(self, store: SQLiteStore) -> None:
+        with pytest.raises(ValueError, match="must be in"):
+            store.insert_human_feedback("s1", "out", human_score=1.5)
+
+    def test_rejects_negative_score(self, store: SQLiteStore) -> None:
+        with pytest.raises(ValueError, match="must be in"):
+            store.insert_human_feedback("s1", "out", human_score=-0.1)
+
+    def test_accepts_boundary_scores(self, store: SQLiteStore) -> None:
+        store.insert_human_feedback("s1", "out1", human_score=0.0, human_notes="zero")
+        store.insert_human_feedback("s1", "out2", human_score=1.0, human_notes="one")
+        items = store.get_human_feedback("s1")
+        assert len(items) == 2
 
 
 class TestJudgeCalibration:

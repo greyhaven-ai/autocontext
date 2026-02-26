@@ -306,6 +306,8 @@ class SQLiteStore:
         generation_id: str | None = None,
     ) -> int:
         """Store human feedback on an agent task output. Returns the row id."""
+        if human_score is not None and not (0.0 <= human_score <= 1.0):
+            raise ValueError(f"human_score must be in [0.0, 1.0], got {human_score}")
         with self.connect() as conn:
             cursor = conn.execute(
                 """
