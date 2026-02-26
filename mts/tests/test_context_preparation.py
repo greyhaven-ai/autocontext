@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-
-from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
-from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
-from mts.scenarios.custom.agent_task_codegen import generate_agent_task_class
-from mts.scenarios.custom.agent_task_validator import validate_spec, validate_execution
-from mts.scenarios.custom.agent_task_designer import parse_agent_task_spec, SPEC_START, SPEC_END
 from mts.execution.judge_executor import JudgeExecutor
 from mts.knowledge.export import SkillPackage, export_agent_task_skill
-
+from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
+from mts.scenarios.custom.agent_task_codegen import generate_agent_task_class
+from mts.scenarios.custom.agent_task_designer import SPEC_END, SPEC_START, parse_agent_task_spec
+from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+from mts.scenarios.custom.agent_task_validator import validate_execution, validate_spec
 
 # -- Spec tests --
 

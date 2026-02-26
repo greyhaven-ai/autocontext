@@ -141,16 +141,18 @@ def validate_execution(source: str) -> list[str]:
             errors.append(f"get_rubric() raised: {exc}")
 
         # Validate prepare_context and validate_context if present
+        prepared: dict = {}
         try:
             state = instance.initial_state()
             prepared = instance.prepare_context(state)
             if not isinstance(prepared, dict):
                 errors.append("prepare_context() must return a dict")
+                prepared = {}
         except Exception as exc:
             errors.append(f"prepare_context() raised: {exc}")
 
         try:
-            ctx_errors = instance.validate_context(prepared if isinstance(prepared, dict) else {})
+            ctx_errors = instance.validate_context(prepared)
             if not isinstance(ctx_errors, list):
                 errors.append("validate_context() must return a list")
         except Exception as exc:
