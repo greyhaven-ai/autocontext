@@ -32,9 +32,15 @@ def list_scenarios() -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     for name, cls in SCENARIO_REGISTRY.items():
         instance = cls()
+        if hasattr(instance, "describe_rules"):
+            preview = instance.describe_rules()[:200]
+        elif hasattr(instance, "describe_task"):
+            preview = instance.describe_task()[:200]
+        else:
+            preview = ""
         results.append({
             "name": name,
-            "rules_preview": instance.describe_rules()[:200],
+            "rules_preview": preview,
         })
     return results
 
@@ -42,10 +48,16 @@ def list_scenarios() -> list[dict[str, str]]:
 def describe_scenario(name: str) -> dict[str, str]:
     """Full scenario description: rules, strategy interface, evaluation criteria."""
     scenario = SCENARIO_REGISTRY[name]()
+    if hasattr(scenario, "describe_rules"):
+        return {
+            "rules": scenario.describe_rules(),
+            "strategy_interface": scenario.describe_strategy_interface(),
+            "evaluation_criteria": scenario.describe_evaluation_criteria(),
+        }
     return {
-        "rules": scenario.describe_rules(),
-        "strategy_interface": scenario.describe_strategy_interface(),
-        "evaluation_criteria": scenario.describe_evaluation_criteria(),
+        "rules": scenario.describe_task() if hasattr(scenario, "describe_task") else "",
+        "strategy_interface": "",
+        "evaluation_criteria": scenario.get_rubric() if hasattr(scenario, "get_rubric") else "",
     }
 
 
