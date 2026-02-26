@@ -47,8 +47,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
             name = "{safe_name}"
             _task_prompt = {task_prompt_repr}
             _rubric = {rubric_repr}
-            _output_format = "{spec.output_format}"
-            _judge_model = "{spec.judge_model}"
+            _output_format = {repr(spec.output_format)}
+            _judge_model = {repr(spec.judge_model)}
             _reference_context = {ref_context_repr}
             _reference_sources = {ref_sources_repr}
             _required_concepts = {req_concepts_repr}
@@ -89,8 +89,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
             def get_rubric(self) -> str:
                 return self._rubric
 
-            def initial_state(self) -> dict:
-                return {{"task_name": "{safe_name}", "output_format": "{spec.output_format}"}}
+            def initial_state(self, seed: int | None = None) -> dict:
+                return {{"task_name": "{safe_name}", "output_format": self._output_format}}
 
             def describe_task(self) -> str:
                 return self._task_prompt

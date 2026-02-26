@@ -59,21 +59,30 @@ class TestLLMJudge:
 
 
     def test_evaluate_with_reference_context(self) -> None:
-        resp = '<!-- JUDGE_RESULT_START -->{"score": 0.7, "reasoning": "Factually accurate", "dimensions": {"clarity": 0.8, "factual_accuracy": 0.6}}<!-- JUDGE_RESULT_END -->'
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.7, "reasoning": "Factually accurate", '
+            '"dimensions": {"clarity": 0.8, "factual_accuracy": 0.6}}<!-- JUDGE_RESULT_END -->'
+        )
         judge = LLMJudge(model="test", rubric="Be good", llm_fn=make_mock_llm(resp))
         result = judge.evaluate("Do task", "My output", reference_context="RLM means recursive language model")
         assert result.dimension_scores["factual_accuracy"] == 0.6
 
     def test_evaluate_with_reference_context_adds_factual_accuracy_default(self) -> None:
         # When reference context provided but judge doesn't return factual_accuracy
-        resp = '<!-- JUDGE_RESULT_START -->{"score": 0.75, "reasoning": "ok", "dimensions": {"clarity": 0.8}}<!-- JUDGE_RESULT_END -->'
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.75, "reasoning": "ok", '
+            '"dimensions": {"clarity": 0.8}}<!-- JUDGE_RESULT_END -->'
+        )
         judge = LLMJudge(model="test", rubric="Be good", llm_fn=make_mock_llm(resp))
         result = judge.evaluate("Do task", "My output", reference_context="Some context")
         assert "factual_accuracy" in result.dimension_scores
         assert result.dimension_scores["factual_accuracy"] == 0.75  # defaults to overall score
 
     def test_evaluate_without_reference_context_no_factual_accuracy(self) -> None:
-        resp = '<!-- JUDGE_RESULT_START -->{"score": 0.8, "reasoning": "ok", "dimensions": {"clarity": 0.9}}<!-- JUDGE_RESULT_END -->'
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.8, "reasoning": "ok", '
+            '"dimensions": {"clarity": 0.9}}<!-- JUDGE_RESULT_END -->'
+        )
         judge = LLMJudge(model="test", rubric="Be good", llm_fn=make_mock_llm(resp))
         result = judge.evaluate("Do task", "My output")
         assert "factual_accuracy" not in result.dimension_scores
@@ -126,13 +135,19 @@ class ConcreteTask(AgentTaskInterface):
     def get_task_prompt(self, state: dict) -> str:
         return "Do something"
 
-    def evaluate_output(self, output: str, state: dict, reference_context: str | None = None, required_concepts: list[str] | None = None) -> AgentTaskResult:
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+    ) -> AgentTaskResult:
         return AgentTaskResult(score=0.9, reasoning="Great", dimension_scores={"quality": 0.9})
 
     def get_rubric(self) -> str:
         return "Be great"
 
-    def initial_state(self) -> dict:
+    def initial_state(self, seed: int | None = None) -> dict:
         return {}
 
     def describe_task(self) -> str:

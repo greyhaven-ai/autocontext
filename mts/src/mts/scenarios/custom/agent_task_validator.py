@@ -42,6 +42,16 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
                 if not isinstance(concept, str) or not concept.strip():
                     errors.append(f"required_concepts[{i}] must be a non-empty string")
 
+    if spec.reference_sources is not None:
+        if not isinstance(spec.reference_sources, list):
+            errors.append("reference_sources must be a list of strings")
+        elif not spec.reference_sources:
+            errors.append("reference_sources, if provided, must not be empty")
+        else:
+            for i, source in enumerate(spec.reference_sources):
+                if not isinstance(source, str) or not source.strip():
+                    errors.append(f"reference_sources[{i}] must be a non-empty string")
+
     return errors
 
 
