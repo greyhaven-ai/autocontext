@@ -18,9 +18,19 @@ class JudgeExecutor:
         calibration_examples: list[dict] | None = None,
     ) -> AgentTaskResult:
         """Evaluate agent output using the task's evaluate_output method."""
+        # Run context preparation if the task supports it
+        prepared_state = self.task.prepare_context(dict(state))
+        context_errors = self.task.validate_context(prepared_state)
+        if context_errors:
+            return AgentTaskResult(
+                score=0.0,
+                reasoning=f"Context validation failed: {'; '.join(context_errors)}",
+                dimension_scores={},
+            )
+
         return self.task.evaluate_output(
             agent_output,
-            state,
+            prepared_state,
             reference_context=reference_context,
             required_concepts=required_concepts,
             calibration_examples=calibration_examples,

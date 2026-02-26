@@ -36,6 +36,7 @@ class SkillPackage:
     example_outputs: list[dict] | None = None
     output_format: str | None = None
     reference_context: str | None = None
+    context_preparation: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -60,6 +61,8 @@ class SkillPackage:
             d["output_format"] = self.output_format
         if self.reference_context is not None:
             d["reference_context"] = self.reference_context
+        if self.context_preparation is not None:
+            d["context_preparation"] = self.context_preparation
         return d
 
     def to_skill_markdown(self) -> str:
@@ -103,6 +106,12 @@ class SkillPackage:
             parts.append(
                 f"\n## Evaluation Criteria\n\n"
                 f"{self.judge_rubric}\n"
+            )
+
+        if self.context_preparation:
+            parts.append(
+                f"\n## Context Preparation\n\n"
+                f"{self.context_preparation}\n"
             )
 
         if self.reference_context:
@@ -181,12 +190,14 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
     judge_rubric: str | None = None
     output_format: str | None = None
     reference_context: str | None = None
+    context_preparation: str | None = None
     if hasattr(scenario, "get_task_prompt") and hasattr(scenario, "get_rubric"):
         try:
             task_prompt = scenario.get_task_prompt(scenario.initial_state())
             judge_rubric = scenario.get_rubric()
             output_format = getattr(scenario, "_output_format", None)
             reference_context = getattr(scenario, "_reference_context", None)
+            context_preparation = getattr(scenario, "_context_preparation", None)
         except Exception:
             pass
 
@@ -208,6 +219,7 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
         judge_rubric=judge_rubric,
         output_format=output_format,
         reference_context=reference_context,
+        context_preparation=context_preparation,
     )
 
 
@@ -241,6 +253,7 @@ def export_agent_task_skill(
     best_outputs: list[dict],
     hints: str | None = None,
     reference_context: str | None = None,
+    context_preparation: str | None = None,
 ) -> SkillPackage:
     """Convenience builder for agent-task skill packages."""
     display_name = scenario_name.replace("_", " ").title()
@@ -259,6 +272,7 @@ def export_agent_task_skill(
         example_outputs=best_outputs or None,
         output_format=output_format,
         reference_context=reference_context,
+        context_preparation=context_preparation,
     )
 
 

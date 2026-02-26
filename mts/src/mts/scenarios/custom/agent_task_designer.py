@@ -27,6 +27,8 @@ _EXAMPLE_SPEC = {
     "reference_context": None,
     "reference_sources": None,
     "required_concepts": None,
+    "context_preparation": None,
+    "required_context_keys": None,
 }
 
 AGENT_TASK_DESIGNER_SYSTEM = (
@@ -45,7 +47,9 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     '  "difficulty_tiers": null,\n'
     '  "reference_context": "Authoritative domain knowledge for judging factual accuracy (optional, null if not needed)",\n'
     '  "reference_sources": ["list of source URLs or references (optional)"],\n'
-    '  "required_concepts": ["key concepts the output must correctly address (optional)"]\n'
+    '  "required_concepts": ["key concepts the output must correctly address (optional)"],\n'
+    '  "context_preparation": "Instructions for gathering context before generation (optional, null if not needed)",\n'
+    '  "required_context_keys": ["state keys that must be present after context preparation (optional)"]\n'
     "}\n"
     "```\n\n"
     "## Rules\n\n"
@@ -57,7 +61,11 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     "Include this when the task requires domain-specific knowledge that the judge LLM may not have. "
     "When provided, the judge will score factual_accuracy as a mandatory dimension.\n"
     "- `reference_sources` (optional) — list of source URLs or citations for the reference context\n"
-    "- `required_concepts` (optional) — key concepts the output must correctly address\n\n"
+    "- `required_concepts` (optional) — key concepts the output must correctly address\n"
+    "- `context_preparation` (optional) — instructions for gathering/loading context before the agent generates output. "
+    "Use this when the task requires research, document loading, or other preparation steps.\n"
+    "- `required_context_keys` (optional) — state dictionary keys that must be present after context preparation. "
+    "Used to validate that preparation completed successfully.\n\n"
     f"## Example\n\n{SPEC_START}\n"
     f"{json.dumps(_EXAMPLE_SPEC, indent=2)}\n"
     f"{SPEC_END}\n\n"
@@ -83,6 +91,8 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
         reference_sources=data.get("reference_sources"),
         required_concepts=data.get("required_concepts"),
         calibration_examples=data.get("calibration_examples"),
+        context_preparation=data.get("context_preparation"),
+        required_context_keys=data.get("required_context_keys"),
     )
 
 

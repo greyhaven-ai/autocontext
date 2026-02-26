@@ -33,6 +33,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
     ref_context_repr = repr(spec.reference_context)
     ref_sources_repr = repr(spec.reference_sources)
     req_concepts_repr = repr(spec.required_concepts)
+    ctx_prep_repr = repr(spec.context_preparation)
+    req_ctx_keys_repr = repr(spec.required_context_keys)
 
     source = textwrap.dedent(f'''\
         from __future__ import annotations
@@ -52,6 +54,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
             _reference_context = {ref_context_repr}
             _reference_sources = {ref_sources_repr}
             _required_concepts = {req_concepts_repr}
+            _context_preparation = {ctx_prep_repr}
+            _required_context_keys = {req_ctx_keys_repr}
 
             def get_task_prompt(self, state: dict) -> str:
                 return self._task_prompt
@@ -96,5 +100,22 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
 
             def describe_task(self) -> str:
                 return self._task_prompt
+
+            def prepare_context(self, state: dict) -> dict:
+                if self._context_preparation:
+                    state["context_preparation"] = self._context_preparation
+                if self._reference_context:
+                    state["reference_context"] = self._reference_context
+                if self._reference_sources:
+                    state["reference_sources"] = self._reference_sources
+                return state
+
+            def validate_context(self, state: dict) -> list[str]:
+                errors: list[str] = []
+                if self._required_context_keys:
+                    for key in self._required_context_keys:
+                        if key not in state or not state[key]:
+                            errors.append(f"missing required context key: '{{key}}'")
+                return errors
     ''')
     return source
