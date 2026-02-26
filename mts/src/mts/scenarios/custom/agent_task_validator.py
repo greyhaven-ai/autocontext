@@ -29,6 +29,19 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
     if not spec.judge_model or not spec.judge_model.strip():
         errors.append("judge_model must not be empty")
 
+    if spec.reference_context is not None and not spec.reference_context.strip():
+        errors.append("reference_context, if provided, must not be empty")
+
+    if spec.required_concepts is not None:
+        if not isinstance(spec.required_concepts, list):
+            errors.append("required_concepts must be a list of strings")
+        elif not spec.required_concepts:
+            errors.append("required_concepts, if provided, must not be empty")
+        else:
+            for i, concept in enumerate(spec.required_concepts):
+                if not isinstance(concept, str) or not concept.strip():
+                    errors.append(f"required_concepts[{i}] must be a non-empty string")
+
     return errors
 
 

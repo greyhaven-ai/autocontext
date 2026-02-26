@@ -24,6 +24,9 @@ _EXAMPLE_SPEC = {
     "output_format": "code",
     "judge_model": "claude-sonnet-4-20250514",
     "difficulty_tiers": None,
+    "reference_context": None,
+    "reference_sources": None,
+    "required_concepts": None,
 }
 
 AGENT_TASK_DESIGNER_SYSTEM = (
@@ -39,14 +42,22 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     '  "judge_rubric": "Detailed rubric for the LLM judge to score the output",\n'
     '  "output_format": "free_text | json_schema | code",\n'
     '  "judge_model": "claude-sonnet-4-20250514",\n'
-    '  "difficulty_tiers": null\n'
+    '  "difficulty_tiers": null,\n'
+    '  "reference_context": "Authoritative domain knowledge for judging factual accuracy (optional, null if not needed)",\n'
+    '  "reference_sources": ["list of source URLs or references (optional)"],\n'
+    '  "required_concepts": ["key concepts the output must correctly address (optional)"]\n'
     "}\n"
     "```\n\n"
     "## Rules\n\n"
     "- `task_prompt` must be clear, detailed, and self-contained\n"
     "- `judge_rubric` must list specific evaluation dimensions with criteria\n"
     "- `output_format` must be one of: free_text, json_schema, code\n"
-    "- `judge_model` should be a valid model identifier\n\n"
+    "- `judge_model` should be a valid model identifier\n"
+    "- `reference_context` (optional) — authoritative domain knowledge the judge should use to verify factual accuracy. "
+    "Include this when the task requires domain-specific knowledge that the judge LLM may not have. "
+    "When provided, the judge will score factual_accuracy as a mandatory dimension.\n"
+    "- `reference_sources` (optional) — list of source URLs or citations for the reference context\n"
+    "- `required_concepts` (optional) — key concepts the output must correctly address\n\n"
     f"## Example\n\n{SPEC_START}\n"
     f"{json.dumps(_EXAMPLE_SPEC, indent=2)}\n"
     f"{SPEC_END}\n\n"
@@ -68,6 +79,9 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
         output_format=data.get("output_format", "free_text"),
         judge_model=data.get("judge_model", "claude-sonnet-4-20250514"),
         difficulty_tiers=data.get("difficulty_tiers"),
+        reference_context=data.get("reference_context"),
+        reference_sources=data.get("reference_sources"),
+        required_concepts=data.get("required_concepts"),
     )
 
 
