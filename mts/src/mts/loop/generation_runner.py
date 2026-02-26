@@ -76,6 +76,8 @@ class GenerationRunner:
                 )
             )
         elif settings.executor_mode == "monty":
+            # MontyExecutor: sandboxed execution via pydantic-monty interpreter.
+            # Scenario methods run on host; eval script runs in Monty sandbox.
             from mts.execution.executors.monty import MontyExecutor
             self.executor = ExecutionSupervisor(
                 executor=MontyExecutor(

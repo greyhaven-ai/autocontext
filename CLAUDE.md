@@ -25,7 +25,7 @@ mts/                          # Python package root (pyproject.toml lives here)
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
     server/                   # FastAPI dashboard + WebSocket events
-  tests/                      # Pytest tests (~330 tests)
+  tests/                      # Pytest tests (~910+ tests)
   migrations/                 # SQLite migration SQL files (001-004, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
@@ -43,6 +43,9 @@ All commands run from the `mts/` directory:
 ```bash
 # Setup
 uv venv && source .venv/bin/activate && uv sync --group dev
+
+# Setup with Monty sandbox support (optional)
+uv sync --group dev --extra monty
 
 # Lint and type check
 uv run ruff check src tests
@@ -64,6 +67,12 @@ MTS_AGENT_PROVIDER=agent_sdk MTS_ANTHROPIC_API_KEY=... uv run mts run --scenario
 
 # Run (RLM mode — REPL-loop agents for analyst/architect)
 MTS_AGENT_PROVIDER=deterministic MTS_RLM_ENABLED=true uv run mts run --scenario grid_ctf --gens 3 --run-id rlm_run
+
+# Run (Monty sandbox executor — pydantic-monty interpreter)
+MTS_AGENT_PROVIDER=deterministic MTS_EXECUTOR_MODE=monty uv run mts run --scenario grid_ctf --gens 3
+
+# Run (RLM with Monty backend — sandboxed REPL)
+MTS_AGENT_PROVIDER=deterministic MTS_RLM_ENABLED=true MTS_RLM_BACKEND=monty uv run mts run --scenario grid_ctf --gens 3
 
 # Ecosystem mode (alternate providers across cycles, shared knowledge directory)
 uv run mts ecosystem --scenario grid_ctf --cycles 3 --gens-per-cycle 2 \
@@ -106,7 +115,8 @@ Runs are idempotent — `generation_exists()` check skips already-completed gene
 
 All roles use `SubagentRuntime` wrapping a `LanguageModelClient` (Anthropic API, `DeterministicDevClient` for offline/CI, or `AgentSdkClient` for Agent SDK mode):
 
-- **Competitor** — Produces a JSON strategy dict matching the scenario's strategy interface. Runs first (sequentially) since its output feeds into tournament scoring.
+- **Competitor** — Produces a JSON strategy dict matching the scenario's strategy interface. Runs first (sequentially) since its output feeds into tournament scoring. In code strategy mode (`MTS_CODE_STRATEGIES_ENABLED=true`), produces executable Python code instead of JSON.
+- **Translator** (`agents/translator.py`) — Extracts structured strategy from competitor output. In standard mode, uses an LLM call to parse JSON. In code strategy mode, `translate_code()` extracts Python from markdown fences via regex (no LLM call), producing `{"__code__": "<source>"}`.
 - **Analyst** — Produces markdown analysis (Findings, Root Causes, Recommendations)
 - **Coach** — Updates the accumulated playbook (Strategy Updates, Prompt Optimizations, Next Gen Checklist). Output parsed via `<!-- PLAYBOOK_START/END -->`, `<!-- LESSONS_START/END -->`, and `<!-- COMPETITOR_HINTS_START/END -->` delimiters.
 - **Architect** — Proposes tooling improvements + emits a `{"tools": [...]}` JSON block that gets persisted as Python files in `knowledge/<scenario>/tools/`. Can update existing tools (old versions archived to `tools/_archive/`).
@@ -126,8 +136,9 @@ Optional mode (`MTS_RLM_ENABLED=true`) that replaces the single-shot analyst and
 - **ReplWorker** — In-process Python REPL with a restricted namespace (no file I/O, no `os`/`subprocess`/`import`). Pre-populated with safe stdlib modules (`json`, `math`, `statistics`, `collections`, `re`, `time`) and an `answer` dict. Enforces wall-clock timeout via `SIGALRM` (main thread) or daemon thread (worker threads).
 - **ContextLoader** — Loads run data (replays, metrics, match scores, playbook, prior analyses, existing tools) into the REPL namespace as Python variables for exploration.
 - **`llm_batch()`** — Injected callable that lets REPL code make batched LLM sub-calls (uses `MTS_RLM_SUB_MODEL`).
+- **MontyReplWorker** (`harness/repl/monty_worker.py`) — Alternative Monty-backed REPL worker selected via `MTS_RLM_BACKEND=monty`. Each `run_code()` creates a fresh Monty interpreter. Cross-turn state persists via `state["key"]` dict (not bare variables). Stdlib access via `stdlib("module", "func", *args)` dispatch. `print()` is textually rewritten to `_print()` external function. Implements `ReplWorkerProtocol` (`harness/repl/types.py`) for duck-typed interchangeability with `ReplWorker`.
 
-When RLM is enabled, `AgentOrchestrator._run_rlm_roles()` runs analyst and architect as RLM sessions sequentially, while coach still runs via the standard single-shot path.
+When RLM is enabled, `AgentOrchestrator._run_rlm_roles()` runs analyst and architect as RLM sessions sequentially, while coach still runs via the standard single-shot path. The `MTS_RLM_BACKEND` setting selects which REPL worker to use (`exec` or `monty`).
 
 ### Scenarios (`scenarios/`)
 
@@ -156,6 +167,8 @@ WebSocket protocol for interactive creation: `create_scenario` → `scenario_gen
 - **ExecutionSupervisor** — Data-plane boundary wrapping an `ExecutionEngine` protocol
 - **LocalExecutor** — Runs strategy in a subprocess (`ProcessPoolExecutor`) with timeout and memory limits; falls back to `ThreadPoolExecutor` if process semaphores are blocked
 - **PrimeIntellectExecutor** — Runs remotely via PrimeIntellect sandbox SDK (create/wait/execute/delete lifecycle)
+- **MontyExecutor** (`execution/executors/monty.py`) — Sandboxed execution via pydantic-monty interpreter. Scenario classes run on the host; Monty sandboxes a generated eval script that calls back via external functions (`initial_state`, `validate_actions`, `step`, `is_terminal`, `get_result`). Supports both JSON strategies (`_EVAL_SCRIPT`) and agent-authored code strategies (`_CODE_STRATEGY_EVAL_SCRIPT` with `get_observation`). Selected via `MTS_EXECUTOR_MODE=monty`. Enforces timeout and max external call limits.
+- **Code strategies** — When `MTS_CODE_STRATEGIES_ENABLED=true`, the competitor emits executable Python code (in `` ```python `` fences) instead of JSON parameters. `StrategyTranslator.translate_code()` extracts the code block without an LLM call, producing `{"__code__": "<source>"}`. `MontyExecutor.execute_code_strategy()` runs the agent code inside the sandbox with access to `get_observation()`, giving agents direct programmatic control over actions.
 
 ### Knowledge System (`knowledge/`, `storage/artifacts.py`)
 
@@ -232,7 +245,7 @@ CLI entry point: `uv run mts mcp-serve` (requires `mcp` optional dependency).
 All config via `MTS_*` environment variables, loaded in `config/settings.py` into a Pydantic `AppSettings` model. Key settings:
 
 - `MTS_AGENT_PROVIDER`: `deterministic` (offline/CI), `anthropic` (live), or `agent_sdk` (Agent SDK with native tools)
-- `MTS_EXECUTOR_MODE`: `local` or `primeintellect`
+- `MTS_EXECUTOR_MODE`: `local`, `primeintellect`, or `monty` (Monty sandbox via pydantic-monty)
 - `MTS_MODEL_*`: per-role model selection (competitor, analyst, coach, architect, curator, translator)
 - `MTS_MATCHES_PER_GENERATION`, `MTS_BACKPRESSURE_MIN_DELTA`, `MTS_MAX_RETRIES`, `MTS_ARCHITECT_EVERY_N_GENS`: loop tuning
 - `MTS_CURATOR_ENABLED`: enable curator quality gate and lesson consolidation (default `true`)
@@ -243,6 +256,10 @@ All config via `MTS_*` environment variables, loaded in `config/settings.py` int
 - `MTS_ABLATION_NO_FEEDBACK`: suppress all feedback injection for A/B testing (default `false`)
 - `MTS_RLM_ENABLED`: enable REPL-loop mode for analyst/architect (default `false`)
 - `MTS_RLM_MAX_TURNS`, `MTS_RLM_MAX_STDOUT_CHARS`, `MTS_RLM_SUB_MODEL`, `MTS_RLM_CODE_TIMEOUT_SECONDS`: RLM tuning
+- `MTS_RLM_BACKEND`: RLM REPL backend — `exec` (default) or `monty` (Monty sandbox)
+- `MTS_MONTY_MAX_EXECUTION_TIME_SECONDS`: Monty sandbox timeout (default `30.0`)
+- `MTS_MONTY_MAX_EXTERNAL_CALLS`: max external function calls per Monty execution (default `100`)
+- `MTS_CODE_STRATEGIES_ENABLED`: enable code strategy mode for competitor (default `false`)
 - `MTS_AGENT_SDK_CONNECT_MCP`: connect Agent SDK agents to MTS MCP server (default `false`)
 - `MTS_SANDBOX_MAX_GENERATIONS`: maximum generations per sandbox run (default `10`)
 
@@ -256,4 +273,4 @@ All config via `MTS_*` environment variables, loaded in `config/settings.py` int
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs: ruff check, mypy, pytest, deterministic smoke runs for both scenarios (`grid_ctf` 3 gens, `othello` 1 gen), and dashboard API health check. A separate `primeintellect-live` job runs when secrets are available.
+GitHub Actions (`.github/workflows/ci.yml`) runs: ruff check, mypy, pytest, deterministic smoke runs for both scenarios (`grid_ctf` 3 gens, `othello` 1 gen), and dashboard API health check. A separate `primeintellect-live` job runs when secrets are available. Monty-specific tests (`test_monty_*.py`) are skipped in CI when pydantic-monty is not installed (`pytest.mark.skipif`).

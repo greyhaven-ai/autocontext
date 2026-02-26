@@ -61,3 +61,7 @@ disallow_untyped_defs = true
 warn_return_any = true
 warn_unused_configs = true
 exclude = "(^tests/)|(^migrations/)"
+
+[[tool.mypy.overrides]]
+module = ["pydantic_monty", "mcp.*", "claude_agent_sdk"]
+ignore_missing_imports = true
