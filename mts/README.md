@@ -1,6 +1,6 @@
 # MTS Control Plane
 
-Infrastructure-first control plane for iterative strategy generation and evaluation. A multi-agent loop where LLM agents collaboratively evolve strategies for pluggable game scenarios, scoring them through tournament matches with Elo-based progression gating.
+Infrastructure-first control plane for iterative strategy generation and evaluation. A multi-agent loop where LLM agents collaboratively evolve strategies for pluggable scenarios — game scenarios scored through tournament matches and agent task scenarios evaluated by LLM judges — with Elo-based progression gating.
 
 ## Quick start
 
@@ -124,11 +124,16 @@ knowledge/<scenario>/
 
 ### Scenarios
 
-Pluggable via `SCENARIO_REGISTRY`. Built-in scenarios: `grid_ctf`, `othello`. Implement `ScenarioInterface` and register to add new ones manually.
+Pluggable via `SCENARIO_REGISTRY`. Two scenario types:
 
-#### Custom scenario creation
+- **Game scenarios** (`ScenarioInterface`) — Evaluated via tournament matches. Built-in: `grid_ctf`, `othello`.
+- **Agent task scenarios** (`AgentTaskInterface`) — Evaluated via LLM judge. Created from natural-language descriptions.
 
-Create scenarios from natural language via the TUI or WebSocket API:
+Both coexist in `SCENARIO_REGISTRY` with `hasattr` guards for interface differences.
+
+#### Custom game scenario creation
+
+Create game scenarios from natural language via the TUI or WebSocket API:
 
 ```bash
 # In the TUI:
@@ -145,6 +150,18 @@ The pipeline: LLM generates a `ScenarioSpec` JSON → template codegen produces 
 
 Custom scenarios use local executor only (PrimeIntellect excluded).
 
+#### Agent task creation
+
+Agent tasks are scenarios where an LLM judge evaluates output quality instead of running tournament matches. The pipeline:
+
+1. LLM generates an `AgentTaskSpec` (task prompt, rubric, output format, judge model, difficulty tiers)
+2. Codegen produces an `AgentTaskInterface` subclass with `repr()`-safe string embedding
+3. Three-stage validation: spec structure, AST parse, execution (instantiate + call)
+4. Persisted to `knowledge/_custom_scenarios/{name}/` with `scenario_type.txt` marker
+5. Registered in `SCENARIO_REGISTRY`, auto-loaded on startup
+
+Evaluation uses `LLMJudge` (`execution/judge.py`) which calls an LLM N times and averages scores parsed from `<!-- JUDGE_RESULT_START/END -->` markers.
+
 ## Configuration
 
 All config via `MTS_*` environment variables (see `src/mts/config/settings.py`).
@@ -154,7 +171,7 @@ All config via `MTS_*` environment variables (see `src/mts/config/settings.py`).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MTS_AGENT_PROVIDER` | `anthropic` | `deterministic` (offline/CI), `anthropic` (live), or `agent_sdk` (Agent SDK with native tools) |
-| `MTS_EXECUTOR_MODE` | `local` | `local` or `primeintellect` |
+| `MTS_EXECUTOR_MODE` | `local` | `local`, `primeintellect`, or `monty` |
 | `MTS_MODEL_COMPETITOR` | `claude-sonnet-4-5-20250929` | Competitor model |
 | `MTS_MODEL_ANALYST` | `claude-sonnet-4-5-20250929` | Analyst model |
 | `MTS_MODEL_COACH` | `claude-opus-4-6` | Coach model |
@@ -175,6 +192,14 @@ All config via `MTS_*` environment variables (see `src/mts/config/settings.py`).
 | `MTS_PLAYBOOK_MAX_VERSIONS` | `5` | Archived playbook versions to keep |
 | `MTS_CROSS_RUN_INHERITANCE` | `true` | Inherit best knowledge across runs |
 | `MTS_ABLATION_NO_FEEDBACK` | `false` | Suppress all feedback injection (for A/B testing) |
+
+### Agent task judge settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MTS_JUDGE_MODEL` | `claude-sonnet-4-20250514` | LLM model for agent task evaluation |
+| `MTS_JUDGE_SAMPLES` | `1` | Judge calls to average per evaluation |
+| `MTS_JUDGE_TEMPERATURE` | `0.0` | Temperature for judge LLM calls |
 
 ### RLM settings
 
@@ -227,6 +252,12 @@ Add to your `.claude/mcp_servers.json`:
 | `mts_sandbox_playbook` | Read sandbox playbook |
 | `mts_sandbox_list` | List active sandboxes |
 | `mts_sandbox_destroy` | Clean up sandbox |
+| `mts_export_skill` | Export portable skill package for a scenario |
+| `mts_list_solved` | List scenarios with completed runs |
+| `mts_search_strategies` | Search solved strategies by natural language |
+| `mts_solve_scenario` | Submit a problem for on-demand solving |
+| `mts_solve_status` | Check solve job status |
+| `mts_solve_result` | Get solve job result |
 
 ## Agent SDK mode
 
