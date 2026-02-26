@@ -21,7 +21,13 @@ class AgentTaskInterface(ABC):
         """Return the task prompt for the agent."""
 
     @abstractmethod
-    def evaluate_output(self, output: str, state: dict) -> AgentTaskResult:
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+    ) -> AgentTaskResult:
         """Evaluate the agent's output against the task criteria."""
 
     @abstractmethod
@@ -29,7 +35,7 @@ class AgentTaskInterface(ABC):
         """Return the evaluation rubric."""
 
     @abstractmethod
-    def initial_state(self) -> dict:
+    def initial_state(self, seed: int | None = None) -> dict:
         """Return the initial state for this task."""
 
     @abstractmethod

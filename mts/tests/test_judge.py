@@ -58,6 +58,49 @@ class TestLLMJudge:
         assert "output" in prompt
 
 
+    def test_evaluate_with_reference_context(self) -> None:
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.7, "reasoning": "Factually accurate", '
+            '"dimensions": {"clarity": 0.8, "factual_accuracy": 0.6}}<!-- JUDGE_RESULT_END -->'
+        )
+        judge = LLMJudge(model="test", rubric="Be good", llm_fn=make_mock_llm(resp))
+        result = judge.evaluate("Do task", "My output", reference_context="RLM means recursive language model")
+        assert result.dimension_scores["factual_accuracy"] == 0.6
+
+    def test_evaluate_with_reference_context_adds_factual_accuracy_default(self) -> None:
+        # When reference context provided but judge doesn't return factual_accuracy
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.75, "reasoning": "ok", '
+            '"dimensions": {"clarity": 0.8}}<!-- JUDGE_RESULT_END -->'
+        )
+        judge = LLMJudge(model="test", rubric="Be good", llm_fn=make_mock_llm(resp))
+        result = judge.evaluate("Do task", "My output", reference_context="Some context")
+        assert "factual_accuracy" in result.dimension_scores
+        assert result.dimension_scores["factual_accuracy"] == 0.75  # defaults to overall score
+
+    def test_evaluate_without_reference_context_no_factual_accuracy(self) -> None:
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.8, "reasoning": "ok", '
+            '"dimensions": {"clarity": 0.9}}<!-- JUDGE_RESULT_END -->'
+        )
+        judge = LLMJudge(model="test", rubric="Be good", llm_fn=make_mock_llm(resp))
+        result = judge.evaluate("Do task", "My output")
+        assert "factual_accuracy" not in result.dimension_scores
+
+    def test_build_judge_prompt_with_reference_context(self) -> None:
+        judge = LLMJudge(model="test", rubric="My rubric", llm_fn=make_mock_llm())
+        prompt = judge._build_judge_prompt("task", "output", reference_context="Domain knowledge here")
+        assert "Reference Context" in prompt
+        assert "Domain knowledge here" in prompt
+
+    def test_build_judge_prompt_with_required_concepts(self) -> None:
+        judge = LLMJudge(model="test", rubric="My rubric", llm_fn=make_mock_llm())
+        prompt = judge._build_judge_prompt("task", "output", required_concepts=["concept1", "concept2"])
+        assert "Required Concepts" in prompt
+        assert "concept1" in prompt
+        assert "concept2" in prompt
+
+
 class TestParseJudgeResponse:
     def test_valid(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
@@ -92,13 +135,19 @@ class ConcreteTask(AgentTaskInterface):
     def get_task_prompt(self, state: dict) -> str:
         return "Do something"
 
-    def evaluate_output(self, output: str, state: dict) -> AgentTaskResult:
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+    ) -> AgentTaskResult:
         return AgentTaskResult(score=0.9, reasoning="Great", dimension_scores={"quality": 0.9})
 
     def get_rubric(self) -> str:
         return "Be great"
 
-    def initial_state(self) -> dict:
+    def initial_state(self, seed: int | None = None) -> dict:
         return {}
 
     def describe_task(self) -> str:

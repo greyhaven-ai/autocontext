@@ -8,14 +8,20 @@ class ConcreteAgentTask(AgentTaskInterface):
     def get_task_prompt(self, state: dict) -> str:
         return "Write a haiku about testing."
 
-    def evaluate_output(self, output: str, state: dict) -> AgentTaskResult:
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+    ) -> AgentTaskResult:
         score = 0.8 if "test" in output.lower() else 0.3
         return AgentTaskResult(score=score, reasoning="Evaluated", dimension_scores={"relevance": score})
 
     def get_rubric(self) -> str:
         return "Must be a haiku about testing."
 
-    def initial_state(self) -> dict:
+    def initial_state(self, seed: int | None = None) -> dict:
         return {"topic": "testing"}
 
     def describe_task(self) -> str:
@@ -59,6 +65,24 @@ class TestAgentTaskSpec:
         assert spec.output_format == "free_text"
         assert spec.judge_model == "claude-sonnet-4-20250514"
         assert spec.difficulty_tiers is None
+
+    def test_reference_context_fields(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Write about RLMs",
+            judge_rubric="Accuracy",
+            reference_context="RLM = Recursive Language Model",
+            reference_sources=["https://example.com/rlm"],
+            required_concepts=["context folding", "sub-LLM delegation"],
+        )
+        assert spec.reference_context == "RLM = Recursive Language Model"
+        assert spec.reference_sources == ["https://example.com/rlm"]
+        assert spec.required_concepts == ["context folding", "sub-LLM delegation"]
+
+    def test_reference_context_defaults_none(self) -> None:
+        spec = AgentTaskSpec(task_prompt="Do X", judge_rubric="Evaluate X")
+        assert spec.reference_context is None
+        assert spec.reference_sources is None
+        assert spec.required_concepts is None
 
     def test_with_options(self) -> None:
         spec = AgentTaskSpec(

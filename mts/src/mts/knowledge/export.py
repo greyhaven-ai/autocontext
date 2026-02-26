@@ -35,6 +35,7 @@ class SkillPackage:
     judge_rubric: str | None = None
     example_outputs: list[dict] | None = None
     output_format: str | None = None
+    reference_context: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -57,6 +58,8 @@ class SkillPackage:
             d["example_outputs"] = self.example_outputs
         if self.output_format is not None:
             d["output_format"] = self.output_format
+        if self.reference_context is not None:
+            d["reference_context"] = self.reference_context
         return d
 
     def to_skill_markdown(self) -> str:
@@ -100,6 +103,12 @@ class SkillPackage:
             parts.append(
                 f"\n## Evaluation Criteria\n\n"
                 f"{self.judge_rubric}\n"
+            )
+
+        if self.reference_context:
+            parts.append(
+                f"\n## Reference Context\n\n"
+                f"{self.reference_context}\n"
             )
 
         if self.example_outputs:
@@ -167,6 +176,20 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
     description = describe_fn() if describe_fn else ""
     display_name = scenario_name.replace("_", " ").title()
 
+    # Populate agent task fields if applicable
+    task_prompt: str | None = None
+    judge_rubric: str | None = None
+    output_format: str | None = None
+    reference_context: str | None = None
+    if hasattr(scenario, "get_task_prompt") and hasattr(scenario, "get_rubric"):
+        try:
+            task_prompt = scenario.get_task_prompt(scenario.initial_state())
+            judge_rubric = scenario.get_rubric()
+            output_format = getattr(scenario, "_output_format", None)
+            reference_context = getattr(scenario, "_reference_context", None)
+        except Exception:
+            pass
+
     return SkillPackage(
         scenario_name=scenario_name,
         display_name=display_name,
@@ -181,6 +204,10 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
             "completed_runs": completed_runs,
             "has_snapshot": snapshot is not None,
         },
+        task_prompt=task_prompt,
+        judge_rubric=judge_rubric,
+        output_format=output_format,
+        reference_context=reference_context,
     )
 
 
@@ -213,6 +240,7 @@ def export_agent_task_skill(
     lessons: list[str],
     best_outputs: list[dict],
     hints: str | None = None,
+    reference_context: str | None = None,
 ) -> SkillPackage:
     """Convenience builder for agent-task skill packages."""
     display_name = scenario_name.replace("_", " ").title()
@@ -230,6 +258,7 @@ def export_agent_task_skill(
         judge_rubric=judge_rubric,
         example_outputs=best_outputs or None,
         output_format=output_format,
+        reference_context=reference_context,
     )
 
 

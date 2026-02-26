@@ -37,15 +37,32 @@ class LLMJudge:
         self.samples = max(1, samples)
         self.temperature = temperature
 
-    def evaluate(self, task_prompt: str, agent_output: str) -> JudgeResult:
+    def evaluate(
+        self,
+        task_prompt: str,
+        agent_output: str,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+    ) -> JudgeResult:
         """Evaluate agent output by calling llm_fn N times and averaging."""
         system_prompt = (
             "You are an expert judge evaluating an AI agent's output. "
             "Evaluate the output against the provided rubric. "
+        )
+        if reference_context:
+            system_prompt += (
+                "You have been provided with authoritative reference context. "
+                "You MUST evaluate factual accuracy against this reference. "
+                "Any claims that contradict the reference context should be penalized heavily. "
+                "Include a 'factual_accuracy' dimension in your scoring. "
+            )
+        system_prompt += (
             "Output your evaluation between <!-- JUDGE_RESULT_START --> and <!-- JUDGE_RESULT_END --> markers "
             'containing JSON: {"score": 0.0-1.0, "reasoning": "...", "dimensions": {"dim1": 0.0-1.0, ...}}'
         )
-        user_prompt = self._build_judge_prompt(task_prompt, agent_output)
+        user_prompt = self._build_judge_prompt(
+            task_prompt, agent_output, reference_context, required_concepts
+        )
 
         scores: list[float] = []
         reasonings: list[str] = []
@@ -72,6 +89,10 @@ class LLMJudge:
                 vals = [d[key] for d in all_dims if key in d]
                 avg_dims[key] = sum(vals) / len(vals) if vals else 0.0
 
+        # Ensure factual_accuracy dimension exists when reference context provided
+        if reference_context and "factual_accuracy" not in avg_dims:
+            avg_dims["factual_accuracy"] = avg_score
+
         combined_reasoning = "\n---\n".join(reasonings)
 
         return JudgeResult(
@@ -81,14 +102,32 @@ class LLMJudge:
             raw_responses=raw_responses,
         )
 
-    def _build_judge_prompt(self, task_prompt: str, agent_output: str) -> str:
-        return (
-            f"## Rubric\n{self.rubric}\n\n"
-            f"## Task Prompt\n{task_prompt}\n\n"
-            f"## Agent Output\n{agent_output}\n\n"
-            "Evaluate the agent's output against the rubric. "
+    def _build_judge_prompt(
+        self,
+        task_prompt: str,
+        agent_output: str,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+    ) -> str:
+        parts = [
+            f"## Rubric\n{self.rubric}\n",
+        ]
+        if reference_context:
+            parts.append(
+                f"\n## Reference Context (Authoritative)\n{reference_context}\n"
+            )
+        if required_concepts:
+            concepts_list = ", ".join(required_concepts)
+            parts.append(
+                f"\n## Required Concepts\nThe output MUST correctly address these concepts: {concepts_list}\n"
+            )
+        parts.append(f"\n## Task Prompt\n{task_prompt}\n")
+        parts.append(f"\n## Agent Output\n{agent_output}\n")
+        parts.append(
+            "\nEvaluate the agent's output against the rubric. "
             "Provide your evaluation between <!-- JUDGE_RESULT_START --> and <!-- JUDGE_RESULT_END --> markers."
         )
+        return "\n".join(parts)
 
     def _parse_judge_response(self, response: str) -> tuple[float, str, dict[str, float]]:
         """Parse judge response, extracting JSON between markers."""
