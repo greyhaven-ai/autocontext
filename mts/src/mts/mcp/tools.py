@@ -254,7 +254,12 @@ def run_improvement_loop(
         supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
         return {"error": f"Unknown scenario '{scenario_name}'. Available: {supported}"}
 
+    from mts.scenarios.agent_task import AgentTaskInterface
+
     task = SCENARIO_REGISTRY[scenario_name]()
+    if not isinstance(task, AgentTaskInterface):
+        return {"error": f"'{scenario_name}' is not an agent task scenario. Improvement loops require agent task scenarios."}
+
     from mts.execution.improvement_loop import ImprovementLoop
 
     calibration = ctx.sqlite.get_calibration_examples(scenario_name, limit=5)

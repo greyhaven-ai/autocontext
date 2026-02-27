@@ -197,6 +197,8 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
     output_format: str | None = None
     reference_context: str | None = None
     context_preparation: str | None = None
+    max_rounds: int | None = None
+    quality_threshold_val: float | None = None
     if hasattr(scenario, "get_task_prompt") and hasattr(scenario, "get_rubric"):
         try:
             task_prompt = scenario.get_task_prompt(scenario.initial_state())
@@ -204,6 +206,8 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
             output_format = getattr(scenario, "_output_format", None)
             reference_context = getattr(scenario, "_reference_context", None)
             context_preparation = getattr(scenario, "_context_preparation", None)
+            max_rounds = getattr(scenario, "_max_rounds", None)
+            quality_threshold_val = getattr(scenario, "_quality_threshold", None)
         except Exception:
             pass
 
@@ -226,6 +230,8 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
         output_format=output_format,
         reference_context=reference_context,
         context_preparation=context_preparation,
+        max_rounds=max_rounds,
+        quality_threshold=quality_threshold_val,
     )
 
 

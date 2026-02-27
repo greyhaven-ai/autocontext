@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
+from mts.scenarios.agent_task import AgentTaskInterface
 
 logger = logging.getLogger(__name__)
 
