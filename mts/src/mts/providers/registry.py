@@ -80,16 +80,20 @@ def create_provider(
 def get_provider(settings: AppSettings) -> LLMProvider:
     """Create a judge provider from MTS settings.
 
-    Reads ``MTS_JUDGE_PROVIDER``, ``MTS_JUDGE_BASE_URL``, and existing
-    settings fields to configure the appropriate provider.
+    Uses ``settings.judge_provider``, ``settings.judge_base_url``, and
+    ``settings.judge_api_key``. Falls back to provider-specific env vars
+    (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``) when ``judge_api_key`` is not set.
     """
-    provider_type = os.getenv("MTS_JUDGE_PROVIDER", "anthropic")
-    base_url = os.getenv("MTS_JUDGE_BASE_URL")
-    api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+    provider_type = settings.judge_provider
+    base_url = settings.judge_base_url
 
-    # For non-Anthropic providers, check for their own key env vars
-    if provider_type in ("openai", "openai-compatible"):
-        api_key = os.getenv("OPENAI_API_KEY") or api_key
+    # Use judge_api_key if set, otherwise fall back to provider-specific keys
+    api_key = settings.judge_api_key
+    if not api_key:
+        if provider_type in ("openai", "openai-compatible"):
+            api_key = os.getenv("OPENAI_API_KEY")
+        else:
+            api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
 
     return create_provider(
         provider_type=provider_type,

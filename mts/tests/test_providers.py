@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
+from mts.execution.judge import JudgeResult, LLMJudge
 from mts.providers.base import CompletionResult, LLMProvider, ProviderError
 from mts.providers.callable_wrapper import CallableProvider
 from mts.providers.registry import create_provider
-from mts.execution.judge import LLMJudge, JudgeResult
 
+try:
+    import openai  # noqa: F401
+
+    _HAS_OPENAI = True
+except ImportError:
+    _HAS_OPENAI = False
+
+_skip_no_openai = pytest.mark.skipif(not _HAS_OPENAI, reason="openai package not installed")
 
 # ---------------------------------------------------------------------------
 # Base interface tests
@@ -71,7 +80,9 @@ class TestLLMProviderInterface:
 
 class TestCallableProvider:
     def test_wraps_callable(self):
-        fn = lambda sys, usr: f"echo: {usr}"
+        def fn(sys: str, usr: str) -> str:
+            return f"echo: {usr}"
+
         p = CallableProvider(fn, model_name="test-model")
         result = p.complete("sys", "hello")
         assert result.text == "echo: hello"
@@ -101,11 +112,13 @@ class TestRegistry:
         assert p.default_model() == "claude-test"
         assert p.name == "AnthropicProvider"
 
+    @_skip_no_openai
     def test_create_ollama_provider(self):
         p = create_provider("ollama", model="llama3.1")
         assert p.default_model() == "llama3.1"
         assert p.name == "OpenAICompatibleProvider"
 
+    @_skip_no_openai
     def test_create_vllm_provider(self):
         p = create_provider("vllm", base_url="http://gpu-box:8000/v1", model="mistral-7b")
         assert p.default_model() == "mistral-7b"
@@ -118,6 +131,7 @@ class TestRegistry:
         p = create_provider("ANTHROPIC", api_key="test")
         assert p.name == "AnthropicProvider"
 
+    @_skip_no_openai
     def test_create_openai_compat(self):
         p = create_provider(
             "openai-compatible",
@@ -147,7 +161,9 @@ class TestJudgeWithProvider:
         assert "excellent" in result.reasoning
 
     def test_judge_with_llm_fn_backward_compat(self):
-        fn = lambda sys, usr: _make_judge_response(0.60, "okay")
+        def fn(sys: str, usr: str) -> str:
+            return _make_judge_response(0.60, "okay")
+
         judge = LLMJudge(model="test", rubric="be good", llm_fn=fn)
         result = judge.evaluate("task", "output")
         assert result.score == 0.60
@@ -159,7 +175,10 @@ class TestJudgeWithProvider:
     def test_judge_provider_takes_precedence(self):
         """When both provider and llm_fn are given, provider wins."""
         provider = _DummyProvider(_make_judge_response(0.99, "provider"))
-        fn = lambda s, u: _make_judge_response(0.01, "callable")
+
+        def fn(s: str, u: str) -> str:
+            return _make_judge_response(0.01, "callable")
+
         judge = LLMJudge(model="test", rubric="rubric", provider=provider, llm_fn=fn)
         result = judge.evaluate("task", "output")
         assert result.score == 0.99
@@ -218,6 +237,7 @@ class TestSettingsIntegration:
         assert provider.name == "AnthropicProvider"
         assert provider.default_model() == "claude-test"
 
+    @_skip_no_openai
     def test_get_provider_ollama(self, monkeypatch):
         from mts.config.settings import AppSettings
         from mts.providers.registry import get_provider

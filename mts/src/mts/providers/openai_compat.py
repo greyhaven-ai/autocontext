@@ -12,7 +12,7 @@ from typing import Any
 from mts.providers.base import CompletionResult, LLMProvider, ProviderError
 
 try:
-    import openai
+    import openai  # type: ignore[import-not-found]
 
     _HAS_OPENAI = True
 except ImportError:

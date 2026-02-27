@@ -38,7 +38,11 @@ class AnthropicProvider(LLMProvider):
         except anthropic.APIError as exc:
             raise ProviderError(f"Anthropic API error: {exc}") from exc
 
-        text = response.content[0].text if response.content else ""
+        text = ""
+        if response.content:
+            block = response.content[0]
+            if hasattr(block, "text"):
+                text = block.text
         usage = {}
         if response.usage:
             usage = {
