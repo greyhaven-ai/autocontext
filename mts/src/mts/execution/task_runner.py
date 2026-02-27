@@ -182,12 +182,14 @@ class TaskRunner:
         model: str = "claude-sonnet-4-20250514",
         poll_interval: float = 60.0,
         max_consecutive_empty: int = 0,  # 0 = run forever
+        notifier: object | None = None,  # Notifier instance (optional)
     ) -> None:
         self.store = store
         self.provider = provider
         self.model = model
         self.poll_interval = poll_interval
         self.max_consecutive_empty = max_consecutive_empty
+        self.notifier = notifier
         self._shutdown = False
         self._tasks_processed = 0
 
@@ -280,9 +282,50 @@ class TaskRunner:
                 task_id, result.best_score, result.total_rounds, result.met_threshold,
             )
 
+            self._emit_completion_event(task_id, spec_name, result)
+
         except Exception:
             logger.exception("task %s failed", task_id)
-            self.store.fail_task(task_id, traceback.format_exc())
+            error_msg = traceback.format_exc()
+            self.store.fail_task(task_id, error_msg)
+            self._emit_failure_event(task_id, spec_name, error_msg)
+
+    def _emit_completion_event(
+        self, task_id: str, spec_name: str, result: ImprovementResult
+    ) -> None:
+        if not self.notifier:
+            return
+        try:
+            from mts.notifications.base import EventType, NotificationEvent
+
+            event_type = EventType.THRESHOLD_MET if result.met_threshold else EventType.COMPLETION
+            event = NotificationEvent(
+                type=event_type,
+                task_name=spec_name,
+                task_id=task_id,
+                score=result.best_score,
+                round_count=result.total_rounds,
+                output_preview=result.best_output[:500] if result.best_output else "",
+            )
+            self.notifier.notify(event)
+        except Exception as exc:
+            logger.warning("notification failed: %s", exc)
+
+    def _emit_failure_event(self, task_id: str, spec_name: str, error: str) -> None:
+        if not self.notifier:
+            return
+        try:
+            from mts.notifications.base import EventType, NotificationEvent
+
+            event = NotificationEvent(
+                type=EventType.FAILURE,
+                task_name=spec_name,
+                task_id=task_id,
+                error=error,
+            )
+            self.notifier.notify(event)
+        except Exception as exc:
+            logger.warning("notification failed: %s", exc)
 
     def _setup_signals(self) -> None:
         """Register signal handlers for graceful shutdown."""
