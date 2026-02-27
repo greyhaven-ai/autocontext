@@ -25,7 +25,8 @@ dependencies = [
 mcp = ["mcp>=1.0.0"]
 agent-sdk = ["claude-agent-sdk>=0.1.0"]
 monty = ["pydantic-monty>=0.0.7"]
-all = ["mts-control-plane[mcp,agent-sdk,monty]"]
+openai = ["openai>=1.0.0"]
+all = ["mts-control-plane[mcp,agent-sdk,monty,openai]"]
 
 [dependency-groups]
 dev = [
