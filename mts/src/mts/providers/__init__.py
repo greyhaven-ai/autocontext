@@ -4,7 +4,7 @@ Supports Anthropic, OpenAI, and any OpenAI-compatible endpoint (vLLM, Ollama, et
 """
 
 from mts.providers.base import LLMProvider, ProviderError
-from mts.providers.registry import get_provider, create_provider
+from mts.providers.registry import create_provider, get_provider
 
 __all__ = [
     "LLMProvider",

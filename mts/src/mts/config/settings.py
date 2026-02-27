@@ -101,9 +101,9 @@ class AppSettings(BaseModel):
     judge_samples: int = Field(default=1, ge=1)
     judge_temperature: float = Field(default=0.0, ge=0.0)
     # Multi-model provider settings
-    judge_provider: str = Field(default="anthropic", description="LLM provider for judge: anthropic, openai, openai-compatible, ollama, vllm")
-    judge_base_url: str | None = Field(default=None, description="Base URL for OpenAI-compatible endpoints (vLLM, Ollama, etc.)")
-    judge_api_key: str | None = Field(default=None, description="API key override for judge provider (falls back to provider-specific env vars)")
+    judge_provider: str = Field(default="anthropic")
+    judge_base_url: str | None = Field(default=None)
+    judge_api_key: str | None = Field(default=None)
 
 
 def load_settings() -> AppSettings:
