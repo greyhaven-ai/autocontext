@@ -5,6 +5,9 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from mts.providers.base import LLMProvider
+from mts.providers.callable_wrapper import CallableProvider
+
 
 @dataclass(slots=True)
 class JudgeResult:
@@ -21,21 +24,35 @@ _RESULT_END = "<!-- JUDGE_RESULT_END -->"
 
 
 class LLMJudge:
-    """LLM-based judge for evaluating agent task outputs."""
+    """LLM-based judge for evaluating agent task outputs.
+
+    Accepts either a ``provider: LLMProvider`` or a legacy
+    ``llm_fn: Callable[[str, str], str]`` for backward compatibility.
+    """
 
     def __init__(
         self,
         model: str,
         rubric: str,
-        llm_fn: Callable[[str, str], str],
+        llm_fn: Callable[[str, str], str] | None = None,
+        provider: LLMProvider | None = None,
         samples: int = 1,
         temperature: float = 0.0,
     ) -> None:
+        if provider is not None:
+            self.provider = provider
+        elif llm_fn is not None:
+            self.provider = CallableProvider(llm_fn, model_name=model)
+        else:
+            raise ValueError("Either 'provider' or 'llm_fn' must be provided")
+
         self.model = model
         self.rubric = rubric
-        self.llm_fn = llm_fn
         self.samples = max(1, samples)
         self.temperature = temperature
+
+        # Backward-compatible property
+        self.llm_fn = llm_fn
 
     def evaluate(
         self,
@@ -45,7 +62,7 @@ class LLMJudge:
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
     ) -> JudgeResult:
-        """Evaluate agent output by calling llm_fn N times and averaging."""
+        """Evaluate agent output by calling the provider N times and averaging."""
         system_prompt = (
             "You are an expert judge evaluating an AI agent's output. "
             "Evaluate the output against the provided rubric. "
@@ -71,7 +88,13 @@ class LLMJudge:
         raw_responses: list[str] = []
 
         for _ in range(self.samples):
-            response = self.llm_fn(system_prompt, user_prompt)
+            result = self.provider.complete(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=self.model,
+                temperature=self.temperature,
+            )
+            response = result.text
             raw_responses.append(response)
             score, reasoning, dims = self._parse_judge_response(response)
             scores.append(score)
