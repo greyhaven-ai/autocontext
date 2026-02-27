@@ -26,8 +26,8 @@ mts/                          # Python package root (pyproject.toml lives here)
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
     server/                   # FastAPI dashboard + WebSocket events
-  tests/                      # Pytest tests (~957 tests)
-  migrations/                 # SQLite migration SQL files (001-004, applied in filename order)
+  tests/                      # Pytest tests (~1029 tests)
+  migrations/                 # SQLite migration SQL files (001-006, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
   skills/                     # Runtime-generated: operational skill notes per scenario
@@ -146,7 +146,7 @@ When RLM is enabled, `AgentOrchestrator._run_rlm_roles()` runs analyst and archi
 Pluggable via `SCENARIO_REGISTRY` dict in `scenarios/__init__.py`. The registry holds two types of scenario:
 
 - **Game scenarios** — Implement `ScenarioInterface` (ABC) with methods: `initial_state`, `get_observation`, `validate_actions`, `step`, `is_terminal`, `get_result`, `execute_match`, `describe_rules`, `describe_strategy_interface`, `describe_evaluation_criteria`. Evaluated via tournament matches.
-- **Agent task scenarios** — Implement `AgentTaskInterface` (ABC, `scenarios/agent_task.py`) with methods: `get_task_prompt`, `evaluate_output`, `get_rubric`, `initial_state`, `describe_task`. Evaluated via LLM judge rather than match execution. Returns `AgentTaskResult` (score, reasoning, dimension_scores).
+- **Agent task scenarios** — Implement `AgentTaskInterface` (ABC, `scenarios/agent_task.py`) with methods: `get_task_prompt`, `evaluate_output`, `get_rubric`, `initial_state`, `describe_task`, plus optional `prepare_context` (gather/validate context before generation), `validate_context` (check required context keys are present), and `revise_output` (revise output based on judge feedback for multi-step improvement). Evaluated via LLM judge rather than match execution. Returns `AgentTaskResult` (score, reasoning, dimension_scores).
 
 Both types coexist in `SCENARIO_REGISTRY`. Code that accesses the registry uses `hasattr`/`getattr` guards to handle the dual-interface pattern (e.g., `describe_rules` vs `describe_task`, `execute_match` vs `evaluate_output`).
 
@@ -173,7 +173,7 @@ WebSocket protocol for interactive creation: `create_scenario` → `scenario_gen
 Agent tasks are a second creation pipeline for scenarios evaluated by LLM judges rather than match execution. The pipeline mirrors custom scenario creation:
 
 1. **Designer** (`custom/agent_task_designer.py`) — LLM generates an `AgentTaskSpec` from a natural-language description
-2. **AgentTaskSpec** (`custom/agent_task_spec.py`) — Dataclass defining `task_prompt`, `judge_rubric`, `output_format`, `judge_model`, and `difficulty_tiers`
+2. **AgentTaskSpec** (`custom/agent_task_spec.py`) — Dataclass defining `task_prompt`, `judge_rubric`, `output_format`, `judge_model`, `difficulty_tiers`, `reference_context` (gold-standard reference for judge), `reference_sources` (URLs/paths), `required_concepts` (must-cover concepts), `context_preparation` (instructions for context gathering), `required_context_keys` (state keys that `prepare_context` must populate), `max_rounds` (improvement loop iterations, default 1), `quality_threshold` (target score 0.0–1.0, default 0.9), and `revision_prompt` (instructions for `revise_output`)
 3. **Codegen** (`custom/agent_task_codegen.py`) — `generate_agent_task_class(spec, name)` produces a Python `AgentTaskInterface` subclass. Uses `repr()` for safe string embedding in generated code.
 4. **Validation** (`custom/agent_task_validator.py`) — Three stages: `validate_spec()` (structural), `validate_syntax()` (`ast.parse()`), `validate_execution()` (instantiate + call methods)
 5. **Creator** (`custom/agent_task_creator.py`) — `AgentTaskCreator` orchestrates the full pipeline: design → validate spec → codegen → validate syntax → validate execution → save to disk → load module → register in `SCENARIO_REGISTRY`
@@ -187,7 +187,8 @@ Agent tasks are a second creation pipeline for scenarios evaluated by LLM judges
 - **MontyExecutor** (`execution/executors/monty.py`) — Sandboxed execution via pydantic-monty interpreter. Scenario classes run on the host; Monty sandboxes a generated eval script that calls back via external functions (`initial_state`, `validate_actions`, `step`, `is_terminal`, `get_result`). Supports both JSON strategies (`_EVAL_SCRIPT`) and agent-authored code strategies (`_CODE_STRATEGY_EVAL_SCRIPT` with `get_observation`). Selected via `MTS_EXECUTOR_MODE=monty`. Enforces timeout and max external call limits.
 - **Code strategies** — When `MTS_CODE_STRATEGIES_ENABLED=true`, the competitor emits executable Python code (in `` ```python `` fences) instead of JSON parameters. `StrategyTranslator.translate_code()` extracts the code block without an LLM call, producing `{"__code__": "<source>"}`. `MontyExecutor.execute_code_strategy()` runs the agent code inside the sandbox with access to `get_observation()`, giving agents direct programmatic control over actions.
 - **LLMJudge** (`execution/judge.py`) — LLM-based evaluation for agent task scenarios. Calls an LLM N times (configurable via `MTS_JUDGE_SAMPLES`) to evaluate agent output against a rubric. Parses structured JSON between `<!-- JUDGE_RESULT_START/END -->` markers. Returns `JudgeResult` with averaged score, combined reasoning, and per-dimension scores. Score clamping ensures 0.0–1.0 range.
-- **JudgeExecutor** (`execution/judge_executor.py`) — Thin executor that delegates to `AgentTaskInterface.evaluate_output()`. Used for agent task scenarios instead of match-based execution.
+- **JudgeExecutor** (`execution/judge_executor.py`) — Executor for agent task scenarios. Runs context preparation (`prepare_context` → `validate_context`) before evaluation — if validation fails, returns score 0.0 with error details. Passes `reference_context`, `required_concepts`, and `calibration_examples` through to `evaluate_output()`.
+- **ImprovementLoop** (`execution/improvement_loop.py`) — Multi-step evaluate→revise loop for agent task scenarios. Calls `evaluate_output()`, then `revise_output()` if score is below threshold, repeating up to `max_rounds`. Tracks per-round `RoundResult` (score, reasoning, output, is_revision) and returns `ImprovementResult` with best score/output, whether threshold was met, and whether improvement occurred. Stops early if revision returns unchanged output.
 
 ### Knowledge System (`knowledge/`, `storage/artifacts.py`)
 
@@ -220,17 +221,17 @@ Key behaviors:
 
 Framework-agnostic knowledge service that lets any autonomous agent query MTS for solved strategies, search for relevant tactics, and submit new problems for on-demand solving. Consumers receive portable markdown+JSON skill packages they can drop into any agent skill directory.
 
-- **Skill Export** (`knowledge/export.py`) — `SkillPackage` dataclass assembles playbook, cleaned lessons, best strategy JSON, hints, and metadata into a portable bundle. For agent task scenarios, also includes `task_prompt`, `judge_rubric`, `example_outputs`, and `output_format` fields with a dedicated `_render_agent_task_markdown()` renderer. `export_skill_package(ctx, scenario_name)` reads from `ArtifactStore` and `SQLiteStore`. `export_agent_task_skill()` is a convenience builder for agent-task packages. `list_solved_scenarios(ctx)` returns metadata for scenarios with completed runs. `_clean_lessons()` strips MTS-internal noise (rollback logs, raw JSON blobs, score parentheticals) from lesson bullets. `_scenario_description()` handles the dual-interface pattern (`describe_rules` vs `describe_task`).
+- **Skill Export** (`knowledge/export.py`) — `SkillPackage` dataclass assembles playbook, cleaned lessons, best strategy JSON, hints, and metadata into a portable bundle. For agent task scenarios, also includes `task_prompt`, `judge_rubric`, `example_outputs`, `output_format`, `reference_context`, `context_preparation`, `max_rounds`, and `quality_threshold` fields with a dedicated `_render_agent_task_markdown()` renderer. `export_skill_package(ctx, scenario_name)` reads from `ArtifactStore` and `SQLiteStore`. `export_agent_task_skill()` is a convenience builder for agent-task packages. `list_solved_scenarios(ctx)` returns metadata for scenarios with completed runs. `_clean_lessons()` strips MTS-internal noise (rollback logs, raw JSON blobs, score parentheticals) from lesson bullets. `_scenario_description()` handles the dual-interface pattern (`describe_rules` vs `describe_task`).
 - **Strategy Search** (`knowledge/search.py`) — `search_strategies(ctx, query, top_k)` builds a search index over solved scenarios (both game and agent task) and scores with TF-IDF-style keyword matching across name, description, strategy interface, evaluation criteria, lessons, playbook excerpt, hints, task prompt, and judge rubric. Weighted fields (name ×3, description ×2, task_prompt ×2, lessons ×1.5, judge_rubric ×1.5, playbook ×1) with multi-term coverage boost.
 - **Solve-on-Demand** (`knowledge/solver.py`) — `SolveManager` accepts natural-language problem descriptions and runs background threads that: create a scenario via `ScenarioCreator`, run N generations via `GenerationRunner`, and export the resulting `SkillPackage`. Jobs are in-memory with polling via `get_status(job_id)` and `get_result(job_id)`.
 
 Access paths:
-- **MCP tools**: `mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`
+- **MCP tools**: `mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`, `mts_record_feedback`, `mts_get_feedback`, `mts_run_improvement_loop`
 - **REST API**: `GET /api/knowledge/scenarios`, `GET /api/knowledge/export/{name}`, `POST /api/knowledge/search`, `POST /api/knowledge/solve`, `GET /api/knowledge/solve/{job_id}`
 
 ### Storage
 
-- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers, knowledge snapshots. Includes `get_best_competitor_output(scenario)` and `count_completed_runs(scenario)` for the knowledge API. Migrations applied from `migrations/*.sql` in filename order.
+- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers, knowledge snapshots, human feedback. Includes `get_best_competitor_output(scenario)` and `count_completed_runs(scenario)` for the knowledge API. Human feedback methods: `insert_human_feedback()`, `get_human_feedback()`, `get_calibration_examples()` (returns scored examples for judge calibration). Migrations applied from `migrations/*.sql` in filename order (001-006; migration 006 adds the `human_feedback` table).
 - **ArtifactStore** (`storage/artifacts.py`) — Filesystem persistence: generation metrics/replays under `runs/<run_id>/generations/`, playbooks/analysis/tools/hints/snapshots under `knowledge/<scenario>/`, skill notes under `skills/`. Syncs skill notes to `.claude/skills/` via symlinks.
 
 ### Dashboard & Events
@@ -254,7 +255,7 @@ The ecosystem loop alternates between provider modes across sequential runs, wit
 Stdio-based MCP server exposing MTS functionality as tools for external Claude Code users:
 
 - **`mcp/tools.py`** — Pure sync tool implementation functions wrapping `ScenarioInterface`/`AgentTaskInterface`, `ArtifactStore`, `SQLiteStore`. Independently testable without MCP protocol. Includes knowledge API wrappers (`export_skill`, `list_solved`, `search_strategies`). Uses `hasattr` guards so tools like `validate_strategy`, `run_match`, and `run_tournament` return appropriate messages for agent task scenarios (which use judge evaluation instead of match execution).
-- **`mcp/server.py`** — MCP server using `@server.tool()` decorators. Each tool delegates to `tools.py`. Registers scenario tools (list, describe, validate, match, tournament), knowledge tools (playbook, trajectory, hints, skills, analysis, tools), run tools (list, status, replay), sandbox tools (create, run, status, playbook, list, destroy), and knowledge API tools (`mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`).
+- **`mcp/server.py`** — MCP server using `@server.tool()` decorators. Each tool delegates to `tools.py`. Registers scenario tools (list, describe, validate, match, tournament), knowledge tools (playbook, trajectory, hints, skills, analysis, tools), run tools (list, status, replay), sandbox tools (create, run, status, playbook, list, destroy), knowledge API tools (`mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`), human feedback tools (`mts_record_feedback`, `mts_get_feedback`), and the improvement loop tool (`mts_run_improvement_loop`).
 - **`mcp/sandbox.py`** — `SandboxManager` creates isolated environments with their own SQLite DB, knowledge directory (seeded from main), and run storage. Sandbox runs use `GenerationRunner` with sandbox-scoped `AppSettings`. `MTS_SANDBOX_MAX_GENERATIONS` limits generation count.
 
 CLI entry point: `uv run mts mcp-serve` (requires `mcp` optional dependency).
