@@ -37,6 +37,8 @@ class SkillPackage:
     output_format: str | None = None
     reference_context: str | None = None
     context_preparation: str | None = None
+    max_rounds: int | None = None
+    quality_threshold: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -63,6 +65,10 @@ class SkillPackage:
             d["reference_context"] = self.reference_context
         if self.context_preparation is not None:
             d["context_preparation"] = self.context_preparation
+        if self.max_rounds is not None and self.max_rounds > 1:
+            d["max_rounds"] = self.max_rounds
+        if self.quality_threshold is not None:
+            d["quality_threshold"] = self.quality_threshold
         return d
 
     def to_skill_markdown(self) -> str:

@@ -35,6 +35,9 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
     req_concepts_repr = repr(spec.required_concepts)
     ctx_prep_repr = repr(spec.context_preparation)
     req_ctx_keys_repr = repr(spec.required_context_keys)
+    max_rounds_repr = repr(spec.max_rounds)
+    quality_threshold_repr = repr(spec.quality_threshold)
+    revision_prompt_repr = repr(spec.revision_prompt)
 
     source = textwrap.dedent(f'''\
         from __future__ import annotations
@@ -56,6 +59,9 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
             _required_concepts = {req_concepts_repr}
             _context_preparation = {ctx_prep_repr}
             _required_context_keys = {req_ctx_keys_repr}
+            _max_rounds = {max_rounds_repr}
+            _quality_threshold = {quality_threshold_repr}
+            _revision_prompt = {revision_prompt_repr}
 
             def get_task_prompt(self, state: dict) -> str:
                 return self._task_prompt
@@ -117,5 +123,16 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                         if key not in state or not state[key]:
                             errors.append(f"missing required context key: '{{key}}'")
                 return errors
+
+            def revise_output(
+                self,
+                output: str,
+                judge_result: AgentTaskResult,
+                state: dict,
+            ) -> str:
+                if not self._revision_prompt and self._max_rounds <= 1:
+                    return output
+                # Default revision: return original (llm_fn must be injected at runtime)
+                return output
     ''')
     return source

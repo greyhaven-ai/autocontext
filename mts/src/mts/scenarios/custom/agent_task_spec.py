@@ -18,3 +18,6 @@ class AgentTaskSpec:
     calibration_examples: list[dict] | None = None
     context_preparation: str | None = None  # Instructions for context gathering
     required_context_keys: list[str] | None = None  # Keys that must be in state after prepare_context
+    max_rounds: int = 1  # Max improvement rounds (1 = single-shot)
+    quality_threshold: float = 0.9  # Stop improving when score >= this
+    revision_prompt: str | None = None  # Instructions for how to revise output
