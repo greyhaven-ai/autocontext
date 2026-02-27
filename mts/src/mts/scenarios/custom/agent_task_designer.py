@@ -29,6 +29,9 @@ _EXAMPLE_SPEC = {
     "required_concepts": None,
     "context_preparation": None,
     "required_context_keys": None,
+    "max_rounds": 1,
+    "quality_threshold": 0.9,
+    "revision_prompt": None,
 }
 
 AGENT_TASK_DESIGNER_SYSTEM = (
@@ -49,7 +52,10 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     '  "reference_sources": ["list of source URLs or references (optional)"],\n'
     '  "required_concepts": ["key concepts the output must correctly address (optional)"],\n'
     '  "context_preparation": "Instructions for gathering context before generation (optional, null if not needed)",\n'
-    '  "required_context_keys": ["state keys that must be present after context preparation (optional)"]\n'
+    '  "required_context_keys": ["state keys that must be present after context preparation (optional)"],\n'
+    '  "max_rounds": 1,\n'
+    '  "quality_threshold": 0.9,\n'
+    '  "revision_prompt": "Instructions for revising output based on judge feedback (optional)"\n'
     "}\n"
     "```\n\n"
     "## Rules\n\n"
@@ -65,7 +71,10 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     "- `context_preparation` (optional) — instructions for gathering/loading context before the agent generates output. "
     "Use this when the task requires research, document loading, or other preparation steps.\n"
     "- `required_context_keys` (optional) — state dictionary keys that must be present after context preparation. "
-    "Used to validate that preparation completed successfully.\n\n"
+    "Used to validate that preparation completed successfully.\n"
+    "- `max_rounds` (optional, default 1) — maximum improvement rounds. Set >1 to enable iterative refinement.\n"
+    "- `quality_threshold` (optional, default 0.9) — stop improving when score >= this value.\n"
+    "- `revision_prompt` (optional) — instructions for how the agent should revise its output based on judge feedback.\n\n"
     f"## Example\n\n{SPEC_START}\n"
     f"{json.dumps(_EXAMPLE_SPEC, indent=2)}\n"
     f"{SPEC_END}\n\n"
@@ -93,6 +102,9 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
         calibration_examples=data.get("calibration_examples"),
         context_preparation=data.get("context_preparation"),
         required_context_keys=data.get("required_context_keys"),
+        max_rounds=data.get("max_rounds", 1),
+        quality_threshold=data.get("quality_threshold", 0.9),
+        revision_prompt=data.get("revision_prompt"),
     )
 
 
