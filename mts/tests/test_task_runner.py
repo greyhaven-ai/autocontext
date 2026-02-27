@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 
 import pytest
 
+from mts.execution.improvement_loop import ImprovementResult, RoundResult
 from mts.execution.task_runner import (
+    SimpleAgentTask,
     TaskConfig,
     TaskRunner,
-    SimpleAgentTask,
-    enqueue_task,
     _serialize_result,
+    enqueue_task,
 )
-from mts.execution.improvement_loop import ImprovementResult, RoundResult
 from mts.providers.base import CompletionResult, LLMProvider
 from mts.storage.sqlite_store import SQLiteStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
