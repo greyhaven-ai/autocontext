@@ -99,6 +99,12 @@ class AgentTaskCreator:
             spec_data["context_preparation"] = spec.context_preparation
         if spec.required_context_keys is not None:
             spec_data["required_context_keys"] = spec.required_context_keys
+        if spec.max_rounds != 1:
+            spec_data["max_rounds"] = spec.max_rounds
+        if spec.quality_threshold != 0.9:
+            spec_data["quality_threshold"] = spec.quality_threshold
+        if spec.revision_prompt is not None:
+            spec_data["revision_prompt"] = spec.revision_prompt
         spec_file.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
 
         # Mark as agent_task type

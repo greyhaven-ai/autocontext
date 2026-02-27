@@ -57,3 +57,16 @@ class AgentTaskInterface(ABC):
         Returns list of validation errors. Empty list means valid.
         """
         return []
+
+    def revise_output(
+        self,
+        output: str,
+        judge_result: AgentTaskResult,
+        state: dict,
+    ) -> str:
+        """Optional: revise output based on judge feedback.
+
+        Returns revised output string. Default returns original (no revision).
+        Override to implement LLM-based revision using judge reasoning.
+        """
+        return output

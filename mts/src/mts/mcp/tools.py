@@ -234,3 +234,66 @@ def get_feedback(
 ) -> list[dict[str, object]]:
     """Get recent human feedback for a scenario."""
     return ctx.sqlite.get_human_feedback(scenario_name, limit=limit)  # type: ignore[return-value]
+
+
+def run_improvement_loop(
+    ctx: MtsToolContext,
+    scenario_name: str,
+    initial_output: str,
+    max_rounds: int = 5,
+    quality_threshold: float = 0.9,
+    reference_context: str | None = None,
+    required_concepts: list[str] | None = None,
+) -> dict[str, object]:
+    """Run the multi-step improvement loop for an agent task.
+
+    Evaluates and iteratively improves agent output until quality threshold
+    is met or max rounds exhausted. Uses accumulated calibration examples.
+    """
+    if scenario_name not in SCENARIO_REGISTRY:
+        supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
+        return {"error": f"Unknown scenario '{scenario_name}'. Available: {supported}"}
+
+    from mts.scenarios.agent_task import AgentTaskInterface
+
+    task = SCENARIO_REGISTRY[scenario_name]()
+    if not isinstance(task, AgentTaskInterface):
+        return {"error": f"'{scenario_name}' is not an agent task scenario. Improvement loops require agent task scenarios."}
+
+    from mts.execution.improvement_loop import ImprovementLoop
+
+    calibration = ctx.sqlite.get_calibration_examples(scenario_name, limit=5)
+
+    loop = ImprovementLoop(
+        task=task,
+        max_rounds=max_rounds,
+        quality_threshold=quality_threshold,
+    )
+    result = loop.run(
+        initial_output=initial_output,
+        state=task.initial_state(),
+        reference_context=reference_context,
+        required_concepts=required_concepts,
+        calibration_examples=calibration if calibration else None,
+    )
+
+    rounds_summary = [
+        {
+            "round": r.round_number,
+            "score": r.score,
+            "is_revision": r.is_revision,
+            "reasoning_preview": r.reasoning[:200],
+        }
+        for r in result.rounds
+    ]
+
+    return {
+        "scenario_name": scenario_name,
+        "total_rounds": result.total_rounds,
+        "met_threshold": result.met_threshold,
+        "best_score": result.best_score,
+        "best_round": result.best_round,
+        "improved": result.improved,
+        "rounds": rounds_summary,
+        "best_output_preview": result.best_output[:500],
+    }

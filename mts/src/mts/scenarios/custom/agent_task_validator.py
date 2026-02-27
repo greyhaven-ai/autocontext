@@ -52,6 +52,15 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
                 if not isinstance(source, str) or not source.strip():
                     errors.append(f"reference_sources[{i}] must be a non-empty string")
 
+    if spec.max_rounds < 1:
+        errors.append("max_rounds must be >= 1")
+
+    if not (0.0 < spec.quality_threshold <= 1.0):
+        errors.append("quality_threshold must be between 0.0 (exclusive) and 1.0 (inclusive)")
+
+    if spec.revision_prompt is not None and not spec.revision_prompt.strip():
+        errors.append("revision_prompt, if provided, must not be empty")
+
     if spec.context_preparation is not None and not spec.context_preparation.strip():
         errors.append("context_preparation, if provided, must not be empty")
 
