@@ -259,6 +259,24 @@ def mts_get_feedback(scenario_name: str, limit: int = 10) -> str:
     return json.dumps(tools.get_feedback(_get_ctx(), scenario_name, limit))
 
 
+@mcp.tool()
+def mts_run_improvement_loop(
+    scenario_name: str,
+    initial_output: str,
+    max_rounds: int = 5,
+    quality_threshold: float = 0.9,
+    reference_context: str | None = None,
+    required_concepts: str | None = None,
+) -> str:
+    """Run the multi-step improvement loop for an agent task.
+    Iteratively evaluates and revises output until quality threshold or max rounds."""
+    concepts = json.loads(required_concepts) if required_concepts else None
+    return json.dumps(tools.run_improvement_loop(
+        _get_ctx(), scenario_name, initial_output, max_rounds,
+        quality_threshold, reference_context, concepts,
+    ))
+
+
 def run_server() -> None:
     """Synchronous entry point for the MCP server."""
     mcp.run(transport="stdio")

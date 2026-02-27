@@ -61,7 +61,7 @@ class AgentTaskInterface(ABC):
     def revise_output(
         self,
         output: str,
-        judge_result: "AgentTaskResult",
+        judge_result: AgentTaskResult,
         state: dict,
     ) -> str:
         """Optional: revise output based on judge feedback.
