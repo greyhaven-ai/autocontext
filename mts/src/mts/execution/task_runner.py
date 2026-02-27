@@ -10,15 +10,15 @@ import json
 import logging
 import signal
 import time
+import traceback
 import uuid
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 from mts.execution.improvement_loop import ImprovementLoop, ImprovementResult
 from mts.execution.judge import LLMJudge
 from mts.providers.base import LLMProvider
-from mts.scenarios.agent_task import AgentTaskInterface
+from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from mts.storage.sqlite_store import SQLiteStore
 
 logger = logging.getLogger(__name__)
@@ -109,18 +109,30 @@ class SimpleAgentTask(AgentTaskInterface):
     def describe_task(self) -> str:
         return self._task_prompt
 
-    def evaluate_output(self, output: str, state: dict, **kwargs: Any) -> Any:
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
+    ) -> AgentTaskResult:
         judge = LLMJudge(
             model=self._model,
             rubric=self._rubric,
             provider=self._provider,
         )
-        return judge.evaluate(
+        judge_result = judge.evaluate(
             task_prompt=self._task_prompt,
             agent_output=output,
-            reference_context=kwargs.get("reference_context"),
-            required_concepts=kwargs.get("required_concepts"),
-            calibration_examples=kwargs.get("calibration_examples"),
+            reference_context=reference_context,
+            required_concepts=required_concepts,
+            calibration_examples=calibration_examples,
+        )
+        return AgentTaskResult(
+            score=judge_result.score,
+            reasoning=judge_result.reasoning,
+            dimension_scores=judge_result.dimension_scores,
         )
 
     def generate_output(self, state: dict) -> str:
@@ -132,7 +144,7 @@ class SimpleAgentTask(AgentTaskInterface):
         )
         return result.text
 
-    def revise_output(self, output: str, judge_result: Any, state: dict) -> str:
+    def revise_output(self, output: str, judge_result: AgentTaskResult, state: dict) -> str:
         """Revise output using judge feedback."""
         revision_instruction = self._revision_prompt or (
             "Revise the following output based on the judge's feedback. "
@@ -270,7 +282,6 @@ class TaskRunner:
 
         except Exception:
             logger.exception("task %s failed", task_id)
-            import traceback
             self.store.fail_task(task_id, traceback.format_exc())
 
     def _setup_signals(self) -> None:
