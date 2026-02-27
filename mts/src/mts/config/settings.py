@@ -100,6 +100,10 @@ class AppSettings(BaseModel):
     judge_model: str = Field(default="claude-sonnet-4-20250514")
     judge_samples: int = Field(default=1, ge=1)
     judge_temperature: float = Field(default=0.0, ge=0.0)
+    # Multi-model provider settings
+    judge_provider: str = Field(default="anthropic", description="LLM provider for judge: anthropic, openai, openai-compatible, ollama, vllm")
+    judge_base_url: str | None = Field(default=None, description="Base URL for OpenAI-compatible endpoints (vLLM, Ollama, etc.)")
+    judge_api_key: str | None = Field(default=None, description="API key override for judge provider (falls back to provider-specific env vars)")
 
 
 def load_settings() -> AppSettings:
@@ -183,4 +187,7 @@ def load_settings() -> AppSettings:
         judge_model=os.getenv("MTS_JUDGE_MODEL", "claude-sonnet-4-20250514"),
         judge_samples=int(os.getenv("MTS_JUDGE_SAMPLES", "1")),
         judge_temperature=float(os.getenv("MTS_JUDGE_TEMPERATURE", "0.0")),
+        judge_provider=os.getenv("MTS_JUDGE_PROVIDER", "anthropic"),
+        judge_base_url=os.getenv("MTS_JUDGE_BASE_URL"),
+        judge_api_key=os.getenv("MTS_JUDGE_API_KEY"),
     )
