@@ -238,12 +238,11 @@ class TestSettingsIntegration:
         assert provider.default_model() == "claude-test"
 
     @_skip_no_openai
-    def test_get_provider_ollama(self, monkeypatch):
+    def test_get_provider_ollama(self):
         from mts.config.settings import AppSettings
         from mts.providers.registry import get_provider
 
-        monkeypatch.setenv("MTS_JUDGE_PROVIDER", "ollama")
-        settings = AppSettings(judge_model="llama3.1")
+        settings = AppSettings(judge_provider="ollama", judge_model="llama3.1")
         provider = get_provider(settings)
         assert provider.name == "OpenAICompatibleProvider"
         assert provider.default_model() == "llama3.1"
