@@ -88,15 +88,21 @@ class LLMJudge:
         raw_responses: list[str] = []
 
         for _ in range(self.samples):
-            result = self.provider.complete(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                model=self.model,
-                temperature=self.temperature,
-            )
-            response = result.text
-            raw_responses.append(response)
-            score, reasoning, dims = self._parse_judge_response(response)
+            score, reasoning, dims = 0.0, "", {}
+            # Retry up to 2 times on parse failure
+            for attempt in range(2):
+                result = self.provider.complete(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model=self.model,
+                    temperature=self.temperature,
+                )
+                response = result.text
+                raw_responses.append(response)
+                score, reasoning, dims = self._parse_judge_response(response)
+                if score > 0.0 or "Failed to parse" not in reasoning:
+                    break
+                logger.warning("judge parse failed (attempt %d), retrying", attempt + 1)
             scores.append(score)
             reasonings.append(reasoning)
             all_dims.append(dims)
@@ -166,7 +172,14 @@ class LLMJudge:
         parts.append(f"\n## Agent Output\n{agent_output}\n")
         parts.append(
             "\nEvaluate the agent's output against the rubric. "
-            "Provide your evaluation between <!-- JUDGE_RESULT_START --> and <!-- JUDGE_RESULT_END --> markers."
+            "Provide your evaluation between <!-- JUDGE_RESULT_START --> and <!-- JUDGE_RESULT_END --> markers.\n\n"
+            "You MUST use exactly this format:\n"
+            "<!-- JUDGE_RESULT_START -->\n"
+            '{"score": 0.85, "reasoning": "Your detailed reasoning here", '
+            '"dimensions": {"dimension_name": 0.9, "other_dimension": 0.8}}\n'
+            "<!-- JUDGE_RESULT_END -->\n\n"
+            "The score and all dimension values must be between 0.0 and 1.0. "
+            "Include dimension scores that match the rubric criteria."
         )
         return "\n".join(parts)
 
