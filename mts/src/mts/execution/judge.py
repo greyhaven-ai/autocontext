@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from mts.providers.base import LLMProvider
 from mts.providers.callable_wrapper import CallableProvider
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -88,7 +91,8 @@ class LLMJudge:
         raw_responses: list[str] = []
 
         for _ in range(self.samples):
-            score, reasoning, dims = 0.0, "", {}
+            dims: dict[str, float] = {}
+            score, reasoning = 0.0, ""
             # Retry up to 2 times on parse failure
             for attempt in range(2):
                 result = self.provider.complete(
@@ -225,7 +229,8 @@ class LLMJudge:
         if not match:
             return None
         try:
-            return json.loads(match.group(1))
+            data: dict = json.loads(match.group(1))
+            return data
         except (json.JSONDecodeError, TypeError):
             return None
 
@@ -296,5 +301,10 @@ class LLMJudge:
         if source != "markers":
             reasoning = f"[{source} parse] {reasoning}"
         dimensions = data.get("dimensions", {})
-        dim_scores = {str(k): max(0.0, min(1.0, float(v))) for k, v in dimensions.items()}
+        dim_scores: dict[str, float] = {}
+        for k, v in dimensions.items():
+            try:
+                dim_scores[str(k)] = max(0.0, min(1.0, float(v)))
+            except (ValueError, TypeError):
+                continue
         return score, reasoning, dim_scores
