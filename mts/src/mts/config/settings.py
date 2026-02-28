@@ -104,6 +104,9 @@ class AppSettings(BaseModel):
     judge_provider: str = Field(default="anthropic")
     judge_base_url: str | None = Field(default=None)
     judge_api_key: str | None = Field(default=None)
+    # Notification settings
+    notify_webhook_url: str | None = Field(default=None)
+    notify_on: str = Field(default="threshold_met,failure")
 
 
 def load_settings() -> AppSettings:
@@ -190,4 +193,6 @@ def load_settings() -> AppSettings:
         judge_provider=os.getenv("MTS_JUDGE_PROVIDER", "anthropic"),
         judge_base_url=os.getenv("MTS_JUDGE_BASE_URL"),
         judge_api_key=os.getenv("MTS_JUDGE_API_KEY"),
+        notify_webhook_url=os.getenv("MTS_NOTIFY_WEBHOOK_URL"),
+        notify_on=os.getenv("MTS_NOTIFY_ON", "threshold_met,failure"),
     )
