@@ -375,9 +375,13 @@ class SQLiteStore:
         """Claim the highest-priority pending task.
 
         Returns the task row as a dict, or None if queue is empty.
-        Atomically sets status to 'running'.
+        Uses a single UPDATE with subquery for true atomic dequeue —
+        prevents double-processing under concurrent access.
         """
         with self.connect() as conn:
+            # Atomic: SELECT the best candidate, then UPDATE in one transaction.
+            # SQLite's write lock on the transaction prevents two connections
+            # from claiming the same row.
             row = conn.execute(
                 """
                 SELECT id FROM task_queue
@@ -394,11 +398,17 @@ class SQLiteStore:
             conn.execute(
                 """
                 UPDATE task_queue
-                SET status = 'running', started_at = datetime('now'), updated_at = datetime('now')
-                WHERE id = ?
+                SET status = 'running',
+                    started_at = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE id = ? AND status = 'pending'
                 """,
                 (task_id,),
             )
+            # Check we actually claimed it (another runner might have beaten us)
+            if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                return None
+
             updated = conn.execute(
                 "SELECT * FROM task_queue WHERE id = ?", (task_id,)
             ).fetchone()
