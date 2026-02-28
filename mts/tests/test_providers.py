@@ -246,3 +246,133 @@ class TestSettingsIntegration:
         provider = get_provider(settings)
         assert provider.name == "OpenAICompatibleProvider"
         assert provider.default_model() == "llama3.1"
+
+
+# ---------------------------------------------------------------------------
+# Fallback parser tests (MTS-12)
+# ---------------------------------------------------------------------------
+
+class TestJudgeFallbackParser:
+    """Test all 4 parse strategies in LLMJudge._parse_judge_response."""
+
+    def _make_judge(self):
+        from mts.execution.judge import LLMJudge
+        from mts.providers.callable_wrapper import CallableProvider
+
+        provider = CallableProvider(lambda s, u: "mock", model_name="mock")
+        return LLMJudge(provider=provider, model="mock", rubric="test rubric")
+
+    def test_strategy1_markers(self):
+        judge = self._make_judge()
+        response = (
+            'Some preamble text\n'
+            '<!-- JUDGE_RESULT_START -->\n'
+            '{"score": 0.85, "reasoning": "Good work", "dimensions": {"clarity": 0.9}}\n'
+            '<!-- JUDGE_RESULT_END -->\n'
+        )
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.85
+        assert "Good work" in reasoning
+        assert dims["clarity"] == 0.9
+        assert "[" not in reasoning  # No fallback tag for primary strategy
+
+    def test_strategy2_code_block(self):
+        judge = self._make_judge()
+        response = (
+            'Here is my evaluation:\n\n'
+            '```json\n'
+            '{"score": 0.72, "reasoning": "Decent attempt", "dimensions": {"insight": 0.7}}\n'
+            '```\n'
+        )
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.72
+        assert "Decent attempt" in reasoning
+        assert "[code_block parse]" in reasoning
+
+    def test_strategy2_code_block_no_lang(self):
+        judge = self._make_judge()
+        response = (
+            '```\n'
+            '{"score": 0.65, "reasoning": "OK", "dimensions": {}}\n'
+            '```\n'
+        )
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.65
+
+    def test_strategy3_raw_json(self):
+        judge = self._make_judge()
+        response = (
+            'I would rate this output as follows:\n\n'
+            '{"score": 0.91, "reasoning": "Excellent", "dimensions": {"voice": 0.95, "brevity": 0.88}}\n\n'
+            'Overall a strong piece.'
+        )
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.91
+        assert dims["voice"] == 0.95
+        assert "[raw_json parse]" in reasoning
+
+    def test_strategy3_raw_json_nested(self):
+        judge = self._make_judge()
+        response = (
+            'The evaluation:\n'
+            '{"score": 0.80, "reasoning": "Good", "dimensions": {"a": 0.8, "b": 0.7}}'
+        )
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.80
+        assert len(dims) == 2
+
+    def test_strategy4_plaintext_score(self):
+        judge = self._make_judge()
+        response = (
+            "This is a well-written piece that demonstrates strong voice and insight.\n\n"
+            "Overall score: 0.82\n\n"
+            "The main areas for improvement are brevity and specificity."
+        )
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.82
+        assert "[plaintext parse]" in reasoning
+        assert dims == {}  # No structured dimensions from plaintext
+
+    def test_strategy4_quoted_score(self):
+        judge = self._make_judge()
+        response = 'The "score": 0.75 reflects moderate quality.'
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.75
+
+    def test_strategy4_score_colon(self):
+        judge = self._make_judge()
+        response = "Score: 0.88\nReasoning: Very good output."
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.88
+
+    def test_all_strategies_fail(self):
+        judge = self._make_judge()
+        response = "I think this is pretty good but I don't want to give a number."
+        score, reasoning, dims = judge._parse_judge_response(response)
+        assert score == 0.0
+        assert "no parseable score" in reasoning
+
+    def test_strategy_priority_markers_first(self):
+        """Markers should win even if code block also present."""
+        judge = self._make_judge()
+        response = (
+            '```json\n{"score": 0.50, "reasoning": "code block"}\n```\n'
+            '<!-- JUDGE_RESULT_START -->\n'
+            '{"score": 0.90, "reasoning": "markers"}\n'
+            '<!-- JUDGE_RESULT_END -->'
+        )
+        score, reasoning, _ = judge._parse_judge_response(response)
+        assert score == 0.90
+        assert "markers" in reasoning
+
+    def test_score_clamping(self):
+        judge = self._make_judge()
+        response = '<!-- JUDGE_RESULT_START -->\n{"score": 1.5, "reasoning": "too high"}\n<!-- JUDGE_RESULT_END -->'
+        score, _, _ = judge._parse_judge_response(response)
+        assert score == 1.0
+
+    def test_score_clamping_negative(self):
+        judge = self._make_judge()
+        response = '<!-- JUDGE_RESULT_START -->\n{"score": -0.5, "reasoning": "negative"}\n<!-- JUDGE_RESULT_END -->'
+        score, _, _ = judge._parse_judge_response(response)
+        assert score == 0.0
