@@ -109,19 +109,25 @@ class TestParseJudgeResponse:
         assert reasoning == "Good output"
         assert dims == {"clarity": 0.9, "accuracy": 0.8}
 
-    def test_missing_markers(self) -> None:
+    def test_missing_markers_no_score(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
-        score, reasoning, dims = judge._parse_judge_response("No markers here")
+        score, reasoning, dims = judge._parse_judge_response("No markers here and no score either")
         assert score == 0.0
-        assert "missing" in reasoning.lower()
+        assert "no parseable score" in reasoning.lower()
         assert dims == {}
 
-    def test_invalid_json(self) -> None:
+    def test_missing_markers_with_plaintext_score(self) -> None:
+        judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
+        score, reasoning, dims = judge._parse_judge_response("Overall score: 0.75")
+        assert score == 0.75
+        assert "[plaintext parse]" in reasoning
+
+    def test_invalid_json_in_markers(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
         resp = "<!-- JUDGE_RESULT_START -->{bad json<!-- JUDGE_RESULT_END -->"
         score, reasoning, dims = judge._parse_judge_response(resp)
+        # Falls through to other strategies; no score in "bad json" text
         assert score == 0.0
-        assert "invalid" in reasoning.lower()
 
     def test_score_clamping(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())

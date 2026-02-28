@@ -184,24 +184,117 @@ class LLMJudge:
         return "\n".join(parts)
 
     def _parse_judge_response(self, response: str) -> tuple[float, str, dict[str, float]]:
-        """Parse judge response, extracting JSON between markers."""
+        """Parse judge response using multiple strategies.
+
+        Strategies (tried in order):
+        1. Marker-based: extract JSON between <!-- JUDGE_RESULT_START/END -->
+        2. Code block: extract JSON from ```json ... ``` blocks
+        3. Raw JSON: find a JSON object with "score" key anywhere in response
+        4. Plain text: regex for "score": X.XX or "Score: X.XX" patterns
+        """
+        # Strategy 1: Marker-based (primary)
+        data = self._try_marker_parse(response)
+        if data is not None:
+            return self._extract_from_dict(data, "markers")
+
+        # Strategy 2: JSON code block
+        data = self._try_code_block_parse(response)
+        if data is not None:
+            return self._extract_from_dict(data, "code_block")
+
+        # Strategy 3: Raw JSON object with "score" key
+        data = self._try_raw_json_parse(response)
+        if data is not None:
+            return self._extract_from_dict(data, "raw_json")
+
+        # Strategy 4: Plain text score extraction
+        result = self._try_plaintext_parse(response)
+        if result is not None:
+            return result
+
+        return 0.0, "Failed to parse judge response: no parseable score found", {}
+
+    @staticmethod
+    def _try_marker_parse(response: str) -> dict | None:
+        """Strategy 1: Extract JSON between JUDGE_RESULT markers."""
         pattern = re.compile(
             re.escape(_RESULT_START) + r"\s*(.*?)\s*" + re.escape(_RESULT_END),
             re.DOTALL,
         )
         match = pattern.search(response)
         if not match:
-            return 0.0, "Failed to parse judge response: missing JUDGE_RESULT markers", {}
-
+            return None
         try:
-            data = json.loads(match.group(1))
+            return json.loads(match.group(1))
         except (json.JSONDecodeError, TypeError):
-            return 0.0, "Failed to parse judge response: invalid JSON", {}
+            return None
 
+    @staticmethod
+    def _try_code_block_parse(response: str) -> dict | None:
+        """Strategy 2: Extract JSON from ```json ... ``` code blocks."""
+        pattern = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
+        for match in pattern.finditer(response):
+            try:
+                data = json.loads(match.group(1).strip())
+                if isinstance(data, dict) and "score" in data:
+                    return data
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return None
+
+    @staticmethod
+    def _try_raw_json_parse(response: str) -> dict | None:
+        """Strategy 3: Find a JSON object containing 'score' key."""
+        # Look for JSON objects in the response
+        for match in re.finditer(r'\{[^{}]*"score"[^{}]*\}', response):
+            try:
+                data = json.loads(match.group(0))
+                if isinstance(data, dict) and "score" in data:
+                    return data
+            except (json.JSONDecodeError, TypeError):
+                continue
+        # Try nested objects (with dimensions)
+        for match in re.finditer(r'\{(?:[^{}]|\{[^{}]*\})*"score"(?:[^{}]|\{[^{}]*\})*\}', response):
+            try:
+                data = json.loads(match.group(0))
+                if isinstance(data, dict) and "score" in data:
+                    return data
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return None
+
+    @staticmethod
+    def _try_plaintext_parse(response: str) -> tuple[float, str, dict[str, float]] | None:
+        """Strategy 4: Extract score from plain text patterns."""
+        # Match patterns like "Score: 0.85" or "Overall score: 0.9"
+        patterns = [
+            r'(?:overall\s+)?score[:\s]+([01](?:\.\d+)?)',
+            r'"score"\s*:\s*([01](?:\.\d+)?)',
+            r'(\d\.\d+)\s*/\s*1\.0',
+        ]
+        for pat in patterns:
+            match = re.search(pat, response, re.IGNORECASE)
+            if match:
+                try:
+                    score = float(match.group(1))
+                    if 0.0 <= score <= 1.0:
+                        # Use the full response as reasoning since we couldn't parse structured
+                        reasoning = response[:500] if len(response) > 500 else response
+                        return score, f"[plaintext parse] {reasoning}", {}
+                except (ValueError, IndexError):
+                    continue
+        return None
+
+    @staticmethod
+    def _extract_from_dict(
+        data: dict, source: str,
+    ) -> tuple[float, str, dict[str, float]]:
+        """Extract score, reasoning, and dimensions from a parsed dict."""
         score = float(data.get("score", 0.0))
         score = max(0.0, min(1.0, score))
         reasoning = str(data.get("reasoning", ""))
+        if source != "markers":
+            reasoning = f"[{source} parse] {reasoning}"
         dimensions = data.get("dimensions", {})
         dim_scores = {str(k): max(0.0, min(1.0, float(v))) for k, v in dimensions.items()}
-
         return score, reasoning, dim_scores
