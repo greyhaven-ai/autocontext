@@ -270,7 +270,10 @@ def mts_run_improvement_loop(
 ) -> str:
     """Run the multi-step improvement loop for an agent task.
     Iteratively evaluates and revises output until quality threshold or max rounds."""
-    concepts = json.loads(required_concepts) if required_concepts else None
+    try:
+        concepts = json.loads(required_concepts) if required_concepts else None
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON in required_concepts parameter"})
     return json.dumps(tools.run_improvement_loop(
         _get_ctx(), scenario_name, initial_output, max_rounds,
         quality_threshold, reference_context, concepts,
@@ -293,7 +296,10 @@ def mts_create_agent_task(
 ) -> str:
     """Create and save an agent task spec for evaluation.
     required_concepts is a JSON array of strings."""
-    concepts = json.loads(required_concepts) if required_concepts else None
+    try:
+        concepts = json.loads(required_concepts) if required_concepts else None
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON in required_concepts parameter"})
     return json.dumps(tools.create_agent_task(
         _get_ctx(), name, task_prompt, rubric, reference_context,
         concepts, max_rounds, quality_threshold, revision_prompt,
