@@ -22,12 +22,15 @@ mts/                          # Python package root (pyproject.toml lives here)
     scenarios/                # Pluggable scenarios (grid_ctf, othello, custom/, agent tasks)
       custom/               # Natural-language → generated scenario pipeline (spec, codegen, validation, loading)
                             # Also: agent task pipeline (agent_task_designer, agent_task_codegen, agent_task_validator, agent_task_creator)
-    execution/                # Execution supervisor, local/remote executors, LLM judge
+    execution/                # Execution supervisor, local/remote executors, LLM judge, task runner daemon
+    providers/                # Multi-model LLM provider abstraction (Anthropic, OpenAI-compat, callable wrapper)
+    notifications/            # Notification webhooks (Slack, HTTP, stdout, callback, composite)
+    runtimes/                 # Agent runtime abstraction (Claude CLI, direct API)
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
     server/                   # FastAPI dashboard + WebSocket events
-  tests/                      # Pytest tests (~1029 tests)
-  migrations/                 # SQLite migration SQL files (001-006, applied in filename order)
+  tests/                      # Pytest tests (~1140 tests)
+  migrations/                 # SQLite migration SQL files (001-007, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
   skills/                     # Runtime-generated: operational skill notes per scenario
@@ -129,6 +132,18 @@ The architect only intervenes fully every N generations (`MTS_ARCHITECT_EVERY_N_
 
 Optional provider (`MTS_AGENT_PROVIDER=agent_sdk`) that uses `claude_agent_sdk.query()` with native tool loops. Each role gets scoped tool permissions via `ROLE_TOOL_CONFIG`: competitor/coach/curator get Read/Glob/Grep, analyst/architect additionally get Bash, translator gets none. The Agent SDK handles multi-turn iteration internally, making RLM mode redundant (automatically skipped when `agent_sdk` provider is active).
 
+### Multi-Model Providers (`providers/`)
+
+Pluggable LLM provider abstraction for the judge and other non-agent LLM calls:
+
+- **`LLMProvider`** (ABC, `providers/base.py`) — Defines `complete(system_prompt, user_prompt, model, temperature, max_tokens) → CompletionResult` and `default_model()`. `CompletionResult` dataclass carries `text`, `model`, and optional `cost_usd`.
+- **`AnthropicProvider`** (`providers/anthropic.py`) — Wraps the Anthropic SDK. Uses `hasattr` guard on content blocks for mypy compatibility.
+- **`OpenAICompatibleProvider`** (`providers/openai_compat.py`) — Works with any OpenAI-compatible endpoint (vLLM, Ollama, etc.). Optional dependency (`openai` package).
+- **`CallableProvider`** (`providers/callable_wrapper.py`) — Wraps any `Callable[[str, str], str]` as an `LLMProvider` for testing and simple integrations.
+- **`registry.py`** — `create_provider(provider_type, api_key, base_url, model)` factory + `get_provider(settings)` convenience that reads from `AppSettings`.
+
+Provider selection is controlled by `MTS_JUDGE_PROVIDER` (default `anthropic`). For OpenAI-compatible endpoints, set `MTS_JUDGE_BASE_URL` and `MTS_JUDGE_API_KEY`.
+
 ### RLM — REPL-Loop Mode (`rlm/`)
 
 Optional mode (`MTS_RLM_ENABLED=true`) that replaces the single-shot analyst and architect with multi-turn REPL sessions where the LLM can iteratively explore data by writing Python code.
@@ -189,6 +204,29 @@ Agent tasks are a second creation pipeline for scenarios evaluated by LLM judges
 - **LLMJudge** (`execution/judge.py`) — LLM-based evaluation for agent task scenarios. Calls an LLM N times (configurable via `MTS_JUDGE_SAMPLES`) to evaluate agent output against a rubric. Parses structured JSON between `<!-- JUDGE_RESULT_START/END -->` markers. Returns `JudgeResult` with averaged score, combined reasoning, and per-dimension scores. Score clamping ensures 0.0–1.0 range.
 - **JudgeExecutor** (`execution/judge_executor.py`) — Executor for agent task scenarios. Runs context preparation (`prepare_context` → `validate_context`) before evaluation — if validation fails, returns score 0.0 with error details. Passes `reference_context`, `required_concepts`, and `calibration_examples` through to `evaluate_output()`.
 - **ImprovementLoop** (`execution/improvement_loop.py`) — Multi-step evaluate→revise loop for agent task scenarios. Calls `evaluate_output()`, then `revise_output()` if score is below threshold, repeating up to `max_rounds`. Tracks per-round `RoundResult` (score, reasoning, output, is_revision) and returns `ImprovementResult` with best score/output, whether threshold was met, and whether improvement occurred. Stops early if revision returns unchanged output.
+- **TaskRunner** (`execution/task_runner.py`) — Daemon that polls a SQLite-backed task queue and runs `ImprovementLoop` for each queued task. `SimpleAgentTask` builds an `AgentTaskInterface` from queue config (task_prompt, rubric, revision_prompt) without codegen. `TaskConfig.from_json()` deserializes queue config. The runner supports graceful shutdown via `SIGINT`/`SIGTERM`, priority-based dequeue, and optional `Notifier` for event emission on completion/failure. `enqueue_task()` convenience function generates a UUID task ID and stores config JSON. Migration 007 adds the `task_queue` table with columns: id, spec_name, status (pending/running/completed/failed), priority, config_json, best_score, best_output, total_rounds, met_threshold, result_json, error, timestamps.
+
+### Notification System (`notifications/`)
+
+Event-driven notification system for task runner results:
+
+- **`Notifier`** (ABC, `notifications/base.py`) — Abstract `notify(event)` method. Implementations must not raise — failures are logged and swallowed.
+- **`NotificationEvent`** — Dataclass with `type` (EventType enum: `threshold_met`, `regression`, `completion`, `failure`), `task_name`, optional `score`, `round_count`, `cost_usd`, `output_preview`, `error`, `metadata`. Has a `summary` property formatting human-readable messages with emoji.
+- **`StdoutNotifier`** — Prints to stdout or logger.
+- **`HTTPNotifier`** — JSON POST to any webhook URL via `urllib.request`.
+- **`SlackWebhookNotifier`** — Formats Slack Block Kit messages with header, summary, field sections, and code preview.
+- **`CallbackNotifier`** — Wraps a user-provided `Callable[[NotificationEvent], None]`.
+- **`CompositeNotifier`** — Fans out to multiple notifiers with optional `EventType` filtering via `notify_on` set.
+
+The `TaskRunner` accepts an optional `notifier` parameter and emits `THRESHOLD_MET`/`COMPLETION` on success and `FAILURE` on exception.
+
+### Agent Runtimes (`runtimes/`)
+
+Abstraction layer for agent execution, decoupling MTS orchestration from how outputs are generated:
+
+- **`AgentRuntime`** (ABC, `runtimes/base.py`) — Defines `generate(prompt, system, schema) → AgentOutput` and `revise(prompt, previous_output, feedback, system) → AgentOutput`. `AgentOutput` dataclass carries `text`, optional `structured` dict, `cost_usd`, `model`, `session_id`, and `metadata`.
+- **`DirectAPIRuntime`** (`runtimes/direct_api.py`) — Wraps an `LLMProvider` for simple single-call generation/revision. Equivalent to what `SimpleAgentTask` does today.
+- **`ClaudeCLIRuntime`** (`runtimes/claude_cli.py`) — Invokes `claude -p` (Claude Code print mode) via subprocess. Features: full tool access, structured JSON output via `--json-schema`, cost tracking from JSON output (`total_cost_usd`), session management for multi-round loops, model selection with fallback. `ClaudeCLIConfig` dataclass controls model, tools, permission mode, session persistence, timeout, and system prompt. `create_session_runtime()` factory creates a runtime with a shared UUID session ID for context across rounds.
 
 ### Knowledge System (`knowledge/`, `storage/artifacts.py`)
 
@@ -206,6 +244,7 @@ knowledge/<scenario>/
   tools/_archive/          # Prior tool versions (archived on update)
   snapshots/<run_id>/      # Cross-run knowledge snapshots
   _custom_scenarios/<name>/  # Persisted custom scenarios (scenario.py + spec.json)
+  _agent_tasks/<name>.json  # Persisted agent task specs (created via MCP tools)
 ```
 
 Key behaviors:
@@ -226,12 +265,12 @@ Framework-agnostic knowledge service that lets any autonomous agent query MTS fo
 - **Solve-on-Demand** (`knowledge/solver.py`) — `SolveManager` accepts natural-language problem descriptions and runs background threads that: create a scenario via `ScenarioCreator`, run N generations via `GenerationRunner`, and export the resulting `SkillPackage`. Jobs are in-memory with polling via `get_status(job_id)` and `get_result(job_id)`.
 
 Access paths:
-- **MCP tools**: `mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`, `mts_record_feedback`, `mts_get_feedback`, `mts_run_improvement_loop`
+- **MCP tools**: `mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`, `mts_record_feedback`, `mts_get_feedback`, `mts_run_improvement_loop`, `mts_create_agent_task`, `mts_list_agent_tasks`, `mts_get_agent_task`, `mts_delete_agent_task`, `mts_evaluate_output`, `mts_queue_improvement_run`, `mts_get_queue_status`, `mts_get_task_result`, `mts_get_best_output`
 - **REST API**: `GET /api/knowledge/scenarios`, `GET /api/knowledge/export/{name}`, `POST /api/knowledge/search`, `POST /api/knowledge/solve`, `GET /api/knowledge/solve/{job_id}`
 
 ### Storage
 
-- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers, knowledge snapshots, human feedback. Includes `get_best_competitor_output(scenario)` and `count_completed_runs(scenario)` for the knowledge API. Human feedback methods: `insert_human_feedback()`, `get_human_feedback()`, `get_calibration_examples()` (returns scored examples for judge calibration). Migrations applied from `migrations/*.sql` in filename order (001-006; migration 006 adds the `human_feedback` table).
+- **SQLiteStore** (`storage/sqlite_store.py`) — Runs, generations, matches, agent outputs, role metrics, recovery markers, knowledge snapshots, human feedback, task queue. Includes `get_best_competitor_output(scenario)` and `count_completed_runs(scenario)` for the knowledge API. Human feedback methods: `insert_human_feedback()`, `get_human_feedback()`, `get_calibration_examples()` (returns scored examples for judge calibration). Task queue methods: `enqueue_task()`, `dequeue_task()` (atomic status transition pending→running, priority-ordered), `complete_task()`, `fail_task()`, `get_task()`, `list_tasks()`, `pending_task_count()`. Migrations applied from `migrations/*.sql` in filename order (001-007; migration 006 adds the `human_feedback` table, migration 007 adds the `task_queue` table).
 - **ArtifactStore** (`storage/artifacts.py`) — Filesystem persistence: generation metrics/replays under `runs/<run_id>/generations/`, playbooks/analysis/tools/hints/snapshots under `knowledge/<scenario>/`, skill notes under `skills/`. Syncs skill notes to `.claude/skills/` via symlinks.
 
 ### Dashboard & Events
@@ -254,8 +293,8 @@ The ecosystem loop alternates between provider modes across sequential runs, wit
 
 Stdio-based MCP server exposing MTS functionality as tools for external Claude Code users:
 
-- **`mcp/tools.py`** — Pure sync tool implementation functions wrapping `ScenarioInterface`/`AgentTaskInterface`, `ArtifactStore`, `SQLiteStore`. Independently testable without MCP protocol. Includes knowledge API wrappers (`export_skill`, `list_solved`, `search_strategies`). Uses `hasattr` guards so tools like `validate_strategy`, `run_match`, and `run_tournament` return appropriate messages for agent task scenarios (which use judge evaluation instead of match execution).
-- **`mcp/server.py`** — MCP server using `@server.tool()` decorators. Each tool delegates to `tools.py`. Registers scenario tools (list, describe, validate, match, tournament), knowledge tools (playbook, trajectory, hints, skills, analysis, tools), run tools (list, status, replay), sandbox tools (create, run, status, playbook, list, destroy), knowledge API tools (`mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`), human feedback tools (`mts_record_feedback`, `mts_get_feedback`), and the improvement loop tool (`mts_run_improvement_loop`).
+- **`mcp/tools.py`** — Pure sync tool implementation functions wrapping `ScenarioInterface`/`AgentTaskInterface`, `ArtifactStore`, `SQLiteStore`. Independently testable without MCP protocol. Includes knowledge API wrappers (`export_skill`, `list_solved`, `search_strategies`), agent task CRUD (`create_agent_task`, `list_agent_tasks`, `get_agent_task`, `delete_agent_task`, `evaluate_output`), and task queue management (`queue_improvement_run`, `get_queue_status`, `get_task_result`, `get_best_output`). Agent task specs are persisted as JSON files under `knowledge/_agent_tasks/`. Uses `hasattr` guards so tools like `validate_strategy`, `run_match`, and `run_tournament` return appropriate messages for agent task scenarios (which use judge evaluation instead of match execution).
+- **`mcp/server.py`** — MCP server using `@server.tool()` decorators. Each tool delegates to `tools.py`. Registers scenario tools (list, describe, validate, match, tournament), knowledge tools (playbook, trajectory, hints, skills, analysis, tools), run tools (list, status, replay), sandbox tools (create, run, status, playbook, list, destroy), knowledge API tools (`mts_export_skill`, `mts_list_solved`, `mts_search_strategies`, `mts_solve_scenario`, `mts_solve_status`, `mts_solve_result`), human feedback tools (`mts_record_feedback`, `mts_get_feedback`), improvement loop tool (`mts_run_improvement_loop`), agent task management tools (`mts_create_agent_task`, `mts_list_agent_tasks`, `mts_get_agent_task`, `mts_delete_agent_task`, `mts_evaluate_output`), and task queue tools (`mts_queue_improvement_run`, `mts_get_queue_status`, `mts_get_task_result`, `mts_get_best_output`). Agent task CRUD tools validate task names with a regex (`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`) to prevent path traversal. JSON parsing at the MCP boundary (`required_concepts`) is wrapped in try/except.
 - **`mcp/sandbox.py`** — `SandboxManager` creates isolated environments with their own SQLite DB, knowledge directory (seeded from main), and run storage. Sandbox runs use `GenerationRunner` with sandbox-scoped `AppSettings`. `MTS_SANDBOX_MAX_GENERATIONS` limits generation count.
 
 CLI entry point: `uv run mts mcp-serve` (requires `mcp` optional dependency).
@@ -285,6 +324,11 @@ All config via `MTS_*` environment variables, loaded in `config/settings.py` int
 - `MTS_JUDGE_MODEL`: LLM model for agent task evaluation (default `claude-sonnet-4-20250514`)
 - `MTS_JUDGE_SAMPLES`: number of judge calls to average per evaluation (default `1`)
 - `MTS_JUDGE_TEMPERATURE`: temperature for judge LLM calls (default `0.0`)
+- `MTS_JUDGE_PROVIDER`: LLM provider for judge — `anthropic`, `openai`, `openai-compatible`, `ollama`, `vllm` (default `anthropic`)
+- `MTS_JUDGE_BASE_URL`: base URL for OpenAI-compatible judge endpoints (default `None`)
+- `MTS_JUDGE_API_KEY`: API key override for judge provider (default `None`, falls back to provider-specific env vars)
+- `MTS_NOTIFY_WEBHOOK_URL`: Slack or HTTP webhook URL for notifications (default `None`)
+- `MTS_NOTIFY_ON`: comma-separated event types to notify on: `threshold_met`, `regression`, `completion`, `failure` (default `threshold_met,failure`)
 
 ## Code Style
 
