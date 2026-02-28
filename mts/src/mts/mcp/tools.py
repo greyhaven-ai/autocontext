@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from mts.config import AppSettings
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
 from mts.scenarios import SCENARIO_REGISTRY
@@ -301,6 +303,15 @@ def run_improvement_loop(
 
 # -- Agent Task Management --
 
+_TASK_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$")
+
+
+def _validate_task_name(name: str) -> str | None:
+    """Return an error message if the task name is invalid, else None."""
+    if not name or not _TASK_NAME_RE.match(name):
+        return "Invalid task name: must be 1-128 alphanumeric chars, hyphens, or underscores"
+    return None
+
 
 def create_agent_task(
     ctx: MtsToolContext,
@@ -315,6 +326,9 @@ def create_agent_task(
 ) -> dict[str, object]:
     """Create and register an agent task spec for evaluation."""
     import json
+
+    if err := _validate_task_name(name):
+        return {"error": err}
 
     spec_data = {
         "name": name,
@@ -365,14 +379,21 @@ def get_agent_task(ctx: MtsToolContext, name: str) -> dict[str, object]:
     """Get full agent task spec by name."""
     import json
 
+    if err := _validate_task_name(name):
+        return {"error": err}
+
     spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{name}.json"
     if not spec_path.exists():
         return {"error": f"Agent task '{name}' not found"}
-    return json.loads(spec_path.read_text(encoding="utf-8"))
+    data: dict[str, object] = json.loads(spec_path.read_text(encoding="utf-8"))
+    return data
 
 
 def delete_agent_task(ctx: MtsToolContext, name: str) -> dict[str, object]:
     """Delete an agent task spec."""
+    if err := _validate_task_name(name):
+        return {"error": err}
+
     spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{name}.json"
     if not spec_path.exists():
         return {"error": f"Agent task '{name}' not found"}
@@ -387,6 +408,9 @@ def evaluate_output(
 ) -> dict[str, object]:
     """One-shot evaluation of an output against a saved agent task spec."""
     import json
+
+    if err := _validate_task_name(task_name):
+        return {"error": err}
 
     spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{task_name}.json"
     if not spec_path.exists():
@@ -435,6 +459,9 @@ def queue_improvement_run(
 ) -> dict[str, object]:
     """Add a task to the runner queue for background processing."""
     import json
+
+    if err := _validate_task_name(task_name):
+        return {"error": err}
 
     spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{task_name}.json"
     if not spec_path.exists():
@@ -504,7 +531,10 @@ def get_task_result(ctx: MtsToolContext, task_id: str) -> dict[str, object]:
         result["best_output"] = task["best_output"]
         result["completed_at"] = task["completed_at"]
         if task.get("result_json"):
-            result["rounds"] = json.loads(task["result_json"]).get("rounds", [])
+            try:
+                result["rounds"] = json.loads(task["result_json"]).get("rounds", [])
+            except (json.JSONDecodeError, AttributeError):
+                result["rounds"] = []
     elif task["status"] == "failed":
         result["error"] = task.get("error", "")
     elif task["status"] == "running":

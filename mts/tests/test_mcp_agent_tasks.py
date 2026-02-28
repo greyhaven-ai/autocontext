@@ -11,17 +11,16 @@ from mts.config.settings import AppSettings
 from mts.mcp.tools import (
     MtsToolContext,
     create_agent_task,
-    list_agent_tasks,
-    get_agent_task,
     delete_agent_task,
     evaluate_output,
-    queue_improvement_run,
+    get_agent_task,
+    get_best_output,
     get_queue_status,
     get_task_result,
-    get_best_output,
+    list_agent_tasks,
+    queue_improvement_run,
 )
 from mts.providers.base import CompletionResult, LLMProvider
-from mts.storage.sqlite_store import SQLiteStore
 
 
 class _MockProvider(LLMProvider):
