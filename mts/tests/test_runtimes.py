@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import json
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
-from mts.runtimes.base import AgentOutput, AgentRuntime
-from mts.runtimes.direct_api import DirectAPIRuntime
-from mts.runtimes.claude_cli import ClaudeCLIRuntime, ClaudeCLIConfig, create_session_runtime
 from mts.providers.base import CompletionResult, LLMProvider
-
+from mts.runtimes.base import AgentOutput
+from mts.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime, create_session_runtime
+from mts.runtimes.direct_api import DirectAPIRuntime
 
 # ---------------------------------------------------------------------------
 # AgentOutput
