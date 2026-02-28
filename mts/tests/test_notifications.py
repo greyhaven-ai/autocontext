@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
-from mts.notifications.base import EventType, NotificationEvent, Notifier
-from mts.notifications.stdout import StdoutNotifier
+from mts.notifications.base import EventType, NotificationEvent
 from mts.notifications.callback import CallbackNotifier
 from mts.notifications.composite import CompositeNotifier
 from mts.notifications.http import HTTPNotifier
 from mts.notifications.slack import SlackWebhookNotifier
-
+from mts.notifications.stdout import StdoutNotifier
 
 # ---------------------------------------------------------------------------
 # NotificationEvent
@@ -189,6 +186,7 @@ class TestSlackWebhookNotifier:
 class TestTaskRunnerNotifications:
     def test_runner_emits_on_completion(self, tmp_path):
         from pathlib import Path
+
         from mts.execution.task_runner import TaskRunner
         from mts.providers.base import CompletionResult, LLMProvider
         from mts.storage.sqlite_store import SQLiteStore
@@ -198,7 +196,9 @@ class TestTaskRunnerNotifications:
                 self._idx = 0
                 self._responses = [
                     "Generated output",
-                    '<!-- JUDGE_RESULT_START -->\n{"score": 0.95, "reasoning": "great", "dimensions": {}}\n<!-- JUDGE_RESULT_END -->',
+                    "<!-- JUDGE_RESULT_START -->\n"
+                    '{"score": 0.95, "reasoning": "great", "dimensions": {}}\n'
+                    "<!-- JUDGE_RESULT_END -->",
                 ]
             def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096):
                 text = self._responses[self._idx % len(self._responses)]
@@ -224,8 +224,9 @@ class TestTaskRunnerNotifications:
 
     def test_runner_emits_on_failure(self, tmp_path):
         from pathlib import Path
+
         from mts.execution.task_runner import TaskRunner
-        from mts.providers.base import LLMProvider, ProviderError
+        from mts.providers.base import LLMProvider
         from mts.storage.sqlite_store import SQLiteStore
 
         class FailProvider(LLMProvider):

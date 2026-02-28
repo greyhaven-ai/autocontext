@@ -13,7 +13,10 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mts.notifications.base import Notifier
 
 from mts.execution.improvement_loop import ImprovementLoop, ImprovementResult
 from mts.execution.judge import LLMJudge
@@ -182,7 +185,7 @@ class TaskRunner:
         model: str = "claude-sonnet-4-20250514",
         poll_interval: float = 60.0,
         max_consecutive_empty: int = 0,  # 0 = run forever
-        notifier: object | None = None,  # Notifier instance (optional)
+        notifier: Notifier | None = None,
     ) -> None:
         self.store = store
         self.provider = provider

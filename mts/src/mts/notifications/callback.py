@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from mts.notifications.base import Notifier, NotificationEvent
+from mts.notifications.base import NotificationEvent, Notifier
 
 logger = logging.getLogger(__name__)
 

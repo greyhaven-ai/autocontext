@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-import urllib.request
 import urllib.error
+import urllib.request
 
-from mts.notifications.base import EventType, Notifier, NotificationEvent
+from mts.notifications.base import EventType, NotificationEvent, Notifier
 
 logger = logging.getLogger(__name__)
 

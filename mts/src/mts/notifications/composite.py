@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from mts.notifications.base import EventType, Notifier, NotificationEvent
+from mts.notifications.base import EventType, NotificationEvent, Notifier
 
 logger = logging.getLogger(__name__)
 
