@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from mts.config import AppSettings
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
 from mts.scenarios import SCENARIO_REGISTRY
@@ -296,4 +298,264 @@ def run_improvement_loop(
         "improved": result.improved,
         "rounds": rounds_summary,
         "best_output_preview": result.best_output[:500],
+    }
+
+
+# -- Agent Task Management --
+
+_TASK_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$")
+
+
+def _validate_task_name(name: str) -> str | None:
+    """Return an error message if the task name is invalid, else None."""
+    if not name or not _TASK_NAME_RE.match(name):
+        return "Invalid task name: must be 1-128 alphanumeric chars, hyphens, or underscores"
+    return None
+
+
+def create_agent_task(
+    ctx: MtsToolContext,
+    name: str,
+    task_prompt: str,
+    rubric: str,
+    reference_context: str | None = None,
+    required_concepts: list[str] | None = None,
+    max_rounds: int = 5,
+    quality_threshold: float = 0.9,
+    revision_prompt: str | None = None,
+) -> dict[str, object]:
+    """Create and register an agent task spec for evaluation."""
+    import json
+
+    if err := _validate_task_name(name):
+        return {"error": err}
+
+    spec_data = {
+        "name": name,
+        "task_prompt": task_prompt,
+        "rubric": rubric,
+        "reference_context": reference_context,
+        "reference_sources": None,
+        "required_concepts": required_concepts,
+        "max_rounds": max_rounds,
+        "quality_threshold": quality_threshold,
+        "revision_prompt": revision_prompt,
+    }
+
+    # Persist to knowledge dir
+    spec_dir = ctx.settings.knowledge_root / "_agent_tasks"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = spec_dir / f"{name}.json"
+    spec_path.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
+
+    return {"name": name, "status": "created", "path": str(spec_path)}
+
+
+def list_agent_tasks(ctx: MtsToolContext) -> list[dict[str, object]]:
+    """List all saved agent task specs."""
+    import json
+
+    spec_dir = ctx.settings.knowledge_root / "_agent_tasks"
+    if not spec_dir.exists():
+        return []
+
+    tasks = []
+    for spec_path in sorted(spec_dir.glob("*.json")):
+        try:
+            data = json.loads(spec_path.read_text(encoding="utf-8"))
+            tasks.append({
+                "name": data.get("name", spec_path.stem),
+                "task_prompt_preview": data.get("task_prompt", "")[:200],
+                "quality_threshold": data.get("quality_threshold", 0.9),
+                "max_rounds": data.get("max_rounds", 5),
+                "has_reference_context": bool(data.get("reference_context")),
+            })
+        except Exception:
+            continue
+    return tasks
+
+
+def get_agent_task(ctx: MtsToolContext, name: str) -> dict[str, object]:
+    """Get full agent task spec by name."""
+    import json
+
+    if err := _validate_task_name(name):
+        return {"error": err}
+
+    spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{name}.json"
+    if not spec_path.exists():
+        return {"error": f"Agent task '{name}' not found"}
+    data: dict[str, object] = json.loads(spec_path.read_text(encoding="utf-8"))
+    return data
+
+
+def delete_agent_task(ctx: MtsToolContext, name: str) -> dict[str, object]:
+    """Delete an agent task spec."""
+    if err := _validate_task_name(name):
+        return {"error": err}
+
+    spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{name}.json"
+    if not spec_path.exists():
+        return {"error": f"Agent task '{name}' not found"}
+    spec_path.unlink()
+    return {"name": name, "status": "deleted"}
+
+
+def evaluate_output(
+    ctx: MtsToolContext,
+    task_name: str,
+    output: str,
+) -> dict[str, object]:
+    """One-shot evaluation of an output against a saved agent task spec."""
+    import json
+
+    if err := _validate_task_name(task_name):
+        return {"error": err}
+
+    spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{task_name}.json"
+    if not spec_path.exists():
+        return {"error": f"Agent task '{task_name}' not found"}
+
+    data = json.loads(spec_path.read_text(encoding="utf-8"))
+
+    from mts.execution.judge import LLMJudge
+    from mts.providers.registry import get_provider
+
+    provider = get_provider(ctx.settings)
+    judge = LLMJudge(
+        model=ctx.settings.judge_model,
+        rubric=data["rubric"],
+        provider=provider,
+        samples=ctx.settings.judge_samples,
+        temperature=ctx.settings.judge_temperature,
+    )
+
+    calibration = ctx.sqlite.get_calibration_examples(task_name, limit=5)
+
+    result = judge.evaluate(
+        task_prompt=data["task_prompt"],
+        agent_output=output,
+        reference_context=data.get("reference_context"),
+        required_concepts=data.get("required_concepts"),
+        calibration_examples=calibration if calibration else None,
+    )
+
+    return {
+        "task_name": task_name,
+        "score": result.score,
+        "reasoning": result.reasoning,
+        "dimension_scores": result.dimension_scores,
+    }
+
+
+# -- Task Queue --
+
+
+def queue_improvement_run(
+    ctx: MtsToolContext,
+    task_name: str,
+    initial_output: str | None = None,
+    priority: int = 0,
+) -> dict[str, object]:
+    """Add a task to the runner queue for background processing."""
+    import json
+
+    if err := _validate_task_name(task_name):
+        return {"error": err}
+
+    spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{task_name}.json"
+    if not spec_path.exists():
+        return {"error": f"Agent task '{task_name}' not found"}
+
+    data = json.loads(spec_path.read_text(encoding="utf-8"))
+
+    from mts.execution.task_runner import enqueue_task
+
+    task_id = enqueue_task(
+        store=ctx.sqlite,
+        spec_name=task_name,
+        task_prompt=data.get("task_prompt"),
+        rubric=data.get("rubric"),
+        reference_context=data.get("reference_context"),
+        required_concepts=data.get("required_concepts"),
+        max_rounds=data.get("max_rounds", 5),
+        quality_threshold=data.get("quality_threshold", 0.9),
+        initial_output=initial_output,
+        priority=priority,
+    )
+
+    return {"task_id": task_id, "task_name": task_name, "status": "queued", "priority": priority}
+
+
+def get_queue_status(ctx: MtsToolContext) -> dict[str, object]:
+    """Get task queue status summary."""
+    pending = ctx.sqlite.list_tasks(status="pending")
+    running = ctx.sqlite.list_tasks(status="running")
+    completed = ctx.sqlite.list_tasks(status="completed", limit=10)
+    failed = ctx.sqlite.list_tasks(status="failed", limit=5)
+
+    return {
+        "pending_count": len(pending),
+        "running_count": len(running),
+        "recent_completed": [
+            {"id": t["id"], "spec_name": t["spec_name"], "best_score": t.get("best_score"), "completed_at": t.get("completed_at")}
+            for t in completed
+        ],
+        "recent_failed": [
+            {"id": t["id"], "spec_name": t["spec_name"], "error_preview": (t.get("error") or "")[:200]}
+            for t in failed
+        ],
+    }
+
+
+def get_task_result(ctx: MtsToolContext, task_id: str) -> dict[str, object]:
+    """Get the result of a specific queued task."""
+    import json
+
+    task = ctx.sqlite.get_task(task_id)
+    if not task:
+        return {"error": f"Task '{task_id}' not found"}
+
+    result: dict[str, object] = {
+        "id": task["id"],
+        "spec_name": task["spec_name"],
+        "status": task["status"],
+        "priority": task["priority"],
+        "created_at": task["created_at"],
+    }
+
+    if task["status"] == "completed":
+        result["best_score"] = task["best_score"]
+        result["total_rounds"] = task["total_rounds"]
+        result["met_threshold"] = bool(task.get("met_threshold"))
+        result["best_output"] = task["best_output"]
+        result["completed_at"] = task["completed_at"]
+        if task.get("result_json"):
+            try:
+                result["rounds"] = json.loads(task["result_json"]).get("rounds", [])
+            except (json.JSONDecodeError, AttributeError):
+                result["rounds"] = []
+    elif task["status"] == "failed":
+        result["error"] = task.get("error", "")
+    elif task["status"] == "running":
+        result["started_at"] = task.get("started_at")
+
+    return result
+
+
+def get_best_output(ctx: MtsToolContext, task_name: str) -> dict[str, object]:
+    """Get the highest-scoring output for a task across all runs."""
+    completed = ctx.sqlite.list_tasks(spec_name=task_name, status="completed")
+    if not completed:
+        return {"error": f"No completed runs for task '{task_name}'"}
+
+    best = max(completed, key=lambda t: t.get("best_score") or 0.0)
+    return {
+        "task_name": task_name,
+        "task_id": best["id"],
+        "best_score": best.get("best_score"),
+        "total_rounds": best.get("total_rounds"),
+        "met_threshold": bool(best.get("met_threshold")),
+        "best_output": best.get("best_output", ""),
+        "completed_at": best.get("completed_at"),
     }

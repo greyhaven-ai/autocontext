@@ -270,11 +270,97 @@ def mts_run_improvement_loop(
 ) -> str:
     """Run the multi-step improvement loop for an agent task.
     Iteratively evaluates and revises output until quality threshold or max rounds."""
-    concepts = json.loads(required_concepts) if required_concepts else None
+    try:
+        concepts = json.loads(required_concepts) if required_concepts else None
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON in required_concepts parameter"})
     return json.dumps(tools.run_improvement_loop(
         _get_ctx(), scenario_name, initial_output, max_rounds,
         quality_threshold, reference_context, concepts,
     ))
+
+
+# -- Agent Task Management tools --
+
+
+@mcp.tool()
+def mts_create_agent_task(
+    name: str,
+    task_prompt: str,
+    rubric: str,
+    reference_context: str | None = None,
+    required_concepts: str | None = None,
+    max_rounds: int = 5,
+    quality_threshold: float = 0.9,
+    revision_prompt: str | None = None,
+) -> str:
+    """Create and save an agent task spec for evaluation.
+    required_concepts is a JSON array of strings."""
+    try:
+        concepts = json.loads(required_concepts) if required_concepts else None
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON in required_concepts parameter"})
+    return json.dumps(tools.create_agent_task(
+        _get_ctx(), name, task_prompt, rubric, reference_context,
+        concepts, max_rounds, quality_threshold, revision_prompt,
+    ))
+
+
+@mcp.tool()
+def mts_list_agent_tasks() -> str:
+    """List all saved agent task specs."""
+    return json.dumps(tools.list_agent_tasks(_get_ctx()))
+
+
+@mcp.tool()
+def mts_get_agent_task(name: str) -> str:
+    """Get full agent task spec by name."""
+    return json.dumps(tools.get_agent_task(_get_ctx(), name))
+
+
+@mcp.tool()
+def mts_delete_agent_task(name: str) -> str:
+    """Delete an agent task spec."""
+    return json.dumps(tools.delete_agent_task(_get_ctx(), name))
+
+
+@mcp.tool()
+def mts_evaluate_output(task_name: str, output: str) -> str:
+    """One-shot evaluation of an output against a saved agent task spec.
+    Returns score, reasoning, and dimension scores."""
+    return json.dumps(tools.evaluate_output(_get_ctx(), task_name, output))
+
+
+# -- Task Queue tools --
+
+
+@mcp.tool()
+def mts_queue_improvement_run(
+    task_name: str,
+    initial_output: str | None = None,
+    priority: int = 0,
+) -> str:
+    """Queue an agent task for background improvement loop processing.
+    The task runner daemon will pick it up automatically."""
+    return json.dumps(tools.queue_improvement_run(_get_ctx(), task_name, initial_output, priority))
+
+
+@mcp.tool()
+def mts_get_queue_status() -> str:
+    """Get task queue status: pending, running, recent completed/failed."""
+    return json.dumps(tools.get_queue_status(_get_ctx()))
+
+
+@mcp.tool()
+def mts_get_task_result(task_id: str) -> str:
+    """Get the result of a specific queued task by ID."""
+    return json.dumps(tools.get_task_result(_get_ctx(), task_id))
+
+
+@mcp.tool()
+def mts_get_best_output(task_name: str) -> str:
+    """Get the highest-scoring output for a task across all completed runs."""
+    return json.dumps(tools.get_best_output(_get_ctx(), task_name))
 
 
 def run_server() -> None:
