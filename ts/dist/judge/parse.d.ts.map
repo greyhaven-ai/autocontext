@@ -1,0 +1,1 @@
+{"version":3,"file":"parse.d.ts","sourceRoot":"","sources":["../../src/judge/parse.ts"],"names":[],"mappings":"AAAA;;;;;;;;GAQG;AAKH,MAAM,WAAW,WAAW;IAC1B,KAAK,EAAE,MAAM,CAAC;IACd,SAAS,EAAE,MAAM,CAAC;IAClB,eAAe,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAC;CACzC;AA8GD,wBAAgB,kBAAkB,CAAC,QAAQ,EAAE,MAAM,GAAG,WAAW,CAsBhE"}
