@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from mts.execution.improvement_loop import (
     ImprovementLoop,
     ImprovementResult,
@@ -35,8 +33,7 @@ class FakeTask(AgentTaskInterface):
     def get_rubric(self) -> str:
         return "test rubric"
 
-    @property
-    def initial_state(self) -> dict:
+    def initial_state(self, seed: int | None = None) -> dict:
         return {}
 
     def describe_task(self) -> str:
