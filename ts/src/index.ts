@@ -49,3 +49,7 @@ export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
 export { DirectAPIRuntime } from "./runtimes/index.js";
 export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
 export type { ClaudeCLIConfig } from "./runtimes/index.js";
+
+// MCP
+export { createMcpServer, startServer } from "./mcp/server.js";
+export type { MtsServerOpts } from "./mcp/server.js";
