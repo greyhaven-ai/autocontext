@@ -36,13 +36,14 @@ export type { LLMJudgeOpts, ParsedJudge } from "./judge/index.js";
 
 // Storage
 export { SQLiteStore } from "./storage/index.js";
-export type { TaskQueueRow } from "./storage/index.js";
+export type { TaskQueueRow, HumanFeedbackRow } from "./storage/index.js";
 
 // Execution
 export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improvement-loop.js";
 export type { ImprovementLoopOpts } from "./execution/improvement-loop.js";
 export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
 export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
+export { JudgeExecutor } from "./execution/judge-executor.js";
 
 // Runtimes
 export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
