@@ -24,10 +24,10 @@
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.0.0",
-    "better-sqlite3": "^11.0.0",
     "@types/better-sqlite3": "^7.6.0"
   },
   "dependencies": {
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "better-sqlite3": "^11.0.0"
   }
 }
