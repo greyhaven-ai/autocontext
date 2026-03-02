@@ -27,7 +27,7 @@ export class JudgeExecutor {
   ): Promise<AgentTaskResult> {
     // Run context preparation if the task supports it
     const preparedState = this.task.prepareContext
-      ? this.task.prepareContext({ ...state })
+      ? await this.task.prepareContext({ ...state })
       : { ...state };
 
     // Validate context
@@ -43,12 +43,6 @@ export class JudgeExecutor {
       };
     }
 
-    return this.task.evaluateOutput(
-      agentOutput,
-      preparedState,
-      opts?.referenceContext,
-      opts?.requiredConcepts,
-      opts?.calibrationExamples,
-    );
+    return this.task.evaluateOutput(agentOutput, preparedState, opts);
   }
 }
