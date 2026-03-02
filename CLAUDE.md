@@ -36,8 +36,8 @@ mts/                          # Python package root (pyproject.toml lives here)
   skills/                     # Runtime-generated: operational skill notes per scenario
   runs/                       # Runtime-generated: SQLite DB, event stream, generation artifacts
 ts/                           # TypeScript port of MTS modules
-  src/                        # Source code (types, judge, storage, execution, runtimes, mcp, cli)
-  tests/                      # Vitest tests (65 tests)
+  src/                        # Source code (types, judge, storage, execution, runtimes, scenarios, knowledge, mcp, cli)
+  tests/                      # Vitest tests (119 tests)
   migrations/                 # Shared SQLite migration SQL (cross-compatible with Python)
 infra/                        # Docker, Fly.io config, bootstrap script
 scripts/                      # Top-level convenience scripts (demo.sh)
@@ -357,7 +357,7 @@ A TypeScript port of MTS modules under `ts/`, published as `@greyhaven/mts`. ESM
 cd ts
 npm install
 npm run lint          # tsc --noEmit
-npm test              # vitest run (65 tests)
+npm test              # vitest run (119 tests)
 npm run build         # tsc (outputs to dist/)
 
 # CLI (after build, or via npx tsx src/cli/index.ts)
@@ -376,14 +376,22 @@ Environment variables: `ANTHROPIC_API_KEY` (required for judge/improve/serve), `
 - **Types** (`src/types/index.ts`) — Zod schemas mirroring Python dataclasses: `CompletionResult`, `JudgeResult`, `AgentTaskResult`, `TaskRow`, `RoundResult`, `ImprovementResult`, `NotificationEvent`. Also defines `LLMProvider` interface, `AgentTaskInterface`, and `ProviderError` class.
 - **Judge Parser** (`src/judge/parse.ts`) — Port of Python's 4-tier fallback parser: markers → code blocks → raw JSON → plaintext regex. `parseJudgeResponse()` returns `{score, reasoning, dimensionScores}` with score clamping to [0, 1].
 - **LLM Judge** (`src/judge/index.ts`) — `LLMJudge` class with async `evaluate()`. Supports multi-sample averaging, retry on parse failure, reference context injection, and calibration examples.
-- **SQLite Store** (`src/storage/index.ts`) — `SQLiteStore` using `better-sqlite3` with WAL mode and foreign keys. Atomic `dequeueTask()` via transaction with `AND status = 'pending'` guard. Methods: `enqueueTask()`, `dequeueTask()`, `completeTask()`, `failTask()`, `pendingTaskCount()`, `getTask()`, `close()`.
+- **SQLite Store** (`src/storage/index.ts`) — `SQLiteStore` using `better-sqlite3` with WAL mode and foreign keys. Atomic `dequeueTask()` via transaction with `AND status = 'pending'` guard. Task queue methods: `enqueueTask()`, `dequeueTask()`, `completeTask()`, `failTask()`, `pendingTaskCount()`, `getTask()`, `close()`. Human feedback methods: `insertHumanFeedback()` (validates score range [0, 1]), `getHumanFeedback()` (ordered by created_at DESC with limit), `getCalibrationExamples()` (filters for entries with both score and notes).
 - **ImprovementLoop** (`src/execution/improvement-loop.ts`) — Multi-step evaluate→revise loop. Parse-failure resilience: `isParseFailure()` detection, carry-forward of last good feedback, consecutive failure abort (3). `isImproved()` filters failed rounds before comparing first vs last valid scores.
+- **JudgeExecutor** (`src/execution/judge-executor.ts`) — Evaluates agent output by delegating to `AgentTaskInterface.evaluateOutput()`. Runs optional context preparation (`prepareContext`) and validation (`validateContext`) before evaluation — if validation fails, returns score 0.0 with error details. Passes reference context, required concepts, and calibration examples through as an opts object.
 - **TaskRunner** (`src/execution/task-runner.ts`) — Daemon that polls the SQLite task queue and runs `ImprovementLoop` for each task. `SimpleAgentTask` builds an `AgentTaskInterface` from queue config with `generateOutput()` and `reviseOutput()`. `enqueueTask()` convenience function generates UUID and stores config JSON. `parseTaskConfig()` deserializes snake_case JSON to camelCase `TaskConfig`.
 - **Agent Runtimes** (`src/runtimes/`) — `AgentRuntime` interface with `generate()` and `revise()` returning `AgentOutput` (text, structured, costUsd, model, sessionId, metadata). Two implementations:
   - `DirectAPIRuntime` — Wraps any `LLMProvider` for single-call generation/revision.
   - `ClaudeCLIRuntime` — Invokes `claude -p` via `execFileAsync` with JSON output parsing, cost tracking, session management, model/tool/permission configuration. `createSessionRuntime()` factory for shared-session multi-round loops.
 - **MCP Server** (`src/mcp/server.ts`) — 5 tools via `@modelcontextprotocol/sdk`: `evaluate_output` (one-shot judge), `run_improvement_loop` (multi-round), `queue_task` (background queue), `get_queue_status` (pending count), `get_task_result` (lookup by ID). `createMcpServer()` returns a configured `McpServer`; `startServer()` connects via stdio.
 - **CLI** (`src/cli/index.ts`) — `mts` binary with `judge`, `improve`, `queue`, `status`, `serve` commands. Uses `node:util/parseArgs`. Includes a built-in fetch-based Anthropic provider (no SDK dependency for the CLI). Dynamic imports for fast `--help` response.
+- **Agent Task Pipeline** (`src/scenarios/`) — TypeScript port of the agent task creation pipeline:
+  - `AgentTaskSpecSchema` (`agent-task-spec.ts`) — Zod schema defining `taskPrompt`, `judgeRubric`, `outputFormat`, `judgeModel`, `maxRounds`, `qualityThreshold`, `referenceContext`, `referenceSources`, `requiredConcepts`, `contextPreparation`, `requiredContextKeys`, `revisionPrompt`, `calibrationExamples`, `exampleOutputs`, `difficultyTiers`. `parseRawSpec()` converts snake_case LLM output to camelCase.
+  - `designAgentTask()` (`agent-task-designer.ts`) — LLM-driven spec generation with `AGENT_TASK_SPEC_START/END` delimiter parsing. `parseAgentTaskSpec()` extracts and parses JSON between delimiters.
+  - `validateSpec()` (`agent-task-validator.ts`) — Zod `safeParse()` validation with collected error messages.
+  - `createAgentTask()` (`agent-task-factory.ts`) — Factory that produces a concrete `AgentTaskInterface` object from a spec. Includes `evaluateOutput` (delegates to `LLMJudge`), `prepareContext`, `validateContext` (null/undefined check for required keys), and `reviseOutput`. No eval or dynamic import needed — returns a plain object.
+  - `AgentTaskCreator` (`agent-task-creator.ts`) — Orchestrates the full pipeline: design → validate → derive name → create → save to disk. `deriveName()` extracts 2-3 keywords from description, filtering stop words.
+- **Skill Export** (`src/knowledge/skill-package.ts`) — `SkillPackage` class for portable markdown+JSON skill bundles. `toDict()` converts to snake_case for serialization. `toSkillMarkdown()` renders dual-format markdown: game scenarios get strategy JSON blocks, agent tasks get task prompt, evaluation criteria, example outputs (capped at 3) in `<details>` blocks. `exportAgentTaskSkill()` convenience builder. `cleanLessons()` strips MTS-internal noise (rollback logs, raw JSON blobs, score parentheticals) from lesson bullets.
 
 ### Dependencies
 
@@ -392,4 +400,4 @@ Environment variables: `ANTHROPIC_API_KEY` (required for judge/improve/serve), `
 
 ### Migration Compatibility
 
-`ts/migrations/007_task_queue.sql` is the same schema as the Python migration, ensuring cross-language database compatibility.
+`ts/migrations/` share schemas with Python migrations for cross-language database compatibility: `007_task_queue.sql` (task queue) and `008_human_feedback.sql` (human feedback table with scenario_name index).
