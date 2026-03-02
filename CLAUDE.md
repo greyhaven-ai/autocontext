@@ -29,15 +29,15 @@ mts/                          # Python package root (pyproject.toml lives here)
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
     server/                   # FastAPI dashboard + WebSocket events
-  tests/                      # Pytest tests (~1195 tests)
+  tests/                      # Pytest tests (~1198 tests)
   migrations/                 # SQLite migration SQL files (001-007, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
   skills/                     # Runtime-generated: operational skill notes per scenario
   runs/                       # Runtime-generated: SQLite DB, event stream, generation artifacts
-ts/                           # TypeScript port of core MTS modules
-  src/                        # Source code (types, judge, storage)
-  tests/                      # Vitest tests (35 tests)
+ts/                           # TypeScript port of MTS modules
+  src/                        # Source code (types, judge, storage, execution, runtimes, mcp, cli)
+  tests/                      # Vitest tests (65 tests)
   migrations/                 # Shared SQLite migration SQL (cross-compatible with Python)
 infra/                        # Docker, Fly.io config, bootstrap script
 scripts/                      # Top-level convenience scripts (demo.sh)
@@ -349,7 +349,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs: ruff check, mypy, pytest, dete
 
 ## TypeScript Port (`ts/`)
 
-A TypeScript port of core MTS modules under `ts/`, published as `@greyhaven/mts`. ESM-only, strict TypeScript, Node.js >=18.
+A TypeScript port of MTS modules under `ts/`, published as `@greyhaven/mts`. ESM-only, strict TypeScript, Node.js >=18. Provides a `mts` CLI binary.
 
 ### Commands
 
@@ -357,9 +357,19 @@ A TypeScript port of core MTS modules under `ts/`, published as `@greyhaven/mts`
 cd ts
 npm install
 npm run lint          # tsc --noEmit
-npm test              # vitest run
+npm test              # vitest run (65 tests)
 npm run build         # tsc (outputs to dist/)
+
+# CLI (after build, or via npx tsx src/cli/index.ts)
+mts judge -p <task-prompt> -o <agent-output> -r <rubric>
+mts improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold]
+mts queue -s <spec-name> [-p prompt] [-r rubric] [--priority N]
+mts status
+mts serve             # start MCP server on stdio
+mts version
 ```
+
+Environment variables: `ANTHROPIC_API_KEY` (required for judge/improve/serve), `MTS_MODEL` (default `claude-sonnet-4-20250514`), `MTS_DB_PATH` (default `./mts.db`).
 
 ### Modules
 
@@ -367,11 +377,18 @@ npm run build         # tsc (outputs to dist/)
 - **Judge Parser** (`src/judge/parse.ts`) — Port of Python's 4-tier fallback parser: markers → code blocks → raw JSON → plaintext regex. `parseJudgeResponse()` returns `{score, reasoning, dimensionScores}` with score clamping to [0, 1].
 - **LLM Judge** (`src/judge/index.ts`) — `LLMJudge` class with async `evaluate()`. Supports multi-sample averaging, retry on parse failure, reference context injection, and calibration examples.
 - **SQLite Store** (`src/storage/index.ts`) — `SQLiteStore` using `better-sqlite3` with WAL mode and foreign keys. Atomic `dequeueTask()` via transaction with `AND status = 'pending'` guard. Methods: `enqueueTask()`, `dequeueTask()`, `completeTask()`, `failTask()`, `pendingTaskCount()`, `getTask()`, `close()`.
+- **ImprovementLoop** (`src/execution/improvement-loop.ts`) — Multi-step evaluate→revise loop. Parse-failure resilience: `isParseFailure()` detection, carry-forward of last good feedback, consecutive failure abort (3). `isImproved()` filters failed rounds before comparing first vs last valid scores.
+- **TaskRunner** (`src/execution/task-runner.ts`) — Daemon that polls the SQLite task queue and runs `ImprovementLoop` for each task. `SimpleAgentTask` builds an `AgentTaskInterface` from queue config with `generateOutput()` and `reviseOutput()`. `enqueueTask()` convenience function generates UUID and stores config JSON. `parseTaskConfig()` deserializes snake_case JSON to camelCase `TaskConfig`.
+- **Agent Runtimes** (`src/runtimes/`) — `AgentRuntime` interface with `generate()` and `revise()` returning `AgentOutput` (text, structured, costUsd, model, sessionId, metadata). Two implementations:
+  - `DirectAPIRuntime` — Wraps any `LLMProvider` for single-call generation/revision.
+  - `ClaudeCLIRuntime` — Invokes `claude -p` via `execFileAsync` with JSON output parsing, cost tracking, session management, model/tool/permission configuration. `createSessionRuntime()` factory for shared-session multi-round loops.
+- **MCP Server** (`src/mcp/server.ts`) — 5 tools via `@modelcontextprotocol/sdk`: `evaluate_output` (one-shot judge), `run_improvement_loop` (multi-round), `queue_task` (background queue), `get_queue_status` (pending count), `get_task_result` (lookup by ID). `createMcpServer()` returns a configured `McpServer`; `startServer()` connects via stdio.
+- **CLI** (`src/cli/index.ts`) — `mts` binary with `judge`, `improve`, `queue`, `status`, `serve` commands. Uses `node:util/parseArgs`. Includes a built-in fetch-based Anthropic provider (no SDK dependency for the CLI). Dynamic imports for fast `--help` response.
 
 ### Dependencies
 
-- **Runtime**: `zod` (schema validation), `better-sqlite3` (SQLite driver)
-- **Dev**: `typescript`, `vitest`, `@types/better-sqlite3`
+- **Runtime**: `zod` (schema validation), `better-sqlite3` (SQLite driver), `@modelcontextprotocol/sdk` (MCP server)
+- **Dev**: `typescript`, `vitest`, `@types/better-sqlite3`, `tsx` (for CLI tests)
 
 ### Migration Compatibility
 
