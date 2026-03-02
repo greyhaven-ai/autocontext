@@ -65,6 +65,10 @@ export {
   SPEC_END,
 } from "./scenarios/index.js";
 
+// Knowledge / Skill Export
+export { SkillPackage, exportAgentTaskSkill, cleanLessons } from "./knowledge/index.js";
+export type { SkillPackageData } from "./knowledge/index.js";
+
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
 export type { MtsServerOpts } from "./mcp/server.js";
