@@ -119,6 +119,7 @@ export class ClaudeCLIRuntime implements AgentRuntime {
 
   private async invoke(prompt: string, args: string[]): Promise<AgentOutput> {
     const claude = this._claudePath ?? "claude";
+    args.push(prompt);
 
     try {
       const { stdout } = await execFileAsync(claude, args, {
