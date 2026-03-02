@@ -37,3 +37,19 @@ export type { LLMJudgeOpts, ParsedJudge } from "./judge/index.js";
 // Storage
 export { SQLiteStore } from "./storage/index.js";
 export type { TaskQueueRow } from "./storage/index.js";
+
+// Execution
+export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improvement-loop.js";
+export type { ImprovementLoopOpts } from "./execution/improvement-loop.js";
+export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
+export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
+
+// Runtimes
+export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
+export { DirectAPIRuntime } from "./runtimes/index.js";
+export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
+export type { ClaudeCLIConfig } from "./runtimes/index.js";
+
+// MCP
+export { createMcpServer, startServer } from "./mcp/server.js";
+export type { MtsServerOpts } from "./mcp/server.js";
