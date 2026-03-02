@@ -51,6 +51,20 @@ export { DirectAPIRuntime } from "./runtimes/index.js";
 export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
 export type { ClaudeCLIConfig } from "./runtimes/index.js";
 
+// Scenarios
+export type { AgentTaskSpec, AgentTaskFactoryOpts, AgentTaskCreatorOpts } from "./scenarios/index.js";
+export {
+  AgentTaskSpecSchema,
+  parseRawSpec,
+  parseAgentTaskSpec,
+  designAgentTask,
+  validateSpec,
+  createAgentTask,
+  AgentTaskCreator,
+  SPEC_START,
+  SPEC_END,
+} from "./scenarios/index.js";
+
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
 export type { MtsServerOpts } from "./mcp/server.js";
