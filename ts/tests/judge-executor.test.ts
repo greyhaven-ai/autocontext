@@ -4,12 +4,15 @@ import type { AgentTaskInterface, AgentTaskResult } from "../src/types/index.js"
 
 function makeTask(overrides?: Partial<AgentTaskInterface>): AgentTaskInterface {
   return {
-    evaluateOutput: async (output, _state, _ref, _req, _cal) => ({
+    getTaskPrompt: () => "test prompt",
+    getRubric: () => "test rubric",
+    initialState: () => ({}),
+    describeTask: () => "test task",
+    evaluateOutput: async (output, _state, _opts) => ({
       score: output.includes("good") ? 0.9 : 0.3,
       reasoning: "test evaluation",
       dimensionScores: { quality: 0.8 },
     }),
-    generateOutput: async () => "generated",
     reviseOutput: async (output) => output,
     ...overrides,
   };
@@ -26,12 +29,10 @@ describe("JudgeExecutor", () => {
   });
 
   it("passes options through", async () => {
-    let capturedRef: string | undefined;
-    let capturedConcepts: string[] | undefined;
+    let capturedOpts: Record<string, unknown> | undefined;
     const task = makeTask({
-      evaluateOutput: async (_out, _state, ref, concepts) => {
-        capturedRef = ref;
-        capturedConcepts = concepts;
+      evaluateOutput: async (_out, _state, opts) => {
+        capturedOpts = opts as Record<string, unknown>;
         return { score: 0.5, reasoning: "ok", dimensionScores: {} };
       },
     });
@@ -40,13 +41,13 @@ describe("JudgeExecutor", () => {
       referenceContext: "ref context",
       requiredConcepts: ["a", "b"],
     });
-    expect(capturedRef).toBe("ref context");
-    expect(capturedConcepts).toEqual(["a", "b"]);
+    expect(capturedOpts?.referenceContext).toBe("ref context");
+    expect(capturedOpts?.requiredConcepts).toEqual(["a", "b"]);
   });
 
   it("runs context preparation when available", async () => {
     const task = makeTask({
-      prepareContext: (state) => ({ ...state, prepared: true }),
+      prepareContext: async (state) => ({ ...state, prepared: true }),
     });
     let capturedState: Record<string, unknown> = {};
     task.evaluateOutput = async (_out, state) => {
@@ -74,8 +75,11 @@ describe("JudgeExecutor", () => {
   it("skips preparation/validation when not provided", async () => {
     // Task with no prepareContext or validateContext
     const task: AgentTaskInterface = {
+      getTaskPrompt: () => "test",
+      getRubric: () => "rubric",
+      initialState: () => ({}),
+      describeTask: () => "test",
       evaluateOutput: async () => ({ score: 0.6, reasoning: "basic", dimensionScores: {} }),
-      generateOutput: async () => "gen",
       reviseOutput: async (o) => o,
     };
     const executor = new JudgeExecutor(task);
