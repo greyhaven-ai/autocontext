@@ -199,8 +199,8 @@ async function cmdImprove(_dbPath: string): Promise<void> {
   const task = new SimpleAgentTask(values.prompt, values.rubric, provider, model);
   const loop = new ImprovementLoop({
     task,
-    maxRounds: parseInt(values.rounds!, 10),
-    qualityThreshold: parseFloat(values.threshold!),
+    maxRounds: parseInt(values.rounds ?? "5", 10),
+    qualityThreshold: parseFloat(values.threshold ?? "0.9"),
   });
 
   const result = await loop.run({ initialOutput: values.output, state: {} });

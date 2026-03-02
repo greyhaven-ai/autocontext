@@ -12,8 +12,9 @@ function runCli(args: string[]): { stdout: string; exitCode: number } {
       env: { ...process.env, NODE_NO_WARNINGS: "1" },
     });
     return { stdout, exitCode: 0 };
-  } catch (err: any) {
-    return { stdout: err.stdout ?? "", exitCode: err.status ?? 1 };
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; status?: number };
+    return { stdout: e.stdout ?? "", exitCode: e.status ?? 1 };
   }
 }
 
