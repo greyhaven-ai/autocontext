@@ -95,6 +95,19 @@ describe("TaskRunner", () => {
     expect(result).not.toBeNull();
     expect(result!.status).toBe("failed");
     expect(result!.error).toContain("API down");
+    // Verify no stack trace in error (only message stored)
+    expect(result!.error).not.toContain("\n    at ");
+  });
+
+  it("rejects invalid config via Zod validation", async () => {
+    const store = createStore();
+    const provider = makeMockProvider();
+    // max_rounds must be a positive integer, not a string
+    store.enqueueTask("bad", "test_spec", 0, { max_rounds: "not_a_number" });
+    const runner = new TaskRunner({ store, provider });
+    const result = await runner.runOnce();
+    expect(result!.status).toBe("failed");
+    expect(result!.error).toContain("Expected number");
   });
 });
 
