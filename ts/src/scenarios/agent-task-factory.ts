@@ -85,7 +85,7 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
       const errors: string[] = [];
       if (spec.requiredContextKeys) {
         for (const key of spec.requiredContextKeys) {
-          if (!(key in state) || !state[key]) {
+          if (!(key in state) || state[key] === undefined || state[key] === null) {
             errors.push(`missing required context key: '${key}'`);
           }
         }
