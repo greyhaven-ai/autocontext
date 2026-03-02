@@ -36,13 +36,27 @@ export class SQLiteStore {
   }
 
   migrate(migrationsDir: string): void {
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS schema_version (
+         filename TEXT PRIMARY KEY,
+         applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+       )`,
+    );
+
+    const applied = new Set(
+      (this.db.prepare("SELECT filename FROM schema_version").all() as Array<{ filename: string }>)
+        .map(r => r.filename),
+    );
+
     const files = readdirSync(migrationsDir)
       .filter(f => f.endsWith(".sql"))
       .sort();
 
     for (const file of files) {
+      if (applied.has(file)) continue;
       const sql = readFileSync(join(migrationsDir, file), "utf8");
       this.db.exec(sql);
+      this.db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
     }
   }
 

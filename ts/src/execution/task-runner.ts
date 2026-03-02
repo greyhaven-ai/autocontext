@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type {
   LLMProvider,
   AgentTaskInterface,
@@ -26,9 +27,22 @@ export interface TaskConfig {
   revisionPrompt?: string;
 }
 
+const TaskConfigSchema = z.object({
+  max_rounds: z.number().int().positive().optional(),
+  quality_threshold: z.number().min(0).max(1).optional(),
+  reference_context: z.string().optional(),
+  required_concepts: z.array(z.string()).optional(),
+  calibration_examples: z.array(z.record(z.unknown())).optional(),
+  initial_output: z.string().optional(),
+  rubric: z.string().optional(),
+  task_prompt: z.string().optional(),
+  revision_prompt: z.string().optional(),
+}).passthrough();
+
 function parseTaskConfig(json: string | null): TaskConfig {
   if (!json) return { maxRounds: 5, qualityThreshold: 0.9 };
-  const d = JSON.parse(json);
+  const raw = JSON.parse(json);
+  const d = TaskConfigSchema.parse(raw);
   return {
     maxRounds: d.max_rounds ?? 5,
     qualityThreshold: d.quality_threshold ?? 0.9,
@@ -232,7 +246,7 @@ export class TaskRunner {
         serializeResult(result),
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.stack ?? err.message : String(err);
+      const msg = err instanceof Error ? err.message : String(err);
       this.store.failTask(task.id, msg);
     }
   }
