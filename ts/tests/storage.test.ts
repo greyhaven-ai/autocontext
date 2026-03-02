@@ -91,4 +91,12 @@ describe("SQLiteStore", () => {
     expect(store.dequeueTask()!.id).toBe("now");
     expect(store.dequeueTask()).toBeNull();
   });
+
+  it("migrate is idempotent with version tracking", () => {
+    // Running migrate again should not throw (migrations already applied)
+    store.migrate(MIGRATIONS_DIR);
+    // Store still works
+    store.enqueueTask("t1", "s");
+    expect(store.dequeueTask()!.id).toBe("t1");
+  });
 });

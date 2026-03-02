@@ -111,6 +111,11 @@ export class ClaudeCLIRuntime implements AgentRuntime {
       args.push("--json-schema", JSON.stringify(schema));
     }
     if (this.config.extraArgs) {
+      for (const arg of this.config.extraArgs) {
+        if (typeof arg !== "string") {
+          throw new Error(`extraArgs must be strings, got ${typeof arg}`);
+        }
+      }
       args.push(...this.config.extraArgs);
     }
 
