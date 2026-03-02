@@ -1,0 +1,33 @@
+{
+  "name": "@greyhaven/mts",
+  "version": "0.1.0",
+  "description": "MTS — always-on agent evaluation harness",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/better-sqlite3": "^7.6.0"
+  },
+  "dependencies": {
+    "zod": "^3.24.0",
+    "better-sqlite3": "^11.0.0"
+  }
+}
