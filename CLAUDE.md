@@ -29,12 +29,16 @@ mts/                          # Python package root (pyproject.toml lives here)
     rlm/                      # REPL-loop mode (optional analyst/architect)
     mcp/                      # MCP server, tool implementations, sandbox manager
     server/                   # FastAPI dashboard + WebSocket events
-  tests/                      # Pytest tests (~1188 tests)
+  tests/                      # Pytest tests (~1195 tests)
   migrations/                 # SQLite migration SQL files (001-007, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
   skills/                     # Runtime-generated: operational skill notes per scenario
   runs/                       # Runtime-generated: SQLite DB, event stream, generation artifacts
+ts/                           # TypeScript port of core MTS modules
+  src/                        # Source code (types, judge, storage)
+  tests/                      # Vitest tests (35 tests)
+  migrations/                 # Shared SQLite migration SQL (cross-compatible with Python)
 infra/                        # Docker, Fly.io config, bootstrap script
 scripts/                      # Top-level convenience scripts (demo.sh)
 .claude/                      # Claude context, implementation plans, synced skill symlinks
@@ -342,3 +346,33 @@ All config via `MTS_*` environment variables, loaded in `config/settings.py` int
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`) runs: ruff check, mypy, pytest, deterministic smoke runs for both scenarios (`grid_ctf` 3 gens, `othello` 1 gen), and dashboard API health check. A separate `primeintellect-live` job runs when secrets are available. Monty-specific tests (`test_monty_*.py`) are skipped in CI when pydantic-monty is not installed (`pytest.mark.skipif`).
+
+## TypeScript Port (`ts/`)
+
+A TypeScript port of core MTS modules under `ts/`, published as `@greyhaven/mts`. ESM-only, strict TypeScript, Node.js >=18.
+
+### Commands
+
+```bash
+cd ts
+npm install
+npm run lint          # tsc --noEmit
+npm test              # vitest run
+npm run build         # tsc (outputs to dist/)
+```
+
+### Modules
+
+- **Types** (`src/types/index.ts`) — Zod schemas mirroring Python dataclasses: `CompletionResult`, `JudgeResult`, `AgentTaskResult`, `TaskRow`, `RoundResult`, `ImprovementResult`, `NotificationEvent`. Also defines `LLMProvider` interface, `AgentTaskInterface`, and `ProviderError` class.
+- **Judge Parser** (`src/judge/parse.ts`) — Port of Python's 4-tier fallback parser: markers → code blocks → raw JSON → plaintext regex. `parseJudgeResponse()` returns `{score, reasoning, dimensionScores}` with score clamping to [0, 1].
+- **LLM Judge** (`src/judge/index.ts`) — `LLMJudge` class with async `evaluate()`. Supports multi-sample averaging, retry on parse failure, reference context injection, and calibration examples.
+- **SQLite Store** (`src/storage/index.ts`) — `SQLiteStore` using `better-sqlite3` with WAL mode and foreign keys. Atomic `dequeueTask()` via transaction with `AND status = 'pending'` guard. Methods: `enqueueTask()`, `dequeueTask()`, `completeTask()`, `failTask()`, `pendingTaskCount()`, `getTask()`, `close()`.
+
+### Dependencies
+
+- **Runtime**: `zod` (schema validation), `better-sqlite3` (SQLite driver)
+- **Dev**: `typescript`, `vitest`, `@types/better-sqlite3`
+
+### Migration Compatibility
+
+`ts/migrations/007_task_queue.sql` is the same schema as the Python migration, ensuring cross-language database compatibility.
