@@ -26,6 +26,16 @@ export interface TaskQueueRow {
   updated_at: string;
 }
 
+export interface HumanFeedbackRow {
+  id: number;
+  scenario_name: string;
+  generation_id: string | null;
+  agent_output: string;
+  human_score: number | null;
+  human_notes: string;
+  created_at: string;
+}
+
 export class SQLiteStore {
   private db: Database.Database;
 
@@ -160,6 +170,51 @@ export class SQLiteStore {
         .prepare("SELECT * FROM task_queue WHERE id = ?")
         .get(taskId) as TaskQueueRow | undefined) ?? null
     );
+  }
+
+  // ---- Human Feedback ----
+
+  insertHumanFeedback(
+    scenarioName: string,
+    agentOutput: string,
+    humanScore?: number | null,
+    humanNotes = "",
+    generationId?: string | null,
+  ): number {
+    if (humanScore != null && (humanScore < 0 || humanScore > 1)) {
+      throw new Error(`human_score must be in [0.0, 1.0], got ${humanScore}`);
+    }
+    const result = this.db
+      .prepare(
+        `INSERT INTO human_feedback(scenario_name, generation_id, agent_output, human_score, human_notes)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(scenarioName, generationId ?? null, agentOutput, humanScore ?? null, humanNotes);
+    return Number(result.lastInsertRowid);
+  }
+
+  getHumanFeedback(scenarioName: string, limit = 10): HumanFeedbackRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, scenario_name, generation_id, agent_output, human_score, human_notes, created_at
+         FROM human_feedback
+         WHERE scenario_name = ?
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(scenarioName, limit) as HumanFeedbackRow[];
+  }
+
+  getCalibrationExamples(scenarioName: string, limit = 5): HumanFeedbackRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, scenario_name, agent_output, human_score, human_notes, created_at
+         FROM human_feedback
+         WHERE scenario_name = ? AND human_score IS NOT NULL AND human_notes != ''
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(scenarioName, limit) as HumanFeedbackRow[];
   }
 
   close(): void {
