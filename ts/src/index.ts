@@ -43,3 +43,9 @@ export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improve
 export type { ImprovementLoopOpts } from "./execution/improvement-loop.js";
 export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
 export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
+
+// Runtimes
+export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
+export { DirectAPIRuntime } from "./runtimes/index.js";
+export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
+export type { ClaudeCLIConfig } from "./runtimes/index.js";
