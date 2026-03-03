@@ -331,6 +331,14 @@ def mts_evaluate_output(task_name: str, output: str) -> str:
     return json.dumps(tools.evaluate_output(_get_ctx(), task_name, output))
 
 
+@mcp.tool()
+def mts_generate_output(task_name: str) -> str:
+    """Generate an initial output for an agent task. Returns the generated text."""
+    ctx = _get_ctx()
+    result = tools.generate_output(ctx, task_name)
+    return json.dumps(result, indent=2, default=str)
+
+
 # -- Task Queue tools --
 
 
@@ -361,6 +369,14 @@ def mts_get_task_result(task_id: str) -> str:
 def mts_get_best_output(task_name: str) -> str:
     """Get the highest-scoring output for a task across all completed runs."""
     return json.dumps(tools.get_best_output(_get_ctx(), task_name))
+
+
+@mcp.tool()
+def mts_export_agent_task_skill(task_name: str) -> str:
+    """Export a portable skill package for an agent task with best outputs and lessons."""
+    ctx = _get_ctx()
+    result = tools.export_agent_task_skill(ctx, task_name)
+    return json.dumps(result, indent=2, default=str)
 
 
 def run_server() -> None:
