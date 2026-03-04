@@ -11,6 +11,7 @@ from mts.loop.stages import (
     stage_curator_gate,
     stage_knowledge_setup,
     stage_persistence,
+    stage_stagnation_check,
     stage_tournament,
 )
 
@@ -119,6 +120,13 @@ class GenerationPipeline:
             sqlite=self._sqlite,
             artifacts=self._artifacts,
             agents=self._orchestrator,
+        )
+
+        # Stage 3b: Stagnation check
+        ctx = stage_stagnation_check(
+            ctx,
+            artifacts=self._artifacts,
+            events=self._events,
         )
 
         # Hook: Controller gate override

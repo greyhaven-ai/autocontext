@@ -307,6 +307,54 @@ def stage_tournament(
     return ctx
 
 
+def stage_stagnation_check(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+    events: EventStreamEmitter,
+) -> GenerationContext:
+    """Stage 3b: Check for stagnation and trigger fresh start if needed."""
+    if not ctx.settings.stagnation_reset_enabled:
+        return ctx
+    if ctx.settings.ablation_no_feedback:
+        return ctx
+
+    from mts.knowledge.stagnation import StagnationDetector
+
+    detector = StagnationDetector(
+        rollback_threshold=ctx.settings.stagnation_rollback_threshold,
+        plateau_window=ctx.settings.stagnation_plateau_window,
+        plateau_epsilon=ctx.settings.stagnation_plateau_epsilon,
+    )
+    report = detector.detect(ctx.gate_decision_history, ctx.score_history)
+
+    if not report.is_stagnated:
+        return ctx
+
+    from mts.knowledge.fresh_start import execute_fresh_start
+
+    lessons = artifacts.read_skill_lessons_raw(ctx.scenario_name)
+    hint = execute_fresh_start(
+        artifacts=artifacts,
+        scenario_name=ctx.scenario_name,
+        current_strategy=ctx.current_strategy,
+        lessons=lessons,
+        top_n=ctx.settings.stagnation_distill_top_lessons,
+    )
+
+    ctx.coach_competitor_hints = hint
+    ctx.fresh_start_triggered = True
+
+    events.emit("fresh_start", {
+        "run_id": ctx.run_id,
+        "generation": ctx.generation,
+        "trigger": report.trigger,
+        "detail": report.detail,
+    })
+
+    return ctx
+
+
 def stage_curator_gate(
     ctx: GenerationContext,
     *,
