@@ -2,9 +2,31 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-caching: true
+      - name: Install
+        run: uv sync --group dev
+      - name: Ruff
+        run: uv run ruff check src tests
+      - name: Mypy
+        run: uv run mypy src
+
   test:
     runs-on: ubuntu-latest
     defaults:
@@ -17,15 +39,38 @@ jobs:
           python-version: "3.11"
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-caching: true
       - name: Install
         run: uv sync --group dev
-      - name: Ruff
-        run: uv run ruff check src tests
-      - name: Mypy
-        run: uv run mypy src
       - name: Tests
-        run: uv run pytest
-      - name: Migration smoke
+        run: uv run pytest --cov=src/mts --cov-report=html:htmlcov -m "not live"
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: mts/htmlcov/
+          retention-days: 14
+
+  smoke:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-caching: true
+      - name: Install
+        run: uv sync --group dev
+      - name: Deterministic scenario runs
         env:
           MTS_AGENT_PROVIDER: deterministic
         run: |
@@ -35,12 +80,13 @@ jobs:
         env:
           MTS_AGENT_PROVIDER: deterministic
         run: |
+          cleanup() { kill $SERVER_PID 2>/dev/null || true; }
+          trap cleanup EXIT
           uv run mts serve --host 127.0.0.1 --port 8010 &
           SERVER_PID=$!
           sleep 2
           curl -fsS http://127.0.0.1:8010/health
           curl -fsS http://127.0.0.1:8010/api/runs
-          kill $SERVER_PID
 
   primeintellect-live:
     runs-on: ubuntu-latest
@@ -57,6 +103,8 @@ jobs:
           python-version: "3.11"
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-caching: true
       - name: Install
         run: uv sync --group dev
       - name: Live PrimeIntellect verification

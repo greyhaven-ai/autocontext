@@ -47,6 +47,9 @@ testpaths = ["tests"]
 addopts = "-q --strict-markers --disable-warnings"
 markers = [
     "monty: tests requiring pydantic-monty to be installed",
+    "slow: tests that run a full generation loop or multi-generation pipeline",
+    "integration: multi-component integration tests",
+    "live: tests requiring external API keys or services",
 ]
 
 [tool.ruff]
