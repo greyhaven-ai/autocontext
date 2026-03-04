@@ -73,6 +73,21 @@ def parse_curator_lesson_result(content: str) -> CuratorLessonResult:
     )
 
 
+_CURATOR_ASSESSMENT_CONSTRAINT = (
+    "Constraints:\n"
+    "- Do NOT accept a playbook that removes validated high-scoring strategies\n"
+    "- Do NOT reject a playbook without comparing specific coverage gaps\n"
+    "- Do NOT merge without preserving the highest-scoring strategy components\n\n"
+)
+
+_CURATOR_CONSOLIDATION_CONSTRAINT = (
+    "Constraints:\n"
+    "- Do NOT remove lessons that are supported by score improvements\n"
+    "- Do NOT merge semantically distinct lessons into a single vague bullet\n"
+    "- Do NOT keep lessons that directly contradict each other without resolution\n\n"
+)
+
+
 class KnowledgeCurator:
     def __init__(self, runtime: SubagentRuntime, model: str):
         self.runtime = runtime
@@ -84,10 +99,13 @@ class KnowledgeCurator:
         proposed_playbook: str,
         score_trajectory: str,
         recent_analysis: str,
+        constraint_mode: bool = False,
     ) -> tuple[CuratorPlaybookDecision, RoleExecution]:
         """Compare current vs proposed playbook. Return accept/reject/merge decision."""
+        constraint_preamble = _CURATOR_ASSESSMENT_CONSTRAINT if constraint_mode else ""
         prompt = (
-            "You are a curator assessing playbook quality. Compare the CURRENT and PROPOSED playbooks.\n\n"
+            constraint_preamble
+            + "You are a curator assessing playbook quality. Compare the CURRENT and PROPOSED playbooks.\n\n"
             "Score both on: coverage, specificity, actionability (1-10 each).\n"
             "Decide: accept (proposed is better), reject (current is better), or merge (combine best parts).\n\n"
             f"CURRENT PLAYBOOK:\n{current_playbook}\n\n"
@@ -121,11 +139,14 @@ class KnowledgeCurator:
         existing_lessons: list[str],
         max_lessons: int,
         score_trajectory: str,
+        constraint_mode: bool = False,
     ) -> tuple[CuratorLessonResult, RoleExecution]:
         """Deduplicate semantically, rank by evidence, cap at max_lessons."""
         lessons_text = "\n".join(existing_lessons)
+        constraint_preamble = _CURATOR_CONSOLIDATION_CONSTRAINT if constraint_mode else ""
         prompt = (
-            "You are a curator consolidating operational lessons. "
+            constraint_preamble
+            + "You are a curator consolidating operational lessons. "
             f"Reduce {len(existing_lessons)} lessons to at most {max_lessons}.\n\n"
             "Deduplicate semantically similar lessons. Rank by evidence strength.\n"
             "Remove outdated or contradicted lessons.\n\n"

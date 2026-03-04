@@ -177,6 +177,22 @@ If no new tools are needed, use an empty tools array.
 Start by examining existing tool code and correlating with performance metrics.
 """
 
+_RLM_ANALYST_CONSTRAINT = (
+    "\n## Constraints\n"
+    "- Do NOT report findings without supporting evidence from match data\n"
+    "- Do NOT omit root cause analysis for score regressions\n"
+    "- Do NOT repeat recommendations already addressed in the current playbook\n"
+    "- Do NOT provide vague recommendations — each must specify concrete parameter changes\n"
+)
+
+_RLM_ARCHITECT_CONSTRAINT = (
+    "\n## Constraints\n"
+    "- Do NOT propose tools that duplicate existing tool functionality\n"
+    "- Do NOT generate code with syntax errors or undefined dependencies\n"
+    "- Do NOT remove or break existing tools without archiving them first\n"
+    "- Do NOT propose changes without an impact hypothesis\n"
+)
+
 ANALYST_RLM_SYSTEM = RLM_SCAFFOLDING_PREAMBLE + """\
 You are the Analyst agent in an iterative strategy evolution system. Your job is to
 analyze match replays, score distributions, and strategic patterns to produce actionable
@@ -221,3 +237,18 @@ If no new tools are needed, use an empty tools array.
 
 Start by examining existing tool code and correlating with performance metrics.
 """
+
+
+def _insert_rlm_constraint(base: str, constraint: str) -> str:
+    """Insert constraint block before '## Important rules' in RLM prompts."""
+    marker = "## Important rules"
+    idx = base.find(marker)
+    if idx == -1:
+        return base + constraint
+    return base[:idx] + constraint.lstrip("\n") + "\n" + base[idx:]
+
+
+ANALYST_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ANALYST_RLM_SYSTEM, _RLM_ANALYST_CONSTRAINT)
+ARCHITECT_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ARCHITECT_RLM_SYSTEM, _RLM_ARCHITECT_CONSTRAINT)
+ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ANALYST_MONTY_RLM_SYSTEM, _RLM_ANALYST_CONSTRAINT)
+ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ARCHITECT_MONTY_RLM_SYSTEM, _RLM_ARCHITECT_CONSTRAINT)

@@ -125,6 +125,8 @@ class AppSettings(BaseModel):
     )
     # Progress JSON
     progress_json_enabled: bool = Field(default=True, description="Inject structured progress JSON into prompts")
+    # Constraint prompts
+    constraint_prompts_enabled: bool = Field(default=True, description="Append constraint suffixes to role prompts")
 
 
 def load_settings() -> AppSettings:
@@ -219,4 +221,5 @@ def load_settings() -> AppSettings:
         stagnation_plateau_epsilon=float(os.getenv("MTS_STAGNATION_PLATEAU_EPSILON", "0.01")),
         stagnation_distill_top_lessons=int(os.getenv("MTS_STAGNATION_DISTILL_TOP_LESSONS", "5")),
         progress_json_enabled=os.getenv("MTS_PROGRESS_JSON_ENABLED", "true").lower() == "true",
+        constraint_prompts_enabled=os.getenv("MTS_CONSTRAINT_PROMPTS_ENABLED", "true").lower() == "true",
     )
