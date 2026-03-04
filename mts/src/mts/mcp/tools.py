@@ -448,6 +448,41 @@ def evaluate_output(
     }
 
 
+def generate_output(
+    ctx: MtsToolContext,
+    task_name: str,
+) -> dict[str, object]:
+    """Generate an initial output for an agent task using the configured provider.
+
+    This gives agents a starting point that can be fed into evaluate_output
+    or run_improvement_loop.
+    """
+    import json
+
+    if err := _validate_task_name(task_name):
+        return {"error": err}
+
+    spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{task_name}.json"
+    if not spec_path.exists():
+        return {"error": f"Agent task '{task_name}' not found"}
+
+    data = json.loads(spec_path.read_text(encoding="utf-8"))
+
+    from mts.providers.registry import get_provider
+
+    provider = get_provider(ctx.settings)
+    result = provider.complete(
+        system_prompt="You are a skilled writer and analyst. Complete the task precisely and thoroughly.",
+        user_prompt=data["task_prompt"],
+    )
+
+    return {
+        "task_name": task_name,
+        "output": result.text,
+        "model": result.model,
+    }
+
+
 # -- Task Queue --
 
 
@@ -559,3 +594,66 @@ def get_best_output(ctx: MtsToolContext, task_name: str) -> dict[str, object]:
         "best_output": best.get("best_output", ""),
         "completed_at": best.get("completed_at"),
     }
+
+
+def export_agent_task_skill(
+    ctx: MtsToolContext,
+    task_name: str,
+) -> dict[str, object]:
+    """Export a skill package for an agent task, including best outputs and lessons learned.
+
+    Assembles results from completed task queue runs into a portable
+    skill package that any agent can use.
+    """
+    import json
+
+    if err := _validate_task_name(task_name):
+        return {"error": err}
+
+    spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{task_name}.json"
+    if not spec_path.exists():
+        return {"error": f"Agent task '{task_name}' not found"}
+
+    data = json.loads(spec_path.read_text(encoding="utf-8"))
+
+    # Gather completed runs for this task
+    completed = ctx.sqlite.list_tasks(spec_name=task_name, status="completed")
+
+    # Build example outputs from completed runs (top 3 by score)
+    example_outputs = []
+    for task_row in sorted(completed, key=lambda t: t.get("best_score") or 0.0, reverse=True)[:3]:
+        example_outputs.append({
+            "output": task_row.get("best_output", "")[:1000],
+            "score": task_row.get("best_score", 0.0),
+            "rounds": task_row.get("total_rounds", 0),
+        })
+
+    # Get human feedback/calibration if any
+    feedback = ctx.sqlite.get_human_feedback(task_name, limit=10)
+    lessons = []
+    for fb in feedback:
+        if fb.get("human_notes"):
+            lessons.append(fb["human_notes"])
+
+    best_score = max((t.get("best_score") or 0.0 for t in completed), default=0.0)
+    best_output = ""
+    if completed:
+        best_row = max(completed, key=lambda t: t.get("best_score") or 0.0)
+        best_output = best_row.get("best_output", "")
+
+    skill_package = {
+        "name": task_name,
+        "task_prompt": data.get("task_prompt", ""),
+        "rubric": data.get("rubric", ""),
+        "reference_context": data.get("reference_context"),
+        "required_concepts": data.get("required_concepts"),
+        "best_score": best_score,
+        "best_output": best_output,
+        "total_runs": len(completed),
+        "example_outputs": example_outputs,
+        "lessons": lessons,
+        "quality_threshold": data.get("quality_threshold", 0.9),
+        "max_rounds": data.get("max_rounds", 5),
+    }
+
+    return skill_package
