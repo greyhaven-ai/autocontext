@@ -263,20 +263,37 @@ class AgentOrchestrator:
         assert self._rlm_loader is not None
         settings = self.settings
 
-        # Select worker class and prompt templates based on rlm_backend
+        # Select worker class and prompt templates based on rlm_backend and constraint_mode
+        use_constraints = settings.constraint_prompts_enabled
         if settings.rlm_backend == "monty":
             from mts.harness.repl.monty_worker import MontyReplWorker
-            from mts.rlm.prompts import ANALYST_MONTY_RLM_SYSTEM, ARCHITECT_MONTY_RLM_SYSTEM
 
-            analyst_system_tpl = ANALYST_MONTY_RLM_SYSTEM
-            architect_system_tpl = ARCHITECT_MONTY_RLM_SYSTEM
+            if use_constraints:
+                from mts.rlm.prompts import (
+                    ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED,
+                    ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED,
+                )
+                analyst_system_tpl = ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED
+                architect_system_tpl = ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED
+            else:
+                from mts.rlm.prompts import ANALYST_MONTY_RLM_SYSTEM, ARCHITECT_MONTY_RLM_SYSTEM
+                analyst_system_tpl = ANALYST_MONTY_RLM_SYSTEM
+                architect_system_tpl = ARCHITECT_MONTY_RLM_SYSTEM
             worker_cls: type = MontyReplWorker
         else:
-            from mts.rlm.prompts import ANALYST_RLM_SYSTEM, ARCHITECT_RLM_SYSTEM
             from mts.rlm.repl_worker import ReplWorker
 
-            analyst_system_tpl = ANALYST_RLM_SYSTEM
-            architect_system_tpl = ARCHITECT_RLM_SYSTEM
+            if use_constraints:
+                from mts.rlm.prompts import (
+                    ANALYST_RLM_SYSTEM_CONSTRAINED,
+                    ARCHITECT_RLM_SYSTEM_CONSTRAINED,
+                )
+                analyst_system_tpl = ANALYST_RLM_SYSTEM_CONSTRAINED
+                architect_system_tpl = ARCHITECT_RLM_SYSTEM_CONSTRAINED
+            else:
+                from mts.rlm.prompts import ANALYST_RLM_SYSTEM, ARCHITECT_RLM_SYSTEM
+                analyst_system_tpl = ANALYST_RLM_SYSTEM
+                architect_system_tpl = ARCHITECT_RLM_SYSTEM
             worker_cls = ReplWorker
 
         # Reset deterministic client turn counter if applicable

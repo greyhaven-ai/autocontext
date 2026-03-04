@@ -13,6 +13,40 @@ class PromptBundle:
     architect: str
 
 
+_COMPETITOR_CONSTRAINT_SUFFIX = (
+    "\n\nConstraints:\n"
+    "- Do NOT repeat any strategy from the registry that resulted in rollback\n"
+    "- Do NOT set parameters outside the valid ranges defined in the strategy interface\n"
+    "- Do NOT omit reasoning for each parameter choice\n"
+    "- Do NOT ignore patterns identified in the score trajectory\n"
+    "- Do NOT propose a strategy without considering the evaluation criteria"
+)
+
+_ANALYST_CONSTRAINT_SUFFIX = (
+    "\n\nConstraints:\n"
+    "- Do NOT report findings without supporting evidence from match data\n"
+    "- Do NOT omit root cause analysis for score regressions\n"
+    "- Do NOT repeat recommendations already addressed in the current playbook\n"
+    "- Do NOT provide vague recommendations — each must specify concrete parameter changes"
+)
+
+_COACH_CONSTRAINT_SUFFIX = (
+    "\n\nConstraints:\n"
+    "- Do NOT remove working strategies from the playbook without justification\n"
+    "- Do NOT omit the required structural markers (PLAYBOOK, LESSONS, COMPETITOR_HINTS START/END)\n"
+    "- Do NOT contradict lessons that have been validated across multiple generations\n"
+    "- Do NOT provide hints that repeat previously rolled-back approaches"
+)
+
+_ARCHITECT_CONSTRAINT_SUFFIX = (
+    "\n\nConstraints:\n"
+    "- Do NOT propose tools that duplicate existing tool functionality\n"
+    "- Do NOT generate code with syntax errors or undefined dependencies\n"
+    "- Do NOT remove or break existing tools without archiving them first\n"
+    "- Do NOT propose changes without an impact hypothesis"
+)
+
+
 def build_prompt_bundle(
     scenario_rules: str,
     strategy_interface: str,
@@ -28,6 +62,7 @@ def build_prompt_bundle(
     score_trajectory: str = "",
     strategy_registry: str = "",
     progress_json: str = "",
+    constraint_mode: bool = False,
 ) -> PromptBundle:
     lessons_block = (
         f"Operational lessons (from prior generations):\n{operational_lessons}\n\n"
@@ -81,18 +116,23 @@ def build_prompt_bundle(
         if coach_competitor_hints
         else ""
     )
+    competitor_constraint = _COMPETITOR_CONSTRAINT_SUFFIX if constraint_mode else ""
+    analyst_constraint = _ANALYST_CONSTRAINT_SUFFIX if constraint_mode else ""
+    coach_constraint = _COACH_CONSTRAINT_SUFFIX if constraint_mode else ""
+    architect_constraint = _ARCHITECT_CONSTRAINT_SUFFIX if constraint_mode else ""
     return PromptBundle(
         competitor=base_context
         + hints_block
-        + (
-            "Describe your strategy reasoning and recommend specific parameter values."
-        ),
+        + competitor_constraint
+        + "Describe your strategy reasoning and recommend specific parameter values.",
         analyst=base_context
+        + analyst_constraint
         + (
             "Analyze strengths/failures and return markdown with sections: "
             "Findings, Root Causes, Actionable Recommendations."
         ),
         coach=base_context
+        + coach_constraint
         + (
             "You are the playbook coach. Produce THREE structured sections:\n\n"
             "1. A COMPLETE replacement playbook between markers. Consolidate all prior guidance, "
@@ -113,6 +153,7 @@ def build_prompt_bundle(
             "<!-- COMPETITOR_HINTS_END -->"
         ),
         architect=base_context
+        + architect_constraint
         + (
             "Propose infrastructure/tooling improvements in markdown with sections: "
             "Observed Bottlenecks, Tool Proposals, Impact Hypothesis. "
