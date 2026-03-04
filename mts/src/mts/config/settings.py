@@ -78,6 +78,12 @@ class AppSettings(BaseModel):
     meta_profiling_enabled: bool = Field(default=False)
     meta_profile_path: Path = Field(default=Path("runs/meta_profiles.json"))
     meta_min_observations: int = Field(default=5, ge=1)
+    # Tiered model routing
+    tier_routing_enabled: bool = Field(default=False, description="Enable dynamic model tier selection")
+    tier_haiku_model: str = Field(default="claude-haiku-4-5-20251001")
+    tier_sonnet_model: str = Field(default="claude-sonnet-4-5-20250929")
+    tier_opus_model: str = Field(default="claude-opus-4-6")
+    tier_competitor_haiku_max_gen: int = Field(default=3, ge=1)
     # Phase 7: Adaptive application
     adapt_enabled: bool = Field(default=False)
     adapt_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
@@ -193,6 +199,11 @@ def load_settings() -> AppSettings:
         meta_profiling_enabled=os.getenv("MTS_META_PROFILING_ENABLED", "false").lower() == "true",
         meta_profile_path=Path(os.getenv("MTS_META_PROFILE_PATH", "runs/meta_profiles.json")),
         meta_min_observations=int(os.getenv("MTS_META_MIN_OBSERVATIONS", "5")),
+        tier_routing_enabled=os.getenv("MTS_TIER_ROUTING_ENABLED", "false").lower() == "true",
+        tier_haiku_model=os.getenv("MTS_TIER_HAIKU_MODEL", "claude-haiku-4-5-20251001"),
+        tier_sonnet_model=os.getenv("MTS_TIER_SONNET_MODEL", "claude-sonnet-4-5-20250929"),
+        tier_opus_model=os.getenv("MTS_TIER_OPUS_MODEL", "claude-opus-4-6"),
+        tier_competitor_haiku_max_gen=int(os.getenv("MTS_TIER_COMPETITOR_HAIKU_MAX_GEN", "3")),
         adapt_enabled=os.getenv("MTS_ADAPT_ENABLED", "false").lower() == "true",
         adapt_min_confidence=float(os.getenv("MTS_ADAPT_MIN_CONFIDENCE", "0.6")),
         adapt_max_changes_per_cycle=int(os.getenv("MTS_ADAPT_MAX_CHANGES_PER_CYCLE", "2")),
