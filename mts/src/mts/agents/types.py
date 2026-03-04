@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mts.harness.core.types import RoleExecution, RoleUsage
+
+if TYPE_CHECKING:
+    from mts.agents.contracts import AnalystOutput, ArchitectOutput, CoachOutput, CompetitorOutput
 
 
 @dataclass(slots=True)
@@ -17,6 +20,10 @@ class AgentOutputs:
     architect_markdown: str
     architect_tools: list[dict[str, Any]]
     role_executions: list[RoleExecution]
+    competitor_output: CompetitorOutput | None = None
+    analyst_output: AnalystOutput | None = None
+    coach_output: CoachOutput | None = None
+    architect_output: ArchitectOutput | None = None
 
 
 __all__ = ["RoleUsage", "RoleExecution", "AgentOutputs"]
