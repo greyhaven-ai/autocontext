@@ -27,6 +27,7 @@ def build_prompt_bundle(
     recent_analysis: str = "",
     score_trajectory: str = "",
     strategy_registry: str = "",
+    progress_json: str = "",
 ) -> PromptBundle:
     lessons_block = (
         f"Operational lessons (from prior generations):\n{operational_lessons}\n\n"
@@ -53,6 +54,11 @@ def build_prompt_bundle(
         if strategy_registry
         else ""
     )
+    progress_block = (
+        f"Progress snapshot:\n```json\n{progress_json}\n```\n\n"
+        if progress_json
+        else ""
+    )
     base_context = (
         f"Scenario rules:\n{scenario_rules}\n\n"
         f"Strategy interface:\n{strategy_interface}\n\n"
@@ -68,6 +74,7 @@ def build_prompt_bundle(
         f"Previous generation summary:\n{previous_summary}\n"
         f"{trajectory_block}"
         f"{registry_block}"
+        f"{progress_block}"
     )
     hints_block = (
         f"Coach hints for competitor:\n{coach_competitor_hints}\n\n"
