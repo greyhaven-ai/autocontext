@@ -139,7 +139,7 @@ class TestLiveAgentImprovement:
         store, tmpdir = _make_store()
         provider = _make_provider()
 
-        task_id = enqueue_task(
+        enqueue_task(
             store,
             spec_name="live-pipeline-test",
             task_prompt="Write one sentence about why code review matters.",

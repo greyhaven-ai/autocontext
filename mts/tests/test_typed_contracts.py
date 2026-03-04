@@ -77,6 +77,12 @@ def test_extract_bullets_no_bullets_under_heading() -> None:
     assert bullets == []
 
 
+def test_extract_bullets_stops_at_sub_heading() -> None:
+    md = "## Findings\n- Finding one\n### Details\n- Detail one\n"
+    bullets = _extract_section_bullets(md, "Findings")
+    assert bullets == ["Finding one"]
+
+
 # ---------- parse_competitor_output ----------
 
 

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+LOGGER = logging.getLogger(__name__)
+
 RLM_SCAFFOLDING_PREAMBLE = """\
 <RLM_SCAFFOLDING>
 You have access to a persistent Python REPL. All data for your analysis has been loaded
@@ -177,6 +181,7 @@ If no new tools are needed, use an empty tools array.
 Start by examining existing tool code and correlating with performance metrics.
 """
 
+# Constraint bullets shared with prompts/templates.py — keep in sync
 _RLM_ANALYST_CONSTRAINT = (
     "\n## Constraints\n"
     "- Do NOT report findings without supporting evidence from match data\n"
@@ -244,6 +249,7 @@ def _insert_rlm_constraint(base: str, constraint: str) -> str:
     marker = "## Important rules"
     idx = base.find(marker)
     if idx == -1:
+        LOGGER.warning("RLM constraint marker '## Important rules' not found; appending to end")
         return base + constraint
     return base[:idx] + constraint.lstrip("\n") + "\n" + base[idx:]
 

@@ -18,7 +18,6 @@ from mts.execution.judge import LLMJudge
 from mts.execution.task_runner import SimpleAgentTask, TaskRunner, enqueue_task
 from mts.notifications.base import EventType, NotificationEvent
 from mts.notifications.callback import CallbackNotifier
-from mts.providers.base import CompletionResult, LLMProvider
 from mts.providers.callable_wrapper import CallableProvider
 from mts.runtimes.direct_api import DirectAPIRuntime
 from mts.scenarios.agent_task import AgentTaskResult
@@ -151,7 +150,7 @@ class TestAgentSelfImprovementE2E:
         store, tmpdir = _make_store()
         provider, _ = _make_mock_fn(judge_scores=[0.5, 0.75, 0.92])
 
-        task_id = enqueue_task(
+        enqueue_task(
             store,
             spec_name="test-pipeline",
             task_prompt="Write about neural networks.",
@@ -279,7 +278,7 @@ class TestMCPToolsAgentFlow:
 
     def test_mcp_create_evaluate_flow(self) -> None:
         """create_agent_task() → evaluate_output() flow using mocked provider."""
-        from mts.mcp.tools import create_agent_task, evaluate_output
+        from mts.mcp.tools import create_agent_task
 
         ctx, tmpdir = self._make_ctx()
 

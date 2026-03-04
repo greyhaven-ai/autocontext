@@ -13,6 +13,9 @@ from mts.harness.evaluation.runner import EvaluationRunner
 from mts.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from mts.harness.evaluation.types import EvaluationResult
+from mts.knowledge.fresh_start import execute_fresh_start
+from mts.knowledge.progress import build_progress_snapshot
+from mts.knowledge.stagnation import StagnationDetector
 from mts.loop.stage_types import GenerationContext
 from mts.prompts.templates import build_prompt_bundle
 
@@ -327,8 +330,6 @@ def stage_stagnation_check(
     if ctx.settings.ablation_no_feedback:
         return ctx
 
-    from mts.knowledge.stagnation import StagnationDetector
-
     detector = StagnationDetector(
         rollback_threshold=ctx.settings.stagnation_rollback_threshold,
         plateau_window=ctx.settings.stagnation_plateau_window,
@@ -338,8 +339,6 @@ def stage_stagnation_check(
 
     if not report.is_stagnated:
         return ctx
-
-    from mts.knowledge.fresh_start import execute_fresh_start
 
     lessons = artifacts.read_skill_lessons_raw(ctx.scenario_name)
     hint = execute_fresh_start(
@@ -550,7 +549,6 @@ def stage_persistence(
 
     # 7b. Write progress snapshot
     if ctx.settings.progress_json_enabled and not ctx.settings.ablation_no_feedback:
-        from mts.knowledge.progress import build_progress_snapshot
         progress_lessons = artifacts.read_skill_lessons_raw(scenario_name)
         snapshot = build_progress_snapshot(
             generation=generation,

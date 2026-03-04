@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from mts.scenarios.base import ScenarioInterface
 
 
-@dataclass
+@dataclass(slots=True)
 class GenerationContext:
     """Carries all mutable state between generation pipeline stages."""
 

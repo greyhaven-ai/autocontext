@@ -30,7 +30,7 @@ class StagnationDetector:
         gate_history: list[str],
         score_history: list[float],
     ) -> StagnationReport:
-        # Check consecutive rollbacks from end
+        # Count trailing 'rollback' only (retries excluded — they may still succeed)
         consecutive_rollbacks = 0
         for decision in reversed(gate_history):
             if decision == "rollback":

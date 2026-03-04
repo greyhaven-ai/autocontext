@@ -26,8 +26,8 @@ def _extract_section_bullets(markdown: str, heading: str) -> list[str]:
     after = markdown[match.end():]
     for line in after.splitlines():
         stripped = line.strip()
-        if stripped.startswith("## ") or stripped.startswith("# "):
-            break
+        if stripped.startswith("#"):
+            break  # Stop at any heading level (##, ###, etc.)
         if stripped.startswith("- "):
             bullets.append(stripped[2:].strip())
 

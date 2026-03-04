@@ -39,12 +39,15 @@ def build_progress_snapshot(
     score_history: list[float],
     current_strategy: dict[str, Any],
     lessons: list[str],
+    blocked_approaches: list[str] | None = None,
 ) -> ProgressSnapshot:
     last_advance_generation = 0
     for i, decision in enumerate(gate_history):
         if decision == "advance":
             last_advance_generation = i + 1
 
+    # Count trailing non-'advance' decisions (includes retry + rollback).
+    # Note: StagnationDetector.detect() counts only trailing 'rollback' — different metric.
     stagnation_count = 0
     for decision in reversed(gate_history):
         if decision != "advance":
@@ -61,7 +64,7 @@ def build_progress_snapshot(
         stagnation_count=stagnation_count,
         gate_history=list(gate_history),
         top_lessons=lessons[:5],
-        blocked_approaches=[],
+        blocked_approaches=blocked_approaches or [],  # callers may populate from strategy registry
         strategy_summary=dict(current_strategy),
         score_trend=score_history[-10:],
     )

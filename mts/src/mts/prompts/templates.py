@@ -13,6 +13,7 @@ class PromptBundle:
     architect: str
 
 
+# Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
 _COMPETITOR_CONSTRAINT_SUFFIX = (
     "\n\nConstraints:\n"
     "- Do NOT repeat any strategy from the registry that resulted in rollback\n"

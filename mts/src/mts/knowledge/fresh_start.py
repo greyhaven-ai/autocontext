@@ -29,7 +29,8 @@ def execute_fresh_start(
     )
 
     # 2. Build distilled playbook
-    strategy_summary = json.dumps(current_strategy, indent=2, sort_keys=True)[:500]
+    full_json = json.dumps(current_strategy, indent=2, sort_keys=True)
+    strategy_summary = full_json[:500] + ("..." if len(full_json) > 500 else "")
     distilled = (
         "# Fresh Start Playbook\n\n"
         "Previous approach stagnated. Starting fresh with distilled knowledge.\n\n"
