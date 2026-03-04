@@ -11,6 +11,7 @@ from mts.agents.coach import CoachRunner, parse_coach_sections
 from mts.agents.competitor import CompetitorRunner
 from mts.agents.curator import KnowledgeCurator
 from mts.agents.llm_client import AnthropicClient, DeterministicDevClient, LanguageModelClient
+from mts.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from mts.agents.subagent_runtime import SubagentRuntime
 from mts.agents.translator import StrategyTranslator
 from mts.agents.types import AgentOutputs, RoleExecution
@@ -143,6 +144,15 @@ class AgentOrchestrator:
 
         tools = parse_architect_tool_specs(architect_exec.content)
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)
+
+        # Parse typed contracts
+        competitor_typed = parse_competitor_output(
+            raw_text, strategy, is_code_strategy=self.settings.code_strategies_enabled,
+        )
+        analyst_typed = parse_analyst_output(analyst_exec.content)
+        coach_typed = parse_coach_output(coach_exec.content)
+        architect_typed = parse_architect_output(architect_exec.content)
+
         return AgentOutputs(
             strategy=strategy,
             analysis_markdown=analyst_exec.content,
@@ -153,6 +163,10 @@ class AgentOrchestrator:
             architect_markdown=architect_exec.content,
             architect_tools=tools,
             role_executions=[competitor_exec, translator_exec, analyst_exec, coach_exec, architect_exec],
+            competitor_output=competitor_typed,
+            analyst_output=analyst_typed,
+            coach_output=coach_typed,
+            architect_output=architect_typed,
         )
 
     def _run_via_pipeline(
@@ -201,6 +215,14 @@ class AgentOrchestrator:
         tools = parse_architect_tool_specs(results["architect"].content)
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(results["coach"].content)
 
+        competitor_typed = parse_competitor_output(
+            results["competitor"].content, strategy,
+            is_code_strategy=self.settings.code_strategies_enabled,
+        )
+        analyst_typed = parse_analyst_output(results["analyst"].content)
+        coach_typed = parse_coach_output(results["coach"].content)
+        architect_typed = parse_architect_output(results["architect"].content)
+
         return AgentOutputs(
             strategy=strategy,
             analysis_markdown=results["analyst"].content,
@@ -213,6 +235,10 @@ class AgentOrchestrator:
             role_executions=[
                 results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]
             ],
+            competitor_output=competitor_typed,
+            analyst_output=analyst_typed,
+            coach_output=coach_typed,
+            architect_output=architect_typed,
         )
 
     def _enrich_coach_prompt(self, base_prompt: str, analyst_content: str) -> str:
