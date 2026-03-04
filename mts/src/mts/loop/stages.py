@@ -72,6 +72,7 @@ def stage_knowledge_setup(
         score_trajectory=score_trajectory,
         strategy_registry=strategy_registry,
         progress_json=progress_json_str,
+        constraint_mode=ctx.settings.constraint_prompts_enabled,
     )
 
     ctx.prompts = prompts
@@ -397,6 +398,7 @@ def stage_curator_gate(
         proposed_playbook=ctx.outputs.coach_playbook,
         score_trajectory=curator_trajectory,
         recent_analysis=curator_analysis,
+        constraint_mode=ctx.settings.constraint_prompts_enabled,
     )
 
     sqlite.append_agent_output(
@@ -528,6 +530,7 @@ def stage_persistence(
             consolidation_trajectory = trajectory_builder.build_trajectory(run_id)
             lesson_result, lesson_exec = curator.consolidate_lessons(
                 existing_lessons, settings.skill_max_lessons, consolidation_trajectory,
+                constraint_mode=settings.constraint_prompts_enabled,
             )
             artifacts.replace_skill_lessons(scenario_name, lesson_result.consolidated_lessons)
             sqlite.append_agent_output(
