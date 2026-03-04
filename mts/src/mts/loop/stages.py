@@ -48,6 +48,12 @@ def stage_knowledge_setup(
     score_trajectory = "" if ablation else trajectory_builder.build_trajectory(ctx.run_id)
     strategy_registry = "" if ablation else trajectory_builder.build_strategy_registry(ctx.run_id)
 
+    progress_json_str = ""
+    if not ablation and ctx.settings.progress_json_enabled:
+        progress_data = artifacts.read_progress(ctx.scenario_name)
+        if progress_data:
+            progress_json_str = json.dumps(progress_data, indent=2, sort_keys=True)
+
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
     strategy_interface = scenario.describe_strategy_interface()
 
@@ -65,6 +71,7 @@ def stage_knowledge_setup(
         recent_analysis=recent_analysis,
         score_trajectory=score_trajectory,
         strategy_registry=strategy_registry,
+        progress_json=progress_json_str,
     )
 
     ctx.prompts = prompts
@@ -537,6 +544,22 @@ def stage_persistence(
     ctx.coach_competitor_hints = coach_competitor_hints
     if gate_decision == "advance" and coach_competitor_hints:
         artifacts.write_hints(scenario_name, coach_competitor_hints)
+
+    # 7b. Write progress snapshot
+    if ctx.settings.progress_json_enabled and not ctx.settings.ablation_no_feedback:
+        from mts.knowledge.progress import build_progress_snapshot
+        progress_lessons = artifacts.read_skill_lessons_raw(scenario_name)
+        snapshot = build_progress_snapshot(
+            generation=generation,
+            best_score=ctx.previous_best,
+            best_elo=ctx.challenger_elo,
+            mean_score=tournament.mean_score,
+            gate_history=ctx.gate_decision_history,
+            score_history=ctx.score_history,
+            current_strategy=ctx.current_strategy,
+            lessons=[lesson.lstrip("- ") for lesson in progress_lessons],
+        )
+        artifacts.write_progress(scenario_name, snapshot.to_dict())
 
     # 8. Emit generation_completed event
     events.emit("generation_completed", {
