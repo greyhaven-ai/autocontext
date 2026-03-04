@@ -184,6 +184,7 @@ class TestStageKnowledgeSetup:
         artifacts.read_tool_context.return_value = ""
         artifacts.read_skills.return_value = ""
         artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
         trajectory = MagicMock()
         trajectory.build_trajectory.return_value = ""
         trajectory.build_strategy_registry.return_value = ""
@@ -198,6 +199,7 @@ class TestStageKnowledgeSetup:
         artifacts.read_tool_context.return_value = ""
         artifacts.read_skills.return_value = ""
         artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
         trajectory = MagicMock()
         trajectory.build_trajectory.return_value = ""
         trajectory.build_strategy_registry.return_value = ""

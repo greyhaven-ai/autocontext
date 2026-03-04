@@ -112,6 +112,18 @@ class ArtifactStore:
         path = self.knowledge_root / scenario_name / "hints.md"
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
+    def write_progress(self, scenario_name: str, snapshot_dict: dict[str, object]) -> None:
+        """Write progress snapshot JSON."""
+        path = self.knowledge_root / scenario_name / "progress.json"
+        self.write_json(path, snapshot_dict)
+
+    def read_progress(self, scenario_name: str) -> dict[str, object] | None:
+        """Read progress snapshot, or None if missing."""
+        path = self.knowledge_root / scenario_name / "progress.json"
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
     def read_latest_advance_analysis(self, scenario_name: str, current_gen: int) -> str:
         """Read the most recent analysis from a generation before current_gen."""
         analysis_dir = self.knowledge_root / scenario_name / "analysis"
