@@ -43,6 +43,7 @@ class GenerationContext:
     attempt: int = 0
     strategy_interface: str = ""
     tool_context: str = ""
+    fresh_start_triggered: bool = False
 
 
 @dataclass(slots=True)

@@ -107,6 +107,22 @@ class AppSettings(BaseModel):
     # Notification settings
     notify_webhook_url: str | None = Field(default=None)
     notify_on: str = Field(default="threshold_met,failure")
+    # Stagnation detection
+    stagnation_reset_enabled: bool = Field(
+        default=False, description="Enable stagnation detection and fresh start",
+    )
+    stagnation_rollback_threshold: int = Field(
+        default=5, ge=1, description="Consecutive rollbacks before fresh start",
+    )
+    stagnation_plateau_window: int = Field(
+        default=5, ge=2, description="Window size for score plateau detection",
+    )
+    stagnation_plateau_epsilon: float = Field(
+        default=0.01, ge=0.0, description="Max variance for plateau detection",
+    )
+    stagnation_distill_top_lessons: int = Field(
+        default=5, ge=1, description="Top lessons to retain in fresh start",
+    )
 
 
 def load_settings() -> AppSettings:
@@ -195,4 +211,9 @@ def load_settings() -> AppSettings:
         judge_api_key=os.getenv("MTS_JUDGE_API_KEY"),
         notify_webhook_url=os.getenv("MTS_NOTIFY_WEBHOOK_URL"),
         notify_on=os.getenv("MTS_NOTIFY_ON", "threshold_met,failure"),
+        stagnation_reset_enabled=os.getenv("MTS_STAGNATION_RESET_ENABLED", "false").lower() == "true",
+        stagnation_rollback_threshold=int(os.getenv("MTS_STAGNATION_ROLLBACK_THRESHOLD", "5")),
+        stagnation_plateau_window=int(os.getenv("MTS_STAGNATION_PLATEAU_WINDOW", "5")),
+        stagnation_plateau_epsilon=float(os.getenv("MTS_STAGNATION_PLATEAU_EPSILON", "0.01")),
+        stagnation_distill_top_lessons=int(os.getenv("MTS_STAGNATION_DISTILL_TOP_LESSONS", "5")),
     )
