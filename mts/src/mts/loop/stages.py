@@ -9,6 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from mts.backpressure.trend_gate import ScoreHistory, TrendAwareGate
+from mts.harness.evaluation.failure_report import FailureReport
 from mts.harness.evaluation.runner import EvaluationRunner
 from mts.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
@@ -259,6 +260,14 @@ def stage_tournament(
                         f"Previous strategy: {json.dumps(current_strategy, sort_keys=True)}\n"
                         f"Adjust your strategy to improve. Do not repeat the same approach.\n"
                     )
+                # Enrich retry prompt with structured failure analysis
+                failure_report = FailureReport.from_tournament(
+                    tournament,
+                    previous_best=ctx.previous_best,
+                    threshold=settings.backpressure_min_delta,
+                    strategy=current_strategy,
+                )
+                retry_prompt += "\n" + failure_report.to_prompt_context()
                 try:
                     raw_text, _ = agents.competitor.run(retry_prompt, tool_context=ctx.tool_context)
                     if is_code_strategy:
