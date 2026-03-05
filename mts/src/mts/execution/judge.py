@@ -5,6 +5,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Literal
 
 from mts.providers.base import LLMProvider
 from mts.providers.callable_wrapper import CallableProvider
@@ -12,7 +13,7 @@ from mts.providers.callable_wrapper import CallableProvider
 logger = logging.getLogger(__name__)
 
 
-ParseMethod = str  # "raw_json" | "code_block" | "markers" | "plaintext" | "none"
+ParseMethod = Literal["raw_json", "code_block", "markers", "plaintext", "none"]
 
 
 @dataclass(slots=True)
@@ -211,17 +212,17 @@ class LLMJudge:
         # Strategy 1: Raw JSON object with "score" key (most common in practice)
         data = self._try_raw_json_parse(response)
         if data is not None:
-            return (*self._extract_from_dict(data, "raw_json"), "raw_json")
+            return self._extract_from_dict(data, "raw_json")
 
         # Strategy 2: JSON code block
         data = self._try_code_block_parse(response)
         if data is not None:
-            return (*self._extract_from_dict(data, "code_block"), "code_block")
+            return self._extract_from_dict(data, "code_block")
 
         # Strategy 3: Marker-based
         data = self._try_marker_parse(response)
         if data is not None:
-            return (*self._extract_from_dict(data, "markers"), "markers")
+            return self._extract_from_dict(data, "markers")
 
         # Strategy 4: Plain text score extraction
         result = self._try_plaintext_parse(response)
@@ -304,9 +305,9 @@ class LLMJudge:
 
     @staticmethod
     def _extract_from_dict(
-        data: dict, source: str,
-    ) -> tuple[float, str, dict[str, float]]:
-        """Extract score, reasoning, and dimensions from a parsed dict."""
+        data: dict, method: ParseMethod,
+    ) -> tuple[float, str, dict[str, float], ParseMethod]:
+        """Extract score, reasoning, dimensions, and parse method from a parsed dict."""
         score = float(data.get("score", 0.0))
         score = max(0.0, min(1.0, score))
         reasoning = str(data.get("reasoning", ""))
@@ -317,4 +318,4 @@ class LLMJudge:
                 dim_scores[str(k)] = max(0.0, min(1.0, float(v)))
             except (ValueError, TypeError):
                 continue
-        return score, reasoning, dim_scores
+        return score, reasoning, dim_scores, method
