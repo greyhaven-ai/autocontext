@@ -233,7 +233,7 @@ export class TaskRunner {
         qualityThreshold: config.qualityThreshold,
       });
 
-      const startTime = Date.now();
+      const startTime = performance.now();
       const result = await loop.run({
         initialOutput,
         state: {},
@@ -241,7 +241,7 @@ export class TaskRunner {
         requiredConcepts: config.requiredConcepts,
         calibrationExamples: config.calibrationExamples,
       });
-      const durationMs = Date.now() - startTime;
+      const durationMs = Math.round(performance.now() - startTime);
 
       this.store.completeTask(
         task.id,
