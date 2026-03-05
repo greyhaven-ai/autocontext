@@ -46,10 +46,10 @@ class AgentOrchestrator:
 
         self._model_router = ModelRouter(TierConfig(
             enabled=settings.tier_routing_enabled,
-            tier_haiku_model=getattr(settings, "tier_haiku_model", "claude-haiku-4-5-20251001"),
-            tier_sonnet_model=getattr(settings, "tier_sonnet_model", "claude-sonnet-4-5-20250929"),
-            tier_opus_model=getattr(settings, "tier_opus_model", "claude-opus-4-6"),
-            competitor_haiku_max_gen=getattr(settings, "tier_competitor_haiku_max_gen", 3),
+            tier_haiku_model=settings.tier_haiku_model,
+            tier_sonnet_model=settings.tier_sonnet_model,
+            tier_opus_model=settings.tier_opus_model,
+            competitor_haiku_max_gen=settings.tier_competitor_haiku_max_gen,
         ))
 
         self._rlm_loader = None
