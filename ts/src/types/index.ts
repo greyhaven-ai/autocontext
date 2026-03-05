@@ -147,6 +147,16 @@ export const ImprovementResultSchema = z.object({
   totalRounds: z.number().int(),
   metThreshold: z.boolean(),
   judgeFailures: z.number().int().default(0),
+  terminationReason: z
+    .enum([
+      "threshold_met",
+      "max_rounds",
+      "plateau_stall",
+      "unchanged_output",
+      "consecutive_failures",
+    ])
+    .default("max_rounds"),
+  dimensionTrajectory: z.record(z.array(z.number())).default({}),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;
