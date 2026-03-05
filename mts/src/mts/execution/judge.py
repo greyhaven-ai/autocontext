@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
+from mts.execution.rubric_coherence import check_rubric_coherence
 from mts.providers.base import LLMProvider
 from mts.providers.callable_wrapper import CallableProvider
 
@@ -47,6 +48,7 @@ class LLMJudge:
         provider: LLMProvider | None = None,
         samples: int = 1,
         temperature: float = 0.0,
+        check_coherence: bool = False,
     ) -> None:
         if provider is not None:
             self.provider = provider
@@ -62,6 +64,17 @@ class LLMJudge:
 
         # Backward-compatible property
         self.llm_fn = llm_fn
+
+        # Optional rubric coherence pre-check
+        self._rubric_warnings: list[str] = []
+        if check_coherence:
+            coherence = check_rubric_coherence(rubric)
+            self._rubric_warnings = coherence.warnings
+
+    @property
+    def rubric_warnings(self) -> list[str]:
+        """Warnings from rubric coherence pre-check (empty if not enabled)."""
+        return self._rubric_warnings
 
     def evaluate(
         self,
