@@ -53,6 +53,7 @@ ${SPEC_END}
   "reference_context": "Authoritative domain knowledge for judging factual accuracy (optional)",
   "reference_sources": ["list of source URLs or references (optional)"],
   "required_concepts": ["key concepts the output must correctly address (optional)"],
+  "sample_input": "Realistic sample input data for data-dependent tasks (optional, null if not needed)",
   "context_preparation": "Instructions for gathering context before generation (optional)",
   "required_context_keys": ["state keys that must be present after context preparation (optional)"],
   "max_rounds": 1,
@@ -64,9 +65,12 @@ ${SPEC_END}
 ## Rules
 
 - \`task_prompt\` must be clear, detailed, and self-contained
+- \`task_prompt\` must be FULLY self-contained: never say "you will be provided with..." or reference external data without including it. If the task depends on input data, populate \`sample_input\` with realistic example data and embed it directly in the prompt
+- \`sample_input\` (optional, null if not needed) — realistic sample input data for data-dependent tasks. Populate this whenever the task requires the agent to process specific input (e.g. an outage report, a code snippet, a dataset)
 - \`judge_rubric\` must list specific evaluation dimensions with criteria
 - \`output_format\` must be one of: free_text, json_schema, code
 - \`judge_model\` should be a valid model identifier
+- \`calibration_examples\` (optional) — provide at least 2 calibration examples: one high-quality example (~0.9 score) and one low-quality example (~0.3 score). These help the judge produce consistent scores
 - \`max_rounds\` (optional, default 1) — maximum improvement rounds
 - \`quality_threshold\` (optional, default 0.9) — stop improving when score >= this
 

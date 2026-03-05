@@ -20,6 +20,7 @@ export const AgentTaskSpecSchema = z.object({
   maxRounds: z.number().int().min(1, "max_rounds must be >= 1").default(1),
   qualityThreshold: z.number().gt(0).lte(1, "quality_threshold must be between 0.0 (exclusive) and 1.0 (inclusive)").default(0.9),
   revisionPrompt: z.string().min(1, "revision_prompt, if provided, must not be empty").nullable().optional(),
+  sampleInput: z.string().min(1, "sample_input, if provided, must not be empty").nullable().optional(),
 });
 
 export type AgentTaskSpec = z.infer<typeof AgentTaskSpecSchema>;
@@ -43,5 +44,6 @@ export function parseRawSpec(data: Record<string, unknown>): AgentTaskSpec {
     maxRounds: data.max_rounds ?? 1,
     qualityThreshold: data.quality_threshold ?? 0.9,
     revisionPrompt: data.revision_prompt ?? null,
+    sampleInput: data.sample_input ?? null,
   });
 }

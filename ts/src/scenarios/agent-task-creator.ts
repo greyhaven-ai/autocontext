@@ -31,19 +31,38 @@ export class AgentTaskCreator {
     this.knowledgeRoot = opts.knowledgeRoot;
   }
 
+  /** Stop words excluded from derived names. */
+  static readonly STOP_WORDS = new Set([
+    "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
+    "i", "want", "need", "make", "create", "build", "write", "develop", "implement",
+    "that", "can", "should", "could", "would", "will", "must",
+    "agent", "tool", "system",
+    "clear", "well", "good", "great", "very", "really", "also", "just", "structured",
+    "it", "we", "they", "is", "are", "was", "be", "do", "does",
+    "to", "in", "on", "at", "by", "which", "what", "how",
+  ]);
+
   /**
    * Derive a snake_case name from a description.
+   * Prefers longer, domain-specific words over short common words.
    */
   deriveName(description: string): string {
-    const stopWords = new Set([
-      "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
-    ]);
     const words = description
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
-      .filter((w) => w && !stopWords.has(w));
-    const nameWords = words.length >= 3 ? words.slice(0, 3) : words.length > 0 ? words.slice(0, 2) : ["custom"];
+      .filter((w) => w && !AgentTaskCreator.STOP_WORDS.has(w));
+    // Prefer longer words (>3 chars) as they are more likely domain-specific nouns
+    const sorted = [...words].sort((a, b) => b.length - a.length);
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const w of sorted) {
+      if (!seen.has(w)) {
+        seen.add(w);
+        unique.push(w);
+      }
+    }
+    const nameWords = unique.length >= 3 ? unique.slice(0, 3) : unique.length > 0 ? unique.slice(0, 2) : ["custom"];
     return nameWords.join("_");
   }
 
@@ -96,6 +115,7 @@ export class AgentTaskCreator {
     if (spec.maxRounds !== 1) specData.max_rounds = spec.maxRounds;
     if (spec.qualityThreshold !== 0.9) specData.quality_threshold = spec.qualityThreshold;
     if (spec.revisionPrompt) specData.revision_prompt = spec.revisionPrompt;
+    if (spec.sampleInput) specData.sample_input = spec.sampleInput;
 
     writeFileSync(
       join(scenarioDir, "agent_task_spec.json"),
