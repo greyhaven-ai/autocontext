@@ -51,7 +51,7 @@ class ModelRouter:
             return None
 
         min_tiers = {
-            "competitor": "haiku",
+            # competitor tier is computed dynamically below
             "analyst": self._config.analyst_min_tier,
             "coach": self._config.coach_min_tier,
             "architect": self._config.architect_min_tier,
