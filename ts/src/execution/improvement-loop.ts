@@ -32,17 +32,26 @@ export interface ImprovementLoopOpts {
   task: AgentTaskInterface;
   maxRounds?: number;
   qualityThreshold?: number;
+  minRounds?: number;
+  maxScoreDelta?: number;
+  capScoreJumps?: boolean;
 }
 
 export class ImprovementLoop {
   private task: AgentTaskInterface;
   private maxRounds: number;
   private qualityThreshold: number;
+  private minRounds: number;
+  private maxScoreDelta: number;
+  private capScoreJumps: boolean;
 
   constructor(opts: ImprovementLoopOpts) {
     this.task = opts.task;
     this.maxRounds = Math.max(1, opts.maxRounds ?? 5);
     this.qualityThreshold = opts.qualityThreshold ?? 0.9;
+    this.minRounds = Math.max(1, opts.minRounds ?? 1);
+    this.maxScoreDelta = opts.maxScoreDelta ?? 0.5;
+    this.capScoreJumps = opts.capScoreJumps ?? false;
   }
 
   async run(opts: {
@@ -61,6 +70,12 @@ export class ImprovementLoop {
     let lastGoodResult: RoundResult | null = null;
     let consecutiveFailures = 0;
     const maxConsecutiveFailures = 3;
+    let terminationReason: ImprovementResult["terminationReason"] = "max_rounds";
+    const dimensionTrajectory: Record<string, number[]> = {};
+
+    // Plateau detection state
+    let prevValidScore: number | null = null;
+    let plateauCount = 0;
 
     for (let roundNum = 1; roundNum <= this.maxRounds; roundNum++) {
       const result = await this.task.evaluateOutput(currentOutput, opts.state, {
@@ -86,7 +101,10 @@ export class ImprovementLoop {
         judgeFailures++;
         consecutiveFailures++;
 
-        if (consecutiveFailures >= maxConsecutiveFailures) break;
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          terminationReason = "consecutive_failures";
+          break;
+        }
 
         if (roundNum < this.maxRounds) {
           if (lastGoodResult && this.task.reviseOutput) {
@@ -111,13 +129,52 @@ export class ImprovementLoop {
       consecutiveFailures = 0;
       lastGoodResult = roundResult;
 
-      if (result.score > bestScore) {
-        bestScore = result.score;
+      // Build dimension trajectory from valid rounds
+      for (const [dim, dimScore] of Object.entries(result.dimensionScores)) {
+        if (!(dim in dimensionTrajectory)) {
+          dimensionTrajectory[dim] = [];
+        }
+        dimensionTrajectory[dim].push(dimScore);
+      }
+
+      let effectiveScore = result.score;
+
+      // Max score delta warning + optional cap
+      if (prevValidScore !== null) {
+        const delta = Math.abs(result.score - prevValidScore);
+        if (delta > this.maxScoreDelta) {
+          console.warn(
+            `Score jump of ${delta.toFixed(3)} exceeds maxScoreDelta ${this.maxScoreDelta} ` +
+            `(round ${roundNum}: ${prevValidScore.toFixed(3)} -> ${result.score.toFixed(3)})`,
+          );
+          if (this.capScoreJumps) {
+            effectiveScore = result.score > prevValidScore
+              ? prevValidScore + this.maxScoreDelta
+              : prevValidScore - this.maxScoreDelta;
+          }
+        }
+      }
+
+      if (effectiveScore > bestScore) {
+        bestScore = effectiveScore;
         bestOutput = currentOutput;
         bestRound = roundNum;
       }
 
-      if (result.score >= this.qualityThreshold) {
+      // Plateau detection
+      if (prevValidScore !== null && Math.abs(result.score - prevValidScore) < 0.01) {
+        plateauCount++;
+        if (plateauCount >= 2) {
+          terminationReason = "plateau_stall";
+          break;
+        }
+      } else {
+        plateauCount = 0;
+      }
+      prevValidScore = result.score;
+
+      if (effectiveScore >= this.qualityThreshold && roundNum >= this.minRounds) {
+        terminationReason = "threshold_met";
         return {
           rounds,
           bestOutput,
@@ -126,6 +183,8 @@ export class ImprovementLoop {
           totalRounds: roundNum,
           metThreshold: true,
           judgeFailures,
+          terminationReason,
+          dimensionTrajectory,
         };
       }
 
@@ -135,7 +194,10 @@ export class ImprovementLoop {
           result,
           opts.state,
         );
-        if (revised === currentOutput) break;
+        if (revised === currentOutput) {
+          terminationReason = "unchanged_output";
+          break;
+        }
         currentOutput = revised;
       }
     }
@@ -148,6 +210,8 @@ export class ImprovementLoop {
       totalRounds: rounds.length,
       metThreshold: false,
       judgeFailures,
+      terminationReason,
+      dimensionTrajectory,
     };
   }
 }

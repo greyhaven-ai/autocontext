@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   ImprovementLoop,
   isParseFailure,
@@ -67,6 +67,7 @@ describe("ImprovementLoop", () => {
     expect(result.metThreshold).toBe(true);
     expect(result.bestScore).toBe(0.95);
     expect(result.totalRounds).toBe(1);
+    expect(result.terminationReason).toBe("threshold_met");
   });
 
   it("improves over multiple rounds", async () => {
@@ -79,6 +80,7 @@ describe("ImprovementLoop", () => {
     expect(result.metThreshold).toBe(true);
     expect(result.bestScore).toBe(0.95);
     expect(result.totalRounds).toBe(2);
+    expect(result.terminationReason).toBe("threshold_met");
   });
 
   it("stops when output unchanged", async () => {
@@ -90,6 +92,7 @@ describe("ImprovementLoop", () => {
     const result = await loop.run({ initialOutput: "test", state: {} });
     expect(result.metThreshold).toBe(false);
     expect(result.totalRounds).toBe(1);
+    expect(result.terminationReason).toBe("unchanged_output");
   });
 
   it("handles judge parse failure gracefully", async () => {
@@ -111,6 +114,7 @@ describe("ImprovementLoop", () => {
     const result = await loop.run({ initialOutput: "test", state: {} });
     expect(result.judgeFailures).toBe(3);
     expect(result.totalRounds).toBe(3);
+    expect(result.terminationReason).toBe("consecutive_failures");
   });
 
   it("carries forward last good feedback on failure", async () => {
@@ -131,5 +135,187 @@ describe("ImprovementLoop", () => {
     expect(result.judgeFailures).toBe(1);
     // Second revision should use "Needs detail" (carried forward)
     expect(revisions[1]).toBe("Needs detail");
+  });
+
+  it("sets terminationReason to max_rounds when exhausted", async () => {
+    const task = makeFakeTask([
+      { score: 0.3, reasoning: "low", dimensionScores: {} },
+      { score: 0.5, reasoning: "mid", dimensionScores: {} },
+      { score: 0.6, reasoning: "better", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.metThreshold).toBe(false);
+    expect(result.terminationReason).toBe("max_rounds");
+  });
+});
+
+describe("Plateau detection", () => {
+  it("detects plateau after 2 consecutive near-identical scores", async () => {
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "ok", dimensionScores: {} },
+      { score: 0.505, reasoning: "ok", dimensionScores: {} },
+      { score: 0.508, reasoning: "ok", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 10, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.terminationReason).toBe("plateau_stall");
+    // Should stop at round 3 (2 consecutive plateaus: round1->2, round2->3)
+    expect(result.totalRounds).toBe(3);
+  });
+
+  it("resets plateau counter on significant score change", async () => {
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "ok", dimensionScores: {} },
+      { score: 0.505, reasoning: "ok", dimensionScores: {} },  // plateau +1
+      { score: 0.7, reasoning: "jump", dimensionScores: {} },  // reset
+      { score: 0.705, reasoning: "ok", dimensionScores: {} },  // plateau +1
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 10, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.terminationReason).toBe("threshold_met");
+    expect(result.totalRounds).toBe(5);
+  });
+
+  it("does not detect plateau with only 1 near-identical score", async () => {
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "ok", dimensionScores: {} },
+      { score: 0.505, reasoning: "ok", dimensionScores: {} },  // plateau +1
+      { score: 0.7, reasoning: "jump", dimensionScores: {} },  // reset
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 10, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.terminationReason).toBe("threshold_met");
+  });
+});
+
+describe("Dimension trajectory", () => {
+  it("builds trajectory from valid rounds", async () => {
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "ok", dimensionScores: { clarity: 0.4, accuracy: 0.6 } },
+      { score: 0.7, reasoning: "better", dimensionScores: { clarity: 0.6, accuracy: 0.8 } },
+      { score: 0.95, reasoning: "great", dimensionScores: { clarity: 0.9, accuracy: 1.0 } },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.dimensionTrajectory).toEqual({
+      clarity: [0.4, 0.6, 0.9],
+      accuracy: [0.6, 0.8, 1.0],
+    });
+  });
+
+  it("skips failed rounds in trajectory", async () => {
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "ok", dimensionScores: { quality: 0.5 } },
+      { score: 0, reasoning: "Failed to parse judge response: no parseable score found", dimensionScores: {} },
+      { score: 0.95, reasoning: "great", dimensionScores: { quality: 0.9 } },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.dimensionTrajectory).toEqual({ quality: [0.5, 0.9] });
+  });
+
+  it("returns empty trajectory when no dimension scores", async () => {
+    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {} }]);
+    const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.dimensionTrajectory).toEqual({});
+  });
+});
+
+describe("Minimum revision rounds", () => {
+  it("continues past threshold when minRounds not yet reached", async () => {
+    const task = makeFakeTask([
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+      { score: 0.96, reasoning: "even better", dimensionScores: {} },
+      { score: 0.97, reasoning: "best", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9, minRounds: 3 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.metThreshold).toBe(true);
+    expect(result.terminationReason).toBe("threshold_met");
+    expect(result.totalRounds).toBe(3);
+    expect(result.bestScore).toBe(0.97);
+  });
+
+  it("stops at threshold when minRounds already met", async () => {
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "ok", dimensionScores: {} },
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9, minRounds: 1 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.metThreshold).toBe(true);
+    expect(result.totalRounds).toBe(2);
+  });
+
+  it("defaults minRounds to 1", async () => {
+    const task = makeFakeTask([{ score: 0.95, reasoning: "great", dimensionScores: {} }]);
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.totalRounds).toBe(1);
+  });
+});
+
+describe("Max score delta", () => {
+  it("warns on large score jump", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const task = makeFakeTask([
+      { score: 0.2, reasoning: "low", dimensionScores: {} },
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9, maxScoreDelta: 0.5 });
+    await loop.run({ initialOutput: "test", state: {} });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("Score jump");
+    warnSpy.mockRestore();
+  });
+
+  it("does not warn when delta within limit", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const task = makeFakeTask([
+      { score: 0.5, reasoning: "ok", dimensionScores: {} },
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9, maxScoreDelta: 0.5 });
+    await loop.run({ initialOutput: "test", state: {} });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("caps score when capScoreJumps is true", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const task = makeFakeTask([
+      { score: 0.2, reasoning: "low", dimensionScores: {} },
+      { score: 0.9, reasoning: "huge jump", dimensionScores: {} },
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({
+      task, maxRounds: 5, qualityThreshold: 0.99,
+      maxScoreDelta: 0.3, capScoreJumps: true,
+    });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    // Round 2: 0.2 -> 0.9, capped to 0.2 + 0.3 = 0.5
+    // bestScore should be capped at 0.5 (from round 2), then round 3 score 0.95
+    // but round 3 compares against prevValidScore=0.9 (raw), delta=0.05 < 0.3, no cap
+    // So bestScore should be 0.95 from round 3
+    expect(result.bestScore).toBe(0.95);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("does not cap score when capScoreJumps is false (default)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const task = makeFakeTask([
+      { score: 0.2, reasoning: "low", dimensionScores: {} },
+      { score: 0.95, reasoning: "great", dimensionScores: {} },
+    ]);
+    const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9, maxScoreDelta: 0.3 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    // Score should NOT be capped, even though delta > 0.3
+    expect(result.bestScore).toBe(0.95);
+    warnSpy.mockRestore();
   });
 });
