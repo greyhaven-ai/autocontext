@@ -6,9 +6,12 @@
 import type { LLMProvider, JudgeResult } from "../types/index.js";
 import { parseJudgeResponse } from "./parse.js";
 import type { ParseMethod } from "./parse.js";
+import { checkRubricCoherence } from "./rubric-coherence.js";
 
 export { parseJudgeResponse } from "./parse.js";
 export type { ParsedJudge, ParseMethod } from "./parse.js";
+export { checkRubricCoherence } from "./rubric-coherence.js";
+export type { RubricCoherenceResult } from "./rubric-coherence.js";
 
 export interface LLMJudgeOpts {
   provider: LLMProvider;
@@ -16,6 +19,7 @@ export interface LLMJudgeOpts {
   rubric: string;
   samples?: number;
   temperature?: number;
+  checkCoherence?: boolean;
 }
 
 export class LLMJudge {
@@ -24,6 +28,7 @@ export class LLMJudge {
   readonly rubric: string;
   private samples: number;
   private temperature: number;
+  private _rubricWarnings: string[];
 
   constructor(opts: LLMJudgeOpts) {
     this.provider = opts.provider;
@@ -31,6 +36,17 @@ export class LLMJudge {
     this.rubric = opts.rubric;
     this.samples = Math.max(1, opts.samples ?? 1);
     this.temperature = opts.temperature ?? 0;
+
+    if (opts.checkCoherence) {
+      const result = checkRubricCoherence(opts.rubric);
+      this._rubricWarnings = result.warnings;
+    } else {
+      this._rubricWarnings = [];
+    }
+  }
+
+  get rubricWarnings(): string[] {
+    return this._rubricWarnings;
   }
 
   async evaluate(opts: {
