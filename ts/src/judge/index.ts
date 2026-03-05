@@ -7,7 +7,7 @@ import type { LLMProvider, JudgeResult } from "../types/index.js";
 import { parseJudgeResponse } from "./parse.js";
 
 export { parseJudgeResponse } from "./parse.js";
-export type { ParsedJudge } from "./parse.js";
+export type { ParsedJudge, ParseMethod } from "./parse.js";
 
 export interface LLMJudgeOpts {
   provider: LLMProvider;
@@ -61,11 +61,14 @@ export class LLMJudge {
     const reasonings: string[] = [];
     const allDims: Array<Record<string, number>> = [];
     const rawResponses: string[] = [];
+    let totalInternalRetries = 0;
+    let lastParseMethod: string = "none";
 
     for (let s = 0; s < this.samples; s++) {
       let score = 0;
       let reasoning = "";
       let dims: Record<string, number> = {};
+      let sampleParseMethod: string = "none";
 
       // Retry up to 2 times on parse failure
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -81,13 +84,16 @@ export class LLMJudge {
         score = parsed.score;
         reasoning = parsed.reasoning;
         dims = parsed.dimensionScores;
+        sampleParseMethod = parsed.parseMethod;
 
         if (score > 0 || !reasoning.includes("Failed to parse")) break;
+        totalInternalRetries++;
       }
 
       scores.push(score);
       reasonings.push(reasoning);
       allDims.push(dims);
+      lastParseMethod = sampleParseMethod;
     }
 
     const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
@@ -109,6 +115,8 @@ export class LLMJudge {
       reasoning: reasonings.join("\n---\n"),
       dimensionScores: avgDims,
       rawResponses,
+      parseMethod: lastParseMethod as JudgeResult["parseMethod"],
+      internalRetries: totalInternalRetries,
     };
   }
 

@@ -28,6 +28,8 @@ class TestLLMJudge:
         assert result.dimension_scores["clarity"] == 0.9
         assert result.dimension_scores["accuracy"] == 0.8
         assert len(result.raw_responses) == 1
+        assert result.parse_method == "raw_json"
+        assert result.internal_retries == 0
 
     def test_multi_sample_averaging(self) -> None:
         responses = [
@@ -49,6 +51,7 @@ class TestLLMJudge:
         assert "R1" in result.reasoning
         assert "R2" in result.reasoning
         assert len(result.raw_responses) == 2
+        assert result.internal_retries == 0
 
     def test_build_judge_prompt(self) -> None:
         judge = LLMJudge(model="test", rubric="My rubric", llm_fn=make_mock_llm())
@@ -100,41 +103,88 @@ class TestLLMJudge:
         assert "concept1" in prompt
         assert "concept2" in prompt
 
+    def test_internal_retries_tracked(self) -> None:
+        """Internal retries are tracked when first parse attempt fails."""
+        call_count = 0
+
+        def retry_llm(system: str, user: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return "no structured output here"
+            return '{"score": 0.7, "reasoning": "OK"}'
+
+        judge = LLMJudge(model="t", rubric="r", llm_fn=retry_llm)
+        result = judge.evaluate("t", "o")
+        assert result.score == 0.7
+        assert result.internal_retries == 1
+        assert call_count == 2
+
+    def test_parse_method_plaintext(self) -> None:
+        """Parse method is 'plaintext' for plain text score extraction."""
+        judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm("The agent scored well. Score: 0.8"))
+        result = judge.evaluate("t", "o")
+        assert result.parse_method == "plaintext"
+        assert result.score == 0.8
+
 
 class TestParseJudgeResponse:
     def test_valid(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
-        score, reasoning, dims = judge._parse_judge_response(VALID_JUDGE_RESPONSE)
+        score, reasoning, dims, parse_method = judge._parse_judge_response(VALID_JUDGE_RESPONSE)
         assert score == 0.85
         assert reasoning == "Good output"
         assert dims == {"clarity": 0.9, "accuracy": 0.8}
+        assert parse_method == "raw_json"
 
     def test_missing_markers_no_score(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
-        score, reasoning, dims = judge._parse_judge_response("No markers here and no score either")
+        score, reasoning, dims, parse_method = judge._parse_judge_response("No markers here and no score either")
         assert score == 0.0
         assert "no parseable score" in reasoning.lower()
         assert dims == {}
+        assert parse_method == "none"
 
     def test_missing_markers_with_plaintext_score(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
-        score, reasoning, dims = judge._parse_judge_response("Overall score: 0.75")
+        score, reasoning, dims, parse_method = judge._parse_judge_response("Overall score: 0.75")
         assert score == 0.75
-        assert "[plaintext parse]" in reasoning
+        assert "[plaintext parse]" not in reasoning
+        assert parse_method == "plaintext"
 
     def test_invalid_json_in_markers(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
         resp = "<!-- JUDGE_RESULT_START -->{bad json<!-- JUDGE_RESULT_END -->"
-        score, reasoning, dims = judge._parse_judge_response(resp)
+        score, reasoning, dims, parse_method = judge._parse_judge_response(resp)
         # Falls through to other strategies; no score in "bad json" text
         assert score == 0.0
 
     def test_score_clamping(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
         resp = '<!-- JUDGE_RESULT_START -->{"score": 1.5, "reasoning": "ok", "dimensions": {"x": -0.5}}<!-- JUDGE_RESULT_END -->'
-        score, reasoning, dims = judge._parse_judge_response(resp)
+        score, reasoning, dims, parse_method = judge._parse_judge_response(resp)
         assert score == 1.0
         assert dims["x"] == 0.0
+
+    def test_raw_json_tried_first(self) -> None:
+        """Raw JSON strategy is tried first and succeeds even with markers present."""
+        judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.9, "reasoning": "markers"}'
+            '<!-- JUDGE_RESULT_END -->'
+        )
+        score, reasoning, dims, parse_method = judge._parse_judge_response(resp)
+        assert score == 0.9
+        assert parse_method == "raw_json"
+
+    def test_reasoning_clean_no_prefix(self) -> None:
+        """Reasoning should not contain parse method prefixes."""
+        judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
+        resp = 'Some text {"score": 0.8, "reasoning": "Good work"} more text'
+        score, reasoning, dims, parse_method = judge._parse_judge_response(resp)
+        assert reasoning == "Good work"
+        assert "[raw_json parse]" not in reasoning
+        assert "[code_block parse]" not in reasoning
 
 
 class ConcreteTask(AgentTaskInterface):

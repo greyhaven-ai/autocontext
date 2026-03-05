@@ -12,6 +12,9 @@ from mts.providers.callable_wrapper import CallableProvider
 logger = logging.getLogger(__name__)
 
 
+ParseMethod = str  # "raw_json" | "code_block" | "markers" | "plaintext" | "none"
+
+
 @dataclass(slots=True)
 class JudgeResult:
     """Result from LLM judge evaluation."""
@@ -20,6 +23,8 @@ class JudgeResult:
     reasoning: str
     dimension_scores: dict[str, float] = field(default_factory=dict)
     raw_responses: list[str] = field(default_factory=list)
+    parse_method: ParseMethod = "none"
+    internal_retries: int = 0
 
 
 _RESULT_START = "<!-- JUDGE_RESULT_START -->"
@@ -89,10 +94,13 @@ class LLMJudge:
         reasonings: list[str] = []
         all_dims: list[dict[str, float]] = []
         raw_responses: list[str] = []
+        total_internal_retries = 0
+        last_parse_method: ParseMethod = "none"
 
         for _ in range(self.samples):
             dims: dict[str, float] = {}
             score, reasoning = 0.0, ""
+            sample_parse_method: ParseMethod = "none"
             # Retry up to 2 times on parse failure
             for attempt in range(2):
                 result = self.provider.complete(
@@ -103,13 +111,15 @@ class LLMJudge:
                 )
                 response = result.text
                 raw_responses.append(response)
-                score, reasoning, dims = self._parse_judge_response(response)
+                score, reasoning, dims, sample_parse_method = self._parse_judge_response(response)
                 if score > 0.0 or "Failed to parse" not in reasoning:
                     break
+                total_internal_retries += 1
                 logger.warning("judge parse failed (attempt %d), retrying", attempt + 1)
             scores.append(score)
             reasonings.append(reasoning)
             all_dims.append(dims)
+            last_parse_method = sample_parse_method
 
         avg_score = sum(scores) / len(scores)
 
@@ -134,6 +144,8 @@ class LLMJudge:
             reasoning=combined_reasoning,
             dimension_scores=avg_dims,
             raw_responses=raw_responses,
+            parse_method=last_parse_method,
+            internal_retries=total_internal_retries,
         )
 
     def _build_judge_prompt(
@@ -187,36 +199,36 @@ class LLMJudge:
         )
         return "\n".join(parts)
 
-    def _parse_judge_response(self, response: str) -> tuple[float, str, dict[str, float]]:
+    def _parse_judge_response(self, response: str) -> tuple[float, str, dict[str, float], ParseMethod]:
         """Parse judge response using multiple strategies.
 
         Strategies (tried in order):
-        1. Marker-based: extract JSON between <!-- JUDGE_RESULT_START/END -->
+        1. Raw JSON: find a JSON object with "score" key anywhere in response
         2. Code block: extract JSON from ```json ... ``` blocks
-        3. Raw JSON: find a JSON object with "score" key anywhere in response
+        3. Marker-based: extract JSON between <!-- JUDGE_RESULT_START/END -->
         4. Plain text: regex for "score": X.XX or "Score: X.XX" patterns
         """
-        # Strategy 1: Marker-based (primary)
-        data = self._try_marker_parse(response)
+        # Strategy 1: Raw JSON object with "score" key (most common in practice)
+        data = self._try_raw_json_parse(response)
         if data is not None:
-            return self._extract_from_dict(data, "markers")
+            return (*self._extract_from_dict(data, "raw_json"), "raw_json")
 
         # Strategy 2: JSON code block
         data = self._try_code_block_parse(response)
         if data is not None:
-            return self._extract_from_dict(data, "code_block")
+            return (*self._extract_from_dict(data, "code_block"), "code_block")
 
-        # Strategy 3: Raw JSON object with "score" key
-        data = self._try_raw_json_parse(response)
+        # Strategy 3: Marker-based
+        data = self._try_marker_parse(response)
         if data is not None:
-            return self._extract_from_dict(data, "raw_json")
+            return (*self._extract_from_dict(data, "markers"), "markers")
 
         # Strategy 4: Plain text score extraction
         result = self._try_plaintext_parse(response)
         if result is not None:
-            return result
+            return (*result, "plaintext")
 
-        return 0.0, "Failed to parse judge response: no parseable score found", {}
+        return 0.0, "Failed to parse judge response: no parseable score found", {}, "none"
 
     @staticmethod
     def _try_marker_parse(response: str) -> dict | None:
@@ -285,7 +297,7 @@ class LLMJudge:
                     if 0.0 <= score <= 1.0:
                         # Use the full response as reasoning since we couldn't parse structured
                         reasoning = response[:500] if len(response) > 500 else response
-                        return score, f"[plaintext parse] {reasoning}", {}
+                        return score, reasoning, {}
                 except (ValueError, IndexError):
                     continue
         return None
@@ -298,8 +310,6 @@ class LLMJudge:
         score = float(data.get("score", 0.0))
         score = max(0.0, min(1.0, score))
         reasoning = str(data.get("reasoning", ""))
-        if source != "markers":
-            reasoning = f"[{source} parse] {reasoning}"
         dimensions = data.get("dimensions", {})
         dim_scores: dict[str, float] = {}
         for k, v in dimensions.items():
