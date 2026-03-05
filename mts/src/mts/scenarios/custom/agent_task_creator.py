@@ -32,6 +32,7 @@ class AgentTaskCreator:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
 
+    # NOTE: Keep in sync with ts/src/scenarios/agent-task-creator.ts STOP_WORDS
     STOP_WORDS = frozenset({
         "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
         "i", "want", "need", "make", "create", "build", "write", "develop", "implement",
@@ -121,6 +122,8 @@ class AgentTaskCreator:
         if spec.revision_prompt is not None:
             spec_data["revision_prompt"] = spec.revision_prompt
         if spec.sample_input is not None:
+            # TODO: wire sample_input into codegen so the generated class
+            # can inject it into get_task_prompt / initial_state
             spec_data["sample_input"] = spec.sample_input
         spec_file.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
 

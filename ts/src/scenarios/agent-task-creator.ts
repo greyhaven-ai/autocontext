@@ -31,7 +31,8 @@ export class AgentTaskCreator {
     this.knowledgeRoot = opts.knowledgeRoot;
   }
 
-  /** Stop words excluded from derived names. */
+  /** Stop words excluded from derived names.
+   * NOTE: Keep in sync with mts/src/mts/scenarios/custom/agent_task_creator.py STOP_WORDS */
   static readonly STOP_WORDS = new Set([
     "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
     "i", "want", "need", "make", "create", "build", "write", "develop", "implement",
@@ -115,6 +116,7 @@ export class AgentTaskCreator {
     if (spec.maxRounds !== 1) specData.max_rounds = spec.maxRounds;
     if (spec.qualityThreshold !== 0.9) specData.quality_threshold = spec.qualityThreshold;
     if (spec.revisionPrompt) specData.revision_prompt = spec.revisionPrompt;
+    // TODO: wire sampleInput into factory so the created task can use it
     if (spec.sampleInput) specData.sample_input = spec.sampleInput;
 
     writeFileSync(
