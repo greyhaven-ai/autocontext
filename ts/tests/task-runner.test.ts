@@ -109,6 +109,28 @@ describe("TaskRunner", () => {
     expect(result!.status).toBe("failed");
     expect(result!.error).toContain("Expected number");
   });
+
+  it("includes duration_ms in completed task result", async () => {
+    const store = createStore();
+    enqueueTask(store, "timing-spec", {
+      taskPrompt: "Write a poem",
+      rubric: "Be creative",
+      initialOutput: "Roses are red",
+    });
+
+    const runner = new TaskRunner({
+      store,
+      provider: makeMockProvider(),
+    });
+
+    const result = await runner.runOnce();
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("completed");
+    expect(result!.result_json).toBeDefined();
+    const parsed = JSON.parse(result!.result_json!);
+    expect(parsed.duration_ms).toBeTypeOf("number");
+    expect(parsed.duration_ms).toBeGreaterThanOrEqual(0);
+  });
 });
 
 describe("SimpleAgentTask", () => {

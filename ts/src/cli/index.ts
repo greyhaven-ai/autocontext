@@ -183,12 +183,13 @@ async function cmdImprove(_dbPath: string): Promise<void> {
       rubric: { type: "string", short: "r" },
       rounds: { type: "string", short: "n", default: "5" },
       threshold: { type: "string", short: "t", default: "0.9" },
+      verbose: { type: "boolean", short: "v" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help || !values.prompt || !values.output || !values.rubric) {
-    console.log("mts improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold]");
+    console.log("mts improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold] [-v]");
     process.exit(values.help ? 0 : 1);
   }
 
@@ -203,7 +204,22 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     qualityThreshold: parseFloat(values.threshold ?? "0.9"),
   });
 
+  const startTime = Date.now();
   const result = await loop.run({ initialOutput: values.output, state: {} });
+  const durationMs = Date.now() - startTime;
+
+  if (values.verbose) {
+    for (const round of result.rounds) {
+      console.error(JSON.stringify({
+        round: round.roundNumber,
+        score: round.score,
+        dimensionScores: round.dimensionScores,
+        reasoning: round.reasoning.slice(0, 200),
+        isRevision: round.isRevision,
+        judgeFailed: round.judgeFailed,
+      }));
+    }
+  }
 
   console.log(JSON.stringify({
     totalRounds: result.totalRounds,
@@ -212,6 +228,7 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     bestRound: result.bestRound,
     judgeFailures: result.judgeFailures,
     bestOutput: result.bestOutput,
+    durationMs,
   }, null, 2));
 }
 
