@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from mts.execution.improvement_loop import ImprovementLoop
 from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from mts.scenarios.custom.agent_task_codegen import generate_agent_task_class
@@ -167,6 +169,7 @@ class TestImprovementLoop:
         assert result.best_score >= 0.9
         # Should not run all 10 rounds
         assert result.total_rounds < 10
+        assert result.termination_reason == "threshold_met"
 
     def test_no_revision_stops_early(self):
         task = NoRevisionTask()
@@ -174,6 +177,7 @@ class TestImprovementLoop:
         result = loop.run("some output", {})
         # revise_output returns same string, loop should stop
         assert result.total_rounds == 1
+        assert result.termination_reason == "unchanged_output"
 
     def test_best_tracking(self):
         task = ImprovingTask()
@@ -291,3 +295,261 @@ class TestDesignerPipelineFields:
         assert spec.max_rounds == 1
         assert spec.quality_threshold == 0.9
         assert spec.revision_prompt is None
+
+
+# -- Programmable fake task for new feature tests --
+
+
+class ProgrammableTask(AgentTaskInterface):
+    """Task returning pre-programmed results for each round."""
+
+    def __init__(self, results: list[AgentTaskResult]) -> None:
+        self._results = results
+        self._call = 0
+
+    def get_task_prompt(self, state: dict) -> str:
+        return "test"
+
+    def evaluate_output(
+        self, output: str, state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
+    ) -> AgentTaskResult:
+        idx = min(self._call, len(self._results) - 1)
+        self._call += 1
+        return self._results[idx]
+
+    def get_rubric(self) -> str:
+        return "test"
+
+    def initial_state(self, seed: int | None = None) -> dict:
+        return {}
+
+    def describe_task(self) -> str:
+        return "test"
+
+    def revise_output(self, output: str, judge_result: AgentTaskResult, state: dict) -> str:
+        return f"{output} [revised]"
+
+
+# -- terminationReason tests --
+
+
+class TestTerminationReason:
+    def test_max_rounds(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.3, reasoning="low"),
+            AgentTaskResult(score=0.5, reasoning="mid"),
+            AgentTaskResult(score=0.6, reasoning="better"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.termination_reason == "max_rounds"
+        assert not result.met_threshold
+
+    def test_consecutive_failures(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0, reasoning="Failed to parse judge response: no parseable score found"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=10, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.termination_reason == "consecutive_failures"
+
+    def test_threshold_met(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.95, reasoning="great"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.termination_reason == "threshold_met"
+
+    def test_unchanged_output(self):
+        class NoChangeTask(ProgrammableTask):
+            def revise_output(self, output, judge_result, state):
+                return output  # No change
+
+        task = NoChangeTask([AgentTaskResult(score=0.5, reasoning="ok")])
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.termination_reason == "unchanged_output"
+
+
+# -- Plateau detection tests --
+
+
+class TestPlateauDetection:
+    def test_plateau_after_two_consecutive(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.5, reasoning="ok"),
+            AgentTaskResult(score=0.505, reasoning="ok"),
+            AgentTaskResult(score=0.508, reasoning="ok"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=10, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.termination_reason == "plateau_stall"
+        assert result.total_rounds == 3
+
+    def test_plateau_resets_on_significant_change(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.5, reasoning="ok"),
+            AgentTaskResult(score=0.505, reasoning="ok"),   # plateau +1
+            AgentTaskResult(score=0.7, reasoning="jump"),   # reset
+            AgentTaskResult(score=0.705, reasoning="ok"),   # plateau +1
+            AgentTaskResult(score=0.95, reasoning="great"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=10, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.termination_reason == "threshold_met"
+        assert result.total_rounds == 5
+
+    def test_single_plateau_not_enough(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.5, reasoning="ok"),
+            AgentTaskResult(score=0.505, reasoning="ok"),   # plateau +1 only
+            AgentTaskResult(score=0.7, reasoning="jump"),   # reset
+            AgentTaskResult(score=0.95, reasoning="great"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=10, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.termination_reason == "threshold_met"
+
+
+# -- Dimension trajectory tests --
+
+
+class TestDimensionTrajectory:
+    def test_builds_trajectory(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.5, reasoning="ok", dimension_scores={"clarity": 0.4, "accuracy": 0.6}),
+            AgentTaskResult(score=0.7, reasoning="better", dimension_scores={"clarity": 0.6, "accuracy": 0.8}),
+            AgentTaskResult(score=0.95, reasoning="great", dimension_scores={"clarity": 0.9, "accuracy": 1.0}),
+        ])
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.dimension_trajectory == {
+            "clarity": [0.4, 0.6, 0.9],
+            "accuracy": [0.6, 0.8, 1.0],
+        }
+
+    def test_skips_failed_rounds(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.5, reasoning="ok", dimension_scores={"quality": 0.5}),
+            AgentTaskResult(score=0, reasoning="Failed to parse judge response: no parseable score found"),
+            AgentTaskResult(score=0.95, reasoning="great", dimension_scores={"quality": 0.9}),
+        ])
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.dimension_trajectory == {"quality": [0.5, 0.9]}
+
+    def test_empty_trajectory_no_dimensions(self):
+        task = ProgrammableTask([AgentTaskResult(score=0.95, reasoning="great")])
+        loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.dimension_trajectory == {}
+
+
+# -- Minimum revision rounds tests --
+
+
+class TestMinRounds:
+    def test_continues_past_threshold(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.95, reasoning="great"),
+            AgentTaskResult(score=0.96, reasoning="better"),
+            AgentTaskResult(score=0.97, reasoning="best"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.9, min_rounds=3)
+        result = loop.run("test", {})
+        assert result.met_threshold
+        assert result.termination_reason == "threshold_met"
+        assert result.total_rounds == 3
+        assert result.best_score == 0.97
+
+    def test_stops_at_threshold_when_min_met(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.5, reasoning="ok"),
+            AgentTaskResult(score=0.95, reasoning="great"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.9, min_rounds=1)
+        result = loop.run("test", {})
+        assert result.met_threshold
+        assert result.total_rounds == 2
+
+    def test_defaults_to_one(self):
+        task = ProgrammableTask([AgentTaskResult(score=0.95, reasoning="great")])
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.9)
+        result = loop.run("test", {})
+        assert result.total_rounds == 1
+
+
+# -- Max score delta tests --
+
+
+class TestMaxScoreDelta:
+    def test_warns_on_large_jump(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.2, reasoning="low"),
+            AgentTaskResult(score=0.95, reasoning="great"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9, max_score_delta=0.5)
+        log = logging.getLogger("mts.execution.improvement_loop")
+        with self._capture_warnings(log) as warnings:
+            result = loop.run("test", {})
+        assert result.met_threshold
+        assert any("Score jump" in w for w in warnings)
+
+    @staticmethod
+    def _capture_warnings(log: logging.Logger):  # noqa: ANN205
+        """Context manager that captures WARNING-level messages."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():  # type: ignore[no-untyped-def]
+            captured: list[str] = []
+
+            class _Handler(logging.Handler):
+                def emit(self, record: logging.LogRecord) -> None:
+                    if record.levelno >= logging.WARNING:
+                        captured.append(self.format(record))
+
+            handler = _Handler()
+            log.addHandler(handler)
+            try:
+                yield captured
+            finally:
+                log.removeHandler(handler)
+
+        return _ctx()
+
+    def test_caps_score_when_enabled(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.2, reasoning="low"),
+            AgentTaskResult(score=0.9, reasoning="huge jump"),
+        ])
+        loop = ImprovementLoop(
+            task, max_rounds=2, quality_threshold=0.99,
+            max_score_delta=0.3, cap_score_jumps=True,
+        )
+        result = loop.run("test", {})
+        # Round 2: 0.2 -> 0.9, capped to 0.2 + 0.3 = 0.5
+        assert result.best_score == 0.5
+
+    def test_no_cap_by_default(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.2, reasoning="low"),
+            AgentTaskResult(score=0.95, reasoning="great"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9, max_score_delta=0.3)
+        result = loop.run("test", {})
+        # Score should NOT be capped, even though delta > 0.3
+        assert result.best_score == 0.95
+
+    def test_no_warn_within_limit(self):
+        task = ProgrammableTask([
+            AgentTaskResult(score=0.5, reasoning="ok"),
+            AgentTaskResult(score=0.95, reasoning="great"),
+        ])
+        loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9, max_score_delta=0.5)
+        result = loop.run("test", {})
+        assert result.met_threshold
