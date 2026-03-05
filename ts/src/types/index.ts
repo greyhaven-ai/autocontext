@@ -49,6 +49,7 @@ export const JudgeResultSchema = z.object({
   rawResponses: z.array(z.string()).default([]),
   parseMethod: z.enum(["raw_json", "code_block", "markers", "plaintext", "none"]).default("none"),
   internalRetries: z.number().int().min(0).default(0),
+  dimensionsWereGenerated: z.boolean().default(false),
 });
 
 export type JudgeResult = z.infer<typeof JudgeResultSchema>;
@@ -93,6 +94,11 @@ export interface AgentTaskInterface {
     judgeResult: AgentTaskResult,
     state: Record<string, unknown>,
   ): Promise<string>;
+
+  verifyFacts?(
+    output: string,
+    state: Record<string, unknown>,
+  ): Promise<{ verified: boolean; issues: string[] }>;
 }
 
 // ---------------------------------------------------------------------------

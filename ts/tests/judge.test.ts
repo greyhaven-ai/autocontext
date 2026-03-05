@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LLMJudge } from "../src/judge/index.js";
+import { LLMJudge, detectGeneratedDimensions } from "../src/judge/index.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 
 function makeMockProvider(response: string): LLMProvider {
@@ -9,6 +9,30 @@ function makeMockProvider(response: string): LLMProvider {
     complete: async () => ({ text: response, usage: {} }),
   };
 }
+
+describe("detectGeneratedDimensions", () => {
+  it("returns false for empty keys", () => {
+    expect(detectGeneratedDimensions([], "any rubric")).toBe(false);
+  });
+
+  it("returns false when all keys match rubric words", () => {
+    expect(
+      detectGeneratedDimensions(["code_quality", "test_coverage"], "Evaluate code quality and test coverage"),
+    ).toBe(false);
+  });
+
+  it("returns true when a key has no matching words in rubric", () => {
+    expect(
+      detectGeneratedDimensions(["originality", "flair"], "Evaluate clarity and accuracy"),
+    ).toBe(true);
+  });
+
+  it("matches fragments case-insensitively", () => {
+    expect(
+      detectGeneratedDimensions(["Code_Quality"], "Check code quality carefully"),
+    ).toBe(false);
+  });
+});
 
 describe("LLMJudge", () => {
   it("evaluates with marker response", async () => {
@@ -60,6 +84,30 @@ describe("LLMJudge", () => {
       referenceContext: "The truth",
     });
     expect(result.dimensionScores.factual_accuracy).toBe(0.6);
+  });
+
+  it("dimensionsWereGenerated is true when dims not in rubric", async () => {
+    const provider = makeMockProvider(
+      '<!-- JUDGE_RESULT_START -->\n{"score": 0.8, "reasoning": "ok", "dimensions": {"originality": 0.9, "flair": 0.7}}\n<!-- JUDGE_RESULT_END -->',
+    );
+    const judge = new LLMJudge({ provider, model: "test", rubric: "Evaluate clarity and accuracy" });
+    const result = await judge.evaluate({
+      taskPrompt: "Write something",
+      agentOutput: "Hello",
+    });
+    expect(result.dimensionsWereGenerated).toBe(true);
+  });
+
+  it("dimensionsWereGenerated is false when dims match rubric", async () => {
+    const provider = makeMockProvider(
+      '<!-- JUDGE_RESULT_START -->\n{"score": 0.8, "reasoning": "ok", "dimensions": {"clarity": 0.9, "accuracy": 0.7}}\n<!-- JUDGE_RESULT_END -->',
+    );
+    const judge = new LLMJudge({ provider, model: "test", rubric: "Evaluate clarity and accuracy" });
+    const result = await judge.evaluate({
+      taskPrompt: "Write something",
+      agentOutput: "Hello",
+    });
+    expect(result.dimensionsWereGenerated).toBe(false);
   });
 
   it("averages multiple samples", async () => {
