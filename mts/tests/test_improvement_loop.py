@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 
 from mts.execution.improvement_loop import ImprovementLoop
@@ -502,8 +503,6 @@ class TestMaxScoreDelta:
     @staticmethod
     def _capture_warnings(log: logging.Logger):  # noqa: ANN205
         """Context manager that captures WARNING-level messages."""
-        import contextlib
-
         @contextlib.contextmanager
         def _ctx():  # type: ignore[no-untyped-def]
             captured: list[str] = []

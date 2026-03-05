@@ -17,6 +17,9 @@ const PARSE_FAILURE_MARKERS = [
   "Failed to parse judge response",
 ] as const;
 
+const PLATEAU_EPSILON = 0.01;
+const PLATEAU_PATIENCE = 2;
+
 export function isParseFailure(score: number, reasoning: string): boolean {
   if (score > 0) return false;
   return PARSE_FAILURE_MARKERS.some((m) => reasoning.includes(m));
@@ -148,9 +151,9 @@ export class ImprovementLoop {
             `(round ${roundNum}: ${prevValidScore.toFixed(3)} -> ${result.score.toFixed(3)})`,
           );
           if (this.capScoreJumps) {
-            effectiveScore = result.score > prevValidScore
+            effectiveScore = Math.max(0, result.score > prevValidScore
               ? prevValidScore + this.maxScoreDelta
-              : prevValidScore - this.maxScoreDelta;
+              : prevValidScore - this.maxScoreDelta);
           }
         }
       }
@@ -161,10 +164,10 @@ export class ImprovementLoop {
         bestRound = roundNum;
       }
 
-      // Plateau detection
-      if (prevValidScore !== null && Math.abs(result.score - prevValidScore) < 0.01) {
+      // Plateau detection (only after minRounds satisfied)
+      if (prevValidScore !== null && Math.abs(result.score - prevValidScore) < PLATEAU_EPSILON) {
         plateauCount++;
-        if (plateauCount >= 2) {
+        if (plateauCount >= PLATEAU_PATIENCE && roundNum >= this.minRounds) {
           terminationReason = "plateau_stall";
           break;
         }
