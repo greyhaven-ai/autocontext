@@ -8,11 +8,18 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Literal
 
 from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 logger = logging.getLogger(__name__)
 
+TerminationReason = Literal[
+    "threshold_met", "max_rounds", "plateau_stall", "unchanged_output", "consecutive_failures",
+]
+
+PLATEAU_EPSILON = 0.01
+PLATEAU_PATIENCE = 2
 
 _PARSE_FAILURE_MARKERS = frozenset({
     "no parseable score found",
@@ -53,7 +60,7 @@ class ImprovementResult:
     total_rounds: int
     met_threshold: bool
     judge_failures: int = 0
-    termination_reason: str = "max_rounds"
+    termination_reason: TerminationReason = "max_rounds"
     dimension_trajectory: dict[str, list[float]] = field(default_factory=dict)
 
     @property
@@ -116,7 +123,7 @@ class ImprovementLoop:
         last_good_result = None  # Carry forward for revision on judge failure
         consecutive_failures = 0
         max_consecutive_failures = 3  # Safety valve
-        termination_reason = "max_rounds"
+        termination_reason: TerminationReason = "max_rounds"
         dimension_trajectory: dict[str, list[float]] = {}
 
         # Plateau detection state
@@ -204,11 +211,11 @@ class ImprovementLoop:
                         round_num, prev_valid_score, result.score,
                     )
                     if self.cap_score_jumps:
-                        effective_score = (
+                        effective_score = max(0.0, (
                             prev_valid_score + self.max_score_delta
                             if result.score > prev_valid_score
                             else prev_valid_score - self.max_score_delta
-                        )
+                        ))
 
             if effective_score > best_score:
                 best_score = effective_score
@@ -220,10 +227,10 @@ class ImprovementLoop:
                 round_num, result.score, best_score, best_round,
             )
 
-            # Plateau detection
-            if prev_valid_score is not None and abs(result.score - prev_valid_score) < 0.01:
+            # Plateau detection (only after min_rounds satisfied)
+            if prev_valid_score is not None and abs(result.score - prev_valid_score) < PLATEAU_EPSILON:
                 plateau_count += 1
-                if plateau_count >= 2:
+                if plateau_count >= PLATEAU_PATIENCE and round_num >= self.min_rounds:
                     termination_reason = "plateau_stall"
                     break
             else:
