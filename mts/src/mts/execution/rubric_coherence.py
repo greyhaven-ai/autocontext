@@ -30,11 +30,11 @@ def check_rubric_coherence(rubric: str) -> RubricCoherenceResult:
     ]
     lower = rubric.lower()
     for a, b in contradictions:
-        if a in lower and b in lower:
+        if re.search(rf"\b{a}\b", lower) and re.search(rf"\b{b}\b", lower):
             warnings.append(f'Potentially contradictory criteria: "{a}" and "{b}" both appear')
 
     # Check for overly vague criteria
-    vague_matches = re.findall(r"\b(good|nice|appropriate|adequate|proper|quality)\b", lower)
+    vague_matches = re.findall(r"\b(good|nice|appropriate|adequate|proper)\b", lower)
     if len(vague_matches) > 2:
         sample = ", ".join(vague_matches[:3])
         warnings.append(f"Rubric may be too vague: {len(vague_matches)} generic terms found ({sample})")

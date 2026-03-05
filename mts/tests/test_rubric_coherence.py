@@ -1,5 +1,7 @@
 """Tests for rubric coherence pre-check utility."""
 
+from __future__ import annotations
+
 from mts.execution.rubric_coherence import check_rubric_coherence
 
 

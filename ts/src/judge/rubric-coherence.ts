@@ -21,13 +21,15 @@ export function checkRubricCoherence(rubric: string): RubricCoherenceResult {
   ];
   const lower = rubric.toLowerCase();
   for (const [a, b] of contradictions) {
-    if (lower.includes(a) && lower.includes(b)) {
+    const aRe = new RegExp(`\\b${a}\\b`);
+    const bRe = new RegExp(`\\b${b}\\b`);
+    if (aRe.test(lower) && bRe.test(lower)) {
       warnings.push(`Potentially contradictory criteria: "${a}" and "${b}" both appear`);
     }
   }
 
   // Check for overly vague criteria
-  const vaguePattern = /\b(good|nice|appropriate|adequate|proper|quality)\b/gi;
+  const vaguePattern = /\b(good|nice|appropriate|adequate|proper)\b/gi;
   const vagueMatches = lower.match(vaguePattern);
   if (vagueMatches && vagueMatches.length > 2) {
     warnings.push(
