@@ -204,9 +204,9 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     qualityThreshold: parseFloat(values.threshold ?? "0.9"),
   });
 
-  const startTime = Date.now();
+  const startTime = performance.now();
   const result = await loop.run({ initialOutput: values.output, state: {} });
-  const durationMs = Date.now() - startTime;
+  const durationMs = Math.round(performance.now() - startTime);
 
   if (values.verbose) {
     for (const round of result.rounds) {
@@ -214,7 +214,7 @@ async function cmdImprove(_dbPath: string): Promise<void> {
         round: round.roundNumber,
         score: round.score,
         dimensionScores: round.dimensionScores,
-        reasoning: round.reasoning.slice(0, 200),
+        reasoning: round.reasoning.length > 200 ? round.reasoning.slice(0, 200) + "..." : round.reasoning,
         isRevision: round.isRevision,
         judgeFailed: round.judgeFailed,
       }));

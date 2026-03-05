@@ -395,3 +395,4 @@ class TestTaskRunnerTiming:
         assert "duration_ms" in result_data
         assert isinstance(result_data["duration_ms"], (int, float))
         assert result_data["duration_ms"] >= 0
+        assert result_data["duration_ms"] < 60000  # sanity: mock task shouldn't take a minute
