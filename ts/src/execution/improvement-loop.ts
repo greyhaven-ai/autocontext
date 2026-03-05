@@ -9,6 +9,7 @@ import type {
   RoundResult,
   ImprovementResult,
 } from "../types/index.js";
+import { cleanRevisionOutput } from "./output-cleaner.js";
 
 const PARSE_FAILURE_MARKERS = [
   "no parseable score found",
@@ -121,7 +122,8 @@ export class ImprovementLoop {
               feedbackResult,
               opts.state,
             );
-            if (revised !== currentOutput) currentOutput = revised;
+            const cleaned = cleanRevisionOutput(revised);
+            if (cleaned !== currentOutput) currentOutput = cleaned;
           }
           // else: no prior feedback, just re-judge next round
         }
@@ -197,11 +199,12 @@ export class ImprovementLoop {
           result,
           opts.state,
         );
-        if (revised === currentOutput) {
+        const cleaned = cleanRevisionOutput(revised);
+        if (cleaned === currentOutput) {
           terminationReason = "unchanged_output";
           break;
         }
-        currentOutput = revised;
+        currentOutput = cleaned;
       }
     }
 

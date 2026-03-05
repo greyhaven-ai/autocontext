@@ -157,7 +157,10 @@ export class SimpleAgentTask implements AgentTaskInterface {
 
     const result = await this.provider.complete({
       systemPrompt:
-        "You are revising content based on expert feedback. Improve the output.",
+        "You are revising content based on expert feedback. Improve the output. " +
+        "IMPORTANT: Return ONLY the revised content. Do NOT include analysis, " +
+        "explanations, headers like '## Revised Output', or self-assessment. " +
+        "Just output the improved version directly.",
       userPrompt: prompt,
       model: this.model,
     });
