@@ -162,7 +162,12 @@ class SimpleAgentTask(AgentTaskInterface):
             "Produce an improved version:"
         )
         result = self._provider.complete(
-            system_prompt="You are revising content based on expert feedback. Improve the output.",
+            system_prompt=(
+                "You are revising content based on expert feedback. Improve the output. "
+                "IMPORTANT: Return ONLY the revised content. Do NOT include analysis, "
+                "explanations, headers like '## Revised Output', or self-assessment. "
+                "Just output the improved version directly."
+            ),
             user_prompt=prompt,
             model=self._model,
         )
