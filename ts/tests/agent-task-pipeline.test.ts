@@ -87,6 +87,23 @@ describe("AgentTaskSpec", () => {
     expect(spec.maxRounds).toBe(3);
     expect(spec.qualityThreshold).toBe(0.8);
   });
+
+  it("parses sample_input field", () => {
+    const spec = parseRawSpec({
+      task_prompt: "Analyze this outage report",
+      judge_rubric: "Check completeness",
+      sample_input: "Service X went down at 3am due to a memory leak in the cache layer.",
+    });
+    expect(spec.sampleInput).toBe("Service X went down at 3am due to a memory leak in the cache layer.");
+  });
+
+  it("sample_input defaults to null when not provided", () => {
+    const spec = parseRawSpec({
+      task_prompt: "Do something",
+      judge_rubric: "Check quality",
+    });
+    expect(spec.sampleInput).toBeNull();
+  });
 });
 
 describe("Designer", () => {
@@ -178,14 +195,53 @@ describe("Factory", () => {
 });
 
 describe("AgentTaskCreator", () => {
-  it("derives name from description", () => {
+  it("derives name from description — prefers longer domain words", () => {
     const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
     const creator = new AgentTaskCreator({
       provider,
       knowledgeRoot: "/tmp/unused",
     });
-    expect(creator.deriveName("Write a haiku about testing software")).toBe("write_haiku_about");
-    expect(creator.deriveName("Create something")).toBe("create_something");
+    // Prefers longer words sorted by length descending
+    expect(creator.deriveName("Write a haiku about testing software")).toBe("software_testing_haiku");
+    // Single meaningful word
+    expect(creator.deriveName("Create something")).toBe("something");
+  });
+
+  it("deriveName filters common stop words", () => {
+    const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
+    const creator = new AgentTaskCreator({
+      provider,
+      knowledgeRoot: "/tmp/unused",
+    });
+    // "I want an agent that writes incident postmortems" -> should contain "incident"
+    const name1 = creator.deriveName("I want an agent that can write clear, well-structured incident postmortems for production outages");
+    expect(name1).toContain("incident");
+    expect(name1).not.toContain("want");
+    expect(name1).not.toContain("agent");
+
+    // "Create a tool that generates API documentation from code" -> should contain "documentation" or "api"
+    const name2 = creator.deriveName("Create a tool that generates API documentation from code");
+    expect(name2).toContain("documentation");
+
+    // Simple case
+    expect(creator.deriveName("haiku writer")).toBe("writer_haiku");
+
+    // Empty string
+    expect(creator.deriveName("")).toBe("custom");
+
+    // All stop words
+    expect(creator.deriveName("a the and")).toBe("custom");
+  });
+
+  it("deriveName deduplicates words", () => {
+    const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
+    const creator = new AgentTaskCreator({
+      provider,
+      knowledgeRoot: "/tmp/unused",
+    });
+    const name = creator.deriveName("test test test testing");
+    // "test" appears 3 times but should only appear once; "testing" is longer
+    expect(name).toBe("testing_test");
   });
 
   it("end-to-end: creates task and saves files", async () => {

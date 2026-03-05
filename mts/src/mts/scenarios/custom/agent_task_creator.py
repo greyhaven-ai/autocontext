@@ -32,13 +32,28 @@ class AgentTaskCreator:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
 
+    STOP_WORDS = frozenset({
+        "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
+        "i", "want", "need", "make", "create", "build", "write", "develop", "implement",
+        "that", "can", "should", "could", "would", "will", "must",
+        "agent", "tool", "system",
+        "clear", "well", "good", "great", "very", "really", "also", "just", "structured",
+        "it", "we", "they", "is", "are", "was", "be", "do", "does",
+        "to", "in", "on", "at", "by", "which", "what", "how",
+    })
+
     def derive_name(self, description: str) -> str:
-        words = re.sub(r"[^a-z0-9\s]", "", description.lower()).split()
-        meaningful = [
-            w for w in words
-            if w not in {"a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for"}
-        ]
-        name_words = meaningful[:3] if len(meaningful) >= 3 else meaningful[:2] if meaningful else ["custom"]
+        words = re.sub(r"[^a-z0-9\s]", " ", description.lower()).split()
+        meaningful = [w for w in words if w not in self.STOP_WORDS]
+        # Prefer longer words (>3 chars) as they are more likely domain-specific nouns
+        sorted_words = sorted(meaningful, key=len, reverse=True)
+        seen: set[str] = set()
+        unique: list[str] = []
+        for w in sorted_words:
+            if w not in seen:
+                seen.add(w)
+                unique.append(w)
+        name_words = unique[:3] if len(unique) >= 3 else unique[:2] if unique else ["custom"]
         return "_".join(name_words)
 
     def create(self, description: str) -> AgentTaskInterface:
@@ -105,6 +120,8 @@ class AgentTaskCreator:
             spec_data["quality_threshold"] = spec.quality_threshold
         if spec.revision_prompt is not None:
             spec_data["revision_prompt"] = spec.revision_prompt
+        if spec.sample_input is not None:
+            spec_data["sample_input"] = spec.sample_input
         spec_file.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
 
         # Mark as agent_task type
