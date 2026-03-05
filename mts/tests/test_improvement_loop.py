@@ -258,8 +258,9 @@ class TestImprovementLoop:
         assert "Fact-check issues" in result.rounds[0].reasoning
         assert "Date is wrong" in result.rounds[0].reasoning
         assert "Name misspelled" in result.rounds[0].reasoning
-        # Score should NOT be modified
-        assert result.best_score == 0.95
+        # Score should be penalized (10% reduction) when fact-check fails
+        assert result.best_score < 0.95
+        assert result.best_score == 0.95 * 0.9  # 0.855
 
     def test_threshold_sensitivity_near_threshold_continues(self):
         """MTS-53: Score 0.91 with threshold 0.90 does not stop immediately."""

@@ -160,11 +160,11 @@ class ImprovementLoop:
             if failed:
                 judge_failures += 1
                 consecutive_failures += 1
+                threshold_met_round = None  # Reset stability tracking on parse failure
                 logger.warning(
                     "round %d: judge parse failure (%s), not counting toward score",
                     round_num, result.reasoning[:80],
                 )
-                threshold_met_round = None  # Reset stability tracking on parse failure
                 if consecutive_failures >= max_consecutive_failures:
                     logger.error(
                         "aborting: %d consecutive judge failures", consecutive_failures,
@@ -240,7 +240,7 @@ class ImprovementLoop:
 
             logger.info(
                 "round %d score: %.2f (best: %.2f at round %d)",
-                round_num, result.score, best_score, best_round,
+                round_num, effective_score, best_score, best_round,
             )
 
             # Plateau detection (only after min_rounds satisfied)
