@@ -133,6 +133,65 @@ describe("TaskRunner", () => {
   });
 });
 
+describe("TaskRunner.runBatch", () => {
+  it("processes multiple tasks concurrently", async () => {
+    const store = createStore();
+    enqueueTask(store, "spec-1", {
+      taskPrompt: "Task 1",
+      rubric: "Be good",
+      initialOutput: "Output 1",
+    });
+    enqueueTask(store, "spec-2", {
+      taskPrompt: "Task 2",
+      rubric: "Be good",
+      initialOutput: "Output 2",
+    });
+    enqueueTask(store, "spec-3", {
+      taskPrompt: "Task 3",
+      rubric: "Be good",
+      initialOutput: "Output 3",
+    });
+
+    const runner = new TaskRunner({
+      store,
+      provider: makeMockProvider(),
+      concurrency: 3,
+    });
+
+    const count = await runner.runBatch();
+    expect(count).toBe(3);
+    expect(runner.tasksProcessed).toBe(3);
+    expect(store.pendingTaskCount()).toBe(0);
+  });
+
+  it("returns 0 on empty queue", async () => {
+    const store = createStore();
+    const runner = new TaskRunner({
+      store,
+      provider: makeMockProvider(),
+      concurrency: 2,
+    });
+    expect(await runner.runBatch()).toBe(0);
+  });
+
+  it("respects limit parameter", async () => {
+    const store = createStore();
+    enqueueTask(store, "s1", { initialOutput: "o", taskPrompt: "t", rubric: "r" });
+    enqueueTask(store, "s2", { initialOutput: "o", taskPrompt: "t", rubric: "r" });
+    enqueueTask(store, "s3", { initialOutput: "o", taskPrompt: "t", rubric: "r" });
+
+    const runner = new TaskRunner({
+      store,
+      provider: makeMockProvider(),
+      concurrency: 10,
+    });
+
+    const count = await runner.runBatch(2);
+    expect(count).toBe(2);
+    expect(store.pendingTaskCount()).toBe(1);
+  });
+});
+
 describe("SimpleAgentTask", () => {
   it("generates and revises output", async () => {
     const provider = makeMockProvider("generated text");

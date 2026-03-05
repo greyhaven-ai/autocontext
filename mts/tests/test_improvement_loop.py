@@ -234,6 +234,119 @@ class TestImprovementLoop:
         result = loop.run("output", {})
         assert not result.improved
 
+    def test_verify_facts_called_and_issues_appended(self):
+        """MTS-50: verifyFacts callback appends issues to reasoning."""
+
+        class VerifyTask(AgentTaskInterface):
+            def get_task_prompt(self, state):
+                return "test"
+            def evaluate_output(self, output, state, reference_context=None,
+                                required_concepts=None, calibration_examples=None):
+                return AgentTaskResult(score=0.95, reasoning="good")
+            def get_rubric(self):
+                return "test"
+            def initial_state(self, seed=None):
+                return {}
+            def describe_task(self):
+                return "test"
+            def verify_facts(self, output, state):
+                return {"verified": False, "issues": ["Date is wrong", "Name misspelled"]}
+
+        task = VerifyTask()
+        loop = ImprovementLoop(task, max_rounds=1, quality_threshold=0.9)
+        result = loop.run("test output", {})
+        assert "Fact-check issues" in result.rounds[0].reasoning
+        assert "Date is wrong" in result.rounds[0].reasoning
+        assert "Name misspelled" in result.rounds[0].reasoning
+        # Score should NOT be modified
+        assert result.best_score == 0.95
+
+    def test_threshold_sensitivity_near_threshold_continues(self):
+        """MTS-53: Score 0.91 with threshold 0.90 does not stop immediately."""
+
+        class StableTask(AgentTaskInterface):
+            def __init__(self):
+                self._count = 0
+            def get_task_prompt(self, state):
+                return "test"
+            def evaluate_output(self, output, state, reference_context=None,
+                                required_concepts=None, calibration_examples=None):
+                self._count += 1
+                return AgentTaskResult(score=0.91, reasoning=f"round {self._count}")
+            def get_rubric(self):
+                return "test"
+            def initial_state(self, seed=None):
+                return {}
+            def describe_task(self):
+                return "test"
+            def revise_output(self, output, judge_result, state):
+                return output + " revised"
+
+        task = StableTask()
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.90)
+        result = loop.run("initial", {})
+        assert result.met_threshold is True
+        # Should run 2 rounds: near-miss then confirmed
+        assert result.total_rounds == 2
+        assert task._count == 2
+
+    def test_threshold_sensitivity_clearly_above_stops_immediately(self):
+        """MTS-53: Score 0.95 with threshold 0.90 stops on first round."""
+
+        class ClearTask(AgentTaskInterface):
+            def __init__(self):
+                self._count = 0
+            def get_task_prompt(self, state):
+                return "test"
+            def evaluate_output(self, output, state, reference_context=None,
+                                required_concepts=None, calibration_examples=None):
+                self._count += 1
+                return AgentTaskResult(score=0.95, reasoning="great")
+            def get_rubric(self):
+                return "test"
+            def initial_state(self, seed=None):
+                return {}
+            def describe_task(self):
+                return "test"
+
+        task = ClearTask()
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.90)
+        result = loop.run("initial", {})
+        assert result.met_threshold is True
+        assert result.total_rounds == 1
+        assert task._count == 1
+
+    def test_threshold_sensitivity_drop_then_recover(self):
+        """MTS-53: Score drops below threshold after near-miss, then recovers."""
+
+        class DropRecoverTask(AgentTaskInterface):
+            def __init__(self):
+                self._count = 0
+                self._scores = [0.91, 0.85, 0.91, 0.91]
+            def get_task_prompt(self, state):
+                return "test"
+            def evaluate_output(self, output, state, reference_context=None,
+                                required_concepts=None, calibration_examples=None):
+                idx = min(self._count, len(self._scores) - 1)
+                score = self._scores[idx]
+                self._count += 1
+                return AgentTaskResult(score=score, reasoning=f"round {self._count}")
+            def get_rubric(self):
+                return "test"
+            def initial_state(self, seed=None):
+                return {}
+            def describe_task(self):
+                return "test"
+            def revise_output(self, output, judge_result, state):
+                return output + " revised"
+
+        task = DropRecoverTask()
+        loop = ImprovementLoop(task, max_rounds=5, quality_threshold=0.90)
+        result = loop.run("initial", {})
+        assert result.met_threshold is True
+        # near-miss(0.91), drop(0.85), near-miss(0.91), confirm(0.91)
+        assert result.total_rounds == 4
+
 
 # -- Codegen tests --
 

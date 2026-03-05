@@ -275,6 +275,46 @@ class TestTaskRunner:
         count = runner.run()
         assert count == 0  # Should stop immediately
 
+    def test_run_batch_processes_multiple(self, store):
+        """MTS-54: run_batch processes multiple tasks concurrently."""
+        provider = _MockProvider([
+            "Output 1", _judge_response(0.95),
+            "Output 2", _judge_response(0.95),
+            "Output 3", _judge_response(0.95),
+        ])
+        store.enqueue_task("t1", "spec", config={"task_prompt": "task 1", "rubric": "r"})
+        store.enqueue_task("t2", "spec", config={"task_prompt": "task 2", "rubric": "r"})
+        store.enqueue_task("t3", "spec", config={"task_prompt": "task 3", "rubric": "r"})
+
+        runner = TaskRunner(store=store, provider=provider, concurrency=3)
+        count = runner.run_batch()
+        assert count == 3
+        assert runner._tasks_processed == 3
+
+        # All tasks should be completed or failed
+        remaining = store.pending_task_count()
+        assert remaining == 0
+
+    def test_run_batch_empty_queue(self, store):
+        provider = _MockProvider()
+        runner = TaskRunner(store=store, provider=provider, concurrency=2)
+        assert runner.run_batch() == 0
+
+    def test_run_batch_respects_limit(self, store):
+        provider = _MockProvider([
+            "Output", _judge_response(0.95),
+            "Output", _judge_response(0.95),
+            "Output", _judge_response(0.95),
+        ])
+        store.enqueue_task("t1", "spec", config={"task_prompt": "t", "rubric": "r"})
+        store.enqueue_task("t2", "spec", config={"task_prompt": "t", "rubric": "r"})
+        store.enqueue_task("t3", "spec", config={"task_prompt": "t", "rubric": "r"})
+
+        runner = TaskRunner(store=store, provider=provider, concurrency=10)
+        count = runner.run_batch(limit=2)
+        assert count == 2
+        assert store.pending_task_count() == 1
+
     def test_priority_ordering(self, store):
         provider = _MockProvider(["Output", _judge_response(0.95)] * 3)
         store.enqueue_task("low", "spec", priority=0, config={"task_prompt": "low", "rubric": "r"})

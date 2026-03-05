@@ -19,6 +19,7 @@ const PARSE_FAILURE_MARKERS = [
 ] as const;
 
 const PLATEAU_EPSILON = 0.01;
+const NEAR_THRESHOLD_MARGIN = 0.02;
 const PLATEAU_PATIENCE = 2;
 
 export function isParseFailure(score: number, reasoning: string): boolean {
@@ -76,6 +77,7 @@ export class ImprovementLoop {
     const maxConsecutiveFailures = 3;
     let terminationReason: ImprovementResult["terminationReason"] = "max_rounds";
     const dimensionTrajectory: Record<string, number[]> = {};
+    let thresholdMetRound: number | null = null;
 
     // Plateau detection state
     let prevValidScore: number | null = null;
@@ -104,6 +106,7 @@ export class ImprovementLoop {
       if (failed) {
         judgeFailures++;
         consecutiveFailures++;
+        thresholdMetRound = null; // Reset stability tracking on parse failure
 
         if (consecutiveFailures >= maxConsecutiveFailures) {
           terminationReason = "consecutive_failures";
@@ -160,6 +163,19 @@ export class ImprovementLoop {
         }
       }
 
+      // Reference verification hook — apply score penalty if facts unverified
+      if (effectiveScore > 0 && this.task.verifyFacts) {
+        const verifyResult = await this.task.verifyFacts(currentOutput, opts.state);
+        if (verifyResult && !verifyResult.verified) {
+          const issues = verifyResult.issues ?? [];
+          if (issues.length > 0) {
+            roundResult.reasoning += " | Fact-check issues: " + issues.join("; ");
+          }
+          effectiveScore = Math.max(0, effectiveScore * 0.9);
+          roundResult.score = effectiveScore;
+        }
+      }
+
       if (effectiveScore > bestScore) {
         bestScore = effectiveScore;
         bestOutput = currentOutput;
@@ -179,18 +195,46 @@ export class ImprovementLoop {
       prevValidScore = result.score;
 
       if (effectiveScore >= this.qualityThreshold && roundNum >= this.minRounds) {
-        terminationReason = "threshold_met";
-        return {
-          rounds,
-          bestOutput,
-          bestScore,
-          bestRound,
-          totalRounds: roundNum,
-          metThreshold: true,
-          judgeFailures,
-          terminationReason,
-          dimensionTrajectory,
-        };
+        const nearThreshold =
+          effectiveScore < this.qualityThreshold + NEAR_THRESHOLD_MARGIN;
+
+        if (thresholdMetRound !== null) {
+          // Threshold was met on a previous round too — confirmed stable
+          terminationReason = "threshold_met";
+          return {
+            rounds,
+            bestOutput,
+            bestScore,
+            bestRound,
+            totalRounds: roundNum,
+            metThreshold: true,
+            judgeFailures,
+            terminationReason,
+            dimensionTrajectory,
+          };
+        }
+
+        if (nearThreshold && roundNum < this.maxRounds) {
+          // Score barely meets threshold — continue to confirm stability
+          thresholdMetRound = roundNum;
+        } else {
+          // Clearly above threshold — stop immediately
+          terminationReason = "threshold_met";
+          return {
+            rounds,
+            bestOutput,
+            bestScore,
+            bestRound,
+            totalRounds: roundNum,
+            metThreshold: true,
+            judgeFailures,
+            terminationReason,
+            dimensionTrajectory,
+          };
+        }
+      } else {
+        // Score dropped below threshold after previously meeting it
+        thresholdMetRound = null;
       }
 
       if (roundNum < this.maxRounds && this.task.reviseOutput) {

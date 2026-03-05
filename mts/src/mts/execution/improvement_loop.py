@@ -21,6 +21,7 @@ TerminationReason = Literal[
 
 PLATEAU_EPSILON = 0.01
 PLATEAU_PATIENCE = 2
+NEAR_THRESHOLD_MARGIN = 0.02
 
 _PARSE_FAILURE_MARKERS = frozenset({
     "no parseable score found",
@@ -126,6 +127,7 @@ class ImprovementLoop:
         max_consecutive_failures = 3  # Safety valve
         termination_reason: TerminationReason = "max_rounds"
         dimension_trajectory: dict[str, list[float]] = {}
+        threshold_met_round: int | None = None
 
         # Plateau detection state
         prev_valid_score: float | None = None
@@ -162,6 +164,7 @@ class ImprovementLoop:
                     "round %d: judge parse failure (%s), not counting toward score",
                     round_num, result.reasoning[:80],
                 )
+                threshold_met_round = None  # Reset stability tracking on parse failure
                 if consecutive_failures >= max_consecutive_failures:
                     logger.error(
                         "aborting: %d consecutive judge failures", consecutive_failures,
@@ -219,6 +222,17 @@ class ImprovementLoop:
                             else prev_valid_score - self.max_score_delta
                         ))
 
+            # Reference verification hook — apply score penalty if facts unverified
+            if effective_score > 0:
+                verify_result = self.task.verify_facts(current_output, state)
+                if verify_result is not None and not verify_result.get("verified", True):
+                    issues = verify_result.get("issues", [])
+                    if issues:
+                        annotation = " | Fact-check issues: " + "; ".join(issues)
+                        round_result.reasoning += annotation
+                    effective_score = max(0.0, effective_score * 0.9)
+                    round_result.score = effective_score
+
             if effective_score > best_score:
                 best_score = effective_score
                 best_output = current_output
@@ -240,18 +254,47 @@ class ImprovementLoop:
             prev_valid_score = result.score
 
             if effective_score >= self.quality_threshold and round_num >= self.min_rounds:
-                logger.info("quality threshold %.2f met at round %d", self.quality_threshold, round_num)
-                return ImprovementResult(
-                    rounds=rounds,
-                    best_output=best_output,
-                    best_score=best_score,
-                    best_round=best_round,
-                    total_rounds=round_num,
-                    met_threshold=True,
-                    judge_failures=judge_failures,
-                    termination_reason="threshold_met",
-                    dimension_trajectory=dimension_trajectory,
-                )
+                near_threshold = effective_score < self.quality_threshold + NEAR_THRESHOLD_MARGIN
+
+                if threshold_met_round is not None:
+                    # Threshold was met on a previous round too — confirmed stable
+                    logger.info("quality threshold %.2f confirmed stable at round %d", self.quality_threshold, round_num)
+                    return ImprovementResult(
+                        rounds=rounds,
+                        best_output=best_output,
+                        best_score=best_score,
+                        best_round=best_round,
+                        total_rounds=round_num,
+                        met_threshold=True,
+                        judge_failures=judge_failures,
+                        termination_reason="threshold_met",
+                        dimension_trajectory=dimension_trajectory,
+                    )
+
+                if near_threshold and round_num < self.max_rounds:
+                    # Score barely meets threshold — continue to confirm stability
+                    logger.info(
+                        "score %.3f barely meets threshold %.2f at round %d, continuing to confirm",
+                        effective_score, self.quality_threshold, round_num,
+                    )
+                    threshold_met_round = round_num
+                else:
+                    # Clearly above threshold — stop immediately
+                    logger.info("quality threshold %.2f met at round %d", self.quality_threshold, round_num)
+                    return ImprovementResult(
+                        rounds=rounds,
+                        best_output=best_output,
+                        best_score=best_score,
+                        best_round=best_round,
+                        total_rounds=round_num,
+                        met_threshold=True,
+                        judge_failures=judge_failures,
+                        termination_reason="threshold_met",
+                        dimension_trajectory=dimension_trajectory,
+                    )
+            else:
+                # Score dropped below threshold after previously meeting it
+                threshold_met_round = None
 
             if round_num < self.max_rounds:
                 revised = self.task.revise_output(current_output, result, state)
