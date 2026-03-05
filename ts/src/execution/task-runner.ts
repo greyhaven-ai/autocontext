@@ -56,7 +56,7 @@ function parseTaskConfig(json: string | null): TaskConfig {
   };
 }
 
-function serializeResult(result: ImprovementResult): string {
+function serializeResult(result: ImprovementResult, durationMs?: number): string {
   return JSON.stringify({
     rounds: result.rounds.map((r) => ({
       round_number: r.roundNumber,
@@ -69,6 +69,7 @@ function serializeResult(result: ImprovementResult): string {
     best_round: result.bestRound,
     total_rounds: result.totalRounds,
     met_threshold: result.metThreshold,
+    ...(durationMs != null ? { duration_ms: durationMs } : {}),
   });
 }
 
@@ -232,6 +233,7 @@ export class TaskRunner {
         qualityThreshold: config.qualityThreshold,
       });
 
+      const startTime = Date.now();
       const result = await loop.run({
         initialOutput,
         state: {},
@@ -239,6 +241,7 @@ export class TaskRunner {
         requiredConcepts: config.requiredConcepts,
         calibrationExamples: config.calibrationExamples,
       });
+      const durationMs = Date.now() - startTime;
 
       this.store.completeTask(
         task.id,
@@ -246,7 +249,7 @@ export class TaskRunner {
         result.bestOutput,
         result.totalRounds,
         result.metThreshold,
-        serializeResult(result),
+        serializeResult(result, durationMs),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

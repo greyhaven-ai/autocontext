@@ -50,4 +50,15 @@ describe("CLI", () => {
     expect(exitCode).toBe(0);
     expect(JSON.parse(stdout).pendingCount).toBe(0);
   });
+
+  it("improve --help shows verbose flag", () => {
+    const { stdout, exitCode } = runCli(["improve", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("-v");
+  });
+
+  it("improve requires args", () => {
+    const { exitCode } = runCli(["improve"]);
+    expect(exitCode).toBe(1);
+  });
 });
