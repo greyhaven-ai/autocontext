@@ -9,7 +9,7 @@ describe("parseJudgeResponse", () => {
     expect(r.score).toBe(0.85);
     expect(r.reasoning).toBe("Good");
     expect(r.dimensionScores.clarity).toBe(0.9);
-    expect(r.parseMethod).toBe("raw_json"); // raw_json now tried first and matches the JSON inside markers
+    expect(r.parseMethod).toBe("markers"); // markers tried first now
   });
 
   it("strategy: markers only (no bare JSON)", () => {
