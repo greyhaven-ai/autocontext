@@ -11,6 +11,7 @@ from mts.agents.coach import CoachRunner, parse_coach_sections
 from mts.agents.competitor import CompetitorRunner
 from mts.agents.curator import KnowledgeCurator
 from mts.agents.llm_client import AnthropicClient, DeterministicDevClient, LanguageModelClient
+from mts.agents.model_router import ModelRouter, TierConfig
 from mts.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from mts.agents.subagent_runtime import SubagentRuntime
 from mts.agents.translator import StrategyTranslator
@@ -42,6 +43,14 @@ class AgentOrchestrator:
         self.curator: KnowledgeCurator | None = None
         if settings.curator_enabled:
             self.curator = KnowledgeCurator(runtime, settings.model_curator)
+
+        self._model_router = ModelRouter(TierConfig(
+            enabled=settings.tier_routing_enabled,
+            tier_haiku_model=settings.tier_haiku_model,
+            tier_sonnet_model=settings.tier_sonnet_model,
+            tier_opus_model=settings.tier_opus_model,
+            competitor_haiku_max_gen=settings.tier_competitor_haiku_max_gen,
+        ))
 
         self._rlm_loader = None
         if settings.rlm_enabled and settings.agent_provider != "agent_sdk":
@@ -240,6 +249,10 @@ class AgentOrchestrator:
             coach_output=coach_typed,
             architect_output=architect_typed,
         )
+
+    def resolve_model(self, role: str, *, generation: int, retry_count: int = 0, is_plateau: bool = False) -> str | None:
+        """Return the model to use for a role, or None to use the default."""
+        return self._model_router.select(role, generation=generation, retry_count=retry_count, is_plateau=is_plateau)
 
     def _enrich_coach_prompt(self, base_prompt: str, analyst_content: str) -> str:
         return base_prompt + f"\n\n--- Analyst findings (this generation) ---\n{analyst_content}\n"
