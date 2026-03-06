@@ -21,3 +21,4 @@ class AgentTaskSpec:
     max_rounds: int = 1  # Max improvement rounds (1 = single-shot)
     quality_threshold: float = 0.9  # Stop improving when score >= this
     revision_prompt: str | None = None  # Instructions for how to revise output
+    sample_input: str | None = None  # Sample input data for data-dependent tasks

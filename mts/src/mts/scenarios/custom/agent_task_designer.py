@@ -51,6 +51,7 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     '  "reference_context": "Authoritative domain knowledge for judging factual accuracy (optional, null if not needed)",\n'
     '  "reference_sources": ["list of source URLs or references (optional)"],\n'
     '  "required_concepts": ["key concepts the output must correctly address (optional)"],\n'
+    '  "sample_input": "Realistic sample input data for data-dependent tasks (optional, null if not needed)",\n'
     '  "context_preparation": "Instructions for gathering context before generation (optional, null if not needed)",\n'
     '  "required_context_keys": ["state keys that must be present after context preparation (optional)"],\n'
     '  "max_rounds": 1,\n'
@@ -60,6 +61,12 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     "```\n\n"
     "## Rules\n\n"
     "- `task_prompt` must be clear, detailed, and self-contained\n"
+    "- `task_prompt` must be FULLY self-contained: never say \"you will be provided with...\" or reference "
+    "external data without including it. If the task depends on input data, populate `sample_input` with "
+    "realistic example data and embed it directly in the prompt\n"
+    "- `sample_input` (optional, null if not needed) — realistic sample input data for data-dependent tasks. "
+    "Populate this whenever the task requires the agent to process specific input "
+    "(e.g. an outage report, a code snippet, a dataset)\n"
     "- `judge_rubric` must list specific evaluation dimensions with criteria\n"
     "- `output_format` must be one of: free_text, json_schema, code\n"
     "- `judge_model` should be a valid model identifier\n"
@@ -72,6 +79,8 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     "Use this when the task requires research, document loading, or other preparation steps.\n"
     "- `required_context_keys` (optional) — state dictionary keys that must be present after context preparation. "
     "Used to validate that preparation completed successfully.\n"
+    "- `calibration_examples` (optional) — provide at least 2 calibration examples: one high-quality example "
+    "(~0.9 score) and one low-quality example (~0.3 score). These help the judge produce consistent scores.\n"
     "- `max_rounds` (optional, default 1) — maximum improvement rounds. Set >1 to enable iterative refinement.\n"
     "- `quality_threshold` (optional, default 0.9) — stop improving when score >= this value.\n"
     "- `revision_prompt` (optional) — instructions for how the agent should revise its output based on judge feedback.\n\n"
@@ -105,6 +114,7 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
         max_rounds=data.get("max_rounds", 1),
         quality_threshold=data.get("quality_threshold", 0.9),
         revision_prompt=data.get("revision_prompt"),
+        sample_input=data.get("sample_input"),
     )
 
 
