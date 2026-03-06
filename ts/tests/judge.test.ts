@@ -22,10 +22,13 @@ describe("LLMJudge", () => {
     });
     expect(result.score).toBe(0.85);
     expect(result.reasoning).toContain("Well done");
+    expect(result.reasoning).not.toContain("[raw_json parse]");
     expect(result.dimensionScores.clarity).toBe(0.9);
+    expect(result.parseMethod).toBe("raw_json"); // raw_json tried first, matches JSON in markers
+    expect(result.internalRetries).toBe(0);
   });
 
-  it("retries on parse failure", async () => {
+  it("retries on parse failure and tracks internalRetries", async () => {
     let callCount = 0;
     const provider: LLMProvider = {
       name: "retry-mock",
@@ -43,6 +46,7 @@ describe("LLMJudge", () => {
     const result = await judge.evaluate({ taskPrompt: "t", agentOutput: "o" });
     expect(result.score).toBe(0.7);
     expect(callCount).toBe(2);
+    expect(result.internalRetries).toBe(1);
   });
 
   it("adds factual_accuracy when reference context provided", async () => {
@@ -76,5 +80,15 @@ describe("LLMJudge", () => {
     const result = await judge.evaluate({ taskPrompt: "t", agentOutput: "o" });
     expect(result.score).toBe(0.7);
     expect(result.rawResponses).toHaveLength(2);
+    expect(result.internalRetries).toBe(0);
+  });
+
+  it("exposes parseMethod from last sample", async () => {
+    const provider = makeMockProvider(
+      'The agent did well. Score: 0.8',
+    );
+    const judge = new LLMJudge({ provider, model: "m", rubric: "r" });
+    const result = await judge.evaluate({ taskPrompt: "t", agentOutput: "o" });
+    expect(result.parseMethod).toBe("plaintext");
   });
 });

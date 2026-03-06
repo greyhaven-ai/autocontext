@@ -1,20 +1,23 @@
 /**
  * Multi-strategy judge response parser.
- * 
+ *
  * Strategies (tried in order):
- * 1. Marker-based: <!-- JUDGE_RESULT_START/END -->
+ * 1. Raw JSON: { "score": ... } anywhere in text
  * 2. Code block: ```json ... ```
- * 3. Raw JSON: { "score": ... } anywhere in text
+ * 3. Marker-based: <!-- JUDGE_RESULT_START/END -->
  * 4. Plain text: "Score: 0.85" patterns
  */
 
 const RESULT_START = "<!-- JUDGE_RESULT_START -->";
 const RESULT_END = "<!-- JUDGE_RESULT_END -->";
 
+export type ParseMethod = "raw_json" | "code_block" | "markers" | "plaintext" | "none";
+
 export interface ParsedJudge {
   score: number;
   reasoning: string;
   dimensionScores: Record<string, number>;
+  parseMethod: ParseMethod;
 }
 
 function clamp(v: number): number {
@@ -23,14 +26,11 @@ function clamp(v: number): number {
 
 function extractFromDict(
   data: Record<string, unknown>,
-  source: string,
+  source: ParseMethod,
 ): ParsedJudge {
   const raw = Number(data.score ?? 0);
   const score = clamp(isNaN(raw) ? 0 : raw);
-  let reasoning = String(data.reasoning ?? "");
-  if (source !== "markers") {
-    reasoning = `[${source} parse] ${reasoning}`;
-  }
+  const reasoning = String(data.reasoning ?? "");
 
   const dims: Record<string, number> = {};
   const dimensions = data.dimensions;
@@ -41,7 +41,7 @@ function extractFromDict(
     }
   }
 
-  return { score, reasoning, dimensionScores: dims };
+  return { score, reasoning, dimensionScores: dims, parseMethod: source };
 }
 
 function tryMarkerParse(response: string): Record<string, unknown> | null {
@@ -116,8 +116,9 @@ function tryPlaintextParse(response: string): ParsedJudge | null {
         const reasoning = response.length > 500 ? response.slice(0, 500) : response;
         return {
           score,
-          reasoning: `[plaintext parse] ${reasoning}`,
+          reasoning,
           dimensionScores: {},
+          parseMethod: "plaintext" as ParseMethod,
         };
       }
     }
@@ -126,17 +127,17 @@ function tryPlaintextParse(response: string): ParsedJudge | null {
 }
 
 export function parseJudgeResponse(response: string): ParsedJudge {
-  // Strategy 1: Markers
-  const markerData = tryMarkerParse(response);
-  if (markerData) return extractFromDict(markerData, "markers");
+  // Strategy 1: Raw JSON (most common in practice)
+  const rawData = tryRawJsonParse(response);
+  if (rawData) return extractFromDict(rawData, "raw_json");
 
   // Strategy 2: Code block
   const codeData = tryCodeBlockParse(response);
   if (codeData) return extractFromDict(codeData, "code_block");
 
-  // Strategy 3: Raw JSON
-  const rawData = tryRawJsonParse(response);
-  if (rawData) return extractFromDict(rawData, "raw_json");
+  // Strategy 3: Markers
+  const markerData = tryMarkerParse(response);
+  if (markerData) return extractFromDict(markerData, "markers");
 
   // Strategy 4: Plaintext
   const plainResult = tryPlaintextParse(response);
@@ -146,5 +147,6 @@ export function parseJudgeResponse(response: string): ParsedJudge {
     score: 0,
     reasoning: "Failed to parse judge response: no parseable score found",
     dimensionScores: {},
+    parseMethod: "none",
   };
 }
