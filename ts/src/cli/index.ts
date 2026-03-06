@@ -183,13 +183,14 @@ async function cmdImprove(_dbPath: string): Promise<void> {
       rubric: { type: "string", short: "r" },
       rounds: { type: "string", short: "n", default: "5" },
       threshold: { type: "string", short: "t", default: "0.9" },
+      "min-rounds": { type: "string", default: "1" },
       verbose: { type: "boolean", short: "v" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help || !values.prompt || !values.output || !values.rubric) {
-    console.log("mts improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold] [-v]");
+    console.log("mts improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold] [--min-rounds N] [-v]");
     process.exit(values.help ? 0 : 1);
   }
 
@@ -202,6 +203,7 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     task,
     maxRounds: parseInt(values.rounds ?? "5", 10),
     qualityThreshold: parseFloat(values.threshold ?? "0.9"),
+    minRounds: parseInt(values["min-rounds"] ?? "1", 10),
   });
 
   const startTime = performance.now();
@@ -243,12 +245,13 @@ async function cmdQueue(dbPath: string): Promise<void> {
       prompt: { type: "string", short: "p" },
       rubric: { type: "string", short: "r" },
       priority: { type: "string", default: "0" },
+      "min-rounds": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help || !values.spec) {
-    console.log("mts queue -s <spec-name> [-p prompt] [-r rubric] [--priority N]");
+    console.log("mts queue -s <spec-name> [-p prompt] [-r rubric] [--priority N] [--min-rounds N]");
     process.exit(values.help ? 0 : 1);
   }
 
@@ -263,6 +266,7 @@ async function cmdQueue(dbPath: string): Promise<void> {
     taskPrompt: values.prompt,
     rubric: values.rubric,
     priority: parseInt(values.priority!, 10),
+    ...(values["min-rounds"] ? { minRounds: parseInt(values["min-rounds"], 10) } : {}),
   });
 
   console.log(JSON.stringify({ taskId: id, specName: values.spec, status: "queued" }));

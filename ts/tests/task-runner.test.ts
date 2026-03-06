@@ -192,6 +192,28 @@ describe("TaskRunner.runBatch", () => {
   });
 });
 
+describe("minRounds wiring (MTS-53)", () => {
+  it("enqueueTask passes minRounds to config", () => {
+    const store = createStore();
+    const id = enqueueTask(store, "test", { minRounds: 3 });
+    const task = store.getTask(id);
+    expect(task).not.toBeNull();
+    const config = JSON.parse(task!.config_json!);
+    expect(config.min_rounds).toBe(3);
+    store.close();
+  });
+
+  it("enqueueTask defaults to no min_rounds in config when not specified", () => {
+    const store = createStore();
+    const id = enqueueTask(store, "test", { taskPrompt: "hello" });
+    const task = store.getTask(id);
+    const config = JSON.parse(task!.config_json!);
+    // min_rounds should not be in config when not explicitly set
+    expect(config.min_rounds).toBeUndefined();
+    store.close();
+  });
+});
+
 describe("SimpleAgentTask", () => {
   it("generates and revises output", async () => {
     const provider = makeMockProvider("generated text");

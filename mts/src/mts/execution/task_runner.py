@@ -34,6 +34,7 @@ class TaskConfig:
 
     max_rounds: int = 5
     quality_threshold: float = 0.9
+    min_rounds: int = 1
     reference_context: str | None = None
     required_concepts: list[str] | None = None
     calibration_examples: list[dict] | None = None
@@ -50,6 +51,7 @@ class TaskConfig:
         return cls(
             max_rounds=parsed.get("max_rounds", 5),
             quality_threshold=parsed.get("quality_threshold", 0.9),
+            min_rounds=parsed.get("min_rounds", 1),
             reference_context=parsed.get("reference_context"),
             required_concepts=parsed.get("required_concepts"),
             calibration_examples=parsed.get("calibration_examples"),
@@ -209,16 +211,23 @@ class TaskRunner:
         self._tasks_processed = 0
 
     def run(self) -> int:
-        """Main loop. Returns the number of tasks processed."""
+        """Main loop. Returns the number of tasks processed.
+
+        When ``concurrency`` > 1, uses :meth:`run_batch` to process
+        multiple tasks in parallel via a thread pool.
+        """
         self._setup_signals()
         consecutive_empty = 0
 
-        logger.info("task runner started (poll_interval=%.1fs)", self.poll_interval)
+        logger.info(
+            "task runner started (poll_interval=%.1fs, concurrency=%d)",
+            self.poll_interval, self.concurrency,
+        )
 
         while not self._shutdown:
-            task = self.store.dequeue_task()
+            processed = self.run_batch(self.concurrency)
 
-            if task is None:
+            if processed == 0:
                 consecutive_empty += 1
                 if self.max_consecutive_empty > 0 and consecutive_empty >= self.max_consecutive_empty:
                     logger.info("max consecutive empty polls reached, shutting down")
@@ -228,8 +237,6 @@ class TaskRunner:
                 continue
 
             consecutive_empty = 0
-            self._process_task(task)
-            self._tasks_processed += 1
 
         logger.info("task runner stopped. processed %d tasks", self._tasks_processed)
         return self._tasks_processed
@@ -304,6 +311,7 @@ class TaskRunner:
                 task=agent_task,
                 max_rounds=config.max_rounds,
                 quality_threshold=config.quality_threshold,
+                min_rounds=config.min_rounds,
             )
 
             start_time = time.monotonic()
@@ -404,6 +412,7 @@ def enqueue_task(
     required_concepts: list[str] | None = None,
     max_rounds: int = 5,
     quality_threshold: float = 0.9,
+    min_rounds: int = 1,
     initial_output: str | None = None,
     priority: int = 0,
 ) -> str:
@@ -412,6 +421,7 @@ def enqueue_task(
     config = {
         "max_rounds": max_rounds,
         "quality_threshold": quality_threshold,
+        "min_rounds": min_rounds,
         "task_prompt": task_prompt,
         "rubric": rubric,
         "reference_context": reference_context,
