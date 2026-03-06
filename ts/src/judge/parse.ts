@@ -127,17 +127,17 @@ function tryPlaintextParse(response: string): ParsedJudge | null {
 }
 
 export function parseJudgeResponse(response: string): ParsedJudge {
-  // Strategy 1: Raw JSON (most common in practice)
+  // Strategy 1: Markers (preferred — matches our system prompt format)
+  const markerData = tryMarkerParse(response);
+  if (markerData) return extractFromDict(markerData, "markers");
+
+  // Strategy 2: Raw JSON
   const rawData = tryRawJsonParse(response);
   if (rawData) return extractFromDict(rawData, "raw_json");
 
-  // Strategy 2: Code block
+  // Strategy 3: Code block
   const codeData = tryCodeBlockParse(response);
   if (codeData) return extractFromDict(codeData, "code_block");
-
-  // Strategy 3: Markers
-  const markerData = tryMarkerParse(response);
-  if (markerData) return extractFromDict(markerData, "markers");
 
   // Strategy 4: Plaintext
   const plainResult = tryPlaintextParse(response);
