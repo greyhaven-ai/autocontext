@@ -119,6 +119,7 @@ export class ImprovementLoop {
               score: lastGoodResult.score,
               reasoning: lastGoodResult.reasoning,
               dimensionScores: lastGoodResult.dimensionScores,
+              internalRetries: 0,
             };
             const revised = await this.task.reviseOutput(
               currentOutput,
@@ -211,6 +212,7 @@ export class ImprovementLoop {
             judgeFailures,
             terminationReason,
             dimensionTrajectory,
+            totalInternalRetries: 0,
           };
         }
 
@@ -230,6 +232,7 @@ export class ImprovementLoop {
             judgeFailures,
             terminationReason,
             dimensionTrajectory,
+            totalInternalRetries: 0,
           };
         }
       } else {
@@ -262,6 +265,7 @@ export class ImprovementLoop {
       judgeFailures,
       terminationReason,
       dimensionTrajectory,
+      totalInternalRetries: 0,
     };
   }
 }
