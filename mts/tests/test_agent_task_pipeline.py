@@ -236,6 +236,80 @@ class TestValidateExecution:
         assert errors == [], f"Execution errors: {errors}"
 
 
+class TestDeriveName:
+    def _creator(self) -> AgentTaskCreator:
+        return AgentTaskCreator(
+            llm_fn=lambda s, u: "",
+            knowledge_root=Path("/tmp/unused"),
+        )
+
+    def test_prefers_longer_domain_words(self) -> None:
+        creator = self._creator()
+        # "Write a haiku about testing software" -> longer words first
+        name = creator.derive_name("Write a haiku about testing software")
+        assert name == "software_testing_haiku"
+
+    def test_filters_stop_words(self) -> None:
+        creator = self._creator()
+        name = creator.derive_name(
+            "I want an agent that can write clear, well-structured incident postmortems for production outages"
+        )
+        assert "incident" in name
+        assert "want" not in name
+        assert "agent" not in name
+
+    def test_api_documentation(self) -> None:
+        creator = self._creator()
+        name = creator.derive_name("Create a tool that generates API documentation from code")
+        assert "documentation" in name
+
+    def test_simple_case(self) -> None:
+        creator = self._creator()
+        assert creator.derive_name("haiku writer") == "writer_haiku"
+
+    def test_empty_string(self) -> None:
+        creator = self._creator()
+        assert creator.derive_name("") == "custom"
+
+    def test_all_stop_words(self) -> None:
+        creator = self._creator()
+        assert creator.derive_name("a the and") == "custom"
+
+    def test_deduplicates_words(self) -> None:
+        creator = self._creator()
+        name = creator.derive_name("test test test testing")
+        assert name == "testing_test"
+
+
+class TestSampleInput:
+    def test_parse_sample_input(self) -> None:
+        data = {
+            "task_prompt": "Analyze this outage",
+            "judge_rubric": "Check completeness",
+            "sample_input": "Service X went down at 3am.",
+        }
+        raw = f"{SPEC_START}\n{json.dumps(data)}\n{SPEC_END}"
+        spec = parse_agent_task_spec(raw)
+        assert spec.sample_input == "Service X went down at 3am."
+
+    def test_sample_input_defaults_to_none(self) -> None:
+        data = {
+            "task_prompt": "Do something",
+            "judge_rubric": "Check quality",
+        }
+        raw = f"{SPEC_START}\n{json.dumps(data)}\n{SPEC_END}"
+        spec = parse_agent_task_spec(raw)
+        assert spec.sample_input is None
+
+    def test_spec_dataclass_has_sample_input(self) -> None:
+        spec = AgentTaskSpec(
+            task_prompt="Test",
+            judge_rubric="Rubric",
+            sample_input="Some input data",
+        )
+        assert spec.sample_input == "Some input data"
+
+
 class TestAgentTaskCreator:
     def test_end_to_end(self) -> None:
         response_text = _mock_llm_response(SAMPLE_SPEC)
