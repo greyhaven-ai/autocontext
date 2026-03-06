@@ -53,7 +53,8 @@ class FailureReport:
                 summary=f"Match {i}: score={result.score:.4f}, passed={result.passed}",
             ))
         delta = round(tournament.best_score - previous_best, 6)
-        strategy_str = json.dumps(strategy, sort_keys=True)[:200]
+        full_json = json.dumps(strategy, sort_keys=True)
+        strategy_str = full_json if len(full_json) <= 200 else full_json[:200] + "..."
         return cls(
             match_diagnoses=diagnoses,
             overall_delta=delta,

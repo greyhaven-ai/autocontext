@@ -2,6 +2,9 @@
 
 Inspired by Plankton's Phase 2 structured violation collection that normalizes
 all linter outputs into a standard JSON format with fix hints.
+
+NOTE: Not yet wired into the generation loop stages. Currently used only
+in tests. TODO: integrate with loop/stages.py pre-tournament validation.
 """
 from __future__ import annotations
 
