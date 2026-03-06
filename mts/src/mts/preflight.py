@@ -44,14 +44,17 @@ class PreflightChecker:
 
     def check_knowledge_writable(self) -> CheckResult:
         """Check if the knowledge directory is writable."""
+        test_file = None
         try:
             self._knowledge_root.mkdir(parents=True, exist_ok=True)
             test_file = self._knowledge_root / ".preflight_test"
             test_file.write_text("test")
-            test_file.unlink()
             return CheckResult(name="knowledge_writable", passed=True, detail="Knowledge dir writable")
         except OSError as e:
             return CheckResult(name="knowledge_writable", passed=False, detail=str(e))
+        finally:
+            if test_file is not None:
+                test_file.unlink(missing_ok=True)
 
     def run_all(self) -> list[CheckResult]:
         """Run all preflight checks."""
