@@ -274,7 +274,7 @@ class TestJudgeFallbackParser:
         assert score == 0.85
         assert "Good work" in reasoning
         assert dims["clarity"] == 0.9
-        assert _pm == "raw_json"  # raw_json tried first, matches JSON inside markers
+        assert _pm == "markers"  # markers tried first now
 
     def test_strategy2_code_block(self):
         judge = self._make_judge()
@@ -354,8 +354,8 @@ class TestJudgeFallbackParser:
         assert score == 0.0
         assert "no parseable score" in reasoning
 
-    def test_strategy_priority_raw_json_first(self):
-        """Raw JSON is tried first — the first JSON object wins."""
+    def test_strategy_priority_markers_first(self):
+        """Markers are tried first — marker-wrapped JSON wins over code block."""
         judge = self._make_judge()
         response = (
             '```json\n{"score": 0.50, "reasoning": "code block"}\n```\n'
@@ -364,9 +364,9 @@ class TestJudgeFallbackParser:
             '<!-- JUDGE_RESULT_END -->'
         )
         score, reasoning, _, _pm = judge._parse_judge_response(response)
-        assert score == 0.50
-        assert reasoning == "code block"
-        assert _pm == "raw_json"
+        assert score == 0.90
+        assert reasoning == "markers"
+        assert _pm == "markers"
 
     def test_score_clamping(self):
         judge = self._make_judge()
