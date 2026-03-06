@@ -116,7 +116,6 @@ export class AgentTaskCreator {
     if (spec.maxRounds !== 1) specData.max_rounds = spec.maxRounds;
     if (spec.qualityThreshold !== 0.9) specData.quality_threshold = spec.qualityThreshold;
     if (spec.revisionPrompt) specData.revision_prompt = spec.revisionPrompt;
-    // TODO: wire sampleInput into factory so the created task can use it
     if (spec.sampleInput) specData.sample_input = spec.sampleInput;
 
     writeFileSync(

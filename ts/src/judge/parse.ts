@@ -2,9 +2,9 @@
  * Multi-strategy judge response parser.
  *
  * Strategies (tried in order):
- * 1. Raw JSON: { "score": ... } anywhere in text
- * 2. Code block: ```json ... ```
- * 3. Marker-based: <!-- JUDGE_RESULT_START/END -->
+ * 1. Marker-based: <!-- JUDGE_RESULT_START/END --> (preferred — matches system prompt format)
+ * 2. Raw JSON: { "score": ... } anywhere in text
+ * 3. Code block: ```json ... ```
  * 4. Plain text: "Score: 0.85" patterns
  */
 
