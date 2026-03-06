@@ -243,9 +243,34 @@ export class ImprovementLoop {
       }
 
       if (roundNum < this.maxRounds && this.task.reviseOutput) {
+        // Enrich feedback with dimension scores + regression warnings (MTS-41)
+        let revisionResult: AgentTaskResult = result;
+        if (Object.keys(result.dimensionScores).length > 0 && roundNum > 1) {
+          const prevValid = rounds.slice(0, -1).filter((r) => !r.judgeFailed);
+          const prevDims = prevValid.length > 0 ? prevValid[prevValid.length - 1].dimensionScores : {};
+          const dimLines: string[] = [];
+          for (const [dim, dscore] of Object.entries(result.dimensionScores).sort()) {
+            let line = `  - ${dim}: ${dscore.toFixed(2)}`;
+            if (dim in prevDims) {
+              const delta = dscore - prevDims[dim];
+              if (delta < -0.05) {
+                line += ` (REGRESSION from ${prevDims[dim].toFixed(2)} — preserve this dimension)`;
+              } else if (delta > 0.05) {
+                line += ` (improved from ${prevDims[dim].toFixed(2)})`;
+              }
+            }
+            dimLines.push(line);
+          }
+          const dimAnnotation = "\n\nDimension Scores:\n" + dimLines.join("\n");
+          revisionResult = {
+            score: result.score,
+            reasoning: result.reasoning + dimAnnotation,
+            dimensionScores: result.dimensionScores,
+          };
+        }
         const revised = await this.task.reviseOutput(
           currentOutput,
-          result,
+          revisionResult,
           opts.state,
         );
         const cleaned = cleanRevisionOutput(revised);

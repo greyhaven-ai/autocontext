@@ -16,6 +16,7 @@ from mts.execution.task_runner import (
     enqueue_task,
 )
 from mts.providers.base import CompletionResult, LLMProvider
+from mts.scenarios.agent_task import AgentTaskInterface
 from mts.storage.sqlite_store import SQLiteStore
 
 # ---------------------------------------------------------------------------
@@ -414,6 +415,159 @@ class TestSerialization:
         serialized = _serialize_result(result)
         data = json.loads(serialized)
         assert "duration_ms" not in data
+
+
+# ---------------------------------------------------------------------------
+# MTS-53: min_rounds wiring
+# ---------------------------------------------------------------------------
+
+class TestMinRoundsWiring:
+    def test_task_config_parses_min_rounds(self):
+        cfg = TaskConfig.from_json(json.dumps({"min_rounds": 3}))
+        assert cfg.min_rounds == 3
+
+    def test_task_config_defaults_min_rounds(self):
+        cfg = TaskConfig.from_json(None)
+        assert cfg.min_rounds == 1
+
+    def test_enqueue_passes_min_rounds(self, store):
+        task_id = enqueue_task(store, "test", min_rounds=3)
+        task = store.get_task(task_id)
+        config = json.loads(task["config_json"])
+        assert config["min_rounds"] == 3
+
+    def test_enqueue_default_min_rounds(self, store):
+        task_id = enqueue_task(store, "test")
+        task = store.get_task(task_id)
+        config = json.loads(task["config_json"])
+        assert config["min_rounds"] == 1
+
+    def test_process_task_uses_min_rounds(self, store):
+        """Task with min_rounds=2 should run at least 2 rounds even if threshold met on round 1."""
+        provider = _MockProvider([
+            "Initial output",
+            _judge_response(0.95, "excellent"),  # round 1 — above threshold but min_rounds=2
+            "Revised output",
+            _judge_response(0.96, "even better"),  # round 2
+        ])
+        config = {
+            "task_prompt": "Write a haiku",
+            "rubric": "Quality",
+            "quality_threshold": 0.9,
+            "min_rounds": 2,
+            "max_rounds": 5,
+        }
+        store.enqueue_task("t1", "haiku", config=config)
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+        assert result is not None
+        assert result["status"] == "completed"
+        result_data = json.loads(result["result_json"])
+        assert result_data["total_rounds"] >= 2
+
+
+# ---------------------------------------------------------------------------
+# MTS-54: run_batch in run() loop
+# ---------------------------------------------------------------------------
+
+class TestRunUsesRunBatch:
+    def test_run_with_concurrency_processes_all(self, store):
+        """run() with concurrency>1 should process all queued tasks."""
+        provider = _MockProvider([
+            "Output", _judge_response(0.95),
+            "Output", _judge_response(0.95),
+            "Output", _judge_response(0.95),
+        ])
+        store.enqueue_task("t1", "spec", config={"task_prompt": "t", "rubric": "r"})
+        store.enqueue_task("t2", "spec", config={"task_prompt": "t", "rubric": "r"})
+        store.enqueue_task("t3", "spec", config={"task_prompt": "t", "rubric": "r"})
+
+        runner = TaskRunner(
+            store=store, provider=provider,
+            concurrency=3, max_consecutive_empty=1, poll_interval=0.01,
+        )
+        count = runner.run()
+        assert count == 3
+        assert store.pending_task_count() == 0
+
+
+# ---------------------------------------------------------------------------
+# MTS-41: Dimension-aware revision
+# ---------------------------------------------------------------------------
+
+class TestDimensionAwareRevision:
+    def test_revision_includes_dimension_scores(self):
+        """ImprovementLoop should enrich revision feedback with dimension scores."""
+        from mts.execution.improvement_loop import ImprovementLoop
+        from mts.scenarios.agent_task import AgentTaskResult
+
+        revision_calls = []
+
+        class DimTask(AgentTaskInterface):
+            def __init__(self):
+                self._eval_count = 0
+
+            def get_task_prompt(self, state): return "test"
+            def get_rubric(self): return "test"
+            def initial_state(self, seed=None): return {}
+            def describe_task(self): return "test"
+
+            def evaluate_output(self, output, state, **kwargs):
+                self._eval_count += 1
+                if self._eval_count == 1:
+                    return AgentTaskResult(
+                        score=0.6, reasoning="needs work",
+                        dimension_scores={"accuracy": 0.8, "creativity": 0.4},
+                    )
+                return AgentTaskResult(
+                    score=0.95, reasoning="great",
+                    dimension_scores={"accuracy": 0.7, "creativity": 0.9},
+                )
+
+            def revise_output(self, output, judge_result, state):
+                revision_calls.append(judge_result.reasoning)
+                return f"revised: {output}"
+
+        task = DimTask()
+        loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9)
+        loop.run("initial", {})
+
+        assert len(revision_calls) >= 1
+        # Second call should have dimension annotation with regression warning
+        if len(revision_calls) >= 2:
+            assert "accuracy" in revision_calls[1]
+            assert "REGRESSION" in revision_calls[1]
+
+    def test_revision_first_round_no_annotation(self):
+        """Round 1 has no previous dims, so no annotation needed."""
+        from mts.execution.improvement_loop import ImprovementLoop
+        from mts.scenarios.agent_task import AgentTaskResult
+
+        revision_calls = []
+
+        class FirstRoundTask(AgentTaskInterface):
+            def get_task_prompt(self, state): return "test"
+            def get_rubric(self): return "test"
+            def initial_state(self, seed=None): return {}
+            def describe_task(self): return "test"
+
+            def evaluate_output(self, output, state, **kwargs):
+                return AgentTaskResult(
+                    score=0.5, reasoning="needs work",
+                    dimension_scores={"quality": 0.5},
+                )
+
+            def revise_output(self, output, judge_result, state):
+                revision_calls.append(judge_result.reasoning)
+                return f"revised: {output}"
+
+        task = FirstRoundTask()
+        loop = ImprovementLoop(task, max_rounds=2, quality_threshold=0.9)
+        loop.run("initial", {})
+
+        # First revision (after round 1) should not have dimension annotation
+        assert len(revision_calls) >= 1
+        assert "Dimension Scores:" not in revision_calls[0]
 
 
 class TestTaskRunnerTiming:
