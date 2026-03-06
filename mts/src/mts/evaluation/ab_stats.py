@@ -6,6 +6,7 @@ odds ratios, and confidence intervals.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import comb
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,8 +104,6 @@ def _binomial_p_value(successes: int, n: int) -> float:
 
 def _exact_binomial_two_sided(k: int, n: int) -> float:
     """Compute exact two-sided binomial p-value without scipy."""
-    from math import comb
-
     # P(X = i) for Binomial(n, 0.5)
     p_k = comb(n, k) / (2**n)
 

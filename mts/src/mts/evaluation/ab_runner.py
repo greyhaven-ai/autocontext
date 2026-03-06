@@ -44,11 +44,11 @@ class ABTestResult:
 
     def treatment_wins(self) -> int:
         """Count of runs where treatment outscored baseline."""
-        return sum(1 for t, b in zip(self.treatment_scores, self.baseline_scores, strict=False) if t > b)
+        return sum(1 for t, b in zip(self.treatment_scores, self.baseline_scores, strict=True) if t > b)
 
     def baseline_wins(self) -> int:
         """Count of runs where baseline outscored treatment."""
-        return sum(1 for t, b in zip(self.treatment_scores, self.baseline_scores, strict=False) if b > t)
+        return sum(1 for t, b in zip(self.treatment_scores, self.baseline_scores, strict=True) if b > t)
 
 
 class ABTestRunner:
@@ -80,7 +80,12 @@ class ABTestRunner:
         return result
 
     def _run_condition(self, env_overrides: dict[str, str], run_id: str) -> RunSummary:
-        """Run a single condition with environment overrides."""
+        """Run a single condition with environment overrides.
+
+        Env vars are set only during ``load_settings()`` then restored
+        immediately, before ``runner.run()`` starts threads.  This avoids
+        thread-unsafe mutation of ``os.environ`` during execution.
+        """
         original_env: dict[str, str | None] = {}
         for k, v in env_overrides.items():
             original_env[k] = os.environ.get(k)
@@ -88,15 +93,17 @@ class ABTestRunner:
 
         try:
             settings = load_settings()
-            runner = GenerationRunner(settings)
-            return runner.run(
-                scenario_name=self._config.scenario,
-                generations=self._config.generations_per_run,
-                run_id=run_id,
-            )
         finally:
+            # Restore env BEFORE runner.run() starts threads
             for k, orig in original_env.items():
                 if orig is None:
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = orig
+
+        runner = GenerationRunner(settings)
+        return runner.run(
+            scenario_name=self._config.scenario,
+            generations=self._config.generations_per_run,
+            run_id=run_id,
+        )
