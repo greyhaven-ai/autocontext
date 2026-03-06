@@ -41,6 +41,7 @@ export type { TaskQueueRow, HumanFeedbackRow } from "./storage/index.js";
 // Execution
 export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improvement-loop.js";
 export type { ImprovementLoopOpts } from "./execution/improvement-loop.js";
+export { cleanRevisionOutput } from "./execution/output-cleaner.js";
 export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
 export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
 export { JudgeExecutor } from "./execution/judge-executor.js";

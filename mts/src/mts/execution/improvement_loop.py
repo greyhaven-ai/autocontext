@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Literal
 
+from mts.execution.output_cleaner import clean_revision_output
 from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 logger = logging.getLogger(__name__)
@@ -180,6 +181,7 @@ class ImprovementLoop:
                             ),
                             state,
                         )
+                        revised = clean_revision_output(revised)
                     else:
                         # No prior feedback — skip revision, just re-judge next round
                         logger.info("no prior feedback available, retrying judge next round")
@@ -253,6 +255,7 @@ class ImprovementLoop:
 
             if round_num < self.max_rounds:
                 revised = self.task.revise_output(current_output, result, state)
+                revised = clean_revision_output(revised)
                 if revised == current_output:
                     logger.info("revise_output returned unchanged output, stopping")
                     termination_reason = "unchanged_output"
