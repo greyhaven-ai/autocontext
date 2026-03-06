@@ -58,4 +58,6 @@ def test_strategy_summary_truncated() -> None:
     report = FailureReport.from_tournament(
         summary, previous_best=0.5, threshold=0.005, strategy=long_strategy,
     )
-    assert len(report.strategy_summary) <= 200
+    # Truncated to 200 chars + "..." ellipsis indicator
+    assert len(report.strategy_summary) <= 203
+    assert report.strategy_summary.endswith("...")
