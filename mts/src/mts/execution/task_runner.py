@@ -59,7 +59,7 @@ class TaskConfig:
         )
 
 
-def _serialize_result(result: ImprovementResult) -> str:
+def _serialize_result(result: ImprovementResult, duration_ms: int | None = None) -> str:
     """Serialize an ImprovementResult to JSON."""
     rounds = []
     for r in result.rounds:
@@ -70,13 +70,16 @@ def _serialize_result(result: ImprovementResult) -> str:
             "dimension_scores": r.dimension_scores,
             "is_revision": r.is_revision,
         })
-    return json.dumps({
+    data: dict[str, object] = {
         "rounds": rounds,
         "best_score": result.best_score,
         "best_round": result.best_round,
         "total_rounds": result.total_rounds,
         "met_threshold": result.met_threshold,
-    })
+    }
+    if duration_ms is not None:
+        data["duration_ms"] = duration_ms
+    return json.dumps(data)
 
 
 class SimpleAgentTask(AgentTaskInterface):
@@ -268,6 +271,7 @@ class TaskRunner:
                 quality_threshold=config.quality_threshold,
             )
 
+            start_time = time.monotonic()
             result = loop.run(
                 initial_output=initial_output,
                 state={},
@@ -275,6 +279,7 @@ class TaskRunner:
                 required_concepts=config.required_concepts,
                 calibration_examples=config.calibration_examples,
             )
+            duration_ms = int((time.monotonic() - start_time) * 1000)
 
             self.store.complete_task(
                 task_id=task_id,
@@ -282,7 +287,7 @@ class TaskRunner:
                 best_output=result.best_output,
                 total_rounds=result.total_rounds,
                 met_threshold=result.met_threshold,
-                result_json=_serialize_result(result),
+                result_json=_serialize_result(result, duration_ms=duration_ms),
             )
 
             logger.info(

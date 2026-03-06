@@ -344,3 +344,55 @@ class TestSerialization:
         assert data["met_threshold"] is True
         assert len(data["rounds"]) == 2
         assert data["rounds"][1]["is_revision"] is True
+
+    def test_serialize_result_with_duration(self):
+        result = ImprovementResult(
+            rounds=[
+                RoundResult(round_number=1, output="out1", score=0.9, reasoning="ok"),
+            ],
+            best_output="out1",
+            best_score=0.9,
+            best_round=1,
+            total_rounds=1,
+            met_threshold=True,
+        )
+        serialized = _serialize_result(result, duration_ms=1234)
+        data = json.loads(serialized)
+        assert data["duration_ms"] == 1234
+
+    def test_serialize_result_without_duration(self):
+        result = ImprovementResult(
+            rounds=[
+                RoundResult(round_number=1, output="out1", score=0.9, reasoning="ok"),
+            ],
+            best_output="out1",
+            best_score=0.9,
+            best_round=1,
+            total_rounds=1,
+            met_threshold=True,
+        )
+        serialized = _serialize_result(result)
+        data = json.loads(serialized)
+        assert "duration_ms" not in data
+
+
+class TestTaskRunnerTiming:
+    def test_completed_task_includes_duration(self, store):
+        """Completed tasks should have duration_ms in result_json."""
+        provider = _MockProvider([
+            "Initial output",
+            _judge_response(0.95, "excellent"),
+        ])
+        config = {"task_prompt": "Write a haiku", "rubric": "Quality and form", "quality_threshold": 0.9}
+        store.enqueue_task("t1", "haiku", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        assert result["status"] == "completed"
+        result_data = json.loads(result["result_json"])
+        assert "duration_ms" in result_data
+        assert isinstance(result_data["duration_ms"], (int, float))
+        assert result_data["duration_ms"] >= 0
+        assert result_data["duration_ms"] < 60000  # sanity: mock task shouldn't take a minute
