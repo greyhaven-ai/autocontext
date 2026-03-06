@@ -74,6 +74,24 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
                 if not isinstance(key, str) or not key.strip():
                     errors.append(f"required_context_keys[{i}] must be a non-empty string")
 
+    # Detect prompts that reference external data without providing sample_input
+    _data_reference_patterns = [
+        "you will be provided with",
+        "given the following data",
+        "analyze the following",
+        "using the provided",
+        "based on the data below",
+    ]
+    if spec.sample_input is None:
+        prompt_lower = spec.task_prompt.lower()
+        for pattern in _data_reference_patterns:
+            if pattern in prompt_lower:
+                errors.append(
+                    f"task_prompt references external data ('{pattern}') but sample_input is None; "
+                    "set sample_input to provide the data that will be embedded in the prompt"
+                )
+                break
+
     return errors
 
 

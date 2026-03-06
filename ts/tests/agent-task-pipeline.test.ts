@@ -305,3 +305,33 @@ describe("AgentTaskCreator", () => {
     expect(specData.required_concepts).toEqual(["context folding"]);
   });
 });
+
+describe("sampleInput wiring", () => {
+  it("embeds sampleInput in getTaskPrompt", () => {
+    const spec: AgentTaskSpec = {
+      ...SAMPLE_SPEC,
+      taskPrompt: "Analyze the following data.",
+      sampleInput: '{"users": [{"name": "Alice"}]}',
+    };
+    const task = createAgentTask({ spec, name: "data_test" });
+    const prompt = task.getTaskPrompt({});
+    expect(prompt).toContain("Analyze the following data");
+    expect(prompt).toContain('{"users"');
+  });
+
+  it("includes sampleInput in initialState", () => {
+    const spec: AgentTaskSpec = {
+      ...SAMPLE_SPEC,
+      sampleInput: "some data",
+    };
+    const task = createAgentTask({ spec, name: "data_test" });
+    const state = task.initialState();
+    expect(state.sampleInput).toBe("some data");
+  });
+
+  it("no sampleInput leaves prompt unchanged", () => {
+    const task = createAgentTask({ spec: SAMPLE_SPEC, name: "basic" });
+    const prompt = task.getTaskPrompt({});
+    expect(prompt).toBe(SAMPLE_SPEC.taskPrompt);
+  });
+});
