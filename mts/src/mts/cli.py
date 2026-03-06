@@ -295,6 +295,83 @@ def tui(
             tui_proc.terminate()
 
 
+@app.command("ab-test")
+def ab_test(
+    scenario: str = typer.Option("grid_ctf", "--scenario", help="Scenario to test"),
+    baseline: str = typer.Option(
+        "MTS_RLM_ENABLED=false", "--baseline", help="Comma-separated KEY=VALUE env overrides for baseline",
+    ),
+    treatment: str = typer.Option(
+        "MTS_RLM_ENABLED=true", "--treatment", help="Comma-separated KEY=VALUE env overrides for treatment",
+    ),
+    runs: int = typer.Option(5, "--runs", min=1, help="Runs per condition"),
+    gens: int = typer.Option(3, "--gens", min=1, help="Generations per run"),
+    seed: int = typer.Option(42, "--seed", help="Random seed for condition ordering"),
+) -> None:
+    """Run paired A/B test comparing two MTS configurations."""
+    from mts.evaluation.ab_runner import ABTestConfig, ABTestRunner
+    from mts.evaluation.ab_stats import mcnemar_test
+
+    def _parse_env(env_str: str) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for pair in env_str.split(","):
+            pair = pair.strip()
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                result[k.strip()] = v.strip()
+        return result
+
+    baseline_env = _parse_env(baseline)
+    treatment_env = _parse_env(treatment)
+
+    config = ABTestConfig(
+        scenario=scenario,
+        baseline_env=baseline_env,
+        treatment_env=treatment_env,
+        runs_per_condition=runs,
+        generations_per_run=gens,
+        seed=seed,
+    )
+
+    console.print(f"[bold]A/B Test: {scenario}[/bold]")
+    console.print(f"  Baseline:  {baseline_env}")
+    console.print(f"  Treatment: {treatment_env}")
+    console.print(f"  Runs: {runs}, Gens: {gens}, Seed: {seed}")
+    console.print()
+
+    runner = ABTestRunner(config)
+    result = runner.run()
+
+    # Results table
+    table = Table(title="A/B Test Results")
+    table.add_column("Run", justify="right")
+    table.add_column("Baseline Score", justify="right")
+    table.add_column("Treatment Score", justify="right")
+    table.add_column("Winner")
+    for i, (b, t) in enumerate(
+        zip(result.baseline_scores, result.treatment_scores, strict=True),
+    ):
+        winner = "Treatment" if t > b else ("Baseline" if b > t else "Tie")
+        table.add_row(str(i), f"{b:.4f}", f"{t:.4f}", winner)
+    console.print(table)
+
+    console.print(f"\n[bold]Mean delta:[/bold] {result.mean_delta():+.4f}")
+    console.print(f"[bold]Treatment wins:[/bold] {result.treatment_wins()}")
+    console.print(f"[bold]Baseline wins:[/bold] {result.baseline_wins()}")
+
+    # McNemar's test
+    threshold = 0.5
+    baseline_passed = [s >= threshold for s in result.baseline_scores]
+    treatment_passed = [s >= threshold for s in result.treatment_scores]
+    if any(baseline_passed) or any(treatment_passed):
+        stats = mcnemar_test(baseline_passed=baseline_passed, treatment_passed=treatment_passed)
+        console.print(f"\n[bold]McNemar's p-value:[/bold] {stats.p_value:.4f}")
+        if stats.significant:
+            console.print("[green]Result is statistically significant (p < 0.05)[/green]")
+        else:
+            console.print("[yellow]Result is not statistically significant[/yellow]")
+
+
 @app.command("mcp-serve")
 def mcp_serve() -> None:
     """Start MTS MCP server on stdio for Claude Code integration."""
