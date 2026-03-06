@@ -49,3 +49,38 @@ def test_empty_current_accepts_anything() -> None:
     guard = PlaybookGuard()
     result = guard.check("", "New playbook content")
     assert result.approved
+
+
+def test_rejects_empty_proposed_when_current_non_empty() -> None:
+    current = "## Strategy\n- Important content"
+    guard = PlaybookGuard()
+    result = guard.check(current, "")
+    assert not result.approved
+    assert "empty" in result.reason.lower()
+
+
+def test_rejects_missing_end_marker() -> None:
+    current = "<!-- PLAYBOOK_START -->\nContent\n<!-- PLAYBOOK_END -->"
+    proposed = "<!-- PLAYBOOK_START -->\nContent without end marker"
+    guard = PlaybookGuard()
+    result = guard.check(current, proposed)
+    assert not result.approved
+    assert "PLAYBOOK_END" in result.reason
+
+
+def test_checks_lessons_markers() -> None:
+    current = "<!-- LESSONS_START -->\n- Lesson 1\n<!-- LESSONS_END -->"
+    proposed = "No lessons markers here"
+    guard = PlaybookGuard()
+    result = guard.check(current, proposed)
+    assert not result.approved
+    assert "LESSONS_START" in result.reason
+
+
+def test_checks_competitor_hints_markers() -> None:
+    current = "<!-- COMPETITOR_HINTS_START -->\nHints\n<!-- COMPETITOR_HINTS_END -->"
+    proposed = "Updated content without hints markers, long enough to pass shrinkage check easily"
+    guard = PlaybookGuard()
+    result = guard.check(current, proposed)
+    assert not result.approved
+    assert "COMPETITOR_HINTS_START" in result.reason
