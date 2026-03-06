@@ -436,8 +436,8 @@ class TestSampleInputWiring:
 
 class TestValidatorExternalDataReference:
     def test_warns_when_prompt_references_data_without_sample_input(self) -> None:
-        from mts.scenarios.custom.agent_task_validator import validate_spec
         from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from mts.scenarios.custom.agent_task_validator import validate_spec
 
         spec = AgentTaskSpec(
             task_prompt="You will be provided with customer data. Analyze it.",
@@ -447,8 +447,8 @@ class TestValidatorExternalDataReference:
         assert any("sample_input" in e for e in errors)
 
     def test_no_warning_when_sample_input_provided(self) -> None:
-        from mts.scenarios.custom.agent_task_validator import validate_spec
         from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from mts.scenarios.custom.agent_task_validator import validate_spec
 
         spec = AgentTaskSpec(
             task_prompt="You will be provided with customer data. Analyze it.",
