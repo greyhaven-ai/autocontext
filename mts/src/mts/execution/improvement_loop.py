@@ -131,6 +131,9 @@ class ImprovementLoop:
         dimension_trajectory: dict[str, list[float]] = {}
         threshold_met_round: int | None = None
 
+        # Dimension pinning: lock dimension names after first successful evaluation
+        pinned_dimensions: list[str] | None = None
+
         # Plateau detection state
         prev_valid_score: float | None = None
         plateau_count = 0
@@ -144,6 +147,7 @@ class ImprovementLoop:
                 reference_context=reference_context,
                 required_concepts=required_concepts,
                 calibration_examples=calibration_examples,
+                pinned_dimensions=pinned_dimensions,
             )
             total_internal_retries += result.internal_retries
 
@@ -199,6 +203,10 @@ class ImprovementLoop:
             # Successful judge evaluation
             consecutive_failures = 0
             last_good_result = round_result
+
+            # Pin dimension names after first successful evaluation
+            if pinned_dimensions is None and result.dimension_scores:
+                pinned_dimensions = sorted(result.dimension_scores.keys())
 
             # Build dimension trajectory from valid rounds
             for dim, dim_score in result.dimension_scores.items():

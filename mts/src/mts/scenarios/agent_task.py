@@ -29,6 +29,7 @@ class AgentTaskInterface(ABC):
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
     ) -> AgentTaskResult:
         """Evaluate the agent's output against the task criteria."""
 

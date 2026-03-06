@@ -108,6 +108,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
       referenceContext?: string;
       requiredConcepts?: string[];
       calibrationExamples?: Array<Record<string, unknown>>;
+      pinnedDimensions?: string[];
     },
   ): Promise<AgentTaskResult> {
     const judge = new LLMJudge({
@@ -121,6 +122,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
       referenceContext: opts?.referenceContext,
       requiredConcepts: opts?.requiredConcepts,
       calibrationExamples: opts?.calibrationExamples,
+      pinnedDimensions: opts?.pinnedDimensions,
     });
     return {
       score: result.score,

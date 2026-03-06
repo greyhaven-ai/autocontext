@@ -77,6 +77,7 @@ export interface AgentTaskInterface {
       referenceContext?: string;
       requiredConcepts?: string[];
       calibrationExamples?: Array<Record<string, unknown>>;
+      pinnedDimensions?: string[];
     },
   ): Promise<AgentTaskResult>;
 
