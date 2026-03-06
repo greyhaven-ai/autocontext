@@ -117,6 +117,101 @@ describe("ImprovementLoop", () => {
     expect(result.terminationReason).toBe("consecutive_failures");
   });
 
+  it("calls verifyFacts and appends issues to reasoning", async () => {
+    let verifyCalled = false;
+    const task: AgentTaskInterface = {
+      getTaskPrompt: () => "test",
+      getRubric: () => "test rubric",
+      initialState: () => ({}),
+      describeTask: () => "test task",
+      evaluateOutput: async () => ({
+        score: 0.95,
+        reasoning: "good",
+        dimensionScores: {},
+      }),
+      reviseOutput: async (out) => `${out} [revised]`,
+      verifyFacts: async () => {
+        verifyCalled = true;
+        return { verified: false, issues: ["Date is wrong", "Name misspelled"] };
+      },
+    };
+    const loop = new ImprovementLoop({ task, maxRounds: 1, qualityThreshold: 0.9 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(verifyCalled).toBe(true);
+    expect(result.rounds[0].reasoning).toContain("Fact-check issues");
+    expect(result.rounds[0].reasoning).toContain("Date is wrong");
+    expect(result.rounds[0].reasoning).toContain("Name misspelled");
+    // Score should NOT be changed by verifyFacts
+    expect(result.bestScore).toBe(0.95);
+  });
+
+  it("threshold sensitivity: score 0.91 with threshold 0.90 does not stop immediately", async () => {
+    let evalCount = 0;
+    const task: AgentTaskInterface = {
+      getTaskPrompt: () => "test",
+      getRubric: () => "test rubric",
+      initialState: () => ({}),
+      describeTask: () => "test task",
+      evaluateOutput: async () => {
+        evalCount++;
+        // Round 1: 0.91 (within 0.02 of 0.90 threshold)
+        // Round 2: 0.91 (confirm stable)
+        return { score: 0.91, reasoning: `round ${evalCount}`, dimensionScores: {} };
+      },
+      reviseOutput: async (out) => `${out} [revised]`,
+    };
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.90 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.metThreshold).toBe(true);
+    // Should run at least 2 rounds since 0.91 is within 0.02 of 0.90
+    expect(result.totalRounds).toBe(2);
+    expect(evalCount).toBe(2);
+  });
+
+  it("threshold sensitivity: score clearly above threshold stops immediately", async () => {
+    let evalCount = 0;
+    const task: AgentTaskInterface = {
+      getTaskPrompt: () => "test",
+      getRubric: () => "test rubric",
+      initialState: () => ({}),
+      describeTask: () => "test task",
+      evaluateOutput: async () => {
+        evalCount++;
+        return { score: 0.95, reasoning: "great", dimensionScores: {} };
+      },
+      reviseOutput: async (out) => `${out} [revised]`,
+    };
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.90 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.metThreshold).toBe(true);
+    expect(result.totalRounds).toBe(1);
+    expect(evalCount).toBe(1);
+  });
+
+  it("threshold sensitivity: score drops below threshold after near-miss continues", async () => {
+    let evalCount = 0;
+    const task: AgentTaskInterface = {
+      getTaskPrompt: () => "test",
+      getRubric: () => "test rubric",
+      initialState: () => ({}),
+      describeTask: () => "test task",
+      evaluateOutput: async () => {
+        evalCount++;
+        // Round 1: 0.91 (near threshold), Round 2: 0.85 (drops below)
+        // Round 3: 0.91 (near again), Round 4: 0.91 (confirmed)
+        const scores = [0.91, 0.85, 0.91, 0.91];
+        const score = scores[Math.min(evalCount - 1, scores.length - 1)];
+        return { score, reasoning: `round ${evalCount}`, dimensionScores: {} };
+      },
+      reviseOutput: async (out) => `${out} [revised]`,
+    };
+    const loop = new ImprovementLoop({ task, maxRounds: 5, qualityThreshold: 0.90 });
+    const result = await loop.run({ initialOutput: "test", state: {} });
+    expect(result.metThreshold).toBe(true);
+    // Should have run 4 rounds: near-miss, drop, near-miss, confirmed
+    expect(result.totalRounds).toBe(4);
+  });
+
   it("carries forward last good feedback on failure", async () => {
     const revisions: string[] = [];
     const task = makeFakeTask(

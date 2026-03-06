@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mts.execution.judge import JudgeResult, LLMJudge
+from mts.execution.judge import JudgeResult, LLMJudge, _detect_generated_dimensions
 from mts.execution.judge_executor import JudgeExecutor
 from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
@@ -126,6 +126,49 @@ class TestLLMJudge:
         result = judge.evaluate("t", "o")
         assert result.parse_method == "plaintext"
         assert result.score == 0.8
+
+
+class TestDetectGeneratedDimensions:
+    def test_empty_keys(self) -> None:
+        assert _detect_generated_dimensions([], "any rubric") is False
+
+    def test_keys_match_rubric(self) -> None:
+        assert _detect_generated_dimensions(
+            ["code_quality", "test_coverage"],
+            "Evaluate code quality and test coverage",
+        ) is False
+
+    def test_keys_not_in_rubric(self) -> None:
+        assert _detect_generated_dimensions(
+            ["originality", "flair"],
+            "Evaluate clarity and accuracy",
+        ) is True
+
+    def test_case_insensitive(self) -> None:
+        assert _detect_generated_dimensions(
+            ["Code_Quality"],
+            "Check code quality carefully",
+        ) is False
+
+
+class TestDimensionsWereGenerated:
+    def test_generated_true_when_dims_not_in_rubric(self) -> None:
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.8, "reasoning": "ok", '
+            '"dimensions": {"originality": 0.9, "flair": 0.7}}<!-- JUDGE_RESULT_END -->'
+        )
+        judge = LLMJudge(model="test", rubric="Evaluate clarity and accuracy", llm_fn=make_mock_llm(resp))
+        result = judge.evaluate("Write something", "Hello")
+        assert result.dimensions_were_generated is True
+
+    def test_generated_false_when_dims_match_rubric(self) -> None:
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.8, "reasoning": "ok", '
+            '"dimensions": {"clarity": 0.9, "accuracy": 0.7}}<!-- JUDGE_RESULT_END -->'
+        )
+        judge = LLMJudge(model="test", rubric="Evaluate clarity and accuracy", llm_fn=make_mock_llm(resp))
+        result = judge.evaluate("Write something", "Hello")
+        assert result.dimensions_were_generated is False
 
 
 class TestParseJudgeResponse:

@@ -175,6 +175,7 @@ export interface TaskRunnerOpts {
   model?: string;
   pollInterval?: number;
   maxConsecutiveEmpty?: number;
+  concurrency?: number;
 }
 
 export class TaskRunner {
@@ -183,6 +184,7 @@ export class TaskRunner {
   private model: string;
   private pollInterval: number;
   private maxConsecutiveEmpty: number;
+  private concurrency: number;
   private _shutdown = false;
   private _tasksProcessed = 0;
 
@@ -192,6 +194,7 @@ export class TaskRunner {
     this.model = opts.model ?? "claude-sonnet-4-20250514";
     this.pollInterval = opts.pollInterval ?? 60;
     this.maxConsecutiveEmpty = opts.maxConsecutiveEmpty ?? 0;
+    this.concurrency = Math.max(1, opts.concurrency ?? 1);
   }
 
   get tasksProcessed(): number {
@@ -204,6 +207,21 @@ export class TaskRunner {
     await this.processTask(task);
     this._tasksProcessed++;
     return this.store.getTask(task.id) ?? null;
+  }
+
+  async runBatch(limit?: number): Promise<number> {
+    const maxTasks = limit ?? this.concurrency;
+    const tasks: TaskQueueRow[] = [];
+    for (let i = 0; i < maxTasks; i++) {
+      const task = this.store.dequeueTask();
+      if (!task) break;
+      tasks.push(task);
+    }
+    if (tasks.length === 0) return 0;
+
+    await Promise.all(tasks.map((task) => this.processTask(task)));
+    this._tasksProcessed += tasks.length;
+    return tasks.length;
   }
 
   shutdown(): void {

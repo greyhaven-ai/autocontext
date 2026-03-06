@@ -70,3 +70,15 @@ class AgentTaskInterface(ABC):
         Override to implement LLM-based revision using judge reasoning.
         """
         return output
+
+    def verify_facts(
+        self,
+        output: str,
+        state: dict,
+    ) -> dict | None:
+        """Optional: verify factual claims in the output.
+
+        Returns a dict with ``verified`` (bool) and ``issues`` (list[str]),
+        or ``None`` if no verification is available.  Default returns None.
+        """
+        return None

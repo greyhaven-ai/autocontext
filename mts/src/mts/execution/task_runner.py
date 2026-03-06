@@ -6,6 +6,7 @@ and stores results. Designed to run as a long-lived background process.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import signal
@@ -194,6 +195,7 @@ class TaskRunner:
         poll_interval: float = 60.0,
         max_consecutive_empty: int = 0,  # 0 = run forever
         notifier: Notifier | None = None,
+        concurrency: int = 1,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -201,6 +203,7 @@ class TaskRunner:
         self.poll_interval = poll_interval
         self.max_consecutive_empty = max_consecutive_empty
         self.notifier = notifier
+        self.concurrency = max(1, concurrency)
         self._shutdown = False
         self._tasks_processed = 0
 
@@ -238,6 +241,37 @@ class TaskRunner:
         self._process_task(task)
         self._tasks_processed += 1
         return self.store.get_task(task["id"])
+
+    def run_batch(self, limit: int | None = None) -> int:
+        """Process up to *limit* (default: ``self.concurrency``) tasks concurrently.
+
+        Uses ``concurrent.futures.ThreadPoolExecutor`` so that each task
+        runs in its own thread.  Returns the number of tasks successfully
+        processed (failed tasks are not counted).
+        """
+        max_tasks = limit if limit is not None else self.concurrency
+        tasks: list[dict[str, Any]] = []
+        for _ in range(max_tasks):
+            task = self.store.dequeue_task()
+            if task is None:
+                break
+            tasks.append(task)
+        if not tasks:
+            return 0
+
+        succeeded = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+            futures = {pool.submit(self._process_task, t): t for t in tasks}
+            for future in concurrent.futures.as_completed(futures):
+                task = futures[future]
+                try:
+                    future.result()
+                    succeeded += 1
+                except Exception:
+                    logger.exception("task %s raised in batch", task.get("id", "?"))
+
+        self._tasks_processed += succeeded
+        return succeeded
 
     def shutdown(self) -> None:
         """Signal the runner to stop after current task completes."""
