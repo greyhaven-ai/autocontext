@@ -10,6 +10,14 @@ from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
 
 _VALID_OUTPUT_FORMATS = {"free_text", "json_schema", "code"}
 
+_DATA_REFERENCE_PATTERNS = [
+    "you will be provided with",
+    "given the following data",
+    "analyze the following",
+    "using the provided",
+    "based on the data below",
+]
+
 
 def validate_spec(spec: AgentTaskSpec) -> list[str]:
     """Validate an AgentTaskSpec for completeness and correctness."""
@@ -75,16 +83,9 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
                     errors.append(f"required_context_keys[{i}] must be a non-empty string")
 
     # Detect prompts that reference external data without providing sample_input
-    _data_reference_patterns = [
-        "you will be provided with",
-        "given the following data",
-        "analyze the following",
-        "using the provided",
-        "based on the data below",
-    ]
     if spec.sample_input is None:
         prompt_lower = spec.task_prompt.lower()
-        for pattern in _data_reference_patterns:
+        for pattern in _DATA_REFERENCE_PATTERNS:
             if pattern in prompt_lower:
                 errors.append(
                     f"task_prompt references external data ('{pattern}') but sample_input is None; "
