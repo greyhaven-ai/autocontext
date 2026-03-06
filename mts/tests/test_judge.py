@@ -28,7 +28,7 @@ class TestLLMJudge:
         assert result.dimension_scores["clarity"] == 0.9
         assert result.dimension_scores["accuracy"] == 0.8
         assert len(result.raw_responses) == 1
-        assert result.parse_method == "raw_json"
+        assert result.parse_method == "markers"
         assert result.internal_retries == 0
 
     def test_multi_sample_averaging(self) -> None:
@@ -178,7 +178,7 @@ class TestParseJudgeResponse:
         assert score == 0.85
         assert reasoning == "Good output"
         assert dims == {"clarity": 0.9, "accuracy": 0.8}
-        assert parse_method == "raw_json"
+        assert parse_method == "markers"
 
     def test_missing_markers_no_score(self) -> None:
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
@@ -209,8 +209,8 @@ class TestParseJudgeResponse:
         assert score == 1.0
         assert dims["x"] == 0.0
 
-    def test_raw_json_tried_first(self) -> None:
-        """Raw JSON strategy is tried first and succeeds even with markers present."""
+    def test_markers_tried_first(self) -> None:
+        """Marker strategy is tried first when markers are present."""
         judge = LLMJudge(model="t", rubric="r", llm_fn=make_mock_llm())
         resp = (
             '<!-- JUDGE_RESULT_START -->{"score": 0.9, "reasoning": "markers"}'
@@ -218,7 +218,7 @@ class TestParseJudgeResponse:
         )
         score, reasoning, dims, parse_method = judge._parse_judge_response(resp)
         assert score == 0.9
-        assert parse_method == "raw_json"
+        assert parse_method == "markers"
 
     def test_reasoning_clean_no_prefix(self) -> None:
         """Reasoning should not contain parse method prefixes."""

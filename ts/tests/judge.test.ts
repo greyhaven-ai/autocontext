@@ -48,7 +48,7 @@ describe("LLMJudge", () => {
     expect(result.reasoning).toContain("Well done");
     expect(result.reasoning).not.toContain("[raw_json parse]");
     expect(result.dimensionScores.clarity).toBe(0.9);
-    expect(result.parseMethod).toBe("raw_json"); // raw_json tried first, matches JSON in markers
+    expect(result.parseMethod).toBe("markers"); // markers tried first now
     expect(result.internalRetries).toBe(0);
   });
 

@@ -243,25 +243,25 @@ class LLMJudge:
         """Parse judge response using multiple strategies.
 
         Strategies (tried in order):
-        1. Raw JSON: find a JSON object with "score" key anywhere in response
-        2. Code block: extract JSON from ```json ... ``` blocks
-        3. Marker-based: extract JSON between <!-- JUDGE_RESULT_START/END -->
+        1. Marker-based: extract JSON between <!-- JUDGE_RESULT_START/END -->
+        2. Raw JSON: find a JSON object with "score" key anywhere in response
+        3. Code block: extract JSON from ```json ... ``` blocks
         4. Plain text: regex for "score": X.XX or "Score: X.XX" patterns
         """
-        # Strategy 1: Raw JSON object with "score" key (most common in practice)
+        # Strategy 1: Marker-based (preferred — matches our system prompt format)
+        data = self._try_marker_parse(response)
+        if data is not None:
+            return self._extract_from_dict(data, "markers")
+
+        # Strategy 2: Raw JSON object with "score" key
         data = self._try_raw_json_parse(response)
         if data is not None:
             return self._extract_from_dict(data, "raw_json")
 
-        # Strategy 2: JSON code block
+        # Strategy 3: JSON code block
         data = self._try_code_block_parse(response)
         if data is not None:
             return self._extract_from_dict(data, "code_block")
-
-        # Strategy 3: Marker-based
-        data = self._try_marker_parse(response)
-        if data is not None:
-            return self._extract_from_dict(data, "markers")
 
         # Strategy 4: Plain text score extraction
         result = self._try_plaintext_parse(response)
