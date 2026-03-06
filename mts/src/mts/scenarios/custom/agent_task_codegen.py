@@ -101,6 +101,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                     score=result.score,
                     reasoning=result.reasoning,
                     dimension_scores=result.dimension_scores,
+                    internal_retries=result.internal_retries,
                 )
 
             def get_rubric(self) -> str:

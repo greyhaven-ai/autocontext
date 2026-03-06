@@ -16,6 +16,7 @@ import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
+import { AgentTaskResultSchema } from "../src/types/index.js";
 
 // --- Helpers ---
 
@@ -333,5 +334,19 @@ describe("sampleInput wiring", () => {
     const task = createAgentTask({ spec: SAMPLE_SPEC, name: "basic" });
     const prompt = task.getTaskPrompt({});
     expect(prompt).toBe(SAMPLE_SPEC.taskPrompt);
+  });
+});
+
+describe("internalRetries surfacing", () => {
+  it("AgentTaskResult accepts internalRetries", () => {
+    const result = { score: 0.8, reasoning: "ok", dimensionScores: {}, internalRetries: 2 };
+    const parsed = AgentTaskResultSchema.parse(result);
+    expect(parsed.internalRetries).toBe(2);
+  });
+
+  it("AgentTaskResult defaults internalRetries to 0", () => {
+    const result = { score: 0.8, reasoning: "ok" };
+    const parsed = AgentTaskResultSchema.parse(result);
+    expect(parsed.internalRetries).toBe(0);
   });
 });

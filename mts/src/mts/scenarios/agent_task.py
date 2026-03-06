@@ -11,6 +11,7 @@ class AgentTaskResult:
     score: float  # 0.0 to 1.0
     reasoning: str
     dimension_scores: dict[str, float] = field(default_factory=dict)
+    internal_retries: int = 0
 
 
 class AgentTaskInterface(ABC):
