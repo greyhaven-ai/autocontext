@@ -2,9 +2,9 @@
  * Multi-strategy judge response parser.
  *
  * Strategies (tried in order):
- * 1. Raw JSON: { "score": ... } anywhere in text
- * 2. Code block: ```json ... ```
- * 3. Marker-based: <!-- JUDGE_RESULT_START/END -->
+ * 1. Marker-based: <!-- JUDGE_RESULT_START/END --> (preferred — matches system prompt format)
+ * 2. Raw JSON: { "score": ... } anywhere in text
+ * 3. Code block: ```json ... ```
  * 4. Plain text: "Score: 0.85" patterns
  */
 
@@ -127,17 +127,17 @@ function tryPlaintextParse(response: string): ParsedJudge | null {
 }
 
 export function parseJudgeResponse(response: string): ParsedJudge {
-  // Strategy 1: Raw JSON (most common in practice)
+  // Strategy 1: Markers (preferred — matches our system prompt format)
+  const markerData = tryMarkerParse(response);
+  if (markerData) return extractFromDict(markerData, "markers");
+
+  // Strategy 2: Raw JSON
   const rawData = tryRawJsonParse(response);
   if (rawData) return extractFromDict(rawData, "raw_json");
 
-  // Strategy 2: Code block
+  // Strategy 3: Code block
   const codeData = tryCodeBlockParse(response);
   if (codeData) return extractFromDict(codeData, "code_block");
-
-  // Strategy 3: Markers
-  const markerData = tryMarkerParse(response);
-  if (markerData) return extractFromDict(markerData, "markers");
 
   // Strategy 4: Plaintext
   const plainResult = tryPlaintextParse(response);

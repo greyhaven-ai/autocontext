@@ -227,6 +227,9 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     bestScore: result.bestScore,
     bestRound: result.bestRound,
     judgeFailures: result.judgeFailures,
+    terminationReason: result.terminationReason,
+    totalInternalRetries: result.totalInternalRetries,
+    dimensionTrajectory: result.dimensionTrajectory,
     bestOutput: result.bestOutput,
     durationMs,
   }, null, 2));

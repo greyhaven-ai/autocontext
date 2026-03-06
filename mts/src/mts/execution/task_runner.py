@@ -140,6 +140,7 @@ class SimpleAgentTask(AgentTaskInterface):
             score=judge_result.score,
             reasoning=judge_result.reasoning,
             dimension_scores=judge_result.dimension_scores,
+            internal_retries=judge_result.internal_retries,
         )
 
     def generate_output(self, state: dict) -> str:

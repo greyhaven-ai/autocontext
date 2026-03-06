@@ -64,6 +64,7 @@ class ImprovementResult:
     judge_failures: int = 0
     termination_reason: TerminationReason = "max_rounds"
     dimension_trajectory: dict[str, list[float]] = field(default_factory=dict)
+    total_internal_retries: int = 0
 
     @property
     def improved(self) -> bool:
@@ -122,6 +123,7 @@ class ImprovementLoop:
         best_score = 0.0
         best_round = 1
         judge_failures = 0
+        total_internal_retries = 0
         last_good_result = None  # Carry forward for revision on judge failure
         consecutive_failures = 0
         max_consecutive_failures = 3  # Safety valve
@@ -143,6 +145,7 @@ class ImprovementLoop:
                 required_concepts=required_concepts,
                 calibration_examples=calibration_examples,
             )
+            total_internal_retries += result.internal_retries
 
             failed = _is_parse_failure(result.score, result.reasoning)
 
@@ -269,6 +272,7 @@ class ImprovementLoop:
                         judge_failures=judge_failures,
                         termination_reason="threshold_met",
                         dimension_trajectory=dimension_trajectory,
+                        total_internal_retries=total_internal_retries,
                     )
 
                 if near_threshold and round_num < self.max_rounds:
@@ -291,6 +295,7 @@ class ImprovementLoop:
                         judge_failures=judge_failures,
                         termination_reason="threshold_met",
                         dimension_trajectory=dimension_trajectory,
+                        total_internal_retries=total_internal_retries,
                     )
             else:
                 # Score dropped below threshold after previously meeting it
@@ -315,4 +320,5 @@ class ImprovementLoop:
             judge_failures=judge_failures,
             termination_reason=termination_reason,
             dimension_trajectory=dimension_trajectory,
+            total_internal_retries=total_internal_retries,
         )

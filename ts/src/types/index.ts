@@ -62,6 +62,7 @@ export const AgentTaskResultSchema = z.object({
   score: z.number().min(0).max(1),
   reasoning: z.string(),
   dimensionScores: z.record(z.number().min(0).max(1)).default({}),
+  internalRetries: z.number().int().min(0).default(0),
 });
 
 export type AgentTaskResult = z.infer<typeof AgentTaskResultSchema>;
@@ -163,6 +164,7 @@ export const ImprovementResultSchema = z.object({
     ])
     .default("max_rounds"),
   dimensionTrajectory: z.record(z.array(z.number())).default({}),
+  totalInternalRetries: z.number().int().min(0).default(0),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;

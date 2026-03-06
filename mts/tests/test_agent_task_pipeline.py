@@ -377,3 +377,126 @@ class TestAgentTaskCreator:
                 assert spec_data["required_concepts"] == ["context folding"]
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
+
+
+class TestSampleInputWiring:
+    def test_sample_input_embedded_in_prompt(self) -> None:
+        from mts.scenarios.custom.agent_task_codegen import generate_agent_task_class
+        from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+
+        spec = AgentTaskSpec(
+            task_prompt="Analyze the following data and provide insights.",
+            judge_rubric="Evaluate analysis quality",
+            sample_input='{"users": [{"name": "Alice", "age": 30}]}',
+        )
+        source = generate_agent_task_class(spec, name="data_analysis")
+        ns: dict = {}
+        exec(compile(source, "<test>", "exec"), ns)  # noqa: S102
+        cls = ns["DataAnalysisAgentTask"]
+        instance = cls()
+        prompt = instance.get_task_prompt({})
+        assert '{"users"' in prompt
+        assert "Analyze the following data" in prompt
+
+    def test_sample_input_in_initial_state(self) -> None:
+        from mts.scenarios.custom.agent_task_codegen import generate_agent_task_class
+        from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+
+        spec = AgentTaskSpec(
+            task_prompt="Analyze data.",
+            judge_rubric="Evaluate",
+            sample_input="some input data",
+        )
+        source = generate_agent_task_class(spec, name="data_task")
+        ns: dict = {}
+        exec(compile(source, "<test>", "exec"), ns)  # noqa: S102
+        cls = ns["DataTaskAgentTask"]
+        instance = cls()
+        state = instance.initial_state()
+        assert state.get("sample_input") == "some input data"
+
+    def test_no_sample_input_unchanged(self) -> None:
+        from mts.scenarios.custom.agent_task_codegen import generate_agent_task_class
+        from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+
+        spec = AgentTaskSpec(
+            task_prompt="Write a haiku.",
+            judge_rubric="Evaluate quality",
+        )
+        source = generate_agent_task_class(spec, name="haiku_task")
+        ns: dict = {}
+        exec(compile(source, "<test>", "exec"), ns)  # noqa: S102
+        cls = ns["HaikuTaskAgentTask"]
+        instance = cls()
+        prompt = instance.get_task_prompt({})
+        assert prompt == "Write a haiku."
+        state = instance.initial_state()
+        assert "sample_input" not in state
+
+
+class TestValidatorExternalDataReference:
+    def test_warns_when_prompt_references_data_without_sample_input(self) -> None:
+        from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from mts.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt="You will be provided with customer data. Analyze it.",
+            judge_rubric="Evaluate analysis",
+        )
+        errors = validate_spec(spec)
+        assert any("sample_input" in e for e in errors)
+
+    def test_no_warning_when_sample_input_provided(self) -> None:
+        from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from mts.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt="You will be provided with customer data. Analyze it.",
+            judge_rubric="Evaluate analysis",
+            sample_input='{"customers": []}',
+        )
+        errors = validate_spec(spec)
+        assert not any("sample_input" in e for e in errors)
+
+
+class TestInternalRetriesSurfacing:
+    def test_agent_task_result_has_internal_retries(self) -> None:
+        from mts.scenarios.agent_task import AgentTaskResult
+
+        result = AgentTaskResult(score=0.8, reasoning="ok", internal_retries=2)
+        assert result.internal_retries == 2
+
+    def test_agent_task_result_defaults_to_zero(self) -> None:
+        from mts.scenarios.agent_task import AgentTaskResult
+
+        result = AgentTaskResult(score=0.8, reasoning="ok")
+        assert result.internal_retries == 0
+
+
+class TestImprovementResultRetries:
+    def test_improvement_result_has_total_internal_retries(self) -> None:
+        from mts.execution.improvement_loop import ImprovementResult, RoundResult
+
+        result = ImprovementResult(
+            rounds=[RoundResult(round_number=1, output="o", score=0.8, reasoning="ok")],
+            best_output="o",
+            best_score=0.8,
+            best_round=1,
+            total_rounds=1,
+            met_threshold=False,
+            total_internal_retries=3,
+        )
+        assert result.total_internal_retries == 3
+
+    def test_improvement_result_defaults_to_zero(self) -> None:
+        from mts.execution.improvement_loop import ImprovementResult
+
+        result = ImprovementResult(
+            rounds=[],
+            best_output="",
+            best_score=0.0,
+            best_round=0,
+            total_rounds=0,
+            met_threshold=False,
+        )
+        assert result.total_internal_retries == 0

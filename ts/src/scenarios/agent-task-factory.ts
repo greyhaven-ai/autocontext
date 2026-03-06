@@ -27,7 +27,11 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
     spec,
 
     getTaskPrompt(_state: Record<string, unknown>): string {
-      return spec.taskPrompt;
+      let prompt = spec.taskPrompt;
+      if (spec.sampleInput) {
+        prompt += "\n\n## Input Data\n" + spec.sampleInput;
+      }
+      return prompt;
     },
 
     getRubric(): string {
@@ -39,7 +43,11 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
     },
 
     initialState(seed?: number): Record<string, unknown> {
-      return { taskName: name, outputFormat: spec.outputFormat, seed: seed ?? null };
+      const state: Record<string, unknown> = { taskName: name, outputFormat: spec.outputFormat, seed: seed ?? null };
+      if (spec.sampleInput) {
+        state.sampleInput = spec.sampleInput;
+      }
+      return state;
     },
 
     async evaluateOutput(
@@ -70,6 +78,7 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
         score: result.score,
         reasoning: result.reasoning,
         dimensionScores: result.dimensionScores ?? {},
+        internalRetries: result.internalRetries ?? 0,
       };
     },
 

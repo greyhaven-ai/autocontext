@@ -27,10 +27,30 @@ class ScenarioCreator:
         self.model = model
         self.knowledge_root = knowledge_root
 
+    # NOTE: Keep in sync with AgentTaskCreator.STOP_WORDS and ts/src/scenarios/agent-task-creator.ts
+    STOP_WORDS = frozenset({
+        "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
+        "i", "want", "need", "make", "create", "build", "write", "develop", "implement",
+        "that", "can", "should", "could", "would", "will", "must",
+        "agent", "tool", "system",
+        "clear", "well", "good", "great", "very", "really", "also", "just", "structured",
+        "it", "we", "they", "is", "are", "was", "be", "do", "does",
+        "to", "in", "on", "at", "by", "which", "what", "how",
+        "game",
+    })
+
     def derive_name(self, description: str) -> str:
-        words = re.sub(r"[^a-z0-9\s]", "", description.lower()).split()
-        meaningful = [w for w in words if w not in {"a", "an", "the", "game", "where", "you", "with", "and", "or", "of", "for"}]
-        name_words = meaningful[:3] if len(meaningful) >= 3 else meaningful[:2] if meaningful else ["custom"]
+        words = re.sub(r"[^a-z0-9\s]", " ", description.lower()).split()
+        meaningful = [w for w in words if w not in self.STOP_WORDS]
+        # Prefer longer words (>3 chars) as they are more likely domain-specific nouns
+        sorted_words = sorted(meaningful, key=len, reverse=True)
+        seen: set[str] = set()
+        unique: list[str] = []
+        for w in sorted_words:
+            if w not in seen:
+                seen.add(w)
+                unique.append(w)
+        name_words = unique[:3] if len(unique) >= 3 else unique[:2] if unique else ["custom"]
         return "_".join(name_words)
 
     def generate_spec(self, description: str) -> ScenarioSpec:

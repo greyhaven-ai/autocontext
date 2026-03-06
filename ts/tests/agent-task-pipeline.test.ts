@@ -16,6 +16,7 @@ import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
+import { AgentTaskResultSchema } from "../src/types/index.js";
 
 // --- Helpers ---
 
@@ -303,5 +304,49 @@ describe("AgentTaskCreator", () => {
     expect(specData.reference_context).toBe("RLM = Recursive Language Model");
     expect(specData.reference_sources).toEqual(["https://example.com/rlm"]);
     expect(specData.required_concepts).toEqual(["context folding"]);
+  });
+});
+
+describe("sampleInput wiring", () => {
+  it("embeds sampleInput in getTaskPrompt", () => {
+    const spec: AgentTaskSpec = {
+      ...SAMPLE_SPEC,
+      taskPrompt: "Analyze the following data.",
+      sampleInput: '{"users": [{"name": "Alice"}]}',
+    };
+    const task = createAgentTask({ spec, name: "data_test" });
+    const prompt = task.getTaskPrompt({});
+    expect(prompt).toContain("Analyze the following data");
+    expect(prompt).toContain('{"users"');
+  });
+
+  it("includes sampleInput in initialState", () => {
+    const spec: AgentTaskSpec = {
+      ...SAMPLE_SPEC,
+      sampleInput: "some data",
+    };
+    const task = createAgentTask({ spec, name: "data_test" });
+    const state = task.initialState();
+    expect(state.sampleInput).toBe("some data");
+  });
+
+  it("no sampleInput leaves prompt unchanged", () => {
+    const task = createAgentTask({ spec: SAMPLE_SPEC, name: "basic" });
+    const prompt = task.getTaskPrompt({});
+    expect(prompt).toBe(SAMPLE_SPEC.taskPrompt);
+  });
+});
+
+describe("internalRetries surfacing", () => {
+  it("AgentTaskResult accepts internalRetries", () => {
+    const result = { score: 0.8, reasoning: "ok", dimensionScores: {}, internalRetries: 2 };
+    const parsed = AgentTaskResultSchema.parse(result);
+    expect(parsed.internalRetries).toBe(2);
+  });
+
+  it("AgentTaskResult defaults internalRetries to 0", () => {
+    const result = { score: 0.8, reasoning: "ok" };
+    const parsed = AgentTaskResultSchema.parse(result);
+    expect(parsed.internalRetries).toBe(0);
   });
 });

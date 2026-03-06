@@ -122,8 +122,6 @@ class AgentTaskCreator:
         if spec.revision_prompt is not None:
             spec_data["revision_prompt"] = spec.revision_prompt
         if spec.sample_input is not None:
-            # TODO: wire sample_input into codegen so the generated class
-            # can inject it into get_task_prompt / initial_state
             spec_data["sample_input"] = spec.sample_input
         spec_file.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
 

@@ -40,6 +40,7 @@ export class JudgeExecutor {
         score: 0.0,
         reasoning: `Context validation failed: ${contextErrors.join("; ")}`,
         dimensionScores: {},
+        internalRetries: 0,
       };
     }
 

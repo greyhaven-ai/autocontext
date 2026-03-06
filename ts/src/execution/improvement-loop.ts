@@ -75,6 +75,7 @@ export class ImprovementLoop {
     let lastGoodResult: RoundResult | null = null;
     let consecutiveFailures = 0;
     const maxConsecutiveFailures = 3;
+    let totalInternalRetries = 0;
     let terminationReason: ImprovementResult["terminationReason"] = "max_rounds";
     const dimensionTrajectory: Record<string, number[]> = {};
     let thresholdMetRound: number | null = null;
@@ -89,6 +90,7 @@ export class ImprovementLoop {
         requiredConcepts: opts.requiredConcepts,
         calibrationExamples: opts.calibrationExamples,
       });
+      totalInternalRetries += result.internalRetries ?? 0;
 
       const failed = isParseFailure(result.score, result.reasoning);
 
@@ -119,6 +121,7 @@ export class ImprovementLoop {
               score: lastGoodResult.score,
               reasoning: lastGoodResult.reasoning,
               dimensionScores: lastGoodResult.dimensionScores,
+              internalRetries: 0,
             };
             const revised = await this.task.reviseOutput(
               currentOutput,
@@ -211,6 +214,7 @@ export class ImprovementLoop {
             judgeFailures,
             terminationReason,
             dimensionTrajectory,
+            totalInternalRetries,
           };
         }
 
@@ -230,6 +234,7 @@ export class ImprovementLoop {
             judgeFailures,
             terminationReason,
             dimensionTrajectory,
+            totalInternalRetries,
           };
         }
       } else {
@@ -262,6 +267,7 @@ export class ImprovementLoop {
       judgeFailures,
       terminationReason,
       dimensionTrajectory,
+      totalInternalRetries,
     };
   }
 }

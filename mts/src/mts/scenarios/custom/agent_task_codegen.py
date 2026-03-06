@@ -38,6 +38,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
     max_rounds_repr = repr(spec.max_rounds)
     quality_threshold_repr = repr(spec.quality_threshold)
     revision_prompt_repr = repr(spec.revision_prompt)
+    sample_input_repr = repr(spec.sample_input)
 
     source = textwrap.dedent(f'''\
         from __future__ import annotations
@@ -62,9 +63,13 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
             _max_rounds = {max_rounds_repr}
             _quality_threshold = {quality_threshold_repr}
             _revision_prompt = {revision_prompt_repr}
+            _sample_input = {sample_input_repr}
 
             def get_task_prompt(self, state: dict) -> str:
-                return self._task_prompt
+                prompt = self._task_prompt
+                if self._sample_input:
+                    prompt += "\\n\\n## Input Data\\n" + self._sample_input
+                return prompt
 
             def evaluate_output(
                 self,
@@ -96,13 +101,17 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                     score=result.score,
                     reasoning=result.reasoning,
                     dimension_scores=result.dimension_scores,
+                    internal_retries=result.internal_retries,
                 )
 
             def get_rubric(self) -> str:
                 return self._rubric
 
             def initial_state(self, seed: int | None = None) -> dict:
-                return {{"task_name": "{safe_name}", "output_format": self._output_format}}
+                state = {{"task_name": "{safe_name}", "output_format": self._output_format}}
+                if self._sample_input:
+                    state["sample_input"] = self._sample_input
+                return state
 
             def describe_task(self) -> str:
                 return self._task_prompt
