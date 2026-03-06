@@ -78,6 +78,7 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
         score: result.score,
         reasoning: result.reasoning,
         dimensionScores: result.dimensionScores ?? {},
+        internalRetries: result.internalRetries ?? 0,
       };
     },
 

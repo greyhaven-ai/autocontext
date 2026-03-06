@@ -457,3 +457,46 @@ class TestValidatorExternalDataReference:
         )
         errors = validate_spec(spec)
         assert not any("sample_input" in e for e in errors)
+
+
+class TestInternalRetriesSurfacing:
+    def test_agent_task_result_has_internal_retries(self) -> None:
+        from mts.scenarios.agent_task import AgentTaskResult
+
+        result = AgentTaskResult(score=0.8, reasoning="ok", internal_retries=2)
+        assert result.internal_retries == 2
+
+    def test_agent_task_result_defaults_to_zero(self) -> None:
+        from mts.scenarios.agent_task import AgentTaskResult
+
+        result = AgentTaskResult(score=0.8, reasoning="ok")
+        assert result.internal_retries == 0
+
+
+class TestImprovementResultRetries:
+    def test_improvement_result_has_total_internal_retries(self) -> None:
+        from mts.execution.improvement_loop import ImprovementResult, RoundResult
+
+        result = ImprovementResult(
+            rounds=[RoundResult(round_number=1, output="o", score=0.8, reasoning="ok")],
+            best_output="o",
+            best_score=0.8,
+            best_round=1,
+            total_rounds=1,
+            met_threshold=False,
+            total_internal_retries=3,
+        )
+        assert result.total_internal_retries == 3
+
+    def test_improvement_result_defaults_to_zero(self) -> None:
+        from mts.execution.improvement_loop import ImprovementResult
+
+        result = ImprovementResult(
+            rounds=[],
+            best_output="",
+            best_score=0.0,
+            best_round=0,
+            total_rounds=0,
+            met_threshold=False,
+        )
+        assert result.total_internal_retries == 0

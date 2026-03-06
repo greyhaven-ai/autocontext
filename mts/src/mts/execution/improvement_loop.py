@@ -64,6 +64,7 @@ class ImprovementResult:
     judge_failures: int = 0
     termination_reason: TerminationReason = "max_rounds"
     dimension_trajectory: dict[str, list[float]] = field(default_factory=dict)
+    total_internal_retries: int = 0
 
     @property
     def improved(self) -> bool:
