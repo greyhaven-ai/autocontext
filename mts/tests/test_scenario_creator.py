@@ -36,6 +36,21 @@ class TestDeriveName:
         assert len(name.split("_")) <= 3
 
 
+class TestDeriveNameImproved:
+    def test_prefers_longer_words(self, creator: ScenarioCreator) -> None:
+        """Longer words should sort first as they're more domain-specific."""
+        name = creator.derive_name("a game where you manage resources efficiently")
+        words = name.split("_")
+        assert "efficiently" in words or "resources" in words
+
+    def test_filters_expanded_stop_words(self, creator: ScenarioCreator) -> None:
+        """Words like 'create', 'build', 'implement' should be filtered."""
+        name = creator.derive_name("create a system to build agents that implement tools")
+        assert "create" not in name.split("_")
+        assert "build" not in name.split("_")
+        assert "implement" not in name.split("_")
+
+
 class TestParseSpecFromResponse:
     def test_valid_response(self) -> None:
         spec_data = {
