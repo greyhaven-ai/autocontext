@@ -80,6 +80,9 @@ export class ImprovementLoop {
     const dimensionTrajectory: Record<string, number[]> = {};
     let thresholdMetRound: number | null = null;
 
+    // Dimension pinning: lock dimension names after first successful evaluation
+    let pinnedDimensions: string[] | undefined;
+
     // Plateau detection state
     let prevValidScore: number | null = null;
     let plateauCount = 0;
@@ -89,6 +92,7 @@ export class ImprovementLoop {
         referenceContext: opts.referenceContext,
         requiredConcepts: opts.requiredConcepts,
         calibrationExamples: opts.calibrationExamples,
+        pinnedDimensions,
       });
       totalInternalRetries += result.internalRetries ?? 0;
 
@@ -139,6 +143,11 @@ export class ImprovementLoop {
       // Successful evaluation
       consecutiveFailures = 0;
       lastGoodResult = roundResult;
+
+      // Pin dimension names after first successful evaluation
+      if (pinnedDimensions === undefined && Object.keys(result.dimensionScores).length > 0) {
+        pinnedDimensions = Object.keys(result.dimensionScores).sort();
+      }
 
       // Build dimension trajectory from valid rounds
       for (const [dim, dimScore] of Object.entries(result.dimensionScores)) {

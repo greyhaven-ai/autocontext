@@ -123,6 +123,7 @@ class SimpleAgentTask(AgentTaskInterface):
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
     ) -> AgentTaskResult:
         judge = LLMJudge(
             model=self._model,
@@ -135,6 +136,7 @@ class SimpleAgentTask(AgentTaskInterface):
             reference_context=reference_context,
             required_concepts=required_concepts,
             calibration_examples=calibration_examples,
+            pinned_dimensions=pinned_dimensions,
         )
         return AgentTaskResult(
             score=judge_result.score,
