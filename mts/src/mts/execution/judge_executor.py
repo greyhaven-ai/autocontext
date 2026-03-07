@@ -16,6 +16,7 @@ class JudgeExecutor:
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
     ) -> AgentTaskResult:
         """Evaluate agent output using the task's evaluate_output method."""
         # Run context preparation if the task supports it
@@ -34,4 +35,5 @@ class JudgeExecutor:
             reference_context=reference_context,
             required_concepts=required_concepts,
             calibration_examples=calibration_examples,
+            pinned_dimensions=pinned_dimensions,
         )
