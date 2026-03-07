@@ -268,15 +268,23 @@ class TaskRunner:
             return 0
 
         succeeded = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as pool:
-            futures = {pool.submit(self._process_task, t): t for t in tasks}
-            for future in concurrent.futures.as_completed(futures):
-                task = futures[future]
-                try:
-                    future.result()
-                    succeeded += 1
-                except Exception:
-                    logger.exception("task %s raised in batch", task.get("id", "?"))
+        if len(tasks) == 1:
+            # Skip thread pool overhead for single tasks
+            try:
+                self._process_task(tasks[0])
+                succeeded = 1
+            except Exception:
+                logger.exception("task %s raised", tasks[0].get("id", "?"))
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+                futures = {pool.submit(self._process_task, t): t for t in tasks}
+                for future in concurrent.futures.as_completed(futures):
+                    task = futures[future]
+                    try:
+                        future.result()
+                        succeeded += 1
+                    except Exception:
+                        logger.exception("task %s raised in batch", task.get("id", "?"))
 
         self._tasks_processed += succeeded
         return succeeded
