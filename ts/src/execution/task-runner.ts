@@ -70,6 +70,8 @@ function serializeResult(result: ImprovementResult, durationMs?: number): string
     total_rounds: result.totalRounds,
     met_threshold: result.metThreshold,
     ...(durationMs != null ? { duration_ms: durationMs } : {}),
+    ...(result.durationMs != null ? { loop_duration_ms: result.durationMs } : {}),
+    ...(result.apiCalls ? { api_calls: result.apiCalls } : {}),
   });
 }
 

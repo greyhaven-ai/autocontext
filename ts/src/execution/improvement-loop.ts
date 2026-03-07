@@ -69,6 +69,8 @@ export class ImprovementLoop {
     requiredConcepts?: string[];
     calibrationExamples?: Array<Record<string, unknown>>;
   }): Promise<ImprovementResult> {
+    const loopStart = performance.now();
+    let apiCalls = 0;
     const rounds: RoundResult[] = [];
     let currentOutput = opts.initialOutput;
     let bestOutput = opts.initialOutput;
@@ -91,12 +93,15 @@ export class ImprovementLoop {
     let plateauCount = 0;
 
     for (let roundNum = 1; roundNum <= this.maxRounds; roundNum++) {
+      const roundStart = performance.now();
       const result = await this.task.evaluateOutput(currentOutput, opts.state, {
         referenceContext: opts.referenceContext,
         requiredConcepts: opts.requiredConcepts,
         calibrationExamples: opts.calibrationExamples,
         pinnedDimensions,
       });
+      apiCalls++;
+      const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
 
       const failed = isParseFailure(result.score, result.reasoning);
@@ -111,6 +116,7 @@ export class ImprovementLoop {
         judgeFailed: failed,
         worstDimension: undefined,
         worstDimensionScore: undefined,
+        roundDurationMs: roundMs,
       };
       rounds.push(roundResult);
 
@@ -241,6 +247,7 @@ export class ImprovementLoop {
         if (thresholdMetRound !== null) {
           // Threshold was met on a previous round too — confirmed stable
           terminationReason = "threshold_met";
+          const durationMs = Math.round(performance.now() - loopStart);
           return {
             rounds,
             bestOutput,
@@ -252,6 +259,8 @@ export class ImprovementLoop {
             terminationReason,
             dimensionTrajectory,
             totalInternalRetries,
+            durationMs,
+            apiCalls,
           };
         }
 
@@ -261,6 +270,7 @@ export class ImprovementLoop {
         } else {
           // Clearly above threshold — stop immediately
           terminationReason = "threshold_met";
+          const durationMs = Math.round(performance.now() - loopStart);
           return {
             rounds,
             bestOutput,
@@ -272,6 +282,8 @@ export class ImprovementLoop {
             terminationReason,
             dimensionTrajectory,
             totalInternalRetries,
+            durationMs,
+            apiCalls,
           };
         }
       } else {
@@ -294,6 +306,7 @@ export class ImprovementLoop {
       }
     }
 
+    const durationMs = Math.round(performance.now() - loopStart);
     return {
       rounds,
       bestOutput,
@@ -305,6 +318,8 @@ export class ImprovementLoop {
       terminationReason,
       dimensionTrajectory,
       totalInternalRetries,
+      durationMs,
+      apiCalls,
     };
   }
 }

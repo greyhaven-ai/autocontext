@@ -80,6 +80,10 @@ def _serialize_result(result: ImprovementResult, duration_ms: int | None = None)
     }
     if duration_ms is not None:
         data["duration_ms"] = duration_ms
+    if result.duration_ms is not None:
+        data["loop_duration_ms"] = result.duration_ms
+    if result.api_calls:
+        data["api_calls"] = result.api_calls
     return json.dumps(data)
 
 
