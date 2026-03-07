@@ -40,6 +40,7 @@ export interface ImprovementLoopOpts {
   minRounds?: number;
   maxScoreDelta?: number;
   capScoreJumps?: boolean;
+  dimensionThreshold?: number;
 }
 
 export class ImprovementLoop {
@@ -49,6 +50,7 @@ export class ImprovementLoop {
   private minRounds: number;
   private maxScoreDelta: number;
   private capScoreJumps: boolean;
+  private dimensionThreshold: number | null;
 
   constructor(opts: ImprovementLoopOpts) {
     this.task = opts.task;
@@ -57,6 +59,7 @@ export class ImprovementLoop {
     this.minRounds = Math.max(1, opts.minRounds ?? 1);
     this.maxScoreDelta = opts.maxScoreDelta ?? 0.5;
     this.capScoreJumps = opts.capScoreJumps ?? false;
+    this.dimensionThreshold = opts.dimensionThreshold ?? null;
   }
 
   async run(opts: {
@@ -106,6 +109,8 @@ export class ImprovementLoop {
         dimensionScores: result.dimensionScores,
         isRevision: roundNum > 1,
         judgeFailed: failed,
+        worstDimension: undefined,
+        worstDimensionScore: undefined,
       };
       rounds.push(roundResult);
 
@@ -143,6 +148,21 @@ export class ImprovementLoop {
       // Successful evaluation
       consecutiveFailures = 0;
       lastGoodResult = roundResult;
+
+      // Compute worst dimension for this round
+      const dimEntries = Object.entries(result.dimensionScores);
+      if (dimEntries.length > 0) {
+        let worstDim = dimEntries[0][0];
+        let worstScore = dimEntries[0][1];
+        for (const [dim, dimScore] of dimEntries) {
+          if (dimScore < worstScore) {
+            worstDim = dim;
+            worstScore = dimScore;
+          }
+        }
+        roundResult.worstDimension = worstDim;
+        roundResult.worstDimensionScore = worstScore;
+      }
 
       // Pin dimension names after first successful evaluation
       if (pinnedDimensions === undefined && Object.keys(result.dimensionScores).length > 0) {
@@ -206,7 +226,15 @@ export class ImprovementLoop {
       }
       prevValidScore = result.score;
 
-      if (effectiveScore >= this.qualityThreshold && roundNum >= this.minRounds) {
+      // Dimension threshold gate: all dimensions must meet minimum
+      let dimsOk = true;
+      if (this.dimensionThreshold !== null && Object.keys(result.dimensionScores).length > 0) {
+        dimsOk = Object.values(result.dimensionScores).every(
+          (v) => v >= this.dimensionThreshold!,
+        );
+      }
+
+      if (effectiveScore >= this.qualityThreshold && roundNum >= this.minRounds && dimsOk) {
         const nearThreshold =
           effectiveScore < this.qualityThreshold + NEAR_THRESHOLD_MARGIN;
 

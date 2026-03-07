@@ -143,6 +143,8 @@ export const RoundResultSchema = z.object({
   dimensionScores: z.record(z.number()).default({}),
   isRevision: z.boolean().default(false),
   judgeFailed: z.boolean().default(false),
+  worstDimension: z.string().nullish(),
+  worstDimensionScore: z.number().nullish(),
 });
 
 export type RoundResult = z.infer<typeof RoundResultSchema>;
