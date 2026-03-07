@@ -21,6 +21,7 @@ const PARSE_FAILURE_MARKERS = [
 const PLATEAU_EPSILON = 0.01;
 const NEAR_THRESHOLD_MARGIN = 0.02;
 const PLATEAU_PATIENCE = 2;
+const DIMENSION_DELTA_THRESHOLD = 0.05;
 
 export function isParseFailure(score: number, reasoning: string): boolean {
   if (score > 0) return false;
@@ -253,9 +254,9 @@ export class ImprovementLoop {
             let line = `  - ${dim}: ${dscore.toFixed(2)}`;
             if (dim in prevDims) {
               const delta = dscore - prevDims[dim];
-              if (delta < -0.05) {
-                line += ` (REGRESSION from ${prevDims[dim].toFixed(2)} — preserve this dimension)`;
-              } else if (delta > 0.05) {
+              if (delta < -DIMENSION_DELTA_THRESHOLD) {
+                line += ` (REGRESSION from ${prevDims[dim].toFixed(2)} -- preserve this dimension)`;
+              } else if (delta > DIMENSION_DELTA_THRESHOLD) {
                 line += ` (improved from ${prevDims[dim].toFixed(2)})`;
               }
             }
@@ -266,6 +267,7 @@ export class ImprovementLoop {
             score: result.score,
             reasoning: result.reasoning + dimAnnotation,
             dimensionScores: result.dimensionScores,
+            internalRetries: result.internalRetries,
           };
         }
         const revised = await this.task.reviseOutput(
