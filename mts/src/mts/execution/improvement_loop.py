@@ -22,6 +22,7 @@ TerminationReason = Literal[
 PLATEAU_EPSILON = 0.01
 PLATEAU_PATIENCE = 2
 NEAR_THRESHOLD_MARGIN = 0.02
+DIMENSION_DELTA_THRESHOLD = 0.05
 
 _PARSE_FAILURE_MARKERS = frozenset({
     "no parseable score found",
@@ -302,7 +303,29 @@ class ImprovementLoop:
                 threshold_met_round = None
 
             if round_num < self.max_rounds:
-                revised = self.task.revise_output(current_output, result, state)
+                # Enrich feedback with dimension scores + regression warnings (MTS-41)
+                revision_result = result
+                if result.dimension_scores and round_num > 1:
+                    prev_valid = [r for r in rounds[:-1] if not r.judge_failed]
+                    prev_dims = prev_valid[-1].dimension_scores if prev_valid else {}
+                    dim_lines = []
+                    for dim, dscore in sorted(result.dimension_scores.items()):
+                        line = f"  - {dim}: {dscore:.2f}"
+                        if dim in prev_dims:
+                            delta = dscore - prev_dims[dim]
+                            if delta < -DIMENSION_DELTA_THRESHOLD:
+                                line += f" (REGRESSION from {prev_dims[dim]:.2f} -- preserve this dimension)"
+                            elif delta > DIMENSION_DELTA_THRESHOLD:
+                                line += f" (improved from {prev_dims[dim]:.2f})"
+                        dim_lines.append(line)
+                    dim_annotation = "\n\nDimension Scores:\n" + "\n".join(dim_lines)
+                    revision_result = AgentTaskResult(
+                        score=result.score,
+                        reasoning=result.reasoning + dim_annotation,
+                        dimension_scores=result.dimension_scores,
+                        internal_retries=result.internal_retries,
+                    )
+                revised = self.task.revise_output(current_output, revision_result, state)
                 revised = clean_revision_output(revised)
                 if revised == current_output:
                     logger.info("revise_output returned unchanged output, stopping")

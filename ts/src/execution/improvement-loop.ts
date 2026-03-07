@@ -21,6 +21,7 @@ const PARSE_FAILURE_MARKERS = [
 const PLATEAU_EPSILON = 0.01;
 const NEAR_THRESHOLD_MARGIN = 0.02;
 const PLATEAU_PATIENCE = 2;
+const DIMENSION_DELTA_THRESHOLD = 0.05;
 
 export function isParseFailure(score: number, reasoning: string): boolean {
   if (score > 0) return false;
@@ -243,9 +244,35 @@ export class ImprovementLoop {
       }
 
       if (roundNum < this.maxRounds && this.task.reviseOutput) {
+        // Enrich feedback with dimension scores + regression warnings (MTS-41)
+        let revisionResult: AgentTaskResult = result;
+        if (Object.keys(result.dimensionScores).length > 0 && roundNum > 1) {
+          const prevValid = rounds.slice(0, -1).filter((r) => !r.judgeFailed);
+          const prevDims = prevValid.length > 0 ? prevValid[prevValid.length - 1].dimensionScores : {};
+          const dimLines: string[] = [];
+          for (const [dim, dscore] of Object.entries(result.dimensionScores).sort()) {
+            let line = `  - ${dim}: ${dscore.toFixed(2)}`;
+            if (dim in prevDims) {
+              const delta = dscore - prevDims[dim];
+              if (delta < -DIMENSION_DELTA_THRESHOLD) {
+                line += ` (REGRESSION from ${prevDims[dim].toFixed(2)} -- preserve this dimension)`;
+              } else if (delta > DIMENSION_DELTA_THRESHOLD) {
+                line += ` (improved from ${prevDims[dim].toFixed(2)})`;
+              }
+            }
+            dimLines.push(line);
+          }
+          const dimAnnotation = "\n\nDimension Scores:\n" + dimLines.join("\n");
+          revisionResult = {
+            score: result.score,
+            reasoning: result.reasoning + dimAnnotation,
+            dimensionScores: result.dimensionScores,
+            internalRetries: result.internalRetries,
+          };
+        }
         const revised = await this.task.reviseOutput(
           currentOutput,
-          result,
+          revisionResult,
           opts.state,
         );
         const cleaned = cleanRevisionOutput(revised);

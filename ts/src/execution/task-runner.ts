@@ -18,6 +18,7 @@ import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
 export interface TaskConfig {
   maxRounds: number;
   qualityThreshold: number;
+  minRounds: number;
   referenceContext?: string;
   requiredConcepts?: string[];
   calibrationExamples?: Array<Record<string, unknown>>;
@@ -30,6 +31,7 @@ export interface TaskConfig {
 const TaskConfigSchema = z.object({
   max_rounds: z.number().int().positive().optional(),
   quality_threshold: z.number().min(0).max(1).optional(),
+  min_rounds: z.number().int().positive().optional(),
   reference_context: z.string().optional(),
   required_concepts: z.array(z.string()).optional(),
   calibration_examples: z.array(z.record(z.unknown())).optional(),
@@ -40,12 +42,13 @@ const TaskConfigSchema = z.object({
 }).passthrough();
 
 function parseTaskConfig(json: string | null): TaskConfig {
-  if (!json) return { maxRounds: 5, qualityThreshold: 0.9 };
+  if (!json) return { maxRounds: 5, qualityThreshold: 0.9, minRounds: 1 };
   const raw = JSON.parse(json);
   const d = TaskConfigSchema.parse(raw);
   return {
     maxRounds: d.max_rounds ?? 5,
     qualityThreshold: d.quality_threshold ?? 0.9,
+    minRounds: d.min_rounds ?? 1,
     referenceContext: d.reference_context,
     requiredConcepts: d.required_concepts,
     calibrationExamples: d.calibration_examples,
@@ -250,6 +253,7 @@ export class TaskRunner {
         task: agentTask,
         maxRounds: config.maxRounds,
         qualityThreshold: config.qualityThreshold,
+        minRounds: config.minRounds,
       });
 
       const startTime = performance.now();
@@ -287,6 +291,7 @@ export function enqueueTask(
     requiredConcepts?: string[];
     maxRounds?: number;
     qualityThreshold?: number;
+    minRounds?: number;
     initialOutput?: string;
     priority?: number;
   },
@@ -295,6 +300,7 @@ export function enqueueTask(
   const config: Record<string, unknown> = {};
   if (opts?.maxRounds != null) config.max_rounds = opts.maxRounds;
   if (opts?.qualityThreshold != null) config.quality_threshold = opts.qualityThreshold;
+  if (opts?.minRounds != null) config.min_rounds = opts.minRounds;
   if (opts?.taskPrompt) config.task_prompt = opts.taskPrompt;
   if (opts?.rubric) config.rubric = opts.rubric;
   if (opts?.referenceContext) config.reference_context = opts.referenceContext;
