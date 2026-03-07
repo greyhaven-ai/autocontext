@@ -27,6 +27,25 @@ const EXAMPLE_SPEC = {
   required_concepts: null,
   context_preparation: null,
   required_context_keys: null,
+  calibration_examples: [
+    {
+      human_score: 0.3,
+      human_notes:
+        "Returns max instead of second-largest; no edge case handling",
+      agent_output: "def second_largest(lst):\n    return max(lst)",
+    },
+    {
+      human_score: 0.9,
+      human_notes:
+        "Correct logic, clean code, handles edge cases with clear error messages",
+      agent_output:
+        "def second_largest(lst):\n" +
+        "    unique = sorted(set(lst), reverse=True)\n" +
+        "    if len(unique) < 2:\n" +
+        "        raise ValueError('Need at least 2 unique values')\n" +
+        "    return unique[1]",
+    },
+  ],
   max_rounds: 1,
   quality_threshold: 0.9,
   revision_prompt: null,
@@ -70,7 +89,7 @@ ${SPEC_END}
 - \`judge_rubric\` must list specific evaluation dimensions with criteria
 - \`output_format\` must be one of: free_text, json_schema, code
 - \`judge_model\` should be a valid model identifier
-- \`calibration_examples\` (optional) — provide at least 2 calibration examples: one high-quality example (~0.9 score) and one low-quality example (~0.3 score). These help the judge produce consistent scores
+- \`calibration_examples\` — You MUST include at least 2 calibration examples: one low-quality output (~0.3 score) and one high-quality output (~0.9 score). Each example must have \`human_score\`, \`human_notes\`, and \`agent_output\` fields. These anchor the judge's scoring scale and are critical for consistent evaluation.
 - \`max_rounds\` (optional, default 1) — maximum improvement rounds
 - \`quality_threshold\` (optional, default 0.9) — stop improving when score >= this
 

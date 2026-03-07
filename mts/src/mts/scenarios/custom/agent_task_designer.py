@@ -29,6 +29,24 @@ _EXAMPLE_SPEC = {
     "required_concepts": None,
     "context_preparation": None,
     "required_context_keys": None,
+    "calibration_examples": [
+        {
+            "human_score": 0.3,
+            "human_notes": "Returns max instead of second-largest; no edge case handling",
+            "agent_output": "def second_largest(lst):\n    return max(lst)",
+        },
+        {
+            "human_score": 0.9,
+            "human_notes": "Correct logic, clean code, handles edge cases with clear error messages",
+            "agent_output": (
+                "def second_largest(lst):\n"
+                "    unique = sorted(set(lst), reverse=True)\n"
+                "    if len(unique) < 2:\n"
+                "        raise ValueError('Need at least 2 unique values')\n"
+                "    return unique[1]"
+            ),
+        },
+    ],
     "max_rounds": 1,
     "quality_threshold": 0.9,
     "revision_prompt": None,
@@ -79,8 +97,10 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     "Use this when the task requires research, document loading, or other preparation steps.\n"
     "- `required_context_keys` (optional) — state dictionary keys that must be present after context preparation. "
     "Used to validate that preparation completed successfully.\n"
-    "- `calibration_examples` (optional) — provide at least 2 calibration examples: one high-quality example "
-    "(~0.9 score) and one low-quality example (~0.3 score). These help the judge produce consistent scores.\n"
+    "- `calibration_examples` — You MUST include at least 2 calibration examples: one low-quality output "
+    "(~0.3 score) and one high-quality output (~0.9 score). Each example must have `human_score`, "
+    "`human_notes`, and `agent_output` fields. These anchor the judge's scoring scale and are critical "
+    "for consistent evaluation.\n"
     "- `max_rounds` (optional, default 1) — maximum improvement rounds. Set >1 to enable iterative refinement.\n"
     "- `quality_threshold` (optional, default 0.9) — stop improving when score >= this value.\n"
     "- `revision_prompt` (optional) — instructions for how the agent should revise its output based on judge feedback.\n\n"
