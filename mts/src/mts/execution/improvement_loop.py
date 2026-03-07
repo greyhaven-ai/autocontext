@@ -7,6 +7,7 @@ Stops when quality_threshold is met or max_rounds is exhausted.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -51,6 +52,7 @@ class RoundResult:
     judge_failed: bool = False
     worst_dimension: str | None = None
     worst_dimension_score: float | None = None
+    round_duration_ms: int | None = None
 
 
 @dataclass(slots=True)
@@ -67,6 +69,8 @@ class ImprovementResult:
     termination_reason: TerminationReason = "max_rounds"
     dimension_trajectory: dict[str, list[float]] = field(default_factory=dict)
     total_internal_retries: int = 0
+    duration_ms: int | None = None
+    api_calls: int = 0
 
     @property
     def improved(self) -> bool:
@@ -121,6 +125,8 @@ class ImprovementLoop:
         don't count toward max_rounds, and the last good feedback is
         carried forward for revision prompts.
         """
+        loop_start = time.monotonic()
+        api_calls = 0
         rounds: list[RoundResult] = []
         current_output = initial_output
         best_output = initial_output
@@ -145,6 +151,7 @@ class ImprovementLoop:
         for round_num in range(1, self.max_rounds + 1):
             logger.info("improvement loop round %d/%d", round_num, self.max_rounds)
 
+            round_start = time.monotonic()
             result = self.task.evaluate_output(
                 current_output,
                 state,
@@ -153,6 +160,8 @@ class ImprovementLoop:
                 calibration_examples=calibration_examples,
                 pinned_dimensions=pinned_dimensions,
             )
+            api_calls += 1
+            round_ms = int((time.monotonic() - round_start) * 1000)
             total_internal_retries += result.internal_retries
 
             failed = _is_parse_failure(result.score, result.reasoning)
@@ -166,6 +175,7 @@ class ImprovementLoop:
                 is_revision=round_num > 1,
                 judge_failed=failed,
             )
+            round_result.round_duration_ms = round_ms
             rounds.append(round_result)
 
             if failed:
@@ -285,6 +295,7 @@ class ImprovementLoop:
                 if threshold_met_round is not None:
                     # Threshold was met on a previous round too — confirmed stable
                     logger.info("quality threshold %.2f confirmed stable at round %d", self.quality_threshold, round_num)
+                    duration_ms = int((time.monotonic() - loop_start) * 1000)
                     return ImprovementResult(
                         rounds=rounds,
                         best_output=best_output,
@@ -296,6 +307,8 @@ class ImprovementLoop:
                         termination_reason="threshold_met",
                         dimension_trajectory=dimension_trajectory,
                         total_internal_retries=total_internal_retries,
+                        duration_ms=duration_ms,
+                        api_calls=api_calls,
                     )
 
                 if near_threshold and round_num < self.max_rounds:
@@ -308,6 +321,7 @@ class ImprovementLoop:
                 else:
                     # Clearly above threshold — stop immediately
                     logger.info("quality threshold %.2f met at round %d", self.quality_threshold, round_num)
+                    duration_ms = int((time.monotonic() - loop_start) * 1000)
                     return ImprovementResult(
                         rounds=rounds,
                         best_output=best_output,
@@ -319,6 +333,8 @@ class ImprovementLoop:
                         termination_reason="threshold_met",
                         dimension_trajectory=dimension_trajectory,
                         total_internal_retries=total_internal_retries,
+                        duration_ms=duration_ms,
+                        api_calls=api_calls,
                     )
             else:
                 # Score dropped below threshold after previously meeting it
@@ -333,6 +349,7 @@ class ImprovementLoop:
                     break
                 current_output = revised
 
+        duration_ms = int((time.monotonic() - loop_start) * 1000)
         return ImprovementResult(
             rounds=rounds,
             best_output=best_output,
@@ -344,4 +361,6 @@ class ImprovementLoop:
             termination_reason=termination_reason,
             dimension_trajectory=dimension_trajectory,
             total_internal_retries=total_internal_retries,
+            duration_ms=duration_ms,
+            api_calls=api_calls,
         )

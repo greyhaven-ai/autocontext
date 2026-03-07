@@ -145,6 +145,7 @@ export const RoundResultSchema = z.object({
   judgeFailed: z.boolean().default(false),
   worstDimension: z.string().nullish(),
   worstDimensionScore: z.number().nullish(),
+  roundDurationMs: z.number().int().min(0).nullish(),
 });
 
 export type RoundResult = z.infer<typeof RoundResultSchema>;
@@ -168,6 +169,8 @@ export const ImprovementResultSchema = z.object({
     .default("max_rounds"),
   dimensionTrajectory: z.record(z.array(z.number())).default({}),
   totalInternalRetries: z.number().int().min(0).default(0),
+  durationMs: z.number().int().min(0).nullish(),
+  apiCalls: z.number().int().min(0).default(0),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;
