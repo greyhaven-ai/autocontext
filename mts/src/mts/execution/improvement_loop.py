@@ -49,6 +49,8 @@ class RoundResult:
     dimension_scores: dict[str, float] = field(default_factory=dict)
     is_revision: bool = False
     judge_failed: bool = False
+    worst_dimension: str | None = None
+    worst_dimension_score: float | None = None
 
 
 @dataclass(slots=True)
@@ -95,6 +97,7 @@ class ImprovementLoop:
         min_rounds: int = 1,
         max_score_delta: float = 0.5,
         cap_score_jumps: bool = False,
+        dimension_threshold: float | None = None,
     ) -> None:
         self.task = task
         self.max_rounds = max(1, max_rounds)
@@ -102,6 +105,7 @@ class ImprovementLoop:
         self.min_rounds = max(1, min_rounds)
         self.max_score_delta = max_score_delta
         self.cap_score_jumps = cap_score_jumps
+        self.dimension_threshold = dimension_threshold
 
     def run(
         self,
@@ -204,6 +208,12 @@ class ImprovementLoop:
             consecutive_failures = 0
             last_good_result = round_result
 
+            # Compute worst dimension for this round
+            if result.dimension_scores:
+                worst_dim = min(result.dimension_scores, key=result.dimension_scores.get)  # type: ignore[arg-type]
+                round_result.worst_dimension = worst_dim
+                round_result.worst_dimension_score = result.dimension_scores[worst_dim]
+
             # Pin dimension names after first successful evaluation
             if pinned_dimensions is None and result.dimension_scores:
                 pinned_dimensions = sorted(result.dimension_scores.keys())
@@ -264,7 +274,12 @@ class ImprovementLoop:
                 plateau_count = 0
             prev_valid_score = result.score
 
-            if effective_score >= self.quality_threshold and round_num >= self.min_rounds:
+            # Dimension threshold gate: all dimensions must meet minimum
+            dims_ok = True
+            if self.dimension_threshold is not None and result.dimension_scores:
+                dims_ok = all(v >= self.dimension_threshold for v in result.dimension_scores.values())
+
+            if effective_score >= self.quality_threshold and round_num >= self.min_rounds and dims_ok:
                 near_threshold = effective_score < self.quality_threshold + NEAR_THRESHOLD_MARGIN
 
                 if threshold_met_round is not None:
