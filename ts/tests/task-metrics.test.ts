@@ -33,11 +33,11 @@ describe("Per-task metrics tracking", () => {
     expect(result.durationMs!).toBeGreaterThanOrEqual(0);
   });
 
-  it("result has apiCalls equal to number of rounds", async () => {
+  it("result has judgeCalls equal to number of rounds", async () => {
     const task = makeFakeTask([0.4, 0.5, 0.95]);
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
     const result = await loop.run({ initialOutput: "hello", state: {} });
-    expect(result.apiCalls).toBe(result.totalRounds);
+    expect(result.judgeCalls).toBe(result.totalRounds);
   });
 
   it("each round has roundDurationMs as a non-negative number", async () => {

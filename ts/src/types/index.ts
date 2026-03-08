@@ -170,7 +170,7 @@ export const ImprovementResultSchema = z.object({
   dimensionTrajectory: z.record(z.array(z.number())).default({}),
   totalInternalRetries: z.number().int().min(0).default(0),
   durationMs: z.number().int().min(0).nullish(),
-  apiCalls: z.number().int().min(0).default(0),
+  judgeCalls: z.number().int().min(0).default(0),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;

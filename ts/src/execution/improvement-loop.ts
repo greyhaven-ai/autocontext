@@ -70,7 +70,7 @@ export class ImprovementLoop {
     calibrationExamples?: Array<Record<string, unknown>>;
   }): Promise<ImprovementResult> {
     const loopStart = performance.now();
-    let apiCalls = 0;
+    let judgeCalls = 0;
     const rounds: RoundResult[] = [];
     let currentOutput = opts.initialOutput;
     let bestOutput = opts.initialOutput;
@@ -100,7 +100,7 @@ export class ImprovementLoop {
         calibrationExamples: opts.calibrationExamples,
         pinnedDimensions,
       });
-      apiCalls++;
+      judgeCalls++;
       const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
 
@@ -160,7 +160,8 @@ export class ImprovementLoop {
       if (dimEntries.length > 0) {
         let worstDim = dimEntries[0][0];
         let worstScore = dimEntries[0][1];
-        for (const [dim, dimScore] of dimEntries) {
+        for (let i = 1; i < dimEntries.length; i++) {
+          const [dim, dimScore] = dimEntries[i];
           if (dimScore < worstScore) {
             worstDim = dim;
             worstScore = dimScore;
@@ -260,7 +261,7 @@ export class ImprovementLoop {
             dimensionTrajectory,
             totalInternalRetries,
             durationMs,
-            apiCalls,
+            judgeCalls,
           };
         }
 
@@ -283,7 +284,7 @@ export class ImprovementLoop {
             dimensionTrajectory,
             totalInternalRetries,
             durationMs,
-            apiCalls,
+            judgeCalls,
           };
         }
       } else {
@@ -319,7 +320,7 @@ export class ImprovementLoop {
       dimensionTrajectory,
       totalInternalRetries,
       durationMs,
-      apiCalls,
+      judgeCalls,
     };
   }
 }

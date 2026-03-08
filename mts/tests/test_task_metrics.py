@@ -2,7 +2,7 @@
 
 Verifies that ImprovementLoop results include:
 - duration_ms on ImprovementResult
-- api_calls count on ImprovementResult
+- judge_calls count on ImprovementResult
 - round_duration_ms on each RoundResult
 """
 
@@ -58,13 +58,13 @@ class TestResultHasDurationMs:
         assert result.duration_ms >= 0
 
 
-class TestResultHasApiCallsCount:
-    def test_result_has_api_calls_count(self) -> None:
+class TestResultHasJudgeCallsCount:
+    def test_result_has_judge_calls_count(self) -> None:
         task = _FixedScoreTask([0.4, 0.5, 0.95])
         loop = ImprovementLoop(task, max_rounds=3, quality_threshold=0.9)
         result = loop.run("hello", {})
         # One evaluate_output call per round
-        assert result.api_calls == result.total_rounds
+        assert result.judge_calls == result.total_rounds
 
 
 class TestPerRoundTiming:
