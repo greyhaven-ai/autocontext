@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mts.prompts.context_budget import ContextBudget
 from mts.scenarios.base import Observation
 
 
@@ -64,7 +65,25 @@ def build_prompt_bundle(
     strategy_registry: str = "",
     progress_json: str = "",
     constraint_mode: bool = False,
+    context_budget_tokens: int = 0,
 ) -> PromptBundle:
+    if context_budget_tokens > 0:
+        budget = ContextBudget(max_tokens=context_budget_tokens)
+        budgeted = budget.apply({
+            "playbook": current_playbook,
+            "trajectory": score_trajectory,
+            "lessons": operational_lessons,
+            "tools": available_tools,
+            "analysis": recent_analysis,
+            "hints": coach_competitor_hints,
+        })
+        current_playbook = budgeted["playbook"]
+        score_trajectory = budgeted["trajectory"]
+        operational_lessons = budgeted["lessons"]
+        available_tools = budgeted["tools"]
+        recent_analysis = budgeted["analysis"]
+        coach_competitor_hints = budgeted["hints"]
+
     lessons_block = (
         f"Operational lessons (from prior generations):\n{operational_lessons}\n\n"
         if operational_lessons
