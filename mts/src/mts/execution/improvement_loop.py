@@ -70,7 +70,7 @@ class ImprovementResult:
     dimension_trajectory: dict[str, list[float]] = field(default_factory=dict)
     total_internal_retries: int = 0
     duration_ms: int | None = None
-    api_calls: int = 0
+    judge_calls: int = 0
 
     @property
     def improved(self) -> bool:
@@ -126,7 +126,7 @@ class ImprovementLoop:
         carried forward for revision prompts.
         """
         loop_start = time.monotonic()
-        api_calls = 0
+        judge_calls = 0
         rounds: list[RoundResult] = []
         current_output = initial_output
         best_output = initial_output
@@ -160,7 +160,7 @@ class ImprovementLoop:
                 calibration_examples=calibration_examples,
                 pinned_dimensions=pinned_dimensions,
             )
-            api_calls += 1
+            judge_calls += 1
             round_ms = int((time.monotonic() - round_start) * 1000)
             total_internal_retries += result.internal_retries
 
@@ -174,8 +174,8 @@ class ImprovementLoop:
                 dimension_scores=result.dimension_scores,
                 is_revision=round_num > 1,
                 judge_failed=failed,
+                round_duration_ms=round_ms,
             )
-            round_result.round_duration_ms = round_ms
             rounds.append(round_result)
 
             if failed:
@@ -220,7 +220,7 @@ class ImprovementLoop:
 
             # Compute worst dimension for this round
             if result.dimension_scores:
-                worst_dim = min(result.dimension_scores, key=result.dimension_scores.get)  # type: ignore[arg-type]
+                worst_dim = min(result.dimension_scores, key=lambda k: result.dimension_scores[k])
                 round_result.worst_dimension = worst_dim
                 round_result.worst_dimension_score = result.dimension_scores[worst_dim]
 
@@ -308,7 +308,7 @@ class ImprovementLoop:
                         dimension_trajectory=dimension_trajectory,
                         total_internal_retries=total_internal_retries,
                         duration_ms=duration_ms,
-                        api_calls=api_calls,
+                        judge_calls=judge_calls,
                     )
 
                 if near_threshold and round_num < self.max_rounds:
@@ -334,7 +334,7 @@ class ImprovementLoop:
                         dimension_trajectory=dimension_trajectory,
                         total_internal_retries=total_internal_retries,
                         duration_ms=duration_ms,
-                        api_calls=api_calls,
+                        judge_calls=judge_calls,
                     )
             else:
                 # Score dropped below threshold after previously meeting it
@@ -362,5 +362,5 @@ class ImprovementLoop:
             dimension_trajectory=dimension_trajectory,
             total_internal_retries=total_internal_retries,
             duration_ms=duration_ms,
-            api_calls=api_calls,
+            judge_calls=judge_calls,
         )
