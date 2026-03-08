@@ -14,6 +14,7 @@ from mts.loop.stages import (
     stage_stagnation_check,
     stage_tournament,
 )
+from mts.loop.startup_verification import verify_startup
 
 if TYPE_CHECKING:
     from mts.agents.curator import KnowledgeCurator
@@ -70,6 +71,20 @@ class GenerationPipeline:
                 "run_id": ctx.run_id, "generation": ctx.generation,
                 "role": role, "status": status,
             })
+
+        # Stage 0: Startup verification (generation 1 only)
+        if ctx.generation == 1:
+            report = verify_startup(
+                scenario_name=ctx.scenario_name,
+                knowledge_root=self._artifacts.knowledge_root,
+                db_path=ctx.settings.db_path,
+            )
+            if report.warnings:
+                self._events.emit("startup_verification", {
+                    "run_id": ctx.run_id,
+                    "warnings": report.warnings,
+                    "passed": report.passed,
+                })
 
         # Stage 1: Knowledge setup
         ctx = stage_knowledge_setup(
