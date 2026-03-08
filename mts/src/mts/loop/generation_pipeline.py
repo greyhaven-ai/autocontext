@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from mts.knowledge.coherence import check_coherence
 from mts.loop.stage_types import GenerationContext
 from mts.loop.stages import (
     stage_agent_generation,
@@ -178,6 +179,20 @@ class GenerationPipeline:
             events=self._events,
             curator=self._curator,
         )
+
+        # Stage 6: Knowledge coherence verification (optional)
+        if ctx.settings.coherence_check_enabled:
+            coherence = check_coherence(
+                scenario_name=ctx.scenario_name,
+                knowledge_root=self._artifacts.knowledge_root,
+                skills_root=self._artifacts.skills_root,
+            )
+            if coherence.issues:
+                self._events.emit("coherence_warning", {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "issues": coherence.issues,
+                })
 
         # Meta-optimization: record full generation metrics
         if self._meta_optimizer is not None and ctx.outputs is not None:
