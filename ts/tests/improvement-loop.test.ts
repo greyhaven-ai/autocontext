@@ -141,8 +141,8 @@ describe("ImprovementLoop", () => {
     expect(result.rounds[0].reasoning).toContain("Fact-check issues");
     expect(result.rounds[0].reasoning).toContain("Date is wrong");
     expect(result.rounds[0].reasoning).toContain("Name misspelled");
-    // Score should NOT be changed by verifyFacts
-    expect(result.bestScore).toBe(0.95);
+    // Score is penalized by 0.9x when facts are unverified
+    expect(result.bestScore).toBe(0.95 * 0.9);
   });
 
   it("threshold sensitivity: score 0.91 with threshold 0.90 does not stop immediately", async () => {

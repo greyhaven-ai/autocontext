@@ -13,6 +13,8 @@ export type { ParsedJudge, ParseMethod } from "./parse.js";
 export { checkRubricCoherence } from "./rubric-coherence.js";
 export type { RubricCoherenceResult } from "./rubric-coherence.js";
 
+export const DEFAULT_FACTUAL_CONFIDENCE = 0.5;
+
 export interface LLMJudgeOpts {
   provider: LLMProvider;
   model: string;
@@ -88,7 +90,10 @@ export class LLMJudge {
         "You have been provided with authoritative reference context. " +
         "You MUST evaluate factual accuracy against this reference. " +
         "Any claims that contradict the reference context should be penalized heavily. " +
-        'Include a \'factual_accuracy\' dimension in your scoring. ';
+        "Include a 'factual_accuracy' dimension in your scoring. " +
+        "Also include a 'factual_confidence' dimension (0.0-1.0) expressing how confident " +
+        "you are in your factual accuracy assessment — 1.0 means all claims are easily " +
+        "verifiable against the reference, 0.0 means claims are beyond your ability to verify. ";
     }
 
     systemPrompt +=
@@ -146,8 +151,18 @@ export class LLMJudge {
       avgDims[key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     }
 
-    if (opts.referenceContext && !("factual_accuracy" in avgDims)) {
-      avgDims["factual_accuracy"] = avgScore;
+    // Ensure factual dimensions exist when reference context provided.
+    // Skip when pinnedDimensions is set — respect the explicit constraint.
+    if (opts.referenceContext && !opts.pinnedDimensions) {
+      if (!("factual_accuracy" in avgDims)) {
+        avgDims["factual_accuracy"] = avgScore;
+      }
+      if (!("factual_confidence" in avgDims)) {
+        // Default confidence: moderate when reference context available.
+        // The judge cannot verify claims against external sources beyond
+        // its training data — this is self-reported confidence only.
+        avgDims["factual_confidence"] = DEFAULT_FACTUAL_CONFIDENCE;
+      }
     }
 
     const dimensionsWereGenerated = detectGeneratedDimensions(
