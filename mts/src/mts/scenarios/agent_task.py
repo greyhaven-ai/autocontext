@@ -82,5 +82,11 @@ class AgentTaskInterface(ABC):
 
         Returns a dict with ``verified`` (bool) and ``issues`` (list[str]),
         or ``None`` if no verification is available.  Default returns None.
+
+        **Limitation**: Without an override, hallucination detection relies
+        entirely on the LLM judge's training data.  The judge catches obvious
+        fabrications but cannot verify claims against external sources.
+        Override this method to add external verification (web search, DB
+        lookup, etc.) for production use cases involving factual content.
         """
         return None

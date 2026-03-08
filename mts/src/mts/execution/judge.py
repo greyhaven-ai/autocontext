@@ -117,6 +117,9 @@ class LLMJudge:
                 "You MUST evaluate factual accuracy against this reference. "
                 "Any claims that contradict the reference context should be penalized heavily. "
                 "Include a 'factual_accuracy' dimension in your scoring. "
+                "Also include a 'factual_confidence' dimension (0.0-1.0) expressing how confident "
+                "you are in your factual accuracy assessment — 1.0 means all claims are easily "
+                "verifiable against the reference, 0.0 means claims are beyond your ability to verify. "
             )
         system_prompt += (
             "Output your evaluation between <!-- JUDGE_RESULT_START --> and <!-- JUDGE_RESULT_END --> markers "
@@ -170,9 +173,16 @@ class LLMJudge:
                 vals = [d[key] for d in all_dims if key in d]
                 avg_dims[key] = sum(vals) / len(vals) if vals else 0.0
 
-        # Ensure factual_accuracy dimension exists when reference context provided
-        if reference_context and "factual_accuracy" not in avg_dims:
-            avg_dims["factual_accuracy"] = avg_score
+        # Ensure factual dimensions exist when reference context provided
+        if reference_context:
+            if "factual_accuracy" not in avg_dims:
+                avg_dims["factual_accuracy"] = avg_score
+            if "factual_confidence" not in avg_dims:
+                # Default confidence: high if reference context available, since
+                # claims can be checked against it. Note: the judge cannot verify
+                # claims against external sources beyond its training data — see
+                # the factual_confidence dimension for self-reported confidence.
+                avg_dims["factual_confidence"] = 0.5
 
         combined_reasoning = "\n---\n".join(reasonings)
 
