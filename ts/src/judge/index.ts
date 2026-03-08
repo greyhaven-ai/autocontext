@@ -13,6 +13,8 @@ export type { ParsedJudge, ParseMethod } from "./parse.js";
 export { checkRubricCoherence } from "./rubric-coherence.js";
 export type { RubricCoherenceResult } from "./rubric-coherence.js";
 
+export const DEFAULT_FACTUAL_CONFIDENCE = 0.5;
+
 export interface LLMJudgeOpts {
   provider: LLMProvider;
   model: string;
@@ -149,15 +151,17 @@ export class LLMJudge {
       avgDims[key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     }
 
-    if (opts.referenceContext) {
+    // Ensure factual dimensions exist when reference context provided.
+    // Skip when pinnedDimensions is set — respect the explicit constraint.
+    if (opts.referenceContext && !opts.pinnedDimensions) {
       if (!("factual_accuracy" in avgDims)) {
         avgDims["factual_accuracy"] = avgScore;
       }
       if (!("factual_confidence" in avgDims)) {
         // Default confidence: moderate when reference context available.
-        // Note: the judge cannot verify claims against external sources
-        // beyond its training data — see factual_confidence dimension.
-        avgDims["factual_confidence"] = 0.5;
+        // The judge cannot verify claims against external sources beyond
+        // its training data — this is self-reported confidence only.
+        avgDims["factual_confidence"] = DEFAULT_FACTUAL_CONFIDENCE;
       }
     }
 
