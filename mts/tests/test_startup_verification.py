@@ -19,7 +19,7 @@ def test_all_checks_pass(tmp_path: Path) -> None:
         knowledge_root=tmp_path,
         db_path=None,  # Skip DB check
     )
-    assert report.passed
+
     assert len(report.warnings) == 0
 
 
@@ -30,7 +30,6 @@ def test_missing_knowledge_dir(tmp_path: Path) -> None:
         knowledge_root=tmp_path,
         db_path=None,
     )
-    assert report.passed  # First run is OK
     assert any("knowledge directory" in w.lower() for w in report.warnings)
 
 
@@ -46,7 +45,6 @@ def test_invalid_progress_json(tmp_path: Path) -> None:
         knowledge_root=tmp_path,
         db_path=None,
     )
-    assert report.passed  # Non-fatal
     assert any("progress.json" in w for w in report.warnings)
 
 
@@ -61,7 +59,7 @@ def test_empty_playbook_warning(tmp_path: Path) -> None:
         knowledge_root=tmp_path,
         db_path=None,
     )
-    assert report.passed
+
     assert any("playbook" in w.lower() for w in report.warnings)
 
 
@@ -72,4 +70,4 @@ def test_db_check_skipped_when_none(tmp_path: Path) -> None:
         knowledge_root=tmp_path,
         db_path=None,
     )
-    assert report.passed
+

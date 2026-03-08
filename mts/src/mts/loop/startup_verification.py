@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 class StartupReport:
     """Result of startup verification."""
 
-    passed: bool = True
     warnings: list[str] = field(default_factory=list)
 
 
@@ -48,12 +47,10 @@ def verify_startup(
     playbook_path = knowledge_dir / "playbook.md"
     if not playbook_path.exists():
         report.warnings.append("Playbook file does not exist yet")
-    elif playbook_path.stat().st_size == 0:
-        report.warnings.append("Playbook file is empty")
     else:
         content = playbook_path.read_text(encoding="utf-8")
         if not content.strip():
-            report.warnings.append("Playbook file contains only whitespace")
+            report.warnings.append("Playbook file is empty")
 
     # Check 3: progress.json
     progress_path = knowledge_dir / "progress.json"

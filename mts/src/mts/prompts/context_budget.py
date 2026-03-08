@@ -68,20 +68,22 @@ class ContextBudget:
         )
 
         result = dict(components)
+        remaining = total
         for key in _TRIM_ORDER:
             if key not in result or key in _PROTECTED:
                 continue
-            current_total = sum(estimate_tokens(v) for v in result.values())
-            if current_total <= self.max_tokens:
+            if remaining <= self.max_tokens:
                 break
-            overshoot = current_total - self.max_tokens
-            current_tokens = estimate_tokens(result[key])
-            target_tokens = max(0, current_tokens - overshoot)
-            if target_tokens < current_tokens:
+            overshoot = remaining - self.max_tokens
+            old_tokens = estimate_tokens(result[key])
+            target_tokens = max(0, old_tokens - overshoot)
+            if target_tokens < old_tokens:
                 result[key] = _truncate_to_tokens(result[key], target_tokens)
+                new_tokens = estimate_tokens(result[key])
+                remaining -= old_tokens - new_tokens
                 logger.debug(
                     "trimmed %s from %d to %d est. tokens",
-                    key, current_tokens, estimate_tokens(result[key]),
+                    key, old_tokens, new_tokens,
                 )
 
         return result

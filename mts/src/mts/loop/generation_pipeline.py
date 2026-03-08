@@ -84,7 +84,6 @@ class GenerationPipeline:
                 self._events.emit("startup_verification", {
                     "run_id": ctx.run_id,
                     "warnings": report.warnings,
-                    "passed": report.passed,
                 })
 
         # Stage 1: Knowledge setup
