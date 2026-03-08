@@ -88,7 +88,10 @@ export class LLMJudge {
         "You have been provided with authoritative reference context. " +
         "You MUST evaluate factual accuracy against this reference. " +
         "Any claims that contradict the reference context should be penalized heavily. " +
-        'Include a \'factual_accuracy\' dimension in your scoring. ';
+        "Include a 'factual_accuracy' dimension in your scoring. " +
+        "Also include a 'factual_confidence' dimension (0.0-1.0) expressing how confident " +
+        "you are in your factual accuracy assessment — 1.0 means all claims are easily " +
+        "verifiable against the reference, 0.0 means claims are beyond your ability to verify. ";
     }
 
     systemPrompt +=
@@ -146,8 +149,16 @@ export class LLMJudge {
       avgDims[key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
     }
 
-    if (opts.referenceContext && !("factual_accuracy" in avgDims)) {
-      avgDims["factual_accuracy"] = avgScore;
+    if (opts.referenceContext) {
+      if (!("factual_accuracy" in avgDims)) {
+        avgDims["factual_accuracy"] = avgScore;
+      }
+      if (!("factual_confidence" in avgDims)) {
+        // Default confidence: moderate when reference context available.
+        // Note: the judge cannot verify claims against external sources
+        // beyond its training data — see factual_confidence dimension.
+        avgDims["factual_confidence"] = 0.5;
+      }
     }
 
     const dimensionsWereGenerated = detectGeneratedDimensions(

@@ -97,6 +97,15 @@ export interface AgentTaskInterface {
     state: Record<string, unknown>,
   ): Promise<string>;
 
+  /**
+   * Optional: verify factual claims in the output.
+   *
+   * **Limitation**: Without an override, hallucination detection relies
+   * entirely on the LLM judge's training data. The judge catches obvious
+   * fabrications but cannot verify claims against external sources.
+   * Override to add external verification (web search, DB lookup, etc.)
+   * for production use cases involving factual content.
+   */
   verifyFacts?(
     output: string,
     state: Record<string, unknown>,
