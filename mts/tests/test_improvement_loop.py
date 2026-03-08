@@ -84,7 +84,7 @@ class ImprovingTask(AgentTaskInterface):
         return "test prompt"
 
     def evaluate_output(self, output, state, reference_context=None,
-                        required_concepts=None, calibration_examples=None):
+                        required_concepts=None, calibration_examples=None, **kwargs):
         # Score increases with each revision
         if "v3" in output:
             score = 0.95
@@ -125,7 +125,7 @@ class NoRevisionTask(AgentTaskInterface):
         return "test"
 
     def evaluate_output(self, output, state, reference_context=None,
-                        required_concepts=None, calibration_examples=None):
+                        required_concepts=None, calibration_examples=None, **kwargs):
         return AgentTaskResult(score=0.5, reasoning="ok")
 
     def get_rubric(self) -> str:
@@ -196,7 +196,7 @@ class TestImprovementLoop:
             def get_task_prompt(self, state):
                 return "test"
             def evaluate_output(self, output, state, reference_context=None,
-                                required_concepts=None, calibration_examples=None):
+                                required_concepts=None, calibration_examples=None, **kwargs):
                 received["ref"] = reference_context
                 received["concepts"] = required_concepts
                 received["calibration"] = calibration_examples
@@ -241,7 +241,7 @@ class TestImprovementLoop:
             def get_task_prompt(self, state):
                 return "test"
             def evaluate_output(self, output, state, reference_context=None,
-                                required_concepts=None, calibration_examples=None):
+                                required_concepts=None, calibration_examples=None, **kwargs):
                 return AgentTaskResult(score=0.95, reasoning="good")
             def get_rubric(self):
                 return "test"
@@ -271,7 +271,7 @@ class TestImprovementLoop:
             def get_task_prompt(self, state):
                 return "test"
             def evaluate_output(self, output, state, reference_context=None,
-                                required_concepts=None, calibration_examples=None):
+                                required_concepts=None, calibration_examples=None, **kwargs):
                 self._count += 1
                 return AgentTaskResult(score=0.91, reasoning=f"round {self._count}")
             def get_rubric(self):
@@ -300,7 +300,7 @@ class TestImprovementLoop:
             def get_task_prompt(self, state):
                 return "test"
             def evaluate_output(self, output, state, reference_context=None,
-                                required_concepts=None, calibration_examples=None):
+                                required_concepts=None, calibration_examples=None, **kwargs):
                 self._count += 1
                 return AgentTaskResult(score=0.95, reasoning="great")
             def get_rubric(self):
@@ -327,7 +327,7 @@ class TestImprovementLoop:
             def get_task_prompt(self, state):
                 return "test"
             def evaluate_output(self, output, state, reference_context=None,
-                                required_concepts=None, calibration_examples=None):
+                                required_concepts=None, calibration_examples=None, **kwargs):
                 idx = min(self._count, len(self._scores) - 1)
                 score = self._scores[idx]
                 self._count += 1
@@ -430,6 +430,7 @@ class ProgrammableTask(AgentTaskInterface):
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        **kwargs: object,
     ) -> AgentTaskResult:
         idx = min(self._call, len(self._results) - 1)
         self._call += 1

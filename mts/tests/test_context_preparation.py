@@ -44,6 +44,7 @@ class ConcreteTask(AgentTaskInterface):
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        **kwargs: object,
     ) -> AgentTaskResult:
         return AgentTaskResult(score=0.5, reasoning="ok")
 
@@ -246,7 +247,7 @@ class TaskWithRequiredContext(AgentTaskInterface):
         return "test"
 
     def evaluate_output(self, output, state, reference_context=None,
-                        required_concepts=None, calibration_examples=None):
+                        required_concepts=None, calibration_examples=None, **kwargs):
         return AgentTaskResult(score=0.8, reasoning="good")
 
     def get_rubric(self) -> str:

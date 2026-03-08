@@ -59,7 +59,7 @@ function parseTaskConfig(json: string | null): TaskConfig {
   };
 }
 
-function serializeResult(result: ImprovementResult, durationMs?: number): string {
+function serializeResult(result: ImprovementResult): string {
   return JSON.stringify({
     rounds: result.rounds.map((r) => ({
       round_number: r.roundNumber,
@@ -72,7 +72,8 @@ function serializeResult(result: ImprovementResult, durationMs?: number): string
     best_round: result.bestRound,
     total_rounds: result.totalRounds,
     met_threshold: result.metThreshold,
-    ...(durationMs != null ? { duration_ms: durationMs } : {}),
+    ...(result.durationMs != null ? { duration_ms: result.durationMs } : {}),
+    ...(result.judgeCalls ? { judge_calls: result.judgeCalls } : {}),
   });
 }
 
@@ -111,6 +112,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
       referenceContext?: string;
       requiredConcepts?: string[];
       calibrationExamples?: Array<Record<string, unknown>>;
+      pinnedDimensions?: string[];
     },
   ): Promise<AgentTaskResult> {
     const judge = new LLMJudge({
@@ -124,6 +126,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
       referenceContext: opts?.referenceContext,
       requiredConcepts: opts?.requiredConcepts,
       calibrationExamples: opts?.calibrationExamples,
+      pinnedDimensions: opts?.pinnedDimensions,
     });
     return {
       score: result.score,
@@ -256,7 +259,6 @@ export class TaskRunner {
         minRounds: config.minRounds,
       });
 
-      const startTime = performance.now();
       const result = await loop.run({
         initialOutput,
         state: {},
@@ -264,7 +266,6 @@ export class TaskRunner {
         requiredConcepts: config.requiredConcepts,
         calibrationExamples: config.calibrationExamples,
       });
-      const durationMs = Math.round(performance.now() - startTime);
 
       this.store.completeTask(
         task.id,
@@ -272,7 +273,7 @@ export class TaskRunner {
         result.bestOutput,
         result.totalRounds,
         result.metThreshold,
-        serializeResult(result, durationMs),
+        serializeResult(result),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

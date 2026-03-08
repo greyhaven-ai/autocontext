@@ -77,6 +77,7 @@ export class LLMJudge {
     referenceContext?: string;
     requiredConcepts?: string[];
     calibrationExamples?: Array<Record<string, unknown>>;
+    pinnedDimensions?: string[];
   }): Promise<JudgeResult> {
     let systemPrompt =
       "You are an expert judge evaluating an AI agent's output. " +
@@ -171,6 +172,7 @@ export class LLMJudge {
     referenceContext?: string;
     requiredConcepts?: string[];
     calibrationExamples?: Array<Record<string, unknown>>;
+    pinnedDimensions?: string[];
   }): string {
     const parts: string[] = [`## Rubric\n${this.rubric}\n`];
 
@@ -202,6 +204,15 @@ export class LLMJudge {
         );
       }
       parts.push(lines.join("\n"));
+    }
+
+    if (opts.pinnedDimensions?.length) {
+      const dimList = opts.pinnedDimensions.join(", ");
+      parts.push(
+        `\n## Required Dimensions\n` +
+        `You MUST use exactly these dimension names in your scoring: ${dimList}\n` +
+        `Do not add, remove, or rename dimensions. Score each one between 0.0 and 1.0.\n`,
+      );
     }
 
     parts.push(`\n## Task Prompt\n${opts.taskPrompt}\n`);

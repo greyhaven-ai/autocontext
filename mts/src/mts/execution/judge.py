@@ -104,6 +104,7 @@ class LLMJudge:
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
     ) -> JudgeResult:
         """Evaluate agent output by calling the provider N times and averaging."""
         system_prompt = (
@@ -122,7 +123,8 @@ class LLMJudge:
             'containing JSON: {"score": 0.0-1.0, "reasoning": "...", "dimensions": {"dim1": 0.0-1.0, ...}}'
         )
         user_prompt = self._build_judge_prompt(
-            task_prompt, agent_output, reference_context, required_concepts, calibration_examples
+            task_prompt, agent_output, reference_context, required_concepts, calibration_examples,
+            pinned_dimensions,
         )
 
         scores: list[float] = []
@@ -195,6 +197,7 @@ class LLMJudge:
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
     ) -> str:
         parts = [
             f"## Rubric\n{self.rubric}\n",
@@ -224,6 +227,13 @@ class LLMJudge:
                     f"Output snippet: {output_snippet}...\n"
                 )
             parts.append("\n".join(cal_lines))
+        if pinned_dimensions:
+            dim_list = ", ".join(pinned_dimensions)
+            parts.append(
+                f"\n## Required Dimensions\n"
+                f"You MUST use exactly these dimension names in your scoring: {dim_list}\n"
+                f"Do not add, remove, or rename dimensions. Score each one between 0.0 and 1.0.\n"
+            )
         parts.append(f"\n## Task Prompt\n{task_prompt}\n")
         parts.append(f"\n## Agent Output\n{agent_output}\n")
         parts.append(

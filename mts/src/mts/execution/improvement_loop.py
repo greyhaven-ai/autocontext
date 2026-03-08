@@ -7,6 +7,7 @@ Stops when quality_threshold is met or max_rounds is exhausted.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -50,6 +51,9 @@ class RoundResult:
     dimension_scores: dict[str, float] = field(default_factory=dict)
     is_revision: bool = False
     judge_failed: bool = False
+    worst_dimension: str | None = None
+    worst_dimension_score: float | None = None
+    round_duration_ms: int | None = None
 
 
 @dataclass(slots=True)
@@ -66,6 +70,8 @@ class ImprovementResult:
     termination_reason: TerminationReason = "max_rounds"
     dimension_trajectory: dict[str, list[float]] = field(default_factory=dict)
     total_internal_retries: int = 0
+    duration_ms: int | None = None
+    judge_calls: int = 0
 
     @property
     def improved(self) -> bool:
@@ -96,6 +102,7 @@ class ImprovementLoop:
         min_rounds: int = 1,
         max_score_delta: float = 0.5,
         cap_score_jumps: bool = False,
+        dimension_threshold: float | None = None,
     ) -> None:
         self.task = task
         self.max_rounds = max(1, max_rounds)
@@ -103,6 +110,7 @@ class ImprovementLoop:
         self.min_rounds = max(1, min_rounds)
         self.max_score_delta = max_score_delta
         self.cap_score_jumps = cap_score_jumps
+        self.dimension_threshold = dimension_threshold
 
     def run(
         self,
@@ -118,6 +126,8 @@ class ImprovementLoop:
         don't count toward max_rounds, and the last good feedback is
         carried forward for revision prompts.
         """
+        loop_start = time.monotonic()
+        judge_calls = 0
         rounds: list[RoundResult] = []
         current_output = initial_output
         best_output = initial_output
@@ -132,6 +142,9 @@ class ImprovementLoop:
         dimension_trajectory: dict[str, list[float]] = {}
         threshold_met_round: int | None = None
 
+        # Dimension pinning: lock dimension names after first successful evaluation
+        pinned_dimensions: list[str] | None = None
+
         # Plateau detection state
         prev_valid_score: float | None = None
         plateau_count = 0
@@ -139,13 +152,17 @@ class ImprovementLoop:
         for round_num in range(1, self.max_rounds + 1):
             logger.info("improvement loop round %d/%d", round_num, self.max_rounds)
 
+            round_start = time.monotonic()
             result = self.task.evaluate_output(
                 current_output,
                 state,
                 reference_context=reference_context,
                 required_concepts=required_concepts,
                 calibration_examples=calibration_examples,
+                pinned_dimensions=pinned_dimensions,
             )
+            judge_calls += 1
+            round_ms = int((time.monotonic() - round_start) * 1000)
             total_internal_retries += result.internal_retries
 
             failed = _is_parse_failure(result.score, result.reasoning)
@@ -158,6 +175,7 @@ class ImprovementLoop:
                 dimension_scores=result.dimension_scores,
                 is_revision=round_num > 1,
                 judge_failed=failed,
+                round_duration_ms=round_ms,
             )
             rounds.append(round_result)
 
@@ -200,6 +218,16 @@ class ImprovementLoop:
             # Successful judge evaluation
             consecutive_failures = 0
             last_good_result = round_result
+
+            # Compute worst dimension for this round
+            if result.dimension_scores:
+                worst_dim = min(result.dimension_scores, key=lambda k: result.dimension_scores[k])
+                round_result.worst_dimension = worst_dim
+                round_result.worst_dimension_score = result.dimension_scores[worst_dim]
+
+            # Pin dimension names after first successful evaluation
+            if pinned_dimensions is None and result.dimension_scores:
+                pinned_dimensions = sorted(result.dimension_scores.keys())
 
             # Build dimension trajectory from valid rounds
             for dim, dim_score in result.dimension_scores.items():
@@ -257,12 +285,18 @@ class ImprovementLoop:
                 plateau_count = 0
             prev_valid_score = result.score
 
-            if effective_score >= self.quality_threshold and round_num >= self.min_rounds:
+            # Dimension threshold gate: all dimensions must meet minimum
+            dims_ok = True
+            if self.dimension_threshold is not None and result.dimension_scores:
+                dims_ok = all(v >= self.dimension_threshold for v in result.dimension_scores.values())
+
+            if effective_score >= self.quality_threshold and round_num >= self.min_rounds and dims_ok:
                 near_threshold = effective_score < self.quality_threshold + NEAR_THRESHOLD_MARGIN
 
                 if threshold_met_round is not None:
                     # Threshold was met on a previous round too — confirmed stable
                     logger.info("quality threshold %.2f confirmed stable at round %d", self.quality_threshold, round_num)
+                    duration_ms = int((time.monotonic() - loop_start) * 1000)
                     return ImprovementResult(
                         rounds=rounds,
                         best_output=best_output,
@@ -274,6 +308,8 @@ class ImprovementLoop:
                         termination_reason="threshold_met",
                         dimension_trajectory=dimension_trajectory,
                         total_internal_retries=total_internal_retries,
+                        duration_ms=duration_ms,
+                        judge_calls=judge_calls,
                     )
 
                 if near_threshold and round_num < self.max_rounds:
@@ -286,6 +322,7 @@ class ImprovementLoop:
                 else:
                     # Clearly above threshold — stop immediately
                     logger.info("quality threshold %.2f met at round %d", self.quality_threshold, round_num)
+                    duration_ms = int((time.monotonic() - loop_start) * 1000)
                     return ImprovementResult(
                         rounds=rounds,
                         best_output=best_output,
@@ -297,6 +334,8 @@ class ImprovementLoop:
                         termination_reason="threshold_met",
                         dimension_trajectory=dimension_trajectory,
                         total_internal_retries=total_internal_retries,
+                        duration_ms=duration_ms,
+                        judge_calls=judge_calls,
                     )
             else:
                 # Score dropped below threshold after previously meeting it
@@ -333,6 +372,7 @@ class ImprovementLoop:
                     break
                 current_output = revised
 
+        duration_ms = int((time.monotonic() - loop_start) * 1000)
         return ImprovementResult(
             rounds=rounds,
             best_output=best_output,
@@ -344,4 +384,6 @@ class ImprovementLoop:
             termination_reason=termination_reason,
             dimension_trajectory=dimension_trajectory,
             total_internal_retries=total_internal_retries,
+            duration_ms=duration_ms,
+            judge_calls=judge_calls,
         )

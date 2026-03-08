@@ -77,6 +77,7 @@ export interface AgentTaskInterface {
       referenceContext?: string;
       requiredConcepts?: string[];
       calibrationExamples?: Array<Record<string, unknown>>;
+      pinnedDimensions?: string[];
     },
   ): Promise<AgentTaskResult>;
 
@@ -142,6 +143,9 @@ export const RoundResultSchema = z.object({
   dimensionScores: z.record(z.number()).default({}),
   isRevision: z.boolean().default(false),
   judgeFailed: z.boolean().default(false),
+  worstDimension: z.string().nullish(),
+  worstDimensionScore: z.number().nullish(),
+  roundDurationMs: z.number().int().min(0).nullish(),
 });
 
 export type RoundResult = z.infer<typeof RoundResultSchema>;
@@ -165,6 +169,8 @@ export const ImprovementResultSchema = z.object({
     .default("max_rounds"),
   dimensionTrajectory: z.record(z.array(z.number())).default({}),
   totalInternalRetries: z.number().int().min(0).default(0),
+  durationMs: z.number().int().min(0).nullish(),
+  judgeCalls: z.number().int().min(0).default(0),
 });
 
 export type ImprovementResult = z.infer<typeof ImprovementResultSchema>;

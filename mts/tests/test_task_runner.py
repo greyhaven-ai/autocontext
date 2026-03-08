@@ -396,8 +396,9 @@ class TestSerialization:
             best_round=1,
             total_rounds=1,
             met_threshold=True,
+            duration_ms=1234,
         )
-        serialized = _serialize_result(result, duration_ms=1234)
+        serialized = _serialize_result(result)
         data = json.loads(serialized)
         assert data["duration_ms"] == 1234
 

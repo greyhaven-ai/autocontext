@@ -62,7 +62,7 @@ class TaskConfig:
         )
 
 
-def _serialize_result(result: ImprovementResult, duration_ms: int | None = None) -> str:
+def _serialize_result(result: ImprovementResult) -> str:
     """Serialize an ImprovementResult to JSON."""
     rounds = []
     for r in result.rounds:
@@ -80,8 +80,10 @@ def _serialize_result(result: ImprovementResult, duration_ms: int | None = None)
         "total_rounds": result.total_rounds,
         "met_threshold": result.met_threshold,
     }
-    if duration_ms is not None:
-        data["duration_ms"] = duration_ms
+    if result.duration_ms is not None:
+        data["duration_ms"] = result.duration_ms
+    if result.judge_calls:
+        data["judge_calls"] = result.judge_calls
     return json.dumps(data)
 
 
@@ -125,6 +127,7 @@ class SimpleAgentTask(AgentTaskInterface):
         reference_context: str | None = None,
         required_concepts: list[str] | None = None,
         calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
     ) -> AgentTaskResult:
         judge = LLMJudge(
             model=self._model,
@@ -137,6 +140,7 @@ class SimpleAgentTask(AgentTaskInterface):
             reference_context=reference_context,
             required_concepts=required_concepts,
             calibration_examples=calibration_examples,
+            pinned_dimensions=pinned_dimensions,
         )
         return AgentTaskResult(
             score=judge_result.score,
@@ -322,7 +326,6 @@ class TaskRunner:
                 min_rounds=config.min_rounds,
             )
 
-            start_time = time.monotonic()
             result = loop.run(
                 initial_output=initial_output,
                 state={},
@@ -330,7 +333,6 @@ class TaskRunner:
                 required_concepts=config.required_concepts,
                 calibration_examples=config.calibration_examples,
             )
-            duration_ms = int((time.monotonic() - start_time) * 1000)
 
             self.store.complete_task(
                 task_id=task_id,
@@ -338,7 +340,7 @@ class TaskRunner:
                 best_output=result.best_output,
                 total_rounds=result.total_rounds,
                 met_threshold=result.met_threshold,
-                result_json=_serialize_result(result, duration_ms=duration_ms),
+                result_json=_serialize_result(result),
             )
 
             logger.info(

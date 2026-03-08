@@ -23,6 +23,7 @@ export class JudgeExecutor {
       referenceContext?: string;
       requiredConcepts?: string[];
       calibrationExamples?: Array<Record<string, unknown>>;
+      pinnedDimensions?: string[];
     },
   ): Promise<AgentTaskResult> {
     // Run context preparation if the task supports it

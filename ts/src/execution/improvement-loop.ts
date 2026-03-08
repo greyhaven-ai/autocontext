@@ -41,6 +41,7 @@ export interface ImprovementLoopOpts {
   minRounds?: number;
   maxScoreDelta?: number;
   capScoreJumps?: boolean;
+  dimensionThreshold?: number;
 }
 
 export class ImprovementLoop {
@@ -50,6 +51,7 @@ export class ImprovementLoop {
   private minRounds: number;
   private maxScoreDelta: number;
   private capScoreJumps: boolean;
+  private dimensionThreshold: number | null;
 
   constructor(opts: ImprovementLoopOpts) {
     this.task = opts.task;
@@ -58,6 +60,7 @@ export class ImprovementLoop {
     this.minRounds = Math.max(1, opts.minRounds ?? 1);
     this.maxScoreDelta = opts.maxScoreDelta ?? 0.5;
     this.capScoreJumps = opts.capScoreJumps ?? false;
+    this.dimensionThreshold = opts.dimensionThreshold ?? null;
   }
 
   async run(opts: {
@@ -67,6 +70,8 @@ export class ImprovementLoop {
     requiredConcepts?: string[];
     calibrationExamples?: Array<Record<string, unknown>>;
   }): Promise<ImprovementResult> {
+    const loopStart = performance.now();
+    let judgeCalls = 0;
     const rounds: RoundResult[] = [];
     let currentOutput = opts.initialOutput;
     let bestOutput = opts.initialOutput;
@@ -81,16 +86,23 @@ export class ImprovementLoop {
     const dimensionTrajectory: Record<string, number[]> = {};
     let thresholdMetRound: number | null = null;
 
+    // Dimension pinning: lock dimension names after first successful evaluation
+    let pinnedDimensions: string[] | undefined;
+
     // Plateau detection state
     let prevValidScore: number | null = null;
     let plateauCount = 0;
 
     for (let roundNum = 1; roundNum <= this.maxRounds; roundNum++) {
+      const roundStart = performance.now();
       const result = await this.task.evaluateOutput(currentOutput, opts.state, {
         referenceContext: opts.referenceContext,
         requiredConcepts: opts.requiredConcepts,
         calibrationExamples: opts.calibrationExamples,
+        pinnedDimensions,
       });
+      judgeCalls++;
+      const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
 
       const failed = isParseFailure(result.score, result.reasoning);
@@ -103,6 +115,9 @@ export class ImprovementLoop {
         dimensionScores: result.dimensionScores,
         isRevision: roundNum > 1,
         judgeFailed: failed,
+        worstDimension: undefined,
+        worstDimensionScore: undefined,
+        roundDurationMs: roundMs,
       };
       rounds.push(roundResult);
 
@@ -140,6 +155,27 @@ export class ImprovementLoop {
       // Successful evaluation
       consecutiveFailures = 0;
       lastGoodResult = roundResult;
+
+      // Compute worst dimension for this round
+      const dimEntries = Object.entries(result.dimensionScores);
+      if (dimEntries.length > 0) {
+        let worstDim = dimEntries[0][0];
+        let worstScore = dimEntries[0][1];
+        for (let i = 1; i < dimEntries.length; i++) {
+          const [dim, dimScore] = dimEntries[i];
+          if (dimScore < worstScore) {
+            worstDim = dim;
+            worstScore = dimScore;
+          }
+        }
+        roundResult.worstDimension = worstDim;
+        roundResult.worstDimensionScore = worstScore;
+      }
+
+      // Pin dimension names after first successful evaluation
+      if (pinnedDimensions === undefined && Object.keys(result.dimensionScores).length > 0) {
+        pinnedDimensions = Object.keys(result.dimensionScores).sort();
+      }
 
       // Build dimension trajectory from valid rounds
       for (const [dim, dimScore] of Object.entries(result.dimensionScores)) {
@@ -198,13 +234,22 @@ export class ImprovementLoop {
       }
       prevValidScore = result.score;
 
-      if (effectiveScore >= this.qualityThreshold && roundNum >= this.minRounds) {
+      // Dimension threshold gate: all dimensions must meet minimum
+      let dimsOk = true;
+      if (this.dimensionThreshold !== null && Object.keys(result.dimensionScores).length > 0) {
+        dimsOk = Object.values(result.dimensionScores).every(
+          (v) => v >= this.dimensionThreshold!,
+        );
+      }
+
+      if (effectiveScore >= this.qualityThreshold && roundNum >= this.minRounds && dimsOk) {
         const nearThreshold =
           effectiveScore < this.qualityThreshold + NEAR_THRESHOLD_MARGIN;
 
         if (thresholdMetRound !== null) {
           // Threshold was met on a previous round too — confirmed stable
           terminationReason = "threshold_met";
+          const durationMs = Math.round(performance.now() - loopStart);
           return {
             rounds,
             bestOutput,
@@ -216,6 +261,8 @@ export class ImprovementLoop {
             terminationReason,
             dimensionTrajectory,
             totalInternalRetries,
+            durationMs,
+            judgeCalls,
           };
         }
 
@@ -225,6 +272,7 @@ export class ImprovementLoop {
         } else {
           // Clearly above threshold — stop immediately
           terminationReason = "threshold_met";
+          const durationMs = Math.round(performance.now() - loopStart);
           return {
             rounds,
             bestOutput,
@@ -236,6 +284,8 @@ export class ImprovementLoop {
             terminationReason,
             dimensionTrajectory,
             totalInternalRetries,
+            durationMs,
+            judgeCalls,
           };
         }
       } else {
@@ -284,6 +334,7 @@ export class ImprovementLoop {
       }
     }
 
+    const durationMs = Math.round(performance.now() - loopStart);
     return {
       rounds,
       bestOutput,
@@ -295,6 +346,8 @@ export class ImprovementLoop {
       terminationReason,
       dimensionTrajectory,
       totalInternalRetries,
+      durationMs,
+      judgeCalls,
     };
   }
 }
