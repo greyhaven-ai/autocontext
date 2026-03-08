@@ -25,24 +25,16 @@ class CoherenceReport:
     issues: list[str] = field(default_factory=list)
 
 
-def _check_playbook(knowledge_dir: Path) -> list[str]:
-    """Check playbook exists and is non-empty."""
-    playbook = knowledge_dir / "playbook.md"
-    if not playbook.exists():
-        return []  # OK on first generation before advance
-    content = playbook.read_text(encoding="utf-8").strip()
-    if not content:
+def _check_playbook(playbook_content: str) -> list[str]:
+    """Check playbook content is non-empty."""
+    if not playbook_content.strip():
         return ["Playbook is empty after persistence"]
     return []
 
 
-def _check_tools(knowledge_dir: Path) -> list[str]:
+def _check_tools(playbook_content: str, knowledge_dir: Path) -> list[str]:
     """Check that tools referenced in playbook exist on disk."""
-    playbook = knowledge_dir / "playbook.md"
-    if not playbook.exists():
-        return []
-    content = playbook.read_text(encoding="utf-8").lower()
-    if "tool" not in content:
+    if "tool" not in playbook_content.lower():
         return []
 
     tools_dir = knowledge_dir / "tools"
@@ -119,8 +111,13 @@ def check_coherence(
     if not knowledge_dir.is_dir():
         return report  # First run, nothing to check
 
-    report.issues.extend(_check_playbook(knowledge_dir))
-    report.issues.extend(_check_tools(knowledge_dir))
+    playbook_path = knowledge_dir / "playbook.md"
+    if not playbook_path.exists():
+        return report  # OK on first generation before advance
+
+    playbook_content = playbook_path.read_text(encoding="utf-8")
+    report.issues.extend(_check_playbook(playbook_content))
+    report.issues.extend(_check_tools(playbook_content, knowledge_dir))
 
     if skills_root is not None:
         lessons = _read_lessons(scenario_name, skills_root)
