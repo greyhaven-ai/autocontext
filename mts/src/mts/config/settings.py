@@ -133,6 +133,10 @@ class AppSettings(BaseModel):
     progress_json_enabled: bool = Field(default=True, description="Inject structured progress JSON into prompts")
     # Constraint prompts
     constraint_prompts_enabled: bool = Field(default=True, description="Append constraint suffixes to role prompts")
+    # Context budget
+    context_budget_tokens: int = Field(default=100_000, ge=0, description="Max estimated tokens for prompt context")
+    # Knowledge coherence
+    coherence_check_enabled: bool = Field(default=True, description="Run knowledge coherence check after persistence")
 
 
 def load_settings() -> AppSettings:
@@ -233,4 +237,6 @@ def load_settings() -> AppSettings:
         stagnation_distill_top_lessons=int(os.getenv("MTS_STAGNATION_DISTILL_TOP_LESSONS", "5")),
         progress_json_enabled=os.getenv("MTS_PROGRESS_JSON_ENABLED", "true").lower() == "true",
         constraint_prompts_enabled=os.getenv("MTS_CONSTRAINT_PROMPTS_ENABLED", "true").lower() == "true",
+        context_budget_tokens=int(os.getenv("MTS_CONTEXT_BUDGET_TOKENS", "100000")),
+        coherence_check_enabled=os.getenv("MTS_COHERENCE_CHECK_ENABLED", "true").lower() in ("true", "1", "yes"),
     )

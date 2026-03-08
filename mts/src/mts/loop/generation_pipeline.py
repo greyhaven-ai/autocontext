@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from mts.knowledge.coherence import check_coherence
 from mts.loop.stage_types import GenerationContext
 from mts.loop.stages import (
     stage_agent_generation,
@@ -14,6 +15,7 @@ from mts.loop.stages import (
     stage_stagnation_check,
     stage_tournament,
 )
+from mts.loop.startup_verification import verify_startup
 
 if TYPE_CHECKING:
     from mts.agents.curator import KnowledgeCurator
@@ -70,6 +72,19 @@ class GenerationPipeline:
                 "run_id": ctx.run_id, "generation": ctx.generation,
                 "role": role, "status": status,
             })
+
+        # Stage 0: Startup verification (generation 1 only)
+        if ctx.generation == 1:
+            report = verify_startup(
+                scenario_name=ctx.scenario_name,
+                knowledge_root=self._artifacts.knowledge_root,
+                db_path=ctx.settings.db_path,
+            )
+            if report.warnings:
+                self._events.emit("startup_verification", {
+                    "run_id": ctx.run_id,
+                    "warnings": report.warnings,
+                })
 
         # Stage 1: Knowledge setup
         ctx = stage_knowledge_setup(
@@ -163,6 +178,20 @@ class GenerationPipeline:
             events=self._events,
             curator=self._curator,
         )
+
+        # Stage 6: Knowledge coherence verification (optional)
+        if ctx.settings.coherence_check_enabled:
+            coherence = check_coherence(
+                scenario_name=ctx.scenario_name,
+                knowledge_root=self._artifacts.knowledge_root,
+                skills_root=self._artifacts.skills_root,
+            )
+            if coherence.issues:
+                self._events.emit("coherence_warning", {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "issues": coherence.issues,
+                })
 
         # Meta-optimization: record full generation metrics
         if self._meta_optimizer is not None and ctx.outputs is not None:

@@ -77,6 +77,7 @@ def stage_knowledge_setup(
         strategy_registry=strategy_registry,
         progress_json=progress_json_str,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
+        context_budget_tokens=ctx.settings.context_budget_tokens,
     )
 
     ctx.prompts = prompts
