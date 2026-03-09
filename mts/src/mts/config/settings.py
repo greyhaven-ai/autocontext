@@ -123,6 +123,16 @@ class AppSettings(BaseModel):
     coherence_check_enabled: bool = Field(default=True, description="Run knowledge coherence check after persistence")
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
+    # Ecosystem convergence (Phase 4)
+    ecosystem_convergence_enabled: bool = Field(
+        default=False, description="Track playbook divergence between ecosystem phases",
+    )
+    ecosystem_divergence_threshold: float = Field(
+        default=0.3, ge=0.0, le=1.0, description="Divergence ratio above which phases are oscillating",
+    )
+    ecosystem_oscillation_window: int = Field(
+        default=3, ge=2, description="Consecutive high-divergence cycles to trigger lock",
+    )
 
 
 def load_settings() -> AppSettings:
@@ -252,4 +262,13 @@ def load_settings() -> AppSettings:
         context_budget_tokens=int(_get("context_budget_tokens", "MTS_CONTEXT_BUDGET_TOKENS", "100000")),
         coherence_check_enabled=_get_bool("coherence_check_enabled", "MTS_COHERENCE_CHECK_ENABLED", "true"),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
+        ecosystem_convergence_enabled=_get_bool(
+            "ecosystem_convergence_enabled", "MTS_ECOSYSTEM_CONVERGENCE_ENABLED", "false",
+        ),
+        ecosystem_divergence_threshold=float(
+            _get("ecosystem_divergence_threshold", "MTS_ECOSYSTEM_DIVERGENCE_THRESHOLD", "0.3"),
+        ),
+        ecosystem_oscillation_window=int(
+            _get("ecosystem_oscillation_window", "MTS_ECOSYSTEM_OSCILLATION_WINDOW", "3"),
+        ),
     )

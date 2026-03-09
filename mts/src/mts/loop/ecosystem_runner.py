@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -45,11 +46,42 @@ class EcosystemSummary:
         return [(rs.run_id, rs.best_score) for rs in self.run_summaries]
 
 
+def compute_playbook_divergence(before: str, after: str) -> float:
+    """Compute divergence between two playbook versions.
+
+    Returns 0.0 for identical, 1.0 for completely different.
+    Uses SequenceMatcher ratio (similarity), inverted to divergence.
+    """
+    if not before and not after:
+        return 0.0
+    if not before or not after:
+        return 1.0
+    similarity = difflib.SequenceMatcher(None, before, after).ratio()
+    return round(1.0 - similarity, 4)
+
+
+def detect_oscillation(
+    divergence_history: list[float],
+    threshold: float,
+    window: int,
+) -> bool:
+    """Detect playbook oscillation from divergence history.
+
+    Returns True if the last `window` entries all exceed `threshold`.
+    """
+    if len(divergence_history) < window:
+        return False
+    recent = divergence_history[-window:]
+    return all(d > threshold for d in recent)
+
+
 class EcosystemRunner:
     def __init__(self, base_settings: AppSettings, config: EcosystemConfig) -> None:
         self.base_settings = base_settings
         self.config = config
         self.events = EventStreamEmitter(base_settings.event_stream_path)
+        self._divergence_history: list[float] = []
+        self._locked = False
 
     def migrate(self, migrations_dir: Path) -> None:
         store = SQLiteStore(self.base_settings.db_path)
@@ -67,6 +99,18 @@ class EcosystemRunner:
     def run(self) -> EcosystemSummary:
         migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
         summaries: list[RunSummary] = []
+
+        # Read initial playbook state for convergence tracking
+        _pre_playbook = ""
+        if self.base_settings.ecosystem_convergence_enabled:
+            from mts.storage import ArtifactStore
+            _init_artifacts = ArtifactStore(
+                self.base_settings.runs_root,
+                self.base_settings.knowledge_root,
+                self.base_settings.skills_root,
+                self.base_settings.claude_skills_path,
+            )
+            _pre_playbook = _init_artifacts.read_playbook(self.config.scenario)
 
         self.events.emit(
             "ecosystem_started",
@@ -102,6 +146,43 @@ class EcosystemRunner:
                     run_id=run_id,
                 )
                 summaries.append(summary)
+
+                # Convergence detection
+                if (
+                    self.base_settings.ecosystem_convergence_enabled
+                    and not self._locked
+                ):
+                    from mts.storage import ArtifactStore
+                    artifacts = ArtifactStore(
+                        self.base_settings.runs_root,
+                        self.base_settings.knowledge_root,
+                        self.base_settings.skills_root,
+                        self.base_settings.claude_skills_path,
+                    )
+                    post_playbook = artifacts.read_playbook(self.config.scenario)
+                    divergence = compute_playbook_divergence(_pre_playbook, post_playbook)
+                    self._divergence_history.append(divergence)
+
+                    if detect_oscillation(
+                        self._divergence_history,
+                        threshold=self.base_settings.ecosystem_divergence_threshold,
+                        window=self.base_settings.ecosystem_oscillation_window,
+                    ):
+                        self._locked = True
+                        self.events.emit(
+                            "ecosystem_convergence_locked",
+                            {
+                                "scenario": self.config.scenario,
+                                "cycle": cycle,
+                                "divergence_history": self._divergence_history,
+                            },
+                            channel="ecosystem",
+                        )
+                        LOGGER.warning(
+                            "ecosystem convergence lock: playbook oscillating for %d cycles",
+                            self.base_settings.ecosystem_oscillation_window,
+                        )
+                    _pre_playbook = post_playbook
 
             self.events.emit(
                 "ecosystem_cycle_completed",
