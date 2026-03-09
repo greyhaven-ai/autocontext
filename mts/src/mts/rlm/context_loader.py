@@ -64,6 +64,44 @@ class ContextLoader:
         summary = self._build_architect_summary(variables)
         return RlmContext(variables=variables, summary=summary)
 
+    def load_for_competitor(
+        self,
+        run_id: str,
+        scenario_name: str,
+        generation: int,
+        *,
+        scenario_rules: str = "",
+        strategy_interface: str = "",
+        current_strategy: dict[str, Any] | None = None,
+    ) -> RlmContext:
+        """Build the REPL namespace for the Competitor role."""
+        variables: dict[str, Any] = {}
+
+        # Match replays (all generations up to current)
+        variables["replays"] = self._load_replays(run_id, generation)
+
+        # Metrics history
+        variables["metrics_history"] = self._load_metrics_files(run_id, generation)
+
+        # Match scores from DB
+        variables["match_scores"] = self._sqlite.get_matches_for_run(run_id)
+
+        # Strategy guidance
+        variables["playbook"] = self._artifacts.read_playbook(scenario_name)
+        variables["coach_hints"] = self._artifacts.read_hints(scenario_name)
+
+        # Scenario context
+        variables["scenario_rules"] = scenario_rules
+        variables["strategy_interface"] = strategy_interface
+        variables["current_strategy"] = current_strategy or {}
+
+        # Prior analyses
+        variables["prior_analyses"] = self._load_prior_analyses(scenario_name, generation)
+        variables["operational_lessons"] = self._artifacts.read_skills(scenario_name)
+
+        summary = self._build_competitor_summary(variables)
+        return RlmContext(variables=variables, summary=summary)
+
     # ------------------------------------------------------------------
     # Data loading helpers
     # ------------------------------------------------------------------
@@ -159,5 +197,20 @@ class ContextLoader:
             f"- `scenario_rules`: string ({len(variables['scenario_rules'])} chars)",
             f"- `match_scores`: list of {len(variables['match_scores'])} match score records",
             f"- `operational_lessons`: string ({len(variables['operational_lessons'])} chars) — lessons from prior gens",
+        ]
+        return "\n".join(lines)
+
+    def _build_competitor_summary(self, variables: dict[str, Any]) -> str:
+        lines = [
+            f"- `replays`: list of {len(variables['replays'])} replay dicts",
+            f"- `metrics_history`: list of {len(variables['metrics_history'])} generation metrics",
+            f"- `match_scores`: list of {len(variables['match_scores'])} match score records",
+            f"- `playbook`: string ({len(variables['playbook'])} chars) — strategy guidance",
+            f"- `coach_hints`: string ({len(variables['coach_hints'])} chars) — competitor hints",
+            f"- `scenario_rules`: string ({len(variables['scenario_rules'])} chars)",
+            f"- `strategy_interface`: string ({len(variables['strategy_interface'])} chars)",
+            "- `current_strategy`: dict — current generation's strategy",
+            f"- `prior_analyses`: list of {len(variables['prior_analyses'])} analysis strings",
+            f"- `operational_lessons`: string ({len(variables['operational_lessons'])} chars)",
         ]
         return "\n".join(lines)

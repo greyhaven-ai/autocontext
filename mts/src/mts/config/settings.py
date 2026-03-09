@@ -52,6 +52,7 @@ class AppSettings(BaseModel):
     rlm_sub_model: str = Field(default="claude-haiku-4-5-20251001")
     rlm_code_timeout_seconds: float = Field(default=10.0, ge=1.0)
     rlm_backend: str = Field(default="exec", description="RLM REPL backend: 'exec' (default) or 'monty' (Monty sandbox)")
+    rlm_competitor_enabled: bool = Field(default=False, description="Enable RLM REPL mode for Competitor role")
     playbook_max_versions: int = Field(default=5, ge=1)
     cross_run_inheritance: bool = Field(default=True)
     model_curator: str = Field(default="claude-opus-4-6")
@@ -247,6 +248,7 @@ def load_settings() -> AppSettings:
         rlm_sub_model=_get("rlm_sub_model", "MTS_RLM_SUB_MODEL", "claude-haiku-4-5-20251001"),
         rlm_code_timeout_seconds=float(_get("rlm_code_timeout_seconds", "MTS_RLM_CODE_TIMEOUT_SECONDS", "10.0")),
         rlm_backend=_get("rlm_backend", "MTS_RLM_BACKEND", "exec"),
+        rlm_competitor_enabled=_get_bool("rlm_competitor_enabled", "MTS_RLM_COMPETITOR_ENABLED", "false"),
         playbook_max_versions=int(_get("playbook_max_versions", "MTS_PLAYBOOK_MAX_VERSIONS", "5")),
         cross_run_inheritance=_get_bool("cross_run_inheritance", "MTS_CROSS_RUN_INHERITANCE", "true"),
         model_curator=_get("model_curator", "MTS_MODEL_CURATOR", "claude-opus-4-6"),
