@@ -27,3 +27,8 @@ class CompetitorRunner:
             )
         )
         return execution.content, execution
+
+    def revise(self, original_prompt: str, revision_prompt: str, tool_context: str = "") -> tuple[str, RoleExecution]:
+        """Re-run competitor with revision feedback appended."""
+        combined = f"{original_prompt}\n\n--- REVISION REQUIRED ---\n{revision_prompt}"
+        return self.run(combined, tool_context=tool_context)
