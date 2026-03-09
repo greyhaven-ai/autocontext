@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from mts.harness.storage.versioned_store import VersionedFileStore
+from mts.storage.buffered_writer import BufferedWriter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class ArtifactStore:
         skills_root: Path,
         claude_skills_path: Path,
         max_playbook_versions: int = 5,
+        enable_buffered_writes: bool = False,
     ):
         self.runs_root = runs_root
         self.knowledge_root = knowledge_root
@@ -26,6 +28,10 @@ class ArtifactStore:
         self.claude_skills_path = claude_skills_path
         self._max_playbook_versions = max_playbook_versions
         self._playbook_stores: dict[str, VersionedFileStore] = {}
+        self._writer: BufferedWriter | None = None
+        if enable_buffered_writes:
+            self._writer = BufferedWriter()
+            self._writer.start()
 
     def _playbook_store(self, scenario_name: str) -> VersionedFileStore:
         """Lazily create a per-scenario VersionedFileStore with legacy naming."""
@@ -58,6 +64,41 @@ class ArtifactStore:
                 handle.write(chunk)
             return
         path.write_text(chunk.lstrip("\n"), encoding="utf-8")
+
+    def flush_writes(self) -> None:
+        """Block until all buffered writes are flushed."""
+        if self._writer is not None:
+            self._writer.flush()
+
+    def shutdown_writer(self) -> None:
+        """Flush and stop the background writer thread."""
+        if self._writer is not None:
+            self._writer.shutdown()
+            self._writer = None
+
+    def buffered_write_json(self, path: Path, payload: dict[str, object]) -> None:
+        """Write JSON via buffer if available, otherwise synchronous."""
+        if self._writer is not None:
+            self._writer.write_json(path, payload)
+        else:
+            self.write_json(path, payload)
+
+    def buffered_write_markdown(self, path: Path, content: str) -> None:
+        """Write markdown via buffer if available, otherwise synchronous."""
+        if self._writer is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._writer.write_text(path, content.strip() + "\n")
+        else:
+            self.write_markdown(path, content)
+
+    def buffered_append_markdown(self, path: Path, content: str, heading: str) -> None:
+        """Append markdown via buffer if available, otherwise synchronous."""
+        if self._writer is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            chunk = f"\n## {heading}\n\n{content.strip()}\n"
+            self._writer.append_text(path, chunk)
+        else:
+            self.append_markdown(path, content, heading)
 
     def read_playbook(self, scenario_name: str) -> str:
         content = self._playbook_store(scenario_name).read("playbook.md")
@@ -207,15 +248,20 @@ class ArtifactStore:
         coach_playbook: str = "",
     ) -> None:
         gen_dir = self.generation_dir(run_id, generation_index)
-        self.write_json(gen_dir / "metrics.json", metrics)
-        self.write_json(gen_dir / "replays" / f"{scenario_name}_{generation_index}.json", replay_payload)
-        self.write_markdown(self.knowledge_root / scenario_name / "analysis" / f"gen_{generation_index}.md", analysis_md)
-        # Always append raw coach output to history for audit trail
-        self.append_coach_history(scenario_name, generation_index, coach_md)
-        # Replace-mode playbook: only write if coach produced a parsed playbook
+        # Non-critical writes — buffer if available
+        self.buffered_write_json(gen_dir / "metrics.json", metrics)
+        self.buffered_write_json(gen_dir / "replays" / f"{scenario_name}_{generation_index}.json", replay_payload)
+        analysis_path = self.knowledge_root / scenario_name / "analysis" / f"gen_{generation_index}.md"
+        self.buffered_write_markdown(analysis_path, analysis_md)
+        self.buffered_append_markdown(
+            self.knowledge_root / scenario_name / "coach_history.md",
+            coach_md,
+            heading=f"generation_{generation_index}",
+        )
+        # Critical write — always synchronous (versioned)
         if coach_playbook:
             self.write_playbook(scenario_name, coach_playbook)
-        self.append_markdown(
+        self.buffered_append_markdown(
             self.knowledge_root / scenario_name / "architect" / "changelog.md",
             architect_md,
             heading=f"generation_{generation_index}",

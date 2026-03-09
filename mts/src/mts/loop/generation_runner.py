@@ -42,6 +42,7 @@ class GenerationRunner:
             settings.skills_root,
             settings.claude_skills_path,
             max_playbook_versions=settings.playbook_max_versions,
+            enable_buffered_writes=True,
         )
         self.agents = AgentOrchestrator.from_settings(
             settings, artifacts=self.artifacts, sqlite=self.sqlite,
@@ -167,76 +168,17 @@ class GenerationRunner:
                             scenario_name,
                         )
 
-        for generation in range(1, generations + 1):
-            if self.controller:
-                self.controller.wait_if_paused()
-                hint = self.controller.take_hint()
-                if hint:
-                    coach_competitor_hints += f"\n\n[User guidance]: {hint}"
-            if self.sqlite.generation_exists(active_run_id, generation):
-                LOGGER.info("generation %s already exists for run %s, skipping for idempotency", generation, active_run_id)
-                continue
-            self.events.emit("generation_started", {"run_id": active_run_id, "generation": generation})
-            self.sqlite.upsert_generation(
-                active_run_id,
-                generation,
-                mean_score=0.0,
-                best_score=previous_best,
-                elo=challenger_elo,
-                wins=0,
-                losses=0,
-                gate_decision="running",
-                status="running",
-            )
-            try:
-                from mts.loop.generation_pipeline import GenerationPipeline
-                from mts.loop.stage_types import GenerationContext
-
-                warm_fn = None
-                if self.settings.executor_mode == "primeintellect" and self.remote is not None:
-                    def _warm(ctx_arg: object, _gen: int = generation) -> dict:
-                        assert self.remote is not None
-                        return self.remote.warm_provision(
-                            environment_name=f"{scenario_name}-gen-{_gen}",
-                            max_retries=self.settings.primeintellect_max_retries,
-                            backoff_seconds=self.settings.primeintellect_backoff_seconds,
-                        )
-                    warm_fn = _warm
-
-                pipeline = GenerationPipeline(
-                    orchestrator=self.agents,
-                    supervisor=self.executor,
-                    gate=self.gate,
-                    artifacts=self.artifacts,
-                    sqlite=self.sqlite,
-                    trajectory_builder=self.trajectory_builder,
-                    events=self.events,
-                    curator=self.agents.curator,
-                    controller=self.controller,
-                    warm_provision_fn=warm_fn,
-                    chat_with_agent_fn=self._chat_with_agent,
-                    meta_optimizer=self._meta_optimizer,
-                )
-                ctx = GenerationContext(
-                    run_id=active_run_id,
-                    scenario_name=scenario_name,
-                    scenario=scenario,
-                    generation=generation,
-                    settings=self.settings,
-                    previous_best=previous_best,
-                    challenger_elo=challenger_elo,
-                    score_history=score_history,
-                    gate_decision_history=gate_decision_history,
-                    coach_competitor_hints=coach_competitor_hints,
-                    replay_narrative=replay_narrative,
-                )
-                ctx = pipeline.run_generation(ctx)
-                previous_best = ctx.previous_best
-                challenger_elo = ctx.challenger_elo
-                replay_narrative = ctx.replay_narrative
-                coach_competitor_hints = ctx.coach_competitor_hints
-                completed += 1
-            except Exception as exc:
+        try:
+            for generation in range(1, generations + 1):
+                if self.controller:
+                    self.controller.wait_if_paused()
+                    hint = self.controller.take_hint()
+                    if hint:
+                        coach_competitor_hints += f"\n\n[User guidance]: {hint}"
+                if self.sqlite.generation_exists(active_run_id, generation):
+                    LOGGER.info("generation %s already exists for run %s, skipping for idempotency", generation, active_run_id)
+                    continue
+                self.events.emit("generation_started", {"run_id": active_run_id, "generation": generation})
                 self.sqlite.upsert_generation(
                     active_run_id,
                     generation,
@@ -245,15 +187,78 @@ class GenerationRunner:
                     elo=challenger_elo,
                     wins=0,
                     losses=0,
-                    gate_decision="error",
-                    status="failed",
+                    gate_decision="running",
+                    status="running",
                 )
-                self.events.emit(
-                    "generation_failed",
-                    {"run_id": active_run_id, "generation": generation, "error": str(exc)},
-                )
-                raise
-        self.sqlite.mark_run_completed(active_run_id)
+                try:
+                    from mts.loop.generation_pipeline import GenerationPipeline
+                    from mts.loop.stage_types import GenerationContext
+
+                    warm_fn = None
+                    if self.settings.executor_mode == "primeintellect" and self.remote is not None:
+                        def _warm(ctx_arg: object, _gen: int = generation) -> dict:
+                            assert self.remote is not None
+                            return self.remote.warm_provision(
+                                environment_name=f"{scenario_name}-gen-{_gen}",
+                                max_retries=self.settings.primeintellect_max_retries,
+                                backoff_seconds=self.settings.primeintellect_backoff_seconds,
+                            )
+                        warm_fn = _warm
+
+                    pipeline = GenerationPipeline(
+                        orchestrator=self.agents,
+                        supervisor=self.executor,
+                        gate=self.gate,
+                        artifacts=self.artifacts,
+                        sqlite=self.sqlite,
+                        trajectory_builder=self.trajectory_builder,
+                        events=self.events,
+                        curator=self.agents.curator,
+                        controller=self.controller,
+                        warm_provision_fn=warm_fn,
+                        chat_with_agent_fn=self._chat_with_agent,
+                        meta_optimizer=self._meta_optimizer,
+                    )
+                    ctx = GenerationContext(
+                        run_id=active_run_id,
+                        scenario_name=scenario_name,
+                        scenario=scenario,
+                        generation=generation,
+                        settings=self.settings,
+                        previous_best=previous_best,
+                        challenger_elo=challenger_elo,
+                        score_history=score_history,
+                        gate_decision_history=gate_decision_history,
+                        coach_competitor_hints=coach_competitor_hints,
+                        replay_narrative=replay_narrative,
+                    )
+                    ctx = pipeline.run_generation(ctx)
+                    previous_best = ctx.previous_best
+                    challenger_elo = ctx.challenger_elo
+                    replay_narrative = ctx.replay_narrative
+                    coach_competitor_hints = ctx.coach_competitor_hints
+                    completed += 1
+                except Exception as exc:
+                    self.sqlite.upsert_generation(
+                        active_run_id,
+                        generation,
+                        mean_score=0.0,
+                        best_score=previous_best,
+                        elo=challenger_elo,
+                        wins=0,
+                        losses=0,
+                        gate_decision="error",
+                        status="failed",
+                    )
+                    self.events.emit(
+                        "generation_failed",
+                        {"run_id": active_run_id, "generation": generation, "error": str(exc)},
+                    )
+                    raise
+            self.sqlite.mark_run_completed(active_run_id)
+            self.artifacts.flush_writes()
+        finally:
+            self.artifacts.shutdown_writer()
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:

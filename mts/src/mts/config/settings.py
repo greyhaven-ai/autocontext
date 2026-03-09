@@ -5,6 +5,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from mts.config.presets import apply_preset
+
 
 class AppSettings(BaseModel):
     db_path: Path = Field(default=Path("runs/mts.sqlite3"))
@@ -84,24 +86,6 @@ class AppSettings(BaseModel):
     tier_sonnet_model: str = Field(default="claude-sonnet-4-5-20250929")
     tier_opus_model: str = Field(default="claude-opus-4-6")
     tier_competitor_haiku_max_gen: int = Field(default=3, ge=1)
-    # Phase 7: Adaptive application
-    adapt_enabled: bool = Field(default=False)
-    adapt_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
-    adapt_max_changes_per_cycle: int = Field(default=2, ge=0)
-    adapt_dry_run: bool = Field(default=False)
-    # Phase 10: Heartbeat
-    heartbeat_enabled: bool = Field(default=False)
-    heartbeat_stall_timeout_seconds: float = Field(default=300.0, ge=10.0)
-    heartbeat_escalation_interval_seconds: float = Field(default=60.0, ge=10.0)
-    heartbeat_max_restart_attempts: int = Field(default=2, ge=0)
-    # Phase 8: Trust layer
-    trust_enabled: bool = Field(default=False)
-    trust_min_observations: int = Field(default=5, ge=1)
-    trust_confidence_saturation: int = Field(default=20, ge=5)
-    trust_decay_rate: float = Field(default=0.05, ge=0.0, le=1.0)
-    # Phase 9: Agent identity
-    identity_enabled: bool = Field(default=False)
-    identity_dir: Path = Field(default=Path("knowledge/_identities"))
     # Agent task judge settings
     judge_model: str = Field(default="claude-sonnet-4-20250514")
     judge_samples: int = Field(default=1, ge=1)
@@ -140,103 +124,129 @@ class AppSettings(BaseModel):
 
 
 def load_settings() -> AppSettings:
+    # Resolve preset overrides (env var > preset > hardcoded default)
+    preset_name = os.getenv("MTS_PRESET", "")
+    preset = apply_preset(preset_name)
+
+    def _get(field: str, env_key: str, default: str) -> str:
+        """Return env var if set, else preset value (as str), else default."""
+        env_val = os.getenv(env_key)
+        if env_val is not None:
+            return env_val
+        if field in preset:
+            return str(preset[field])
+        return default
+
+    _TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+    def _get_bool(field: str, env_key: str, default: str) -> bool:
+        """Return bool: env var if set, else preset value, else default."""
+        env_val = os.getenv(env_key)
+        if env_val is not None:
+            return env_val.lower() in _TRUTHY
+        if field in preset:
+            return str(preset[field]).lower() in _TRUTHY
+        return default.lower() in _TRUTHY
+
     return AppSettings(
-        db_path=Path(os.getenv("MTS_DB_PATH", "runs/mts.sqlite3")),
-        runs_root=Path(os.getenv("MTS_RUNS_ROOT", "runs")),
-        knowledge_root=Path(os.getenv("MTS_KNOWLEDGE_ROOT", "knowledge")),
-        skills_root=Path(os.getenv("MTS_SKILLS_ROOT", "skills")),
-        claude_skills_path=Path(os.getenv("MTS_CLAUDE_SKILLS_PATH", ".claude/skills")),
-        executor_mode=os.getenv("MTS_EXECUTOR_MODE", "local"),
-        agent_provider=os.getenv("MTS_AGENT_PROVIDER", "anthropic"),
+        db_path=Path(_get("db_path", "MTS_DB_PATH", "runs/mts.sqlite3")),
+        runs_root=Path(_get("runs_root", "MTS_RUNS_ROOT", "runs")),
+        knowledge_root=Path(_get("knowledge_root", "MTS_KNOWLEDGE_ROOT", "knowledge")),
+        skills_root=Path(_get("skills_root", "MTS_SKILLS_ROOT", "skills")),
+        claude_skills_path=Path(_get("claude_skills_path", "MTS_CLAUDE_SKILLS_PATH", ".claude/skills")),
+        executor_mode=_get("executor_mode", "MTS_EXECUTOR_MODE", "local"),
+        agent_provider=_get("agent_provider", "MTS_AGENT_PROVIDER", "anthropic"),
         anthropic_api_key=os.getenv("MTS_ANTHROPIC_API_KEY"),
-        model_competitor=os.getenv("MTS_MODEL_COMPETITOR", "claude-sonnet-4-5-20250929"),
-        model_analyst=os.getenv("MTS_MODEL_ANALYST", "claude-sonnet-4-5-20250929"),
-        model_coach=os.getenv("MTS_MODEL_COACH", "claude-opus-4-6"),
-        model_architect=os.getenv("MTS_MODEL_ARCHITECT", "claude-opus-4-6"),
-        model_translator=os.getenv("MTS_MODEL_TRANSLATOR", "claude-sonnet-4-5-20250929"),
-        architect_every_n_gens=int(os.getenv("MTS_ARCHITECT_EVERY_N_GENS", "3")),
-        matches_per_generation=int(os.getenv("MTS_MATCHES_PER_GENERATION", "3")),
-        backpressure_min_delta=float(os.getenv("MTS_BACKPRESSURE_MIN_DELTA", "0.005")),
-        backpressure_mode=os.getenv("MTS_BACKPRESSURE_MODE", "simple"),
-        backpressure_plateau_window=int(os.getenv("MTS_BACKPRESSURE_PLATEAU_WINDOW", "3")),
-        backpressure_plateau_relaxation=float(os.getenv("MTS_BACKPRESSURE_PLATEAU_RELAXATION", "0.5")),
-        default_generations=int(os.getenv("MTS_DEFAULT_GENERATIONS", "1")),
-        seed_base=int(os.getenv("MTS_SEED_BASE", "1000")),
-        max_retries=int(os.getenv("MTS_MAX_RETRIES", "2")),
-        retry_backoff_seconds=float(os.getenv("MTS_RETRY_BACKOFF_SECONDS", "0.25")),
-        event_stream_path=Path(os.getenv("MTS_EVENT_STREAM_PATH", "runs/events.ndjson")),
-        primeintellect_api_base=os.getenv("MTS_PRIMEINTELLECT_API_BASE", "https://api.primeintellect.ai"),
+        model_competitor=_get("model_competitor", "MTS_MODEL_COMPETITOR", "claude-sonnet-4-5-20250929"),
+        model_analyst=_get("model_analyst", "MTS_MODEL_ANALYST", "claude-sonnet-4-5-20250929"),
+        model_coach=_get("model_coach", "MTS_MODEL_COACH", "claude-opus-4-6"),
+        model_architect=_get("model_architect", "MTS_MODEL_ARCHITECT", "claude-opus-4-6"),
+        model_translator=_get("model_translator", "MTS_MODEL_TRANSLATOR", "claude-sonnet-4-5-20250929"),
+        architect_every_n_gens=int(_get("architect_every_n_gens", "MTS_ARCHITECT_EVERY_N_GENS", "3")),
+        matches_per_generation=int(_get("matches_per_generation", "MTS_MATCHES_PER_GENERATION", "3")),
+        backpressure_min_delta=float(_get("backpressure_min_delta", "MTS_BACKPRESSURE_MIN_DELTA", "0.005")),
+        backpressure_mode=_get("backpressure_mode", "MTS_BACKPRESSURE_MODE", "simple"),
+        backpressure_plateau_window=int(_get("backpressure_plateau_window", "MTS_BACKPRESSURE_PLATEAU_WINDOW", "3")),
+        backpressure_plateau_relaxation=float(
+            _get("backpressure_plateau_relaxation", "MTS_BACKPRESSURE_PLATEAU_RELAXATION", "0.5"),
+        ),
+        default_generations=int(_get("default_generations", "MTS_DEFAULT_GENERATIONS", "1")),
+        seed_base=int(_get("seed_base", "MTS_SEED_BASE", "1000")),
+        max_retries=int(_get("max_retries", "MTS_MAX_RETRIES", "2")),
+        retry_backoff_seconds=float(_get("retry_backoff_seconds", "MTS_RETRY_BACKOFF_SECONDS", "0.25")),
+        event_stream_path=Path(_get("event_stream_path", "MTS_EVENT_STREAM_PATH", "runs/events.ndjson")),
+        primeintellect_api_base=_get("primeintellect_api_base", "MTS_PRIMEINTELLECT_API_BASE", "https://api.primeintellect.ai"),
         primeintellect_api_key=os.getenv("MTS_PRIMEINTELLECT_API_KEY"),
-        primeintellect_docker_image=os.getenv("MTS_PRIMEINTELLECT_DOCKER_IMAGE", "python:3.11-slim"),
-        primeintellect_cpu_cores=float(os.getenv("MTS_PRIMEINTELLECT_CPU_CORES", "1.0")),
-        primeintellect_memory_gb=float(os.getenv("MTS_PRIMEINTELLECT_MEMORY_GB", "2.0")),
-        primeintellect_disk_size_gb=float(os.getenv("MTS_PRIMEINTELLECT_DISK_SIZE_GB", "5.0")),
-        primeintellect_timeout_minutes=int(os.getenv("MTS_PRIMEINTELLECT_TIMEOUT_MINUTES", "30")),
-        primeintellect_wait_attempts=int(os.getenv("MTS_PRIMEINTELLECT_WAIT_ATTEMPTS", "60")),
-        primeintellect_max_retries=int(os.getenv("MTS_PRIMEINTELLECT_MAX_RETRIES", "2")),
-        primeintellect_backoff_seconds=float(os.getenv("MTS_PRIMEINTELLECT_BACKOFF_SECONDS", "0.75")),
-        allow_primeintellect_fallback=os.getenv("MTS_ALLOW_PRIMEINTELLECT_FALLBACK", "true").lower() == "true",
-        local_sandbox_hardened=os.getenv("MTS_LOCAL_SANDBOX_HARDENED", "true").lower() == "true",
-        ablation_no_feedback=os.getenv("MTS_ABLATION_NO_FEEDBACK", "false").lower() == "true",
-        rlm_enabled=os.getenv("MTS_RLM_ENABLED", "false").lower() == "true",
-        rlm_max_turns=int(os.getenv("MTS_RLM_MAX_TURNS", "25")),
-        rlm_max_stdout_chars=int(os.getenv("MTS_RLM_MAX_STDOUT_CHARS", "8192")),
-        rlm_sub_model=os.getenv("MTS_RLM_SUB_MODEL", "claude-haiku-4-5-20251001"),
-        rlm_code_timeout_seconds=float(os.getenv("MTS_RLM_CODE_TIMEOUT_SECONDS", "10.0")),
-        rlm_backend=os.getenv("MTS_RLM_BACKEND", "exec"),
-        playbook_max_versions=int(os.getenv("MTS_PLAYBOOK_MAX_VERSIONS", "5")),
-        cross_run_inheritance=os.getenv("MTS_CROSS_RUN_INHERITANCE", "true").lower() == "true",
-        model_curator=os.getenv("MTS_MODEL_CURATOR", "claude-opus-4-6"),
-        curator_enabled=os.getenv("MTS_CURATOR_ENABLED", "true").lower() == "true",
-        curator_consolidate_every_n_gens=int(os.getenv("MTS_CURATOR_CONSOLIDATE_EVERY_N_GENS", "3")),
-        skill_max_lessons=int(os.getenv("MTS_SKILL_MAX_LESSONS", "30")),
-        agent_sdk_connect_mcp=os.getenv("MTS_AGENT_SDK_CONNECT_MCP", "false").lower() == "true",
-        sandbox_max_generations=int(os.getenv("MTS_SANDBOX_MAX_GENERATIONS", "10")),
-        use_pipeline_engine=os.getenv("MTS_USE_PIPELINE_ENGINE", "false").lower() == "true",
-        monty_max_execution_time_seconds=float(os.getenv("MTS_MONTY_MAX_EXECUTION_TIME_SECONDS", "30.0")),
-        monty_max_external_calls=int(os.getenv("MTS_MONTY_MAX_EXTERNAL_CALLS", "100")),
-        code_strategies_enabled=os.getenv("MTS_CODE_STRATEGIES_ENABLED", "false").lower() == "true",
-        audit_enabled=os.getenv("MTS_AUDIT_ENABLED", "true").lower() == "true",
-        audit_log_path=Path(os.getenv("MTS_AUDIT_LOG_PATH", "runs/audit.ndjson")),
-        cost_tracking_enabled=os.getenv("MTS_COST_TRACKING_ENABLED", "true").lower() == "true",
-        cost_budget_limit=float(os.getenv("MTS_COST_BUDGET_LIMIT", "0")) or None,
-        meta_profiling_enabled=os.getenv("MTS_META_PROFILING_ENABLED", "false").lower() == "true",
-        meta_profile_path=Path(os.getenv("MTS_META_PROFILE_PATH", "runs/meta_profiles.json")),
-        meta_min_observations=int(os.getenv("MTS_META_MIN_OBSERVATIONS", "5")),
-        tier_routing_enabled=os.getenv("MTS_TIER_ROUTING_ENABLED", "false").lower() == "true",
-        tier_haiku_model=os.getenv("MTS_TIER_HAIKU_MODEL", "claude-haiku-4-5-20251001"),
-        tier_sonnet_model=os.getenv("MTS_TIER_SONNET_MODEL", "claude-sonnet-4-5-20250929"),
-        tier_opus_model=os.getenv("MTS_TIER_OPUS_MODEL", "claude-opus-4-6"),
-        tier_competitor_haiku_max_gen=int(os.getenv("MTS_TIER_COMPETITOR_HAIKU_MAX_GEN", "3")),
-        adapt_enabled=os.getenv("MTS_ADAPT_ENABLED", "false").lower() == "true",
-        adapt_min_confidence=float(os.getenv("MTS_ADAPT_MIN_CONFIDENCE", "0.6")),
-        adapt_max_changes_per_cycle=int(os.getenv("MTS_ADAPT_MAX_CHANGES_PER_CYCLE", "2")),
-        adapt_dry_run=os.getenv("MTS_ADAPT_DRY_RUN", "false").lower() == "true",
-        heartbeat_enabled=os.getenv("MTS_HEARTBEAT_ENABLED", "false").lower() == "true",
-        heartbeat_stall_timeout_seconds=float(os.getenv("MTS_HEARTBEAT_STALL_TIMEOUT_SECONDS", "300.0")),
-        heartbeat_escalation_interval_seconds=float(os.getenv("MTS_HEARTBEAT_ESCALATION_INTERVAL_SECONDS", "60.0")),
-        heartbeat_max_restart_attempts=int(os.getenv("MTS_HEARTBEAT_MAX_RESTART_ATTEMPTS", "2")),
-        trust_enabled=os.getenv("MTS_TRUST_ENABLED", "false").lower() == "true",
-        trust_min_observations=int(os.getenv("MTS_TRUST_MIN_OBSERVATIONS", "5")),
-        trust_confidence_saturation=int(os.getenv("MTS_TRUST_CONFIDENCE_SATURATION", "20")),
-        trust_decay_rate=float(os.getenv("MTS_TRUST_DECAY_RATE", "0.05")),
-        identity_enabled=os.getenv("MTS_IDENTITY_ENABLED", "false").lower() == "true",
-        identity_dir=Path(os.getenv("MTS_IDENTITY_DIR", "knowledge/_identities")),
-        judge_model=os.getenv("MTS_JUDGE_MODEL", "claude-sonnet-4-20250514"),
-        judge_samples=int(os.getenv("MTS_JUDGE_SAMPLES", "1")),
-        judge_temperature=float(os.getenv("MTS_JUDGE_TEMPERATURE", "0.0")),
-        judge_provider=os.getenv("MTS_JUDGE_PROVIDER", "anthropic"),
+        primeintellect_docker_image=_get("primeintellect_docker_image", "MTS_PRIMEINTELLECT_DOCKER_IMAGE", "python:3.11-slim"),
+        primeintellect_cpu_cores=float(_get("primeintellect_cpu_cores", "MTS_PRIMEINTELLECT_CPU_CORES", "1.0")),
+        primeintellect_memory_gb=float(_get("primeintellect_memory_gb", "MTS_PRIMEINTELLECT_MEMORY_GB", "2.0")),
+        primeintellect_disk_size_gb=float(_get("primeintellect_disk_size_gb", "MTS_PRIMEINTELLECT_DISK_SIZE_GB", "5.0")),
+        primeintellect_timeout_minutes=int(
+            _get("primeintellect_timeout_minutes", "MTS_PRIMEINTELLECT_TIMEOUT_MINUTES", "30"),
+        ),
+        primeintellect_wait_attempts=int(_get("primeintellect_wait_attempts", "MTS_PRIMEINTELLECT_WAIT_ATTEMPTS", "60")),
+        primeintellect_max_retries=int(_get("primeintellect_max_retries", "MTS_PRIMEINTELLECT_MAX_RETRIES", "2")),
+        primeintellect_backoff_seconds=float(
+            _get("primeintellect_backoff_seconds", "MTS_PRIMEINTELLECT_BACKOFF_SECONDS", "0.75"),
+        ),
+        allow_primeintellect_fallback=_get_bool(
+            "allow_primeintellect_fallback", "MTS_ALLOW_PRIMEINTELLECT_FALLBACK", "true",
+        ),
+        local_sandbox_hardened=_get_bool("local_sandbox_hardened", "MTS_LOCAL_SANDBOX_HARDENED", "true"),
+        ablation_no_feedback=_get_bool("ablation_no_feedback", "MTS_ABLATION_NO_FEEDBACK", "false"),
+        rlm_enabled=_get_bool("rlm_enabled", "MTS_RLM_ENABLED", "false"),
+        rlm_max_turns=int(_get("rlm_max_turns", "MTS_RLM_MAX_TURNS", "25")),
+        rlm_max_stdout_chars=int(_get("rlm_max_stdout_chars", "MTS_RLM_MAX_STDOUT_CHARS", "8192")),
+        rlm_sub_model=_get("rlm_sub_model", "MTS_RLM_SUB_MODEL", "claude-haiku-4-5-20251001"),
+        rlm_code_timeout_seconds=float(_get("rlm_code_timeout_seconds", "MTS_RLM_CODE_TIMEOUT_SECONDS", "10.0")),
+        rlm_backend=_get("rlm_backend", "MTS_RLM_BACKEND", "exec"),
+        playbook_max_versions=int(_get("playbook_max_versions", "MTS_PLAYBOOK_MAX_VERSIONS", "5")),
+        cross_run_inheritance=_get_bool("cross_run_inheritance", "MTS_CROSS_RUN_INHERITANCE", "true"),
+        model_curator=_get("model_curator", "MTS_MODEL_CURATOR", "claude-opus-4-6"),
+        curator_enabled=_get_bool("curator_enabled", "MTS_CURATOR_ENABLED", "true"),
+        curator_consolidate_every_n_gens=int(
+            _get("curator_consolidate_every_n_gens", "MTS_CURATOR_CONSOLIDATE_EVERY_N_GENS", "3"),
+        ),
+        skill_max_lessons=int(_get("skill_max_lessons", "MTS_SKILL_MAX_LESSONS", "30")),
+        agent_sdk_connect_mcp=_get_bool("agent_sdk_connect_mcp", "MTS_AGENT_SDK_CONNECT_MCP", "false"),
+        sandbox_max_generations=int(_get("sandbox_max_generations", "MTS_SANDBOX_MAX_GENERATIONS", "10")),
+        use_pipeline_engine=_get_bool("use_pipeline_engine", "MTS_USE_PIPELINE_ENGINE", "false"),
+        monty_max_execution_time_seconds=float(
+            _get("monty_max_execution_time_seconds", "MTS_MONTY_MAX_EXECUTION_TIME_SECONDS", "30.0"),
+        ),
+        monty_max_external_calls=int(_get("monty_max_external_calls", "MTS_MONTY_MAX_EXTERNAL_CALLS", "100")),
+        code_strategies_enabled=_get_bool("code_strategies_enabled", "MTS_CODE_STRATEGIES_ENABLED", "false"),
+        audit_enabled=_get_bool("audit_enabled", "MTS_AUDIT_ENABLED", "true"),
+        audit_log_path=Path(_get("audit_log_path", "MTS_AUDIT_LOG_PATH", "runs/audit.ndjson")),
+        cost_tracking_enabled=_get_bool("cost_tracking_enabled", "MTS_COST_TRACKING_ENABLED", "true"),
+        cost_budget_limit=float(_get("cost_budget_limit", "MTS_COST_BUDGET_LIMIT", "0")) or None,
+        meta_profiling_enabled=_get_bool("meta_profiling_enabled", "MTS_META_PROFILING_ENABLED", "false"),
+        meta_profile_path=Path(_get("meta_profile_path", "MTS_META_PROFILE_PATH", "runs/meta_profiles.json")),
+        meta_min_observations=int(_get("meta_min_observations", "MTS_META_MIN_OBSERVATIONS", "5")),
+        tier_routing_enabled=_get_bool("tier_routing_enabled", "MTS_TIER_ROUTING_ENABLED", "false"),
+        tier_haiku_model=_get("tier_haiku_model", "MTS_TIER_HAIKU_MODEL", "claude-haiku-4-5-20251001"),
+        tier_sonnet_model=_get("tier_sonnet_model", "MTS_TIER_SONNET_MODEL", "claude-sonnet-4-5-20250929"),
+        tier_opus_model=_get("tier_opus_model", "MTS_TIER_OPUS_MODEL", "claude-opus-4-6"),
+        tier_competitor_haiku_max_gen=int(_get("tier_competitor_haiku_max_gen", "MTS_TIER_COMPETITOR_HAIKU_MAX_GEN", "3")),
+        judge_model=_get("judge_model", "MTS_JUDGE_MODEL", "claude-sonnet-4-20250514"),
+        judge_samples=int(_get("judge_samples", "MTS_JUDGE_SAMPLES", "1")),
+        judge_temperature=float(_get("judge_temperature", "MTS_JUDGE_TEMPERATURE", "0.0")),
+        judge_provider=_get("judge_provider", "MTS_JUDGE_PROVIDER", "anthropic"),
         judge_base_url=os.getenv("MTS_JUDGE_BASE_URL"),
         judge_api_key=os.getenv("MTS_JUDGE_API_KEY"),
         notify_webhook_url=os.getenv("MTS_NOTIFY_WEBHOOK_URL"),
-        notify_on=os.getenv("MTS_NOTIFY_ON", "threshold_met,failure"),
-        stagnation_reset_enabled=os.getenv("MTS_STAGNATION_RESET_ENABLED", "false").lower() == "true",
-        stagnation_rollback_threshold=int(os.getenv("MTS_STAGNATION_ROLLBACK_THRESHOLD", "5")),
-        stagnation_plateau_window=int(os.getenv("MTS_STAGNATION_PLATEAU_WINDOW", "5")),
-        stagnation_plateau_epsilon=float(os.getenv("MTS_STAGNATION_PLATEAU_EPSILON", "0.01")),
-        stagnation_distill_top_lessons=int(os.getenv("MTS_STAGNATION_DISTILL_TOP_LESSONS", "5")),
-        progress_json_enabled=os.getenv("MTS_PROGRESS_JSON_ENABLED", "true").lower() == "true",
-        constraint_prompts_enabled=os.getenv("MTS_CONSTRAINT_PROMPTS_ENABLED", "true").lower() == "true",
-        context_budget_tokens=int(os.getenv("MTS_CONTEXT_BUDGET_TOKENS", "100000")),
-        coherence_check_enabled=os.getenv("MTS_COHERENCE_CHECK_ENABLED", "true").lower() in ("true", "1", "yes"),
+        notify_on=_get("notify_on", "MTS_NOTIFY_ON", "threshold_met,failure"),
+        stagnation_reset_enabled=_get_bool("stagnation_reset_enabled", "MTS_STAGNATION_RESET_ENABLED", "false"),
+        stagnation_rollback_threshold=int(
+            _get("stagnation_rollback_threshold", "MTS_STAGNATION_ROLLBACK_THRESHOLD", "5"),
+        ),
+        stagnation_plateau_window=int(_get("stagnation_plateau_window", "MTS_STAGNATION_PLATEAU_WINDOW", "5")),
+        stagnation_plateau_epsilon=float(_get("stagnation_plateau_epsilon", "MTS_STAGNATION_PLATEAU_EPSILON", "0.01")),
+        stagnation_distill_top_lessons=int(
+            _get("stagnation_distill_top_lessons", "MTS_STAGNATION_DISTILL_TOP_LESSONS", "5"),
+        ),
+        progress_json_enabled=_get_bool("progress_json_enabled", "MTS_PROGRESS_JSON_ENABLED", "true"),
+        constraint_prompts_enabled=_get_bool("constraint_prompts_enabled", "MTS_CONSTRAINT_PROMPTS_ENABLED", "true"),
+        context_budget_tokens=int(_get("context_budget_tokens", "MTS_CONTEXT_BUDGET_TOKENS", "100000")),
+        coherence_check_enabled=_get_bool("coherence_check_enabled", "MTS_COHERENCE_CHECK_ENABLED", "true"),
     )

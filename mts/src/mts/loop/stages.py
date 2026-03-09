@@ -309,7 +309,7 @@ def stage_tournament(
     best_exec = best_eval.metadata["execution_output"]
     replay_narrative = scenario.replay_to_narrative(best_exec.result.replay)
     gen_dir = artifacts.generation_dir(ctx.run_id, ctx.generation)
-    artifacts.write_markdown(gen_dir / "narrative.md", replay_narrative)
+    artifacts.buffered_write_markdown(gen_dir / "narrative.md", replay_narrative)
 
     # Accumulate history for trend-aware gate
     ctx.score_history.append(tournament.best_score)
