@@ -44,6 +44,36 @@ class RoleDAG:
 
         return batches
 
+    def add_role(self, role: RoleSpec) -> None:
+        """Add a role to the DAG. Validates no duplicates, no self-deps, no missing deps, no cycles."""
+        if role.name in self._roles:
+            raise ValueError(f"Role '{role.name}' already exists in DAG")
+        for dep in role.depends_on:
+            if dep == role.name:
+                raise ValueError(f"Role '{role.name}' depends on itself")
+            if dep not in self._roles:
+                raise ValueError(f"Role '{role.name}' depends on unknown role '{dep}'")
+        self._roles[role.name] = role
+        self._names.append(role.name)
+        # Validate no cycles were introduced
+        try:
+            self.execution_batches()
+        except ValueError:
+            # Rollback
+            del self._roles[role.name]
+            self._names.remove(role.name)
+            raise
+
+    def remove_role(self, name: str) -> None:
+        """Remove a role from the DAG. Fails if other roles depend on it."""
+        if name not in self._roles:
+            raise ValueError(f"Role '{name}' not found in DAG")
+        dependents = [r.name for r in self._roles.values() if name in r.depends_on]
+        if dependents:
+            raise ValueError(f"Role '{name}' is depended on by: {', '.join(dependents)}")
+        del self._roles[name]
+        self._names.remove(name)
+
     @property
     def roles(self) -> dict[str, RoleSpec]:
         return dict(self._roles)
