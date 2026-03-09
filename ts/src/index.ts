@@ -45,6 +45,8 @@ export { cleanRevisionOutput } from "./execution/output-cleaner.js";
 export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
 export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
 export { JudgeExecutor } from "./execution/judge-executor.js";
+export { StrategyValidator, ValidationResultSchema } from "./execution/strategy-validator.js";
+export type { ValidationResult, MatchResult, StrategyValidatorOpts, ExecuteMatchFn } from "./execution/strategy-validator.js";
 
 // Runtimes
 export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
