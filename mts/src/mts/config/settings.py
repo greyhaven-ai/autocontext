@@ -137,14 +137,16 @@ def load_settings() -> AppSettings:
             return str(preset[field])
         return default
 
+    _TRUTHY = frozenset({"1", "true", "yes", "on"})
+
     def _get_bool(field: str, env_key: str, default: str) -> bool:
         """Return bool: env var if set, else preset value, else default."""
         env_val = os.getenv(env_key)
         if env_val is not None:
-            return env_val.lower() == "true"
+            return env_val.lower() in _TRUTHY
         if field in preset:
             return bool(preset[field])
-        return default.lower() == "true"
+        return default.lower() in _TRUTHY
 
     return AppSettings(
         db_path=Path(_get("db_path", "MTS_DB_PATH", "runs/mts.sqlite3")),
