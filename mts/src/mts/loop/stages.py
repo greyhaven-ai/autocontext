@@ -8,6 +8,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from mts.agents.architect import parse_dag_changes
 from mts.backpressure.trend_gate import ScoreHistory, TrendAwareGate
 from mts.harness.evaluation.failure_report import FailureReport
 from mts.harness.evaluation.runner import EvaluationRunner
@@ -19,6 +20,7 @@ from mts.knowledge.progress import build_progress_snapshot
 from mts.knowledge.stagnation import StagnationDetector
 from mts.loop.stage_types import GenerationContext
 from mts.prompts.templates import build_prompt_bundle
+from mts.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 if TYPE_CHECKING:
     from mts.agents.curator import KnowledgeCurator
@@ -148,6 +150,9 @@ def stage_agent_generation(
                 "tokens": role_execution.usage.input_tokens + role_execution.usage.output_tokens,
             })
     created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
+
+    # Parse DAG change directives from architect output
+    ctx.dag_changes = parse_dag_changes(outputs.architect_markdown)
 
     ctx.outputs = outputs
     ctx.current_strategy = outputs.strategy
@@ -392,7 +397,7 @@ def stage_curator_gate(
         return ctx
 
     current_pb = artifacts.read_playbook(ctx.scenario_name)
-    if not current_pb or current_pb == "No playbook yet. Start from scenario rules and observation.":
+    if not current_pb or current_pb == EMPTY_PLAYBOOK_SENTINEL:
         return ctx
 
     events.emit("curator_started", {

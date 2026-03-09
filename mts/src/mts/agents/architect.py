@@ -6,6 +6,7 @@ from typing import Any
 
 from mts.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from mts.agents.types import RoleExecution
+from mts.harness.core.output_parser import extract_delimited_section
 
 
 def parse_architect_tool_specs(content: str) -> list[dict[str, Any]]:
@@ -34,6 +35,45 @@ def parse_architect_tool_specs(content: str) -> list[dict[str, Any]]:
             continue
         valid_tools.append({"name": name, "description": description, "code": code})
     return valid_tools
+
+
+_DAG_START = "<!-- DAG_CHANGES_START -->"
+_DAG_END = "<!-- DAG_CHANGES_END -->"
+_VALID_ACTIONS = {"add_role", "remove_role"}
+
+
+def parse_dag_changes(content: str) -> list[dict[str, Any]]:
+    """Extract DAG change directives from architect output.
+
+    Looks for <!-- DAG_CHANGES_START --> ... <!-- DAG_CHANGES_END --> markers
+    containing JSON: {"changes": [{"action": "add_role"|"remove_role", "name": ..., "depends_on": [...]}]}
+    """
+    body = extract_delimited_section(content, _DAG_START, _DAG_END)
+    if body is None:
+        return []
+    try:
+        decoded = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(decoded, Mapping):
+        return []
+    changes = decoded.get("changes")
+    if not isinstance(changes, list):
+        return []
+    valid: list[dict[str, Any]] = []
+    for item in changes:
+        if not isinstance(item, Mapping):
+            continue
+        action = item.get("action")
+        name = item.get("name")
+        if action not in _VALID_ACTIONS or not isinstance(name, str):
+            continue
+        entry: dict[str, Any] = {"action": action, "name": name}
+        if action == "add_role":
+            deps = item.get("depends_on", [])
+            entry["depends_on"] = list(deps) if isinstance(deps, list) else []
+        valid.append(entry)
+    return valid
 
 
 class ArchitectRunner:
