@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from mts.knowledge.coherence import check_coherence
+from mts.loop.stage_probe import stage_probe
 from mts.loop.stage_types import GenerationContext
 from mts.loop.stages import (
     stage_agent_generation,
@@ -125,6 +126,14 @@ class GenerationPipeline:
                 role, message = chat_request
                 response = self._chat_with_agent_fn(role, message, ctx.prompts, ctx.tool_context)
                 self._controller.respond_chat(role, response)
+
+        # Stage 2.5: Probe (optional — refine strategy from observation)
+        ctx = stage_probe(
+            ctx,
+            agents=self._orchestrator,
+            events=self._events,
+            supervisor=self._supervisor,
+        )
 
         # Stage 3: Tournament + gate
         ctx = stage_tournament(
