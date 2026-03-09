@@ -256,6 +256,7 @@ class GenerationRunner:
                 raise
         self.sqlite.mark_run_completed(active_run_id)
         self.artifacts.flush_writes()
+        self.artifacts.shutdown_writer()
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:

@@ -57,15 +57,17 @@ class BufferedWriter:
         """Background thread: process write items until sentinel."""
         while True:
             item = self._queue.get()
-            if item is _SENTINEL:
-                self._queue.task_done()
-                break
-            assert isinstance(item, _WriteItem)
             try:
+                if item is _SENTINEL:
+                    break
+                if not isinstance(item, _WriteItem):
+                    logger.error("unexpected item type in buffered writer queue: %r", type(item))
+                    continue
                 self._execute(item)
             except Exception:
-                logger.exception("buffered write failed: %s", item.path)
-            self._queue.task_done()
+                logger.exception("buffered write failed: %s", getattr(item, "path", "?"))
+            finally:
+                self._queue.task_done()
 
     @staticmethod
     def _execute(item: _WriteItem) -> None:

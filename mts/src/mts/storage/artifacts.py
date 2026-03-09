@@ -95,7 +95,8 @@ class ArtifactStore:
         """Append markdown via buffer if available, otherwise synchronous."""
         if self._writer is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            chunk = f"\n## {heading}\n\n{content.strip()}\n"
+            prefix = "\n" if path.exists() else ""
+            chunk = f"{prefix}## {heading}\n\n{content.strip()}\n"
             self._writer.append_text(path, chunk)
         else:
             self.append_markdown(path, content, heading)
