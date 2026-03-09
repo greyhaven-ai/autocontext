@@ -75,3 +75,22 @@ export type { SkillPackageData } from "./knowledge/index.js";
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
 export type { MtsServerOpts } from "./mcp/server.js";
+
+// RLM (REPL-Loop Mode)
+export { RlmSession, extractCode } from "./rlm/index.js";
+export type {
+  RlmSessionOpts,
+  RlmResult,
+  ReplWorker,
+  LlmComplete,
+  ReplCommand,
+  ReplResult,
+  ExecutionRecord,
+  RlmContext,
+} from "./rlm/index.js";
+export {
+  ReplCommandSchema,
+  ReplResultSchema,
+  ExecutionRecordSchema,
+  RlmContextSchema,
+} from "./rlm/index.js";
