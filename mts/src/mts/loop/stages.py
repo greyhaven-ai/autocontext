@@ -149,6 +149,10 @@ def stage_agent_generation(
             })
     created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
 
+    # Parse DAG change directives from architect output
+    from mts.agents.architect import parse_dag_changes
+    ctx.dag_changes = parse_dag_changes(outputs.architect_markdown)
+
     ctx.outputs = outputs
     ctx.current_strategy = outputs.strategy
     ctx.created_tools = created_tools
