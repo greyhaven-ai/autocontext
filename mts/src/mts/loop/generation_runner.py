@@ -42,6 +42,7 @@ class GenerationRunner:
             settings.skills_root,
             settings.claude_skills_path,
             max_playbook_versions=settings.playbook_max_versions,
+            enable_buffered_writes=True,
         )
         self.agents = AgentOrchestrator.from_settings(
             settings, artifacts=self.artifacts, sqlite=self.sqlite,
@@ -254,6 +255,7 @@ class GenerationRunner:
                 )
                 raise
         self.sqlite.mark_run_completed(active_run_id)
+        self.artifacts.flush_writes()
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
