@@ -127,6 +127,10 @@ class AppSettings(BaseModel):
     prevalidation_max_retries: int = Field(
         default=2, ge=0, le=5, description="Max revision attempts on pre-validation failure",
     )
+    # Harness validators (Phase B P3)
+    harness_validators_enabled: bool = Field(
+        default=False, description="Run architect-generated harness validators before tournament",
+    )
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
     # Ecosystem convergence (Phase 4)
@@ -301,6 +305,9 @@ def load_settings() -> AppSettings:
         prevalidation_enabled=_get_bool("prevalidation_enabled", "MTS_PREVALIDATION_ENABLED", "false"),
         prevalidation_max_retries=int(
             _get("prevalidation_max_retries", "MTS_PREVALIDATION_MAX_RETRIES", "2"),
+        ),
+        harness_validators_enabled=_get_bool(
+            "harness_validators_enabled", "MTS_HARNESS_VALIDATORS_ENABLED", "false",
         ),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
         ecosystem_convergence_enabled=_get_bool(
