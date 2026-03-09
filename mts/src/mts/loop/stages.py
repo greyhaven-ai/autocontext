@@ -20,6 +20,7 @@ from mts.knowledge.progress import build_progress_snapshot
 from mts.knowledge.stagnation import StagnationDetector
 from mts.loop.stage_types import GenerationContext
 from mts.prompts.templates import build_prompt_bundle
+from mts.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 if TYPE_CHECKING:
     from mts.agents.curator import KnowledgeCurator
@@ -396,7 +397,7 @@ def stage_curator_gate(
         return ctx
 
     current_pb = artifacts.read_playbook(ctx.scenario_name)
-    if not current_pb or current_pb == "No playbook yet. Start from scenario rules and observation.":
+    if not current_pb or current_pb == EMPTY_PLAYBOOK_SENTINEL:
         return ctx
 
     events.emit("curator_started", {

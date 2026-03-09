@@ -1,25 +1,14 @@
 """Tests for applying DAG changes in the orchestrator (MTS-27)."""
 from __future__ import annotations
 
-from mts.harness.orchestration.dag import RoleDAG
-from mts.harness.orchestration.types import RoleSpec
-
-
-def _base_dag() -> RoleDAG:
-    return RoleDAG([
-        RoleSpec(name="competitor"),
-        RoleSpec(name="translator", depends_on=("competitor",)),
-        RoleSpec(name="analyst", depends_on=("translator",)),
-        RoleSpec(name="architect", depends_on=("translator",)),
-        RoleSpec(name="coach", depends_on=("analyst",)),
-    ])
+from conftest import make_base_dag
 
 
 def test_apply_add_role() -> None:
     """apply_dag_changes adds a new role to the DAG."""
     from mts.agents.orchestrator import apply_dag_changes
 
-    dag = _base_dag()
+    dag = make_base_dag()
     changes = [{"action": "add_role", "name": "critic", "depends_on": ["analyst"]}]
     applied, skipped = apply_dag_changes(dag, changes)
     assert applied == 1
@@ -31,7 +20,7 @@ def test_apply_remove_role() -> None:
     """apply_dag_changes removes a role from the DAG."""
     from mts.agents.orchestrator import apply_dag_changes
 
-    dag = _base_dag()
+    dag = make_base_dag()
     changes = [{"action": "remove_role", "name": "architect"}]
     applied, skipped = apply_dag_changes(dag, changes)
     assert applied == 1
@@ -42,7 +31,7 @@ def test_apply_invalid_change_skipped() -> None:
     """Invalid changes (e.g., removing a depended-upon role) are skipped."""
     from mts.agents.orchestrator import apply_dag_changes
 
-    dag = _base_dag()
+    dag = make_base_dag()
     changes = [{"action": "remove_role", "name": "analyst"}]  # coach depends on analyst
     applied, skipped = apply_dag_changes(dag, changes)
     assert applied == 0
@@ -54,7 +43,7 @@ def test_apply_multiple_changes() -> None:
     """Multiple changes are applied in order."""
     from mts.agents.orchestrator import apply_dag_changes
 
-    dag = _base_dag()
+    dag = make_base_dag()
     changes = [
         {"action": "remove_role", "name": "architect"},
         {"action": "add_role", "name": "critic", "depends_on": ["analyst"]},

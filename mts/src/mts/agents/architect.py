@@ -6,6 +6,7 @@ from typing import Any
 
 from mts.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from mts.agents.types import RoleExecution
+from mts.harness.core.output_parser import extract_delimited_section
 
 
 def parse_architect_tool_specs(content: str) -> list[dict[str, Any]]:
@@ -47,11 +48,9 @@ def parse_dag_changes(content: str) -> list[dict[str, Any]]:
     Looks for <!-- DAG_CHANGES_START --> ... <!-- DAG_CHANGES_END --> markers
     containing JSON: {"changes": [{"action": "add_role"|"remove_role", "name": ..., "depends_on": [...]}]}
     """
-    start = content.find(_DAG_START)
-    end = content.find(_DAG_END)
-    if start == -1 or end == -1 or end <= start:
+    body = extract_delimited_section(content, _DAG_START, _DAG_END)
+    if body is None:
         return []
-    body = content[start + len(_DAG_START) : end].strip()
     try:
         decoded = json.loads(body)
     except json.JSONDecodeError:

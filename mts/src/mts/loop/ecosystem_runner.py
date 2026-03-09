@@ -9,7 +9,8 @@ from pathlib import Path
 from mts.config import AppSettings
 from mts.loop.events import EventStreamEmitter
 from mts.loop.generation_runner import GenerationRunner, RunSummary
-from mts.storage import SQLiteStore
+from mts.storage import ArtifactStore, SQLiteStore
+from mts.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,9 +47,6 @@ class EcosystemSummary:
         return [(rs.run_id, rs.best_score) for rs in self.run_summaries]
 
 
-_EMPTY_PLAYBOOK_SENTINEL = "No playbook yet. Start from scenario rules and observation."
-
-
 def compute_playbook_divergence(before: str, after: str) -> float:
     """Compute divergence between two playbook versions.
 
@@ -56,9 +54,9 @@ def compute_playbook_divergence(before: str, after: str) -> float:
     Uses SequenceMatcher ratio (similarity), inverted to divergence.
     """
     # Treat the default sentinel as empty to avoid false high-divergence on first runs
-    if before == _EMPTY_PLAYBOOK_SENTINEL:
+    if before == EMPTY_PLAYBOOK_SENTINEL:
         before = ""
-    if after == _EMPTY_PLAYBOOK_SENTINEL:
+    if after == EMPTY_PLAYBOOK_SENTINEL:
         after = ""
     if not before and not after:
         return 0.0
@@ -90,6 +88,18 @@ class EcosystemRunner:
         self.events = EventStreamEmitter(base_settings.event_stream_path)
         self._divergence_history: list[float] = []
         self._locked = False
+        self._artifacts: ArtifactStore | None = None
+
+    def _get_artifacts(self) -> ArtifactStore:
+        """Lazy-initialized shared ArtifactStore for convergence tracking."""
+        if self._artifacts is None:
+            self._artifacts = ArtifactStore(
+                self.base_settings.runs_root,
+                self.base_settings.knowledge_root,
+                self.base_settings.skills_root,
+                self.base_settings.claude_skills_path,
+            )
+        return self._artifacts
 
     def migrate(self, migrations_dir: Path) -> None:
         store = SQLiteStore(self.base_settings.db_path)
@@ -111,14 +121,7 @@ class EcosystemRunner:
         # Read initial playbook state for convergence tracking
         _pre_playbook = ""
         if self.base_settings.ecosystem_convergence_enabled:
-            from mts.storage import ArtifactStore
-            _init_artifacts = ArtifactStore(
-                self.base_settings.runs_root,
-                self.base_settings.knowledge_root,
-                self.base_settings.skills_root,
-                self.base_settings.claude_skills_path,
-            )
-            _pre_playbook = _init_artifacts.read_playbook(self.config.scenario)
+            _pre_playbook = self._get_artifacts().read_playbook(self.config.scenario)
 
         self.events.emit(
             "ecosystem_started",
@@ -160,14 +163,7 @@ class EcosystemRunner:
                     self.base_settings.ecosystem_convergence_enabled
                     and not self._locked
                 ):
-                    from mts.storage import ArtifactStore
-                    artifacts = ArtifactStore(
-                        self.base_settings.runs_root,
-                        self.base_settings.knowledge_root,
-                        self.base_settings.skills_root,
-                        self.base_settings.claude_skills_path,
-                    )
-                    post_playbook = artifacts.read_playbook(self.config.scenario)
+                    post_playbook = self._get_artifacts().read_playbook(self.config.scenario)
                     divergence = compute_playbook_divergence(_pre_playbook, post_playbook)
                     self._divergence_history.append(divergence)
 
