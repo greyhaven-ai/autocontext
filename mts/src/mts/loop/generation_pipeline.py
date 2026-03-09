@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from mts.knowledge.coherence import check_coherence
+from mts.loop.stage_prevalidation import stage_prevalidation
 from mts.loop.stage_probe import stage_probe
 from mts.loop.stage_types import GenerationContext
 from mts.loop.stages import (
@@ -126,6 +127,13 @@ class GenerationPipeline:
                 role, message = chat_request
                 response = self._chat_with_agent_fn(role, message, ctx.prompts, ctx.tool_context)
                 self._controller.respond_chat(role, response)
+
+        # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
+        ctx = stage_prevalidation(
+            ctx,
+            events=self._events,
+            agents=self._orchestrator,
+        )
 
         # Stage 2.5: Probe (optional — refine strategy from observation)
         ctx = stage_probe(

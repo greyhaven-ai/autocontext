@@ -121,6 +121,11 @@ class AppSettings(BaseModel):
     context_budget_tokens: int = Field(default=100_000, ge=0, description="Max estimated tokens for prompt context")
     # Knowledge coherence
     coherence_check_enabled: bool = Field(default=True, description="Run knowledge coherence check after persistence")
+    # Strategy pre-validation
+    prevalidation_enabled: bool = Field(default=False, description="Run self-play dry-run before tournament")
+    prevalidation_max_retries: int = Field(
+        default=2, ge=0, le=5, description="Max revision attempts on pre-validation failure",
+    )
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
     # Ecosystem convergence (Phase 4)
@@ -291,6 +296,10 @@ def load_settings() -> AppSettings:
         constraint_prompts_enabled=_get_bool("constraint_prompts_enabled", "MTS_CONSTRAINT_PROMPTS_ENABLED", "true"),
         context_budget_tokens=int(_get("context_budget_tokens", "MTS_CONTEXT_BUDGET_TOKENS", "100000")),
         coherence_check_enabled=_get_bool("coherence_check_enabled", "MTS_COHERENCE_CHECK_ENABLED", "true"),
+        prevalidation_enabled=_get_bool("prevalidation_enabled", "MTS_PREVALIDATION_ENABLED", "false"),
+        prevalidation_max_retries=int(
+            _get("prevalidation_max_retries", "MTS_PREVALIDATION_MAX_RETRIES", "2"),
+        ),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
         ecosystem_convergence_enabled=_get_bool(
             "ecosystem_convergence_enabled", "MTS_ECOSYSTEM_CONVERGENCE_ENABLED", "false",
