@@ -84,24 +84,6 @@ class AppSettings(BaseModel):
     tier_sonnet_model: str = Field(default="claude-sonnet-4-5-20250929")
     tier_opus_model: str = Field(default="claude-opus-4-6")
     tier_competitor_haiku_max_gen: int = Field(default=3, ge=1)
-    # Phase 7: Adaptive application
-    adapt_enabled: bool = Field(default=False)
-    adapt_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
-    adapt_max_changes_per_cycle: int = Field(default=2, ge=0)
-    adapt_dry_run: bool = Field(default=False)
-    # Phase 10: Heartbeat
-    heartbeat_enabled: bool = Field(default=False)
-    heartbeat_stall_timeout_seconds: float = Field(default=300.0, ge=10.0)
-    heartbeat_escalation_interval_seconds: float = Field(default=60.0, ge=10.0)
-    heartbeat_max_restart_attempts: int = Field(default=2, ge=0)
-    # Phase 8: Trust layer
-    trust_enabled: bool = Field(default=False)
-    trust_min_observations: int = Field(default=5, ge=1)
-    trust_confidence_saturation: int = Field(default=20, ge=5)
-    trust_decay_rate: float = Field(default=0.05, ge=0.0, le=1.0)
-    # Phase 9: Agent identity
-    identity_enabled: bool = Field(default=False)
-    identity_dir: Path = Field(default=Path("knowledge/_identities"))
     # Agent task judge settings
     judge_model: str = Field(default="claude-sonnet-4-20250514")
     judge_samples: int = Field(default=1, ge=1)
@@ -208,20 +190,6 @@ def load_settings() -> AppSettings:
         tier_sonnet_model=os.getenv("MTS_TIER_SONNET_MODEL", "claude-sonnet-4-5-20250929"),
         tier_opus_model=os.getenv("MTS_TIER_OPUS_MODEL", "claude-opus-4-6"),
         tier_competitor_haiku_max_gen=int(os.getenv("MTS_TIER_COMPETITOR_HAIKU_MAX_GEN", "3")),
-        adapt_enabled=os.getenv("MTS_ADAPT_ENABLED", "false").lower() == "true",
-        adapt_min_confidence=float(os.getenv("MTS_ADAPT_MIN_CONFIDENCE", "0.6")),
-        adapt_max_changes_per_cycle=int(os.getenv("MTS_ADAPT_MAX_CHANGES_PER_CYCLE", "2")),
-        adapt_dry_run=os.getenv("MTS_ADAPT_DRY_RUN", "false").lower() == "true",
-        heartbeat_enabled=os.getenv("MTS_HEARTBEAT_ENABLED", "false").lower() == "true",
-        heartbeat_stall_timeout_seconds=float(os.getenv("MTS_HEARTBEAT_STALL_TIMEOUT_SECONDS", "300.0")),
-        heartbeat_escalation_interval_seconds=float(os.getenv("MTS_HEARTBEAT_ESCALATION_INTERVAL_SECONDS", "60.0")),
-        heartbeat_max_restart_attempts=int(os.getenv("MTS_HEARTBEAT_MAX_RESTART_ATTEMPTS", "2")),
-        trust_enabled=os.getenv("MTS_TRUST_ENABLED", "false").lower() == "true",
-        trust_min_observations=int(os.getenv("MTS_TRUST_MIN_OBSERVATIONS", "5")),
-        trust_confidence_saturation=int(os.getenv("MTS_TRUST_CONFIDENCE_SATURATION", "20")),
-        trust_decay_rate=float(os.getenv("MTS_TRUST_DECAY_RATE", "0.05")),
-        identity_enabled=os.getenv("MTS_IDENTITY_ENABLED", "false").lower() == "true",
-        identity_dir=Path(os.getenv("MTS_IDENTITY_DIR", "knowledge/_identities")),
         judge_model=os.getenv("MTS_JUDGE_MODEL", "claude-sonnet-4-20250514"),
         judge_samples=int(os.getenv("MTS_JUDGE_SAMPLES", "1")),
         judge_temperature=float(os.getenv("MTS_JUDGE_TEMPERATURE", "0.0")),
