@@ -46,12 +46,20 @@ class EcosystemSummary:
         return [(rs.run_id, rs.best_score) for rs in self.run_summaries]
 
 
+_EMPTY_PLAYBOOK_SENTINEL = "No playbook yet. Start from scenario rules and observation."
+
+
 def compute_playbook_divergence(before: str, after: str) -> float:
     """Compute divergence between two playbook versions.
 
     Returns 0.0 for identical, 1.0 for completely different.
     Uses SequenceMatcher ratio (similarity), inverted to divergence.
     """
+    # Treat the default sentinel as empty to avoid false high-divergence on first runs
+    if before == _EMPTY_PLAYBOOK_SENTINEL:
+        before = ""
+    if after == _EMPTY_PLAYBOOK_SENTINEL:
+        after = ""
     if not before and not after:
         return 0.0
     if not before or not after:
