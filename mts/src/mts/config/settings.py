@@ -145,7 +145,7 @@ def load_settings() -> AppSettings:
         if env_val is not None:
             return env_val.lower() in _TRUTHY
         if field in preset:
-            return bool(preset[field])
+            return str(preset[field]).lower() in _TRUTHY
         return default.lower() in _TRUTHY
 
     return AppSettings(

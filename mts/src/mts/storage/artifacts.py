@@ -76,14 +76,14 @@ class ArtifactStore:
             self._writer.shutdown()
             self._writer = None
 
-    def _buffered_write_json(self, path: Path, payload: dict[str, object]) -> None:
+    def buffered_write_json(self, path: Path, payload: dict[str, object]) -> None:
         """Write JSON via buffer if available, otherwise synchronous."""
         if self._writer is not None:
             self._writer.write_json(path, payload)
         else:
             self.write_json(path, payload)
 
-    def _buffered_write_markdown(self, path: Path, content: str) -> None:
+    def buffered_write_markdown(self, path: Path, content: str) -> None:
         """Write markdown via buffer if available, otherwise synchronous."""
         if self._writer is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,12 +91,11 @@ class ArtifactStore:
         else:
             self.write_markdown(path, content)
 
-    def _buffered_append_markdown(self, path: Path, content: str, heading: str) -> None:
+    def buffered_append_markdown(self, path: Path, content: str, heading: str) -> None:
         """Append markdown via buffer if available, otherwise synchronous."""
         if self._writer is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            prefix = "\n" if path.exists() else ""
-            chunk = f"{prefix}## {heading}\n\n{content.strip()}\n"
+            chunk = f"\n## {heading}\n\n{content.strip()}\n"
             self._writer.append_text(path, chunk)
         else:
             self.append_markdown(path, content, heading)
@@ -250,11 +249,11 @@ class ArtifactStore:
     ) -> None:
         gen_dir = self.generation_dir(run_id, generation_index)
         # Non-critical writes — buffer if available
-        self._buffered_write_json(gen_dir / "metrics.json", metrics)
-        self._buffered_write_json(gen_dir / "replays" / f"{scenario_name}_{generation_index}.json", replay_payload)
+        self.buffered_write_json(gen_dir / "metrics.json", metrics)
+        self.buffered_write_json(gen_dir / "replays" / f"{scenario_name}_{generation_index}.json", replay_payload)
         analysis_path = self.knowledge_root / scenario_name / "analysis" / f"gen_{generation_index}.md"
-        self._buffered_write_markdown(analysis_path, analysis_md)
-        self._buffered_append_markdown(
+        self.buffered_write_markdown(analysis_path, analysis_md)
+        self.buffered_append_markdown(
             self.knowledge_root / scenario_name / "coach_history.md",
             coach_md,
             heading=f"generation_{generation_index}",
@@ -262,7 +261,7 @@ class ArtifactStore:
         # Critical write — always synchronous (versioned)
         if coach_playbook:
             self.write_playbook(scenario_name, coach_playbook)
-        self._buffered_append_markdown(
+        self.buffered_append_markdown(
             self.knowledge_root / scenario_name / "architect" / "changelog.md",
             architect_md,
             heading=f"generation_{generation_index}",
