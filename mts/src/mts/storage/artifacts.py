@@ -11,6 +11,8 @@ from mts.storage.buffered_writer import BufferedWriter
 
 LOGGER = logging.getLogger(__name__)
 
+EMPTY_PLAYBOOK_SENTINEL = "No playbook yet. Start from scenario rules and observation."
+
 
 class ArtifactStore:
     def __init__(
@@ -103,7 +105,7 @@ class ArtifactStore:
     def read_playbook(self, scenario_name: str) -> str:
         content = self._playbook_store(scenario_name).read("playbook.md")
         if not content:
-            return "No playbook yet. Start from scenario rules and observation."
+            return EMPTY_PLAYBOOK_SENTINEL
         return content
 
     def write_playbook(self, scenario_name: str, content: str) -> None:

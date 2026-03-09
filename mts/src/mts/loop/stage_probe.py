@@ -76,8 +76,13 @@ def stage_probe(
         )
 
     # Attempt refinement
+    probe_usage: dict[str, object] = {}
     try:
-        raw_text, _ = agents.competitor.run(refinement_prompt, tool_context=ctx.tool_context)
+        raw_text, refinement_exec = agents.competitor.run(refinement_prompt, tool_context=ctx.tool_context)
+        probe_usage = {
+            "input_tokens": refinement_exec.usage.input_tokens,
+            "output_tokens": refinement_exec.usage.output_tokens,
+        }
         if is_code_strategy:
             revised, _ = agents.translator.translate_code(raw_text)
         else:
@@ -102,6 +107,7 @@ def stage_probe(
         "generation": ctx.generation,
         "probe_score": probe_result.best_score,
         "refined": ctx.probe_refinement_applied,
+        **({} if not probe_usage else {"refinement_usage": probe_usage}),
     })
 
     return ctx
