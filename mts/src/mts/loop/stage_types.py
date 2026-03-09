@@ -45,6 +45,7 @@ class GenerationContext:
     tool_context: str = ""
     fresh_start_triggered: bool = False
     probe_refinement_applied: bool = False
+    dag_changes: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

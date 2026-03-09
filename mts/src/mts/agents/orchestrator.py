@@ -17,9 +17,33 @@ from mts.agents.subagent_runtime import SubagentRuntime
 from mts.agents.translator import StrategyTranslator
 from mts.agents.types import AgentOutputs, RoleExecution
 from mts.config.settings import AppSettings
+from mts.harness.orchestration.dag import RoleDAG
+from mts.harness.orchestration.types import RoleSpec
 from mts.prompts.templates import PromptBundle
 
 LOGGER = logging.getLogger(__name__)
+
+
+def apply_dag_changes(dag: RoleDAG, changes: list[dict[str, Any]]) -> tuple[int, int]:
+    """Apply a list of DAG change directives. Returns (applied, skipped) counts."""
+    applied = 0
+    skipped = 0
+    for change in changes:
+        action = change.get("action")
+        name = change.get("name", "")
+        try:
+            if action == "add_role":
+                deps = tuple(change.get("depends_on", []))
+                dag.add_role(RoleSpec(name=name, depends_on=deps))
+                applied += 1
+            elif action == "remove_role":
+                dag.remove_role(name)
+                applied += 1
+            else:
+                skipped += 1
+        except ValueError:
+            skipped += 1
+    return applied, skipped
 
 
 class AgentOrchestrator:
