@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from mts.config import AppSettings
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
@@ -16,6 +17,9 @@ class MtsToolContext:
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
         self.sqlite = SQLiteStore(settings.db_path)
+        migrations_dir = Path(__file__).resolve().parents[3] / "migrations"
+        if migrations_dir.exists():
+            self.sqlite.migrate(migrations_dir)
         self.artifacts = ArtifactStore(
             settings.runs_root,
             settings.knowledge_root,
