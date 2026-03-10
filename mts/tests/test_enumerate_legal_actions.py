@@ -98,10 +98,12 @@ class TestEnumerateLegalActions:
         assert result is not None
         assert result == []
 
-    def test_existing_scenarios_unaffected(self) -> None:
-        """Built-in scenarios that don't override still work normally."""
+    def test_existing_scenarios_have_method(self) -> None:
+        """Built-in scenarios inherit enumerate_legal_actions."""
         from mts.scenarios.grid_ctf.scenario import GridCtfScenario
 
         scenario = GridCtfScenario()
         assert hasattr(scenario, "enumerate_legal_actions")
-        assert scenario.enumerate_legal_actions(scenario.initial_state(seed=42)) is None
+        result = scenario.enumerate_legal_actions(scenario.initial_state(seed=42))
+        # grid_ctf overrides to return parameter descriptors (not None)
+        assert isinstance(result, list)
