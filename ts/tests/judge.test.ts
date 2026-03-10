@@ -32,6 +32,24 @@ describe("detectGeneratedDimensions", () => {
       detectGeneratedDimensions(["Code_Quality"], "Check code quality carefully"),
     ).toBe(false);
   });
+
+  it("returns false when key exactly matches underscore-compound rubric term", () => {
+    expect(
+      detectGeneratedDimensions(
+        ["technical_accuracy", "clarity", "completeness"],
+        "Evaluate on three dimensions: technical_accuracy, clarity, completeness",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when rubric uses underscored terms inline", () => {
+    expect(
+      detectGeneratedDimensions(
+        ["code_quality"],
+        "Score the code_quality of the submission",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("LLMJudge", () => {
