@@ -34,6 +34,17 @@ PRESETS: dict[str, dict[str, object]] = {
         "curator_enabled": True,
         "code_strategies_enabled": True,
     },
+    "rapid": {
+        "backpressure_min_delta": 0.0,
+        "backpressure_mode": "simple",
+        "curator_enabled": False,
+        "max_retries": 0,
+        "matches_per_generation": 2,
+        "rlm_max_turns": 5,
+        "probe_matches": 0,
+        "coherence_check_enabled": False,
+        "constraint_prompts_enabled": False,
+    },
 }
 
 
