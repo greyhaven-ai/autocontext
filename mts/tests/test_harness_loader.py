@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mts.agents.architect import parse_architect_harness_specs
-from mts.execution.harness_loader import HarnessLoader, HarnessValidationResult, _SAFE_BUILTINS
+from mts.execution.harness_loader import _SAFE_BUILTINS, HarnessLoader, HarnessValidationResult
 from mts.storage.artifacts import ArtifactStore
 
 # ── HarnessLoader ──────────────────────────────────────────────────────────────
@@ -335,7 +335,7 @@ class TestStagePrevalidationHarness:
 
             stage_prevalidation(ctx, events=events, agents=agents, harness_loader=None)
 
-        # Should have emitted prevalidation_started (no harness events)
+        # Should have emitted dry_run_started (no harness events)
         event_names = [call[0][0] for call in events.emit.call_args_list]
         assert "harness_validation_failed" not in event_names
 

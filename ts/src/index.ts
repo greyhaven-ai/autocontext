@@ -45,6 +45,8 @@ export { cleanRevisionOutput } from "./execution/output-cleaner.js";
 export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
 export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
 export { JudgeExecutor } from "./execution/judge-executor.js";
+export { ActionFilterHarness, ActionDictSchema } from "./execution/action-filter.js";
+export type { ActionDict, ScenarioLike, HarnessLoaderLike } from "./execution/action-filter.js";
 export { StrategyValidator, ValidationResultSchema } from "./execution/strategy-validator.js";
 export type { ValidationResult, MatchResult, StrategyValidatorOpts, ExecuteMatchFn } from "./execution/strategy-validator.js";
 
@@ -69,8 +71,8 @@ export {
 } from "./scenarios/index.js";
 
 // Knowledge / Skill Export
-export { SkillPackage, exportAgentTaskSkill, cleanLessons } from "./knowledge/index.js";
-export type { SkillPackageData } from "./knowledge/index.js";
+export { SkillPackage, exportAgentTaskSkill, cleanLessons, HarnessStore } from "./knowledge/index.js";
+export type { SkillPackageData, HarnessVersionEntry, HarnessVersionMap } from "./knowledge/index.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
