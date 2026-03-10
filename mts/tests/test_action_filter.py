@@ -162,7 +162,8 @@ class TestFormatActionPrompt:
             {"action": "weight", "description": "A weight", "type": "continuous", "range": [0.0, 1.0]},
         ]
         prompt = h.format_action_prompt(actions)
-        assert "continuous [0.0, 1.0]" in prompt
+        assert "Provide a JSON object" in prompt
+        assert '"weight": 0.5' in prompt
 
     def test_empty_actions(self) -> None:
         h = _harness()
@@ -231,6 +232,31 @@ class TestParseActionSelection:
         actions = h.get_legal_actions({"terminal": False})
         assert actions is not None
         assert h.parse_action_selection("", actions) is None
+
+    def test_continuous_json_parse(self) -> None:
+        h = _harness()
+        actions = [
+            {"action": "aggression", "description": "x", "type": "continuous", "range": [0.0, 1.0]},
+            {"action": "defense", "description": "y", "type": "continuous", "range": [0.0, 1.0]},
+        ]
+        result = h.parse_action_selection('{"aggression": 0.6, "defense": 0.4}', actions)
+        assert result == {"aggression": 0.6, "defense": 0.4}
+
+    def test_continuous_json_missing_key_returns_none(self) -> None:
+        h = _harness()
+        actions = [
+            {"action": "aggression", "description": "x", "type": "continuous", "range": [0.0, 1.0]},
+            {"action": "defense", "description": "y", "type": "continuous", "range": [0.0, 1.0]},
+        ]
+        assert h.parse_action_selection('{"aggression": 0.6}', actions) is None
+
+    def test_continuous_json_out_of_range_returns_none(self) -> None:
+        h = _harness()
+        actions = [
+            {"action": "aggression", "description": "x", "type": "continuous", "range": [0.0, 1.0]},
+            {"action": "defense", "description": "y", "type": "continuous", "range": [0.0, 1.0]},
+        ]
+        assert h.parse_action_selection('{"aggression": 1.6, "defense": 0.4}', actions) is None
 
 
 # ---------------------------------------------------------------------------

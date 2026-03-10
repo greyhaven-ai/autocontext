@@ -39,12 +39,12 @@ class TestHarnessModeSettings:
         assert settings.harness_mode is HarnessMode.FILTER
 
     def test_env_var_parsing(self) -> None:
-        with patch.dict("os.environ", {"MTS_HARNESS_MODE": "verify"}):
+        with patch.dict("os.environ", {"MTS_HARNESS_MODE": "verify", "MTS_HARNESS_VALIDATORS_ENABLED": "true"}):
             settings = load_settings()
             assert settings.harness_mode is HarnessMode.VERIFY
 
     def test_env_var_filter(self) -> None:
-        with patch.dict("os.environ", {"MTS_HARNESS_MODE": "filter"}):
+        with patch.dict("os.environ", {"MTS_HARNESS_MODE": "filter", "MTS_HARNESS_VALIDATORS_ENABLED": "true"}):
             settings = load_settings()
             assert settings.harness_mode is HarnessMode.FILTER
 
@@ -57,6 +57,17 @@ class TestHarnessModeSettings:
         with patch.dict("os.environ", {"MTS_HARNESS_MODE": "none"}):
             settings = load_settings()
             assert settings.harness_mode is HarnessMode.NONE
+
+    def test_load_settings_applies_mode_fallback(self) -> None:
+        with patch.dict("os.environ", {"MTS_HARNESS_MODE": "verify", "MTS_HARNESS_VALIDATORS_ENABLED": "false"}):
+            settings = load_settings()
+            assert settings.harness_mode is HarnessMode.NONE
+
+    def test_load_settings_policy_enables_code_strategies(self) -> None:
+        with patch.dict("os.environ", {"MTS_HARNESS_MODE": "policy", "MTS_CODE_STRATEGIES_ENABLED": "false"}):
+            settings = load_settings()
+            assert settings.harness_mode is HarnessMode.POLICY
+            assert settings.code_strategies_enabled is True
 
 
 # ---------------------------------------------------------------------------

@@ -152,21 +152,27 @@ class TestGridCtfEndToEnd:
         assert "defense" in prompt
         assert "path_bias" in prompt
 
-        selected = harness.parse_action_selection("1", actions)
+        selected = harness.parse_action_selection(
+            '{"aggression": 0.6, "defense": 0.4, "path_bias": 0.7}',
+            actions,
+        )
         assert selected is not None
-        assert selected["action"] == "aggression"
+        assert selected == {"aggression": 0.6, "defense": 0.4, "path_bias": 0.7}
 
     def test_filter_mode_action_name_parse(self) -> None:
-        """grid_ctf: parse by action name."""
+        """grid_ctf: parse JSON in markdown fence."""
         scenario = GridCtfScenario()
         harness = ActionFilterHarness(scenario)
         state = scenario.initial_state(seed=42)
         actions = harness.get_legal_actions(state)
         assert actions is not None
 
-        selected = harness.parse_action_selection("I'll set path_bias to 0.8", actions)
+        selected = harness.parse_action_selection(
+            '```json\n{"aggression": 0.5, "defense": 0.5, "path_bias": 0.8}\n```',
+            actions,
+        )
         assert selected is not None
-        assert selected["action"] == "path_bias"
+        assert selected["path_bias"] == 0.8
 
     def test_verify_mode_valid_strategy(self) -> None:
         """grid_ctf: valid strategy passes verify."""
@@ -221,9 +227,12 @@ class TestOthelloEndToEnd:
         assert "corner_weight" in prompt
         assert "stability_weight" in prompt
 
-        selected = harness.parse_action_selection("2", actions)
+        selected = harness.parse_action_selection(
+            '{"mobility_weight": 0.3, "corner_weight": 0.8, "stability_weight": 0.6}',
+            actions,
+        )
         assert selected is not None
-        assert selected["action"] == "corner_weight"
+        assert selected["corner_weight"] == 0.8
 
     def test_verify_mode_valid_strategy(self) -> None:
         """othello: valid strategy passes verify."""

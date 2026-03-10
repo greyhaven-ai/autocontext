@@ -8,6 +8,7 @@ harness validates).
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Mapping
@@ -54,6 +55,18 @@ class ActionFilterHarness:
         """
         if not actions:
             return "No actions available."
+        if self._is_continuous_param_space(actions):
+            lines = ["Provide a JSON object with all strategy parameters:"]
+            example: dict[str, float] = {}
+            for action in actions:
+                name = str(action["action"])
+                desc = action.get("description", "")
+                low, high = action["range"]
+                lines.append(f"- {name}: {desc} (range [{low}, {high}])")
+                example[name] = round((float(low) + float(high)) / 2.0, 3)
+            lines.append(f"Example: {json.dumps(example, sort_keys=True)}")
+            lines.append("Respond with JSON only.")
+            return "\n".join(lines)
         lines = ["Available actions:"]
         for i, action in enumerate(actions, 1):
             name = action.get("action", f"action_{i}")
@@ -86,6 +99,9 @@ class ActionFilterHarness:
         """
         if not actions:
             return None
+
+        if self._is_continuous_param_space(actions):
+            return self._parse_continuous_selection(response, actions)
 
         # Try numeric index first
         match = re.search(r"\b(\d+)\b", response.strip())
@@ -145,4 +161,63 @@ class ActionFilterHarness:
                         return result
                 except Exception:
                     LOGGER.warning("harness enumerate_legal_actions failed", exc_info=True)
+        return None
+
+    @staticmethod
+    def _is_continuous_param_space(actions: list[dict[str, Any]]) -> bool:
+        if not actions:
+            return False
+        for action in actions:
+            if action.get("type") != "continuous":
+                return False
+            if not isinstance(action.get("action"), str):
+                return False
+            rng = action.get("range")
+            if not isinstance(rng, (list, tuple)) or len(rng) != 2:
+                return False
+            if not all(isinstance(v, (int, float)) for v in rng):
+                return False
+        return True
+
+    def _parse_continuous_selection(
+        self,
+        response: str,
+        actions: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        payload = self._extract_json_object(response)
+        if payload is None:
+            return None
+
+        strategy: dict[str, float] = {}
+        for action in actions:
+            key = str(action["action"])
+            if key not in payload:
+                return None
+            raw = payload[key]
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                return None
+            low, high = action["range"]
+            value = float(raw)
+            if value < float(low) or value > float(high):
+                return None
+            strategy[key] = value
+        return strategy
+
+    @staticmethod
+    def _extract_json_object(response: str) -> dict[str, Any] | None:
+        candidates: list[str] = []
+        fenced = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", response, flags=re.IGNORECASE)
+        if fenced:
+            candidates.append(fenced.group(1))
+        start = response.find("{")
+        end = response.rfind("}")
+        if start != -1 and end > start:
+            candidates.append(response[start : end + 1])
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
         return None
