@@ -220,7 +220,7 @@ def load_settings() -> AppSettings:
             return str(preset[field]).lower() in _TRUTHY
         return default.lower() in _TRUTHY
 
-    return AppSettings(
+    settings = AppSettings(
         db_path=Path(_get("db_path", "MTS_DB_PATH", "runs/mts.sqlite3")),
         runs_root=Path(_get("runs_root", "MTS_RUNS_ROOT", "runs")),
         knowledge_root=Path(_get("knowledge_root", "MTS_KNOWLEDGE_ROOT", "knowledge")),
@@ -354,6 +354,7 @@ def load_settings() -> AppSettings:
         session_reports_enabled=_get_bool("session_reports_enabled", "MTS_SESSION_REPORTS_ENABLED", "true"),
         config_adaptive_enabled=_get_bool("config_adaptive_enabled", "MTS_CONFIG_ADAPTIVE_ENABLED", "false"),
     )
+    return validate_harness_mode(settings)
 
 
 def validate_harness_mode(settings: AppSettings) -> AppSettings:
