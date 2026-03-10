@@ -109,6 +109,15 @@ class ScenarioInterface(ABC):
     def render_frame(self, state: Mapping[str, Any]) -> dict[str, Any]:
         """Render state frame for UI consumers."""
 
+    def enumerate_legal_actions(self, state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+        """Return all legal actions from the current state.
+
+        Returns None if enumeration is not supported for this scenario (default).
+        An empty list means no legal moves are available (e.g. must pass).
+        Each action dict should have at minimum ``{"action": str, "description": str}``.
+        """
+        return None
+
     def seed_tools(self) -> dict[str, str]:
         return {}
 
