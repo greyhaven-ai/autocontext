@@ -5,16 +5,19 @@ Disabled by default (prevalidation_enabled=False).
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING
 
 from mts.execution.strategy_validator import StrategyValidator
+from mts.knowledge.dead_end_manager import DeadEndEntry
 from mts.loop.stage_types import GenerationContext
 
 if TYPE_CHECKING:
     from mts.agents.orchestrator import AgentOrchestrator
     from mts.execution.harness_loader import HarnessLoader
     from mts.loop.events import EventStreamEmitter
+    from mts.storage import ArtifactStore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -25,6 +28,7 @@ def stage_prevalidation(
     events: EventStreamEmitter,
     agents: AgentOrchestrator,
     harness_loader: HarnessLoader | None = None,
+    artifacts: ArtifactStore | None = None,
 ) -> GenerationContext:
     """Pre-validate strategy via harness validators and self-play dry-run.
 
@@ -77,6 +81,11 @@ def stage_prevalidation(
             events.emit("harness_validation_passed", {
                 "generation": ctx.generation,
             })
+        elif ctx.settings.dead_end_tracking_enabled and artifacts is not None:
+            _record_dead_end(
+                artifacts, ctx.scenario_name, ctx.generation, ctx.current_strategy,
+                f"Harness validation failed after {ctx.settings.prevalidation_max_retries} revisions: {harness_result.errors[0]}",
+            )
 
     # --- Phase 2: Self-play dry-run ---
     if not ctx.settings.prevalidation_dry_run_enabled:
@@ -134,4 +143,29 @@ def stage_prevalidation(
         "prevalidation exhausted %d retries, proceeding with last strategy",
         ctx.settings.prevalidation_max_retries,
     )
+    if ctx.settings.dead_end_tracking_enabled and artifacts is not None:
+        last_errors = result.errors if result else []
+        reason = f"Pre-validation failed after {ctx.settings.prevalidation_max_retries} revisions"
+        if last_errors:
+            reason += f": {last_errors[0]}"
+        _record_dead_end(artifacts, ctx.scenario_name, ctx.generation, ctx.current_strategy, reason)
+
     return ctx
+
+
+def _record_dead_end(
+    artifacts: ArtifactStore,
+    scenario_name: str,
+    generation: int,
+    strategy: dict[str, object],
+    reason: str,
+) -> None:
+    """Record a dead-end entry from a failed pre-validation."""
+    summary = json.dumps(strategy, sort_keys=True)
+    entry = DeadEndEntry(
+        generation=generation,
+        strategy_summary=summary[:120] + "..." if len(summary) > 120 else summary,
+        score=0.0,
+        reason=reason,
+    )
+    artifacts.append_dead_end(scenario_name, entry.to_markdown())
