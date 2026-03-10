@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ from mts.execution import ExecutionSupervisor
 from mts.execution.executors import LocalExecutor, PrimeIntellectExecutor
 from mts.harness.meta_optimizer import MetaOptimizer
 from mts.integrations.primeintellect import PrimeIntellectClient
+from mts.knowledge.report import generate_session_report
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
 from mts.loop.controller import LoopController
 from mts.loop.events import EventStreamEmitter
@@ -122,9 +124,34 @@ class GenerationRunner:
         except Exception as exc:
             return f"Error chatting with {role}: {exc}"
 
+    def _count_dead_ends(self, scenario_name: str) -> int:
+        """Count dead-end entries from the dead_ends.md file."""
+        content = self.artifacts.read_dead_ends(scenario_name)
+        if not content:
+            return 0
+        return content.count("### Dead End")
+
+    def _generate_session_report(
+        self, run_id: str, scenario_name: str, duration_seconds: float,
+    ) -> None:
+        """Generate and persist a session report for a completed run."""
+        trajectory_rows = self.sqlite.get_generation_trajectory(run_id)
+        dead_ends_count = self._count_dead_ends(scenario_name)
+        report = generate_session_report(
+            run_id=run_id,
+            scenario=scenario_name,
+            trajectory_rows=trajectory_rows,
+            exploration_mode=self.settings.exploration_mode,
+            duration_seconds=duration_seconds,
+            dead_ends_found=dead_ends_count,
+        )
+        markdown = report.to_markdown()
+        self.artifacts.write_session_report(scenario_name, run_id, markdown)
+
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
+        run_start_time = time.monotonic()
         self.sqlite.create_run(
             active_run_id, scenario_name, generations, self.settings.executor_mode,
             agent_provider=self.settings.agent_provider,
@@ -259,6 +286,14 @@ class GenerationRunner:
             self.artifacts.flush_writes()
         finally:
             self.artifacts.shutdown_writer()
+
+        # Generate session report
+        if self.settings.session_reports_enabled:
+            duration = time.monotonic() - run_start_time
+            try:
+                self._generate_session_report(active_run_id, scenario_name, duration)
+            except Exception:
+                LOGGER.warning("failed to generate session report for run %s", active_run_id, exc_info=True)
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
