@@ -26,6 +26,17 @@ class ScoreTrajectoryBuilder:
             )
         return "\n".join(lines)
 
+    def build_experiment_log(self, run_id: str) -> str:
+        """Collect RLM trial summaries across generations into an experiment log."""
+        rows = self.sqlite.get_agent_outputs_by_role(run_id, "competitor_rlm_trials")
+        if not rows:
+            return ""
+        lines = ["## RLM Experiment Log", ""]
+        for row in rows:
+            lines.append(str(row["content"]))
+            lines.append("")
+        return "\n".join(lines)
+
     def build_strategy_registry(self, run_id: str) -> str:
         """Markdown table: Gen | Strategy (truncated) | Best Score | Gate"""
         rows = self.sqlite.get_strategy_score_history(run_id)

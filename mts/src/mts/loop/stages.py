@@ -108,6 +108,8 @@ def stage_knowledge_setup(
                 validated = validate_tuning_overrides(raw_overrides)
                 _apply_tuning_to_settings(ctx, validated)
 
+    experiment_log = "" if ablation else trajectory_builder.build_experiment_log(ctx.run_id)
+
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
     strategy_interface = scenario.describe_strategy_interface()
 
@@ -126,6 +128,7 @@ def stage_knowledge_setup(
         score_trajectory=score_trajectory,
         strategy_registry=strategy_registry,
         progress_json=progress_json_str,
+        experiment_log=experiment_log,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
         context_budget_tokens=ctx.settings.context_budget_tokens,
     )

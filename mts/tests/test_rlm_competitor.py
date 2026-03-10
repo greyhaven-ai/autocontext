@@ -15,7 +15,7 @@ import pytest
 from mts.agents.llm_client import DeterministicDevClient
 from mts.config.settings import AppSettings, load_settings
 from mts.harness.core.llm_client import LanguageModelClient
-from mts.harness.core.types import ModelResponse, RoleUsage
+from mts.harness.core.types import ModelResponse, RoleExecution, RoleUsage
 from mts.harness.repl.types import RlmContext
 from mts.rlm.repl_worker import ReplWorker
 from mts.rlm.session import RlmSession
@@ -604,3 +604,149 @@ class TestOrchestratorCompetitorRlm:
 
         assert analyst_kwargs.get("scenario_rules") == "Capture the flag on a 5x5 grid."
         assert architect_kwargs.get("scenario_rules") == "Capture the flag on a 5x5 grid."
+
+
+# ===========================================================================
+# 6. RLM Trial Summary & Experiment Log Tests (MTS-100)
+# ===========================================================================
+
+
+class TestBuildTrialSummary:
+    def test_summary_includes_generation_and_turns(self) -> None:
+        """Trial summary contains generation number and turn count."""
+        from mts.agents.orchestrator import _build_trial_summary
+        from mts.harness.repl.types import ExecutionRecord
+
+        history = [
+            ExecutionRecord(turn=1, code="x = 1", stdout="", error=None, answer_ready=False),
+            ExecutionRecord(turn=2, code='answer["ready"] = True', stdout="", error=None, answer_ready=True),
+        ]
+        role_exec = RoleExecution(
+            role="competitor", content="done",
+            usage=RoleUsage(input_tokens=100, output_tokens=50, latency_ms=500, model="test"),
+            subagent_id="abc", status="completed",
+        )
+        summary = _build_trial_summary(3, history, role_exec)
+        assert "Generation 3" in summary
+        assert "Turns: 2" in summary
+        assert "code executions: 2" in summary
+        assert "500ms" in summary
+
+    def test_summary_counts_errors(self) -> None:
+        """Error count reflects turns with errors."""
+        from mts.agents.orchestrator import _build_trial_summary
+        from mts.harness.repl.types import ExecutionRecord
+
+        history = [
+            ExecutionRecord(turn=1, code="bad()", stdout="", error="NameError", answer_ready=False),
+            ExecutionRecord(turn=2, code="ok()", stdout="ok", error=None, answer_ready=True),
+        ]
+        role_exec = RoleExecution(
+            role="competitor", content="done",
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=100, model="t"),
+            subagent_id="x", status="completed",
+        )
+        summary = _build_trial_summary(1, history, role_exec)
+        assert "errors: 1" in summary
+        assert "[ERROR]" in summary
+
+    def test_summary_shows_ready_flag(self) -> None:
+        """Turns where answer_ready=True are marked [READY]."""
+        from mts.agents.orchestrator import _build_trial_summary
+        from mts.harness.repl.types import ExecutionRecord
+
+        history = [
+            ExecutionRecord(turn=1, code='answer["ready"] = True', stdout="", error=None, answer_ready=True),
+        ]
+        role_exec = RoleExecution(
+            role="competitor", content="done",
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=50, model="t"),
+            subagent_id="x", status="completed",
+        )
+        summary = _build_trial_summary(1, history, role_exec)
+        assert "[READY]" in summary
+
+
+class TestExperimentLog:
+    def test_build_experiment_log_empty_when_no_trials(self, tmp_sqlite: Any) -> None:
+        """Returns empty string when no RLM trial data."""
+        from mts.knowledge.trajectory import ScoreTrajectoryBuilder
+
+        builder = ScoreTrajectoryBuilder(tmp_sqlite)
+        result = builder.build_experiment_log("nonexistent-run")
+        assert result == ""
+
+    @staticmethod
+    def _seed_run(sqlite: Any, run_id: str, generations: list[int]) -> None:
+        """Create run + generation rows so FK constraints pass."""
+        sqlite.create_run(run_id, "grid_ctf", len(generations), "local")
+        for gen in generations:
+            sqlite.upsert_generation(run_id, gen, mean_score=0.5, best_score=0.5, elo=1500.0,
+                                     wins=0, losses=0, gate_decision="advance", status="completed")
+
+    def test_build_experiment_log_collects_summaries(self, tmp_sqlite: Any) -> None:
+        """Collects stored trial summaries across generations."""
+        from mts.knowledge.trajectory import ScoreTrajectoryBuilder
+
+        self._seed_run(tmp_sqlite, "run-1", [1, 2])
+        tmp_sqlite.append_agent_output("run-1", 1, "competitor_rlm_trials", "### Gen 1 trial")
+        tmp_sqlite.append_agent_output("run-1", 2, "competitor_rlm_trials", "### Gen 2 trial")
+
+        builder = ScoreTrajectoryBuilder(tmp_sqlite)
+        log = builder.build_experiment_log("run-1")
+        assert "RLM Experiment Log" in log
+        assert "Gen 1 trial" in log
+        assert "Gen 2 trial" in log
+
+    def test_build_experiment_log_ignores_other_roles(self, tmp_sqlite: Any) -> None:
+        """Only collects competitor_rlm_trials, not other roles."""
+        from mts.knowledge.trajectory import ScoreTrajectoryBuilder
+
+        self._seed_run(tmp_sqlite, "run-1", [1])
+        tmp_sqlite.append_agent_output("run-1", 1, "competitor", '{"aggression": 0.5}')
+        tmp_sqlite.append_agent_output("run-1", 1, "competitor_rlm_trials", "### Gen 1 trial")
+
+        builder = ScoreTrajectoryBuilder(tmp_sqlite)
+        log = builder.build_experiment_log("run-1")
+        assert "Gen 1 trial" in log
+        assert "aggression" not in log
+
+
+class TestRlmTrialStorage:
+    def test_rlm_competitor_stores_trial_summary(
+        self, tmp_artifacts: Any, tmp_sqlite: Any, seeded_artifacts: Any,
+    ) -> None:
+        """Running competitor via RLM stores a trial summary in sqlite."""
+        from mts.agents.orchestrator import AgentOrchestrator
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            rlm_enabled=True,
+            rlm_competitor_enabled=True,
+            rlm_max_turns=5,
+            curator_enabled=False,
+        )
+        orch = AgentOrchestrator(
+            client=DeterministicDevClient(),
+            settings=settings,
+            artifacts=seeded_artifacts,
+            sqlite=tmp_sqlite,
+        )
+
+        # Seed run + generation so FK constraints pass
+        tmp_sqlite.create_run("trial-test", "grid_ctf", 1, "local")
+        tmp_sqlite.upsert_generation("trial-test", 1, mean_score=0.5, best_score=0.5,
+                                     elo=1500.0, wins=0, losses=0, gate_decision="advance",
+                                     status="completed")
+
+        orch._run_rlm_competitor(
+            run_id="trial-test",
+            scenario_name="grid_ctf",
+            generation_index=1,
+        )
+
+        rows = tmp_sqlite.get_agent_outputs_by_role("trial-test", "competitor_rlm_trials")
+        assert len(rows) == 1
+        content = rows[0]["content"]
+        assert "Generation 1" in content
+        assert "RLM competitor trial" in content

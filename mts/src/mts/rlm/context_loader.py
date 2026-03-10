@@ -15,6 +15,11 @@ class ContextLoader:
         self._artifacts = artifacts
         self._sqlite = sqlite
 
+    @property
+    def sqlite(self) -> SQLiteStore:
+        """Expose the SQLite store for trial summary persistence."""
+        return self._sqlite
+
     def load_for_analyst(
         self,
         run_id: str,
