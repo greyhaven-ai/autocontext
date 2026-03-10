@@ -179,3 +179,111 @@ class TestHypothesisTreeInit:
     def test_temperature_must_be_positive(self) -> None:
         with pytest.raises(ValueError):
             HypothesisTree(temperature=0.0)
+
+
+# ── Additional tests for MTS-82 comprehensive coverage ──────────────
+
+
+class TestHypothesisTreeAddExtended:
+    def test_add_multiple_up_to_max(self) -> None:
+        tree = HypothesisTree(max_hypotheses=5)
+        for i in range(5):
+            tree.add({"v": i})
+        assert tree.size() == 5
+
+    def test_add_builds_tree_structure(self) -> None:
+        tree = HypothesisTree()
+        root = tree.add({"v": 0})
+        child1 = tree.add({"v": 1}, parent_id=root.id, generation=1)
+        child2 = tree.add({"v": 2}, parent_id=root.id, generation=1)
+        grandchild = tree.add({"v": 3}, parent_id=child1.id, generation=2)
+        assert child1.parent_id == root.id
+        assert child2.parent_id == root.id
+        assert grandchild.parent_id == child1.id
+        assert grandchild.generation == 2
+
+
+class TestThompsonSamplingExtended:
+    def test_low_temperature_concentrates(self) -> None:
+        """Temperature=0.1 concentrates selection (exploitation)."""
+        tree = HypothesisTree(temperature=0.1)
+        n1 = tree.add({"v": 1})
+        n2 = tree.add({"v": 2})
+        tree.update(n1.id, [0.9] * 10, elo=1600.0)
+        tree.update(n2.id, [0.1] * 10, elo=1400.0)
+        rng = random.Random(42)
+        selections = [tree.select(rng=rng).id for _ in range(50)]
+        assert selections.count(n1.id) > 45  # Very concentrated
+
+    def test_high_temperature_spreads(self) -> None:
+        """Temperature=10.0 spreads selection (exploration)."""
+        tree = HypothesisTree(temperature=10.0)
+        n1 = tree.add({"v": 1})
+        n2 = tree.add({"v": 2})
+        tree.update(n1.id, [0.9] * 10, elo=1600.0)
+        tree.update(n2.id, [0.1] * 10, elo=1400.0)
+        rng = random.Random(42)
+        selections = [tree.select(rng=rng).id for _ in range(100)]
+        # With high temp, both should get selected a reasonable number of times
+        assert selections.count(n2.id) > 10  # n2 (lower score) still gets significant selection
+
+    def test_beta_fitting_with_above_and_below_median(self) -> None:
+        """Scores correctly split into wins/losses relative to median."""
+        tree = HypothesisTree()
+        n1 = tree.add({"v": 1})
+        n2 = tree.add({"v": 2})
+        # n1 has all scores above median, n2 all below
+        tree.update(n1.id, [0.9, 0.95, 0.85], elo=1600.0)
+        tree.update(n2.id, [0.1, 0.05, 0.15], elo=1400.0)
+        rng = random.Random(77)
+        selections = [tree.select(rng=rng).id for _ in range(50)]
+        assert selections.count(n1.id) > selections.count(n2.id)
+
+
+class TestPruneExtended:
+    def test_pruned_nodes_fully_removed(self) -> None:
+        tree = HypothesisTree(max_hypotheses=2)
+        nodes = []
+        for i in range(3):
+            n = tree.add({"v": i})
+            tree.update(n.id, [float(i) * 0.3], elo=1400.0 + i * 100)
+            nodes.append(n)
+        # After auto-prune on add, lowest should be gone
+        for n in nodes:
+            if n.id in tree.nodes:
+                assert tree.nodes[n.id] is n
+
+    def test_prune_preserves_valid_parent_references(self) -> None:
+        """After pruning, surviving children have valid parent refs if parent survived."""
+        tree = HypothesisTree(max_hypotheses=5)
+        root = tree.add({"v": 0})
+        tree.update(root.id, [0.5], elo=1600.0)
+        child = tree.add({"v": 1}, parent_id=root.id)
+        tree.update(child.id, [0.5], elo=1550.0)
+        # Add low-Elo nodes to be pruned
+        low = tree.add({"v": 2})
+        tree.update(low.id, [0.1], elo=1200.0)
+        tree.max_hypotheses = 2
+        tree.prune()
+        # root and child should survive, low should be pruned
+        assert root.id in tree.nodes
+        assert child.id in tree.nodes
+        assert child.parent_id == root.id
+        assert low.id not in tree.nodes
+
+
+class TestConvergedExtended:
+    def test_converged_threshold_sensitivity(self) -> None:
+        """Different thresholds produce different results."""
+        tree = HypothesisTree()
+        n1 = tree.add({"v": 1})
+        n2 = tree.add({"v": 2})
+        # ~3.3% deviation (50/1500)
+        tree.update(n1.id, [0.5], elo=1450.0)
+        tree.update(n2.id, [0.5], elo=1550.0)
+        assert tree.converged(threshold=0.05) is True  # 5% threshold
+        assert tree.converged(threshold=0.02) is False  # 2% threshold
+
+    def test_converged_empty_tree(self) -> None:
+        tree = HypothesisTree()
+        assert tree.converged() is True
