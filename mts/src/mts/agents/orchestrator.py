@@ -316,7 +316,8 @@ class AgentOrchestrator:
         """
         from mts.rlm.session import RlmSession, make_llm_batch
 
-        assert self._rlm_loader is not None
+        if self._rlm_loader is None:
+            raise RuntimeError("RLM loader not initialized")
         settings = self.settings
 
         # Select worker class and prompt template based on backend
@@ -393,7 +394,8 @@ class AgentOrchestrator:
         """
         from mts.rlm.session import RlmSession, make_llm_batch
 
-        assert self._rlm_loader is not None
+        if self._rlm_loader is None:
+            raise RuntimeError("RLM loader not initialized")
         settings = self.settings
 
         # Select worker class and prompt templates based on rlm_backend and constraint_mode

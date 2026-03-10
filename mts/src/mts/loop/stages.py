@@ -144,7 +144,8 @@ def stage_agent_generation(
     events: EventStreamEmitter | None = None,
 ) -> GenerationContext:
     """Stage 2: Run agent orchestration and validate strategy."""
-    assert ctx.prompts is not None, "stage_knowledge_setup must run first"
+    if ctx.prompts is None:
+        raise RuntimeError("stage_knowledge_setup must run first")
 
     if events is not None:
         roles = ["competitor", "analyst", "coach", "architect"]
@@ -225,7 +226,8 @@ def stage_tournament(
     agents: AgentOrchestrator | None = None,
 ) -> GenerationContext:
     """Stage 3: Run tournament matches, evaluate gate, retry if needed."""
-    assert ctx.outputs is not None, "stage_agent_generation must run first"
+    if ctx.outputs is None:
+        raise RuntimeError("stage_agent_generation must run first")
 
     settings = ctx.settings
     scenario = ctx.scenario
@@ -348,7 +350,7 @@ def stage_tournament(
                     else:
                         current_strategy = revised_strategy
                 except Exception:
-                    pass  # Fall back to current strategy
+                    LOGGER.debug("retry-learning competitor re-invocation failed", exc_info=True)
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 
@@ -356,7 +358,8 @@ def stage_tournament(
             sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_result.reason, attempt)
         break
 
-    assert tournament is not None
+    if tournament is None:
+        raise RuntimeError("tournament was not initialized")
 
     # #173 - Auto-transition from rapid to linear
     if use_rapid and should_transition_to_linear(ctx.generation, settings.rapid_gens):
@@ -513,8 +516,10 @@ def stage_persistence(
     curator: KnowledgeCurator | None,
 ) -> GenerationContext:
     """Stage 5: Persist generation results, metrics, and knowledge artifacts."""
-    assert ctx.tournament is not None, "stage_tournament must run first"
-    assert ctx.outputs is not None, "stage_agent_generation must run first"
+    if ctx.tournament is None:
+        raise RuntimeError("stage_tournament must run first")
+    if ctx.outputs is None:
+        raise RuntimeError("stage_agent_generation must run first")
 
     tournament = ctx.tournament
     outputs = ctx.outputs
