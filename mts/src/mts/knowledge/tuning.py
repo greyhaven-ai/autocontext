@@ -5,14 +5,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-# Hard bounds for tunable parameters
-TUNING_BOUNDS: dict[str, tuple[float, float]] = {
-    "matches_per_generation": (1, 10),
-    "backpressure_min_delta": (0.0, 0.05),
-    "rlm_max_turns": (3, 50),
-    "architect_every_n_gens": (1, 10),
-    "probe_matches": (0, 5),
-}
+from mts.config.tuning_bounds import architect_bounds
+
+# Architect-tier bounds: tighter ranges for automated proposals.
+# Derived from the canonical definition in config/tuning_bounds.py.
+TUNING_BOUNDS: dict[str, tuple[float, float]] = architect_bounds()
 
 
 @dataclass(slots=True)
