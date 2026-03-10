@@ -1,6 +1,7 @@
 """Tests for ab-test CLI command."""
 from __future__ import annotations
 
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from mts.cli import app
@@ -17,7 +18,9 @@ def test_ab_test_command_exists() -> None:
 def test_ab_test_help_shows_options() -> None:
     result = runner.invoke(app, ["ab-test", "--help"])
     assert result.exit_code == 0
-    assert "--scenario" in result.output
-    assert "--runs" in result.output
-    assert "--gens" in result.output
-    assert "--seed" in result.output
+    command = get_command(app).get_command(None, "ab-test")
+    assert command is not None
+    option_names = {param.name for param in command.params}
+    option_flags = {flag for param in command.params for flag in getattr(param, "opts", [])}
+    assert {"scenario", "runs", "gens", "seed"} <= option_names
+    assert {"--scenario", "--runs", "--gens", "--seed"} <= option_flags

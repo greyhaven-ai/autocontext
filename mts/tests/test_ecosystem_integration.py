@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from mts.config import AppSettings
@@ -136,9 +137,12 @@ def test_ecosystem_cli_command_exists() -> None:
     result = runner.invoke(app, ["ecosystem", "--help"])
     assert result.exit_code == 0
     assert "ecosystem" in result.output.lower()
-    assert "--cycles" in result.output
-    assert "--provider-a" in result.output
-    assert "--provider-b" in result.output
+    command = get_command(app).get_command(None, "ecosystem")
+    assert command is not None
+    option_names = {param.name for param in command.params}
+    option_flags = {flag for param in command.params for flag in getattr(param, "opts", [])}
+    assert {"cycles", "provider_a", "provider_b"} <= option_names
+    assert {"--cycles", "--provider-a", "--provider-b"} <= option_flags
 
 
 def test_ecosystem_cli_runs_deterministic(tmp_path: Path, monkeypatch: object) -> None:
