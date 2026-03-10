@@ -186,6 +186,13 @@ class AppSettings(BaseModel):
     rapid_gens: int = Field(
         default=0, ge=0, description="Auto-transition from rapid to linear after N gens (0=manual)",
     )
+    # Tree search (P4, activates when exploration_mode="tree")
+    tree_max_hypotheses: int = Field(
+        default=8, ge=1, description="Max concurrent strategy variants in tree search",
+    )
+    tree_sampling_temperature: float = Field(
+        default=1.0, gt=0.0, description="Thompson sampling temperature for tree search",
+    )
     # Session reports (AR-5)
     session_reports_enabled: bool = Field(
         default=True, description="Generate cross-session summary reports",
@@ -356,6 +363,10 @@ def load_settings() -> AppSettings:
         protocol_enabled=_get_bool("protocol_enabled", "MTS_PROTOCOL_ENABLED", "false"),
         exploration_mode=cast(Literal["linear", "rapid", "tree"], _get("exploration_mode", "MTS_EXPLORATION_MODE", "linear")),
         rapid_gens=int(_get("rapid_gens", "MTS_RAPID_GENS", "0")),
+        tree_max_hypotheses=int(_get("tree_max_hypotheses", "MTS_TREE_MAX_HYPOTHESES", "8")),
+        tree_sampling_temperature=float(
+            _get("tree_sampling_temperature", "MTS_TREE_SAMPLING_TEMPERATURE", "1.0"),
+        ),
         session_reports_enabled=_get_bool("session_reports_enabled", "MTS_SESSION_REPORTS_ENABLED", "true"),
         config_adaptive_enabled=_get_bool("config_adaptive_enabled", "MTS_CONFIG_ADAPTIVE_ENABLED", "false"),
     )
