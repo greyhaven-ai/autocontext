@@ -4,7 +4,8 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
-import { join, basename } from "node:path";
+import { unlinkSync } from "node:fs";
+import { join } from "node:path";
 
 export interface HarnessVersionEntry {
   version: number;
@@ -19,6 +20,7 @@ export class HarnessStore {
   private readonly harnessDir: string;
   private readonly archiveDir: string;
   private readonly versionPath: string;
+  private static readonly VALID_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
   constructor(knowledgeRoot: string, scenarioName: string) {
     this.harnessDir = join(knowledgeRoot, scenarioName, "harness");
@@ -35,6 +37,14 @@ export class HarnessStore {
       .sort();
   }
 
+  private validateName(name: string): string {
+    const normalized = name.trim();
+    if (!HarnessStore.VALID_NAME.test(normalized)) {
+      throw new Error(`invalid harness name: ${name}`);
+    }
+    return normalized;
+  }
+
   /** Read harness_version.json. */
   getVersions(): HarnessVersionMap {
     if (!existsSync(this.versionPath)) return {};
@@ -43,16 +53,17 @@ export class HarnessStore {
 
   /** Write a harness file with version tracking, archiving the previous. */
   writeVersioned(name: string, source: string, generation: number): string {
+    const normalized = this.validateName(name);
     mkdirSync(this.harnessDir, { recursive: true });
-    const filePath = join(this.harnessDir, `${name}.py`);
+    const filePath = join(this.harnessDir, `${normalized}.py`);
 
     // Archive current version if exists
     if (existsSync(filePath)) {
       mkdirSync(this.archiveDir, { recursive: true });
       const versions = this.getVersions();
-      const entry = versions[name];
+      const entry = versions[normalized];
       const vNum = entry ? entry.version : 1;
-      const archivePath = join(this.archiveDir, `v${vNum}_${name}.py`);
+      const archivePath = join(this.archiveDir, `v${vNum}_${normalized}.py`);
       copyFileSync(filePath, archivePath);
     }
 
@@ -60,8 +71,8 @@ export class HarnessStore {
 
     // Update version metadata
     const versions = this.getVersions();
-    const prevVersion = versions[name]?.version ?? 0;
-    versions[name] = { version: prevVersion + 1, generation };
+    const prevVersion = versions[normalized]?.version ?? 0;
+    versions[normalized] = { version: prevVersion + 1, generation };
     writeFileSync(this.versionPath, JSON.stringify(versions, null, 2), "utf-8");
 
     return filePath;
@@ -69,29 +80,33 @@ export class HarnessStore {
 
   /** Rollback to the previous archived version. Returns content or null. */
   rollback(name: string): string | null {
+    const normalized = this.validateName(name);
     if (!existsSync(this.archiveDir)) return null;
 
     // Find latest archive for this name
-    const archives = readdirSync(this.archiveDir)
-      .filter((f) => f.endsWith(`_${name}.py`))
-      .sort();
-    if (archives.length === 0) return null;
+    const entries = readdirSync(this.archiveDir)
+      .map((f) => {
+        const match = f.match(new RegExp(`^v(\\d+)_${normalized}\\.py$`));
+        return match ? { file: f, version: Number.parseInt(match[1], 10) } : null;
+      })
+      .filter((entry): entry is { file: string; version: number } => entry !== null);
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => a.version - b.version);
 
-    const latestArchive = archives[archives.length - 1];
+    const latestArchive = entries[entries.length - 1].file;
     const archivePath = join(this.archiveDir, latestArchive);
     const content = readFileSync(archivePath, "utf-8");
 
     // Restore
-    const filePath = join(this.harnessDir, `${name}.py`);
+    const filePath = join(this.harnessDir, `${normalized}.py`);
     writeFileSync(filePath, content, "utf-8");
 
     // Remove used archive
-    const { unlinkSync } = require("node:fs") as typeof import("node:fs");
     unlinkSync(archivePath);
 
     // Update version metadata
     const versions = this.getVersions();
-    const entry = versions[name];
+    const entry = versions[normalized];
     if (entry && entry.version > 1) {
       entry.version -= 1;
       writeFileSync(this.versionPath, JSON.stringify(versions, null, 2), "utf-8");
@@ -102,7 +117,8 @@ export class HarnessStore {
 
   /** Read a harness file's source code. */
   read(name: string): string | null {
-    const filePath = join(this.harnessDir, `${name}.py`);
+    const normalized = this.validateName(name);
+    const filePath = join(this.harnessDir, `${normalized}.py`);
     if (!existsSync(filePath)) return null;
     return readFileSync(filePath, "utf-8");
   }

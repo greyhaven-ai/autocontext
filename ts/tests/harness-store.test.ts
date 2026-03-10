@@ -2,7 +2,7 @@
  * Tests for HarnessStore and SkillPackage harness support (MTS-95).
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HarnessStore } from "../src/knowledge/harness-store.js";
@@ -25,8 +25,8 @@ describe("HarnessStore", () => {
     it("lists .py files without extension", () => {
       const dir = join(knowledgeRoot, "grid_ctf", "harness");
       mkdirSync(dir, { recursive: true });
-      require("node:fs").writeFileSync(join(dir, "validate_move.py"), "def v(): ...");
-      require("node:fs").writeFileSync(join(dir, "score_action.py"), "def s(): ...");
+      writeFileSync(join(dir, "validate_move.py"), "def v(): ...");
+      writeFileSync(join(dir, "score_action.py"), "def s(): ...");
       expect(store.listHarness()).toEqual(["score_action", "validate_move"]);
     });
   });
@@ -45,7 +45,7 @@ describe("HarnessStore", () => {
       store.writeVersioned("validate_move", "v2", 2);
       const archiveDir = join(knowledgeRoot, "grid_ctf", "harness", "_archive");
       expect(existsSync(archiveDir)).toBe(true);
-      const archives = require("node:fs").readdirSync(archiveDir) as string[];
+      const archives = readdirSync(archiveDir);
       expect(archives.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -64,6 +64,13 @@ describe("HarnessStore", () => {
       expect(versions.validate_move).toBeDefined();
       expect(versions.score_action).toBeDefined();
     });
+
+    it.each(["", "../escape", "bad/name", "contains space", "123abc"])(
+      "rejects invalid harness name %s",
+      (name) => {
+        expect(() => store.writeVersioned(name, "code", 1)).toThrow("invalid harness name");
+      },
+    );
   });
 
   describe("rollback", () => {
@@ -89,6 +96,22 @@ describe("HarnessStore", () => {
     it("returns null for nonexistent harness", () => {
       expect(store.rollback("nonexistent")).toBeNull();
     });
+
+    it("uses numeric archive order for rollback after v10", () => {
+      for (let i = 1; i <= 11; i += 1) {
+        store.writeVersioned("validate_move", `v${i}`, i);
+      }
+      const result = store.rollback("validate_move");
+      expect(result).toBe("v10");
+      expect(store.read("validate_move")).toBe("v10");
+    });
+
+    it.each(["", "../escape", "bad/name", "contains space", "123abc"])(
+      "rejects invalid rollback name %s",
+      (name) => {
+        expect(() => store.rollback(name)).toThrow("invalid harness name");
+      },
+    );
   });
 
   describe("read", () => {
@@ -100,6 +123,13 @@ describe("HarnessStore", () => {
       store.writeVersioned("validate_move", "code here", 1);
       expect(store.read("validate_move")).toBe("code here");
     });
+
+    it.each(["", "../escape", "bad/name", "contains space", "123abc"])(
+      "rejects invalid read name %s",
+      (name) => {
+        expect(() => store.read(name)).toThrow("invalid harness name");
+      },
+    );
   });
 });
 
