@@ -74,6 +74,10 @@ export {
 export { SkillPackage, exportAgentTaskSkill, cleanLessons, HarnessStore } from "./knowledge/index.js";
 export type { SkillPackageData, HarnessVersionEntry, HarnessVersionMap } from "./knowledge/index.js";
 
+// Loop (generation loop components)
+export { HypothesisTree, HypothesisNodeSchema } from "./loop/index.js";
+export type { HypothesisNode } from "./loop/index.js";
+
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
 export type { MtsServerOpts } from "./mcp/server.js";
