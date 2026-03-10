@@ -17,6 +17,7 @@ from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from mts.harness.evaluation.types import EvaluationResult
 from mts.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from mts.knowledge.fresh_start import execute_fresh_start
+from mts.knowledge.harness_quality import compute_harness_quality
 from mts.knowledge.progress import build_progress_snapshot
 from mts.knowledge.protocol import parse_research_protocol, validate_tuning_overrides
 from mts.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
@@ -472,12 +473,19 @@ def stage_curator_gate(
     curator_trajectory = trajectory_builder.build_trajectory(ctx.run_id)
     curator_analysis = artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
 
+    # Compute harness quality signal if harness validators are enabled
+    harness_quality_section = ""
+    if ctx.settings.harness_validators_enabled and ctx.tournament is not None:
+        quality = compute_harness_quality(ctx.tournament.results)
+        harness_quality_section = quality.to_prompt_section()
+
     curator_decision, curator_exec = curator.assess_playbook_quality(
         current_playbook=current_pb,
         proposed_playbook=ctx.outputs.coach_playbook,
         score_trajectory=curator_trajectory,
         recent_analysis=curator_analysis,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
+        harness_quality_section=harness_quality_section,
     )
 
     sqlite.append_agent_output(
@@ -491,6 +499,10 @@ def stage_curator_gate(
 
     if curator_decision.decision == "reject":
         ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook="")
+        # Roll back harness files on reject when harness inheritance is active
+        if ctx.settings.harness_validators_enabled and ctx.settings.harness_inheritance_enabled:
+            for name in artifacts.list_harness(ctx.scenario_name):
+                artifacts.rollback_harness(ctx.scenario_name, name)
     elif curator_decision.decision == "merge" and curator_decision.playbook:
         ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook=curator_decision.playbook)
     # "accept" -> no change to outputs
