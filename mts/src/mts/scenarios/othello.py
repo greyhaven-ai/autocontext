@@ -118,6 +118,36 @@ class OthelloScenario(ScenarioInterface):
             f"{latest.get('stability', 0.0):.2f}."
         )
 
+    def enumerate_legal_actions(self, state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+        """Enumerate the strategy parameter space for othello.
+
+        The othello scenario uses continuous weight parameters rather than
+        discrete board placements. Returns parameter descriptors with valid
+        ranges so the ActionFilterHarness can present or validate them.
+        """
+        if self.is_terminal(state):
+            return []
+        return [
+            {
+                "action": "mobility_weight",
+                "description": "Weight for move availability; higher values prioritize keeping options open",
+                "type": "continuous",
+                "range": [0.0, 1.0],
+            },
+            {
+                "action": "corner_weight",
+                "description": "Weight for corner control; corners are permanently stable once captured",
+                "type": "continuous",
+                "range": [0.0, 1.0],
+            },
+            {
+                "action": "stability_weight",
+                "description": "Weight for disc stability; stable discs cannot be flipped",
+                "type": "continuous",
+                "range": [0.0, 1.0],
+            },
+        ]
+
     def render_frame(self, state: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "scenario": self.name,
