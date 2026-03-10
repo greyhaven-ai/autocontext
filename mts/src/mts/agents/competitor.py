@@ -32,3 +32,7 @@ class CompetitorRunner:
         """Re-run competitor with revision feedback appended."""
         combined = f"{original_prompt}\n\n--- REVISION REQUIRED ---\n{revision_prompt}"
         return self.run(combined, tool_context=tool_context)
+
+    def refine_strategy(self, refinement_prompt: str, tool_context: str = "") -> tuple[str, RoleExecution]:
+        """Refine an existing strategy given match feedback (tree search)."""
+        return self.run(refinement_prompt, tool_context=tool_context)
