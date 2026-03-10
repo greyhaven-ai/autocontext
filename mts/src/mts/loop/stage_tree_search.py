@@ -274,17 +274,28 @@ def stage_tree_search(
     )
 
     # ── Persist agent outputs to sqlite ──────────────────────────────
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "competitor", json.dumps(best_strategy, sort_keys=True))
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "analyst", analyst_exec.content)
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "coach", coach_exec.content)
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "architect", architect_exec.content)
-    for role_exec in outputs.role_executions:
-        sqlite.append_agent_role_metric(
-            ctx.run_id, ctx.generation,
-            role_exec.role, role_exec.usage.model,
-            role_exec.usage.input_tokens, role_exec.usage.output_tokens,
-            role_exec.usage.latency_ms, role_exec.subagent_id, role_exec.status,
-        )
+    sqlite.append_generation_agent_activity(
+        ctx.run_id,
+        ctx.generation,
+        outputs=[
+            ("competitor", json.dumps(best_strategy, sort_keys=True)),
+            ("analyst", analyst_exec.content),
+            ("coach", coach_exec.content),
+            ("architect", architect_exec.content),
+        ],
+        role_metrics=[
+            (
+                role_exec.role,
+                role_exec.usage.model,
+                role_exec.usage.input_tokens,
+                role_exec.usage.output_tokens,
+                role_exec.usage.latency_ms,
+                role_exec.subagent_id,
+                role_exec.status,
+            )
+            for role_exec in outputs.role_executions
+        ],
+    )
 
     created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, tools)
     if settings.harness_validators_enabled and harness_specs:

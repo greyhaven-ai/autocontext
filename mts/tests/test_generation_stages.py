@@ -306,10 +306,10 @@ class TestStageAgentGeneration:
 
         stage_agent_generation(ctx, orchestrator=orch, artifacts=artifacts, sqlite=sqlite)
 
-        # Should have called append_agent_output 4 times (competitor, analyst, coach, architect)
-        assert sqlite.append_agent_output.call_count == 4
-        # Should have called append_agent_role_metric 5 times (all role_executions)
-        assert sqlite.append_agent_role_metric.call_count == 5
+        sqlite.append_generation_agent_activity.assert_called_once()
+        _, kwargs = sqlite.append_generation_agent_activity.call_args
+        assert len(kwargs["outputs"]) == 4
+        assert len(kwargs["role_metrics"]) == 5
 
 
 # ---------- Helpers for tournament / curator stage tests ----------

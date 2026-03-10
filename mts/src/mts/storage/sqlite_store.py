@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+
+SQLITE_BUSY_TIMEOUT_MS = 5_000
+AgentOutputBatch = tuple[str, str]
+AgentRoleMetricBatch = tuple[str, str, int, int, int, str, str]
 
 
 class SQLiteStore:
@@ -11,9 +16,11 @@ class SQLiteStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON;")
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
         return conn
 
     def migrate(self, migrations_dir: Path) -> None:
@@ -105,14 +112,42 @@ class SQLiteStore:
             )
 
     def append_agent_output(self, run_id: str, generation_index: int, role: str, content: str) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO agent_outputs(run_id, generation_index, role, content)
-                VALUES (?, ?, ?, ?)
-                """,
-                (run_id, generation_index, role, content),
-            )
+        self.append_generation_agent_activity(
+            run_id,
+            generation_index,
+            outputs=[(role, content)],
+            role_metrics=[],
+        )
+
+    def append_agent_outputs(
+        self,
+        run_id: str,
+        generation_index: int,
+        outputs: Sequence[AgentOutputBatch],
+    ) -> None:
+        self.append_generation_agent_activity(
+            run_id,
+            generation_index,
+            outputs=outputs,
+            role_metrics=[],
+        )
+
+    def _append_agent_outputs(
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
+        generation_index: int,
+        outputs: Sequence[AgentOutputBatch],
+    ) -> None:
+        if not outputs:
+            return
+        conn.executemany(
+            """
+            INSERT INTO agent_outputs(run_id, generation_index, role, content)
+            VALUES (?, ?, ?, ?)
+            """,
+            [(run_id, generation_index, role, content) for role, content in outputs],
+        )
 
     def get_agent_outputs_by_role(self, run_id: str, role: str) -> list[dict[str, object]]:
         """Return agent_outputs rows for a given run and role, ordered by generation."""
@@ -140,13 +175,50 @@ class SQLiteStore:
         subagent_id: str,
         status: str,
     ) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO agent_role_metrics(
-                    run_id, generation_index, role, model, input_tokens, output_tokens, latency_ms, subagent_id, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+        self.append_generation_agent_activity(
+            run_id,
+            generation_index,
+            outputs=[],
+            role_metrics=[(
+                role,
+                model,
+                input_tokens,
+                output_tokens,
+                latency_ms,
+                subagent_id,
+                status,
+            )],
+        )
+
+    def append_agent_role_metrics(
+        self,
+        run_id: str,
+        generation_index: int,
+        role_metrics: Sequence[AgentRoleMetricBatch],
+    ) -> None:
+        self.append_generation_agent_activity(
+            run_id,
+            generation_index,
+            outputs=[],
+            role_metrics=role_metrics,
+        )
+
+    def _append_agent_role_metrics(
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
+        generation_index: int,
+        role_metrics: Sequence[AgentRoleMetricBatch],
+    ) -> None:
+        if not role_metrics:
+            return
+        conn.executemany(
+            """
+            INSERT INTO agent_role_metrics(
+                run_id, generation_index, role, model, input_tokens, output_tokens, latency_ms, subagent_id, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
                 (
                     run_id,
                     generation_index,
@@ -157,8 +229,23 @@ class SQLiteStore:
                     latency_ms,
                     subagent_id,
                     status,
-                ),
-            )
+                )
+                for role, model, input_tokens, output_tokens, latency_ms, subagent_id, status in role_metrics
+            ],
+        )
+
+    def append_generation_agent_activity(
+        self,
+        run_id: str,
+        generation_index: int,
+        outputs: Sequence[AgentOutputBatch],
+        role_metrics: Sequence[AgentRoleMetricBatch],
+    ) -> None:
+        if not outputs and not role_metrics:
+            return
+        with self.connect() as conn:
+            self._append_agent_outputs(conn, run_id, generation_index, outputs)
+            self._append_agent_role_metrics(conn, run_id, generation_index, role_metrics)
 
     def append_recovery_marker(
         self,
