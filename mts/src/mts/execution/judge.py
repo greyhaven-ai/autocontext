@@ -50,7 +50,12 @@ def _detect_generated_dimensions(dimension_keys: list[str], rubric: str) -> bool
     rubric_words.discard("")
 
     for key in dimension_keys:
-        fragments = [f for f in key.lower().split("_") if f]
+        key_lower = key.lower()
+        # Exact match — the key itself appears in the rubric as-is
+        if key_lower in rubric_words:
+            continue
+        # Fragment match — any underscore-delimited part appears
+        fragments = [f for f in key_lower.split("_") if f]
         if not any(frag in rubric_words for frag in fragments):
             return True
     return False
