@@ -135,7 +135,7 @@ class GenerationPipeline:
 
             h_dir = self._artifacts.harness_dir(ctx.scenario_name)
             if h_dir.exists():
-                harness_loader = HarnessLoader(h_dir)
+                harness_loader = HarnessLoader(h_dir, timeout_seconds=ctx.settings.harness_timeout_seconds)
                 harness_loader.load()
 
         ctx = stage_prevalidation(

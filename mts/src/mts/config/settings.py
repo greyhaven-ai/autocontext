@@ -132,6 +132,9 @@ class AppSettings(BaseModel):
     harness_validators_enabled: bool = Field(
         default=False, description="Run architect-generated harness validators before tournament",
     )
+    harness_timeout_seconds: float = Field(
+        default=5.0, ge=0.5, le=60.0, description="Timeout for harness code execution",
+    )
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
     # Ecosystem convergence (Phase 4)
@@ -309,6 +312,9 @@ def load_settings() -> AppSettings:
         ),
         harness_validators_enabled=_get_bool(
             "harness_validators_enabled", "MTS_HARNESS_VALIDATORS_ENABLED", "false",
+        ),
+        harness_timeout_seconds=float(
+            _get("harness_timeout_seconds", "MTS_HARNESS_TIMEOUT_SECONDS", "5.0"),
         ),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
         ecosystem_convergence_enabled=_get_bool(
