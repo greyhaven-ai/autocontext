@@ -116,6 +116,8 @@ class AgentOrchestrator:
         scenario_name: str = "",
         strategy_interface: str = "",
         on_role_event: Callable[[str, str], None] | None = None,
+        scenario_rules: str = "",
+        current_strategy: dict[str, Any] | None = None,
     ) -> AgentOutputs:
         # Feature-gated pipeline codepath (skips RLM path when active)
         if self.settings.use_pipeline_engine and not (
@@ -142,6 +144,8 @@ class AgentOrchestrator:
             raw_text, competitor_exec = self._run_rlm_competitor(
                 run_id, scenario_name, generation_index,
                 strategy_interface=strategy_interface,
+                scenario_rules=scenario_rules,
+                current_strategy=current_strategy,
             )
             _notify("competitor", "completed")
         else:
@@ -168,6 +172,7 @@ class AgentOrchestrator:
             _notify("architect", "started")
             analyst_exec, architect_exec = self._run_rlm_roles(
                 run_id, scenario_name, generation_index, strategy, architect_prompt,
+                scenario_rules=scenario_rules,
             )
             _notify("analyst", "completed")
             _notify("architect", "completed")
@@ -308,6 +313,8 @@ class AgentOrchestrator:
         generation_index: int,
         *,
         strategy_interface: str = "",
+        scenario_rules: str = "",
+        current_strategy: dict[str, Any] | None = None,
     ) -> tuple[str, RoleExecution]:
         """Run the Competitor via an RLM REPL session.
 
@@ -350,6 +357,8 @@ class AgentOrchestrator:
         competitor_ctx = self._rlm_loader.load_for_competitor(
             run_id, scenario_name, generation_index,
             strategy_interface=strategy_interface,
+            scenario_rules=scenario_rules,
+            current_strategy=current_strategy,
         )
         competitor_ns = dict(competitor_ctx.variables)
         competitor_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
@@ -384,6 +393,8 @@ class AgentOrchestrator:
         generation_index: int,
         strategy: dict[str, Any],
         architect_prompt: str,
+        *,
+        scenario_rules: str = "",
     ) -> tuple[RoleExecution, RoleExecution]:
         """Run Analyst and Architect via RLM sessions.
 
@@ -436,6 +447,7 @@ class AgentOrchestrator:
         # --- Analyst ---
         analyst_ctx = self._rlm_loader.load_for_analyst(
             run_id, scenario_name, generation_index,
+            scenario_rules=scenario_rules,
             current_strategy=strategy,
         )
         analyst_ns = dict(analyst_ctx.variables)
@@ -467,6 +479,7 @@ class AgentOrchestrator:
         # --- Architect ---
         architect_ctx = self._rlm_loader.load_for_architect(
             run_id, scenario_name, generation_index,
+            scenario_rules=scenario_rules,
         )
         architect_ns = dict(architect_ctx.variables)
         architect_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)

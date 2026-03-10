@@ -162,6 +162,8 @@ def stage_agent_generation(
         scenario_name=ctx.scenario_name,
         strategy_interface=ctx.strategy_interface,
         on_role_event=on_role_event,
+        scenario_rules=ctx.scenario.describe_rules(),
+        current_strategy=ctx.current_strategy or None,
     )
 
     if "__code__" not in outputs.strategy:
