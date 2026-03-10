@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from mts.storage.artifacts import ArtifactStore
 
 
@@ -59,6 +61,11 @@ class TestWriteHarness:
         assert isinstance(path, Path)
         assert path.parent.name == "harness"
 
+    def test_write_rejects_invalid_name(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        with pytest.raises(ValueError, match="invalid harness name"):
+            store.write_harness("grid_ctf", "../escape", "pass")
+
 
 # ---------------------------------------------------------------------------
 # read_harness
@@ -79,6 +86,11 @@ class TestReadHarness:
     def test_read_missing_scenario_returns_none(self, tmp_path: Path) -> None:
         store = _make_store(tmp_path)
         assert store.read_harness("no_scenario", "anything") is None
+
+    def test_read_rejects_invalid_name(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        with pytest.raises(ValueError, match="invalid harness name"):
+            store.read_harness("grid_ctf", "../../etc/passwd")
 
 
 # ---------------------------------------------------------------------------

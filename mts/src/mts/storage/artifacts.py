@@ -261,17 +261,27 @@ class ArtifactStore:
             created.append(label)
         return created
 
+    @staticmethod
+    def _validate_harness_name(name: str) -> str:
+        """Validate harness module name and prevent path traversal."""
+        candidate = name.strip()
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", candidate):
+            raise ValueError(f"invalid harness name: {name!r}")
+        return candidate
+
     def write_harness(self, scenario_name: str, name: str, source: str) -> Path:
         """Write a single harness file to knowledge/<scenario>/harness/<name>.py."""
+        safe_name = self._validate_harness_name(name)
         h_dir = self.harness_dir(scenario_name)
         h_dir.mkdir(parents=True, exist_ok=True)
-        target = h_dir / f"{name}.py"
+        target = h_dir / f"{safe_name}.py"
         target.write_text(source, encoding="utf-8")
         return target
 
     def read_harness(self, scenario_name: str, name: str) -> str | None:
         """Read a harness file by name, or None if not found."""
-        target = self.harness_dir(scenario_name) / f"{name}.py"
+        safe_name = self._validate_harness_name(name)
+        target = self.harness_dir(scenario_name) / f"{safe_name}.py"
         if not target.exists():
             return None
         return target.read_text(encoding="utf-8")
