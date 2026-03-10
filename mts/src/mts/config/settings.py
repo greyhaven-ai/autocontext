@@ -1,12 +1,25 @@
 from __future__ import annotations
 
+import logging
 import os
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 
 from mts.config.presets import apply_preset
+
+LOGGER = logging.getLogger(__name__)
+
+
+class HarnessMode(StrEnum):
+    """How the harness interacts with strategy execution."""
+
+    NONE = "none"        # No harness intervention (existing behavior)
+    FILTER = "filter"    # Enumerate valid moves, LLM selects by index
+    VERIFY = "verify"    # LLM proposes, code validates, retry on invalid
+    POLICY = "policy"    # Pure code strategy (alias for CODE_STRATEGIES_ENABLED)
 
 
 class AppSettings(BaseModel):
@@ -135,6 +148,9 @@ class AppSettings(BaseModel):
     harness_timeout_seconds: float = Field(
         default=5.0, ge=0.5, le=60.0, description="Timeout for harness code execution",
     )
+    harness_mode: HarnessMode = Field(
+        default=HarnessMode.NONE, description="Harness interaction mode: none, filter, verify, policy",
+    )
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
     # Ecosystem convergence (Phase 4)
@@ -204,7 +220,7 @@ def load_settings() -> AppSettings:
             return str(preset[field]).lower() in _TRUTHY
         return default.lower() in _TRUTHY
 
-    return AppSettings(
+    settings = AppSettings(
         db_path=Path(_get("db_path", "MTS_DB_PATH", "runs/mts.sqlite3")),
         runs_root=Path(_get("runs_root", "MTS_RUNS_ROOT", "runs")),
         knowledge_root=Path(_get("knowledge_root", "MTS_KNOWLEDGE_ROOT", "knowledge")),
@@ -316,6 +332,7 @@ def load_settings() -> AppSettings:
         harness_timeout_seconds=float(
             _get("harness_timeout_seconds", "MTS_HARNESS_TIMEOUT_SECONDS", "5.0"),
         ),
+        harness_mode=HarnessMode(_get("harness_mode", "MTS_HARNESS_MODE", "none")),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
         ecosystem_convergence_enabled=_get_bool(
             "ecosystem_convergence_enabled", "MTS_ECOSYSTEM_CONVERGENCE_ENABLED", "false",
@@ -337,3 +354,21 @@ def load_settings() -> AppSettings:
         session_reports_enabled=_get_bool("session_reports_enabled", "MTS_SESSION_REPORTS_ENABLED", "true"),
         config_adaptive_enabled=_get_bool("config_adaptive_enabled", "MTS_CONFIG_ADAPTIVE_ENABLED", "false"),
     )
+    return validate_harness_mode(settings)
+
+
+def validate_harness_mode(settings: AppSettings) -> AppSettings:
+    """Validate harness_mode against dependent settings, falling back to NONE if invalid."""
+    mode = settings.harness_mode
+    if mode in (HarnessMode.FILTER, HarnessMode.VERIFY) and not settings.harness_validators_enabled:
+        LOGGER.warning(
+            "harness_mode=%s requires harness_validators_enabled=true; falling back to 'none'",
+            mode.value,
+        )
+        settings = settings.model_copy(update={"harness_mode": HarnessMode.NONE})
+    if mode == HarnessMode.POLICY and not settings.code_strategies_enabled:
+        LOGGER.warning(
+            "harness_mode=policy implies code_strategies_enabled=true; enabling it",
+        )
+        settings = settings.model_copy(update={"code_strategies_enabled": True})
+    return settings
