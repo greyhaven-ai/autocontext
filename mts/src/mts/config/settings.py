@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -159,7 +160,7 @@ class AppSettings(BaseModel):
         default=False, description="Enable research protocol meta-document for architect steering",
     )
     # Exploration mode (AR-4)
-    exploration_mode: str = Field(
+    exploration_mode: Literal["linear", "rapid", "tree"] = Field(
         default="linear", description="Exploration mode: linear, rapid, or tree",
     )
     rapid_gens: int = Field(
@@ -325,7 +326,7 @@ def load_settings() -> AppSettings:
         ),
         dead_end_max_entries=int(_get("dead_end_max_entries", "MTS_DEAD_END_MAX_ENTRIES", "20")),
         protocol_enabled=_get_bool("protocol_enabled", "MTS_PROTOCOL_ENABLED", "false"),
-        exploration_mode=_get("exploration_mode", "MTS_EXPLORATION_MODE", "linear"),
+        exploration_mode=cast(Literal["linear", "rapid", "tree"], _get("exploration_mode", "MTS_EXPLORATION_MODE", "linear")),
         rapid_gens=int(_get("rapid_gens", "MTS_RAPID_GENS", "0")),
         session_reports_enabled=_get_bool("session_reports_enabled", "MTS_SESSION_REPORTS_ENABLED", "true"),
         config_adaptive_enabled=_get_bool("config_adaptive_enabled", "MTS_CONFIG_ADAPTIVE_ENABLED", "false"),

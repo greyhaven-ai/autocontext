@@ -4,6 +4,7 @@ import ast
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 from mts.harness.storage.versioned_store import VersionedFileStore
@@ -234,6 +235,9 @@ class ArtifactStore:
             code = str(spec.get("code", "")).strip()
             description = str(spec.get("description", "")).strip()
             if not name or not code:
+                continue
+            if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", name):
+                LOGGER.warning("skipping harness '%s': invalid name (must be a valid identifier)", name)
                 continue
             try:
                 ast.parse(code)
