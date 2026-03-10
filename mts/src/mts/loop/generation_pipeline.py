@@ -159,6 +159,7 @@ class GenerationPipeline:
                 events=self._events,
                 agents=self._orchestrator,
                 harness_loader=harness_loader,
+                artifacts=self._artifacts,
             )
 
             # Stage 2.5: Probe (optional — refine strategy from observation)
