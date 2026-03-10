@@ -13,6 +13,7 @@ export interface SkillPackageData {
   bestScore: number;
   bestElo: number;
   hints: string;
+  harness?: Record<string, string>;
   metadata?: Record<string, unknown>;
   // Agent task fields
   taskPrompt?: string | null;
@@ -40,6 +41,7 @@ export class SkillPackage {
   readonly bestScore: number;
   readonly bestElo: number;
   readonly hints: string;
+  readonly harness: Record<string, string>;
   readonly metadata: Record<string, unknown>;
   readonly taskPrompt: string | null;
   readonly judgeRubric: string | null;
@@ -60,6 +62,7 @@ export class SkillPackage {
     this.bestScore = data.bestScore;
     this.bestElo = data.bestElo;
     this.hints = data.hints;
+    this.harness = data.harness ?? {};
     this.metadata = data.metadata ?? {};
     this.taskPrompt = data.taskPrompt ?? null;
     this.judgeRubric = data.judgeRubric ?? null;
@@ -82,6 +85,7 @@ export class SkillPackage {
       best_score: this.bestScore,
       best_elo: this.bestElo,
       hints: this.hints,
+      harness: this.harness,
       metadata: this.metadata,
     };
     if (this.taskPrompt != null) d.task_prompt = this.taskPrompt;
@@ -112,6 +116,16 @@ export class SkillPackage {
         `\nBest score: ${this.bestScore.toFixed(4)} | Best Elo: ${this.bestElo.toFixed(1)}\n`;
     }
 
+    let harnessBlock = "";
+    const harnessEntries = Object.entries(this.harness).sort(([a], [b]) => a.localeCompare(b));
+    if (harnessEntries.length > 0) {
+      const parts = ["\n## Harness Validators\n"];
+      for (const [name, source] of harnessEntries) {
+        parts.push(`\n### ${name}\n\n\`\`\`python\n${source}\n\`\`\`\n`);
+      }
+      harnessBlock = parts.join("");
+    }
+
     return (
       `---\nname: ${this.scenarioName.replace(/_/g, "-")}-knowledge\n` +
       `description: ${this.description.slice(0, 200)}\n---\n\n` +
@@ -121,7 +135,8 @@ export class SkillPackage {
       `${lessonsBlock}\n` +
       `${strategyBlock}\n` +
       `## Playbook\n\n` +
-      `${this.playbook}\n`
+      `${this.playbook}\n` +
+      harnessBlock
     );
   }
 

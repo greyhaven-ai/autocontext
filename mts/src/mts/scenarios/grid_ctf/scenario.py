@@ -134,6 +134,36 @@ class GridCtfScenario(ScenarioInterface):
             f"{event.get('energy_efficiency', 0.0):.2f}."
         )
 
+    def enumerate_legal_actions(self, state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+        """Enumerate the strategy parameter space for grid_ctf.
+
+        Grid CTF uses continuous float parameters rather than discrete moves.
+        Returns parameter descriptors with valid ranges and constraints so that
+        the ActionFilterHarness can present or validate them.
+        """
+        if self.is_terminal(state):
+            return []
+        return [
+            {
+                "action": "aggression",
+                "description": "Attack intensity; higher values push harder toward the flag",
+                "type": "continuous",
+                "range": [0.0, 1.0],
+            },
+            {
+                "action": "defense",
+                "description": "Defensive allocation; constraint: aggression + defense <= 1.4",
+                "type": "continuous",
+                "range": [0.0, 1.0],
+            },
+            {
+                "action": "path_bias",
+                "description": "Pathfinding preference; influences capture route selection",
+                "type": "continuous",
+                "range": [0.0, 1.0],
+            },
+        ]
+
     def render_frame(self, state: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "scenario": self.name,
