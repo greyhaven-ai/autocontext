@@ -128,6 +128,9 @@ class AppSettings(BaseModel):
     prevalidation_max_retries: int = Field(
         default=2, ge=0, le=5, description="Max revision attempts on pre-validation failure",
     )
+    prevalidation_dry_run_enabled: bool = Field(
+        default=True, description="Run self-play dry-run match during pre-validation",
+    )
     # Harness validators (Phase B P3)
     harness_validators_enabled: bool = Field(
         default=False, description="Run architect-generated harness validators before tournament",
@@ -309,6 +312,9 @@ def load_settings() -> AppSettings:
         prevalidation_enabled=_get_bool("prevalidation_enabled", "MTS_PREVALIDATION_ENABLED", "false"),
         prevalidation_max_retries=int(
             _get("prevalidation_max_retries", "MTS_PREVALIDATION_MAX_RETRIES", "2"),
+        ),
+        prevalidation_dry_run_enabled=_get_bool(
+            "prevalidation_dry_run_enabled", "MTS_PREVALIDATION_DRY_RUN_ENABLED", "true",
         ),
         harness_validators_enabled=_get_bool(
             "harness_validators_enabled", "MTS_HARNESS_VALIDATORS_ENABLED", "false",
