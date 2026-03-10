@@ -82,9 +82,12 @@ def stage_prevalidation(
                 "generation": ctx.generation,
             })
         elif ctx.settings.dead_end_tracking_enabled and artifacts is not None:
+            reason = f"Harness validation failed after {ctx.settings.prevalidation_max_retries} revisions"
+            if harness_result.errors:
+                reason += f": {harness_result.errors[0]}"
             _record_dead_end(
                 artifacts, ctx.scenario_name, ctx.generation, ctx.current_strategy,
-                f"Harness validation failed after {ctx.settings.prevalidation_max_retries} revisions: {harness_result.errors[0]}",
+                reason,
             )
 
     # --- Phase 2: Self-play dry-run ---

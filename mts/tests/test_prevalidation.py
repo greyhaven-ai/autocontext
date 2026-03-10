@@ -625,3 +625,25 @@ class TestDeadEndFromPrevalidation:
         entry_text = artifacts.append_dead_end.call_args[0][1]
         assert "Harness validation failed" in entry_text
         assert "invalid move pattern" in entry_text
+
+    def test_harness_failure_without_errors_still_records_dead_end(self) -> None:
+        """Harness failures with empty errors should not crash dead-end recording."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=0)
+        ctx.settings = ctx.settings.model_copy(update={"prevalidation_dry_run_enabled": False})
+        events = MagicMock()
+        agents = self._mock_agents()
+        artifacts = MagicMock()
+
+        harness_loader = MagicMock()
+        harness_loader.validate_strategy.return_value = MagicMock(passed=False, errors=[])
+
+        stage_prevalidation(
+            ctx, events=events, agents=agents,
+            harness_loader=harness_loader, artifacts=artifacts,
+        )
+
+        artifacts.append_dead_end.assert_called_once()
+        entry_text = artifacts.append_dead_end.call_args[0][1]
+        assert "Harness validation failed after 0 revisions" in entry_text
