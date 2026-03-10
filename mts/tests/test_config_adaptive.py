@@ -32,6 +32,24 @@ class TestConfigAdaptiveSettings:
         assert settings.config_adaptive_enabled is True
 
 
+class TestHarnessInheritanceSetting:
+    def test_default_is_true(self) -> None:
+        settings = AppSettings()
+        assert settings.harness_inheritance_enabled is True
+
+    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MTS_HARNESS_INHERITANCE_ENABLED", "false")
+        monkeypatch.setenv("MTS_AGENT_PROVIDER", "deterministic")
+        settings = load_settings()
+        assert settings.harness_inheritance_enabled is False
+
+    def test_env_var_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MTS_HARNESS_INHERITANCE_ENABLED", "true")
+        monkeypatch.setenv("MTS_AGENT_PROVIDER", "deterministic")
+        settings = load_settings()
+        assert settings.harness_inheritance_enabled is True
+
+
 # ---------------------------------------------------------------------------
 # TestTuningConfig
 # ---------------------------------------------------------------------------
