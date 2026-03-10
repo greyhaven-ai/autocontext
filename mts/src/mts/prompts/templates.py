@@ -64,6 +64,10 @@ def build_prompt_bundle(
     score_trajectory: str = "",
     strategy_registry: str = "",
     progress_json: str = "",
+    experiment_log: str = "",
+    dead_ends: str = "",
+    research_protocol: str = "",
+    session_reports: str = "",
     constraint_mode: bool = False,
     context_budget_tokens: int = 0,
 ) -> PromptBundle:
@@ -76,6 +80,10 @@ def build_prompt_bundle(
             "tools": available_tools,
             "analysis": recent_analysis,
             "hints": coach_competitor_hints,
+            "experiment_log": experiment_log,
+            "dead_ends": dead_ends,
+            "research_protocol": research_protocol,
+            "session_reports": session_reports,
         })
         current_playbook = budgeted["playbook"]
         score_trajectory = budgeted["trajectory"]
@@ -83,6 +91,10 @@ def build_prompt_bundle(
         available_tools = budgeted["tools"]
         recent_analysis = budgeted["analysis"]
         coach_competitor_hints = budgeted["hints"]
+        experiment_log = budgeted["experiment_log"]
+        dead_ends = budgeted["dead_ends"]
+        research_protocol = budgeted["research_protocol"]
+        session_reports = budgeted["session_reports"]
 
     lessons_block = (
         f"Operational lessons (from prior generations):\n{operational_lessons}\n\n"
@@ -114,6 +126,26 @@ def build_prompt_bundle(
         if progress_json
         else ""
     )
+    experiment_log_block = (
+        f"Experiment log:\n{experiment_log}\n\n"
+        if experiment_log
+        else ""
+    )
+    dead_ends_block = (
+        f"Known dead ends (DO NOT repeat these approaches):\n{dead_ends}\n\n"
+        if dead_ends
+        else ""
+    )
+    protocol_block = (
+        f"Research protocol (current focus and constraints):\n{research_protocol}\n\n"
+        if research_protocol
+        else ""
+    )
+    session_reports_block = (
+        f"Prior session reports:\n{session_reports}\n\n"
+        if session_reports
+        else ""
+    )
     base_context = (
         f"Scenario rules:\n{scenario_rules}\n\n"
         f"Strategy interface:\n{strategy_interface}\n\n"
@@ -129,7 +161,11 @@ def build_prompt_bundle(
         f"Previous generation summary:\n{previous_summary}\n"
         f"{trajectory_block}"
         f"{registry_block}"
+        f"{dead_ends_block}"
         f"{progress_block}"
+        f"{experiment_log_block}"
+        f"{protocol_block}"
+        f"{session_reports_block}"
     )
     hints_block = (
         f"Coach hints for competitor:\n{coach_competitor_hints}\n\n"
@@ -180,7 +216,16 @@ def build_prompt_bundle(
             "Then append a JSON code block with shape "
             '{"tools":[{"name":"<snake_case>","description":"<text>","code":"<python code>"}]}. '
             "If no new tools, return tools as empty array."
-            " You may CREATE new tools or UPDATE existing tools by using the same name."
+            " You may CREATE new tools or UPDATE existing tools by using the same name.\n\n"
+            "Additionally, you may propose harness validators — executable Python checks "
+            "that run against each strategy BEFORE tournament matches. Each validator must "
+            "define `validate_strategy(strategy: dict, scenario) -> tuple[bool, list[str]]`. "
+            "Wrap harness specs between markers:\n\n"
+            "<!-- HARNESS_START -->\n"
+            '{"harness":[{"name":"<snake_case>","description":"<text>",'
+            '"code":"def validate_strategy(strategy, scenario):\\n    ..."}]}\n'
+            "<!-- HARNESS_END -->\n\n"
+            "If no harness validators, omit the HARNESS markers entirely."
         ),
     )
 
