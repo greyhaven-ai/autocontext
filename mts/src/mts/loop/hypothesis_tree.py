@@ -53,7 +53,8 @@ class HypothesisTree:
         self.nodes[node_id] = node
 
         if len(self.nodes) > self.max_hypotheses:
-            self.prune()
+            # Keep the newly-added node for at least one refinement cycle.
+            self.prune(protected_ids={node_id})
 
         return node
 
@@ -97,12 +98,22 @@ class HypothesisTree:
         node.elo = elo
         node.refinement_count += 1
 
-    def prune(self) -> list[HypothesisNode]:
-        """Remove lowest-Elo nodes to stay within max_hypotheses. Returns removed nodes."""
+    def prune(self, protected_ids: set[str] | None = None) -> list[HypothesisNode]:
+        """Remove lowest-Elo nodes to stay within max_hypotheses.
+
+        `protected_ids` can be used to keep specific nodes (for example a newly
+        added hypothesis) from immediate pruning.
+        """
         if len(self.nodes) <= self.max_hypotheses:
             return []
-        sorted_nodes = sorted(self.nodes.values(), key=lambda n: n.elo)
+
+        protected = protected_ids or set()
+        candidates = [n for n in self.nodes.values() if n.id not in protected]
         to_remove = len(self.nodes) - self.max_hypotheses
+        if len(candidates) < to_remove:
+            raise ValueError("Not enough non-protected nodes to prune")
+
+        sorted_nodes = sorted(candidates, key=lambda n: n.elo)
         removed = sorted_nodes[:to_remove]
         for node in removed:
             del self.nodes[node.id]
