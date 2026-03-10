@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mts.agents.architect import parse_architect_harness_specs
-from mts.execution.harness_loader import HarnessLoader, HarnessValidationResult, _SAFE_BUILTINS
+from mts.execution.harness_loader import _SAFE_BUILTINS, HarnessLoader, HarnessValidationResult
 from mts.storage.artifacts import ArtifactStore
 
 # ── HarnessLoader ──────────────────────────────────────────────────────────────
