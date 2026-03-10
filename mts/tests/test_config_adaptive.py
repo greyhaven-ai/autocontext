@@ -53,6 +53,37 @@ class TestHarnessInheritanceSetting:
 
 
 # ---------------------------------------------------------------------------
+# TestTreeSearchSettings
+# ---------------------------------------------------------------------------
+
+
+class TestTreeSearchSettings:
+    def test_tree_max_hypotheses_defaults_to_8(self) -> None:
+        settings = AppSettings()
+        assert settings.tree_max_hypotheses == 8
+
+    def test_tree_sampling_temperature_defaults_to_1(self) -> None:
+        settings = AppSettings()
+        assert settings.tree_sampling_temperature == 1.0
+
+    def test_load_settings_reads_tree_search_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MTS_TREE_MAX_HYPOTHESES", "12")
+        monkeypatch.setenv("MTS_TREE_SAMPLING_TEMPERATURE", "0.5")
+        monkeypatch.setenv("MTS_AGENT_PROVIDER", "deterministic")
+        settings = load_settings()
+        assert settings.tree_max_hypotheses == 12
+        assert settings.tree_sampling_temperature == 0.5
+
+    def test_tree_max_hypotheses_minimum_1(self) -> None:
+        with pytest.raises(ValueError):
+            AppSettings(tree_max_hypotheses=0)
+
+    def test_tree_sampling_temperature_must_be_positive(self) -> None:
+        with pytest.raises(ValueError):
+            AppSettings(tree_sampling_temperature=0.0)
+
+
+# ---------------------------------------------------------------------------
 # TestTuningConfig
 # ---------------------------------------------------------------------------
 
