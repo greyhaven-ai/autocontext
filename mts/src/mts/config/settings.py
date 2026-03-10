@@ -150,6 +150,9 @@ class AppSettings(BaseModel):
     harness_timeout_seconds: float = Field(
         default=5.0, ge=0.5, le=60.0, description="Timeout for harness code execution",
     )
+    harness_inheritance_enabled: bool = Field(
+        default=True, description="Inherit harness files across runs (requires harness_validators_enabled)",
+    )
     harness_mode: HarnessMode = Field(
         default=HarnessMode.NONE, description="Harness interaction mode: none, filter, verify, policy",
     )
@@ -331,6 +334,9 @@ def load_settings() -> AppSettings:
         ),
         harness_timeout_seconds=float(
             _get("harness_timeout_seconds", "MTS_HARNESS_TIMEOUT_SECONDS", "5.0"),
+        ),
+        harness_inheritance_enabled=_get_bool(
+            "harness_inheritance_enabled", "MTS_HARNESS_INHERITANCE_ENABLED", "true",
         ),
         harness_mode=HarnessMode(_get("harness_mode", "MTS_HARNESS_MODE", "none")),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),

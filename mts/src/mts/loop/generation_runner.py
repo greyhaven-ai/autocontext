@@ -195,6 +195,18 @@ class GenerationRunner:
                             scenario_name,
                         )
 
+        # Harness inheritance: log existing harness files at run start
+        if (
+            self.settings.harness_validators_enabled
+            and self.settings.harness_inheritance_enabled
+        ):
+            existing_harness = self.artifacts.list_harness(scenario_name)
+            if existing_harness:
+                LOGGER.info(
+                    "inheriting %d harness file(s) for scenario %s: %s",
+                    len(existing_harness), scenario_name, ", ".join(existing_harness),
+                )
+
         try:
             for generation in range(1, generations + 1):
                 if self.controller:
