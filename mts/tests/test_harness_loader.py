@@ -335,7 +335,7 @@ class TestStagePrevalidationHarness:
 
             stage_prevalidation(ctx, events=events, agents=agents, harness_loader=None)
 
-        # Should have emitted prevalidation_started (no harness events)
+        # Should have emitted dry_run_started (no harness events)
         event_names = [call[0][0] for call in events.emit.call_args_list]
         assert "harness_validation_failed" not in event_names
 
