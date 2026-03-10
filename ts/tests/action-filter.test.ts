@@ -134,7 +134,8 @@ describe("ActionFilterHarness — formatActionPrompt", () => {
       { action: "weight", description: "A weight", type: "continuous", range: [0.0, 1.0] },
     ];
     const prompt = h.formatActionPrompt(actions);
-    expect(prompt).toContain("continuous [0, 1]");
+    expect(prompt).toContain("Provide a JSON object");
+    expect(prompt).toContain('"weight":0.5');
   });
 
   it("handles empty actions", () => {
@@ -152,21 +153,21 @@ describe("ActionFilterHarness — parseActionSelection", () => {
     const h = new ActionFilterHarness(mockScenario());
     const actions = h.getLegalActions({})!;
     const result = h.parseActionSelection("1", actions);
-    expect(result?.action).toBe("move_up");
+    expect(result && "action" in result ? result.action : undefined).toBe("move_up");
   });
 
   it("parses numeric with text", () => {
     const h = new ActionFilterHarness(mockScenario());
     const actions = h.getLegalActions({})!;
     const result = h.parseActionSelection("I choose 2", actions);
-    expect(result?.action).toBe("move_down");
+    expect(result && "action" in result ? result.action : undefined).toBe("move_down");
   });
 
   it("parses numeric with whitespace", () => {
     const h = new ActionFilterHarness(mockScenario());
     const actions = h.getLegalActions({})!;
     const result = h.parseActionSelection("  3  ", actions);
-    expect(result?.action).toBe("capture_flag");
+    expect(result && "action" in result ? result.action : undefined).toBe("capture_flag");
   });
 
   it("returns null for out-of-range index", () => {
@@ -179,7 +180,7 @@ describe("ActionFilterHarness — parseActionSelection", () => {
     const h = new ActionFilterHarness(mockScenario());
     const actions = h.getLegalActions({})!;
     const result = h.parseActionSelection("I want to move_down please", actions);
-    expect(result?.action).toBe("move_down");
+    expect(result && "action" in result ? result.action : undefined).toBe("move_down");
   });
 
   it("returns null for no match", () => {
@@ -197,6 +198,34 @@ describe("ActionFilterHarness — parseActionSelection", () => {
     const h = new ActionFilterHarness(mockScenario());
     const actions = h.getLegalActions({})!;
     expect(h.parseActionSelection("", actions)).toBeNull();
+  });
+
+  it("parses continuous JSON selection", () => {
+    const h = new ActionFilterHarness(mockScenario());
+    const actions: ActionDict[] = [
+      { action: "aggression", description: "x", type: "continuous", range: [0, 1] },
+      { action: "defense", description: "y", type: "continuous", range: [0, 1] },
+    ];
+    const result = h.parseActionSelection('{"aggression":0.6,"defense":0.4}', actions);
+    expect(result).toEqual({ aggression: 0.6, defense: 0.4 });
+  });
+
+  it("returns null when continuous JSON misses keys", () => {
+    const h = new ActionFilterHarness(mockScenario());
+    const actions: ActionDict[] = [
+      { action: "aggression", description: "x", type: "continuous", range: [0, 1] },
+      { action: "defense", description: "y", type: "continuous", range: [0, 1] },
+    ];
+    expect(h.parseActionSelection('{"aggression":0.6}', actions)).toBeNull();
+  });
+
+  it("returns null when continuous JSON is out of range", () => {
+    const h = new ActionFilterHarness(mockScenario());
+    const actions: ActionDict[] = [
+      { action: "aggression", description: "x", type: "continuous", range: [0, 1] },
+      { action: "defense", description: "y", type: "continuous", range: [0, 1] },
+    ];
+    expect(h.parseActionSelection('{"aggression":1.6,"defense":0.4}', actions)).toBeNull();
   });
 });
 

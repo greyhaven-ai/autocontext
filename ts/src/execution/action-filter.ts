@@ -87,6 +87,20 @@ export class ActionFilterHarness {
     if (actions.length === 0) {
       return "No actions available.";
     }
+    if (this.isContinuousParamSpace(actions)) {
+      const lines: string[] = ["Provide a JSON object with all strategy parameters:"];
+      const example: Record<string, number> = {};
+      for (const action of actions) {
+        const name = action.action;
+        const desc = action.description ?? "";
+        const [low, high] = action.range!;
+        lines.push(`- ${name}: ${desc} (range [${low}, ${high}])`);
+        example[name] = Number(((low + high) / 2).toFixed(3));
+      }
+      lines.push(`Example: ${JSON.stringify(example)}`);
+      lines.push("Respond with JSON only.");
+      return lines.join("\n");
+    }
     const lines: string[] = ["Available actions:"];
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
@@ -117,9 +131,13 @@ export class ActionFilterHarness {
   parseActionSelection(
     response: string,
     actions: ActionDict[],
-  ): ActionDict | null {
+  ): Record<string, unknown> | ActionDict | null {
     if (actions.length === 0) {
       return null;
+    }
+
+    if (this.isContinuousParamSpace(actions)) {
+      return this.parseContinuousSelection(response, actions);
     }
 
     // Try numeric index first
@@ -185,6 +203,56 @@ export class ActionFilterHarness {
         } catch {
           // harness enumerate_legal_actions failed, try next
         }
+      }
+    }
+    return null;
+  }
+
+  private isContinuousParamSpace(actions: ActionDict[]): boolean {
+    if (actions.length === 0) return false;
+    return actions.every((action) => {
+      if (action.type !== "continuous") return false;
+      if (!action.range || action.range.length !== 2) return false;
+      const [low, high] = action.range;
+      return typeof low === "number" && typeof high === "number";
+    });
+  }
+
+  private parseContinuousSelection(
+    response: string,
+    actions: ActionDict[],
+  ): Record<string, number> | null {
+    const payload = this.extractJsonObject(response);
+    if (!payload) return null;
+
+    const strategy: Record<string, number> = {};
+    for (const action of actions) {
+      const key = action.action;
+      if (!(key in payload)) return null;
+      const raw = payload[key];
+      if (typeof raw !== "number" || Number.isNaN(raw)) return null;
+      const [low, high] = action.range!;
+      if (raw < low || raw > high) return null;
+      strategy[key] = raw;
+    }
+    return strategy;
+  }
+
+  private extractJsonObject(response: string): Record<string, unknown> | null {
+    const candidates: string[] = [];
+    const fenced = response.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+    if (fenced?.[1]) candidates.push(fenced[1]);
+    const start = response.indexOf("{");
+    const end = response.lastIndexOf("}");
+    if (start !== -1 && end > start) candidates.push(response.slice(start, end + 1));
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        // continue
       }
     }
     return null;
