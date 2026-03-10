@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from mts.config.settings import AppSettings, load_settings
+from mts.config.tuning_bounds import TUNING_PARAMS, architect_bounds, protocol_bounds
 from mts.knowledge.tuning import (
+    TUNING_BOUNDS,
     TuningConfig,
     compute_meta_parameter_stats,
     format_meta_stats,
@@ -30,6 +32,24 @@ class TestConfigAdaptiveSettings:
         monkeypatch.setenv("MTS_AGENT_PROVIDER", "deterministic")
         settings = load_settings()
         assert settings.config_adaptive_enabled is True
+
+
+class TestHarnessInheritanceSetting:
+    def test_default_is_true(self) -> None:
+        settings = AppSettings()
+        assert settings.harness_inheritance_enabled is True
+
+    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MTS_HARNESS_INHERITANCE_ENABLED", "false")
+        monkeypatch.setenv("MTS_AGENT_PROVIDER", "deterministic")
+        settings = load_settings()
+        assert settings.harness_inheritance_enabled is False
+
+    def test_env_var_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MTS_HARNESS_INHERITANCE_ENABLED", "true")
+        monkeypatch.setenv("MTS_AGENT_PROVIDER", "deterministic")
+        settings = load_settings()
+        assert settings.harness_inheritance_enabled is True
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +238,38 @@ class TestFormatMetaStats:
         assert "Average gate delta: 0.0123" in output
         assert "RLM utilization: 0%" in output
         assert "last 8 gens" in output
+
+
+# ---------------------------------------------------------------------------
+# TestCanonicalTuningBounds
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalTuningBounds:
+    """Verify both tiers derive from the single canonical source."""
+
+    def test_tuning_bounds_matches_architect_bounds(self) -> None:
+        assert TUNING_BOUNDS == architect_bounds()
+
+    def test_protocol_and_architect_share_same_keys(self) -> None:
+        assert set(architect_bounds().keys()) == set(protocol_bounds().keys())
+
+    def test_architect_bounds_within_protocol_bounds(self) -> None:
+        """Architect bounds should be equal or tighter than protocol bounds."""
+        for key, param in TUNING_PARAMS.items():
+            assert param.architect_min >= param.protocol_min, (
+                f"{key}: architect_min ({param.architect_min}) < protocol_min ({param.protocol_min})"
+            )
+            assert param.architect_max <= param.protocol_max, (
+                f"{key}: architect_max ({param.architect_max}) > protocol_max ({param.protocol_max})"
+            )
+
+    def test_all_tuning_params_have_valid_ranges(self) -> None:
+        for key, param in TUNING_PARAMS.items():
+            assert param.architect_min <= param.architect_max, f"{key}: architect min > max"
+            assert param.protocol_min <= param.protocol_max, f"{key}: protocol min > max"
+
+    def test_architect_every_n_gens_in_protocol_bounds(self) -> None:
+        """architect_every_n_gens was missing from protocol — now present."""
+        pb = protocol_bounds()
+        assert "architect_every_n_gens" in pb

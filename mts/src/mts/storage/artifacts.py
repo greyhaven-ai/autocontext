@@ -229,6 +229,13 @@ class ArtifactStore:
             p.stem for p in h_dir.glob("*.py") if p.is_file()
         )
 
+    def _validate_harness_name(self, name: str) -> str:
+        """Validate and normalize a harness function name."""
+        normalized = name.strip()
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", normalized):
+            raise ValueError(f"invalid harness name: {name!r}")
+        return normalized
+
     def persist_harness(
         self, scenario_name: str, generation_index: int, specs: list[dict[str, object]],
     ) -> list[str]:
@@ -269,6 +276,38 @@ class ArtifactStore:
             label = f"{target.name} (updated)" if is_update else target.name
             created.append(label)
         return created
+
+    @staticmethod
+    def _validate_harness_name(name: str) -> str:
+        """Validate harness module name and prevent path traversal."""
+        candidate = name.strip()
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", candidate):
+            raise ValueError(f"invalid harness name: {name!r}")
+        return candidate
+
+    def write_harness(self, scenario_name: str, name: str, source: str) -> Path:
+        """Write a single harness file to knowledge/<scenario>/harness/<name>.py."""
+        safe_name = self._validate_harness_name(name)
+        h_dir = self.harness_dir(scenario_name)
+        h_dir.mkdir(parents=True, exist_ok=True)
+        target = h_dir / f"{safe_name}.py"
+        target.write_text(source, encoding="utf-8")
+        return target
+
+    def read_harness(self, scenario_name: str, name: str) -> str | None:
+        """Read a harness file by name, or None if not found."""
+        safe_name = self._validate_harness_name(name)
+        target = self.harness_dir(scenario_name) / f"{safe_name}.py"
+        if not target.exists():
+            return None
+        return target.read_text(encoding="utf-8")
+
+    def list_harness(self, scenario_name: str) -> list[str]:
+        """List all harness file names for a scenario (sorted, without .py extension)."""
+        h_dir = self.harness_dir(scenario_name)
+        if not h_dir.exists():
+            return []
+        return sorted(p.stem for p in h_dir.glob("*.py") if not p.name.startswith("_"))
 
     def read_harness_context(self, scenario_name: str) -> str:
         """Read harness validator files as markdown context for prompts."""
@@ -614,6 +653,72 @@ class ArtifactStore:
         for path in report_files[:max_reports]:
             reports.append(path.read_text(encoding="utf-8"))
         return "\n\n---\n\n".join(reports)
+
+    # --- Harness versioning ---------------------------------------------------
+
+    def _harness_store(self, scenario_name: str) -> VersionedFileStore:
+        """Lazily create a per-scenario VersionedFileStore for harness files."""
+        key = f"harness:{scenario_name}"
+        if key not in self._playbook_stores:
+            self._playbook_stores[key] = VersionedFileStore(
+                root=self.harness_dir(scenario_name),
+                max_versions=self._max_playbook_versions,
+                versions_dir_name="_archive",
+                version_prefix="v",
+                version_suffix=".py",
+            )
+        return self._playbook_stores[key]
+
+    def _harness_version_path(self, scenario_name: str) -> Path:
+        return self.harness_dir(scenario_name) / "harness_version.json"
+
+    def get_harness_version(self, scenario_name: str) -> dict[str, object]:
+        """Read harness_version.json — tracks current version per function."""
+        path = self._harness_version_path(scenario_name)
+        if not path.exists():
+            return {}
+        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+    def _update_harness_version(
+        self, scenario_name: str, name: str, version: int, generation: int,
+    ) -> None:
+        versions = self.get_harness_version(scenario_name)
+        versions[name] = {"version": version, "generation": generation}
+        path = self._harness_version_path(scenario_name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(versions, indent=2, sort_keys=True), encoding="utf-8")
+
+    def write_harness_versioned(
+        self, scenario_name: str, name: str, source: str, generation: int,
+    ) -> Path:
+        """Write a harness file with version tracking, archiving the previous version."""
+        normalized = self._validate_harness_name(name)
+        store = self._harness_store(scenario_name)
+        filename = f"{normalized}.py"
+        store.write(filename, source)
+        version = store.version_count(filename) + 1
+        self._update_harness_version(scenario_name, normalized, version, generation)
+        return self.harness_dir(scenario_name) / filename
+
+    def rollback_harness(self, scenario_name: str, name: str) -> str | None:
+        """Restore previous version of a harness file from archive.
+
+        Returns the restored content, or None if no archived version exists.
+        """
+        normalized = self._validate_harness_name(name)
+        store = self._harness_store(scenario_name)
+        filename = f"{normalized}.py"
+        if not store.rollback(filename):
+            return None
+        # Update version metadata
+        versions_info = self.get_harness_version(scenario_name)
+        entry = versions_info.get(normalized)
+        if isinstance(entry, dict) and isinstance(entry.get("version"), int) and entry["version"] > 1:
+            entry["version"] -= 1
+            self._update_harness_version(
+                scenario_name, normalized, entry["version"], entry.get("generation", 0),  # type: ignore[arg-type]
+            )
+        return store.read(filename)
 
     def read_tuning(self, scenario_name: str) -> str:
         """Read tuning config JSON, or empty string if none."""

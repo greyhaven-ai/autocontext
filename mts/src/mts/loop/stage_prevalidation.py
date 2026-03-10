@@ -28,14 +28,17 @@ def stage_prevalidation(
 ) -> GenerationContext:
     """Pre-validate strategy via harness validators and self-play dry-run.
 
-    Harness validation runs first (if enabled), then self-play dry-run.
-    Retry up to max_retries.
+    Harness validation runs first (if enabled), then self-play dry-run
+    (if prevalidation_dry_run_enabled). Retry up to max_retries.
     """
     if not ctx.settings.prevalidation_enabled:
         return ctx
 
-    # --- Harness validation (before self-play dry-run) ---
+    # --- Phase 1: Harness validation ---
     if harness_loader is not None:
+        events.emit("harness_validation_started", {
+            "generation": ctx.generation,
+        })
         harness_result = harness_loader.validate_strategy(ctx.current_strategy, ctx.scenario)
         if not harness_result.passed:
             events.emit("harness_validation_failed", {
@@ -70,8 +73,16 @@ def stage_prevalidation(
                 harness_result = harness_loader.validate_strategy(ctx.current_strategy, ctx.scenario)
                 if harness_result.passed:
                     break
+        if harness_result.passed:
+            events.emit("harness_validation_passed", {
+                "generation": ctx.generation,
+            })
 
-    events.emit("prevalidation_started", {
+    # --- Phase 2: Self-play dry-run ---
+    if not ctx.settings.prevalidation_dry_run_enabled:
+        return ctx
+
+    events.emit("dry_run_started", {
         "generation": ctx.generation,
     })
 
@@ -81,14 +92,14 @@ def stage_prevalidation(
         result = validator.validate(ctx.current_strategy)
 
         if result.passed:
-            events.emit("prevalidation_passed", {
+            events.emit("dry_run_passed", {
                 "generation": ctx.generation,
                 "attempt": attempt,
             })
             return ctx
 
         # Validation failed
-        events.emit("prevalidation_failed", {
+        events.emit("dry_run_failed", {
             "generation": ctx.generation,
             "attempt": attempt,
             "errors": result.errors,
@@ -96,7 +107,7 @@ def stage_prevalidation(
 
         if attempt < ctx.settings.prevalidation_max_retries:
             # Get revision from competitor
-            events.emit("prevalidation_revision", {
+            events.emit("dry_run_revision", {
                 "generation": ctx.generation,
                 "attempt": attempt,
             })

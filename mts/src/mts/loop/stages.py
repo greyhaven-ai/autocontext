@@ -6,6 +6,7 @@ import dataclasses
 import json
 import logging
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from mts.agents.architect import parse_dag_changes
@@ -17,6 +18,7 @@ from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from mts.harness.evaluation.types import EvaluationResult
 from mts.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from mts.knowledge.fresh_start import execute_fresh_start
+from mts.knowledge.harness_quality import compute_harness_quality
 from mts.knowledge.progress import build_progress_snapshot
 from mts.knowledge.protocol import parse_research_protocol, validate_tuning_overrides
 from mts.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
@@ -140,11 +142,12 @@ def stage_agent_generation(
     orchestrator: AgentOrchestrator,
     artifacts: ArtifactStore,
     sqlite: SQLiteStore,
-    on_role_event: Any | None = None,
+    on_role_event: Callable[[str, str], None] | None = None,
     events: EventStreamEmitter | None = None,
 ) -> GenerationContext:
     """Stage 2: Run agent orchestration and validate strategy."""
-    assert ctx.prompts is not None, "stage_knowledge_setup must run first"
+    if ctx.prompts is None:
+        raise RuntimeError("stage_knowledge_setup must run first")
 
     if events is not None:
         roles = ["competitor", "analyst", "coach", "architect"]
@@ -162,6 +165,8 @@ def stage_agent_generation(
         scenario_name=ctx.scenario_name,
         strategy_interface=ctx.strategy_interface,
         on_role_event=on_role_event,
+        scenario_rules=ctx.scenario.describe_rules(),
+        current_strategy=ctx.current_strategy or None,
     )
 
     if "__code__" not in outputs.strategy:
@@ -225,7 +230,8 @@ def stage_tournament(
     agents: AgentOrchestrator | None = None,
 ) -> GenerationContext:
     """Stage 3: Run tournament matches, evaluate gate, retry if needed."""
-    assert ctx.outputs is not None, "stage_agent_generation must run first"
+    if ctx.outputs is None:
+        raise RuntimeError("stage_agent_generation must run first")
 
     settings = ctx.settings
     scenario = ctx.scenario
@@ -348,7 +354,7 @@ def stage_tournament(
                     else:
                         current_strategy = revised_strategy
                 except Exception:
-                    pass  # Fall back to current strategy
+                    LOGGER.debug("retry-learning competitor re-invocation failed", exc_info=True)
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 
@@ -356,7 +362,8 @@ def stage_tournament(
             sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_result.reason, attempt)
         break
 
-    assert tournament is not None
+    if tournament is None:
+        raise RuntimeError("tournament was not initialized")
 
     # #173 - Auto-transition from rapid to linear
     if use_rapid and should_transition_to_linear(ctx.generation, settings.rapid_gens):
@@ -472,12 +479,19 @@ def stage_curator_gate(
     curator_trajectory = trajectory_builder.build_trajectory(ctx.run_id)
     curator_analysis = artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
 
+    # Compute harness quality signal if harness validators are enabled
+    harness_quality_section = ""
+    if ctx.settings.harness_validators_enabled and ctx.tournament is not None:
+        quality = compute_harness_quality(ctx.tournament.results)
+        harness_quality_section = quality.to_prompt_section()
+
     curator_decision, curator_exec = curator.assess_playbook_quality(
         current_playbook=current_pb,
         proposed_playbook=ctx.outputs.coach_playbook,
         score_trajectory=curator_trajectory,
         recent_analysis=curator_analysis,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
+        harness_quality_section=harness_quality_section,
     )
 
     sqlite.append_agent_output(
@@ -491,6 +505,10 @@ def stage_curator_gate(
 
     if curator_decision.decision == "reject":
         ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook="")
+        # Roll back harness files on reject when harness inheritance is active
+        if ctx.settings.harness_validators_enabled and ctx.settings.harness_inheritance_enabled:
+            for name in artifacts.list_harness(ctx.scenario_name):
+                artifacts.rollback_harness(ctx.scenario_name, name)
     elif curator_decision.decision == "merge" and curator_decision.playbook:
         ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook=curator_decision.playbook)
     # "accept" -> no change to outputs
@@ -503,6 +521,114 @@ def stage_curator_gate(
     return ctx
 
 
+def _persist_skill_note(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+) -> None:
+    """Write skill note — advance lessons or rollback warning."""
+    tournament = ctx.tournament
+    assert tournament is not None  # caller guarantees
+    outputs = ctx.outputs
+    assert outputs is not None
+    gate_decision = ctx.gate_decision
+    gate_delta = ctx.gate_delta
+    generation = ctx.generation
+    settings = ctx.settings
+
+    if gate_decision == "advance":
+        skill_lessons = outputs.coach_lessons
+    else:
+        retry_note = f" after {ctx.attempt} retries" if ctx.attempt > 0 else ""
+        skill_lessons = (
+            f"- Generation {generation} ROLLBACK{retry_note} "
+            f"(score={tournament.best_score:.4f}, "
+            f"delta={gate_delta:+.4f}, threshold={settings.backpressure_min_delta}). "
+            f"Strategy: {json.dumps(ctx.current_strategy, sort_keys=True)[:200]}. "
+            f"Narrative: {ctx.replay_narrative[:150]}. "
+            f"Avoid this approach."
+        )
+    artifacts.persist_skill_note(
+        scenario_name=ctx.scenario_name,
+        generation_index=generation,
+        decision=gate_decision,
+        lessons=skill_lessons,
+    )
+
+    # Dead-end registry: record rollback as dead end
+    if gate_decision == "rollback" and settings.dead_end_tracking_enabled:
+        strategy_json = json.dumps(ctx.current_strategy, sort_keys=True)
+        entry = DeadEndEntry.from_rollback(
+            generation=generation,
+            strategy=strategy_json,
+            score=tournament.best_score,
+        )
+        artifacts.append_dead_end(ctx.scenario_name, entry.to_markdown())
+
+
+def _run_curator_consolidation(
+    ctx: GenerationContext,
+    *,
+    curator: KnowledgeCurator,
+    artifacts: ArtifactStore,
+    trajectory_builder: ScoreTrajectoryBuilder,
+    sqlite: SQLiteStore,
+) -> None:
+    """Consolidate lessons and dead-ends via curator."""
+    settings = ctx.settings
+    scenario_name = ctx.scenario_name
+
+    existing_lessons = artifacts.read_skill_lessons_raw(scenario_name)
+    if len(existing_lessons) <= settings.skill_max_lessons:
+        return
+
+    consolidation_trajectory = trajectory_builder.build_trajectory(ctx.run_id)
+    lesson_result, lesson_exec = curator.consolidate_lessons(
+        existing_lessons, settings.skill_max_lessons, consolidation_trajectory,
+        constraint_mode=settings.constraint_prompts_enabled,
+    )
+    artifacts.replace_skill_lessons(scenario_name, lesson_result.consolidated_lessons)
+    sqlite.append_agent_output(
+        ctx.run_id, ctx.generation, "curator_consolidation", lesson_exec.content,
+    )
+    sqlite.append_agent_role_metric(
+        ctx.run_id, ctx.generation, lesson_exec.role, lesson_exec.usage.model,
+        lesson_exec.usage.input_tokens, lesson_exec.usage.output_tokens,
+        lesson_exec.usage.latency_ms, lesson_exec.subagent_id, lesson_exec.status,
+    )
+
+    # Dead-end consolidation
+    if settings.dead_end_tracking_enabled:
+        dead_end_text = artifacts.read_dead_ends(scenario_name)
+        if dead_end_text:
+            consolidated = consolidate_dead_ends(dead_end_text, max_entries=settings.dead_end_max_entries)
+            artifacts.replace_dead_ends(scenario_name, consolidated)
+
+
+def _persist_progress_snapshot(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+) -> None:
+    """Write progress JSON snapshot if enabled."""
+    tournament = ctx.tournament
+    assert tournament is not None  # caller guarantees
+    scenario_name = ctx.scenario_name
+
+    progress_lessons = artifacts.read_skill_lessons_raw(scenario_name)
+    snapshot = build_progress_snapshot(
+        generation=ctx.generation,
+        best_score=ctx.previous_best,
+        best_elo=ctx.challenger_elo,
+        mean_score=tournament.mean_score,
+        gate_history=ctx.gate_decision_history,
+        score_history=ctx.score_history,
+        current_strategy=ctx.current_strategy,
+        lessons=[lesson.lstrip("- ") for lesson in progress_lessons],
+    )
+    artifacts.write_progress(scenario_name, snapshot.to_dict())
+
+
 def stage_persistence(
     ctx: GenerationContext,
     *,
@@ -513,8 +639,10 @@ def stage_persistence(
     curator: KnowledgeCurator | None,
 ) -> GenerationContext:
     """Stage 5: Persist generation results, metrics, and knowledge artifacts."""
-    assert ctx.tournament is not None, "stage_tournament must run first"
-    assert ctx.outputs is not None, "stage_agent_generation must run first"
+    if ctx.tournament is None:
+        raise RuntimeError("stage_tournament must run first")
+    if ctx.outputs is None:
+        raise RuntimeError("stage_agent_generation must run first")
 
     tournament = ctx.tournament
     outputs = ctx.outputs
@@ -575,35 +703,8 @@ def stage_persistence(
         coach_playbook=outputs.coach_playbook if gate_decision == "advance" else "",
     )
 
-    # 5. Write skill note
-    if gate_decision == "advance":
-        skill_lessons = outputs.coach_lessons
-    else:
-        retry_note = f" after {ctx.attempt} retries" if ctx.attempt > 0 else ""
-        skill_lessons = (
-            f"- Generation {generation} ROLLBACK{retry_note} "
-            f"(score={tournament.best_score:.4f}, "
-            f"delta={gate_delta:+.4f}, threshold={settings.backpressure_min_delta}). "
-            f"Strategy: {json.dumps(ctx.current_strategy, sort_keys=True)[:200]}. "
-            f"Narrative: {ctx.replay_narrative[:150]}. "
-            f"Avoid this approach."
-        )
-    artifacts.persist_skill_note(
-        scenario_name=scenario_name,
-        generation_index=generation,
-        decision=gate_decision,
-        lessons=skill_lessons,
-    )
-
-    # 5b. Dead-end registry: record rollback as dead end (Issue #158)
-    if gate_decision == "rollback" and settings.dead_end_tracking_enabled:
-        strategy_json = json.dumps(ctx.current_strategy, sort_keys=True)
-        entry = DeadEndEntry.from_rollback(
-            generation=generation,
-            strategy=strategy_json,
-            score=tournament.best_score,
-        )
-        artifacts.append_dead_end(scenario_name, entry.to_markdown())
+    # 5. Write skill note + dead-end tracking
+    _persist_skill_note(ctx, artifacts=artifacts)
 
     # 6. Curator lesson consolidation
     existing_lessons_check = artifacts.read_skill_lessons_raw(scenario_name)
@@ -614,29 +715,10 @@ def stage_persistence(
         and (generation % settings.curator_consolidate_every_n_gens == 0 or severely_over)
         and not settings.ablation_no_feedback
     ):
-        existing_lessons = artifacts.read_skill_lessons_raw(scenario_name)
-        if len(existing_lessons) > settings.skill_max_lessons:
-            consolidation_trajectory = trajectory_builder.build_trajectory(run_id)
-            lesson_result, lesson_exec = curator.consolidate_lessons(
-                existing_lessons, settings.skill_max_lessons, consolidation_trajectory,
-                constraint_mode=settings.constraint_prompts_enabled,
-            )
-            artifacts.replace_skill_lessons(scenario_name, lesson_result.consolidated_lessons)
-            sqlite.append_agent_output(
-                run_id, generation, "curator_consolidation", lesson_exec.content,
-            )
-            sqlite.append_agent_role_metric(
-                run_id, generation, lesson_exec.role, lesson_exec.usage.model,
-                lesson_exec.usage.input_tokens, lesson_exec.usage.output_tokens,
-                lesson_exec.usage.latency_ms, lesson_exec.subagent_id, lesson_exec.status,
-            )
-
-            # 6b. Dead-end consolidation (Issue #160)
-            if settings.dead_end_tracking_enabled:
-                dead_end_text = artifacts.read_dead_ends(scenario_name)
-                if dead_end_text:
-                    consolidated = consolidate_dead_ends(dead_end_text, max_entries=settings.dead_end_max_entries)
-                    artifacts.replace_dead_ends(scenario_name, consolidated)
+        _run_curator_consolidation(
+            ctx, curator=curator, artifacts=artifacts,
+            trajectory_builder=trajectory_builder, sqlite=sqlite,
+        )
 
     # 7. Carry forward coach hints
     coach_competitor_hints = outputs.coach_competitor_hints
@@ -645,21 +727,10 @@ def stage_persistence(
         artifacts.write_hints(scenario_name, coach_competitor_hints)
 
     # 7b. Write progress snapshot
-    if ctx.settings.progress_json_enabled and not ctx.settings.ablation_no_feedback:
-        progress_lessons = artifacts.read_skill_lessons_raw(scenario_name)
-        snapshot = build_progress_snapshot(
-            generation=generation,
-            best_score=ctx.previous_best,
-            best_elo=ctx.challenger_elo,
-            mean_score=tournament.mean_score,
-            gate_history=ctx.gate_decision_history,
-            score_history=ctx.score_history,
-            current_strategy=ctx.current_strategy,
-            lessons=[lesson.lstrip("- ") for lesson in progress_lessons],
-        )
-        artifacts.write_progress(scenario_name, snapshot.to_dict())
+    if settings.progress_json_enabled and not settings.ablation_no_feedback:
+        _persist_progress_snapshot(ctx, artifacts=artifacts)
 
-    # #188 - Persist tuning proposal on advance decisions
+    # 8. Persist tuning proposal on advance
     if (
         ctx.tuning_proposal is not None
         and settings.config_adaptive_enabled
@@ -667,7 +738,7 @@ def stage_persistence(
     ):
         artifacts.write_tuning(scenario_name, ctx.tuning_proposal.to_json())
 
-    # 8. Emit generation_completed event
+    # 9. Emit generation_completed event
     events.emit("generation_completed", {
         "run_id": run_id,
         "generation": generation,
