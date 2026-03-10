@@ -96,10 +96,13 @@ def validate_tuning_overrides(raw: dict[str, object]) -> dict[str, float | int]:
         if key not in TUNING_ALLOWED_KEYS:
             continue
         expected_type, min_val, max_val = TUNING_ALLOWED_KEYS[key]
-        if expected_type is int:
-            val = int(value)  # type: ignore[call-overload]
-        else:
-            val = float(value)  # type: ignore[arg-type]
+        try:
+            if expected_type is int:
+                val = int(value)  # type: ignore[call-overload]
+            else:
+                val = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
         if min_val <= val <= max_val:
             result[key] = val
     return result

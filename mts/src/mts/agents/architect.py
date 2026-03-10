@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from collections.abc import Mapping
 from typing import Any
@@ -86,8 +87,6 @@ def parse_architect_harness_specs(content: str) -> list[dict[str, Any]]:
     Looks for <!-- HARNESS_START --> ... <!-- HARNESS_END --> markers
     containing JSON: {"harness": [{"name": "...", "description": "...", "code": "..."}]}
     """
-    import ast as _ast
-
     body = extract_delimited_section(content, _HARNESS_START, _HARNESS_END)
     if body is None:
         return []
@@ -110,7 +109,7 @@ def parse_architect_harness_specs(content: str) -> list[dict[str, Any]]:
             continue
         # AST-validate the code
         try:
-            _ast.parse(code)
+            ast.parse(code)
         except SyntaxError:
             continue
         entry: dict[str, Any] = {"name": name, "code": code}
