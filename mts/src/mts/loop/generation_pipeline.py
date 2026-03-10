@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from mts.knowledge.coherence import check_coherence
 from mts.loop.stage_prevalidation import stage_prevalidation
 from mts.loop.stage_probe import stage_probe
+from mts.loop.stage_tree_search import stage_tree_search
 from mts.loop.stage_types import GenerationContext
 from mts.loop.stages import (
     stage_agent_generation,
@@ -102,67 +103,83 @@ class GenerationPipeline:
                 "run_id": ctx.run_id, "generation": ctx.generation, **warm_state,
             })
 
-        # Stage 2: Agent generation
-        ctx = stage_agent_generation(
-            ctx,
-            orchestrator=self._orchestrator,
-            artifacts=self._artifacts,
-            sqlite=self._sqlite,
-            on_role_event=_on_role_event,
-            events=self._events,
-        )
+        # Stage 2+3: Tree search mode OR standard agent generation + tournament
+        use_tree_search = ctx.settings.exploration_mode == "tree"
 
-        # Meta-optimization: record LLM calls
-        if self._meta_optimizer is not None and ctx.outputs is not None:
-            try:
-                for role_exec in ctx.outputs.role_executions:
-                    self._meta_optimizer.record_llm_call(role_exec.role, role_exec.usage, ctx.generation)
-            except Exception:
-                LOGGER.debug("meta_optimizer.record_llm_call failed", exc_info=True)
+        if use_tree_search:
+            # Tree search combines agent generation + tournament into one stage
+            ctx = stage_tree_search(
+                ctx,
+                orchestrator=self._orchestrator,
+                supervisor=self._supervisor,
+                artifacts=self._artifacts,
+                sqlite=self._sqlite,
+                events=self._events,
+                on_role_event=_on_role_event,
+            )
+        else:
+            # Standard flow: agent generation → pre-validation → probe → tournament
+            ctx = stage_agent_generation(
+                ctx,
+                orchestrator=self._orchestrator,
+                artifacts=self._artifacts,
+                sqlite=self._sqlite,
+                on_role_event=_on_role_event,
+                events=self._events,
+            )
 
-        # Hook: Controller chat checkpoint
-        if self._controller is not None and self._chat_with_agent_fn is not None:
-            chat_request = self._controller.poll_chat()
-            if chat_request:
-                role, message = chat_request
-                response = self._chat_with_agent_fn(role, message, ctx.prompts, ctx.tool_context)
-                self._controller.respond_chat(role, response)
+            # Meta-optimization: record LLM calls
+            if self._meta_optimizer is not None and ctx.outputs is not None:
+                try:
+                    for role_exec in ctx.outputs.role_executions:
+                        self._meta_optimizer.record_llm_call(role_exec.role, role_exec.usage, ctx.generation)
+                except Exception:
+                    LOGGER.debug("meta_optimizer.record_llm_call failed", exc_info=True)
 
-        # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
-        harness_loader = None
-        if ctx.settings.harness_validators_enabled:
-            from mts.execution.harness_loader import HarnessLoader
+            # Hook: Controller chat checkpoint
+            if self._controller is not None and self._chat_with_agent_fn is not None:
+                chat_request = self._controller.poll_chat()
+                if chat_request:
+                    role, message = chat_request
+                    response = self._chat_with_agent_fn(role, message, ctx.prompts, ctx.tool_context)
+                    self._controller.respond_chat(role, response)
 
-            h_dir = self._artifacts.harness_dir(ctx.scenario_name)
-            if h_dir.exists():
-                harness_loader = HarnessLoader(h_dir, timeout_seconds=ctx.settings.harness_timeout_seconds)
-                harness_loader.load()
+            # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
+            harness_loader = None
+            if ctx.settings.harness_validators_enabled:
+                from mts.execution.harness_loader import HarnessLoader
 
-        ctx = stage_prevalidation(
-            ctx,
-            events=self._events,
-            agents=self._orchestrator,
-            harness_loader=harness_loader,
-        )
+                h_dir = self._artifacts.harness_dir(ctx.scenario_name)
+                if h_dir.exists():
+                    harness_loader = HarnessLoader(h_dir, timeout_seconds=ctx.settings.harness_timeout_seconds)
+                    harness_loader.load()
 
-        # Stage 2.5: Probe (optional — refine strategy from observation)
-        ctx = stage_probe(
-            ctx,
-            agents=self._orchestrator,
-            events=self._events,
-            supervisor=self._supervisor,
-        )
+            ctx = stage_prevalidation(
+                ctx,
+                events=self._events,
+                agents=self._orchestrator,
+                harness_loader=harness_loader,
+                artifacts=self._artifacts,
+            )
 
-        # Stage 3: Tournament + gate
-        ctx = stage_tournament(
-            ctx,
-            supervisor=self._supervisor,
-            gate=self._gate,
-            events=self._events,
-            sqlite=self._sqlite,
-            artifacts=self._artifacts,
-            agents=self._orchestrator,
-        )
+            # Stage 2.5: Probe (optional — refine strategy from observation)
+            ctx = stage_probe(
+                ctx,
+                agents=self._orchestrator,
+                events=self._events,
+                supervisor=self._supervisor,
+            )
+
+            # Stage 3: Tournament + gate
+            ctx = stage_tournament(
+                ctx,
+                supervisor=self._supervisor,
+                gate=self._gate,
+                events=self._events,
+                sqlite=self._sqlite,
+                artifacts=self._artifacts,
+                agents=self._orchestrator,
+            )
 
         # Stage 3b: Stagnation check
         ctx = stage_stagnation_check(

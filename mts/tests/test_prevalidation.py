@@ -489,3 +489,161 @@ class TestPipelineWiring:
             mock_stage.side_effect = lambda ctx, **kw: ctx
             # If we get here without error, the import exists and is patchable
             assert mock_stage is not None
+
+
+# ---------------------------------------------------------------------------
+# 8. Dead-end recording from pre-validation failures (MTS-107)
+# ---------------------------------------------------------------------------
+
+
+class TestDeadEndFromPrevalidation:
+    def _make_ctx(
+        self,
+        *,
+        max_retries: int = 1,
+        dead_end_tracking_enabled: bool = True,
+    ) -> Any:
+        from mts.loop.stage_types import GenerationContext
+
+        settings = AppSettings(
+            prevalidation_enabled=True,
+            prevalidation_max_retries=max_retries,
+            prevalidation_dry_run_enabled=True,
+            dead_end_tracking_enabled=dead_end_tracking_enabled,
+        )
+        scenario = FakeScenario(match_exception=RuntimeError("always fails"))
+        return GenerationContext(
+            run_id="test-run",
+            scenario_name="fake",
+            scenario=scenario,  # type: ignore[arg-type]
+            generation=5,
+            settings=settings,
+            previous_best=0.0,
+            challenger_elo=1500.0,
+            score_history=[],
+            gate_decision_history=[],
+            coach_competitor_hints="",
+            replay_narrative="",
+            current_strategy={"aggression": 0.5},
+            strategy_interface='{"aggression": float}',
+        )
+
+    def _mock_agents(self) -> MagicMock:
+        from mts.agents.types import RoleExecution
+        from mts.harness.core.types import RoleUsage
+
+        agents = MagicMock()
+        mock_exec = RoleExecution(
+            role="competitor", content='{"aggression": 0.3}',
+            usage=RoleUsage(input_tokens=10, output_tokens=20, latency_ms=100, model="test"),
+            subagent_id="test", status="completed",
+        )
+        agents.competitor.revise.return_value = ('{"aggression": 0.3}', mock_exec)
+        agents.translator.translate.return_value = ({"aggression": 0.3}, mock_exec)
+        return agents
+
+    def test_dry_run_exhaustion_records_dead_end(self) -> None:
+        """When dry-run retries are exhausted, a dead end is recorded."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=1)
+        events = MagicMock()
+        agents = self._mock_agents()
+        artifacts = MagicMock()
+
+        stage_prevalidation(ctx, events=events, agents=agents, artifacts=artifacts)
+
+        artifacts.append_dead_end.assert_called_once()
+        call_args = artifacts.append_dead_end.call_args
+        assert call_args[0][0] == "fake"  # scenario_name
+        entry_text = call_args[0][1]
+        assert "Gen 5" in entry_text
+        assert "Pre-validation failed" in entry_text
+        assert "score=0.0000" in entry_text
+
+    def test_no_dead_end_when_tracking_disabled(self) -> None:
+        """When dead_end_tracking_enabled=False, no dead end is recorded."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=0, dead_end_tracking_enabled=False)
+        events = MagicMock()
+        agents = self._mock_agents()
+        artifacts = MagicMock()
+
+        stage_prevalidation(ctx, events=events, agents=agents, artifacts=artifacts)
+
+        artifacts.append_dead_end.assert_not_called()
+
+    def test_no_dead_end_when_no_artifacts(self) -> None:
+        """When artifacts is None, dead end recording is gracefully skipped."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=0)
+        events = MagicMock()
+        agents = self._mock_agents()
+
+        # Should not raise even without artifacts
+        stage_prevalidation(ctx, events=events, agents=agents, artifacts=None)
+
+    def test_no_dead_end_when_validation_passes(self) -> None:
+        """When strategy validates, no dead end is recorded."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx()
+        ctx.scenario = FakeScenario(  # type: ignore[assignment]
+            match_result=Result(score=0.5, summary="ok", validation_errors=[]),
+        )
+        events = MagicMock()
+        agents = self._mock_agents()
+        artifacts = MagicMock()
+
+        stage_prevalidation(ctx, events=events, agents=agents, artifacts=artifacts)
+
+        artifacts.append_dead_end.assert_not_called()
+
+    def test_harness_failure_records_dead_end(self) -> None:
+        """When harness validation exhausts retries, a dead end is recorded."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=0)
+        ctx.settings = ctx.settings.model_copy(update={"prevalidation_dry_run_enabled": False})
+        events = MagicMock()
+        agents = self._mock_agents()
+        artifacts = MagicMock()
+
+        harness_loader = MagicMock()
+        harness_loader.validate_strategy.return_value = MagicMock(
+            passed=False, errors=["invalid move pattern"],
+        )
+
+        stage_prevalidation(
+            ctx, events=events, agents=agents,
+            harness_loader=harness_loader, artifacts=artifacts,
+        )
+
+        artifacts.append_dead_end.assert_called_once()
+        entry_text = artifacts.append_dead_end.call_args[0][1]
+        assert "Harness validation failed" in entry_text
+        assert "invalid move pattern" in entry_text
+
+    def test_harness_failure_without_errors_still_records_dead_end(self) -> None:
+        """Harness failures with empty errors should not crash dead-end recording."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=0)
+        ctx.settings = ctx.settings.model_copy(update={"prevalidation_dry_run_enabled": False})
+        events = MagicMock()
+        agents = self._mock_agents()
+        artifacts = MagicMock()
+
+        harness_loader = MagicMock()
+        harness_loader.validate_strategy.return_value = MagicMock(passed=False, errors=[])
+
+        stage_prevalidation(
+            ctx, events=events, agents=agents,
+            harness_loader=harness_loader, artifacts=artifacts,
+        )
+
+        artifacts.append_dead_end.assert_called_once()
+        entry_text = artifacts.append_dead_end.call_args[0][1]
+        assert "Harness validation failed after 0 revisions" in entry_text
