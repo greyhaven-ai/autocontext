@@ -80,6 +80,11 @@ class TestWriteHarnessVersioned:
         expected = store.harness_dir("grid_ctf") / "validate_move.py"
         assert path == expected
 
+    @pytest.mark.parametrize("name", ["", "../escape", "bad/name", "contains space", "123abc"])
+    def test_rejects_invalid_harness_name(self, store: ArtifactStore, name: str) -> None:
+        with pytest.raises(ValueError, match="invalid harness name"):
+            store.write_harness_versioned("grid_ctf", name, "code", generation=1)
+
 
 class TestRollbackHarness:
     """rollback_harness restores previous versions from archive."""
@@ -125,6 +130,11 @@ class TestRollbackHarness:
         assert r1 == "v2"
         r2 = store.rollback_harness("grid_ctf", "validate_move")
         assert r2 == "v1"
+
+    @pytest.mark.parametrize("name", ["", "../escape", "bad/name", "contains space", "123abc"])
+    def test_rejects_invalid_harness_name(self, store: ArtifactStore, name: str) -> None:
+        with pytest.raises(ValueError, match="invalid harness name"):
+            store.rollback_harness("grid_ctf", name)
 
 
 class TestGetHarnessVersion:

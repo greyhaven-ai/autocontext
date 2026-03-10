@@ -229,6 +229,13 @@ class ArtifactStore:
             p.stem for p in h_dir.glob("*.py") if p.is_file()
         )
 
+    def _validate_harness_name(self, name: str) -> str:
+        """Validate and normalize a harness function name."""
+        normalized = name.strip()
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", normalized):
+            raise ValueError(f"invalid harness name: {name!r}")
+        return normalized
+
     def persist_harness(
         self, scenario_name: str, generation_index: int, specs: list[dict[str, object]],
     ) -> list[str]:
@@ -653,11 +660,12 @@ class ArtifactStore:
         self, scenario_name: str, name: str, source: str, generation: int,
     ) -> Path:
         """Write a harness file with version tracking, archiving the previous version."""
+        normalized = self._validate_harness_name(name)
         store = self._harness_store(scenario_name)
-        filename = f"{name}.py"
+        filename = f"{normalized}.py"
         store.write(filename, source)
         version = store.version_count(filename) + 1
-        self._update_harness_version(scenario_name, name, version, generation)
+        self._update_harness_version(scenario_name, normalized, version, generation)
         return self.harness_dir(scenario_name) / filename
 
     def rollback_harness(self, scenario_name: str, name: str) -> str | None:
@@ -665,17 +673,18 @@ class ArtifactStore:
 
         Returns the restored content, or None if no archived version exists.
         """
+        normalized = self._validate_harness_name(name)
         store = self._harness_store(scenario_name)
-        filename = f"{name}.py"
+        filename = f"{normalized}.py"
         if not store.rollback(filename):
             return None
         # Update version metadata
         versions_info = self.get_harness_version(scenario_name)
-        entry = versions_info.get(name)
+        entry = versions_info.get(normalized)
         if isinstance(entry, dict) and isinstance(entry.get("version"), int) and entry["version"] > 1:
             entry["version"] -= 1
             self._update_harness_version(
-                scenario_name, name, entry["version"], entry.get("generation", 0),  # type: ignore[arg-type]
+                scenario_name, normalized, entry["version"], entry.get("generation", 0),  # type: ignore[arg-type]
             )
         return store.read(filename)
 
