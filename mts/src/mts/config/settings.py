@@ -135,6 +135,9 @@ class AppSettings(BaseModel):
     harness_timeout_seconds: float = Field(
         default=5.0, ge=0.5, le=60.0, description="Timeout for harness code execution",
     )
+    harness_inheritance_enabled: bool = Field(
+        default=True, description="Inherit harness files across runs (requires harness_validators_enabled)",
+    )
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
     # Ecosystem convergence (Phase 4)
@@ -315,6 +318,9 @@ def load_settings() -> AppSettings:
         ),
         harness_timeout_seconds=float(
             _get("harness_timeout_seconds", "MTS_HARNESS_TIMEOUT_SECONDS", "5.0"),
+        ),
+        harness_inheritance_enabled=_get_bool(
+            "harness_inheritance_enabled", "MTS_HARNESS_INHERITANCE_ENABLED", "true",
         ),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
         ecosystem_convergence_enabled=_get_bool(
