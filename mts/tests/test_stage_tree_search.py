@@ -232,10 +232,10 @@ class TestTreeSearchStage:
             artifacts=artifacts, sqlite=sqlite, events=events,
         )
 
-        # competitor, analyst, coach, architect = 4 agent outputs
-        assert sqlite.append_agent_output.call_count == 4
-        # 5 role executions (competitor, translator, analyst, coach, architect)
-        assert sqlite.append_agent_role_metric.call_count == 5
+        sqlite.append_generation_agent_activity.assert_called_once()
+        _, kwargs = sqlite.append_generation_agent_activity.call_args
+        assert len(kwargs["outputs"]) == 4
+        assert len(kwargs["role_metrics"]) == 5
 
     def test_runs_analyst_coach_architect(self) -> None:
         """Tree search runs knowledge agents (analyst/coach/architect) after finding best strategy."""

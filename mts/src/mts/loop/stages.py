@@ -178,22 +178,28 @@ def stage_agent_generation(
         if not valid:
             raise ValueError(f"competitor strategy validation failed: {reason}")
 
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "competitor", json.dumps(outputs.strategy, sort_keys=True))
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "analyst", outputs.analysis_markdown)
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "coach", outputs.coach_markdown)
-    sqlite.append_agent_output(ctx.run_id, ctx.generation, "architect", outputs.architect_markdown)
-    for role_execution in outputs.role_executions:
-        sqlite.append_agent_role_metric(
-            ctx.run_id,
-            ctx.generation,
-            role_execution.role,
-            role_execution.usage.model,
-            role_execution.usage.input_tokens,
-            role_execution.usage.output_tokens,
-            role_execution.usage.latency_ms,
-            role_execution.subagent_id,
-            role_execution.status,
-        )
+    sqlite.append_generation_agent_activity(
+        ctx.run_id,
+        ctx.generation,
+        outputs=[
+            ("competitor", json.dumps(outputs.strategy, sort_keys=True)),
+            ("analyst", outputs.analysis_markdown),
+            ("coach", outputs.coach_markdown),
+            ("architect", outputs.architect_markdown),
+        ],
+        role_metrics=[
+            (
+                role_execution.role,
+                role_execution.usage.model,
+                role_execution.usage.input_tokens,
+                role_execution.usage.output_tokens,
+                role_execution.usage.latency_ms,
+                role_execution.subagent_id,
+                role_execution.status,
+            )
+            for role_execution in outputs.role_executions
+        ],
+    )
     if events is not None:
         for role_execution in outputs.role_executions:
             events.emit("role_completed", {
@@ -497,13 +503,19 @@ def stage_curator_gate(
         harness_quality_section=harness_quality_section,
     )
 
-    sqlite.append_agent_output(
-        ctx.run_id, ctx.generation, "curator", curator_exec.content,
-    )
-    sqlite.append_agent_role_metric(
-        ctx.run_id, ctx.generation, curator_exec.role, curator_exec.usage.model,
-        curator_exec.usage.input_tokens, curator_exec.usage.output_tokens,
-        curator_exec.usage.latency_ms, curator_exec.subagent_id, curator_exec.status,
+    sqlite.append_generation_agent_activity(
+        ctx.run_id,
+        ctx.generation,
+        outputs=[("curator", curator_exec.content)],
+        role_metrics=[(
+            curator_exec.role,
+            curator_exec.usage.model,
+            curator_exec.usage.input_tokens,
+            curator_exec.usage.output_tokens,
+            curator_exec.usage.latency_ms,
+            curator_exec.subagent_id,
+            curator_exec.status,
+        )],
     )
 
     if curator_decision.decision == "reject":
@@ -591,13 +603,19 @@ def _run_curator_consolidation(
         constraint_mode=settings.constraint_prompts_enabled,
     )
     artifacts.replace_skill_lessons(scenario_name, lesson_result.consolidated_lessons)
-    sqlite.append_agent_output(
-        ctx.run_id, ctx.generation, "curator_consolidation", lesson_exec.content,
-    )
-    sqlite.append_agent_role_metric(
-        ctx.run_id, ctx.generation, lesson_exec.role, lesson_exec.usage.model,
-        lesson_exec.usage.input_tokens, lesson_exec.usage.output_tokens,
-        lesson_exec.usage.latency_ms, lesson_exec.subagent_id, lesson_exec.status,
+    sqlite.append_generation_agent_activity(
+        ctx.run_id,
+        ctx.generation,
+        outputs=[("curator_consolidation", lesson_exec.content)],
+        role_metrics=[(
+            lesson_exec.role,
+            lesson_exec.usage.model,
+            lesson_exec.usage.input_tokens,
+            lesson_exec.usage.output_tokens,
+            lesson_exec.usage.latency_ms,
+            lesson_exec.subagent_id,
+            lesson_exec.status,
+        )],
     )
 
     # Dead-end consolidation
