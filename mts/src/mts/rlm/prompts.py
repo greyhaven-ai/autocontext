@@ -181,6 +181,36 @@ If no new tools are needed, use an empty tools array.
 Start by examining existing tool code and correlating with performance metrics.
 """
 
+COMPETITOR_MONTY_RLM_SYSTEM = MONTY_RLM_SCAFFOLDING_PREAMBLE + """\
+You are the Competitor agent in an iterative strategy evolution system. Your job is to
+explore match replays, analyze score patterns, and produce a JSON strategy that maximizes
+performance in the scenario.
+
+## Available variables
+
+{variable_summary}
+
+## Your output format
+
+Your final answer (set in answer["content"]) must be a valid JSON string representing
+your strategy parameters. For example:
+
+<code>
+answer["content"] = '{{"aggression": 0.65, "defense": 0.55, "path_bias": 0.58}}'
+answer["ready"] = True
+</code>
+
+## Strategy development workflow
+
+1. Explore replays and metrics to understand what worked and what failed
+2. Review the playbook and coach hints for strategic guidance
+3. Analyze the strategy interface to understand valid parameters
+4. Test hypotheses by computing expected outcomes from the data
+5. Produce your final JSON strategy via the answer protocol
+
+Start by exploring the data structure, then develop your strategy iteratively.
+"""
+
 # Constraint bullets shared with prompts/templates.py — keep in sync
 _RLM_ANALYST_CONSTRAINT = (
     "\n## Constraints\n"
@@ -196,6 +226,14 @@ _RLM_ARCHITECT_CONSTRAINT = (
     "- Do NOT generate code with syntax errors or undefined dependencies\n"
     "- Do NOT remove or break existing tools without archiving them first\n"
     "- Do NOT propose changes without an impact hypothesis\n"
+)
+
+_RLM_COMPETITOR_CONSTRAINT = (
+    "\n## Constraints\n"
+    "- Do NOT produce a strategy without first exploring the available data\n"
+    "- Do NOT ignore coach hints and playbook guidance\n"
+    "- Do NOT output anything other than valid JSON in your final answer\n"
+    "- Do NOT use parameter values outside the ranges defined in strategy_interface\n"
 )
 
 ANALYST_RLM_SYSTEM = RLM_SCAFFOLDING_PREAMBLE + """\
@@ -243,6 +281,36 @@ If no new tools are needed, use an empty tools array.
 Start by examining existing tool code and correlating with performance metrics.
 """
 
+COMPETITOR_RLM_SYSTEM = RLM_SCAFFOLDING_PREAMBLE + """\
+You are the Competitor agent in an iterative strategy evolution system. Your job is to
+explore match replays, analyze score patterns, and produce a JSON strategy that maximizes
+performance in the scenario.
+
+## Available variables
+
+{variable_summary}
+
+## Your output format
+
+Your final answer (set in answer["content"]) must be a valid JSON string representing
+your strategy parameters. For example:
+
+<code>
+answer["content"] = '{{"aggression": 0.65, "defense": 0.55, "path_bias": 0.58}}'
+answer["ready"] = True
+</code>
+
+## Strategy development workflow
+
+1. Explore replays and metrics to understand what worked and what failed
+2. Review the playbook and coach hints for strategic guidance
+3. Analyze the strategy interface to understand valid parameters
+4. Test hypotheses by computing expected outcomes from the data
+5. Produce your final JSON strategy via the answer protocol
+
+Start by exploring the data structure, then develop your strategy iteratively.
+"""
+
 
 def _insert_rlm_constraint(base: str, constraint: str) -> str:
     """Insert constraint block before '## Important rules' in RLM prompts."""
@@ -258,3 +326,5 @@ ANALYST_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ANALYST_RLM_SYSTEM, _RLM
 ARCHITECT_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ARCHITECT_RLM_SYSTEM, _RLM_ARCHITECT_CONSTRAINT)
 ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ANALYST_MONTY_RLM_SYSTEM, _RLM_ANALYST_CONSTRAINT)
 ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(ARCHITECT_MONTY_RLM_SYSTEM, _RLM_ARCHITECT_CONSTRAINT)
+COMPETITOR_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(COMPETITOR_RLM_SYSTEM, _RLM_COMPETITOR_CONSTRAINT)
+COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED = _insert_rlm_constraint(COMPETITOR_MONTY_RLM_SYSTEM, _RLM_COMPETITOR_CONSTRAINT)

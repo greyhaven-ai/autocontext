@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json as _json
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from mts.agents.analyst import AnalystRunner
-from mts.agents.architect import ArchitectRunner, parse_architect_tool_specs
+from mts.agents.architect import ArchitectRunner, parse_architect_harness_specs, parse_architect_tool_specs
 from mts.agents.coach import CoachRunner, parse_coach_sections
 from mts.agents.competitor import CompetitorRunner
 from mts.agents.curator import KnowledgeCurator
@@ -128,13 +129,30 @@ class AgentOrchestrator:
             if on_role_event:
                 on_role_event(role, status)
 
-        _notify("competitor", "started")
-        competitor_prompt = prompts.competitor
-        if self.settings.code_strategies_enabled:
-            from mts.prompts.templates import code_strategy_competitor_suffix
-            competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
-        raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
-        _notify("competitor", "completed")
+        # --- Competitor phase ---
+        use_competitor_rlm = (
+            self.settings.rlm_enabled
+            and self.settings.rlm_competitor_enabled
+            and self._rlm_loader is not None
+            and self.settings.agent_provider != "agent_sdk"
+        )
+
+        if use_competitor_rlm:
+            _notify("competitor", "started")
+            raw_text, competitor_exec = self._run_rlm_competitor(
+                run_id, scenario_name, generation_index,
+                strategy_interface=strategy_interface,
+            )
+            _notify("competitor", "completed")
+        else:
+            _notify("competitor", "started")
+            competitor_prompt = prompts.competitor
+            if self.settings.code_strategies_enabled:
+                from mts.prompts.templates import code_strategy_competitor_suffix
+                competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
+            raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
+            _notify("competitor", "completed")
+
         _notify("translator", "started")
         if self.settings.code_strategies_enabled:
             strategy, translator_exec = self.translator.translate_code(raw_text)
@@ -176,6 +194,7 @@ class AgentOrchestrator:
                 _notify("architect", "completed")
 
         tools = parse_architect_tool_specs(architect_exec.content)
+        harness_specs = parse_architect_harness_specs(architect_exec.content)
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)
 
         # Parse typed contracts
@@ -195,6 +214,7 @@ class AgentOrchestrator:
             coach_competitor_hints=coach_hints,
             architect_markdown=architect_exec.content,
             architect_tools=tools,
+            architect_harness_specs=harness_specs,
             role_executions=[competitor_exec, translator_exec, analyst_exec, coach_exec, architect_exec],
             competitor_output=competitor_typed,
             analyst_output=analyst_typed,
@@ -211,8 +231,6 @@ class AgentOrchestrator:
         on_role_event: Callable[[str, str], None] | None,
     ) -> AgentOutputs:
         """Execute the 5-role generation via PipelineEngine."""
-        import json as _json
-
         from mts.agents.pipeline_adapter import build_mts_dag, build_role_handler
         from mts.harness.orchestration.engine import PipelineEngine
 
@@ -246,6 +264,7 @@ class AgentOrchestrator:
             strategy = {}
 
         tools = parse_architect_tool_specs(results["architect"].content)
+        harness_specs = parse_architect_harness_specs(results["architect"].content)
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(results["coach"].content)
 
         competitor_typed = parse_competitor_output(
@@ -265,6 +284,7 @@ class AgentOrchestrator:
             coach_competitor_hints=coach_hints,
             architect_markdown=results["architect"].content,
             architect_tools=tools,
+            architect_harness_specs=harness_specs,
             role_executions=[
                 results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]
             ],
@@ -280,6 +300,82 @@ class AgentOrchestrator:
 
     def _enrich_coach_prompt(self, base_prompt: str, analyst_content: str) -> str:
         return base_prompt + f"\n\n--- Analyst findings (this generation) ---\n{analyst_content}\n"
+
+    def _run_rlm_competitor(
+        self,
+        run_id: str,
+        scenario_name: str,
+        generation_index: int,
+        *,
+        strategy_interface: str = "",
+    ) -> tuple[str, RoleExecution]:
+        """Run the Competitor via an RLM REPL session.
+
+        Returns (raw_text, competitor_exec) matching the CompetitorRunner.run() contract.
+        The raw_text is the answer content (expected to be a JSON strategy string).
+        """
+        from mts.rlm.session import RlmSession, make_llm_batch
+
+        assert self._rlm_loader is not None
+        settings = self.settings
+
+        # Select worker class and prompt template based on backend
+        use_constraints = settings.constraint_prompts_enabled
+        if settings.rlm_backend == "monty":
+            from mts.harness.repl.monty_worker import MontyReplWorker
+
+            if use_constraints:
+                from mts.rlm.prompts import COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED
+                competitor_system_tpl = COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED
+            else:
+                from mts.rlm.prompts import COMPETITOR_MONTY_RLM_SYSTEM
+                competitor_system_tpl = COMPETITOR_MONTY_RLM_SYSTEM
+            worker_cls: type = MontyReplWorker
+        else:
+            from mts.rlm.repl_worker import ReplWorker
+
+            if use_constraints:
+                from mts.rlm.prompts import COMPETITOR_RLM_SYSTEM_CONSTRAINED
+                competitor_system_tpl = COMPETITOR_RLM_SYSTEM_CONSTRAINED
+            else:
+                from mts.rlm.prompts import COMPETITOR_RLM_SYSTEM
+                competitor_system_tpl = COMPETITOR_RLM_SYSTEM
+            worker_cls = ReplWorker
+
+        # Reset deterministic client turn counter if applicable
+        if hasattr(self.client, "reset_rlm_turns"):
+            self.client.reset_rlm_turns()
+
+        # Load competitor context
+        competitor_ctx = self._rlm_loader.load_for_competitor(
+            run_id, scenario_name, generation_index,
+            strategy_interface=strategy_interface,
+        )
+        competitor_ns = dict(competitor_ctx.variables)
+        competitor_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
+        competitor_worker = worker_cls(
+            namespace=competitor_ns,
+            max_stdout_chars=settings.rlm_max_stdout_chars,
+            timeout_seconds=settings.rlm_code_timeout_seconds,
+        )
+        competitor_system = competitor_system_tpl.format(
+            max_stdout_chars=settings.rlm_max_stdout_chars,
+            max_turns=settings.rlm_max_turns,
+            variable_summary=competitor_ctx.summary,
+        )
+        competitor_session = RlmSession(
+            client=self.client,
+            worker=competitor_worker,
+            role="competitor",
+            model=settings.model_competitor,
+            system_prompt=competitor_system,
+            max_turns=settings.rlm_max_turns,
+        )
+        competitor_exec = competitor_session.run()
+
+        # The answer content is the raw text (expected JSON strategy)
+        raw_text = competitor_exec.content
+        return raw_text, competitor_exec
 
     def _run_rlm_roles(
         self,

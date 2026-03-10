@@ -197,6 +197,10 @@ def stage_agent_generation(
             })
     created_tools = artifacts.persist_tools(ctx.scenario_name, ctx.generation, outputs.architect_tools)
 
+    # Persist harness validators if enabled
+    if ctx.settings.harness_validators_enabled and outputs.architect_harness_specs:
+        artifacts.persist_harness(ctx.scenario_name, ctx.generation, outputs.architect_harness_specs)
+
     # Parse DAG change directives from architect output
     ctx.dag_changes = parse_dag_changes(outputs.architect_markdown)
 

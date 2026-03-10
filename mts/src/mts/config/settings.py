@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -52,6 +53,7 @@ class AppSettings(BaseModel):
     rlm_sub_model: str = Field(default="claude-haiku-4-5-20251001")
     rlm_code_timeout_seconds: float = Field(default=10.0, ge=1.0)
     rlm_backend: str = Field(default="exec", description="RLM REPL backend: 'exec' (default) or 'monty' (Monty sandbox)")
+    rlm_competitor_enabled: bool = Field(default=False, description="Enable RLM REPL mode for Competitor role")
     playbook_max_versions: int = Field(default=5, ge=1)
     cross_run_inheritance: bool = Field(default=True)
     model_curator: str = Field(default="claude-opus-4-6")
@@ -121,6 +123,15 @@ class AppSettings(BaseModel):
     context_budget_tokens: int = Field(default=100_000, ge=0, description="Max estimated tokens for prompt context")
     # Knowledge coherence
     coherence_check_enabled: bool = Field(default=True, description="Run knowledge coherence check after persistence")
+    # Strategy pre-validation
+    prevalidation_enabled: bool = Field(default=False, description="Run self-play dry-run before tournament")
+    prevalidation_max_retries: int = Field(
+        default=2, ge=0, le=5, description="Max revision attempts on pre-validation failure",
+    )
+    # Harness validators (Phase B P3)
+    harness_validators_enabled: bool = Field(
+        default=False, description="Run architect-generated harness validators before tournament",
+    )
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
     # Ecosystem convergence (Phase 4)
@@ -149,7 +160,7 @@ class AppSettings(BaseModel):
         default=False, description="Enable research protocol meta-document for architect steering",
     )
     # Exploration mode (AR-4)
-    exploration_mode: str = Field(
+    exploration_mode: Literal["linear", "rapid", "tree"] = Field(
         default="linear", description="Exploration mode: linear, rapid, or tree",
     )
     rapid_gens: int = Field(
@@ -242,6 +253,7 @@ def load_settings() -> AppSettings:
         rlm_sub_model=_get("rlm_sub_model", "MTS_RLM_SUB_MODEL", "claude-haiku-4-5-20251001"),
         rlm_code_timeout_seconds=float(_get("rlm_code_timeout_seconds", "MTS_RLM_CODE_TIMEOUT_SECONDS", "10.0")),
         rlm_backend=_get("rlm_backend", "MTS_RLM_BACKEND", "exec"),
+        rlm_competitor_enabled=_get_bool("rlm_competitor_enabled", "MTS_RLM_COMPETITOR_ENABLED", "false"),
         playbook_max_versions=int(_get("playbook_max_versions", "MTS_PLAYBOOK_MAX_VERSIONS", "5")),
         cross_run_inheritance=_get_bool("cross_run_inheritance", "MTS_CROSS_RUN_INHERITANCE", "true"),
         model_curator=_get("model_curator", "MTS_MODEL_CURATOR", "claude-opus-4-6"),
@@ -291,6 +303,13 @@ def load_settings() -> AppSettings:
         constraint_prompts_enabled=_get_bool("constraint_prompts_enabled", "MTS_CONSTRAINT_PROMPTS_ENABLED", "true"),
         context_budget_tokens=int(_get("context_budget_tokens", "MTS_CONTEXT_BUDGET_TOKENS", "100000")),
         coherence_check_enabled=_get_bool("coherence_check_enabled", "MTS_COHERENCE_CHECK_ENABLED", "true"),
+        prevalidation_enabled=_get_bool("prevalidation_enabled", "MTS_PREVALIDATION_ENABLED", "false"),
+        prevalidation_max_retries=int(
+            _get("prevalidation_max_retries", "MTS_PREVALIDATION_MAX_RETRIES", "2"),
+        ),
+        harness_validators_enabled=_get_bool(
+            "harness_validators_enabled", "MTS_HARNESS_VALIDATORS_ENABLED", "false",
+        ),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
         ecosystem_convergence_enabled=_get_bool(
             "ecosystem_convergence_enabled", "MTS_ECOSYSTEM_CONVERGENCE_ENABLED", "false",
@@ -307,7 +326,7 @@ def load_settings() -> AppSettings:
         ),
         dead_end_max_entries=int(_get("dead_end_max_entries", "MTS_DEAD_END_MAX_ENTRIES", "20")),
         protocol_enabled=_get_bool("protocol_enabled", "MTS_PROTOCOL_ENABLED", "false"),
-        exploration_mode=_get("exploration_mode", "MTS_EXPLORATION_MODE", "linear"),
+        exploration_mode=cast(Literal["linear", "rapid", "tree"], _get("exploration_mode", "MTS_EXPLORATION_MODE", "linear")),
         rapid_gens=int(_get("rapid_gens", "MTS_RAPID_GENS", "0")),
         session_reports_enabled=_get_bool("session_reports_enabled", "MTS_SESSION_REPORTS_ENABLED", "true"),
         config_adaptive_enabled=_get_bool("config_adaptive_enabled", "MTS_CONFIG_ADAPTIVE_ENABLED", "false"),

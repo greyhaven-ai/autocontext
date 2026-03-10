@@ -45,6 +45,8 @@ export { cleanRevisionOutput } from "./execution/output-cleaner.js";
 export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
 export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
 export { JudgeExecutor } from "./execution/judge-executor.js";
+export { StrategyValidator, ValidationResultSchema } from "./execution/strategy-validator.js";
+export type { ValidationResult, MatchResult, StrategyValidatorOpts, ExecuteMatchFn } from "./execution/strategy-validator.js";
 
 // Runtimes
 export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
@@ -73,3 +75,22 @@ export type { SkillPackageData } from "./knowledge/index.js";
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
 export type { MtsServerOpts } from "./mcp/server.js";
+
+// RLM (REPL-Loop Mode)
+export { RlmSession, extractCode } from "./rlm/index.js";
+export type {
+  RlmSessionOpts,
+  RlmResult,
+  ReplWorker,
+  LlmComplete,
+  ReplCommand,
+  ReplResult,
+  ExecutionRecord,
+  RlmContext,
+} from "./rlm/index.js";
+export {
+  ReplCommandSchema,
+  ReplResultSchema,
+  ExecutionRecordSchema,
+  RlmContextSchema,
+} from "./rlm/index.js";

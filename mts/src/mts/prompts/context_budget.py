@@ -16,10 +16,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Trim cascade: first entry trimmed first (least critical)
-_TRIM_ORDER = ("trajectory", "analysis", "tools", "lessons", "playbook")
+_TRIM_ORDER = (
+    "session_reports", "experiment_log", "research_protocol",
+    "trajectory", "analysis", "tools", "lessons", "playbook",
+)
 
 # Components that are never trimmed
-_PROTECTED = frozenset({"hints"})
+_PROTECTED = frozenset({"hints", "dead_ends"})
 
 
 def estimate_tokens(text: str) -> int:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from collections.abc import Mapping
 from typing import Any
@@ -72,6 +73,49 @@ def parse_dag_changes(content: str) -> list[dict[str, Any]]:
         if action == "add_role":
             deps = item.get("depends_on", [])
             entry["depends_on"] = list(deps) if isinstance(deps, list) else []
+        valid.append(entry)
+    return valid
+
+
+_HARNESS_START = "<!-- HARNESS_START -->"
+_HARNESS_END = "<!-- HARNESS_END -->"
+
+
+def parse_architect_harness_specs(content: str) -> list[dict[str, Any]]:
+    """Extract harness validator specs from architect output.
+
+    Looks for <!-- HARNESS_START --> ... <!-- HARNESS_END --> markers
+    containing JSON: {"harness": [{"name": "...", "description": "...", "code": "..."}]}
+    """
+    body = extract_delimited_section(content, _HARNESS_START, _HARNESS_END)
+    if body is None:
+        return []
+    try:
+        decoded = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(decoded, Mapping):
+        return []
+    harness = decoded.get("harness")
+    if not isinstance(harness, list):
+        return []
+    valid: list[dict[str, Any]] = []
+    for item in harness:
+        if not isinstance(item, Mapping):
+            continue
+        name = item.get("name")
+        code = item.get("code")
+        if not isinstance(name, str) or not isinstance(code, str):
+            continue
+        # AST-validate the code
+        try:
+            ast.parse(code)
+        except SyntaxError:
+            continue
+        entry: dict[str, Any] = {"name": name, "code": code}
+        desc = item.get("description")
+        if isinstance(desc, str):
+            entry["description"] = desc
         valid.append(entry)
     return valid
 
