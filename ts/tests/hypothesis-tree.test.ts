@@ -50,6 +50,21 @@ describe("HypothesisTree", () => {
       // Lowest Elo (nodes[0]) should be pruned
       expect(tree.nodes.has(nodes[0]!.id)).toBe(false);
     });
+
+    it("should preserve newly added node when existing elos are higher", () => {
+      const tree = new HypothesisTree({ maxHypotheses: 3 });
+      const nodes = [];
+      for (let i = 0; i < 3; i++) {
+        const n = tree.add({ v: i });
+        tree.update(n.id, [0.8], 1600.0 + i * 50);
+        nodes.push(n);
+      }
+
+      const newNode = tree.add({ v: 99 });
+      expect(tree.size()).toBe(3);
+      expect(tree.nodes.has(newNode.id)).toBe(true);
+      expect(tree.nodes.has(nodes[0]!.id)).toBe(false);
+    });
   });
 
   describe("select", () => {
@@ -160,6 +175,14 @@ describe("HypothesisTree", () => {
       const removed = tree.prune();
       expect(removed).toEqual([]);
       expect(tree.size()).toBe(2);
+    });
+
+    it("should throw when protected ids block pruning", () => {
+      const tree = new HypothesisTree({ maxHypotheses: 2 });
+      const n1 = tree.add({ v: 1 });
+      const n2 = tree.add({ v: 2 });
+      (tree as { maxHypotheses: number }).maxHypotheses = 1;
+      expect(() => tree.prune(new Set([n1.id, n2.id]))).toThrow("Not enough non-protected nodes");
     });
   });
 

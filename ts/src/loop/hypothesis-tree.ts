@@ -118,7 +118,8 @@ export class HypothesisTree {
     this.nodes.set(nodeId, node);
 
     if (this.nodes.size > this.maxHypotheses) {
-      this.prune();
+      // Keep newly-added hypotheses for at least one refinement cycle.
+      this.prune(new Set([nodeId]));
     }
 
     return node;
@@ -171,12 +172,19 @@ export class HypothesisTree {
   }
 
   /** Remove lowest-Elo nodes to stay within maxHypotheses. Returns removed nodes. */
-  prune(): HypothesisNode[] {
+  prune(protectedIds?: Set<string>): HypothesisNode[] {
     if (this.nodes.size <= this.maxHypotheses) {
       return [];
     }
-    const sorted = [...this.nodes.values()].sort((a, b) => a.elo - b.elo);
+
+    const protectedSet = protectedIds ?? new Set<string>();
+    const candidates = [...this.nodes.values()].filter((n) => !protectedSet.has(n.id));
     const toRemove = this.nodes.size - this.maxHypotheses;
+    if (candidates.length < toRemove) {
+      throw new Error("Not enough non-protected nodes to prune");
+    }
+
+    const sorted = candidates.sort((a, b) => a.elo - b.elo);
     const removed = sorted.slice(0, toRemove);
     for (const node of removed) {
       this.nodes.delete(node.id);
