@@ -15,9 +15,13 @@ from mts.harness.evaluation.runner import EvaluationRunner
 from mts.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from mts.harness.evaluation.types import EvaluationResult
+from mts.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from mts.knowledge.fresh_start import execute_fresh_start
 from mts.knowledge.progress import build_progress_snapshot
+from mts.knowledge.protocol import parse_research_protocol, validate_tuning_overrides
+from mts.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
 from mts.knowledge.stagnation import StagnationDetector
+from mts.knowledge.tuning import TuningConfig, parse_tuning_proposal
 from mts.loop.stage_types import GenerationContext
 from mts.prompts.templates import build_prompt_bundle
 from mts.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
@@ -32,6 +36,21 @@ if TYPE_CHECKING:
     from mts.storage import ArtifactStore, SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _apply_tuning_to_settings(
+    ctx: GenerationContext,
+    parameters: dict[str, float | int],
+) -> None:
+    """Apply validated tuning parameters to ctx.settings (Pydantic model copy)."""
+    if not parameters:
+        return
+    update: dict[str, Any] = {}
+    for key, value in parameters.items():
+        if hasattr(ctx.settings, key):
+            update[key] = value
+    if update:
+        ctx.settings = ctx.settings.model_copy(update=update)
 
 
 def stage_knowledge_setup(
@@ -59,6 +78,33 @@ def stage_knowledge_setup(
         progress_data = artifacts.read_progress(ctx.scenario_name)
         if progress_data:
             progress_json_str = json.dumps(progress_data, indent=2, sort_keys=True)
+
+    # #185 - Load tuning.json when config_adaptive_enabled
+    if ctx.settings.config_adaptive_enabled:
+        raw_tuning = artifacts.read_tuning(ctx.scenario_name)
+        if raw_tuning:
+            try:
+                tuning_config = TuningConfig.from_json(raw_tuning)
+                _apply_tuning_to_settings(ctx, tuning_config.parameters)
+            except (json.JSONDecodeError, ValueError):
+                LOGGER.warning("Failed to parse tuning.json for %s", ctx.scenario_name)
+
+    # #166 - Apply protocol tuning overrides when protocol_enabled
+    if ctx.settings.protocol_enabled:
+        raw_protocol = artifacts.read_research_protocol(ctx.scenario_name)
+        if raw_protocol:
+            protocol = parse_research_protocol(raw_protocol)
+            # Apply exploration mode from protocol
+            if protocol.exploration_mode != ctx.settings.exploration_mode:
+                ctx.settings = ctx.settings.model_copy(
+                    update={"exploration_mode": protocol.exploration_mode},
+                )
+            # Apply tuning overrides from protocol
+            if protocol.tuning_overrides:
+                # Cast to dict[str, object] for validate_tuning_overrides signature
+                raw_overrides: dict[str, object] = dict(protocol.tuning_overrides)
+                validated = validate_tuning_overrides(raw_overrides)
+                _apply_tuning_to_settings(ctx, validated)
 
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
     strategy_interface = scenario.describe_strategy_interface()
@@ -154,6 +200,10 @@ def stage_agent_generation(
     # Parse DAG change directives from architect output
     ctx.dag_changes = parse_dag_changes(outputs.architect_markdown)
 
+    # #186 - Parse tuning proposal from architect output when config_adaptive_enabled
+    if ctx.settings.config_adaptive_enabled:
+        ctx.tuning_proposal = parse_tuning_proposal(outputs.architect_markdown)
+
     ctx.outputs = outputs
     ctx.current_strategy = outputs.strategy
     ctx.created_tools = created_tools
@@ -179,6 +229,7 @@ def stage_tournament(
     attempt = 0
     gate_decision = "rollback"
     tournament = None
+    use_rapid = settings.exploration_mode == "rapid"
 
     while True:
         events.emit("tournament_started", {
@@ -216,7 +267,12 @@ def stage_tournament(
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 
-        if isinstance(gate, TrendAwareGate):
+        # #168 + #172 - Exploration mode gate selection
+        if use_rapid:
+            gate_result_rapid = rapid_gate(tournament.best_score, ctx.previous_best)
+            gate_decision = gate_result_rapid.decision
+            # Rapid mode: no retry, only advance or rollback
+        elif isinstance(gate, TrendAwareGate):
             best_eval = max(tournament.results, key=lambda r: r.score)
             best_exec = best_eval.metadata["execution_output"]
             custom_metrics = scenario.custom_backpressure(best_exec.result)
@@ -231,6 +287,7 @@ def stage_tournament(
                 ),
                 custom_metrics=custom_metrics,
             )
+            gate_decision = gate_result.decision
         else:
             gate_result = gate.evaluate(
                 ctx.previous_best,
@@ -238,10 +295,9 @@ def stage_tournament(
                 retry_count=attempt,
                 max_retries=settings.max_retries,
             )
+            gate_decision = gate_result.decision
 
-        gate_decision = gate_result.decision
-
-        if gate_decision == "retry":
+        if gate_decision == "retry" and not use_rapid:
             attempt += 1
             sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_result.reason, attempt)
             if attempt > settings.max_retries:
@@ -292,10 +348,15 @@ def stage_tournament(
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 
-        sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_result.reason, attempt)
+        if not use_rapid:
+            sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_result.reason, attempt)
         break
 
     assert tournament is not None
+
+    # #173 - Auto-transition from rapid to linear
+    if use_rapid and should_transition_to_linear(ctx.generation, settings.rapid_gens):
+        ctx.settings = ctx.settings.model_copy(update={"exploration_mode": "linear"})
 
     events.emit("tournament_completed", {
         "run_id": ctx.run_id, "generation": ctx.generation,
@@ -530,6 +591,16 @@ def stage_persistence(
         lessons=skill_lessons,
     )
 
+    # 5b. Dead-end registry: record rollback as dead end (Issue #158)
+    if gate_decision == "rollback" and settings.dead_end_tracking_enabled:
+        strategy_json = json.dumps(ctx.current_strategy, sort_keys=True)
+        entry = DeadEndEntry.from_rollback(
+            generation=generation,
+            strategy=strategy_json,
+            score=tournament.best_score,
+        )
+        artifacts.append_dead_end(scenario_name, entry.to_markdown())
+
     # 6. Curator lesson consolidation
     existing_lessons_check = artifacts.read_skill_lessons_raw(scenario_name)
     severely_over = len(existing_lessons_check) > settings.skill_max_lessons * 2
@@ -556,6 +627,13 @@ def stage_persistence(
                 lesson_exec.usage.latency_ms, lesson_exec.subagent_id, lesson_exec.status,
             )
 
+            # 6b. Dead-end consolidation (Issue #160)
+            if settings.dead_end_tracking_enabled:
+                dead_end_text = artifacts.read_dead_ends(scenario_name)
+                if dead_end_text:
+                    consolidated = consolidate_dead_ends(dead_end_text, max_entries=settings.dead_end_max_entries)
+                    artifacts.replace_dead_ends(scenario_name, consolidated)
+
     # 7. Carry forward coach hints
     coach_competitor_hints = outputs.coach_competitor_hints
     ctx.coach_competitor_hints = coach_competitor_hints
@@ -576,6 +654,14 @@ def stage_persistence(
             lessons=[lesson.lstrip("- ") for lesson in progress_lessons],
         )
         artifacts.write_progress(scenario_name, snapshot.to_dict())
+
+    # #188 - Persist tuning proposal on advance decisions
+    if (
+        ctx.tuning_proposal is not None
+        and settings.config_adaptive_enabled
+        and gate_decision == "advance"
+    ):
+        artifacts.write_tuning(scenario_name, ctx.tuning_proposal.to_json())
 
     # 8. Emit generation_completed event
     events.emit("generation_completed", {

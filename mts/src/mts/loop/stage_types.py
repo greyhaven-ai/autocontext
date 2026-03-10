@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from mts.agents.types import AgentOutputs
     from mts.config.settings import AppSettings
     from mts.harness.evaluation.types import EvaluationSummary
+    from mts.knowledge.tuning import TuningConfig
     from mts.prompts.templates import PromptBundle
     from mts.scenarios.base import ScenarioInterface
 
@@ -46,6 +47,9 @@ class GenerationContext:
     fresh_start_triggered: bool = False
     probe_refinement_applied: bool = False
     dag_changes: list[dict[str, Any]] = field(default_factory=list)
+
+    # Pipeline wiring: tuning proposal from architect (AR-6)
+    tuning_proposal: TuningConfig | None = None
 
 
 @dataclass(slots=True)
