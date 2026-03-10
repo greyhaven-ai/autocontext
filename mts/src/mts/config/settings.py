@@ -133,6 +133,36 @@ class AppSettings(BaseModel):
     ecosystem_oscillation_window: int = Field(
         default=3, ge=2, description="Consecutive high-divergence cycles to trigger lock",
     )
+    # Experiment log (AR-1)
+    experiment_log_enabled: bool = Field(
+        default=False, description="Inject experiment log table into agent prompts",
+    )
+    # Dead-end registry (AR-2)
+    dead_end_tracking_enabled: bool = Field(
+        default=False, description="Track dead-end strategies that consistently fail",
+    )
+    dead_end_max_entries: int = Field(
+        default=20, ge=1, description="Max dead-end entries before oldest are pruned",
+    )
+    # Research protocol (AR-3)
+    protocol_enabled: bool = Field(
+        default=False, description="Enable research protocol meta-document for architect steering",
+    )
+    # Exploration mode (AR-4)
+    exploration_mode: str = Field(
+        default="linear", description="Exploration mode: linear, rapid, or tree",
+    )
+    rapid_gens: int = Field(
+        default=0, ge=0, description="Auto-transition from rapid to linear after N gens (0=manual)",
+    )
+    # Session reports (AR-5)
+    session_reports_enabled: bool = Field(
+        default=True, description="Generate cross-session summary reports",
+    )
+    # Config-adaptive loop (AR-6)
+    config_adaptive_enabled: bool = Field(
+        default=False, description="Allow architect to propose meta-parameter tuning",
+    )
 
 
 def load_settings() -> AppSettings:
@@ -271,4 +301,14 @@ def load_settings() -> AppSettings:
         ecosystem_oscillation_window=int(
             _get("ecosystem_oscillation_window", "MTS_ECOSYSTEM_OSCILLATION_WINDOW", "3"),
         ),
+        experiment_log_enabled=_get_bool("experiment_log_enabled", "MTS_EXPERIMENT_LOG_ENABLED", "false"),
+        dead_end_tracking_enabled=_get_bool(
+            "dead_end_tracking_enabled", "MTS_DEAD_END_TRACKING_ENABLED", "false",
+        ),
+        dead_end_max_entries=int(_get("dead_end_max_entries", "MTS_DEAD_END_MAX_ENTRIES", "20")),
+        protocol_enabled=_get_bool("protocol_enabled", "MTS_PROTOCOL_ENABLED", "false"),
+        exploration_mode=_get("exploration_mode", "MTS_EXPLORATION_MODE", "linear"),
+        rapid_gens=int(_get("rapid_gens", "MTS_RAPID_GENS", "0")),
+        session_reports_enabled=_get_bool("session_reports_enabled", "MTS_SESSION_REPORTS_ENABLED", "true"),
+        config_adaptive_enabled=_get_bool("config_adaptive_enabled", "MTS_CONFIG_ADAPTIVE_ENABLED", "false"),
     )
