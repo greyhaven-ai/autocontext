@@ -30,6 +30,7 @@ class SkillPackage:
     best_score: float
     best_elo: float
     hints: str
+    harness: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     task_prompt: str | None = None
     judge_rubric: str | None = None
@@ -51,6 +52,7 @@ class SkillPackage:
             "best_score": self.best_score,
             "best_elo": self.best_elo,
             "hints": self.hints,
+            "harness": self.harness,
             "metadata": self.metadata,
         }
         if self.task_prompt is not None:
@@ -85,6 +87,13 @@ class SkillPackage:
         if self.task_prompt is not None:
             return self._render_agent_task_markdown(lessons_block)
 
+        harness_block = ""
+        if self.harness:
+            harness_parts = ["\n## Harness Validators\n"]
+            for name, source in sorted(self.harness.items()):
+                harness_parts.append(f"\n### {name}\n\n```python\n{source}\n```\n")
+            harness_block = "".join(harness_parts)
+
         return (
             f"---\nname: {self.scenario_name.replace('_', '-')}-knowledge\n"
             f"description: {self.description[:200]}\n---\n\n"
@@ -95,6 +104,7 @@ class SkillPackage:
             f"{strategy_block}\n"
             "## Playbook\n\n"
             f"{self.playbook}\n"
+            f"{harness_block}"
         )
 
     def _render_agent_task_markdown(self, lessons_block: str) -> str:
@@ -211,6 +221,14 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
         except Exception:
             pass
 
+    # Collect harness files if present
+    harness: dict[str, str] = {}
+    harness_names = ctx.artifacts.list_harness(scenario_name)
+    for h_name in harness_names:
+        h_path = ctx.artifacts.harness_dir(scenario_name) / f"{h_name}.py"
+        if h_path.exists():
+            harness[h_name] = h_path.read_text(encoding="utf-8")
+
     return SkillPackage(
         scenario_name=scenario_name,
         display_name=display_name,
@@ -221,6 +239,7 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
         best_score=best_score,
         best_elo=best_elo,
         hints=hints,
+        harness=harness,
         metadata={
             "completed_runs": completed_runs,
             "has_snapshot": snapshot is not None,

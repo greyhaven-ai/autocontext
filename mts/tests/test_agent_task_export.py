@@ -264,3 +264,72 @@ class TestSearchIndexAgentTaskFields:
         }
         score, _ = _keyword_score(["something"], entry)
         assert score == 0.0
+
+
+class TestHarnessInSkillPackage:
+    """MTS-93: harness field in SkillPackage."""
+
+    def test_to_dict_includes_harness(self) -> None:
+        pkg = SkillPackage(
+            scenario_name="grid_ctf",
+            display_name="Grid Ctf",
+            description="Capture the flag",
+            playbook="pb",
+            lessons=[],
+            best_strategy=None,
+            best_score=0.0,
+            best_elo=1500.0,
+            hints="",
+            harness={"validate_move": "def validate_move(): ..."},
+        )
+        d = pkg.to_dict()
+        assert "harness" in d
+        assert d["harness"]["validate_move"] == "def validate_move(): ..."
+
+    def test_to_dict_empty_harness(self) -> None:
+        pkg = SkillPackage(
+            scenario_name="test",
+            display_name="Test",
+            description="desc",
+            playbook="pb",
+            lessons=[],
+            best_strategy=None,
+            best_score=0.0,
+            best_elo=1500.0,
+            hints="",
+        )
+        d = pkg.to_dict()
+        assert d["harness"] == {}
+
+    def test_skill_markdown_includes_harness_section(self) -> None:
+        pkg = SkillPackage(
+            scenario_name="grid_ctf",
+            display_name="Grid Ctf",
+            description="Capture the flag",
+            playbook="pb",
+            lessons=[],
+            best_strategy=None,
+            best_score=0.0,
+            best_elo=1500.0,
+            hints="",
+            harness={"validate_move": "def validate_move(): ..."},
+        )
+        md = pkg.to_skill_markdown()
+        assert "## Harness Validators" in md
+        assert "### validate_move" in md
+        assert "def validate_move(): ..." in md
+
+    def test_skill_markdown_no_harness_section_when_empty(self) -> None:
+        pkg = SkillPackage(
+            scenario_name="grid_ctf",
+            display_name="Grid Ctf",
+            description="Capture the flag",
+            playbook="pb",
+            lessons=[],
+            best_strategy=None,
+            best_score=0.0,
+            best_elo=1500.0,
+            hints="",
+        )
+        md = pkg.to_skill_markdown()
+        assert "## Harness Validators" not in md

@@ -93,7 +93,6 @@ class AppSettings(BaseModel):
     cost_tracking_enabled: bool = Field(default=True)
     cost_budget_limit: float | None = Field(default=None)
     meta_profiling_enabled: bool = Field(default=False)
-    meta_profile_path: Path = Field(default=Path("runs/meta_profiles.json"))
     meta_min_observations: int = Field(default=5, ge=1)
     # Tiered model routing
     tier_routing_enabled: bool = Field(default=False, description="Enable dynamic model tier selection")
@@ -141,12 +140,18 @@ class AppSettings(BaseModel):
     prevalidation_max_retries: int = Field(
         default=2, ge=0, le=5, description="Max revision attempts on pre-validation failure",
     )
+    prevalidation_dry_run_enabled: bool = Field(
+        default=True, description="Run self-play dry-run match during pre-validation",
+    )
     # Harness validators (Phase B P3)
     harness_validators_enabled: bool = Field(
         default=False, description="Run architect-generated harness validators before tournament",
     )
     harness_timeout_seconds: float = Field(
         default=5.0, ge=0.5, le=60.0, description="Timeout for harness code execution",
+    )
+    harness_inheritance_enabled: bool = Field(
+        default=True, description="Inherit harness files across runs (requires harness_validators_enabled)",
     )
     harness_mode: HarnessMode = Field(
         default=HarnessMode.NONE, description="Harness interaction mode: none, filter, verify, policy",
@@ -162,10 +167,6 @@ class AppSettings(BaseModel):
     )
     ecosystem_oscillation_window: int = Field(
         default=3, ge=2, description="Consecutive high-divergence cycles to trigger lock",
-    )
-    # Experiment log (AR-1)
-    experiment_log_enabled: bool = Field(
-        default=False, description="Inject experiment log table into agent prompts",
     )
     # Dead-end registry (AR-2)
     dead_end_tracking_enabled: bool = Field(
@@ -301,7 +302,6 @@ def load_settings() -> AppSettings:
         cost_tracking_enabled=_get_bool("cost_tracking_enabled", "MTS_COST_TRACKING_ENABLED", "true"),
         cost_budget_limit=float(_get("cost_budget_limit", "MTS_COST_BUDGET_LIMIT", "0")) or None,
         meta_profiling_enabled=_get_bool("meta_profiling_enabled", "MTS_META_PROFILING_ENABLED", "false"),
-        meta_profile_path=Path(_get("meta_profile_path", "MTS_META_PROFILE_PATH", "runs/meta_profiles.json")),
         meta_min_observations=int(_get("meta_min_observations", "MTS_META_MIN_OBSERVATIONS", "5")),
         tier_routing_enabled=_get_bool("tier_routing_enabled", "MTS_TIER_ROUTING_ENABLED", "false"),
         tier_haiku_model=_get("tier_haiku_model", "MTS_TIER_HAIKU_MODEL", "claude-haiku-4-5-20251001"),
@@ -333,11 +333,17 @@ def load_settings() -> AppSettings:
         prevalidation_max_retries=int(
             _get("prevalidation_max_retries", "MTS_PREVALIDATION_MAX_RETRIES", "2"),
         ),
+        prevalidation_dry_run_enabled=_get_bool(
+            "prevalidation_dry_run_enabled", "MTS_PREVALIDATION_DRY_RUN_ENABLED", "true",
+        ),
         harness_validators_enabled=_get_bool(
             "harness_validators_enabled", "MTS_HARNESS_VALIDATORS_ENABLED", "false",
         ),
         harness_timeout_seconds=float(
             _get("harness_timeout_seconds", "MTS_HARNESS_TIMEOUT_SECONDS", "5.0"),
+        ),
+        harness_inheritance_enabled=_get_bool(
+            "harness_inheritance_enabled", "MTS_HARNESS_INHERITANCE_ENABLED", "true",
         ),
         harness_mode=HarnessMode(_get("harness_mode", "MTS_HARNESS_MODE", "none")),
         probe_matches=int(_get("probe_matches", "MTS_PROBE_MATCHES", "0")),
@@ -350,7 +356,6 @@ def load_settings() -> AppSettings:
         ecosystem_oscillation_window=int(
             _get("ecosystem_oscillation_window", "MTS_ECOSYSTEM_OSCILLATION_WINDOW", "3"),
         ),
-        experiment_log_enabled=_get_bool("experiment_log_enabled", "MTS_EXPERIMENT_LOG_ENABLED", "false"),
         dead_end_tracking_enabled=_get_bool(
             "dead_end_tracking_enabled", "MTS_DEAD_END_TRACKING_ENABLED", "false",
         ),

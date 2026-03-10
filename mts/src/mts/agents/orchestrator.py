@@ -4,6 +4,7 @@ import json as _json
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Any
 
 from mts.agents.analyst import AnalystRunner
@@ -23,6 +24,72 @@ from mts.harness.orchestration.types import RoleSpec
 from mts.prompts.templates import PromptBundle
 
 LOGGER = logging.getLogger(__name__)
+
+_ARCHITECT_CADENCE_SKIP = "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
+
+
+@dataclass(frozen=True, slots=True)
+class _RlmBackendConfig:
+    """Resolved RLM worker class and per-role prompt templates."""
+
+    worker_cls: type
+    competitor_tpl: str
+    analyst_tpl: str
+    architect_tpl: str
+
+
+def _resolve_rlm_backend(settings: AppSettings) -> _RlmBackendConfig:
+    """Select worker class and prompt templates based on backend + constraint mode."""
+    use_constraints = settings.constraint_prompts_enabled
+    if settings.rlm_backend == "monty":
+        from mts.harness.repl.monty_worker import MontyReplWorker
+
+        if use_constraints:
+            from mts.rlm.prompts import (
+                ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED,
+                ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED,
+                COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED,
+            )
+            return _RlmBackendConfig(
+                worker_cls=MontyReplWorker,
+                competitor_tpl=COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED,
+                analyst_tpl=ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED,
+                architect_tpl=ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED,
+            )
+        from mts.rlm.prompts import (
+            ANALYST_MONTY_RLM_SYSTEM,
+            ARCHITECT_MONTY_RLM_SYSTEM,
+            COMPETITOR_MONTY_RLM_SYSTEM,
+        )
+        return _RlmBackendConfig(
+            worker_cls=MontyReplWorker,
+            competitor_tpl=COMPETITOR_MONTY_RLM_SYSTEM,
+            analyst_tpl=ANALYST_MONTY_RLM_SYSTEM,
+            architect_tpl=ARCHITECT_MONTY_RLM_SYSTEM,
+        )
+    # Default: exec backend
+    from mts.rlm.repl_worker import ReplWorker
+
+    if use_constraints:
+        from mts.rlm.prompts import (
+            ANALYST_RLM_SYSTEM_CONSTRAINED,
+            ARCHITECT_RLM_SYSTEM_CONSTRAINED,
+            COMPETITOR_RLM_SYSTEM_CONSTRAINED,
+        )
+        return _RlmBackendConfig(
+            worker_cls=ReplWorker,
+            competitor_tpl=COMPETITOR_RLM_SYSTEM_CONSTRAINED,
+            analyst_tpl=ANALYST_RLM_SYSTEM_CONSTRAINED,
+            architect_tpl=ARCHITECT_RLM_SYSTEM_CONSTRAINED,
+        )
+    from mts.rlm.prompts import ANALYST_RLM_SYSTEM, ARCHITECT_RLM_SYSTEM, COMPETITOR_RLM_SYSTEM
+
+    return _RlmBackendConfig(
+        worker_cls=ReplWorker,
+        competitor_tpl=COMPETITOR_RLM_SYSTEM,
+        analyst_tpl=ANALYST_RLM_SYSTEM,
+        architect_tpl=ARCHITECT_RLM_SYSTEM,
+    )
 
 
 def apply_dag_changes(dag: RoleDAG, changes: list[dict[str, Any]]) -> tuple[int, int]:
@@ -116,6 +183,8 @@ class AgentOrchestrator:
         scenario_name: str = "",
         strategy_interface: str = "",
         on_role_event: Callable[[str, str], None] | None = None,
+        scenario_rules: str = "",
+        current_strategy: dict[str, Any] | None = None,
     ) -> AgentOutputs:
         # Feature-gated pipeline codepath (skips RLM path when active)
         if self.settings.use_pipeline_engine and not (
@@ -142,6 +211,8 @@ class AgentOrchestrator:
             raw_text, competitor_exec = self._run_rlm_competitor(
                 run_id, scenario_name, generation_index,
                 strategy_interface=strategy_interface,
+                scenario_rules=scenario_rules,
+                current_strategy=current_strategy,
             )
             _notify("competitor", "completed")
         else:
@@ -161,13 +232,14 @@ class AgentOrchestrator:
         _notify("translator", "completed")
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
-            architect_prompt += "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
+            architect_prompt += _ARCHITECT_CADENCE_SKIP
 
         if self.settings.rlm_enabled and self._rlm_loader is not None and self.settings.agent_provider != "agent_sdk":
             _notify("analyst", "started")
             _notify("architect", "started")
             analyst_exec, architect_exec = self._run_rlm_roles(
                 run_id, scenario_name, generation_index, strategy, architect_prompt,
+                scenario_rules=scenario_rules,
             )
             _notify("analyst", "completed")
             _notify("architect", "completed")
@@ -238,10 +310,7 @@ class AgentOrchestrator:
 
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
-            architect_prompt += (
-                "\n\nArchitect cadence note: no major intervention; "
-                "return minimal status + empty tools array."
-            )
+            architect_prompt += _ARCHITECT_CADENCE_SKIP
 
         prompt_map = {
             "competitor": prompts.competitor,
@@ -301,6 +370,40 @@ class AgentOrchestrator:
     def _enrich_coach_prompt(self, base_prompt: str, analyst_content: str) -> str:
         return base_prompt + f"\n\n--- Analyst findings (this generation) ---\n{analyst_content}\n"
 
+    def _run_single_rlm_session(
+        self,
+        role: str,
+        model: str,
+        system_tpl: str,
+        context: Any,
+        worker_cls: type,
+    ) -> RoleExecution:
+        """Build and run a single RLM REPL session for the given role."""
+        from mts.rlm.session import RlmSession, make_llm_batch
+
+        settings = self.settings
+        ns = dict(context.variables)
+        ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
+        worker = worker_cls(
+            namespace=ns,
+            max_stdout_chars=settings.rlm_max_stdout_chars,
+            timeout_seconds=settings.rlm_code_timeout_seconds,
+        )
+        system_prompt = system_tpl.format(
+            max_stdout_chars=settings.rlm_max_stdout_chars,
+            max_turns=settings.rlm_max_turns,
+            variable_summary=context.summary,
+        )
+        session = RlmSession(
+            client=self.client,
+            worker=worker,
+            role=role,
+            model=model,
+            system_prompt=system_prompt,
+            max_turns=settings.rlm_max_turns,
+        )
+        return session.run()
+
     def _run_rlm_competitor(
         self,
         run_id: str,
@@ -308,72 +411,36 @@ class AgentOrchestrator:
         generation_index: int,
         *,
         strategy_interface: str = "",
+        scenario_rules: str = "",
+        current_strategy: dict[str, Any] | None = None,
     ) -> tuple[str, RoleExecution]:
         """Run the Competitor via an RLM REPL session.
 
         Returns (raw_text, competitor_exec) matching the CompetitorRunner.run() contract.
         The raw_text is the answer content (expected to be a JSON strategy string).
         """
-        from mts.rlm.session import RlmSession, make_llm_batch
+        if self._rlm_loader is None:
+            raise RuntimeError("RLM loader not initialized")
 
-        assert self._rlm_loader is not None
-        settings = self.settings
-
-        # Select worker class and prompt template based on backend
-        use_constraints = settings.constraint_prompts_enabled
-        if settings.rlm_backend == "monty":
-            from mts.harness.repl.monty_worker import MontyReplWorker
-
-            if use_constraints:
-                from mts.rlm.prompts import COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED
-                competitor_system_tpl = COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED
-            else:
-                from mts.rlm.prompts import COMPETITOR_MONTY_RLM_SYSTEM
-                competitor_system_tpl = COMPETITOR_MONTY_RLM_SYSTEM
-            worker_cls: type = MontyReplWorker
-        else:
-            from mts.rlm.repl_worker import ReplWorker
-
-            if use_constraints:
-                from mts.rlm.prompts import COMPETITOR_RLM_SYSTEM_CONSTRAINED
-                competitor_system_tpl = COMPETITOR_RLM_SYSTEM_CONSTRAINED
-            else:
-                from mts.rlm.prompts import COMPETITOR_RLM_SYSTEM
-                competitor_system_tpl = COMPETITOR_RLM_SYSTEM
-            worker_cls = ReplWorker
+        backend = _resolve_rlm_backend(self.settings)
 
         # Reset deterministic client turn counter if applicable
         if hasattr(self.client, "reset_rlm_turns"):
             self.client.reset_rlm_turns()
 
-        # Load competitor context
         competitor_ctx = self._rlm_loader.load_for_competitor(
             run_id, scenario_name, generation_index,
             strategy_interface=strategy_interface,
+            scenario_rules=scenario_rules,
+            current_strategy=current_strategy,
         )
-        competitor_ns = dict(competitor_ctx.variables)
-        competitor_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
-        competitor_worker = worker_cls(
-            namespace=competitor_ns,
-            max_stdout_chars=settings.rlm_max_stdout_chars,
-            timeout_seconds=settings.rlm_code_timeout_seconds,
-        )
-        competitor_system = competitor_system_tpl.format(
-            max_stdout_chars=settings.rlm_max_stdout_chars,
-            max_turns=settings.rlm_max_turns,
-            variable_summary=competitor_ctx.summary,
-        )
-        competitor_session = RlmSession(
-            client=self.client,
-            worker=competitor_worker,
+        competitor_exec = self._run_single_rlm_session(
             role="competitor",
-            model=settings.model_competitor,
-            system_prompt=competitor_system,
-            max_turns=settings.rlm_max_turns,
+            model=self.settings.model_competitor,
+            system_tpl=backend.competitor_tpl,
+            context=competitor_ctx,
+            worker_cls=backend.worker_cls,
         )
-        competitor_exec = competitor_session.run()
-
-        # The answer content is the raw text (expected JSON strategy)
         raw_text = competitor_exec.content
         return raw_text, competitor_exec
 
@@ -384,50 +451,14 @@ class AgentOrchestrator:
         generation_index: int,
         strategy: dict[str, Any],
         architect_prompt: str,
+        *,
+        scenario_rules: str = "",
     ) -> tuple[RoleExecution, RoleExecution]:
-        """Run Analyst and Architect via RLM sessions.
+        """Run Analyst and Architect via RLM sessions."""
+        if self._rlm_loader is None:
+            raise RuntimeError("RLM loader not initialized")
 
-        Selects worker class and prompt templates based on settings.rlm_backend:
-        - 'exec': ReplWorker with exec-based REPL (variables persist directly)
-        - 'monty': MontyReplWorker with Monty sandbox (state["key"] persistence)
-        """
-        from mts.rlm.session import RlmSession, make_llm_batch
-
-        assert self._rlm_loader is not None
-        settings = self.settings
-
-        # Select worker class and prompt templates based on rlm_backend and constraint_mode
-        use_constraints = settings.constraint_prompts_enabled
-        if settings.rlm_backend == "monty":
-            from mts.harness.repl.monty_worker import MontyReplWorker
-
-            if use_constraints:
-                from mts.rlm.prompts import (
-                    ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED,
-                    ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED,
-                )
-                analyst_system_tpl = ANALYST_MONTY_RLM_SYSTEM_CONSTRAINED
-                architect_system_tpl = ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED
-            else:
-                from mts.rlm.prompts import ANALYST_MONTY_RLM_SYSTEM, ARCHITECT_MONTY_RLM_SYSTEM
-                analyst_system_tpl = ANALYST_MONTY_RLM_SYSTEM
-                architect_system_tpl = ARCHITECT_MONTY_RLM_SYSTEM
-            worker_cls: type = MontyReplWorker
-        else:
-            from mts.rlm.repl_worker import ReplWorker
-
-            if use_constraints:
-                from mts.rlm.prompts import (
-                    ANALYST_RLM_SYSTEM_CONSTRAINED,
-                    ARCHITECT_RLM_SYSTEM_CONSTRAINED,
-                )
-                analyst_system_tpl = ANALYST_RLM_SYSTEM_CONSTRAINED
-                architect_system_tpl = ARCHITECT_RLM_SYSTEM_CONSTRAINED
-            else:
-                from mts.rlm.prompts import ANALYST_RLM_SYSTEM, ARCHITECT_RLM_SYSTEM
-                analyst_system_tpl = ANALYST_RLM_SYSTEM
-                architect_system_tpl = ARCHITECT_RLM_SYSTEM
-            worker_cls = ReplWorker
+        backend = _resolve_rlm_backend(self.settings)
 
         # Reset deterministic client turn counter if applicable
         if hasattr(self.client, "reset_rlm_turns"):
@@ -436,29 +467,16 @@ class AgentOrchestrator:
         # --- Analyst ---
         analyst_ctx = self._rlm_loader.load_for_analyst(
             run_id, scenario_name, generation_index,
+            scenario_rules=scenario_rules,
             current_strategy=strategy,
         )
-        analyst_ns = dict(analyst_ctx.variables)
-        analyst_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
-        analyst_worker = worker_cls(
-            namespace=analyst_ns,
-            max_stdout_chars=settings.rlm_max_stdout_chars,
-            timeout_seconds=settings.rlm_code_timeout_seconds,
-        )
-        analyst_system = analyst_system_tpl.format(
-            max_stdout_chars=settings.rlm_max_stdout_chars,
-            max_turns=settings.rlm_max_turns,
-            variable_summary=analyst_ctx.summary,
-        )
-        analyst_session = RlmSession(
-            client=self.client,
-            worker=analyst_worker,
+        analyst_exec = self._run_single_rlm_session(
             role="analyst",
-            model=settings.model_analyst,
-            system_prompt=analyst_system,
-            max_turns=settings.rlm_max_turns,
+            model=self.settings.model_analyst,
+            system_tpl=backend.analyst_tpl,
+            context=analyst_ctx,
+            worker_cls=backend.worker_cls,
         )
-        analyst_exec = analyst_session.run()
 
         # Reset turn counter between roles for deterministic client
         if hasattr(self.client, "reset_rlm_turns"):
@@ -467,27 +485,14 @@ class AgentOrchestrator:
         # --- Architect ---
         architect_ctx = self._rlm_loader.load_for_architect(
             run_id, scenario_name, generation_index,
+            scenario_rules=scenario_rules,
         )
-        architect_ns = dict(architect_ctx.variables)
-        architect_ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
-        architect_worker = worker_cls(
-            namespace=architect_ns,
-            max_stdout_chars=settings.rlm_max_stdout_chars,
-            timeout_seconds=settings.rlm_code_timeout_seconds,
-        )
-        architect_system = architect_system_tpl.format(
-            max_stdout_chars=settings.rlm_max_stdout_chars,
-            max_turns=settings.rlm_max_turns,
-            variable_summary=architect_ctx.summary,
-        )
-        architect_session = RlmSession(
-            client=self.client,
-            worker=architect_worker,
+        architect_exec = self._run_single_rlm_session(
             role="architect",
-            model=settings.model_architect,
-            system_prompt=architect_system,
-            max_turns=settings.rlm_max_turns,
+            model=self.settings.model_architect,
+            system_tpl=backend.architect_tpl,
+            context=architect_ctx,
+            worker_cls=backend.worker_cls,
         )
-        architect_exec = architect_session.run()
 
         return analyst_exec, architect_exec

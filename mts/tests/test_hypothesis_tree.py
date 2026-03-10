@@ -39,6 +39,19 @@ class TestHypothesisTreeAdd:
         # Lowest Elo (nodes[0]) should be pruned
         assert nodes[0].id not in tree.nodes
 
+    def test_add_preserves_new_node_when_existing_elos_are_higher(self) -> None:
+        tree = HypothesisTree(max_hypotheses=3)
+        nodes = []
+        for i, elo in enumerate([1600.0, 1650.0, 1700.0]):
+            n = tree.add({"v": i})
+            tree.update(n.id, [0.8], elo=elo)
+            nodes.append(n)
+
+        new_node = tree.add({"v": 99})
+        assert tree.size() == 3
+        assert new_node.id in tree.nodes
+        assert nodes[0].id not in tree.nodes
+
 
 class TestHypothesisTreeSelect:
     def test_select_single_node(self) -> None:
@@ -131,6 +144,14 @@ class TestHypothesisTreePrune:
         removed = tree.prune()
         assert removed == []
         assert tree.size() == 2
+
+    def test_prune_raises_when_protected_ids_block_removal(self) -> None:
+        tree = HypothesisTree(max_hypotheses=2)
+        n1 = tree.add({"v": 1})
+        n2 = tree.add({"v": 2})
+        tree.max_hypotheses = 1
+        with pytest.raises(ValueError, match="Not enough non-protected nodes"):
+            tree.prune(protected_ids={n1.id, n2.id})
 
 
 class TestHypothesisTreeBest:

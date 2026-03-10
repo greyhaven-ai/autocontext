@@ -100,6 +100,7 @@ class KnowledgeCurator:
         score_trajectory: str,
         recent_analysis: str,
         constraint_mode: bool = False,
+        harness_quality_section: str = "",
     ) -> tuple[CuratorPlaybookDecision, RoleExecution]:
         """Compare current vs proposed playbook. Return accept/reject/merge decision."""
         constraint_preamble = _CURATOR_ASSESSMENT_CONSTRAINT if constraint_mode else ""
@@ -115,6 +116,8 @@ class KnowledgeCurator:
             prompt += f"SCORE TRAJECTORY:\n{score_trajectory}\n\n"
         if recent_analysis:
             prompt += f"RECENT ANALYSIS:\n{recent_analysis}\n\n"
+        if harness_quality_section:
+            prompt += f"{harness_quality_section}\n"
         prompt += (
             "Output your decision using these markers:\n"
             "<!-- CURATOR_DECISION: accept|reject|merge -->\n"

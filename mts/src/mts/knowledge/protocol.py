@@ -4,13 +4,11 @@ import json
 import re
 from dataclasses import dataclass, field
 
-# Allowed tuning override keys and their validation ranges
-TUNING_ALLOWED_KEYS: dict[str, tuple[type, float | int, float | int]] = {
-    "backpressure_min_delta": (float, 0.0, 1.0),
-    "matches_per_generation": (int, 1, 20),
-    "rlm_max_turns": (int, 1, 50),
-    "probe_matches": (int, 0, 10),
-}
+from mts.config.tuning_bounds import protocol_bounds
+
+# Protocol-tier bounds: wider ranges for deliberate experimental exploration.
+# Derived from the canonical definition in config/tuning_bounds.py.
+TUNING_ALLOWED_KEYS: dict[str, tuple[type, float | int, float | int]] = protocol_bounds()
 
 
 @dataclass(slots=True)

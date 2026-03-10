@@ -163,10 +163,11 @@ class TestFormatRevisionPrompt:
 
 class TestConfigFields:
     def test_config_defaults(self) -> None:
-        """prevalidation_enabled defaults to False, max_retries defaults to 2."""
+        """prevalidation_enabled defaults to False, max_retries defaults to 2, dry_run defaults True."""
         settings = AppSettings()
         assert settings.prevalidation_enabled is False
         assert settings.prevalidation_max_retries == 2
+        assert settings.prevalidation_dry_run_enabled is True
 
     def test_config_env_vars(self) -> None:
         """MTS_PREVALIDATION_ENABLED=true loads correctly."""
@@ -180,6 +181,17 @@ class TestConfigFields:
             settings = load_settings()
             assert settings.prevalidation_enabled is True
             assert settings.prevalidation_max_retries == 3
+
+    def test_dry_run_toggle_env_var(self) -> None:
+        """MTS_PREVALIDATION_DRY_RUN_ENABLED=false disables self-play dry-run."""
+        with patch.dict(
+            "os.environ",
+            {
+                "MTS_PREVALIDATION_DRY_RUN_ENABLED": "false",
+            },
+        ):
+            settings = load_settings()
+            assert settings.prevalidation_dry_run_enabled is False
 
 
 # ---------------------------------------------------------------------------
@@ -227,13 +239,20 @@ class TestCompetitorRevise:
 
 
 class TestStagePrevalidation:
-    def _make_ctx(self, *, prevalidation_enabled: bool = True, max_retries: int = 2) -> Any:
+    def _make_ctx(
+        self,
+        *,
+        prevalidation_enabled: bool = True,
+        max_retries: int = 2,
+        dry_run_enabled: bool = True,
+    ) -> Any:
         """Build a minimal GenerationContext for testing."""
         from mts.loop.stage_types import GenerationContext
 
         settings = AppSettings(
             prevalidation_enabled=prevalidation_enabled,
             prevalidation_max_retries=max_retries,
+            prevalidation_dry_run_enabled=dry_run_enabled,
         )
         scenario = FakeScenario(
             match_result=Result(score=0.5, summary="ok", validation_errors=[]),
@@ -278,10 +297,10 @@ class TestStagePrevalidation:
         result = stage_prevalidation(ctx, events=events, agents=agents)
 
         assert result is ctx
-        # Should emit started + passed events
+        # Should emit dry_run started + passed events
         event_names = [call[0][0] for call in events.emit.call_args_list]
-        assert "prevalidation_started" in event_names
-        assert "prevalidation_passed" in event_names
+        assert "dry_run_started" in event_names
+        assert "dry_run_passed" in event_names
 
     def test_pipeline_retries_on_failure(self) -> None:
         """When validation fails, stage calls competitor.revise() and retries."""
@@ -318,10 +337,46 @@ class TestStagePrevalidation:
 
         # Should have emitted failed + revision events
         event_names = [call[0][0] for call in events.emit.call_args_list]
-        assert "prevalidation_failed" in event_names
-        assert "prevalidation_revision" in event_names
+        assert "dry_run_failed" in event_names
+        assert "dry_run_revision" in event_names
         # And eventually passed
-        assert "prevalidation_passed" in event_names
+        assert "dry_run_passed" in event_names
+
+    def test_dry_run_disabled_skips_self_play(self) -> None:
+        """When dry_run_enabled=False, skip self-play but still run harness."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(dry_run_enabled=False)
+        events = MagicMock()
+        agents = MagicMock()
+
+        harness_loader = MagicMock()
+        harness_loader.validate_strategy.return_value = MagicMock(passed=True, errors=[])
+
+        result = stage_prevalidation(ctx, events=events, agents=agents, harness_loader=harness_loader)
+
+        assert result is ctx
+        event_names = [call[0][0] for call in events.emit.call_args_list]
+        # Harness phase should run
+        assert "harness_validation_started" in event_names
+        assert "harness_validation_passed" in event_names
+        # Dry-run phase should NOT run
+        assert "dry_run_started" not in event_names
+
+    def test_dry_run_disabled_no_harness_returns_immediately(self) -> None:
+        """With dry_run disabled and no harness loader, stage is a no-op."""
+        from mts.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(dry_run_enabled=False)
+        events = MagicMock()
+        agents = MagicMock()
+
+        result = stage_prevalidation(ctx, events=events, agents=agents, harness_loader=None)
+
+        assert result is ctx
+        event_names = [call[0][0] for call in events.emit.call_args_list]
+        assert "dry_run_started" not in event_names
+        assert "harness_validation_started" not in event_names
 
     def test_max_retries_exhaustion(self) -> None:
         """After N failures, falls through to tournament with last strategy."""
@@ -352,7 +407,7 @@ class TestStagePrevalidation:
         assert ctx_out is ctx
         # Check exhaustion event was emitted
         event_names = [call[0][0] for call in events.emit.call_args_list]
-        assert "prevalidation_failed" in event_names
+        assert "dry_run_failed" in event_names
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +452,7 @@ class TestEventEmission:
         # Check started event payload
         started_calls = [
             call for call in events.emit.call_args_list
-            if call[0][0] == "prevalidation_started"
+            if call[0][0] == "dry_run_started"
         ]
         assert len(started_calls) == 1
         payload = started_calls[0][0][1]
@@ -406,7 +461,7 @@ class TestEventEmission:
         # Check passed event payload
         passed_calls = [
             call for call in events.emit.call_args_list
-            if call[0][0] == "prevalidation_passed"
+            if call[0][0] == "dry_run_passed"
         ]
         assert len(passed_calls) == 1
         payload = passed_calls[0][0][1]

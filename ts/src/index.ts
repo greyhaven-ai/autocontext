@@ -71,8 +71,8 @@ export {
 } from "./scenarios/index.js";
 
 // Knowledge / Skill Export
-export { SkillPackage, exportAgentTaskSkill, cleanLessons } from "./knowledge/index.js";
-export type { SkillPackageData } from "./knowledge/index.js";
+export { SkillPackage, exportAgentTaskSkill, cleanLessons, HarnessStore } from "./knowledge/index.js";
+export type { SkillPackageData, HarnessVersionEntry, HarnessVersionMap } from "./knowledge/index.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";

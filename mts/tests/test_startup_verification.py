@@ -65,7 +65,7 @@ def test_empty_playbook_warning(tmp_path: Path) -> None:
 
 def test_db_check_skipped_when_none(tmp_path: Path) -> None:
     """No DB path skips DB check cleanly."""
-    report = verify_startup(
+    verify_startup(
         scenario_name="grid_ctf",
         knowledge_root=tmp_path,
         db_path=None,

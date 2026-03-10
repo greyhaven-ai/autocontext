@@ -133,7 +133,6 @@ def test_coordinator_from_settings() -> None:
         cost_tracking_enabled=True,
         cost_budget_limit=10.0,
         meta_profiling_enabled=True,
-        meta_profile_path=Path("/tmp/test_profiles.json"),
         meta_min_observations=3,
     )
     mo = MetaOptimizer.from_settings(settings)

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -501,3 +502,105 @@ class TestOrchestratorCompetitorRlm:
         # The competitor execution should still be present.
         roles = [r.role for r in outputs.role_executions]
         assert "competitor" in roles
+
+    def test_orchestrator_passes_scenario_rules_and_strategy(
+        self, tmp_artifacts: Any, tmp_sqlite: Any, seeded_artifacts: Any,
+    ) -> None:
+        """scenario_rules and current_strategy reach the context loader."""
+        from mts.agents.orchestrator import AgentOrchestrator
+        from mts.prompts.templates import PromptBundle
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            rlm_enabled=True,
+            rlm_competitor_enabled=True,
+            rlm_max_turns=5,
+            curator_enabled=False,
+        )
+        orch = AgentOrchestrator(
+            client=DeterministicDevClient(),
+            settings=settings,
+            artifacts=seeded_artifacts,
+            sqlite=tmp_sqlite,
+        )
+        prompts = PromptBundle(
+            competitor="Describe your strategy.",
+            analyst="Analyze.",
+            coach="Coach.",
+            architect="Propose.",
+        )
+
+        captured_kwargs: dict[str, Any] = {}
+        original_load = orch._rlm_loader.load_for_competitor  # type: ignore[union-attr]
+
+        def _spy_load(*args: Any, **kwargs: Any) -> Any:
+            captured_kwargs.update(kwargs)
+            return original_load(*args, **kwargs)
+
+        with patch.object(orch._rlm_loader, "load_for_competitor", side_effect=_spy_load):  # type: ignore[union-attr]
+            orch.run_generation(
+                prompts,
+                generation_index=1,
+                run_id="test_run",
+                scenario_name="grid_ctf",
+                scenario_rules="Capture the flag on a 5x5 grid.",
+                current_strategy={"aggression": 0.5},
+            )
+
+        assert captured_kwargs.get("scenario_rules") == "Capture the flag on a 5x5 grid."
+        assert captured_kwargs.get("current_strategy") == {"aggression": 0.5}
+
+    def test_orchestrator_passes_scenario_rules_to_analyst_and_architect(
+        self, tmp_artifacts: Any, tmp_sqlite: Any, seeded_artifacts: Any,
+    ) -> None:
+        """scenario_rules reaches the analyst and architect context loaders."""
+        from mts.agents.orchestrator import AgentOrchestrator
+        from mts.prompts.templates import PromptBundle
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            rlm_enabled=True,
+            rlm_competitor_enabled=False,  # Use normal competitor path
+            rlm_max_turns=5,
+            curator_enabled=False,
+        )
+        orch = AgentOrchestrator(
+            client=DeterministicDevClient(),
+            settings=settings,
+            artifacts=seeded_artifacts,
+            sqlite=tmp_sqlite,
+        )
+        prompts = PromptBundle(
+            competitor="Describe your strategy.",
+            analyst="Analyze.",
+            coach="Coach.",
+            architect="Propose.",
+        )
+
+        analyst_kwargs: dict[str, Any] = {}
+        architect_kwargs: dict[str, Any] = {}
+        original_analyst = orch._rlm_loader.load_for_analyst  # type: ignore[union-attr]
+        original_architect = orch._rlm_loader.load_for_architect  # type: ignore[union-attr]
+
+        def _spy_analyst(*args: Any, **kwargs: Any) -> Any:
+            analyst_kwargs.update(kwargs)
+            return original_analyst(*args, **kwargs)
+
+        def _spy_architect(*args: Any, **kwargs: Any) -> Any:
+            architect_kwargs.update(kwargs)
+            return original_architect(*args, **kwargs)
+
+        with (
+            patch.object(orch._rlm_loader, "load_for_analyst", side_effect=_spy_analyst),  # type: ignore[union-attr]
+            patch.object(orch._rlm_loader, "load_for_architect", side_effect=_spy_architect),  # type: ignore[union-attr]
+        ):
+            orch.run_generation(
+                prompts,
+                generation_index=1,
+                run_id="test_run",
+                scenario_name="grid_ctf",
+                scenario_rules="Capture the flag on a 5x5 grid.",
+            )
+
+        assert analyst_kwargs.get("scenario_rules") == "Capture the flag on a 5x5 grid."
+        assert architect_kwargs.get("scenario_rules") == "Capture the flag on a 5x5 grid."
