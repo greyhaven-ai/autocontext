@@ -24,6 +24,8 @@ from mts.prompts.templates import PromptBundle
 
 LOGGER = logging.getLogger(__name__)
 
+_ARCHITECT_CADENCE_SKIP = "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
+
 
 def apply_dag_changes(dag: RoleDAG, changes: list[dict[str, Any]]) -> tuple[int, int]:
     """Apply a list of DAG change directives. Returns (applied, skipped) counts."""
@@ -161,7 +163,7 @@ class AgentOrchestrator:
         _notify("translator", "completed")
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
-            architect_prompt += "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
+            architect_prompt += _ARCHITECT_CADENCE_SKIP
 
         if self.settings.rlm_enabled and self._rlm_loader is not None and self.settings.agent_provider != "agent_sdk":
             _notify("analyst", "started")
@@ -238,10 +240,7 @@ class AgentOrchestrator:
 
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
-            architect_prompt += (
-                "\n\nArchitect cadence note: no major intervention; "
-                "return minimal status + empty tools array."
-            )
+            architect_prompt += _ARCHITECT_CADENCE_SKIP
 
         prompt_map = {
             "competitor": prompts.competitor,

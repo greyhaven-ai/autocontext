@@ -6,6 +6,7 @@ import dataclasses
 import json
 import logging
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from mts.agents.architect import parse_dag_changes
@@ -140,7 +141,7 @@ def stage_agent_generation(
     orchestrator: AgentOrchestrator,
     artifacts: ArtifactStore,
     sqlite: SQLiteStore,
-    on_role_event: Any | None = None,
+    on_role_event: Callable[[str, str], None] | None = None,
     events: EventStreamEmitter | None = None,
 ) -> GenerationContext:
     """Stage 2: Run agent orchestration and validate strategy."""
