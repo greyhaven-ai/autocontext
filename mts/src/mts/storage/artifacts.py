@@ -261,6 +261,28 @@ class ArtifactStore:
             created.append(label)
         return created
 
+    def write_harness(self, scenario_name: str, name: str, source: str) -> Path:
+        """Write a single harness file to knowledge/<scenario>/harness/<name>.py."""
+        h_dir = self.harness_dir(scenario_name)
+        h_dir.mkdir(parents=True, exist_ok=True)
+        target = h_dir / f"{name}.py"
+        target.write_text(source, encoding="utf-8")
+        return target
+
+    def read_harness(self, scenario_name: str, name: str) -> str | None:
+        """Read a harness file by name, or None if not found."""
+        target = self.harness_dir(scenario_name) / f"{name}.py"
+        if not target.exists():
+            return None
+        return target.read_text(encoding="utf-8")
+
+    def list_harness(self, scenario_name: str) -> list[str]:
+        """List all harness file names for a scenario (sorted, without .py extension)."""
+        h_dir = self.harness_dir(scenario_name)
+        if not h_dir.exists():
+            return []
+        return sorted(p.stem for p in h_dir.glob("*.py") if not p.name.startswith("_"))
+
     def read_harness_context(self, scenario_name: str) -> str:
         """Read harness validator files as markdown context for prompts."""
         h_dir = self.harness_dir(scenario_name)
