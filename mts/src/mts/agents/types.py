@@ -20,6 +20,7 @@ class AgentOutputs:
     architect_markdown: str
     architect_tools: list[dict[str, Any]]
     role_executions: list[RoleExecution]
+    architect_harness_specs: list[dict[str, Any]] | None = None
     competitor_output: CompetitorOutput | None = None
     analyst_output: AnalystOutput | None = None
     coach_output: CoachOutput | None = None

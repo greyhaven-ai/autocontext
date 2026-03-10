@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from mts.agents.analyst import AnalystRunner
-from mts.agents.architect import ArchitectRunner, parse_architect_tool_specs
+from mts.agents.architect import ArchitectRunner, parse_architect_harness_specs, parse_architect_tool_specs
 from mts.agents.coach import CoachRunner, parse_coach_sections
 from mts.agents.competitor import CompetitorRunner
 from mts.agents.curator import KnowledgeCurator
@@ -194,6 +194,7 @@ class AgentOrchestrator:
                 _notify("architect", "completed")
 
         tools = parse_architect_tool_specs(architect_exec.content)
+        harness_specs = parse_architect_harness_specs(architect_exec.content)
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(coach_exec.content)
 
         # Parse typed contracts
@@ -213,6 +214,7 @@ class AgentOrchestrator:
             coach_competitor_hints=coach_hints,
             architect_markdown=architect_exec.content,
             architect_tools=tools,
+            architect_harness_specs=harness_specs,
             role_executions=[competitor_exec, translator_exec, analyst_exec, coach_exec, architect_exec],
             competitor_output=competitor_typed,
             analyst_output=analyst_typed,
@@ -262,6 +264,7 @@ class AgentOrchestrator:
             strategy = {}
 
         tools = parse_architect_tool_specs(results["architect"].content)
+        harness_specs = parse_architect_harness_specs(results["architect"].content)
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(results["coach"].content)
 
         competitor_typed = parse_competitor_output(
@@ -281,6 +284,7 @@ class AgentOrchestrator:
             coach_competitor_hints=coach_hints,
             architect_markdown=results["architect"].content,
             architect_tools=tools,
+            architect_harness_specs=harness_specs,
             role_executions=[
                 results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]
             ],

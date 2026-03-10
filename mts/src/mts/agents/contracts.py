@@ -34,5 +34,6 @@ class CoachOutput:
 class ArchitectOutput:
     raw_markdown: str
     tool_specs: list[dict[str, Any]] = field(default_factory=list)
+    harness_specs: list[dict[str, Any]] = field(default_factory=list)
     changelog_entry: str = ""
     parse_success: bool = True

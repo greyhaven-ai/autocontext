@@ -129,10 +129,20 @@ class GenerationPipeline:
                 self._controller.respond_chat(role, response)
 
         # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
+        harness_loader = None
+        if ctx.settings.harness_validators_enabled:
+            from mts.execution.harness_loader import HarnessLoader
+
+            h_dir = self._artifacts.harness_dir(ctx.scenario_name)
+            if h_dir.exists():
+                harness_loader = HarnessLoader(h_dir)
+                harness_loader.load()
+
         ctx = stage_prevalidation(
             ctx,
             events=self._events,
             agents=self._orchestrator,
+            harness_loader=harness_loader,
         )
 
         # Stage 2.5: Probe (optional — refine strategy from observation)
