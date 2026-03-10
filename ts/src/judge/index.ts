@@ -39,7 +39,11 @@ export function detectGeneratedDimensions(
   const rubricWords = new Set(rubricLower.split(/\W+/).filter(Boolean));
 
   for (const key of dimensionKeys) {
-    const fragments = key.toLowerCase().split("_").filter(Boolean);
+    const keyLower = key.toLowerCase();
+    // Exact match — the key itself appears in the rubric as-is
+    if (rubricWords.has(keyLower)) continue;
+    // Fragment match — any underscore-delimited part appears
+    const fragments = keyLower.split("_").filter(Boolean);
     const anyMatch = fragments.some((frag) => rubricWords.has(frag));
     if (!anyMatch) return true;
   }
