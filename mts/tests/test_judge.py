@@ -150,6 +150,18 @@ class TestDetectGeneratedDimensions:
             "Check code quality carefully",
         ) is False
 
+    def test_underscore_compound_rubric_term_exact_match(self) -> None:
+        assert _detect_generated_dimensions(
+            ["technical_accuracy", "clarity", "completeness"],
+            "Evaluate on three dimensions: technical_accuracy, clarity, completeness",
+        ) is False
+
+    def test_underscore_compound_rubric_term_inline(self) -> None:
+        assert _detect_generated_dimensions(
+            ["code_quality"],
+            "Score the code_quality of the submission",
+        ) is False
+
 
 class TestDimensionsWereGenerated:
     def test_generated_true_when_dims_not_in_rubric(self) -> None:
