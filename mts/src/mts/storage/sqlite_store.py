@@ -114,6 +114,20 @@ class SQLiteStore:
                 (run_id, generation_index, role, content),
             )
 
+    def get_agent_outputs_by_role(self, run_id: str, role: str) -> list[dict[str, object]]:
+        """Return agent_outputs rows for a given run and role, ordered by generation."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT generation_index, role, content
+                FROM agent_outputs
+                WHERE run_id = ? AND role = ?
+                ORDER BY generation_index
+                """,
+                (run_id, role),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def append_agent_role_metric(
         self,
         run_id: str,

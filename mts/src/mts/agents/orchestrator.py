@@ -28,6 +28,30 @@ LOGGER = logging.getLogger(__name__)
 _ARCHITECT_CADENCE_SKIP = "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
 
 
+def _build_trial_summary(
+    generation: int,
+    history: list[Any],
+    role_exec: RoleExecution,
+) -> str:
+    """Build a concise markdown summary of an RLM competitor session."""
+    total_turns = len(history)
+    code_runs = sum(1 for r in history if r.code)
+    errors = sum(1 for r in history if r.error)
+    lines = [
+        f"### Generation {generation} — RLM competitor trial",
+        f"- Turns: {total_turns}, code executions: {code_runs}, errors: {errors}",
+        f"- Status: {role_exec.status}",
+        f"- Latency: {role_exec.usage.latency_ms}ms",
+    ]
+    # Include a brief log of each turn
+    for rec in history:
+        err_flag = " [ERROR]" if rec.error else ""
+        ready_flag = " [READY]" if rec.answer_ready else ""
+        code_preview = rec.code[:80].replace("\n", " ")
+        lines.append(f"  - Turn {rec.turn}: `{code_preview}`{err_flag}{ready_flag}")
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True, slots=True)
 class _RlmBackendConfig:
     """Resolved RLM worker class and per-role prompt templates."""
@@ -377,8 +401,12 @@ class AgentOrchestrator:
         system_tpl: str,
         context: Any,
         worker_cls: type,
-    ) -> RoleExecution:
-        """Build and run a single RLM REPL session for the given role."""
+    ) -> tuple[RoleExecution, list[Any]]:
+        """Build and run a single RLM REPL session for the given role.
+
+        Returns (role_execution, execution_history) where execution_history
+        is a list of ExecutionRecord from the session.
+        """
         from mts.rlm.session import RlmSession, make_llm_batch
 
         settings = self.settings
@@ -402,7 +430,8 @@ class AgentOrchestrator:
             system_prompt=system_prompt,
             max_turns=settings.rlm_max_turns,
         )
-        return session.run()
+        role_exec = session.run()
+        return role_exec, session.execution_history
 
     def _run_rlm_competitor(
         self,
@@ -434,13 +463,24 @@ class AgentOrchestrator:
             scenario_rules=scenario_rules,
             current_strategy=current_strategy,
         )
-        competitor_exec = self._run_single_rlm_session(
+        competitor_exec, exec_history = self._run_single_rlm_session(
             role="competitor",
             model=self.settings.model_competitor,
             system_tpl=backend.competitor_tpl,
             context=competitor_ctx,
             worker_cls=backend.worker_cls,
         )
+
+        # Store RLM trial summary for experiment log
+        if exec_history:
+            summary = _build_trial_summary(generation_index, exec_history, competitor_exec)
+            try:
+                self._rlm_loader.sqlite.append_agent_output(
+                    run_id, generation_index, "competitor_rlm_trials", summary,
+                )
+            except Exception:
+                LOGGER.debug("failed to store RLM trial summary", exc_info=True)
+
         raw_text = competitor_exec.content
         return raw_text, competitor_exec
 
@@ -470,7 +510,7 @@ class AgentOrchestrator:
             scenario_rules=scenario_rules,
             current_strategy=strategy,
         )
-        analyst_exec = self._run_single_rlm_session(
+        analyst_exec, _ = self._run_single_rlm_session(
             role="analyst",
             model=self.settings.model_analyst,
             system_tpl=backend.analyst_tpl,
@@ -487,7 +527,7 @@ class AgentOrchestrator:
             run_id, scenario_name, generation_index,
             scenario_rules=scenario_rules,
         )
-        architect_exec = self._run_single_rlm_session(
+        architect_exec, _ = self._run_single_rlm_session(
             role="architect",
             model=self.settings.model_architect,
             system_tpl=backend.architect_tpl,
