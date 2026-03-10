@@ -8,10 +8,16 @@ from __future__ import annotations
 
 import ast
 import logging
+import signal
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from mts.execution.ast_safety import check_ast_safety
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,9 +27,41 @@ _SAFE_BUILTINS = {
         "abs", "all", "any", "bool", "dict", "enumerate", "filter", "float",
         "frozenset", "int", "isinstance", "issubclass", "len", "list", "map",
         "max", "min", "print", "range", "repr", "reversed", "round", "set",
-        "sorted", "str", "sum", "tuple", "type", "zip",
+        "sorted", "str", "sum", "tuple", "zip",
     )
 }
+
+
+class _HarnessTimeout(Exception):
+    """Raised when harness execution exceeds the time limit."""
+
+
+def _run_with_timeout(fn: Callable[[], Any], timeout_seconds: float) -> Any:
+    """Run *fn* with a wall-clock timeout.
+
+    Uses SIGALRM on the main thread (macOS/Linux) for reliable interruption,
+    falls back to ThreadPoolExecutor on worker threads.
+    """
+    if threading.current_thread() is threading.main_thread():
+        old_handler = signal.getsignal(signal.SIGALRM)
+        def _alarm_handler(signum: int, frame: Any) -> None:
+            raise _HarnessTimeout
+        try:
+            signal.signal(signal.SIGALRM, _alarm_handler)
+            signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+            return fn()
+        except _HarnessTimeout:
+            raise
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old_handler)
+    else:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(fn)
+            try:
+                return future.result(timeout=timeout_seconds)
+            except FuturesTimeoutError:
+                raise _HarnessTimeout from None
 
 
 @dataclass(slots=True, frozen=True)
@@ -36,20 +74,24 @@ class HarnessValidationResult:
 
 
 def _exec_harness_source(source: str, namespace: dict[str, Any]) -> None:
-    """Execute harness source code in a restricted namespace.
+    """Run harness source code in a restricted namespace.
 
     Security note: This runs architect-generated code in a namespace with
     restricted builtins. The code is AST-validated before execution.
-    Only called on files that have passed ast.parse() validation.
+    Only called on files that have passed ast.parse() and AST safety checks.
     """
-    exec(source, namespace)  # noqa: S102
+    # Security: exec is intentional here — code has been AST-safety-checked
+    # and runs in a restricted-builtins namespace.
+    code = compile(source, "<harness>", "exec")  # noqa: S102
+    exec(code, namespace)  # noqa: S102
 
 
 class HarnessLoader:
     """Loads harness validator .py files and runs their validate_strategy functions."""
 
-    def __init__(self, harness_dir: Path) -> None:
+    def __init__(self, harness_dir: Path, *, timeout_seconds: float = 5.0) -> None:
         self._harness_dir = harness_dir
+        self._timeout_seconds = timeout_seconds
         self._validators: dict[str, Callable[..., tuple[bool, list[str]]]] = {}
         self._callables: dict[str, dict[str, Callable[..., Any]]] = {}
 
@@ -70,10 +112,25 @@ class HarnessLoader:
                 LOGGER.warning("skipping harness '%s': syntax error", name)
                 continue
 
-            # Execute in restricted namespace
+            # AST safety check — reject dangerous patterns
+            violations = check_ast_safety(source)
+            if violations:
+                LOGGER.warning(
+                    "skipping harness '%s': AST safety violations: %s",
+                    name, "; ".join(violations),
+                )
+                continue
+
+            # Run in restricted namespace with timeout
             namespace: dict[str, Any] = {"__builtins__": dict(_SAFE_BUILTINS)}
             try:
-                _exec_harness_source(source, namespace)
+                def _run_exec(ns: dict[str, Any] = namespace, src: str = source) -> None:
+                    _exec_harness_source(src, ns)
+
+                _run_with_timeout(_run_exec, self._timeout_seconds)
+            except _HarnessTimeout:
+                LOGGER.warning("skipping harness '%s': timed out (%.1fs)", name, self._timeout_seconds)
+                continue
             except Exception:
                 LOGGER.warning("skipping harness '%s': execution error", name, exc_info=True)
                 continue
@@ -100,9 +157,15 @@ class HarnessLoader:
         all_errors: list[str] = []
         for name, validator_fn in self._validators.items():
             try:
-                passed, errors = validator_fn(strategy, scenario)
+                def _run_validator(fn: Callable[..., Any] = validator_fn) -> tuple[bool, list[str]]:
+                    result: tuple[bool, list[str]] = fn(strategy, scenario)
+                    return result
+
+                passed, errors = _run_with_timeout(_run_validator, self._timeout_seconds)
                 if not passed:
                     all_errors.extend(f"[{name}] {e}" for e in errors)
+            except _HarnessTimeout:
+                all_errors.append(f"[{name}] validator timed out ({self._timeout_seconds:.1f}s)")
             except Exception as exc:
                 all_errors.append(f"[{name}] validator raised exception: {exc}")
 

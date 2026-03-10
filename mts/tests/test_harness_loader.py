@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import textwrap
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -9,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mts.agents.architect import parse_architect_harness_specs
-from mts.execution.harness_loader import HarnessLoader, HarnessValidationResult
+from mts.execution.harness_loader import HarnessLoader, HarnessValidationResult, _SAFE_BUILTINS
 from mts.storage.artifacts import ArtifactStore
 
 # ── HarnessLoader ──────────────────────────────────────────────────────────────
@@ -380,3 +381,115 @@ class TestStagePrevalidationHarness:
 
         event_names = [call[0][0] for call in events.emit.call_args_list]
         assert "harness_validation_failed" in event_names
+
+
+# ── Sandbox hardening ──────────────────────────────────────────────────────────
+
+
+class TestHarnessLoaderSandbox:
+    """Tests for sandbox hardening: AST safety checks, timeout, builtins restrictions."""
+
+    def _write_and_load(self, tmp_path: Path, code: str, *, timeout: float = 5.0) -> tuple[HarnessLoader, list[str]]:
+        h_dir = tmp_path / "harness"
+        h_dir.mkdir(parents=True, exist_ok=True)
+        (h_dir / "test.py").write_text(textwrap.dedent(code), encoding="utf-8")
+        loader = HarnessLoader(h_dir, timeout_seconds=timeout)
+        loaded = loader.load()
+        return loader, loaded
+
+    def test_import_rejected(self, tmp_path: Path) -> None:
+        _, loaded = self._write_and_load(tmp_path, """\
+            import os
+            def validate_strategy(s, sc):
+                return True, []
+        """)
+        assert loaded == []
+
+    def test_class_hierarchy_traversal_rejected(self, tmp_path: Path) -> None:
+        _, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(s, sc):
+                x = ().__class__.__bases__[0].__subclasses__()
+                return True, []
+        """)
+        assert loaded == []
+
+    def test_eval_rejected(self, tmp_path: Path) -> None:
+        # Tests that code using the dangerous 'eval' builtin is rejected by AST check
+        _, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(s, sc):
+                return eval('True'), []
+        """)
+        assert loaded == []
+
+    def test_getattr_rejected(self, tmp_path: Path) -> None:
+        _, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(s, sc):
+                return getattr(s, 'x', True), []
+        """)
+        assert loaded == []
+
+    def test_globals_dunder_rejected(self, tmp_path: Path) -> None:
+        _, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(s, sc):
+                g = validate_strategy.__globals__
+                return True, []
+        """)
+        assert loaded == []
+
+    def test_type_not_in_builtins(self) -> None:
+        assert "type" not in _SAFE_BUILTINS
+
+    def test_open_rejected(self, tmp_path: Path) -> None:
+        _, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(s, sc):
+                f = open('/etc/passwd')
+                return True, []
+        """)
+        assert loaded == []
+
+    def test_infinite_loop_timeout_on_load(self, tmp_path: Path) -> None:
+        _, loaded = self._write_and_load(tmp_path, """\
+            while True:
+                pass
+            def validate_strategy(s, sc):
+                return True, []
+        """, timeout=0.5)
+        assert loaded == []
+
+    def test_infinite_loop_timeout_on_validate(self, tmp_path: Path) -> None:
+        loader, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(s, sc):
+                while True:
+                    pass
+                return True, []
+        """, timeout=0.5)
+        assert loaded == ["test"]
+        start = time.monotonic()
+        result = loader.validate_strategy({}, None)
+        elapsed = time.monotonic() - start
+        assert not result.passed
+        assert any("timed out" in e for e in result.errors)
+        assert elapsed < 3.0  # should be ~0.5s, generous upper bound
+
+    def test_safe_validators_still_work(self, tmp_path: Path) -> None:
+        loader, loaded = self._write_and_load(tmp_path, """\
+            def validate_strategy(strategy, scenario):
+                if "moves" not in strategy:
+                    return False, ["missing moves"]
+                return True, []
+        """)
+        assert loaded == ["test"]
+        result = loader.validate_strategy({"moves": [1]}, None)
+        assert result.passed
+
+    def test_mixed_safe_unsafe_loading(self, tmp_path: Path) -> None:
+        h_dir = tmp_path / "harness"
+        h_dir.mkdir(parents=True, exist_ok=True)
+        (h_dir / "bad.py").write_text("import os\ndef validate_strategy(s, sc): return True, []\n", encoding="utf-8")
+        (h_dir / "good.py").write_text(
+            "def validate_strategy(s, sc): return True, []\n", encoding="utf-8",
+        )
+        loader = HarnessLoader(h_dir)
+        loaded = loader.load()
+        assert "good" in loaded
+        assert "bad" not in loaded
