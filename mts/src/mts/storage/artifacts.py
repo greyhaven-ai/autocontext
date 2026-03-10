@@ -220,6 +220,15 @@ class ArtifactStore:
         """Return the harness directory: knowledge/<scenario>/harness/"""
         return self.knowledge_root / scenario_name / "harness"
 
+    def list_harness(self, scenario_name: str) -> list[str]:
+        """Return names of harness .py files (without extension), excluding _archive."""
+        h_dir = self.harness_dir(scenario_name)
+        if not h_dir.exists():
+            return []
+        return sorted(
+            p.stem for p in h_dir.glob("*.py") if p.is_file()
+        )
+
     def persist_harness(
         self, scenario_name: str, generation_index: int, specs: list[dict[str, object]],
     ) -> list[str]:
@@ -467,6 +476,17 @@ class ArtifactStore:
                 skill_path.read_text(encoding="utf-8"), encoding="utf-8"
             )
 
+        # Snapshot harness files
+        h_dir = self.harness_dir(scenario_name)
+        if h_dir.exists():
+            harness_snapshot = snapshot_dir / "harness"
+            harness_snapshot.mkdir(parents=True, exist_ok=True)
+            for py_file in h_dir.glob("*.py"):
+                if py_file.is_file():
+                    (harness_snapshot / py_file.name).write_text(
+                        py_file.read_text(encoding="utf-8"), encoding="utf-8",
+                    )
+
         return hashlib.sha256(playbook_content.encode("utf-8")).hexdigest()[:16]
 
     def restore_knowledge_snapshot(self, scenario_name: str, source_run_id: str) -> bool:
@@ -496,6 +516,18 @@ class ArtifactStore:
             (skill_dir / "SKILL.md").write_text(
                 skill_snapshot.read_text(encoding="utf-8"), encoding="utf-8"
             )
+            restored = True
+
+        # Restore harness files from snapshot
+        harness_snapshot = snapshot_dir / "harness"
+        if harness_snapshot.exists():
+            h_dir = self.harness_dir(scenario_name)
+            h_dir.mkdir(parents=True, exist_ok=True)
+            for py_file in harness_snapshot.glob("*.py"):
+                if py_file.is_file():
+                    (h_dir / py_file.name).write_text(
+                        py_file.read_text(encoding="utf-8"), encoding="utf-8",
+                    )
             restored = True
 
         return restored
