@@ -9,7 +9,7 @@ from mts.config.settings import AppSettings
 from mts.harness.core.llm_client import LanguageModelClient
 from mts.harness.core.types import ModelResponse, RoleUsage
 from mts.providers.base import ProviderError
-from mts.providers.mlx_provider import MLXProvider
+from mts.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
 
 
 class AnthropicClient(LanguageModelClient):
@@ -455,8 +455,6 @@ class DeterministicDevClient(LanguageModelClient):
         if "threat assessment" in prompt_lower:
             return json.dumps({"aggression": 0.6, "defense": 0.56, "path_bias": 0.62})
         return json.dumps({"aggression": 0.58, "defense": 0.57, "path_bias": 0.54})
-
-
 def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
     if settings.agent_provider == "anthropic":

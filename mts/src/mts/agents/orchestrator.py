@@ -141,6 +141,42 @@ def apply_dag_changes(dag: RoleDAG, changes: list[dict[str, Any]]) -> tuple[int,
     return applied, skipped
 
 
+def _apply_role_overrides(orch: AgentOrchestrator, settings: AppSettings) -> None:
+    """Apply per-role provider overrides to an orchestrator's runners.
+
+    For each role with a non-empty ``{role}_provider`` setting, create a
+    dedicated LanguageModelClient and SubagentRuntime, then reassign the
+    runner to use it.
+    """
+    from mts.agents.provider_bridge import create_role_client
+
+    role_overrides: dict[str, str] = {
+        "competitor": settings.competitor_provider,
+        "analyst": settings.analyst_provider,
+        "coach": settings.coach_provider,
+        "architect": settings.architect_provider,
+    }
+
+    runner_map = {
+        "competitor": "competitor",
+        "analyst": "analyst",
+        "coach": "coach",
+        "architect": "architect",
+    }
+
+    for role, provider_type in role_overrides.items():
+        if not provider_type:
+            continue
+        client = create_role_client(provider_type, settings)
+        if client is None:
+            continue
+        orch._role_clients[role] = client
+        runtime = SubagentRuntime(client=client)
+        runner = getattr(orch, runner_map[role])
+        runner.runtime = runtime
+        LOGGER.info("role '%s' using per-role provider: %s", role, provider_type)
+
+
 class AgentOrchestrator:
     """Runs competitor/analyst/coach/architect role sequence."""
 
@@ -164,6 +200,7 @@ class AgentOrchestrator:
         self.curator: KnowledgeCurator | None = None
         if settings.curator_enabled:
             self.curator = KnowledgeCurator(runtime, settings.model_curator)
+        self._role_clients: dict[str, LanguageModelClient] = {}
 
         self._model_router = ModelRouter(TierConfig(
             enabled=settings.tier_routing_enabled,
@@ -191,7 +228,16 @@ class AgentOrchestrator:
         sqlite: Any | None = None,
     ) -> AgentOrchestrator:
         client: LanguageModelClient = build_client_from_settings(settings)
-        return cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite)
+
+        orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite)
+
+        # Apply per-role provider overrides (AC-184)
+        _apply_role_overrides(orch, settings)
+
+        return orch
+
+    def _client_for_role(self, role: str) -> LanguageModelClient:
+        return self._role_clients.get(role, self.client)
 
     def run_generation(
         self,
@@ -480,7 +526,8 @@ class AgentOrchestrator:
 
         settings = self.settings
         ns = dict(context.variables)
-        ns["llm_batch"] = make_llm_batch(self.client, settings.rlm_sub_model)
+        role_client = self._client_for_role(role)
+        ns["llm_batch"] = make_llm_batch(role_client, settings.rlm_sub_model)
         worker = worker_cls(
             namespace=ns,
             max_stdout_chars=settings.rlm_max_stdout_chars,
@@ -492,7 +539,7 @@ class AgentOrchestrator:
             variable_summary=context.summary,
         )
         session = RlmSession(
-            client=self.client,
+            client=role_client,
             worker=worker,
             role=role,
             model=model,
@@ -524,8 +571,9 @@ class AgentOrchestrator:
         backend = _resolve_rlm_backend(self.settings)
 
         # Reset deterministic client turn counter if applicable
-        if hasattr(self.client, "reset_rlm_turns"):
-            self.client.reset_rlm_turns()
+        competitor_client = self._client_for_role("competitor")
+        if hasattr(competitor_client, "reset_rlm_turns"):
+            competitor_client.reset_rlm_turns()
 
         competitor_ctx = self._rlm_loader.load_for_competitor(
             run_id, scenario_name, generation_index,
@@ -576,8 +624,9 @@ class AgentOrchestrator:
         backend = _resolve_rlm_backend(self.settings)
 
         # Reset deterministic client turn counter if applicable
-        if hasattr(self.client, "reset_rlm_turns"):
-            self.client.reset_rlm_turns()
+        analyst_client = self._client_for_role("analyst")
+        if hasattr(analyst_client, "reset_rlm_turns"):
+            analyst_client.reset_rlm_turns()
 
         # --- Analyst ---
         analyst_ctx = self._rlm_loader.load_for_analyst(
@@ -594,8 +643,9 @@ class AgentOrchestrator:
         )
 
         # Reset turn counter between roles for deterministic client
-        if hasattr(self.client, "reset_rlm_turns"):
-            self.client.reset_rlm_turns()
+        architect_client = self._client_for_role("architect")
+        if hasattr(architect_client, "reset_rlm_turns"):
+            architect_client.reset_rlm_turns()
 
         # --- Architect ---
         architect_ctx = self._rlm_loader.load_for_architect(
