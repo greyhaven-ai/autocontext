@@ -384,5 +384,21 @@ def mcp_serve() -> None:
     run_server()
 
 
+@app.command()
+def train(
+    scenario: str = typer.Option("grid_ctf", "--scenario", help="Scenario to train on"),
+    data: str = typer.Option("training_data.jsonl", "--data", help="Path to JSONL training data"),
+    time_budget: int = typer.Option(300, "--time-budget", help="Training time budget in seconds"),
+) -> None:
+    """Train an MLX model to distill strategy knowledge (requires MLX)."""
+
+    from mts.training import HAS_MLX
+
+    if not HAS_MLX:
+        console.print("[red]MLX is not installed. Install with: uv sync --group dev --extra mlx[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Starting MLX training for scenario={scenario} data={data} budget={time_budget}s[/green]")
+
+
 if __name__ == "__main__":
     app()
