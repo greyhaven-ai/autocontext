@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import cast
 
 from mts.config import AppSettings
 from mts.execution.harness_loader import HarnessLoader
@@ -947,7 +948,7 @@ def export_package(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]
         pkg = export_strategy_package(ctx, scenario_name)
     except ValueError as exc:
         return {"error": str(exc)}
-    return json.loads(pkg.to_json())
+    return cast(dict[str, object], json.loads(pkg.to_json()))
 
 
 def import_package(

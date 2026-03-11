@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -58,12 +59,10 @@ def export_skill(scenario_name: str, format: str = "skill") -> dict[str, Any]:
     """
     try:
         if format == "package":
-            import json as _json
-
             from mts.knowledge.export import export_strategy_package
 
             strategy_pkg = export_strategy_package(_get_ctx(), scenario_name)
-            return _json.loads(strategy_pkg.to_json())
+            return cast(dict[str, Any], json.loads(strategy_pkg.to_json()))
         skill_pkg = export_skill_package(_get_ctx(), scenario_name)
         return skill_pkg.to_dict()
     except ValueError as exc:
