@@ -71,9 +71,16 @@ def create_provider(
             default_model_name=model or "default",
         )
 
+    if provider_type == "mlx":
+        from mts.providers.mlx_provider import MLXProvider
+
+        if not model:
+            raise ProviderError("MLX provider requires a model path (model_path). Set MTS_MLX_MODEL_PATH.")
+        return MLXProvider(model_path=model)
+
     raise ProviderError(
         f"Unknown provider type: {provider_type!r}. "
-        f"Supported: anthropic, openai, openai-compatible, ollama, vllm"
+        f"Supported: anthropic, openai, openai-compatible, ollama, vllm, mlx"
     )
 
 
@@ -86,6 +93,19 @@ def get_provider(settings: AppSettings) -> LLMProvider:
     """
     provider_type = settings.judge_provider
     base_url = settings.judge_base_url
+
+    # MLX provider has its own construction path using mlx_* settings
+    if provider_type == "mlx":
+        from mts.providers.mlx_provider import MLXProvider
+
+        model_path = settings.mlx_model_path
+        if not model_path:
+            raise ProviderError("MLX provider requires mlx_model_path. Set MTS_MLX_MODEL_PATH.")
+        return MLXProvider(
+            model_path=model_path,
+            temperature=settings.mlx_temperature,
+            max_tokens=settings.mlx_max_tokens,
+        )
 
     # Use judge_api_key if set, otherwise fall back to provider-specific keys
     api_key = settings.judge_api_key

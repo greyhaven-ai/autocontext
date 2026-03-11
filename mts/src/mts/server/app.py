@@ -56,22 +56,11 @@ def _dashboard_dir() -> Path:
 
 def _build_scenario_creator(app_settings: object) -> object | None:
     try:
-        from mts.agents.llm_client import AnthropicClient, DeterministicDevClient, LanguageModelClient
+        from mts.agents.llm_client import build_client_from_settings
         from mts.agents.subagent_runtime import SubagentRuntime
         from mts.scenarios.custom.creator import ScenarioCreator
 
-        provider = getattr(app_settings, "agent_provider", "deterministic")
-        client: LanguageModelClient
-        if provider == "deterministic":
-            client = DeterministicDevClient()
-        elif provider == "anthropic":
-            api_key = getattr(app_settings, "anthropic_api_key", None)
-            if not api_key:
-                return None
-            client = AnthropicClient(api_key)
-        else:
-            return None
-
+        client = build_client_from_settings(app_settings)  # type: ignore[arg-type]
         runtime = SubagentRuntime(client)
         model = getattr(app_settings, "model_architect", "claude-sonnet-4-5-20250929")
         knowledge_root = getattr(app_settings, "knowledge_root", Path("knowledge"))

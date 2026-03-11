@@ -5,13 +5,14 @@ All MLX code is behind import guards so the module can be imported
 """
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any
 
 from mts.training import HAS_MLX
-from mts.training.autoresearch.prepare import BASE_VOCAB_SIZE, total_vocab_size
+from mts.training.autoresearch.prepare import BASE_VOCAB_SIZE, save_tokenizer_json, total_vocab_size
 
 if HAS_MLX:
     import mlx.core as mx  # type: ignore[import-not-found]
@@ -270,6 +271,36 @@ else:
 
         def __init__(self, cfg: ModelConfig) -> None:
             raise ImportError("MLX is required. Install with: uv sync --group dev --extra mlx")
+
+    def save_checkpoint(model: GPTModel, path: Path) -> None:  # type: ignore[no-redef]
+        raise ImportError("MLX is required. Install with: uv sync --group dev --extra mlx")
+
+    def load_checkpoint(model: GPTModel, path: Path) -> None:  # type: ignore[no-redef]
+        raise ImportError("MLX is required. Install with: uv sync --group dev --extra mlx")
+
+
+def save_inference_bundle(
+    model: GPTModel,
+    cfg: ModelConfig,
+    tokenizer: Any,
+    output_dir: Path,
+) -> None:
+    """Write the checkpoint bundle consumed by the MLXProvider."""
+    if is_dataclass(cfg):
+        config_payload = asdict(cfg)
+    else:
+        config_payload = {
+            key: getattr(cfg, key)
+            for key in ("depth", "aspect_ratio", "head_dim", "n_kv_heads", "vocab_size", "seq_len")
+            if hasattr(cfg, key)
+        }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "config.json").write_text(
+        json.dumps(config_payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    save_tokenizer_json(tokenizer, output_dir / "tokenizer.json")
+    save_checkpoint(model, output_dir / "model.safetensors")
 
 
 # ---------------------------------------------------------------------------
