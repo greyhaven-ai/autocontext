@@ -419,5 +419,62 @@ def train(
     raise typer.Exit(code=2)
 
 
+@app.command("export-training-data")
+def export_training_data_cmd(
+    run_id: str | None = typer.Option(None, "--run-id", help="Export a specific run"),
+    scenario: str | None = typer.Option(None, "--scenario", help="Export all runs for a scenario"),
+    all_runs: bool = typer.Option(False, "--all-runs", help="Required with --scenario to confirm multi-run export"),
+    output: str = typer.Option("", "--output", help="Output JSONL file path"),
+    include_matches: bool = typer.Option(False, "--include-matches", help="Include per-match records"),
+    kept_only: bool = typer.Option(False, "--kept-only", help="Only export generations that advanced"),
+    db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
+) -> None:
+    """Export strategy-level training data as JSONL."""
+    import dataclasses
+
+    from mts.storage.artifacts import ArtifactStore
+    from mts.training.export import export_training_data
+
+    if not output:
+        console.print("[red]--output is required[/red]")
+        raise typer.Exit(code=1)
+
+    if run_id is None and scenario is None:
+        console.print("[red]Must specify either --run-id or --scenario --all-runs[/red]")
+        raise typer.Exit(code=1)
+
+    if scenario is not None and not all_runs and run_id is None:
+        console.print("[red]Use --all-runs with --scenario to export all runs for a scenario[/red]")
+        raise typer.Exit(code=1)
+
+    settings = load_settings()
+    resolved_db = Path(db_path) if db_path is not None else settings.db_path
+    sqlite = SQLiteStore(resolved_db)
+
+    artifacts = ArtifactStore(
+        runs_root=settings.runs_root,
+        knowledge_root=settings.knowledge_root,
+        skills_root=settings.skills_root,
+        claude_skills_path=settings.claude_skills_path,
+    )
+
+    output_path = Path(output)
+    count = 0
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        for record in export_training_data(
+            sqlite,
+            artifacts,
+            run_id=run_id,
+            scenario=scenario,
+            include_matches=include_matches,
+            kept_only=kept_only,
+        ):
+            f.write(json.dumps(dataclasses.asdict(record)) + "\n")
+            count += 1
+
+    console.print(f"[green]Exported {count} record(s) to {output_path}[/green]")
+
+
 if __name__ == "__main__":
     app()
