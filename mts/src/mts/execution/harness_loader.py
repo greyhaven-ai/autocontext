@@ -137,7 +137,12 @@ class HarnessLoader:
 
             # Extract known callables
             file_callables: dict[str, Callable[..., Any]] = {}
-            for fn_name in ("validate_strategy", "enumerate_legal_actions", "parse_game_state"):
+            for fn_name in (
+                "validate_strategy",
+                "enumerate_legal_actions",
+                "parse_game_state",
+                "is_legal_action",
+            ):
                 fn = namespace.get(fn_name)
                 if callable(fn):
                     file_callables[fn_name] = fn
