@@ -5,9 +5,11 @@ partial harness coverage, validation accuracy impact, and model tier recommendat
 """
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from mts.execution.harness_coverage import HarnessCoverage, HarnessCoverageAnalyzer
+from mts.execution.harness_loader import HarnessLoader
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -102,6 +104,7 @@ class TestAnalyzerScoring:
         assert cov.has_enumerate_legal_actions is True
         assert cov.has_is_legal_action is True
         assert cov.has_parse_game_state is True
+        assert cov.function_count == 4
 
     def test_validate_strategy_only(self) -> None:
         """Only validate_strategy → weighted score of 0.4 * accuracy_factor."""
@@ -180,7 +183,7 @@ class TestAnalyzerScoring:
         assert cov.has_parse_game_state is False
         # 0.4 + 0.3 + 0.2 = 0.9
         assert abs(cov.coverage_score - 0.9) < 1e-9
-        assert cov.function_count == 2
+        assert cov.function_count == 3
 
     def test_default_accuracy_is_zero(self) -> None:
         """Default validation_accuracy parameter should be 0.0."""
@@ -192,6 +195,52 @@ class TestAnalyzerScoring:
         cov = analyzer.analyze(loader)
         # Raw = 0.4, accuracy = 0.0 → penalty of 0.5 → 0.4 * 0.5 = 0.2
         assert abs(cov.coverage_score - 0.2) < 1e-9
+
+    def test_function_count_counts_detected_functions_not_files(self) -> None:
+        loader = _mock_loader(
+            names=["a", "b", "c"],
+            callables={
+                "a": ["validate_strategy"],
+                "b": [],
+                "c": ["parse_game_state"],
+            },
+        )
+        analyzer = HarnessCoverageAnalyzer()
+        cov = analyzer.analyze(loader, validation_accuracy=1.0)
+        assert cov.function_count == 2
+
+
+class TestAnalyzerWithRealLoader:
+    def test_real_loader_detects_is_legal_action(self, tmp_path: Path) -> None:
+        harness_dir = tmp_path / "harness"
+        harness_dir.mkdir()
+        (harness_dir / "validator.py").write_text(
+            "\n".join(
+                [
+                    "def validate_strategy(strategy, scenario):",
+                    "    return True, []",
+                    "",
+                    "def enumerate_legal_actions(state):",
+                    "    return []",
+                    "",
+                    "def parse_game_state(raw):",
+                    "    return raw",
+                    "",
+                    "def is_legal_action(state, action):",
+                    "    return True",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loader = HarnessLoader(harness_dir)
+        assert loader.load() == ["validator"]
+
+        analyzer = HarnessCoverageAnalyzer()
+        cov = analyzer.analyze(loader, validation_accuracy=1.0)
+        assert cov.has_is_legal_action is True
+        assert cov.function_count == 4
 
 
 # ── Model tier recommendation tests ─────────────────────────────────────
