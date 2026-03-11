@@ -1,67 +1,71 @@
-"""Tests for settings preset system (MTS-25)."""
+"""Tests for settings preset system (MTS-25, updated for MTS-173)."""
 from __future__ import annotations
 
 import os
 from unittest.mock import patch
+
+import pytest
 
 from mts.config.presets import PRESETS, apply_preset
 from mts.config.settings import load_settings
 
 
 def test_preset_names() -> None:
-    """All three presets exist."""
-    assert "conservative" in PRESETS
-    assert "aggressive" in PRESETS
-    assert "experimental" in PRESETS
+    """All four named presets exist."""
+    assert "quick" in PRESETS
+    assert "standard" in PRESETS
+    assert "deep" in PRESETS
+    assert "rapid" in PRESETS
 
 
-def test_conservative_preset() -> None:
-    """Conservative preset has high thresholds and curator enabled."""
-    overrides = PRESETS["conservative"]
-    assert overrides["curator_enabled"] is True
-    assert overrides["backpressure_min_delta"] >= 0.01
-
-
-def test_aggressive_preset() -> None:
-    """Aggressive preset has lower thresholds and curator disabled."""
-    overrides = PRESETS["aggressive"]
+def test_quick_preset() -> None:
+    """Quick preset has minimal matches and curator disabled."""
+    overrides = PRESETS["quick"]
     assert overrides["curator_enabled"] is False
-    assert overrides["backpressure_min_delta"] <= 0.003
+    assert overrides["matches_per_generation"] == 2
 
 
-def test_experimental_preset() -> None:
-    """Experimental preset enables stagnation resets."""
-    overrides = PRESETS["experimental"]
-    assert overrides["stagnation_reset_enabled"] is True
+def test_standard_preset() -> None:
+    """Standard preset enables curator and trend backpressure."""
+    overrides = PRESETS["standard"]
+    assert overrides["curator_enabled"] is True
+    assert overrides["backpressure_mode"] == "trend"
+
+
+def test_deep_preset() -> None:
+    """Deep preset enables probes and coherence checks."""
+    overrides = PRESETS["deep"]
+    assert overrides["probe_matches"] == 2
+    assert overrides["coherence_check_enabled"] is True
 
 
 def test_apply_preset_returns_overrides() -> None:
     """apply_preset returns the preset's dict for a known name."""
-    result = apply_preset("conservative")
+    result = apply_preset("standard")
     assert isinstance(result, dict)
-    assert "backpressure_min_delta" in result
+    assert "backpressure_mode" in result
 
 
-def test_apply_preset_unknown_returns_empty() -> None:
-    """Unknown preset name returns empty dict."""
-    result = apply_preset("nonexistent")
-    assert result == {}
+def test_apply_preset_unknown_raises() -> None:
+    """Unknown preset name raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown preset"):
+        apply_preset("nonexistent")
 
 
 def test_load_settings_with_preset() -> None:
     """MTS_PRESET env var applies preset defaults."""
-    env = {"MTS_PRESET": "aggressive"}
+    env = {"MTS_PRESET": "quick"}
     with patch.dict(os.environ, env, clear=False):
         settings = load_settings()
     assert settings.curator_enabled is False
-    assert settings.backpressure_min_delta <= 0.003
+    assert settings.matches_per_generation == 2
 
 
 def test_env_var_overrides_preset() -> None:
     """Explicit env var takes precedence over preset."""
     env = {
-        "MTS_PRESET": "aggressive",
-        "MTS_CURATOR_ENABLED": "true",  # Override aggressive's False
+        "MTS_PRESET": "quick",
+        "MTS_CURATOR_ENABLED": "true",  # Override quick's False
     }
     with patch.dict(os.environ, env, clear=False):
         settings = load_settings()
