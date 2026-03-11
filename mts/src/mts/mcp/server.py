@@ -446,6 +446,27 @@ def mts_capabilities() -> str:
     return json.dumps(tools.get_capabilities())
 
 
+@mcp.tool()
+def mts_export_package(scenario_name: str) -> str:
+    """Export a versioned, portable strategy package for a scenario.
+
+    Returns JSON with format_version, metadata, playbook, lessons, strategy, and harness.
+    """
+    return json.dumps(tools.export_package(_get_ctx(), scenario_name))
+
+
+@mcp.tool()
+def mts_import_package(package_data: str, conflict_policy: str = "merge") -> str:
+    """Import a strategy package into scenario knowledge.
+
+    package_data should be a JSON string of a StrategyPackage.
+    conflict_policy: overwrite, merge, or skip.
+    """
+    return json.dumps(tools.import_package(
+        _get_ctx(), json.loads(package_data), conflict_policy,
+    ))
+
+
 def run_server() -> None:
     """Synchronous entry point for the MCP server."""
     mcp.run(transport="stdio")
