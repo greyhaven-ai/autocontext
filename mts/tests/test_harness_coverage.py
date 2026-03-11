@@ -99,7 +99,7 @@ class TestAnalyzerScoring:
         )
         analyzer = HarnessCoverageAnalyzer()
         cov = analyzer.analyze(loader, validation_accuracy=1.0)
-        assert cov.coverage_score == 1.0
+        assert abs(cov.coverage_score - 1.0) < 1e-9
         assert cov.has_validate_strategy is True
         assert cov.has_enumerate_legal_actions is True
         assert cov.has_is_legal_action is True
