@@ -466,6 +466,32 @@ def mts_import_package(package_data: str, conflict_policy: str = "merge") -> str
         _get_ctx(), json.loads(package_data), conflict_policy,
     ))
 
+# -- Discovery & capability advertisement tools (AC-195) --
+
+
+@mcp.tool()
+def mts_skill_advertise() -> str:
+    """Return full capability advertisement: version, runtime health, scenarios, artifact counts."""
+    return json.dumps(tools.skill_advertise_capabilities(_get_ctx()))
+
+
+@mcp.tool()
+def mts_skill_scenario_capabilities(scenario_name: str) -> str:
+    """Return per-scenario capabilities: evaluation mode, harness, playbook, best scores."""
+    return json.dumps(tools.skill_scenario_capabilities(_get_ctx(), scenario_name))
+
+
+@mcp.tool()
+def mts_skill_runtime_health() -> str:
+    """Return runtime health: executor mode, provider, harness mode, available models."""
+    return json.dumps(tools.skill_runtime_health(_get_ctx()))
+
+
+@mcp.tool()
+def mts_skill_scenario_artifacts(scenario_name: str) -> str:
+    """Return all artifacts associated with a scenario."""
+    return json.dumps(tools.skill_scenario_artifact_lookup(_get_ctx(), scenario_name))
+
 
 # -- ClawHub skill wrapper tools (AC-192) --
 

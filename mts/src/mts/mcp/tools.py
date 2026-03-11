@@ -1018,6 +1018,40 @@ def get_capabilities() -> dict[str, object]:
         ],
     }
 
+# -- Discovery & capability advertisement (AC-195) --
+
+
+def skill_advertise_capabilities(ctx: MtsToolContext) -> dict[str, object]:
+    """Return full capability advertisement: version, runtime, scenarios, artifacts."""
+    from mts.openclaw.discovery import advertise_capabilities
+
+    ad = advertise_capabilities(ctx)
+    return cast(dict[str, object], ad.model_dump())
+
+
+def skill_scenario_capabilities(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]:
+    """Return per-scenario capability info: evaluation mode, harness, playbook, etc."""
+    from mts.openclaw.discovery import discover_scenario_capabilities
+
+    caps = discover_scenario_capabilities(ctx, scenario_name)
+    return cast(dict[str, object], caps.model_dump())
+
+
+def skill_runtime_health(ctx: MtsToolContext) -> dict[str, object]:
+    """Return runtime health: executor mode, provider, harness mode, models."""
+    from mts.openclaw.discovery import get_runtime_health
+
+    health = get_runtime_health(ctx.settings)
+    return cast(dict[str, object], health.model_dump())
+
+
+def skill_scenario_artifact_lookup(ctx: MtsToolContext, scenario_name: str) -> list[dict[str, object]]:
+    """Return all artifacts associated with a scenario."""
+    from mts.openclaw.discovery import scenario_artifact_lookup
+
+    artifacts = scenario_artifact_lookup(ctx, scenario_name)
+    return [cast(dict[str, object], a.model_dump()) for a in artifacts]
+
 
 # -- ClawHub skill wrapper functions (AC-192) --
 
