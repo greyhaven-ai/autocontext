@@ -12,7 +12,7 @@ from mts.agents.architect import ArchitectRunner, parse_architect_harness_specs,
 from mts.agents.coach import CoachRunner, parse_coach_sections
 from mts.agents.competitor import CompetitorRunner
 from mts.agents.curator import KnowledgeCurator
-from mts.agents.llm_client import AnthropicClient, DeterministicDevClient, LanguageModelClient
+from mts.agents.llm_client import LanguageModelClient, build_client_from_settings
 from mts.agents.model_router import ModelRouter, TierConfig
 from mts.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from mts.agents.subagent_runtime import SubagentRuntime
@@ -190,19 +190,7 @@ class AgentOrchestrator:
         artifacts: Any | None = None,
         sqlite: Any | None = None,
     ) -> AgentOrchestrator:
-        if settings.agent_provider == "anthropic":
-            if not settings.anthropic_api_key:
-                raise ValueError("MTS_ANTHROPIC_API_KEY is required when MTS_AGENT_PROVIDER=anthropic")
-            client: LanguageModelClient = AnthropicClient(api_key=settings.anthropic_api_key)
-        elif settings.agent_provider == "deterministic":
-            client = DeterministicDevClient()
-        elif settings.agent_provider == "agent_sdk":
-            from mts.agents.agent_sdk_client import AgentSdkClient, AgentSdkConfig
-
-            sdk_config = AgentSdkConfig(connect_mcp_server=settings.agent_sdk_connect_mcp)
-            client = AgentSdkClient(config=sdk_config)
-        else:
-            raise ValueError(f"unsupported agent provider: {settings.agent_provider}")
+        client: LanguageModelClient = build_client_from_settings(settings)
         return cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite)
 
     def run_generation(

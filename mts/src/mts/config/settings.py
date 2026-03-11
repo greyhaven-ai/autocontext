@@ -230,6 +230,10 @@ class AppSettings(BaseModel):
     validity_max_retries: int = Field(
         default=3, ge=0, description="Max validity retries before falling through to tournament",
     )
+    # MLX local model inference (AC-182)
+    mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
+    mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
+    mlx_max_tokens: int = Field(default=512, ge=1, description="Max generation tokens for MLX model")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
