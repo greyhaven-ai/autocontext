@@ -7,6 +7,8 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from mts.cli import app
+from mts.scenarios import SCENARIO_REGISTRY
+from mts.scenarios.custom.registry import load_all_custom_scenarios
 
 runner = CliRunner()
 
@@ -32,8 +34,8 @@ class TestNewScenarioScaffold:
     """Test `mts new-scenario --template <name> --name <scenario-name>` command."""
 
     def test_scaffold_creates_directory(self, tmp_path: Path) -> None:
-        target = tmp_path / "knowledge" / "_agent_tasks" / "my-prompt-task"
-        with patch("mts.cli._get_agent_tasks_dir", return_value=tmp_path / "knowledge" / "_agent_tasks"):
+        target = tmp_path / "knowledge" / "_custom_scenarios" / "my-prompt-task"
+        with patch("mts.cli._get_custom_scenarios_dir", return_value=tmp_path / "knowledge" / "_custom_scenarios"):
             result = runner.invoke(
                 app,
                 ["new-scenario", "--template", "prompt-optimization", "--name", "my-prompt-task", "--non-interactive"],
@@ -45,23 +47,24 @@ class TestNewScenarioScaffold:
         assert (target / "scenario_type.txt").is_file()
 
     def test_scaffold_with_judge_model(self, tmp_path: Path) -> None:
-        with patch("mts.cli._get_agent_tasks_dir", return_value=tmp_path / "knowledge" / "_agent_tasks"):
+        with patch("mts.cli._get_custom_scenarios_dir", return_value=tmp_path / "knowledge" / "_custom_scenarios"):
             result = runner.invoke(
                 app,
                 [
                     "new-scenario",
                     "--template", "rag-accuracy",
                     "--name", "my-rag",
-                    "--judge-model", "claude-sonnet-4-20250514",
+                    "--judge-model", "test-judge-model",
                     "--non-interactive",
                 ],
             )
         assert result.exit_code == 0
-        target = tmp_path / "knowledge" / "_agent_tasks" / "my-rag"
+        target = tmp_path / "knowledge" / "_custom_scenarios" / "my-rag"
         assert target.is_dir()
+        assert "test-judge-model" in (target / "agent_task.py").read_text(encoding="utf-8")
 
     def test_scaffold_missing_template(self, tmp_path: Path) -> None:
-        with patch("mts.cli._get_agent_tasks_dir", return_value=tmp_path / "knowledge" / "_agent_tasks"):
+        with patch("mts.cli._get_custom_scenarios_dir", return_value=tmp_path / "knowledge" / "_custom_scenarios"):
             result = runner.invoke(
                 app,
                 ["new-scenario", "--template", "nonexistent", "--name", "test", "--non-interactive"],
@@ -78,7 +81,7 @@ class TestNewScenarioScaffold:
 
     def test_scaffold_registers_scenario(self, tmp_path: Path) -> None:
         """After scaffolding, the scenario should be registered."""
-        with patch("mts.cli._get_agent_tasks_dir", return_value=tmp_path / "knowledge" / "_agent_tasks"):
+        with patch("mts.cli._get_custom_scenarios_dir", return_value=tmp_path / "knowledge" / "_custom_scenarios"):
             result = runner.invoke(
                 app,
                 [
@@ -88,15 +91,20 @@ class TestNewScenarioScaffold:
                     "--non-interactive",
                 ],
             )
-        assert result.exit_code == 0
-        assert "my-blog-task" in result.stdout or "scaffolded" in result.stdout.lower() or "created" in result.stdout.lower()
+        try:
+            assert result.exit_code == 0
+            assert "my-blog-task" in SCENARIO_REGISTRY
+            loaded = load_all_custom_scenarios(tmp_path / "knowledge")
+            assert "my-blog-task" in loaded
+        finally:
+            SCENARIO_REGISTRY.pop("my-blog-task", None)
 
 
 class TestNewScenarioNonInteractive:
     """Test the --non-interactive flag."""
 
     def test_non_interactive_uses_defaults(self, tmp_path: Path) -> None:
-        with patch("mts.cli._get_agent_tasks_dir", return_value=tmp_path / "knowledge" / "_agent_tasks"):
+        with patch("mts.cli._get_custom_scenarios_dir", return_value=tmp_path / "knowledge" / "_custom_scenarios"):
             result = runner.invoke(
                 app,
                 [
@@ -107,5 +115,5 @@ class TestNewScenarioNonInteractive:
                 ],
             )
         assert result.exit_code == 0
-        target = tmp_path / "knowledge" / "_agent_tasks" / "auto-test"
+        target = tmp_path / "knowledge" / "_custom_scenarios" / "auto-test"
         assert target.is_dir()

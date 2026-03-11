@@ -38,9 +38,9 @@ def _runner(preset: str | None = None) -> GenerationRunner:
     return runner
 
 
-def _get_agent_tasks_dir() -> Path:
-    """Return the default directory for scaffolded agent tasks."""
-    return Path("knowledge") / "_agent_tasks"
+def _get_custom_scenarios_dir() -> Path:
+    """Return the default directory for scaffolded custom scenarios."""
+    return Path("knowledge") / "_custom_scenarios"
 
 
 @app.command()
@@ -470,16 +470,24 @@ def new_scenario(
         overrides["judge_model"] = judge_model
 
     # Scaffold to target directory
-    target_dir = _get_agent_tasks_dir() / name
+    target_dir = _get_custom_scenarios_dir() / name
     try:
         loader.scaffold(template_name=template, target_dir=target_dir, overrides=overrides or None)
     except Exception as e:
         console.print(f"[red]Failed to scaffold scenario: {e}[/red]")
         raise typer.Exit(code=1) from None
 
+    from mts.scenarios import SCENARIO_REGISTRY
+    from mts.scenarios.custom.registry import load_all_custom_scenarios
+
+    loaded = load_all_custom_scenarios(target_dir.parent.parent)
+    registered = loaded.get(name)
+    if registered is not None:
+        SCENARIO_REGISTRY[name] = registered
+
     console.print(f"[green]Scenario '{name}' created from template '{template}'[/green]")
     console.print(f"[dim]Files scaffolded to: {target_dir}[/dim]")
-    console.print(f"[dim]Run with: MTS_AGENT_PROVIDER=deterministic uv run mts run --scenario {name} --gens 1[/dim]")
+    console.print("[dim]Available to agent-task tooling after scaffold/load via the custom scenario registry.[/dim]")
 
 
 if __name__ == "__main__":

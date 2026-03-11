@@ -2,11 +2,59 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import yaml
 
 from mts.execution.judge import LLMJudge
+from mts.providers.base import CompletionResult, LLMProvider
 from mts.scenarios.templates import TEMPLATE_DIR, RubricDimension, TemplateLoader, TemplateSpec
+
+
+class _ConditionalProvider(LLMProvider):
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> CompletionResult:
+        if "strong candidate output" in user_prompt:
+            payload = {
+                "score": 0.92,
+                "reasoning": "Strong candidate output",
+                "dimensions": {
+                    "clarity": 0.9,
+                    "specificity": 0.95,
+                    "constraint_coverage": 0.92,
+                    "format_compliance": 0.91,
+                    "edge_case_handling": 0.89,
+                },
+            }
+        else:
+            payload = {
+                "score": 0.41,
+                "reasoning": "Weak candidate output",
+                "dimensions": {
+                    "clarity": 0.4,
+                    "specificity": 0.42,
+                    "constraint_coverage": 0.39,
+                    "format_compliance": 0.43,
+                    "edge_case_handling": 0.41,
+                },
+            }
+        return CompletionResult(
+            text=(
+                "<!-- JUDGE_RESULT_START -->\n"
+                f"{json.dumps(payload)}\n"
+                "<!-- JUDGE_RESULT_END -->"
+            ),
+            model=model or self.default_model(),
+        )
+
+    def default_model(self) -> str:
+        return "test-model"
 
 # ---------------------------------------------------------------------------
 # Rubric YAML schema tests
@@ -242,17 +290,20 @@ class TestJudgeRubricIntegration:
         loader = TemplateLoader()
         task = loader.load_as_agent_task("prompt-optimization")
 
-        # Test with varying output lengths to get different scores
-        short_output = "Be clear."
-        long_output = "You are an expert. " * 50
-
-        short_result = task.evaluate_output(short_output, {})
-        long_result = task.evaluate_output(long_output, {})
+        with patch("mts.scenarios.templates.get_provider", return_value=_ConditionalProvider()):
+            weak_result = task.evaluate_output("weak candidate output", {})
+            strong_result = task.evaluate_output("strong candidate output", {})
 
         # Scores should differ for different outputs
-        assert short_result.score != long_result.score
-        # Long output should score higher with our length-based heuristic
-        assert long_result.score > short_result.score
+        assert weak_result.score != strong_result.score
+        assert strong_result.score > weak_result.score
+        assert sorted(strong_result.dimension_scores.keys()) == [
+            "clarity",
+            "constraint_coverage",
+            "edge_case_handling",
+            "format_compliance",
+            "specificity",
+        ]
 
 
 # ---------------------------------------------------------------------------

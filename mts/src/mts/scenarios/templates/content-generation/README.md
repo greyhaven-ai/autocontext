@@ -18,8 +18,8 @@ This template sets up an agent task where the goal is to produce high-quality wr
 # Scaffold a new scenario from this template
 mts new-scenario --template content-generation --name my-blog-task
 
-# Run with deterministic provider
-MTS_AGENT_PROVIDER=deterministic uv run mts run --scenario my-blog-task --gens 3
+# The scaffolded task is written under knowledge/_custom_scenarios/my-blog-task
+# and becomes available to Autocontext's agent-task tooling after load/restart.
 ```
 
 ## Customization

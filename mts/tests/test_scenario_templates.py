@@ -3,11 +3,40 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
 
+from mts.providers.base import CompletionResult, LLMProvider
 from mts.scenarios.templates import TEMPLATE_DIR, TemplateLoader, TemplateSpec
+
+
+def _judge_response(score: float, dimensions: dict[str, float]) -> str:
+    payload = json.dumps({
+        "score": score,
+        "reasoning": "Template smoke test",
+        "dimensions": dimensions,
+    })
+    return f"<!-- JUDGE_RESULT_START -->\n{payload}\n<!-- JUDGE_RESULT_END -->"
+
+
+class _StaticProvider(LLMProvider):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> CompletionResult:
+        return CompletionResult(text=self._response, model=model or self.default_model())
+
+    def default_model(self) -> str:
+        return "test-model"
 
 # ---------------------------------------------------------------------------
 # Template directory structure tests
@@ -161,6 +190,7 @@ class TestTemplateLoader:
         assert isinstance(rubric, str) and len(rubric) > 0
         desc = task.describe_task()
         assert isinstance(desc, str)
+        assert state["task_name"] == "test-prompt-opt"
 
     def test_scaffold_to_directory(self, tmp_path: Path) -> None:
         """Scaffolding a template should copy files to a target directory."""
@@ -173,6 +203,9 @@ class TestTemplateLoader:
         assert (target / "example_output.json").is_file()
         assert (target / "agent_task.py").is_file()
         assert (target / "scenario_type.txt").read_text().strip() == "agent_task"
+        source = (target / "agent_task.py").read_text(encoding="utf-8")
+        assert "LLMJudge" in source
+        assert "get_provider" in source
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +265,11 @@ class TestTemplateSmoke:
         rubric = task.get_rubric()
         assert len(rubric) > 0
         # Evaluate with a dummy output
-        result = task.evaluate_output("Some output text for testing purposes.", state)
+        spec = loader.get_template(template_name)
+        dim_names = [d.name for d in spec.rubric_dimensions or []]
+        response = _judge_response(0.74, {name: 0.74 for name in dim_names})
+        with patch("mts.scenarios.templates.get_provider", return_value=_StaticProvider(response)):
+            result = task.evaluate_output("Some output text for testing purposes.", state)
         assert 0.0 <= result.score <= 1.0
         assert isinstance(result.reasoning, str)
+        assert sorted(result.dimension_scores.keys()) == sorted(dim_names)
