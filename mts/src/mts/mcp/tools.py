@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 from mts.config import AppSettings
+from mts.execution.harness_loader import HarnessLoader
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
 from mts.scenarios import SCENARIO_REGISTRY
 from mts.storage import ArtifactStore, SQLiteStore
@@ -709,6 +711,7 @@ def evaluate_strategy(
 def validate_strategy_against_harness(
     scenario_name: str,
     strategy: dict[str, object],
+    ctx: MtsToolContext | None = None,
 ) -> dict[str, object]:
     """Validate a strategy against scenario constraints and any harness validators.
 
@@ -727,7 +730,53 @@ def validate_strategy_against_harness(
 
     state = scenario.initial_state(seed=42)
     valid, reason = scenario.validate_actions(state, "challenger", strategy)
-    return {"valid": valid, "reason": reason, "scenario": scenario_name}
+    harness_loaded: list[str] = []
+    harness_errors: list[str] = []
+    harness_passed = True
+
+    if valid and ctx is not None:
+        harness_loaded = _sync_published_harness_artifacts(ctx, scenario_name)
+        harness_loader = HarnessLoader(
+            ctx.artifacts.harness_dir(scenario_name),
+            timeout_seconds=ctx.settings.harness_timeout_seconds,
+        )
+        harness_loaded = harness_loader.load()
+        harness_result = harness_loader.validate_strategy(dict(strategy), scenario)
+        harness_passed = harness_result.passed
+        harness_errors = harness_result.errors
+
+    return {
+        "valid": valid and harness_passed,
+        "reason": reason,
+        "scenario": scenario_name,
+        "harness_loaded": harness_loaded,
+        "harness_passed": harness_passed,
+        "harness_errors": harness_errors,
+    }
+
+
+def _sync_published_harness_artifacts(ctx: MtsToolContext, scenario_name: str) -> list[str]:
+    """Mirror published harness artifacts into the runtime harness directory."""
+    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
+    if not artifacts_dir.exists():
+        return []
+
+    synced: list[str] = []
+    for artifact_path in sorted(artifacts_dir.glob("*.json")):
+        try:
+            artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if artifact_data.get("artifact_type") != "harness" or artifact_data.get("scenario") != scenario_name:
+            continue
+        source_code = artifact_data.get("source_code")
+        artifact_id = artifact_data.get("id", artifact_path.stem)
+        if not isinstance(source_code, str) or not source_code.strip():
+            continue
+        module_name = f"openclaw_{str(artifact_id).replace('-', '_')}"
+        ctx.artifacts.write_harness(scenario_name, module_name, source_code)
+        synced.append(module_name)
+    return synced
 
 
 def _validate_and_persist_artifact(
@@ -750,6 +799,8 @@ def _validate_and_persist_artifact(
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = artifacts_dir / f"{validated.id}.json"
     artifact_path.write_text(validated.model_dump_json(indent=2), encoding="utf-8")
+    if artifact_type == "harness":
+        ctx.artifacts.write_harness(validated.scenario, f"openclaw_{validated.id}", validated.source_code)
 
     return validated.id, str(artifact_path)
 

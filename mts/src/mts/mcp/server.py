@@ -404,7 +404,7 @@ def mts_validate_strategy_against_harness(
     """Validate a strategy against scenario constraints and harness validators.
     strategy should be a JSON string."""
     return json.dumps(tools.validate_strategy_against_harness(
-        scenario_name, json.loads(strategy),
+        scenario_name, json.loads(strategy), ctx=_get_ctx(),
     ))
 
 

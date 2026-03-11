@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from mts.config import load_settings
@@ -12,14 +12,18 @@ from mts.mcp.tools import MtsToolContext
 
 router = APIRouter(prefix="/api/openclaw", tags=["openclaw"])
 
-_ctx: MtsToolContext | None = None
 
-
-def _get_ctx() -> MtsToolContext:
-    global _ctx
-    if _ctx is None:
-        _ctx = MtsToolContext(load_settings())
-    return _ctx
+def get_openclaw_ctx(request: Request) -> MtsToolContext:
+    """Resolve the OpenClaw tool context from app state instead of module globals."""
+    ctx = getattr(request.app.state, "openclaw_ctx", None)
+    if ctx is None:
+        settings = getattr(request.app.state, "app_settings", None)
+        if settings is None:
+            settings = load_settings()
+            request.app.state.app_settings = settings
+        ctx = MtsToolContext(settings)
+        request.app.state.openclaw_ctx = ctx
+    return ctx
 
 
 # -- Request models --
@@ -57,22 +61,28 @@ def evaluate_strategy_endpoint(body: EvaluateRequest) -> dict[str, Any]:
 
 
 @router.post("/validate")
-def validate_strategy_endpoint(body: ValidateRequest) -> dict[str, Any]:
+def validate_strategy_endpoint(
+    body: ValidateRequest,
+    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+) -> dict[str, Any]:
     """Check a strategy against scenario constraints and harness validators."""
     from mts.mcp.tools import validate_strategy_against_harness
 
-    result = validate_strategy_against_harness(body.scenario_name, body.strategy)
+    result = validate_strategy_against_harness(body.scenario_name, body.strategy, ctx=ctx)
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result["error"]))
     return result  # type: ignore[return-value]
 
 
 @router.post("/artifacts")
-def publish_artifact_endpoint(body: dict[str, Any]) -> dict[str, Any]:
+def publish_artifact_endpoint(
+    body: dict[str, Any],
+    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+) -> dict[str, Any]:
     """Publish an artifact (harness, policy, or distilled model)."""
     from mts.mcp.tools import publish_artifact
 
-    result = publish_artifact(_get_ctx(), body)
+    result = publish_artifact(ctx, body)
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result["error"]))
     return result  # type: ignore[return-value]
@@ -82,39 +92,48 @@ def publish_artifact_endpoint(body: dict[str, Any]) -> dict[str, Any]:
 def list_artifacts_endpoint(
     scenario: str | None = None,
     artifact_type: str | None = None,
+    ctx: MtsToolContext = Depends(get_openclaw_ctx),
 ) -> list[dict[str, Any]]:
     """List published artifacts with optional filters."""
     from mts.mcp.tools import list_artifacts
 
-    return list_artifacts(_get_ctx(), scenario=scenario, artifact_type=artifact_type)  # type: ignore[return-value]
+    return list_artifacts(ctx, scenario=scenario, artifact_type=artifact_type)  # type: ignore[return-value]
 
 
 @router.get("/artifacts/{artifact_id}")
-def fetch_artifact_endpoint(artifact_id: str) -> dict[str, Any]:
+def fetch_artifact_endpoint(
+    artifact_id: str,
+    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+) -> dict[str, Any]:
     """Fetch a published artifact by its ID."""
     from mts.mcp.tools import fetch_artifact
 
-    result = fetch_artifact(_get_ctx(), artifact_id)
+    result = fetch_artifact(ctx, artifact_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=str(result["error"]))
     return result  # type: ignore[return-value]
 
 
 @router.get("/distill")
-def distill_status_endpoint() -> dict[str, Any]:
+def distill_status_endpoint(
+    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+) -> dict[str, Any]:
     """Check status of distillation workflows."""
     from mts.mcp.tools import distill_status
 
-    return distill_status(_get_ctx())  # type: ignore[return-value]
+    return distill_status(ctx)  # type: ignore[return-value]
 
 
 @router.post("/distill")
-def trigger_distillation_endpoint(body: TriggerDistillRequest) -> dict[str, Any]:
+def trigger_distillation_endpoint(
+    body: TriggerDistillRequest,
+    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+) -> dict[str, Any]:
     """Trigger a distillation workflow for a scenario."""
     from mts.mcp.tools import trigger_distillation
 
     return trigger_distillation(  # type: ignore[return-value]
-        _get_ctx(),
+        ctx,
         scenario=body.scenario,
         source_artifact_ids=body.source_artifact_ids,
     )
