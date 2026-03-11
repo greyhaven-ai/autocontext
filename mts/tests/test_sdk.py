@@ -47,7 +47,14 @@ class TestMTSInit:
         """If an AppSettings is passed directly, it is used without modification."""
         settings = AppSettings(db_path=tmp_path / "mts.db")
         client = MTS(settings=settings)
-        assert client._settings is settings
+        assert client._settings.db_path == settings.db_path
+
+    def test_uses_load_settings_as_base(self, tmp_path: Path) -> None:
+        base = AppSettings(db_path=tmp_path / "base.db", knowledge_root=tmp_path / "base_k")
+        with patch("mts.sdk.load_settings", return_value=base):
+            client = MTS(db_path=tmp_path / "override.db")
+        assert client._settings.db_path == tmp_path / "override.db"
+        assert client._settings.knowledge_root == tmp_path / "base_k"
 
 
 # ---------------------------------------------------------------------------
@@ -90,12 +97,12 @@ class TestDescribeScenario:
 
 
 class TestValidate:
-    """validate delegates to tools.validate_strategy and returns ValidateResult."""
+    """validate delegates to the shared harness-aware validation path."""
 
     def test_valid_strategy_returns_typed_result(self, tmp_path: Path) -> None:
         client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
-        with patch("mts.sdk.tools.validate_strategy", return_value={
-            "valid": True, "reason": "ok",
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": True, "reason": "ok", "harness_passed": True, "harness_errors": [],
         }):
             result = client.validate("grid_ctf", {"aggression": 0.5})
         assert isinstance(result, ValidateResult)
@@ -104,21 +111,33 @@ class TestValidate:
 
     def test_invalid_strategy_returns_typed_result(self, tmp_path: Path) -> None:
         client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
-        with patch("mts.sdk.tools.validate_strategy", return_value={
-            "valid": False, "reason": "out of range",
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": False, "reason": "out of range", "harness_passed": False, "harness_errors": [],
         }):
             result = client.validate("grid_ctf", {"aggression": 5.0})
         assert isinstance(result, ValidateResult)
         assert result.valid is False
         assert "out of range" in result.reason
 
+    def test_unknown_scenario_error_returns_invalid_result(self, tmp_path: Path) -> None:
+        client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "error": "Unknown scenario 'grid_ctf'",
+        }):
+            result = client.validate("grid_ctf", {"aggression": 0.5})
+        assert result.valid is False
+        assert "Unknown scenario" in result.reason
+
 
 class TestEvaluate:
-    """evaluate delegates to tools.run_tournament and returns EvaluateResult."""
+    """evaluate delegates to the shared validation/evaluation path."""
 
     def test_returns_typed_evaluate_result(self, tmp_path: Path) -> None:
         client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
-        with patch("mts.sdk.tools.run_tournament", return_value={
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": True, "reason": "ok", "harness_passed": True, "harness_errors": [],
+        }), patch("mts.sdk.tools.evaluate_strategy", return_value={
+            "scenario": "grid_ctf",
             "matches": 3,
             "scores": [0.6, 0.7, 0.8],
             "mean_score": 0.7,
@@ -132,31 +151,47 @@ class TestEvaluate:
 
     def test_evaluate_passes_matches_and_seed(self, tmp_path: Path) -> None:
         client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
-        with patch("mts.sdk.tools.run_tournament", return_value={
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": True, "reason": "", "harness_passed": True, "harness_errors": [],
+        }), patch("mts.sdk.tools.evaluate_strategy", return_value={
+            "scenario": "grid_ctf",
             "matches": 5,
             "scores": [0.5] * 5,
             "mean_score": 0.5,
             "best_score": 0.5,
-        }) as mock_rt:
+        }) as mock_eval:
             client.evaluate("grid_ctf", {"aggression": 0.5}, matches=5, seed_base=100)
-        mock_rt.assert_called_once_with("grid_ctf", {"aggression": 0.5}, matches=5, seed_base=100)
+        mock_eval.assert_called_once_with("grid_ctf", {"aggression": 0.5}, num_matches=5, seed_base=100)
 
     def test_evaluate_error_propagates(self, tmp_path: Path) -> None:
         client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
-        with patch("mts.sdk.tools.run_tournament", return_value={
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": True, "reason": "", "harness_passed": True, "harness_errors": [],
+        }), patch("mts.sdk.tools.evaluate_strategy", return_value={
             "error": "Agent task scenarios use judge evaluation",
         }):
             result = client.evaluate("some_task", {})
         assert isinstance(result, EvaluateResult)
         assert result.error == "Agent task scenarios use judge evaluation"
 
+    def test_evaluate_invalid_strategy_stops_before_tournament(self, tmp_path: Path) -> None:
+        client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": False, "reason": "out of range", "harness_passed": False, "harness_errors": [],
+        }), patch("mts.sdk.tools.evaluate_strategy") as mock_eval:
+            result = client.evaluate("grid_ctf", {"aggression": 5.0})
+        mock_eval.assert_not_called()
+        assert result.error == "out of range"
+
 
 class TestMatch:
-    """match delegates to tools.run_match and returns MatchResult."""
+    """match validates first and then delegates to tools.run_match."""
 
     def test_returns_typed_match_result(self, tmp_path: Path) -> None:
         client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
-        with patch("mts.sdk.tools.run_match", return_value={
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": True, "reason": "", "harness_passed": True, "harness_errors": [],
+        }), patch("mts.sdk.tools.run_match", return_value={
             "score": 0.75,
             "winner": "challenger",
             "summary": "Challenger captured the flag",
@@ -172,11 +207,22 @@ class TestMatch:
 
     def test_match_passes_seed(self, tmp_path: Path) -> None:
         client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
-        with patch("mts.sdk.tools.run_match", return_value={
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": True, "reason": "", "harness_passed": True, "harness_errors": [],
+        }), patch("mts.sdk.tools.run_match", return_value={
             "score": 0.5, "winner": "defender", "summary": "draw", "metrics": {}, "replay": [],
         }) as mock_rm:
             client.match("grid_ctf", {"aggression": 0.5}, seed=99)
         mock_rm.assert_called_once_with("grid_ctf", {"aggression": 0.5}, seed=99)
+
+    def test_match_invalid_strategy_stops_before_execution(self, tmp_path: Path) -> None:
+        client = MTS(db_path=tmp_path / "mts.db", knowledge_root=tmp_path / "k")
+        with patch("mts.sdk.tools.validate_strategy_against_harness", return_value={
+            "valid": False, "reason": "out of range", "harness_passed": False, "harness_errors": [],
+        }), patch("mts.sdk.tools.run_match") as mock_rm:
+            result = client.match("grid_ctf", {"aggression": 5.0})
+        mock_rm.assert_not_called()
+        assert result.error == "out of range"
 
 
 # ---------------------------------------------------------------------------
