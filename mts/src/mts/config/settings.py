@@ -205,6 +205,26 @@ class AppSettings(BaseModel):
     staged_validation_enabled: bool = Field(
         default=True, description="Use staged validation pipeline for pre-tournament checks",
     )
+    # Pre-flight harness synthesis (AC-150)
+    harness_preflight_enabled: bool = Field(
+        default=False, description="Run pre-flight harness synthesis before generation 1",
+    )
+    harness_preflight_max_iterations: int = Field(
+        default=30, ge=1, description="Max synthesis iterations for pre-flight",
+    )
+    harness_preflight_target_accuracy: float = Field(
+        default=0.9, ge=0.0, le=1.0, description="Target accuracy threshold for pre-flight convergence",
+    )
+    harness_preflight_force: bool = Field(
+        default=False, description="Force re-synthesis even if harness exists",
+    )
+    # Two-tier gating (AC-160)
+    two_tier_gating_enabled: bool = Field(
+        default=False, description="Enable two-tier validity+quality gating in tournament",
+    )
+    validity_max_retries: int = Field(
+        default=3, ge=0, description="Max validity retries before falling through to tournament",
+    )
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod

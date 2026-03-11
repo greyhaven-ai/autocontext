@@ -15,7 +15,8 @@ from mts.harness.evaluation.failure_report import FailureReport
 from mts.harness.evaluation.runner import EvaluationRunner
 from mts.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
-from mts.harness.evaluation.types import EvaluationResult
+from mts.harness.evaluation.types import EvaluationResult, EvaluationSummary
+from mts.harness.pipeline.validity_gate import ValidityGate
 from mts.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from mts.knowledge.fresh_start import execute_fresh_start
 from mts.knowledge.harness_quality import compute_harness_quality
@@ -38,6 +39,86 @@ if TYPE_CHECKING:
     from mts.storage import ArtifactStore, SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _load_validity_harness_loader(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+) -> Any | None:
+    """Load harness validators for two-tier validity checks when enabled."""
+    if not ctx.settings.harness_validators_enabled:
+        return None
+
+    from mts.execution.harness_loader import HarnessLoader
+
+    harness_dir = artifacts.harness_dir(ctx.scenario_name)
+    if not harness_dir.exists():
+        return None
+
+    loader = HarnessLoader(
+        harness_dir,
+        timeout_seconds=ctx.settings.harness_timeout_seconds,
+    )
+    loader.load()
+    return loader
+
+
+def _build_empty_tournament(ctx: GenerationContext) -> EvaluationSummary:
+    """Create a zero-match summary for rollback paths that skip execution."""
+    return EvaluationSummary(
+        mean_score=0.0,
+        best_score=0.0,
+        wins=0,
+        losses=0,
+        elo_after=ctx.challenger_elo,
+        results=[],
+    )
+
+
+def _revise_strategy_for_validity_failure(
+    ctx: GenerationContext,
+    *,
+    current_strategy: dict[str, Any],
+    errors: list[str],
+    retry_attempt: int,
+    agents: AgentOrchestrator | None,
+) -> dict[str, Any] | None:
+    """Ask the competitor to fix an invalid strategy before running matches."""
+    if agents is None or ctx.prompts is None:
+        return None
+
+    is_code_strategy = "__code__" in current_strategy
+    retry_prompt = (
+        ctx.prompts.competitor
+        + f"\n\n--- VALIDITY RETRY ATTEMPT {retry_attempt} ---\n"
+        + "Your previous strategy failed pre-tournament validation.\n"
+        + "Validation errors:\n"
+        + "\n".join(f"- {error}" for error in errors)
+        + "\n"
+    )
+    if is_code_strategy:
+        retry_prompt += "Adjust your code so it satisfies the harness and scenario contracts.\n"
+        if ctx.settings.code_strategies_enabled:
+            from mts.prompts.templates import code_strategy_competitor_suffix
+
+            retry_prompt += code_strategy_competitor_suffix(ctx.strategy_interface)
+    else:
+        retry_prompt += (
+            f"Previous strategy: {json.dumps(current_strategy, sort_keys=True)}\n"
+            "Return a revised valid strategy. Do not repeat the same invalid approach.\n"
+        )
+
+    try:
+        raw_text, _ = agents.competitor.run(retry_prompt, tool_context=ctx.tool_context)
+        if is_code_strategy:
+            revised_strategy, _ = agents.translator.translate_code(raw_text)
+        else:
+            revised_strategy, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
+        return revised_strategy
+    except Exception:
+        LOGGER.debug("validity retry competitor re-invocation failed", exc_info=True)
+        return None
 
 
 def _apply_tuning_to_settings(
@@ -249,8 +330,68 @@ def stage_tournament(
     gate_decision = "rollback"
     tournament = None
     use_rapid = settings.exploration_mode == "rapid"
+    validity_retry_attempt = 0
+    validity_gate = None
+
+    # --- Tier 1: Validity gate (AC-160) ---
+    if settings.two_tier_gating_enabled:
+        harness_loader = _load_validity_harness_loader(ctx, artifacts=artifacts)
+        validity_gate = ValidityGate(
+            harness_loader=harness_loader,
+            scenario=scenario,
+            max_retries=settings.validity_max_retries,
+        )
 
     while True:
+        if validity_gate is not None:
+            validity_result = validity_gate.check(current_strategy)
+            if not validity_result.passed:
+                events.emit("validity_check_failed", {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "errors": validity_result.errors,
+                    "retry_budget_remaining": validity_result.retry_budget_remaining,
+                })
+                can_retry = validity_gate.consume_retry()
+                if can_retry:
+                    validity_retry_attempt += 1
+                    revised_strategy = _revise_strategy_for_validity_failure(
+                        ctx,
+                        current_strategy=current_strategy,
+                        errors=validity_result.errors,
+                        retry_attempt=validity_retry_attempt,
+                        agents=agents,
+                    )
+                    if revised_strategy is not None:
+                        current_strategy = revised_strategy
+                    time.sleep(settings.retry_backoff_seconds * validity_retry_attempt)
+                    continue
+
+                # Validity budget exhausted: rollback without tournament
+                gate_decision = "rollback"
+                gate_delta = 0.0
+                tournament = _build_empty_tournament(ctx)
+                events.emit("gate_decided", {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "decision": gate_decision,
+                    "delta": gate_delta,
+                    "tier": "validity",
+                })
+                ctx.score_history.append(0.0)
+                ctx.gate_decision_history.append(gate_decision)
+                ctx.gate_decision = gate_decision
+                ctx.gate_delta = gate_delta
+                ctx.current_strategy = current_strategy
+                ctx.attempt = validity_retry_attempt
+                ctx.tournament = tournament
+                return ctx
+
+            events.emit("validity_check_passed", {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+            })
+
         events.emit("tournament_started", {
             "run_id": ctx.run_id,
             "generation": ctx.generation,
@@ -712,11 +853,15 @@ def stage_persistence(
     )
 
     # 4. Persist generation artifacts
+    replay_payload: dict[str, object] = {}
+    if tournament.results:
+        replay_payload = tournament.results[0].metadata["execution_output"].replay.model_dump()
+
     artifacts.persist_generation(
         run_id=run_id,
         generation_index=generation,
         metrics=metrics,
-        replay_payload=tournament.results[0].metadata["execution_output"].replay.model_dump(),
+        replay_payload=replay_payload,
         analysis_md=outputs.analysis_markdown,
         coach_md=outputs.coach_markdown,
         architect_md=outputs.architect_markdown,

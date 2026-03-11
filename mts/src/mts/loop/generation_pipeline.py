@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from mts.knowledge.coherence import check_coherence
+from mts.loop.stage_preflight import stage_preflight
 from mts.loop.stage_prevalidation import stage_prevalidation
 from mts.loop.stage_probe import stage_probe
 from mts.loop.stage_staged_validation import stage_staged_validation
@@ -89,6 +90,14 @@ class GenerationPipeline:
                     "run_id": ctx.run_id,
                     "warnings": report.warnings,
                 })
+
+        # Stage 0.5: Pre-flight harness synthesis (generation 1 only)
+        if ctx.generation == 1:
+            ctx = stage_preflight(
+                ctx,
+                events=self._events,
+                artifacts=self._artifacts,
+            )
 
         # Stage 1: Knowledge setup
         ctx = stage_knowledge_setup(
