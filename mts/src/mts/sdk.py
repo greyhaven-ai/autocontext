@@ -19,7 +19,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from mts.config import AppSettings
+from mts.config import AppSettings, load_settings
+from mts.config.settings import validate_harness_mode
 from mts.mcp import tools
 from mts.mcp.tools import MtsToolContext
 from mts.sdk_models import EvaluateResult, MatchResult, SearchResult, ValidateResult
@@ -57,8 +58,9 @@ class MTS:
             (e.g. ``matches_per_generation=5``).
         """
         if settings is not None:
-            self._settings = settings
+            self._settings = validate_harness_mode(settings)
         else:
+            base_settings = load_settings()
             kwargs: dict[str, Any] = {}
             if db_path is not None:
                 kwargs["db_path"] = Path(db_path)
@@ -69,7 +71,7 @@ class MTS:
             if claude_skills_path is not None:
                 kwargs["claude_skills_path"] = Path(claude_skills_path)
             kwargs.update(overrides)
-            self._settings = AppSettings(**kwargs)
+            self._settings = validate_harness_mode(base_settings.model_copy(update=kwargs))
 
         self._ctx = MtsToolContext(self._settings)
 
@@ -90,7 +92,9 @@ class MTS:
 
         Returns a :class:`ValidateResult` with ``valid`` and ``reason`` fields.
         """
-        raw: dict[str, Any] = tools.validate_strategy(scenario, strategy)
+        raw: dict[str, Any] = tools.validate_strategy_against_harness(scenario, strategy, ctx=self._ctx)
+        if "error" in raw:
+            return ValidateResult(valid=False, reason=str(raw["error"]))
         return ValidateResult(
             valid=bool(raw.get("valid", False)),
             reason=str(raw.get("reason", "")),
@@ -108,7 +112,13 @@ class MTS:
         Returns an :class:`EvaluateResult`.  If the scenario is an agent task
         (which uses judge evaluation), the ``error`` field is populated instead.
         """
-        raw: dict[str, Any] = tools.run_tournament(scenario, strategy, matches=matches, seed_base=seed_base)
+        validation: dict[str, Any] = tools.validate_strategy_against_harness(scenario, strategy, ctx=self._ctx)
+        if "error" in validation:
+            return EvaluateResult(error=str(validation["error"]))
+        if not bool(validation.get("valid", False)):
+            return EvaluateResult(error=str(validation.get("reason", "validation failed")))
+
+        raw: dict[str, Any] = tools.evaluate_strategy(scenario, strategy, num_matches=matches, seed_base=seed_base)
         if "error" in raw:
             return EvaluateResult(error=str(raw["error"]))
         return EvaluateResult(
@@ -128,6 +138,12 @@ class MTS:
 
         Returns a :class:`MatchResult`.
         """
+        validation: dict[str, Any] = tools.validate_strategy_against_harness(scenario, strategy, ctx=self._ctx)
+        if "error" in validation:
+            return MatchResult(error=str(validation["error"]))
+        if not bool(validation.get("valid", False)):
+            return MatchResult(error=str(validation.get("reason", "validation failed")))
+
         raw: dict[str, Any] = tools.run_match(scenario, strategy, seed=seed)
         if "error" in raw:
             return MatchResult(error=str(raw["error"]))
