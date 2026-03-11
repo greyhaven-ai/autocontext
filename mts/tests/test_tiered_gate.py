@@ -103,6 +103,7 @@ class TestTieredGateValidityTier:
         assert result.validity_errors == ["bad move"]
         assert result.quality_delta is None
         assert result.quality_threshold is None
+        assert result.validity_retry_budget_remaining == 2
         validity.consume_retry.assert_called_once()
 
     def test_invalid_strategy_rollback_when_exhausted(self) -> None:
@@ -120,6 +121,7 @@ class TestTieredGateValidityTier:
         assert result.tier == "validity"
         assert result.decision == "rollback"
         assert result.validity_passed is False
+        assert result.validity_retry_budget_remaining == 0
 
     def test_invalid_strategy_does_not_call_quality_gate(self) -> None:
         validity = self._make_validity_gate(passed=False, errors=["bad"], budget=3)
