@@ -1,11 +1,17 @@
 """Tiered model routing based on complexity signals.
 
 Inspired by Plankton's pattern-based Haiku/Sonnet/Opus routing that matches
-problem complexity to appropriate reasoning capacity.
+problem complexity to appropriate reasoning capacity.  Supports harness-aware
+dynamic demotion (AC-164): when harness coverage is strong, the competitor
+can be demoted to a cheaper tier since the harness catches invalid strategies.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mts.execution.harness_coverage import HarnessCoverage
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +30,9 @@ class TierConfig:
     architect_min_tier: str = "opus"
     analyst_min_tier: str = "haiku"
     translator_min_tier: str = "haiku"
+    # Harness-aware dynamic demotion (AC-164)
+    harness_aware_tiering_enabled: bool = False
+    harness_coverage_demotion_threshold: float = 0.8
 
 
 class ModelRouter:
@@ -45,8 +54,17 @@ class ModelRouter:
         generation: int,
         retry_count: int,
         is_plateau: bool,
+        harness_coverage: HarnessCoverage | None = None,
     ) -> str | None:
-        """Return model name for the given role and context, or None if routing disabled."""
+        """Return model name for the given role and context, or None if routing disabled.
+
+        Args:
+            role: Agent role (competitor, analyst, coach, etc.).
+            generation: Current generation number.
+            retry_count: Number of retries for this generation.
+            is_plateau: Whether score progression has plateaued.
+            harness_coverage: Optional harness coverage measurement for demotion.
+        """
         if not self._config.enabled:
             return None
 
@@ -65,6 +83,20 @@ class ModelRouter:
                 tier = "haiku"
             else:
                 tier = "sonnet"
+
+            # Harness-aware demotion: strong coverage allows cheaper models
+            if (
+                self._config.harness_aware_tiering_enabled
+                and harness_coverage is not None
+                and harness_coverage.coverage_score >= self._config.harness_coverage_demotion_threshold
+            ):
+                from mts.execution.harness_coverage import HarnessCoverageAnalyzer
+
+                recommended = HarnessCoverageAnalyzer().recommend_model_tier(harness_coverage)
+                if recommended:
+                    tier = recommended
+
+            # Escalation overrides demotion — retries and plateau take priority
             if retry_count >= self._config.competitor_retry_escalation:
                 tier = self._max_tier(tier, "sonnet")
             if is_plateau:
@@ -78,3 +110,7 @@ class ModelRouter:
     def _max_tier(self, a: str, b: str) -> str:
         """Return the higher of two tiers."""
         return a if self._tier_order.index(a) >= self._tier_order.index(b) else b
+
+    def _min_tier(self, a: str, b: str) -> str:
+        """Return the lower of two tiers."""
+        return a if self._tier_order.index(a) <= self._tier_order.index(b) else b

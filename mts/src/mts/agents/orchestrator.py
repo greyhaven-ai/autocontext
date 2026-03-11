@@ -5,7 +5,7 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mts.agents.analyst import AnalystRunner
 from mts.agents.architect import ArchitectRunner, parse_architect_harness_specs, parse_architect_tool_specs
@@ -22,6 +22,9 @@ from mts.config.settings import AppSettings
 from mts.harness.orchestration.dag import RoleDAG
 from mts.harness.orchestration.types import RoleSpec
 from mts.prompts.templates import PromptBundle
+
+if TYPE_CHECKING:
+    from mts.execution.harness_coverage import HarnessCoverage
 
 LOGGER = logging.getLogger(__name__)
 
@@ -150,6 +153,8 @@ class AgentOrchestrator:
     ) -> None:
         self.client = client
         self.settings = settings
+        self._artifacts = artifacts
+        self._harness_coverage_cache: dict[str, HarnessCoverage | None] = {}
         runtime = SubagentRuntime(client=client)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor)
         self.translator = StrategyTranslator(runtime, settings.model_translator)
@@ -166,6 +171,8 @@ class AgentOrchestrator:
             tier_sonnet_model=settings.tier_sonnet_model,
             tier_opus_model=settings.tier_opus_model,
             competitor_haiku_max_gen=settings.tier_competitor_haiku_max_gen,
+            harness_aware_tiering_enabled=settings.tier_harness_aware_enabled,
+            harness_coverage_demotion_threshold=settings.tier_harness_coverage_demotion_threshold,
         ))
 
         self._rlm_loader = None
@@ -215,7 +222,7 @@ class AgentOrchestrator:
             self.settings.rlm_enabled and self._rlm_loader is not None
         ):
             return self._run_via_pipeline(
-                prompts, generation_index, tool_context, strategy_interface, on_role_event,
+                prompts, generation_index, scenario_name, tool_context, strategy_interface, on_role_event,
             )
 
         def _notify(role: str, status: str) -> None:
@@ -223,6 +230,11 @@ class AgentOrchestrator:
                 on_role_event(role, status)
 
         # --- Competitor phase ---
+        competitor_model = self.resolve_model(
+            "competitor",
+            generation=generation_index,
+            scenario_name=scenario_name,
+        ) or self.competitor.model
         use_competitor_rlm = (
             self.settings.rlm_enabled
             and self.settings.rlm_competitor_enabled
@@ -234,6 +246,7 @@ class AgentOrchestrator:
             _notify("competitor", "started")
             raw_text, competitor_exec = self._run_rlm_competitor(
                 run_id, scenario_name, generation_index,
+                model=competitor_model,
                 strategy_interface=strategy_interface,
                 scenario_rules=scenario_rules,
                 current_strategy=current_strategy,
@@ -245,7 +258,12 @@ class AgentOrchestrator:
             if self.settings.code_strategies_enabled:
                 from mts.prompts.templates import code_strategy_competitor_suffix
                 competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
-            raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
+            original_model = self.competitor.model
+            self.competitor.model = competitor_model
+            try:
+                raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
+            finally:
+                self.competitor.model = original_model
             _notify("competitor", "completed")
 
         _notify("translator", "started")
@@ -276,18 +294,34 @@ class AgentOrchestrator:
         else:
             # Analyst runs first; its output enriches the coach prompt
             _notify("analyst", "started")
-            analyst_exec = self.analyst.run(prompts.analyst)
+            analyst_model = self.resolve_model("analyst", generation=generation_index) or self.analyst.model
+            original_analyst_model = self.analyst.model
+            self.analyst.model = analyst_model
+            try:
+                analyst_exec = self.analyst.run(prompts.analyst)
+            finally:
+                self.analyst.model = original_analyst_model
             _notify("analyst", "completed")
             enriched_coach_prompt = self._enrich_coach_prompt(prompts.coach, analyst_exec.content)
             _notify("coach", "started")
             _notify("architect", "started")
+            coach_model = self.resolve_model("coach", generation=generation_index) or self.coach.model
+            architect_model = self.resolve_model("architect", generation=generation_index) or self.architect.model
+            original_coach_model = self.coach.model
+            original_architect_model = self.architect.model
+            self.coach.model = coach_model
+            self.architect.model = architect_model
             with ThreadPoolExecutor(max_workers=2) as pool:
-                coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
-                architect_future = pool.submit(self.architect.run, architect_prompt)
-                coach_exec = coach_future.result()
-                _notify("coach", "completed")
-                architect_exec = architect_future.result()
-                _notify("architect", "completed")
+                try:
+                    coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
+                    architect_future = pool.submit(self.architect.run, architect_prompt)
+                    coach_exec = coach_future.result()
+                    _notify("coach", "completed")
+                    architect_exec = architect_future.result()
+                    _notify("architect", "completed")
+                finally:
+                    self.coach.model = original_coach_model
+                    self.architect.model = original_architect_model
 
         tools = parse_architect_tool_specs(architect_exec.content)
         harness_specs = parse_architect_harness_specs(architect_exec.content)
@@ -322,6 +356,7 @@ class AgentOrchestrator:
         self,
         prompts: PromptBundle,
         generation_index: int,
+        scenario_name: str,
         tool_context: str,
         strategy_interface: str,
         on_role_event: Callable[[str, str], None] | None,
@@ -344,7 +379,13 @@ class AgentOrchestrator:
             "coach": prompts.coach,
         }
 
-        handler = build_role_handler(self, tool_context=tool_context, strategy_interface=strategy_interface)
+        handler = build_role_handler(
+            self,
+            generation=generation_index,
+            scenario_name=scenario_name,
+            tool_context=tool_context,
+            strategy_interface=strategy_interface,
+        )
         engine = PipelineEngine(dag, handler, max_workers=2)
         results = engine.execute(prompt_map, on_role_event=on_role_event)
 
@@ -387,9 +428,49 @@ class AgentOrchestrator:
             architect_output=architect_typed,
         )
 
-    def resolve_model(self, role: str, *, generation: int, retry_count: int = 0, is_plateau: bool = False) -> str | None:
+    def resolve_model(
+        self,
+        role: str,
+        *,
+        generation: int,
+        retry_count: int = 0,
+        is_plateau: bool = False,
+        scenario_name: str = "",
+        harness_coverage: HarnessCoverage | None = None,
+    ) -> str | None:
         """Return the model to use for a role, or None to use the default."""
-        return self._model_router.select(role, generation=generation, retry_count=retry_count, is_plateau=is_plateau)
+        if harness_coverage is None and role == "competitor":
+            harness_coverage = self._get_harness_coverage(scenario_name)
+        return self._model_router.select(
+            role,
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            harness_coverage=harness_coverage,
+        )
+
+    def _get_harness_coverage(self, scenario_name: str) -> HarnessCoverage | None:
+        """Load and cache harness coverage for a scenario when routing needs it."""
+        if not self.settings.tier_harness_aware_enabled or not scenario_name or self._artifacts is None:
+            return None
+        if scenario_name in self._harness_coverage_cache:
+            return self._harness_coverage_cache[scenario_name]
+
+        from mts.execution.harness_coverage import HarnessCoverageAnalyzer
+        from mts.execution.harness_loader import HarnessLoader
+
+        harness_dir = self._artifacts.harness_dir(scenario_name)
+        loader = HarnessLoader(harness_dir, timeout_seconds=self.settings.harness_timeout_seconds)
+        loader.load()
+        if not loader.loaded_names:
+            self._harness_coverage_cache[scenario_name] = None
+            return None
+
+        # Until we persist historical harness accuracy, treat loaded scenario
+        # harnesses as trusted executable constraints for routing purposes.
+        coverage = HarnessCoverageAnalyzer().analyze(loader, validation_accuracy=1.0)
+        self._harness_coverage_cache[scenario_name] = coverage
+        return coverage
 
     def _enrich_coach_prompt(self, base_prompt: str, analyst_content: str) -> str:
         return base_prompt + f"\n\n--- Analyst findings (this generation) ---\n{analyst_content}\n"
@@ -439,6 +520,7 @@ class AgentOrchestrator:
         scenario_name: str,
         generation_index: int,
         *,
+        model: str | None = None,
         strategy_interface: str = "",
         scenario_rules: str = "",
         current_strategy: dict[str, Any] | None = None,
@@ -463,9 +545,14 @@ class AgentOrchestrator:
             scenario_rules=scenario_rules,
             current_strategy=current_strategy,
         )
+        resolved_model = model or self.resolve_model(
+            "competitor",
+            generation=generation_index,
+            scenario_name=scenario_name,
+        ) or self.settings.model_competitor
         competitor_exec, exec_history = self._run_single_rlm_session(
             role="competitor",
-            model=self.settings.model_competitor,
+            model=resolved_model,
             system_tpl=backend.competitor_tpl,
             context=competitor_ctx,
             worker_cls=backend.worker_cls,
