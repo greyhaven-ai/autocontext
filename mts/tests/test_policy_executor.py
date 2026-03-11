@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 
 from mts.execution.policy_executor import PolicyExecutor, PolicyMatchResult
+from mts.scenarios.base import Result
 from mts.scenarios.grid_ctf import GridCtfScenario
 from mts.scenarios.othello import OthelloScenario
-from mts.scenarios.base import Result
 
 # ── PolicyMatchResult dataclass ───────────────────────────────────────────────
 
