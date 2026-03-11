@@ -520,7 +520,7 @@ class AgentOrchestrator:
         scenario_name: str,
         generation_index: int,
         *,
-        model: str,
+        model: str | None = None,
         strategy_interface: str = "",
         scenario_rules: str = "",
         current_strategy: dict[str, Any] | None = None,
@@ -545,9 +545,14 @@ class AgentOrchestrator:
             scenario_rules=scenario_rules,
             current_strategy=current_strategy,
         )
+        resolved_model = model or self.resolve_model(
+            "competitor",
+            generation=generation_index,
+            scenario_name=scenario_name,
+        ) or self.settings.model_competitor
         competitor_exec, exec_history = self._run_single_rlm_session(
             role="competitor",
-            model=model,
+            model=resolved_model,
             system_tpl=backend.competitor_tpl,
             context=competitor_ctx,
             worker_cls=backend.worker_cls,

@@ -31,7 +31,7 @@ def build_mts_dag() -> RoleDAG:
 
 def build_role_handler(
     orch: AgentOrchestrator,
-    generation: int,
+    generation: int = 1,
     scenario_name: str = "",
     tool_context: str = "",
     strategy_interface: str = "",
