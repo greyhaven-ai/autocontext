@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -43,7 +43,7 @@ class HarnessArtifact(_ArtifactBase):
     other agents can validate strategies against known constraints.
     """
 
-    artifact_type: str = Field(default="harness", frozen=True)
+    artifact_type: Literal["harness"] = Field(default="harness", frozen=True)
     source_code: str = Field(..., min_length=1, description="Python source code of the harness")
     accuracy: float | None = Field(default=None, ge=0.0, le=1.0, description="Measured accuracy on test suite")
     synthesis_iterations: int | None = Field(default=None, ge=1, description="How many iterations to synthesize")
@@ -56,7 +56,7 @@ class PolicyArtifact(_ArtifactBase):
     They can be shared via ClawHub for benchmarking or warm-starting.
     """
 
-    artifact_type: str = Field(default="policy", frozen=True)
+    artifact_type: Literal["policy"] = Field(default="policy", frozen=True)
     source_code: str = Field(..., min_length=1, description="Python source code of the policy")
     heuristic_value: float | None = Field(default=None, description="Heuristic quality score")
     match_results: list[dict[str, Any]] = Field(default_factory=list, description="Summary of match results")
@@ -69,7 +69,7 @@ class DistilledModelArtifact(_ArtifactBase):
     from MTS strategy evolution trajectories.
     """
 
-    artifact_type: str = Field(default="distilled_model", frozen=True)
+    artifact_type: Literal["distilled_model"] = Field(default="distilled_model", frozen=True)
     architecture: str = Field(..., min_length=1, description="Model architecture (e.g. transformer, mlp, cnn)")
     parameter_count: int = Field(..., gt=0, description="Total trainable parameters")
     checkpoint_path: str = Field(..., min_length=1, description="Path or URI to the model checkpoint")

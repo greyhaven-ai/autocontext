@@ -142,6 +142,17 @@ class TestHarnessArtifact:
                 provenance=ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf"),
             )
 
+    def test_harness_rejects_mismatched_artifact_type(self) -> None:
+        with pytest.raises(ValidationError):
+            HarnessArtifact(
+                name="bad",
+                version=1,
+                scenario="grid_ctf",
+                artifact_type="policy",
+                source_code="pass",
+                provenance=ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf"),
+            )
+
 
 # ---------------------------------------------------------------------------
 # PolicyArtifact
@@ -200,6 +211,17 @@ class TestPolicyArtifact:
                 version=1,
                 scenario="grid_ctf",
                 source_code="",
+                provenance=ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf"),
+            )
+
+    def test_policy_rejects_mismatched_artifact_type(self) -> None:
+        with pytest.raises(ValidationError):
+            PolicyArtifact(
+                name="bad",
+                version=1,
+                scenario="grid_ctf",
+                artifact_type="harness",
+                source_code="pass",
                 provenance=ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf"),
             )
 
@@ -278,6 +300,19 @@ class TestDistilledModelArtifact:
                 architecture="transformer",
                 parameter_count=100,
                 checkpoint_path="",
+                provenance=ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf"),
+            )
+
+    def test_model_rejects_mismatched_artifact_type(self) -> None:
+        with pytest.raises(ValidationError):
+            DistilledModelArtifact(
+                name="bad",
+                version=1,
+                scenario="grid_ctf",
+                artifact_type="policy",
+                architecture="transformer",
+                parameter_count=100,
+                checkpoint_path="/tmp/model.pt",
                 provenance=ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf"),
             )
 

@@ -119,6 +119,7 @@ def create_app(
     application.include_router(knowledge_router)
     application.include_router(openclaw_router)
     app_settings = load_settings()
+    application.state.app_settings = app_settings
     store = SQLiteStore(app_settings.db_path)
     scenario_creator = _build_scenario_creator(app_settings)
 

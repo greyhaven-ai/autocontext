@@ -126,6 +126,35 @@ class TestValidateStrategyOp:
         )
         assert "error" in result
 
+    def test_validate_uses_published_harness_artifacts(self, tool_ctx: MtsToolContext) -> None:
+        from mts.mcp.tools import publish_artifact, validate_strategy_against_harness
+
+        prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
+        harness = HarnessArtifact(
+            name="max_aggression",
+            version=1,
+            scenario="grid_ctf",
+            source_code=(
+                "def validate_strategy(strategy, scenario):\n"
+                "    if float(strategy.get('aggression', 0.0)) <= 0.6:\n"
+                "        return True, []\n"
+                "    return False, ['aggression must be <= 0.6']\n"
+            ),
+            provenance=prov,
+        )
+        publish_artifact(tool_ctx, harness.model_dump())
+
+        result = validate_strategy_against_harness(
+            scenario_name="grid_ctf",
+            strategy={"aggression": 0.7, "defense": 0.5, "path_bias": 0.5},
+            ctx=tool_ctx,
+        )
+
+        assert result["valid"] is False
+        assert result["harness_passed"] is False
+        assert result["harness_loaded"] == [f"openclaw_{harness.id}"]
+        assert any("aggression must be <= 0.6" in err for err in result["harness_errors"])
+
 
 # ---------------------------------------------------------------------------
 # MCP tool: mts_publish_artifact
@@ -184,6 +213,22 @@ class TestPublishArtifact:
         publish_artifact(tool_ctx, h.model_dump())
         artifacts_dir = tool_ctx.settings.knowledge_root / "_openclaw_artifacts"
         assert artifacts_dir.exists()
+
+    def test_publish_harness_syncs_runtime_harness(self, tool_ctx: MtsToolContext) -> None:
+        from mts.mcp.tools import publish_artifact
+
+        prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
+        h = HarnessArtifact(
+            name="runtime_sync",
+            version=1,
+            scenario="grid_ctf",
+            source_code="def validate_strategy(strategy, scenario):\n    return True, []\n",
+            provenance=prov,
+        )
+
+        publish_artifact(tool_ctx, h.model_dump())
+
+        assert tool_ctx.artifacts.read_harness("grid_ctf", f"openclaw_{h.id}") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -445,3 +490,39 @@ class TestRESTEndpoints:
         data = resp.json()
         assert "operations" in data
         assert "version" in data
+
+    def test_openclaw_context_is_scoped_to_each_app(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        from mts.server import app as app_module
+
+        settings_one = AppSettings(
+            runs_root=tmp_path / "runs_one",
+            knowledge_root=tmp_path / "knowledge_one",
+            skills_root=tmp_path / "skills_one",
+            claude_skills_path=tmp_path / ".claude" / "skills_one",
+        )
+        settings_two = AppSettings(
+            runs_root=tmp_path / "runs_two",
+            knowledge_root=tmp_path / "knowledge_two",
+            skills_root=tmp_path / "skills_two",
+            claude_skills_path=tmp_path / ".claude" / "skills_two",
+        )
+
+        monkeypatch.setattr(app_module, "load_settings", lambda: settings_one)
+        client_one = TestClient(app_module.create_app())
+
+        prov = ArtifactProvenance(run_id="run_1", generation=1, scenario="grid_ctf")
+        artifact = HarnessArtifact(
+            name="isolated",
+            version=1,
+            scenario="grid_ctf",
+            source_code="pass\n",
+            provenance=prov,
+        )
+        publish_resp = client_one.post("/api/openclaw/artifacts", json=artifact.model_dump(mode="json"))
+        assert publish_resp.status_code == 200
+
+        monkeypatch.setattr(app_module, "load_settings", lambda: settings_two)
+        client_two = TestClient(app_module.create_app())
+
+        assert client_one.get("/api/openclaw/artifacts").json() != []
+        assert client_two.get("/api/openclaw/artifacts").json() == []
