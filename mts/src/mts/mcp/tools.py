@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 from mts.config import AppSettings
+from mts.execution.harness_loader import HarnessLoader
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
 from mts.scenarios import SCENARIO_REGISTRY
 from mts.storage import ArtifactStore, SQLiteStore
@@ -661,3 +663,325 @@ def export_agent_task_skill(
     }
 
     return skill_package
+
+
+# -- OpenClaw operations (MTS-191) --
+
+
+_OPENCLAW_VERSION = "0.1.0"
+
+
+def evaluate_strategy(
+    scenario_name: str,
+    strategy: dict[str, object],
+    num_matches: int = 3,
+    seed_base: int = 42,
+) -> dict[str, object]:
+    """Evaluate a candidate strategy against a scenario by running matches.
+
+    Returns aggregate scores for the strategy across multiple seeds.
+    """
+    if scenario_name not in SCENARIO_REGISTRY:
+        supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
+        return {"error": f"Unknown scenario '{scenario_name}'. Available: {supported}"}
+
+    scenario = SCENARIO_REGISTRY[scenario_name]()
+    if not hasattr(scenario, "execute_match"):
+        return {
+            "error": (
+                f"'{scenario_name}' is an agent task scenario. "
+                "Use evaluate_output() for judge-based evaluation."
+            )
+        }
+
+    scores: list[float] = []
+    for i in range(num_matches):
+        result = scenario.execute_match(strategy, seed_base + i)
+        scores.append(result.score)
+
+    return {
+        "scenario": scenario_name,
+        "matches": num_matches,
+        "scores": scores,
+        "mean_score": sum(scores) / len(scores) if scores else 0.0,
+        "best_score": max(scores) if scores else 0.0,
+    }
+
+
+def validate_strategy_against_harness(
+    scenario_name: str,
+    strategy: dict[str, object],
+    ctx: MtsToolContext | None = None,
+) -> dict[str, object]:
+    """Validate a strategy against scenario constraints and any harness validators.
+
+    Checks both built-in scenario validation and any published harness artifacts.
+    """
+    if scenario_name not in SCENARIO_REGISTRY:
+        supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
+        return {"error": f"Unknown scenario '{scenario_name}'. Available: {supported}"}
+
+    scenario = SCENARIO_REGISTRY[scenario_name]()
+    if not hasattr(scenario, "validate_actions"):
+        return {
+            "valid": True,
+            "reason": "Agent task scenarios use judge evaluation, not action validation",
+        }
+
+    state = scenario.initial_state(seed=42)
+    valid, reason = scenario.validate_actions(state, "challenger", strategy)
+    harness_loaded: list[str] = []
+    harness_errors: list[str] = []
+    harness_passed = True
+
+    if valid and ctx is not None:
+        harness_loaded = _sync_published_harness_artifacts(ctx, scenario_name)
+        harness_loader = HarnessLoader(
+            ctx.artifacts.harness_dir(scenario_name),
+            timeout_seconds=ctx.settings.harness_timeout_seconds,
+        )
+        harness_loaded = harness_loader.load()
+        harness_result = harness_loader.validate_strategy(dict(strategy), scenario)
+        harness_passed = harness_result.passed
+        harness_errors = harness_result.errors
+
+    return {
+        "valid": valid and harness_passed,
+        "reason": reason,
+        "scenario": scenario_name,
+        "harness_loaded": harness_loaded,
+        "harness_passed": harness_passed,
+        "harness_errors": harness_errors,
+    }
+
+
+def _sync_published_harness_artifacts(ctx: MtsToolContext, scenario_name: str) -> list[str]:
+    """Mirror published harness artifacts into the runtime harness directory."""
+    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
+    if not artifacts_dir.exists():
+        return []
+
+    synced: list[str] = []
+    for artifact_path in sorted(artifacts_dir.glob("*.json")):
+        try:
+            artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if artifact_data.get("artifact_type") != "harness" or artifact_data.get("scenario") != scenario_name:
+            continue
+        source_code = artifact_data.get("source_code")
+        artifact_id = artifact_data.get("id", artifact_path.stem)
+        if not isinstance(source_code, str) or not source_code.strip():
+            continue
+        module_name = f"openclaw_{str(artifact_id).replace('-', '_')}"
+        ctx.artifacts.write_harness(scenario_name, module_name, source_code)
+        synced.append(module_name)
+    return synced
+
+
+def _validate_and_persist_artifact(
+    ctx: MtsToolContext,
+    artifact_data: dict[str, object],
+    artifact_type: str,
+) -> tuple[str, str]:
+    """Validate artifact data and persist to disk. Returns (artifact_id, json_content)."""
+    from mts.artifacts import DistilledModelArtifact, HarnessArtifact, PolicyArtifact
+
+    validated: HarnessArtifact | PolicyArtifact | DistilledModelArtifact
+    if artifact_type == "harness":
+        validated = HarnessArtifact.model_validate(artifact_data)
+    elif artifact_type == "policy":
+        validated = PolicyArtifact.model_validate(artifact_data)
+    else:
+        validated = DistilledModelArtifact.model_validate(artifact_data)
+
+    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = artifacts_dir / f"{validated.id}.json"
+    artifact_path.write_text(validated.model_dump_json(indent=2), encoding="utf-8")
+    if artifact_type == "harness":
+        ctx.artifacts.write_harness(validated.scenario, f"openclaw_{validated.id}", validated.source_code)
+
+    return validated.id, str(artifact_path)
+
+
+def publish_artifact(
+    ctx: MtsToolContext,
+    artifact_data: dict[str, object],
+) -> dict[str, object]:
+    """Publish an artifact (harness, policy, or distilled model) to the local store.
+
+    The artifact_data must be a valid serialized artifact dict with an artifact_type field.
+    """
+    artifact_type = artifact_data.get("artifact_type")
+    if artifact_type not in ("harness", "policy", "distilled_model"):
+        return {
+            "error": (
+                f"Invalid or missing artifact_type: {artifact_type!r}. "
+                "Must be harness, policy, or distilled_model."
+            )
+        }
+
+    try:
+        artifact_id, artifact_path = _validate_and_persist_artifact(ctx, artifact_data, str(artifact_type))
+    except Exception as exc:
+        return {"error": f"Invalid artifact data: {exc}"}
+
+    return {
+        "status": "published",
+        "artifact_id": artifact_id,
+        "artifact_type": str(artifact_type),
+        "path": artifact_path,
+    }
+
+
+def fetch_artifact(
+    ctx: MtsToolContext,
+    artifact_id: str,
+) -> dict[str, object]:
+    """Fetch a published artifact by its ID."""
+    import json as _json
+
+    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
+    artifact_path = artifacts_dir / f"{artifact_id}.json"
+    if not artifact_path.exists():
+        return {"error": f"Artifact '{artifact_id}' not found"}
+
+    data: dict[str, object] = _json.loads(artifact_path.read_text(encoding="utf-8"))
+    return data
+
+
+def list_artifacts(
+    ctx: MtsToolContext,
+    scenario: str | None = None,
+    artifact_type: str | None = None,
+) -> list[dict[str, object]]:
+    """List published artifacts, optionally filtered by scenario or type."""
+    import json as _json
+
+    artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
+    if not artifacts_dir.exists():
+        return []
+
+    results: list[dict[str, object]] = []
+    for path in sorted(artifacts_dir.glob("*.json")):
+        try:
+            data: dict[str, object] = _json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if scenario and data.get("scenario") != scenario:
+            continue
+        if artifact_type and data.get("artifact_type") != artifact_type:
+            continue
+        results.append({
+            "id": data.get("id", path.stem),
+            "name": data.get("name", ""),
+            "artifact_type": data.get("artifact_type", ""),
+            "scenario": data.get("scenario", ""),
+            "version": data.get("version", 0),
+        })
+    return results
+
+
+def distill_status(
+    ctx: MtsToolContext,
+) -> dict[str, object]:
+    """Return the status of distillation workflows.
+
+    Distillation is a placeholder for future training sidecar integration.
+    Currently returns an empty job list.
+    """
+    jobs_dir = ctx.settings.knowledge_root / "_openclaw_distill_jobs"
+    jobs: list[dict[str, object]] = []
+    if jobs_dir.exists():
+        import json as _json
+
+        for path in sorted(jobs_dir.glob("*.json")):
+            try:
+                data: dict[str, object] = _json.loads(path.read_text(encoding="utf-8"))
+                jobs.append(data)
+            except Exception:
+                continue
+
+    return {
+        "active_jobs": len([j for j in jobs if j.get("status") in ("pending", "running")]),
+        "jobs": jobs,
+    }
+
+
+def trigger_distillation(
+    ctx: MtsToolContext,
+    scenario: str,
+    source_artifact_ids: list[str] | None = None,
+) -> dict[str, object]:
+    """Trigger a distillation workflow for a scenario.
+
+    Creates a pending distillation job. The actual training would be handled
+    by the training sidecar (future integration).
+    """
+    import json as _json
+    import uuid
+
+    job_id = uuid.uuid4().hex
+    jobs_dir = ctx.settings.knowledge_root / "_openclaw_distill_jobs"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+
+    job: dict[str, object] = {
+        "job_id": job_id,
+        "scenario": scenario,
+        "source_artifact_ids": source_artifact_ids or [],
+        "status": "pending",
+    }
+    (jobs_dir / f"{job_id}.json").write_text(
+        _json.dumps(job, indent=2), encoding="utf-8"
+    )
+
+    return {"job_id": job_id, "status": "pending", "scenario": scenario}
+
+
+def get_capabilities() -> dict[str, object]:
+    """Return capability metadata for this MTS instance.
+
+    Lists all available OpenClaw operations and their descriptions,
+    enabling clients to discover what this MTS instance can do.
+    """
+    return {
+        "version": _OPENCLAW_VERSION,
+        "operations": [
+            {
+                "name": "evaluate_strategy",
+                "description": "Evaluate a candidate strategy by running tournament matches",
+                "input": "scenario_name, strategy, num_matches, seed_base",
+            },
+            {
+                "name": "validate_strategy",
+                "description": "Validate a strategy against scenario constraints and harness validators",
+                "input": "scenario_name, strategy",
+            },
+            {
+                "name": "publish_artifact",
+                "description": "Publish a harness, policy, or distilled model artifact",
+                "input": "artifact_data (serialized artifact dict)",
+            },
+            {
+                "name": "fetch_artifact",
+                "description": "Fetch a published artifact by ID",
+                "input": "artifact_id",
+            },
+            {
+                "name": "list_artifacts",
+                "description": "List published artifacts with optional filters",
+                "input": "scenario (optional), artifact_type (optional)",
+            },
+            {
+                "name": "distill_status",
+                "description": "Check status of distillation workflows",
+                "input": "(none)",
+            },
+            {
+                "name": "trigger_distillation",
+                "description": "Trigger a distillation workflow for a scenario",
+                "input": "scenario, source_artifact_ids (optional)",
+            },
+        ],
+    }
