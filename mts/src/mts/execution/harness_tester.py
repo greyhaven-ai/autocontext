@@ -7,6 +7,7 @@ collecting structured failure reports suitable for LLM-driven refinement.
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -70,7 +71,14 @@ class HarnessTester:
         self._timeout_per_test = timeout_per_test
         self._max_failures_reported = max_failures_reported
 
-    def test_harness(self, harness_source: str, sample_states: list[SampleState]) -> HarnessTestReport:
+    def test_harness(
+        self,
+        harness_source: str,
+        sample_states: list[SampleState],
+        *,
+        scenario: Any | None = None,
+        required_functions: list[str] | None = None,
+    ) -> HarnessTestReport:
         """Run *harness_source* against every state and return a structured report."""
         t0 = time.monotonic()
 
@@ -133,6 +141,28 @@ class HarnessTester:
         fn_enumerate = namespace.get("enumerate_legal_actions")
         fn_is_legal = namespace.get("is_legal_action")
         fn_validate = namespace.get("validate_strategy")
+        callables: dict[str, Any] = {
+            "enumerate_legal_actions": fn_enumerate if callable(fn_enumerate) else None,
+            "is_legal_action": fn_is_legal if callable(fn_is_legal) else None,
+            "validate_strategy": fn_validate if callable(fn_validate) else None,
+        }
+
+        missing = [name for name in (required_functions or []) if callables.get(name) is None]
+        if missing:
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            failures = self._make_blanket_failures(
+                sample_states,
+                "missing_function",
+                f"missing required harness function(s): {', '.join(missing)}",
+            )
+            return HarnessTestReport(
+                total_tests=len(sample_states),
+                passed=0,
+                failed=len(sample_states),
+                accuracy=0.0,
+                failures=failures,
+                execution_time_ms=elapsed_ms,
+            )
 
         # ── Run tests in parallel ────────────────────────────────────────
         all_failures: list[HarnessTestFailure] = []
@@ -143,9 +173,10 @@ class HarnessTester:
             pool.submit(
                 _test_single_state,
                 sample,
-                fn_enumerate=fn_enumerate if callable(fn_enumerate) else None,
-                fn_is_legal=fn_is_legal if callable(fn_is_legal) else None,
-                fn_validate=fn_validate if callable(fn_validate) else None,
+                fn_enumerate=callables["enumerate_legal_actions"],
+                fn_is_legal=callables["is_legal_action"],
+                fn_validate=callables["validate_strategy"],
+                scenario=scenario,
             ): sample
             for sample in sample_states
         }
@@ -283,6 +314,7 @@ def _test_single_state(
     fn_enumerate: Any | None,
     fn_is_legal: Any | None,
     fn_validate: Any | None,
+    scenario: Any | None,
 ) -> HarnessTestFailure | None:
     """Test all available harness functions against a single sample state.
 
@@ -355,7 +387,38 @@ def _test_single_state(
     # Test validate_strategy doesn't crash (no ground truth needed)
     if fn_validate is not None:
         try:
-            fn_validate(state, None)
+            strategy = _example_strategy_from_sample(sample, scenario)
+            if strategy is None:
+                if scenario is None and sample.expected_legal_actions is None:
+                    return None
+                return HarnessTestFailure(
+                    state=state,
+                    function_name="validate_strategy",
+                    expected="a valid example strategy",
+                    actual=None,
+                    error="could not derive an example strategy from sample state",
+                    state_description=sample.description,
+                )
+            result = fn_validate(strategy, scenario)
+            if not _validation_result_is_valid(result):
+                return HarnessTestFailure(
+                    state=state,
+                    function_name="validate_strategy",
+                    expected="tuple[bool, list[str]]",
+                    actual=result,
+                    error="validate_strategy returned an invalid result shape",
+                    state_description=sample.description,
+                )
+            passed, errors = result
+            if not passed:
+                return HarnessTestFailure(
+                    state=state,
+                    function_name="validate_strategy",
+                    expected=True,
+                    actual=result,
+                    error=f"rejected derived valid strategy: {errors}",
+                    state_description=sample.description,
+                )
         except Exception as exc:
             return HarnessTestFailure(
                 state=state,
@@ -375,6 +438,70 @@ def _actions_match(expected: list[dict[str, Any]], actual: Any) -> bool:
         return False
     if len(expected) != len(actual):
         return False
-    expected_keys = sorted(str(a.get("action", a)) for a in expected)
-    actual_keys = sorted(str(a.get("action", a)) for a in actual)
+    expected_keys = sorted(json.dumps(_normalize_action(a), sort_keys=True) for a in expected)
+    actual_keys = sorted(json.dumps(_normalize_action(a), sort_keys=True) for a in actual)
     return expected_keys == actual_keys
+
+
+def _normalize_action(value: Any) -> Any:
+    """Normalize nested action descriptors for stable equality checks."""
+    if isinstance(value, dict):
+        return {key: _normalize_action(val) for key, val in sorted(value.items())}
+    if isinstance(value, list):
+        return [_normalize_action(item) for item in value]
+    return value
+
+
+def _validation_result_is_valid(result: Any) -> bool:
+    """Check the validate_strategy return contract."""
+    return (
+        isinstance(result, tuple)
+        and len(result) == 2
+        and isinstance(result[0], bool)
+        and isinstance(result[1], list)
+        and all(isinstance(item, str) for item in result[1])
+    )
+
+
+def _example_strategy_from_sample(sample: SampleState, scenario: Any | None) -> dict[str, Any] | None:
+    """Derive a valid example strategy from the sample's legal-action metadata."""
+    legal_actions = sample.expected_legal_actions
+    if legal_actions is None and scenario is not None:
+        enumerate_fn = getattr(scenario, "enumerate_legal_actions", None)
+        if callable(enumerate_fn):
+            enumerated = enumerate_fn(sample.state)
+            if isinstance(enumerated, list):
+                legal_actions = enumerated
+    if not legal_actions:
+        return None
+
+    if all(isinstance(action, dict) and action.get("type") == "continuous" and "range" in action for action in legal_actions):
+        low_strategy: dict[str, Any] = {}
+        midpoint_strategy: dict[str, Any] = {}
+        for action in legal_actions:
+            low, high = action["range"]
+            low_strategy[str(action["action"])] = round(float(low), 4)
+            midpoint = (float(low) + float(high)) / 2.0
+            midpoint_strategy[str(action["action"])] = round(midpoint, 4)
+        for candidate in (midpoint_strategy, low_strategy):
+            if _strategy_is_valid(sample, scenario, candidate):
+                return candidate
+        return None
+
+    first_action = legal_actions[0]
+    if isinstance(first_action, dict):
+        candidate = dict(first_action)
+        if _strategy_is_valid(sample, scenario, candidate):
+            return candidate
+    return None
+
+
+def _strategy_is_valid(sample: SampleState, scenario: Any | None, strategy: dict[str, Any]) -> bool:
+    """Check whether the example strategy satisfies the scenario contract when available."""
+    if scenario is None:
+        return True
+    validate_fn = getattr(scenario, "validate_actions", None)
+    if not callable(validate_fn):
+        return True
+    valid, _ = validate_fn(sample.state, "harness_tester", strategy)
+    return bool(valid)

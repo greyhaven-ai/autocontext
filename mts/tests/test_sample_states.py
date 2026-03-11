@@ -1,6 +1,7 @@
 """Tests for SampleStateGenerator — diverse game state generation for harness testing."""
 from __future__ import annotations
 
+import random
 from collections.abc import Mapping
 from typing import Any
 
@@ -211,3 +212,17 @@ class TestSampleStateGeneratorRealScenarios:
         states = gen.generate_with_ground_truth()
         has_actions = [s for s in states if s.expected_legal_actions is not None]
         assert len(has_actions) > 0
+
+    def test_grid_ctf_random_actions_respect_constraints(self) -> None:
+        from mts.scenarios.grid_ctf import GridCtfScenario
+
+        scenario = GridCtfScenario()
+        gen = SampleStateGenerator(scenario, n_states=1)
+        rng = random.Random(7)
+        state = scenario.initial_state(seed=7)
+
+        for _ in range(25):
+            actions = gen._random_actions(state, rng)
+            assert actions is not None
+            valid, _ = scenario.validate_actions(state, "generator", actions)
+            assert valid

@@ -141,6 +141,9 @@ class SampleStateGenerator:
                 break
 
             actions = self._random_actions(state, rng)
+            if actions is None:
+                LOGGER.debug("no valid actions generated during simulation for seed %d", seed)
+                break
             try:
                 state = self._scenario.step(state, actions)
             except Exception:
@@ -151,20 +154,47 @@ class SampleStateGenerator:
 
         return states
 
-    def _random_actions(self, state: dict[str, Any], rng: random.Random) -> dict[str, Any]:
+    def _random_actions(self, state: dict[str, Any], rng: random.Random) -> dict[str, Any] | None:
         """Generate random valid actions for the current state."""
         legal = self._scenario.enumerate_legal_actions(state)
         if legal is not None and len(legal) > 0:
             # Check if continuous parameter space
             if all(a.get("type") == "continuous" and "range" in a for a in legal):
-                actions: dict[str, Any] = {}
+                baseline: dict[str, Any] = {}
                 for a in legal:
-                    low, high = a["range"]
-                    actions[str(a["action"])] = round(rng.uniform(float(low), float(high)), 4)
-                return actions
+                    low, _ = a["range"]
+                    baseline[str(a["action"])] = round(float(low), 4)
+                if self._is_valid_action(state, baseline):
+                    return baseline
+
+                for _ in range(32):
+                    actions: dict[str, Any] = {}
+                    for a in legal:
+                        low, high = a["range"]
+                        actions[str(a["action"])] = round(rng.uniform(float(low), float(high)), 4)
+                    if self._is_valid_action(state, actions):
+                        return actions
+                return None
             # Discrete: pick one
-            choice = rng.choice(legal)
-            return dict(choice)
+            choices = list(legal)
+            rng.shuffle(choices)
+            for choice in choices:
+                candidate = dict(choice)
+                if self._is_valid_action(state, candidate):
+                    return candidate
+            return None
 
         # Fallback: try a simple strategy with random values
-        return {"value": round(rng.random(), 4)}
+        candidate = {"value": round(rng.random(), 4)}
+        if self._is_valid_action(state, candidate):
+            return candidate
+        return None
+
+    def _is_valid_action(self, state: dict[str, Any], actions: dict[str, Any]) -> bool:
+        """Return whether the scenario accepts the candidate action mapping."""
+        try:
+            valid, _ = self._scenario.validate_actions(state, "generator", actions)
+        except Exception:
+            LOGGER.debug("validate_actions failed during sampling", exc_info=True)
+            return False
+        return valid

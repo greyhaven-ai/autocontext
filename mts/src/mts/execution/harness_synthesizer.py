@@ -91,7 +91,7 @@ class HarnessSynthesizer:
 
         failure_log: list[str] = []
         best_source = ""
-        best_accuracy = 0.0
+        best_accuracy = -1.0
         current_source = ""
 
         for iteration in range(1, self._max_iterations + 1):
@@ -107,7 +107,12 @@ class HarnessSynthesizer:
                 current_source = extracted
 
             # ── Test ──────────────────────────────────────────────────────
-            report = self._tester.test_harness(current_source, sample_states)
+            report = self._tester.test_harness(
+                current_source,
+                sample_states,
+                scenario=self._scenario,
+                required_functions=target_functions,
+            )
 
             LOGGER.info(
                 "synthesis iteration %d: accuracy=%.2f (%d/%d passed)",
@@ -194,12 +199,14 @@ class HarnessSynthesizer:
             "test failures. Return ONLY valid Python code with no imports. "
             "Only safe builtins are available."
         )
+        func_specs = "\n".join(f"- {fn}" for fn in target_functions)
         user_prompt = (
             f"The following harness code for '{self._scenario.name}' has failures:\n\n"
             f"```python\n{current_source}\n```\n\n"
             f"Test failures:\n{failure_context}\n\n"
             f"Scenario rules:\n{self._scenario.describe_rules()}\n\n"
             f"Strategy interface:\n{self._scenario.describe_strategy_interface()}\n\n"
+            f"Required functions:\n{func_specs}\n\n"
             "Fix the code and return ONLY the corrected Python code."
         )
         result = self._provider.complete(
