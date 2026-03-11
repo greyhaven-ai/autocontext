@@ -80,6 +80,9 @@ class TieredGateOrchestrator:
         if not validity_result.passed:
             can_retry = self._validity_gate.consume_retry()
             decision: Literal["retry", "rollback"] = "retry" if can_retry else "rollback"
+            remaining_validity_budget = validity_result.retry_budget_remaining
+            if can_retry:
+                remaining_validity_budget = max(0, remaining_validity_budget - 1)
             return TieredGateResult(
                 tier="validity",
                 decision=decision,
@@ -88,7 +91,7 @@ class TieredGateOrchestrator:
                 quality_delta=None,
                 quality_threshold=None,
                 retry_budget_remaining=max_retries - retry_count,
-                validity_retry_budget_remaining=validity_result.retry_budget_remaining,
+                validity_retry_budget_remaining=remaining_validity_budget,
             )
 
         # --- Tier 2: Quality ---
