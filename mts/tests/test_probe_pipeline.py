@@ -27,6 +27,7 @@ def test_pipeline_calls_probe_when_enabled() -> None:
     with (
         patch("mts.loop.generation_pipeline.stage_knowledge_setup", return_value=mock_ctx),
         patch("mts.loop.generation_pipeline.stage_agent_generation", return_value=mock_ctx),
+        patch("mts.loop.generation_pipeline.stage_staged_validation", return_value=mock_ctx),
         patch("mts.loop.generation_pipeline.stage_prevalidation", return_value=mock_ctx),
         patch("mts.loop.generation_pipeline.stage_probe", return_value=mock_ctx) as mock_probe,
         patch("mts.loop.generation_pipeline.stage_tournament", return_value=mock_ctx),
@@ -60,6 +61,7 @@ def test_pipeline_skips_probe_when_disabled() -> None:
     with (
         patch("mts.loop.generation_pipeline.stage_knowledge_setup", return_value=mock_ctx),
         patch("mts.loop.generation_pipeline.stage_agent_generation", return_value=mock_ctx),
+        patch("mts.loop.generation_pipeline.stage_staged_validation", return_value=mock_ctx),
         patch("mts.loop.generation_pipeline.stage_prevalidation", return_value=mock_ctx),
         patch("mts.loop.generation_pipeline.stage_probe", return_value=mock_ctx) as mock_probe,
         patch("mts.loop.generation_pipeline.stage_tournament", return_value=mock_ctx),

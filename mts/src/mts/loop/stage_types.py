@@ -51,6 +51,10 @@ class GenerationContext:
     # Pipeline wiring: tuning proposal from architect (AR-6)
     tuning_proposal: TuningConfig | None = None
 
+    # Staged validation results (AC-200)
+    staged_validation_results: list[Any] | None = None
+    staged_validation_metrics: dict[str, Any] | None = None
+
 
 @dataclass(slots=True)
 class StageResult:

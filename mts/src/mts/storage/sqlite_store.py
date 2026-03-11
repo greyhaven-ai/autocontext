@@ -111,6 +111,57 @@ class SQLiteStore:
                 (run_id, generation_index, seed, score, int(passed_validation), validation_errors),
             )
 
+    def insert_staged_validation_results(
+        self,
+        run_id: str,
+        generation_index: int,
+        results: list[dict[str, Any]],
+    ) -> None:
+        """Persist per-stage validation results from the staged pipeline."""
+        if not results:
+            return
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO staged_validation_results(
+                    run_id, generation_index, stage_order, stage_name,
+                    status, duration_ms, error, error_code
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        run_id,
+                        generation_index,
+                        r["stage_order"],
+                        r["stage_name"],
+                        r["status"],
+                        r["duration_ms"],
+                        r.get("error"),
+                        r.get("error_code"),
+                    )
+                    for r in results
+                ],
+            )
+
+    def get_staged_validation_results(
+        self,
+        run_id: str,
+        generation_index: int,
+    ) -> list[dict[str, Any]]:
+        """Retrieve staged validation results for a generation, ordered by stage."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT stage_order, stage_name, status, duration_ms, error, error_code
+                FROM staged_validation_results
+                WHERE run_id = ? AND generation_index = ?
+                ORDER BY stage_order
+                """,
+                (run_id, generation_index),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def append_agent_output(self, run_id: str, generation_index: int, role: str, content: str) -> None:
         self.append_generation_agent_activity(
             run_id,
