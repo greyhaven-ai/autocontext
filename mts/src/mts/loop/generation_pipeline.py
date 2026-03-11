@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from mts.knowledge.coherence import check_coherence
 from mts.loop.stage_prevalidation import stage_prevalidation
 from mts.loop.stage_probe import stage_probe
+from mts.loop.stage_staged_validation import stage_staged_validation
 from mts.loop.stage_tree_search import stage_tree_search
 from mts.loop.stage_types import GenerationContext
 from mts.loop.stages import (
@@ -143,6 +144,13 @@ class GenerationPipeline:
                     role, message = chat_request
                     response = self._chat_with_agent_fn(role, message, ctx.prompts, ctx.tool_context)
                     self._controller.respond_chat(role, response)
+
+            # Stage 2.3: Staged validation (progressive checks before tournament)
+            ctx = stage_staged_validation(
+                ctx,
+                events=self._events,
+                sqlite=self._sqlite,
+            )
 
             # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
             harness_loader = None

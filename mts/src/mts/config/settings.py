@@ -201,6 +201,10 @@ class AppSettings(BaseModel):
     config_adaptive_enabled: bool = Field(
         default=False, description="Allow architect to propose meta-parameter tuning",
     )
+    # Staged validation (AC-200)
+    staged_validation_enabled: bool = Field(
+        default=True, description="Use staged validation pipeline for pre-tournament checks",
+    )
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
