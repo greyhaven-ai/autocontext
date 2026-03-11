@@ -573,6 +573,7 @@
             "type": "string"
           },
           "message": {
+            "minLength": 1,
             "title": "Message",
             "type": "string"
           }
@@ -607,6 +608,7 @@
             "type": "string"
           },
           "description": {
+            "minLength": 1,
             "title": "Description",
             "type": "string"
           }
@@ -627,6 +629,7 @@
             "type": "string"
           },
           "text": {
+            "minLength": 1,
             "title": "Text",
             "type": "string"
           }
@@ -711,6 +714,7 @@
             "type": "string"
           },
           "feedback": {
+            "minLength": 1,
             "title": "Feedback",
             "type": "string"
           }
@@ -735,6 +739,7 @@
             "type": "string"
           },
           "generations": {
+            "exclusiveMinimum": 0,
             "title": "Generations",
             "type": "integer"
           }

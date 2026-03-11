@@ -182,6 +182,24 @@ class TestClientMessageParsing:
         with pytest.raises(ValidationError):
             parse_client_message({"type": "override_gate", "decision": "invalid"})
 
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            {"type": "inject_hint", "text": ""},
+            {"type": "chat_agent", "role": "analyst", "message": ""},
+            {"type": "create_scenario", "description": ""},
+            {"type": "revise_scenario", "feedback": ""},
+        ],
+    )
+    def test_empty_required_strings_rejected(self, raw: dict[str, object]) -> None:
+        with pytest.raises(ValidationError):
+            parse_client_message(raw)
+
+    @pytest.mark.parametrize("generations", [0, -1])
+    def test_non_positive_generations_rejected(self, generations: int) -> None:
+        with pytest.raises(ValidationError):
+            parse_client_message({"type": "start_run", "scenario": "grid_ctf", "generations": generations})
+
 
 class TestEventPayloads:
     """Verify each event payload model validates its expected shape."""
