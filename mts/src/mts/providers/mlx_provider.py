@@ -6,7 +6,6 @@ module is importable for type-checking even when MLX is not installed.
 """
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -14,6 +13,20 @@ from typing import Any
 from mts.providers.base import CompletionResult, LLMProvider, ProviderError
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _resolve_weights_path(model_dir: Path) -> Path:
+    """Resolve the safetensors weights file from a model bundle directory."""
+    preferred = model_dir / "model.safetensors"
+    if preferred.exists():
+        return preferred
+
+    candidates = sorted(model_dir.glob("*.safetensors"))
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ProviderError(f"Model weights (safetensors) not found in: {model_dir}")
+    raise ProviderError(f"Multiple safetensors checkpoints found in {model_dir}; expected model.safetensors")
 
 
 def _load_model_and_tokenizer(model_dir: Path) -> tuple[Any, Any]:
@@ -45,20 +58,22 @@ def _load_model_and_tokenizer(model_dir: Path) -> tuple[Any, Any]:
         ) from exc
 
     # Load config
+    import json
+
     config_path = model_dir / "config.json"
     if not config_path.exists():
-        raise ProviderError(f"Model config not found: {config_path}")
+        raise ProviderError(
+            f"Model config not found: {config_path}. "
+            "Generate an inference bundle with save_inference_bundle()."
+        )
 
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         raw_config = json.load(f)
 
     cfg = ModelConfig(**{k: v for k, v in raw_config.items() if hasattr(ModelConfig, k)})
 
     # Load model weights
-    weights_path = model_dir / "model.safetensors"
-    if not weights_path.exists():
-        raise ProviderError(f"Model weights (safetensors) not found: {weights_path}")
-
+    weights_path = _resolve_weights_path(model_dir)
     model = GPTModel(cfg)
     load_checkpoint(model, weights_path)
     mx.eval(model.parameters())
@@ -75,10 +90,13 @@ def _load_tokenizer(model_dir: Path) -> Any:
     Tries tokenizer.json first, falls back to training a new one from
     the model config.
     """
+    import json
+
     try:
         import tiktoken  # type: ignore[import-not-found]
 
         from mts.training.autoresearch.prepare import (
+            _BPE_PAT,
             BASE_VOCAB_SIZE,
             AutoresearchTokenizer,
             build_special_tokens,
@@ -90,7 +108,7 @@ def _load_tokenizer(model_dir: Path) -> Any:
     if not tokenizer_path.exists():
         raise ProviderError(f"Tokenizer not found: {tokenizer_path}")
 
-    with open(tokenizer_path) as f:
+    with open(tokenizer_path, encoding="utf-8") as f:
         tok_data = json.load(f)
 
     # If the tokenizer file contains mergeable_ranks, build a tiktoken encoding
@@ -100,22 +118,16 @@ def _load_tokenizer(model_dir: Path) -> Any:
         import base64
 
         decoded_ranks = {base64.b64decode(k): v for k, v in mergeable_ranks.items()}
-        special_tokens = build_special_tokens(BASE_VOCAB_SIZE)
-        _BPE_PAT = (
-            r"(?i:'s|'t|'re|'ve|'m|'ll|'d)"
-            r"|[^\r\n\p{L}\p{N}]?\p{L}+"
-            r"|\p{N}{1,3}"
-            r"| ?[^\s\p{L}\p{N}]+[\r\n]*"
-            r"|\s*[\r\n]+"
-            r"|\s+"
-        )
+        base_vocab_size = int(tok_data.get("base_vocab_size", BASE_VOCAB_SIZE))
+        pat_str = str(tok_data.get("pat_str", _BPE_PAT))
+        special_tokens = build_special_tokens(base_vocab_size)
         enc = tiktoken.Encoding(
             name="mts_mlx_provider",
-            pat_str=_BPE_PAT,
+            pat_str=pat_str,
             mergeable_ranks=decoded_ranks,
             special_tokens=special_tokens,
         )
-        return AutoresearchTokenizer(enc, base_vocab_size=BASE_VOCAB_SIZE)
+        return AutoresearchTokenizer(enc, base_vocab_size=base_vocab_size)
 
     # Fallback: return a simple mock-compatible tokenizer for testing
     raise ProviderError(f"Unsupported tokenizer format in {tokenizer_path}")
@@ -139,8 +151,7 @@ class MLXProvider(LLMProvider):
             raise ProviderError(f"Model path does not exist: {model_path}")
         if not (model_dir / "config.json").exists():
             raise ProviderError(f"Model config not found: {model_dir / 'config.json'}")
-        if not (model_dir / "model.safetensors").exists():
-            raise ProviderError(f"Model weights (safetensors) not found: {model_dir / 'model.safetensors'}")
+        _resolve_weights_path(model_dir)
 
         self._model_path = model_path
         self._temperature = temperature
@@ -188,9 +199,13 @@ class MLXProvider(LLMProvider):
         Returns:
             Decoded output text.
         """
-        token_ids = self._tokenizer.encode(prompt)
-        new_tokens = self._sample_tokens(token_ids, temperature=temperature, max_tokens=max_tokens)
-        decoded: str = self._tokenizer.decode(new_tokens)
+        prompt_tokens = self._tokenizer.encode(prompt)
+        all_tokens = self._sample_tokens(prompt_tokens, temperature=temperature, max_tokens=max_tokens)
+        generated_tokens = all_tokens[len(prompt_tokens):]
+        end_token_id = getattr(self._tokenizer, "end_token_id", None)
+        if generated_tokens and end_token_id is not None and generated_tokens[-1] == end_token_id:
+            generated_tokens = generated_tokens[:-1]
+        decoded: str = self._tokenizer.decode(generated_tokens)
         return decoded
 
     def _sample_tokens(

@@ -37,6 +37,17 @@ def _fake_tokenizer(*, end_token_id: int = 8196) -> MagicMock:
     return tok
 
 
+def _fake_serializable_tokenizer() -> MagicMock:
+    """Build a tokenizer with the metadata needed for JSON serialization."""
+    tok = _fake_tokenizer()
+    encoding = MagicMock()
+    encoding._mergeable_ranks = {b"a": 0, b"b": 1}
+    encoding._pat_str = r"\w+|\s+"
+    tok._encoding = encoding
+    tok.base_vocab_size = 256
+    return tok
+
+
 def _fake_model(*, vocab_size: int = 8197, seq_len: int = 2048) -> MagicMock:
     """Build a mock model that returns logits."""
     model = MagicMock()
@@ -329,6 +340,24 @@ class TestAutoRegressiveSampling:
         assert isinstance(result, str)
 
     @patch("mts.providers.mlx_provider._load_model_and_tokenizer")
+    def test_generate_decodes_only_generated_tokens(self, mock_load: MagicMock, tmp_path: Path) -> None:
+        """The provider should not echo prompt tokens back in the returned text."""
+        from mts.providers.mlx_provider import MLXProvider
+
+        _write_fake_checkpoint(tmp_path / "model")
+        tokenizer = _fake_tokenizer()
+        tokenizer.encode.side_effect = lambda text, **kwargs: [1, 2, 3]
+        tokenizer.decode.side_effect = lambda token_ids: '{"action": "move"}'
+        mock_load.return_value = (_fake_model(), tokenizer)
+
+        provider = MLXProvider(model_path=str(tmp_path / "model"))
+        with patch.object(provider, "_sample_tokens", return_value=[1, 2, 3, 10, 20, tokenizer.end_token_id]):
+            result = provider._generate("prompt", temperature=0.8, max_tokens=32)
+
+        tokenizer.decode.assert_called_once_with([10, 20])
+        assert result == '{"action": "move"}'
+
+    @patch("mts.providers.mlx_provider._load_model_and_tokenizer")
     def test_generate_respects_max_tokens(self, mock_load: MagicMock, tmp_path: Path) -> None:
         """Generation should stop after max_tokens even without end token."""
         from mts.providers.mlx_provider import MLXProvider
@@ -427,3 +456,73 @@ class TestRegistryWiring:
 
         with pytest.raises(ProviderError, match="mlx"):
             create_provider("magic-llm")
+
+
+class TestAgentLoopWiring:
+    @patch("mts.agents.llm_client.MLXProvider")
+    def test_build_client_from_settings_supports_mlx(self, mock_provider: MagicMock, tmp_path: Path) -> None:
+        """The main agent loop should be able to build an MLX-backed client."""
+        from mts.agents.llm_client import MLXClient, build_client_from_settings
+        from mts.config.settings import AppSettings
+
+        mock_instance = MagicMock()
+        mock_instance.default_model.return_value = str(tmp_path / "bundle")
+        mock_instance.complete.return_value = CompletionResult(text='{"action": "move"}', model=str(tmp_path / "bundle"))
+        mock_provider.return_value = mock_instance
+
+        settings = AppSettings(agent_provider="mlx", mlx_model_path=str(tmp_path / "bundle"))
+        client = build_client_from_settings(settings)
+        assert isinstance(client, MLXClient)
+
+    @patch("mts.agents.llm_client.MLXProvider")
+    def test_mlx_client_generate_uses_provider_completion(self, mock_provider: MagicMock, tmp_path: Path) -> None:
+        """MLXClient should adapt provider completions into ModelResponse for agents."""
+        from mts.agents.llm_client import MLXClient
+
+        mock_instance = MagicMock()
+        mock_instance.default_model.return_value = str(tmp_path / "bundle")
+        mock_instance.complete.return_value = CompletionResult(
+            text='{"action": "move"}',
+            model=str(tmp_path / "bundle"),
+            usage={"input_tokens": 11, "output_tokens": 5},
+        )
+        mock_provider.return_value = mock_instance
+
+        client = MLXClient(str(tmp_path / "bundle"))
+        response = client.generate(
+            model="ignored",
+            prompt="describe your strategy",
+            max_tokens=128,
+            temperature=0.3,
+        )
+        assert response.text == '{"action": "move"}'
+        assert response.usage.input_tokens == 11
+        assert response.usage.output_tokens == 5
+
+
+class TestBundleCompatibility:
+    def test_save_tokenizer_json_persists_provider_format(self, tmp_path: Path) -> None:
+        from mts.training.autoresearch.prepare import save_tokenizer_json
+
+        tokenizer = _fake_serializable_tokenizer()
+        path = tmp_path / "tokenizer.json"
+        save_tokenizer_json(tokenizer, path)
+
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["base_vocab_size"] == 256
+        assert "mergeable_ranks" in payload
+        assert "pat_str" in payload
+
+    @patch("mts.training.autoresearch.train.save_checkpoint")
+    def test_save_inference_bundle_writes_provider_artifacts(self, mock_save_checkpoint: MagicMock, tmp_path: Path) -> None:
+        from mts.training.autoresearch.train import ModelConfig, save_inference_bundle
+
+        bundle_dir = tmp_path / "bundle"
+        tokenizer = _fake_serializable_tokenizer()
+        model = MagicMock()
+
+        save_inference_bundle(model, ModelConfig(), tokenizer, bundle_dir)
+
+        assert (bundle_dir / "config.json").exists()
+        assert (bundle_dir / "tokenizer.json").exists()
+        mock_save_checkpoint.assert_called_once_with(model, bundle_dir / "model.safetensors")
