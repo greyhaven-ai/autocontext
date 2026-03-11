@@ -70,6 +70,20 @@ BAD_HARNESS_IMPORT = textwrap.dedent("""\
         return True, []
 """)
 
+BAD_HARNESS_WRONG_METADATA = textwrap.dedent("""\
+    def validate_strategy(strategy, scenario):
+        return True, []
+
+    def enumerate_legal_actions(state):
+        return [
+            {"action": "up", "range": [9.0, 9.0]},
+            {"action": "down", "range": [9.0, 9.0]},
+        ]
+
+    def is_legal_action(state, action):
+        return action.get("action") in ("up", "down")
+""")
+
 
 # ── HarnessTestFailure dataclass ──────────────────────────────────────────────
 
@@ -175,6 +189,13 @@ class TestHarnessTesterBadHarness:
         assert report.failed == report.total_tests
         assert report.accuracy == 0.0
 
+    def test_action_metadata_mismatch_detected(self) -> None:
+        tester = HarnessTester()
+        states = _make_states(3)
+        report = tester.test_harness(BAD_HARNESS_WRONG_METADATA, states)
+        assert report.failed > 0
+        assert report.accuracy < 1.0
+
 
 # ── Max failures limit ────────────────────────────────────────────────────────
 
@@ -269,13 +290,33 @@ class TestHarnessTesterEdgeCases:
         assert report.passed == 1
 
     def test_harness_missing_function(self) -> None:
-        """Harness that lacks expected functions should report failures."""
+        """Missing required functions should report failures when requested."""
         harness = textwrap.dedent("""\
             def validate_strategy(strategy, scenario):
                 return True, []
         """)
         tester = HarnessTester()
         states = _make_states(3)
-        report = tester.test_harness(harness, states)
-        # Should still work — just can't test enumerate_legal_actions / is_legal_action
-        assert report.total_tests == 3
+        report = tester.test_harness(
+            harness,
+            states,
+            required_functions=["validate_strategy", "enumerate_legal_actions", "is_legal_action"],
+        )
+        assert report.failed == report.total_tests
+        assert report.accuracy == 0.0
+
+    def test_validate_strategy_receives_real_contract(self) -> None:
+        harness = textwrap.dedent("""\
+            def validate_strategy(strategy, scenario):
+                return strategy.get("action") == "up" and scenario is not None, []
+
+            def enumerate_legal_actions(state):
+                return [{"action": "up"}, {"action": "down"}]
+
+            def is_legal_action(state, action):
+                return action.get("action") in ("up", "down")
+        """)
+        tester = HarnessTester()
+        states = _make_states(1)
+        report = tester.test_harness(harness, states, scenario=object())
+        assert report.failed == 0

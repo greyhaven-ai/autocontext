@@ -300,6 +300,19 @@ class TestHarnessSynthesizerTargetFunctions:
         result = synth.synthesize(states)
         assert result.converged
 
+    def test_default_target_functions_reject_missing_callables(self) -> None:
+        harness_validate_only = textwrap.dedent("""\
+            def validate_strategy(strategy, scenario):
+                return True, []
+        """)
+        provider = MockProvider([harness_validate_only])
+        scenario = FakeScenario()
+        synth = HarnessSynthesizer(scenario, provider, max_iterations=1)
+        states = _make_states()
+        result = synth.synthesize(states)
+        assert not result.converged
+        assert result.accuracy == 0.0
+
     def test_custom_target_functions(self) -> None:
         """Can request just validate_strategy."""
         harness_validate_only = textwrap.dedent("""\
