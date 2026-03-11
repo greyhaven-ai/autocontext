@@ -23,6 +23,45 @@ if HAS_MLX:
     import mlx.core as mx  # type: ignore[import-not-found]
 
 
+BASE_VOCAB_SIZE = 8192
+SPECIAL_TOKEN_STRINGS = (
+    "<|scenario|>",
+    "<|context|>",
+    "<|strategy|>",
+    "<|score|>",
+    "<|end|>",
+)
+
+
+def build_special_tokens(base_vocab_size: int) -> dict[str, int]:
+    """Map the autoresearch special tokens above the base tokenizer range."""
+
+    return {
+        token: base_vocab_size + offset for offset, token in enumerate(SPECIAL_TOKEN_STRINGS)
+    }
+
+
+def total_vocab_size(base_vocab_size: int) -> int:
+    """Return the embedding/output vocab size including special tokens."""
+
+    return base_vocab_size + len(SPECIAL_TOKEN_STRINGS)
+
+
+def _extract_strategy_json(text: str) -> dict[str, Any] | None:
+    """Extract JSON strategy from model output text."""
+    match = re.search(r"<\|strategy\|>(.*?)(?:<\||$)", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))  # type: ignore[no-any-return]
+        except json.JSONDecodeError:
+            return None
+    # Try parsing the whole text as JSON
+    try:
+        return json.loads(text)  # type: ignore[no-any-return]
+    except json.JSONDecodeError:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # 1. Data loading (no MLX dependency)
 # ---------------------------------------------------------------------------
@@ -102,7 +141,26 @@ def extract_best_opponent(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 if HAS_MLX:
 
-    def train_tokenizer(corpus_path: Path, vocab_size: int = 8192) -> Any:
+    class AutoresearchTokenizer:
+        """Thin wrapper that preserves special-token metadata for training/inference."""
+
+        def __init__(self, encoding: Any, *, base_vocab_size: int) -> None:
+            self._encoding = encoding
+            self.base_vocab_size = base_vocab_size
+            self.special_tokens = build_special_tokens(base_vocab_size)
+            self.vocab_size = total_vocab_size(base_vocab_size)
+
+        @property
+        def end_token_id(self) -> int:
+            return self.special_tokens["<|end|>"]
+
+        def encode(self, text: str) -> list[int]:
+            return self._encoding.encode(text, allowed_special=set(self.special_tokens))
+
+        def decode(self, token_ids: list[int]) -> str:
+            return self._encoding.decode(token_ids)
+
+    def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> AutoresearchTokenizer:
         """Train a BPE tokenizer on the given corpus.
 
         Uses rustbpe for fast BPE training and wraps with tiktoken for
@@ -130,13 +188,7 @@ if HAS_MLX:
 
         # Build tiktoken encoding from the merges
         # Special tokens for our format
-        special_tokens = {
-            "<|scenario|>": vocab_size,
-            "<|context|>": vocab_size + 1,
-            "<|strategy|>": vocab_size + 2,
-            "<|score|>": vocab_size + 3,
-            "<|end|>": vocab_size + 4,
-        }
+        special_tokens = build_special_tokens(vocab_size)
 
         _BPE_PAT = (
             r"(?i:'s|'t|'re|'ve|'m|'ll|'d)"
@@ -152,7 +204,7 @@ if HAS_MLX:
             mergeable_ranks=merges,
             special_tokens=special_tokens,
         )
-        return enc
+        return AutoresearchTokenizer(enc, base_vocab_size=vocab_size)
 
     # -----------------------------------------------------------------------
     # 4. Dataloader (MLX arrays)
@@ -234,8 +286,12 @@ if HAS_MLX:
 
         for i in range(n_samples):
             try:
-                # Generate strategy text from model
-                raw_output = tokenizer.decode([0] * 32)  # placeholder generation
+                raw_output = _generate_strategy_text(
+                    model=model,
+                    tokenizer=tokenizer,
+                    scenario=scenario,
+                    seed=i,
+                )
                 strategy = _extract_strategy_json(raw_output)
 
                 if strategy is not None:
@@ -260,16 +316,57 @@ if HAS_MLX:
             "valid_rate": valid_rate,
         }
 
-    def _extract_strategy_json(text: str) -> dict[str, Any] | None:
-        """Extract JSON strategy from model output text."""
-        match = re.search(r"<\|strategy\|>(.*?)<\|", text, re.DOTALL)
-        if match:
+    def _generate_strategy_text(
+        *,
+        model: Any,
+        tokenizer: Any,
+        scenario: Any,
+        seed: int,
+        max_new_tokens: int = 128,
+    ) -> str:
+        """Generate a candidate strategy from the model with a deterministic prompt."""
+
+        if not hasattr(model, "cfg"):
+            # Test doubles may not expose a sampling surface; fall back to the tokenizer stub.
+            return tokenizer.decode([seed] * 32)
+
+        prompt = (
+            f"<|scenario|>{_resolve_scenario_name(scenario)}"
+            f"<|context|>{_resolve_scenario_context(scenario)}"
+            "<|strategy|>"
+        )
+        token_ids = list(tokenizer.encode(prompt))
+        seq_len = int(model.cfg.seq_len)
+        end_token_id = getattr(tokenizer, "end_token_id", None)
+
+        for _ in range(max_new_tokens):
+            window = token_ids[-seq_len:]
+            x = mx.array([window], dtype=mx.int32)
+            logits = model(x)
+            next_token = int(mx.argmax(logits[:, -1, :], axis=-1).item())
+            token_ids.append(next_token)
+            if end_token_id is not None and next_token == end_token_id:
+                break
+
+        return tokenizer.decode(token_ids)
+
+    def _resolve_scenario_name(scenario: Any) -> str:
+        value = getattr(scenario, "name", None)
+        if isinstance(value, str) and value.strip():
+            return value
+        return scenario.__class__.__name__.lower()
+
+    def _resolve_scenario_context(scenario: Any) -> str:
+        task_prompt = getattr(scenario, "get_task_prompt", None)
+        if callable(task_prompt):
             try:
-                return json.loads(match.group(1))  # type: ignore[no-any-return]
-            except json.JSONDecodeError:
-                return None
-        # Try parsing the whole text as JSON
-        try:
-            return json.loads(text)  # type: ignore[no-any-return]
-        except json.JSONDecodeError:
-            return None
+                prompt = task_prompt()
+            except TypeError:
+                prompt = None
+            if isinstance(prompt, str):
+                return prompt
+
+        description = getattr(scenario, "description", None)
+        if isinstance(description, str):
+            return description
+        return ""

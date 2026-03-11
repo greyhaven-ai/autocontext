@@ -64,6 +64,13 @@ def test_format_training_example() -> None:
     assert "<|end|>" in result
 
 
+def test_total_vocab_size_includes_special_tokens() -> None:
+    """The model vocab reserves slots for the autoresearch special tokens."""
+    from mts.training.autoresearch.prepare import BASE_VOCAB_SIZE, SPECIAL_TOKEN_STRINGS, total_vocab_size
+
+    assert total_vocab_size(BASE_VOCAB_SIZE) == BASE_VOCAB_SIZE + len(SPECIAL_TOKEN_STRINGS)
+
+
 def test_best_known_opponent_extraction(tmp_path: Path) -> None:
     """extract_best_opponent() returns the highest-scoring strategy."""
     from mts.training.autoresearch.prepare import extract_best_opponent
@@ -75,6 +82,14 @@ def test_best_known_opponent_extraction(tmp_path: Path) -> None:
     ]
     best = extract_best_opponent(records)
     assert best["aggression"] == 0.9
+
+
+def test_extract_strategy_json_without_trailing_special_token() -> None:
+    """_extract_strategy_json accepts outputs that end immediately after the strategy JSON."""
+    from mts.training.autoresearch.prepare import _extract_strategy_json
+
+    parsed = _extract_strategy_json('<|strategy|>{"aggression": 0.6}')
+    assert parsed == {"aggression": 0.6}
 
 
 # ---------------------------------------------------------------------------

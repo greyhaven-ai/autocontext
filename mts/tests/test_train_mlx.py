@@ -14,6 +14,7 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not installed")
 
 def test_model_instantiation() -> None:
     """GPTModel can be instantiated with default hyperparameters."""
+    from mts.training.autoresearch.prepare import BASE_VOCAB_SIZE, SPECIAL_TOKEN_STRINGS
     from mts.training.autoresearch.train import GPTModel, ModelConfig
 
     cfg = ModelConfig()
@@ -21,7 +22,7 @@ def test_model_instantiation() -> None:
     assert model is not None
     # Verify key config values
     assert cfg.depth == 4
-    assert cfg.vocab_size == 8192
+    assert cfg.vocab_size == BASE_VOCAB_SIZE + len(SPECIAL_TOKEN_STRINGS)
     assert cfg.seq_len == 2048
 
 

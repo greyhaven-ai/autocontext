@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from mts.training import HAS_MLX
+from mts.training.autoresearch.prepare import BASE_VOCAB_SIZE, total_vocab_size
 
 if HAS_MLX:
     import mlx.core as mx  # type: ignore[import-not-found]
@@ -30,7 +31,7 @@ class ModelConfig:
     aspect_ratio: int = 64
     head_dim: int = 64
     n_kv_heads: int = 4
-    vocab_size: int = 8192
+    vocab_size: int = total_vocab_size(BASE_VOCAB_SIZE)
     seq_len: int = 2048
 
     @property
@@ -261,7 +262,7 @@ else:
         aspect_ratio: int = 64
         head_dim: int = 64
         n_kv_heads: int = 4
-        vocab_size: int = 8192
+        vocab_size: int = total_vocab_size(BASE_VOCAB_SIZE)
         seq_len: int = 2048
 
     class GPTModel:  # type: ignore[no-redef]

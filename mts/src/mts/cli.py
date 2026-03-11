@@ -397,7 +397,12 @@ def train(
     if not HAS_MLX:
         console.print("[red]MLX is not installed. Install with: uv sync --group dev --extra mlx[/red]")
         raise typer.Exit(code=1)
-    console.print(f"[green]Starting MLX training for scenario={scenario} data={data} budget={time_budget}s[/green]")
+    console.print(
+        "[yellow]The distillation scaffold is installed, but the end-to-end training runner "
+        "is not wired yet. Use the exported data path directly until the runner lands.[/yellow]"
+    )
+    console.print(f"[dim]scenario={scenario} data={data} budget={time_budget}s[/dim]")
+    raise typer.Exit(code=2)
 
 
 if __name__ == "__main__":
