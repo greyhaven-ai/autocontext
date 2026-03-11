@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from mts.config.settings import AppSettings, HarnessMode
-
+from mts.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -75,6 +75,14 @@ class TestScenarioCapabilities:
         caps = discover_scenario_capabilities(mock_ctx, "grid_ctf")
         assert caps.has_playbook is False
 
+    def test_no_playbook_when_sentinel(self, mock_ctx: MagicMock) -> None:
+        """has_playbook should be False when ArtifactStore returns the empty sentinel."""
+        from mts.openclaw.discovery import discover_scenario_capabilities
+
+        mock_ctx.artifacts.read_playbook.return_value = EMPTY_PLAYBOOK_SENTINEL
+        caps = discover_scenario_capabilities(mock_ctx, "grid_ctf")
+        assert caps.has_playbook is False
+
     def test_has_harness_when_dir_has_files(self, mock_ctx: MagicMock, tmp_path: Path) -> None:
         """has_harness and harness_count should reflect harness files on disk."""
         from mts.openclaw.discovery import discover_scenario_capabilities
@@ -118,13 +126,13 @@ class TestScenarioCapabilities:
         """best_score and best_elo should be pulled from SQLite data."""
         from mts.openclaw.discovery import discover_scenario_capabilities
 
-        mock_ctx.sqlite.execute_query = MagicMock()
-        # Simulate getting generations data
-        with patch("mts.openclaw.discovery._get_scenario_best_metrics") as mock_metrics:
-            mock_metrics.return_value = (0.85, 1520.0)
-            caps = discover_scenario_capabilities(mock_ctx, "grid_ctf")
-            assert caps.best_score == 0.85
-            assert caps.best_elo == 1520.0
+        mock_ctx.sqlite.get_best_knowledge_snapshot.return_value = {
+            "best_score": 0.85,
+            "best_elo": 1520.0,
+        }
+        caps = discover_scenario_capabilities(mock_ctx, "grid_ctf")
+        assert caps.best_score == 0.85
+        assert caps.best_elo == 1520.0
 
     def test_unknown_scenario_raises(self, mock_ctx: MagicMock) -> None:
         """Should raise KeyError for an unregistered scenario."""
@@ -378,11 +386,10 @@ class TestRestEndpoints:
     @pytest.fixture()
     def client(self, tmp_settings: AppSettings) -> object:
         """Create a test client for the FastAPI app."""
+        from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
-        from mts.server.openclaw_api import get_openclaw_ctx, router
-
-        from fastapi import FastAPI
+        from mts.server.openclaw_api import router
         app = FastAPI()
         app.include_router(router)
 
