@@ -5,8 +5,11 @@ import time
 
 from anthropic import Anthropic
 
+from mts.config.settings import AppSettings
 from mts.harness.core.llm_client import LanguageModelClient
 from mts.harness.core.types import ModelResponse, RoleUsage
+from mts.providers.base import ProviderError
+from mts.providers.mlx_provider import MLXProvider
 
 
 class AnthropicClient(LanguageModelClient):
@@ -401,5 +404,87 @@ class DeterministicDevClient(LanguageModelClient):
             return json.dumps({"aggression": 0.6, "defense": 0.56, "path_bias": 0.62})
         return json.dumps({"aggression": 0.58, "defense": 0.57, "path_bias": 0.54})
 
+class MLXClient(LanguageModelClient):
+    """LanguageModelClient adapter over the local MLX provider."""
 
-__all__ = ["LanguageModelClient", "ModelResponse", "AnthropicClient", "DeterministicDevClient"]
+    def __init__(self, model_path: str, *, temperature: float = 0.8, max_tokens: int = 512) -> None:
+        self._provider = MLXProvider(model_path=model_path, temperature=temperature, max_tokens=max_tokens)
+
+    def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        del model, role
+        started = time.perf_counter()
+        try:
+            result = self._provider.complete("", prompt, temperature=temperature, max_tokens=max_tokens)
+        except ProviderError as exc:
+            raise RuntimeError(str(exc)) from exc
+        elapsed = int((time.perf_counter() - started) * 1000)
+        usage = RoleUsage(
+            input_tokens=result.usage.get("input_tokens", 0),
+            output_tokens=result.usage.get("output_tokens", 0),
+            latency_ms=elapsed,
+            model=result.model or self._provider.default_model(),
+        )
+        return ModelResponse(text=result.text, usage=usage)
+
+    def generate_multiturn(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        del role
+        user_parts = [m["content"] for m in messages if m["role"] == "user"]
+        combined = "\n\n".join(user_parts)
+        prompt = f"{system}\n\n{combined}" if system else combined
+        return self.generate(
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+
+def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
+    """Construct a LanguageModelClient from AppSettings."""
+    if settings.agent_provider == "anthropic":
+        if not settings.anthropic_api_key:
+            raise ValueError("MTS_ANTHROPIC_API_KEY is required when MTS_AGENT_PROVIDER=anthropic")
+        return AnthropicClient(api_key=settings.anthropic_api_key)
+    if settings.agent_provider == "deterministic":
+        return DeterministicDevClient()
+    if settings.agent_provider == "agent_sdk":
+        from mts.agents.agent_sdk_client import AgentSdkClient, AgentSdkConfig
+
+        sdk_config = AgentSdkConfig(connect_mcp_server=settings.agent_sdk_connect_mcp)
+        return AgentSdkClient(config=sdk_config)
+    if settings.agent_provider == "mlx":
+        if not settings.mlx_model_path:
+            raise ValueError("MTS_MLX_MODEL_PATH is required when MTS_AGENT_PROVIDER=mlx")
+        return MLXClient(
+            model_path=settings.mlx_model_path,
+            temperature=settings.mlx_temperature,
+            max_tokens=settings.mlx_max_tokens,
+        )
+    raise ValueError(f"unsupported agent provider: {settings.agent_provider}")
+
+
+__all__ = [
+    "LanguageModelClient",
+    "ModelResponse",
+    "AnthropicClient",
+    "DeterministicDevClient",
+    "MLXClient",
+    "build_client_from_settings",
+]

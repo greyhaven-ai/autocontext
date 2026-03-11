@@ -6,6 +6,7 @@ LanguageModelClient.
 """
 from __future__ import annotations
 
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -24,8 +25,9 @@ class ProviderBridgeClient(LanguageModelClient):
     to be used as a client for agent role runners.
     """
 
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(self, provider: LLMProvider, *, use_provider_default_model: bool = False) -> None:
         self._provider = provider
+        self._use_provider_default_model = use_provider_default_model
 
     def generate(
         self,
@@ -37,14 +39,16 @@ class ProviderBridgeClient(LanguageModelClient):
         role: str = "",
     ) -> ModelResponse:
         t0 = time.monotonic()
+        resolved_model = None if self._use_provider_default_model else model
         result = self._provider.complete(
             system_prompt="",
             user_prompt=prompt,
-            model=model,
+            model=resolved_model,
             temperature=temperature,
             max_tokens=max_tokens,
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
+        usage_model = result.model or resolved_model or self._provider.default_model()
 
         return ModelResponse(
             text=result.text,
@@ -52,9 +56,19 @@ class ProviderBridgeClient(LanguageModelClient):
                 input_tokens=result.usage.get("input_tokens", 0),
                 output_tokens=result.usage.get("output_tokens", 0),
                 latency_ms=elapsed_ms,
-                model=model,
+                model=usage_model,
             ),
         )
+
+
+def _provider_api_key(provider_type: str, settings: AppSettings) -> str | None:
+    if provider_type == "anthropic":
+        return settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+    if provider_type in ("openai", "openai-compatible"):
+        return settings.judge_api_key or os.getenv("OPENAI_API_KEY")
+    if provider_type == "vllm":
+        return settings.judge_api_key or "no-key"
+    return settings.judge_api_key
 
 
 def _create_provider_bridge(provider_type: str, settings: AppSettings) -> LanguageModelClient:
@@ -69,13 +83,15 @@ def _create_provider_bridge(provider_type: str, settings: AppSettings) -> Langua
             temperature=getattr(settings, "mlx_temperature", 0.8),
             max_tokens=getattr(settings, "mlx_max_tokens", 512),
         )
+        use_provider_default_model = True
     else:
         provider = create_provider(
             provider_type=provider_type,
-            api_key=settings.anthropic_api_key or settings.judge_api_key,
+            api_key=_provider_api_key(provider_type, settings),
             base_url=settings.judge_base_url,
         )
-    return ProviderBridgeClient(provider)
+        use_provider_default_model = True
+    return ProviderBridgeClient(provider, use_provider_default_model=use_provider_default_model)
 
 
 def create_role_client(provider_type: str, settings: AppSettings) -> LanguageModelClient | None:
@@ -106,11 +122,7 @@ def create_role_client(provider_type: str, settings: AppSettings) -> LanguageMod
     if provider_type == "anthropic":
         from mts.agents.llm_client import AnthropicClient
 
-        api_key = settings.anthropic_api_key
-        if not api_key:
-            import os
-
-            api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = _provider_api_key(provider_type, settings)
         if not api_key:
             raise ValueError("Anthropic per-role override requires MTS_ANTHROPIC_API_KEY")
         return AnthropicClient(api_key=api_key)

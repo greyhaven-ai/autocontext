@@ -5,6 +5,7 @@ while frontier models handle reasoning roles.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -116,6 +117,19 @@ class TestProviderBridgeClient:
         assert response.usage.input_tokens == 10
         assert response.usage.output_tokens == 5
 
+    def test_bridge_can_use_provider_default_model_for_overrides(self) -> None:
+        from mts.agents.provider_bridge import ProviderBridgeClient
+
+        provider = _StubProvider("output")
+        bridge = ProviderBridgeClient(provider, use_provider_default_model=True)
+        response = bridge.generate(
+            model="claude-sonnet-4-5-20250929",
+            prompt="p",
+            max_tokens=100,
+            temperature=0.0,
+        )
+        assert response.usage.model == "stub"
+
 
 # ── Client creation helper tests ────────────────────────────────────────
 
@@ -148,6 +162,27 @@ class TestCreateClientForProvider:
         client = create_role_client("mlx", settings)
         assert isinstance(client, LanguageModelClient)
         mock_bridge.assert_called_once()
+
+    @patch("mts.providers.registry.create_provider")
+    def test_openai_override_uses_judge_key_not_anthropic_key(self, mock_create: MagicMock) -> None:
+        from mts.agents.provider_bridge import create_role_client
+        from mts.config.settings import AppSettings
+
+        mock_create.return_value = _StubProvider()
+        settings = AppSettings(
+            anthropic_api_key="anthropic-key",
+            judge_api_key="openai-key",
+            judge_base_url="http://localhost:8000/v1",
+        )
+
+        client = create_role_client("openai", settings)
+
+        assert isinstance(client, LanguageModelClient)
+        mock_create.assert_called_once_with(
+            provider_type="openai",
+            api_key="openai-key",
+            base_url="http://localhost:8000/v1",
+        )
 
     def test_empty_provider_returns_none(self) -> None:
         from mts.agents.provider_bridge import create_role_client
@@ -240,3 +275,50 @@ class TestOrchestratorPerRoleWiring:
         # Competitor, analyst, coach should all share default
         assert orch.competitor.runtime.client is orch.analyst.runtime.client
         assert orch.analyst.runtime.client is orch.coach.runtime.client
+
+    @patch("mts.agents.orchestrator.build_client_from_settings")
+    def test_from_settings_uses_shared_client_builder(self, mock_build: MagicMock) -> None:
+        from mts.agents.orchestrator import AgentOrchestrator
+        from mts.config.settings import AppSettings
+
+        default_client = MagicMock(spec=LanguageModelClient)
+        mock_build.return_value = default_client
+
+        settings = AppSettings(agent_provider="mlx", mlx_model_path="/tmp/model")
+        orch = AgentOrchestrator.from_settings(settings)
+
+        assert orch.client is default_client
+        mock_build.assert_called_once_with(settings)
+
+    def test_rlm_uses_role_specific_client_when_override_exists(self) -> None:
+        from mts.agents.orchestrator import AgentOrchestrator
+        from mts.config.settings import AppSettings
+
+        default_client = MagicMock(spec=LanguageModelClient)
+        role_client = MagicMock(spec=LanguageModelClient)
+        settings = AppSettings(agent_provider="deterministic")
+        orch = AgentOrchestrator(default_client, settings)
+        orch._role_clients["competitor"] = role_client
+
+        context = SimpleNamespace(variables={}, summary="summary")
+        backend_worker = object()
+
+        with (
+            patch("mts.rlm.session.make_llm_batch", return_value="batch") as mock_batch,
+            patch("mts.rlm.session.RlmSession") as mock_session_cls,
+        ):
+            session = MagicMock()
+            session.execution_history = []
+            session.run.return_value = MagicMock()
+            mock_session_cls.return_value = session
+
+            orch._run_single_rlm_session(
+                role="competitor",
+                model="model",
+                system_tpl="{variable_summary}",
+                context=context,
+                worker_cls=lambda **kwargs: backend_worker,
+            )
+
+        mock_batch.assert_called_once_with(role_client, settings.rlm_sub_model)
+        assert mock_session_cls.call_args.kwargs["client"] is role_client
