@@ -20,7 +20,6 @@ import pytest
 from mts.agents.types import AgentOutputs
 from mts.config.settings import AppSettings
 from mts.execution.supervisor import ExecutionSupervisor
-from mts.harness.evaluation.types import EvaluationResult, EvaluationSummary
 from mts.loop.stage_types import GenerationContext
 from mts.loop.stages import stage_tournament
 from mts.scenarios.base import (
@@ -30,7 +29,6 @@ from mts.scenarios.base import (
     Result,
     ScenarioInterface,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -186,7 +184,7 @@ class TestTwoTierConfig:
 
     def test_validity_max_retries_validation(self) -> None:
         """Should not allow negative values."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             _make_settings(validity_max_retries=-1)
 
 
@@ -236,7 +234,11 @@ class TestTwoTierDisabled:
 class TestTwoTierEnabled:
     def test_validity_check_runs_when_enabled(self) -> None:
         """When enabled, ValidityGate.check() is called before tournament matches."""
-        settings = _make_settings(two_tier_gating_enabled=True, validity_max_retries=3)
+        settings = _make_settings(
+            two_tier_gating_enabled=True,
+            validity_max_retries=3,
+            harness_validators_enabled=True,
+        )
         ctx = _make_tournament_ctx(settings=settings)
         supervisor = _make_inline_supervisor()
         gate = MagicMock()
@@ -244,8 +246,12 @@ class TestTwoTierEnabled:
         events = MagicMock()
         sqlite = MagicMock()
         artifacts = MagicMock()
+        harness_dir = MagicMock()
+        harness_dir.exists.return_value = True
+        artifacts.harness_dir.return_value = harness_dir
 
-        with patch("mts.loop.stages.ValidityGate") as MockVG:
+        with patch("mts.loop.stages.ValidityGate") as MockVG, \
+             patch("mts.execution.harness_loader.HarnessLoader") as MockHarnessLoader:
             mock_vg_instance = MagicMock()
             # Validity passes
             mock_vg_instance.check.return_value = MagicMock(
@@ -265,6 +271,8 @@ class TestTwoTierEnabled:
 
         # ValidityGate was created and check() was called
         MockVG.assert_called_once()
+        _, kwargs = MockVG.call_args
+        assert kwargs["harness_loader"] is MockHarnessLoader.return_value
         mock_vg_instance.check.assert_called_once()
         assert result.tournament is not None
         assert result.gate_decision == "advance"
@@ -323,7 +331,7 @@ class TestTwoTierEnabled:
             mock_vg_instance.consume_retry.return_value = False
             MockVG.return_value = mock_vg_instance
 
-            result = stage_tournament(
+            stage_tournament(
                 ctx,
                 supervisor=supervisor,
                 gate=gate,
@@ -335,6 +343,83 @@ class TestTwoTierEnabled:
 
         event_names = [call[0][0] for call in events.emit.call_args_list]
         assert "validity_check_failed" in event_names
+
+    def test_invalid_strategy_rolls_back_without_running_tournament(self) -> None:
+        """Exhausted validity budget should not spend tournament execution."""
+        settings = _make_settings(two_tier_gating_enabled=True, validity_max_retries=0)
+        ctx = _make_tournament_ctx(settings=settings)
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+
+        with patch("mts.loop.stages.ValidityGate") as MockVG:
+            mock_vg_instance = MagicMock()
+            mock_vg_instance.check.return_value = MagicMock(
+                passed=False,
+                errors=["invalid move format"],
+                retry_budget_remaining=0,
+            )
+            mock_vg_instance.consume_retry.return_value = False
+            MockVG.return_value = mock_vg_instance
+
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=None,
+            )
+
+        event_names = [call[0][0] for call in events.emit.call_args_list]
+        assert "tournament_started" not in event_names
+        gate.evaluate.assert_not_called()
+        assert result.gate_decision == "rollback"
+        assert result.tournament is not None
+        assert result.tournament.results == []
+
+    def test_validity_retry_revises_before_tournament(self) -> None:
+        """A failed validity check should revise the strategy before evaluation."""
+        settings = _make_settings(two_tier_gating_enabled=True, validity_max_retries=1)
+        ctx = _make_tournament_ctx(settings=settings, strategy={"aggression": -1.0})
+        ctx.prompts = MagicMock(competitor="Fix the strategy.")
+        ctx.strategy_interface = '{"aggression": float}'
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="advance", reason="ok", delta=0.1, threshold=0.005)
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+        agents = MagicMock()
+        agents.competitor.run.return_value = ('{"aggression": 0.8}', None)
+        agents.translator.translate.return_value = ({"aggression": 0.8}, None)
+
+        with patch("mts.loop.stages.ValidityGate") as MockVG:
+            mock_vg_instance = MagicMock()
+            mock_vg_instance.check.side_effect = [
+                MagicMock(passed=False, errors=["out of range"], retry_budget_remaining=1),
+                MagicMock(passed=True, errors=[], retry_budget_remaining=0),
+            ]
+            mock_vg_instance.consume_retry.return_value = True
+            MockVG.return_value = mock_vg_instance
+
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=agents,
+            )
+
+        assert result.current_strategy == {"aggression": 0.8}
+        assert result.tournament is not None
+        assert result.tournament.results
+        gate.evaluate.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
