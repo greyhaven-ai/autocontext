@@ -1,8 +1,8 @@
-"""HarnessCoverageAnalyzer — measures harness protection level for model tiering.
+"""HarnessCoverageAnalyzer - measures harness protection level for model tiering.
 
 Analyzes loaded harness validators to produce a weighted coverage score in
 [0.0, 1.0] that reflects how much of a scenario's constraint space is
-covered.  Higher coverage enables cheaper model tiers since the harness
+covered. Higher coverage enables cheaper model tiers since the harness
 catches more invalid strategies.
 """
 from __future__ import annotations
@@ -76,7 +76,7 @@ class HarnessCoverageAnalyzer:
             has_parse_game_state=has_fn["parse_game_state"],
             has_is_legal_action=has_fn["is_legal_action"],
             validation_accuracy=validation_accuracy,
-            function_count=len(names),
+            function_count=sum(1 for present in has_fn.values() if present),
             coverage_score=coverage_score,
         )
 
