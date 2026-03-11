@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from mts.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
+
 if TYPE_CHECKING:
     from mts.config.settings import AppSettings
     from mts.mcp.tools import MtsToolContext
@@ -78,15 +80,14 @@ def _get_scenario_best_metrics(ctx: MtsToolContext, scenario_name: str) -> tuple
     Returns (best_score, best_elo). Either may be None if no data exists.
     """
     try:
-        with ctx.sqlite.connect() as conn:
-            row = conn.execute(
-                "SELECT MAX(g.best_score), MAX(g.elo) "
-                "FROM generations g JOIN runs r ON g.run_id = r.run_id "
-                "WHERE r.scenario = ?",
-                (scenario_name,),
-            ).fetchone()
-        if row and row[0] is not None:
-            return (float(row[0]), float(row[1]) if row[1] is not None else None)
+        snapshot = ctx.sqlite.get_best_knowledge_snapshot(scenario_name)
+        if snapshot is not None:
+            best_score = snapshot.get("best_score")
+            best_elo = snapshot.get("best_elo")
+            return (
+                float(best_score) if best_score is not None else None,
+                float(best_elo) if best_elo is not None else None,
+            )
     except Exception:
         pass
     return (None, None)
@@ -150,7 +151,7 @@ def discover_scenario_capabilities(ctx: MtsToolContext, scenario_name: str) -> S
     has_playbook = False
     try:
         playbook = ctx.artifacts.read_playbook(scenario_name)
-        has_playbook = bool(playbook and playbook.strip())
+        has_playbook = bool(playbook and playbook.strip() and playbook != EMPTY_PLAYBOOK_SENTINEL)
     except Exception:
         pass
 
