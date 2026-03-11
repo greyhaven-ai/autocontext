@@ -9,6 +9,7 @@ Covers:
 - Events emitted correctly
 - Pipeline wiring integration
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,11 +17,11 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mts.config.settings import AppSettings
 from mts.loop.stage_types import GenerationContext
 from mts.storage.artifacts import ArtifactStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -123,14 +124,14 @@ class TestPreflightConfig:
         assert settings.harness_preflight_enabled is True
 
     def test_harness_preflight_max_iterations_validation(self) -> None:
-        with pytest.raises(Exception):  # Pydantic validation
+        with pytest.raises(ValidationError):
             _make_settings(harness_preflight_max_iterations=0)
 
     def test_harness_preflight_target_accuracy_bounds(self) -> None:
         settings = _make_settings(harness_preflight_target_accuracy=0.5)
         assert settings.harness_preflight_target_accuracy == 0.5
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             _make_settings(harness_preflight_target_accuracy=1.5)
 
 
@@ -213,7 +214,7 @@ class TestPreflightSkips:
             MockSynth.return_value.synthesize.return_value = mock_result
             MockGen.return_value.generate_with_ground_truth.return_value = []
 
-            result = stage_preflight(ctx, events=events, artifacts=store)
+            stage_preflight(ctx, events=events, artifacts=store)
 
         # Should have run synthesis (emit preflight_start)
         event_names = [call[0][0] for call in events.emit.call_args_list]
@@ -250,7 +251,7 @@ class TestPreflightExecution:
             mock_result.iterations = 3
             MockSynth.return_value.synthesize.return_value = mock_result
 
-            result = stage_preflight(ctx, events=events, artifacts=store)
+            stage_preflight(ctx, events=events, artifacts=store)
 
         # Verify harness file was written
         harness_path = store.harness_dir("grid_ctf") / "preflight_synthesized.py"
@@ -356,7 +357,7 @@ class TestPreflightExecution:
 
         with patch("mts.loop.stage_preflight.HarnessSynthesizer") as MockSynth, \
              patch("mts.loop.stage_preflight.SampleStateGenerator") as MockGen, \
-             patch("mts.loop.stage_preflight.get_provider") as mock_get_provider:
+             patch("mts.loop.stage_preflight.get_provider"):
             mock_result = MagicMock()
             mock_result.harness_source = "pass"
             mock_result.converged = True
@@ -417,5 +418,4 @@ class TestPreflightPipelineWiring:
             # We only need to verify the import and call exists;
             # the full pipeline test requires many more mocks.
             # Import verification suffices for wiring.
-            from mts.loop.generation_pipeline import GenerationPipeline
             assert mock_stage is not None  # confirms patching worked
