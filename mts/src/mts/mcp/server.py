@@ -247,7 +247,7 @@ def mts_record_feedback(
     human_notes: str = "",
     generation_id: str | None = None,
 ) -> str:
-    """Record human feedback on an agent task output. Score should be 0.0–1.0."""
+    """Record human feedback on an agent task output. Score should be 0.0-1.0."""
     return json.dumps(tools.record_feedback(
         _get_ctx(), scenario_name, agent_output, human_score, human_notes, generation_id
     ))
@@ -377,6 +377,73 @@ def mts_export_agent_task_skill(task_name: str) -> str:
     ctx = _get_ctx()
     result = tools.export_agent_task_skill(ctx, task_name)
     return json.dumps(result, indent=2, default=str)
+
+
+# -- OpenClaw tools (MTS-191) --
+
+
+@mcp.tool()
+def mts_evaluate_strategy(
+    scenario_name: str,
+    strategy: str,
+    num_matches: int = 3,
+    seed_base: int = 42,
+) -> str:
+    """Evaluate a candidate strategy against a scenario by running tournament matches.
+    strategy should be a JSON string."""
+    return json.dumps(tools.evaluate_strategy(
+        scenario_name, json.loads(strategy), num_matches, seed_base,
+    ))
+
+
+@mcp.tool()
+def mts_validate_strategy_against_harness(
+    scenario_name: str,
+    strategy: str,
+) -> str:
+    """Validate a strategy against scenario constraints and harness validators.
+    strategy should be a JSON string."""
+    return json.dumps(tools.validate_strategy_against_harness(
+        scenario_name, json.loads(strategy),
+    ))
+
+
+@mcp.tool()
+def mts_publish_artifact(artifact_data: str) -> str:
+    """Publish an artifact (harness, policy, or distilled model).
+    artifact_data should be a JSON string of the artifact dict."""
+    return json.dumps(tools.publish_artifact(
+        _get_ctx(), json.loads(artifact_data),
+    ))
+
+
+@mcp.tool()
+def mts_fetch_artifact(artifact_id: str) -> str:
+    """Fetch a published artifact by its ID."""
+    return json.dumps(tools.fetch_artifact(_get_ctx(), artifact_id))
+
+
+@mcp.tool()
+def mts_list_artifacts(
+    scenario: str | None = None,
+    artifact_type: str | None = None,
+) -> str:
+    """List published artifacts with optional scenario and type filters."""
+    return json.dumps(tools.list_artifacts(
+        _get_ctx(), scenario=scenario, artifact_type=artifact_type,
+    ))
+
+
+@mcp.tool()
+def mts_distill_status() -> str:
+    """Check status of distillation workflows."""
+    return json.dumps(tools.distill_status(_get_ctx()))
+
+
+@mcp.tool()
+def mts_capabilities() -> str:
+    """Return capability metadata for this MTS instance."""
+    return json.dumps(tools.get_capabilities())
 
 
 def run_server() -> None:

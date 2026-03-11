@@ -15,6 +15,7 @@ from mts.config import load_settings
 from mts.loop.controller import LoopController
 from mts.loop.events import EventStreamEmitter
 from mts.server.knowledge_api import router as knowledge_router
+from mts.server.openclaw_api import router as openclaw_router
 from mts.server.protocol import (
     AckMsg,
     CancelScenarioCmd,
@@ -116,6 +117,7 @@ def create_app(
     """Factory that creates the FastAPI app, optionally wired to a LoopController."""
     application = FastAPI(title="MTS Dashboard API", version="0.1.0")
     application.include_router(knowledge_router)
+    application.include_router(openclaw_router)
     app_settings = load_settings()
     store = SQLiteStore(app_settings.db_path)
     scenario_creator = _build_scenario_creator(app_settings)
