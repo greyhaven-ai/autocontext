@@ -5,12 +5,13 @@ and round-trip import support for AC-189.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -19,6 +20,7 @@ from mts.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 if TYPE_CHECKING:
     from mts.knowledge.export import SkillPackage
     from mts.storage.artifacts import ArtifactStore
+    from mts.storage.sqlite_store import SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -186,13 +188,104 @@ class ImportResult(BaseModel):
     harness_written: list[str] = Field(default_factory=list)
     harness_skipped: list[str] = Field(default_factory=list)
     skill_written: bool = False
+    snapshot_written: bool = False
     conflict_policy: str = ""
+
+
+def _package_metadata_path(artifacts: ArtifactStore, scenario_name: str) -> Path:
+    return artifacts.knowledge_root / scenario_name / "package_metadata.json"
+
+
+def read_package_metadata(artifacts: ArtifactStore, scenario_name: str) -> dict[str, Any]:
+    path = _package_metadata_path(artifacts, scenario_name)
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        LOGGER.warning("failed to read package metadata for %s", scenario_name)
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _write_package_metadata(artifacts: ArtifactStore, package: StrategyPackage) -> None:
+    payload: dict[str, object] = {
+        "format_version": package.format_version,
+        "best_strategy": cast(object, package.best_strategy),
+        "best_score": package.best_score,
+        "best_elo": package.best_elo,
+        "metadata": cast(object, package.metadata.model_dump()),
+    }
+    artifacts.write_json(_package_metadata_path(artifacts, package.scenario_name), payload)
+
+
+def _persist_imported_snapshot(
+    sqlite: SQLiteStore,
+    artifacts: ArtifactStore,
+    package: StrategyPackage,
+    conflict_policy: ConflictPolicy,
+) -> bool:
+    should_restore = (
+        package.best_strategy is not None
+        or package.best_score != 0.0
+        or package.best_elo != 1500.0
+        or package.metadata.has_snapshot
+    )
+    if not should_restore:
+        return False
+
+    existing_snapshot = sqlite.get_best_knowledge_snapshot(package.scenario_name)
+    if conflict_policy == ConflictPolicy.SKIP and existing_snapshot is not None:
+        return False
+    if (
+        conflict_policy == ConflictPolicy.MERGE
+        and existing_snapshot is not None
+        and float(existing_snapshot.get("best_score", 0.0)) > package.best_score
+    ):
+        return False
+
+    created_at = package.metadata.created_at.replace(":", "-")
+    run_id_suffix = package.metadata.source_run_id or created_at
+    run_id = f"imported-{package.scenario_name}-{run_id_suffix}"
+
+    sqlite.create_run(run_id, package.scenario_name, 1, "import", agent_provider="package")
+    sqlite.upsert_generation(
+        run_id=run_id,
+        generation_index=1,
+        mean_score=package.best_score,
+        best_score=package.best_score,
+        elo=package.best_elo,
+        wins=0,
+        losses=0,
+        gate_decision="accepted",
+        status="completed",
+    )
+    if package.best_strategy is not None:
+        sqlite.append_agent_output(
+            run_id,
+            1,
+            "competitor",
+            json.dumps(package.best_strategy, sort_keys=True),
+        )
+    sqlite.mark_run_completed(run_id)
+    playbook_hash = hashlib.sha256(package.playbook.encode("utf-8")).hexdigest()[:16]
+    sqlite.save_knowledge_snapshot(
+        package.scenario_name,
+        run_id,
+        package.best_score,
+        package.best_elo,
+        playbook_hash,
+        agent_provider="package",
+        rlm_enabled=False,
+    )
+    return True
 
 
 def import_strategy_package(
     artifacts: ArtifactStore,
     package: StrategyPackage,
     *,
+    sqlite: SQLiteStore | None = None,
     conflict_policy: ConflictPolicy = ConflictPolicy.MERGE,
 ) -> ImportResult:
     """Hydrate a scenario's knowledge directory from a strategy package.
@@ -207,6 +300,7 @@ def import_strategy_package(
     """
     scenario = package.scenario_name
     result = ImportResult(scenario_name=scenario, conflict_policy=conflict_policy.value)
+    _write_package_metadata(artifacts, package)
 
     # ── Playbook ──
     if package.playbook:
@@ -250,12 +344,31 @@ def import_strategy_package(
             result.harness_written.append(name)
 
     # ── SKILL.md ──
-    skill_pkg = package.to_skill_package()
-    skill_md = skill_pkg.to_skill_markdown()
     skill_dir = artifacts.skills_root / f"{scenario.replace('_', '-')}-ops"
     skill_dir.mkdir(parents=True, exist_ok=True)
-    (skill_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
-    result.skill_written = True
+    skill_path = skill_dir / "SKILL.md"
+    skill_pkg = package.to_skill_package()
+    skill_md = skill_pkg.to_skill_markdown()
+    if conflict_policy == ConflictPolicy.OVERWRITE or not skill_path.exists():
+        skill_path.write_text(skill_md, encoding="utf-8")
+        result.skill_written = True
+    elif conflict_policy == ConflictPolicy.MERGE:
+        merged_lessons = artifacts.read_skill_lessons_raw(scenario)
+        for lesson in package.lessons:
+            bullet = lesson if lesson.startswith("- ") else f"- {lesson}"
+            if bullet not in merged_lessons:
+                merged_lessons.append(bullet)
+        if merged_lessons:
+            artifacts.replace_skill_lessons(scenario, merged_lessons)
+            result.skill_written = True
+
+    if sqlite is not None:
+        result.snapshot_written = _persist_imported_snapshot(
+            sqlite,
+            artifacts,
+            package,
+            conflict_policy,
+        )
 
     # ── Sync to .claude/skills ──
     artifacts.sync_skills_to_claude()

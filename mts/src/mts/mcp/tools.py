@@ -966,7 +966,7 @@ def import_package(
         policy = ConflictPolicy(conflict_policy)
     except ValueError:
         return {"error": f"Invalid conflict_policy: {conflict_policy!r}. Must be overwrite, merge, or skip."}
-    result = import_strategy_package(ctx.artifacts, pkg, conflict_policy=policy)
+    result = import_strategy_package(ctx.artifacts, pkg, sqlite=ctx.sqlite, conflict_policy=policy)
     return result.model_dump()
 
 

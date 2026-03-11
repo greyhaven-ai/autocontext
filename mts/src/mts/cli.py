@@ -664,6 +664,7 @@ def import_package_cmd(
     package_file: str = typer.Argument(..., help="Path to the strategy package JSON file"),
     scenario: str | None = typer.Option(None, "--scenario", help="Override target scenario name"),
     conflict: str = typer.Option("merge", "--conflict", help="Conflict policy: overwrite, merge, or skip"),
+    db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
     knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root"),
     skills_root: str | None = typer.Option(None, "--skills-root", help="Override skills root"),
     claude_skills_path: str | None = typer.Option(None, "--claude-skills-path", help="Override Claude skills path"),
@@ -693,6 +694,11 @@ def import_package_cmd(
         raise typer.Exit(code=1) from exc
 
     settings = load_settings()
+    resolved_db = Path(db_path) if db_path is not None else settings.db_path
+    sqlite = SQLiteStore(resolved_db)
+    migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
+    if migrations_dir.exists():
+        sqlite.migrate(migrations_dir)
     artifacts = ArtifactStore(
         runs_root=settings.runs_root,
         knowledge_root=Path(knowledge_root) if knowledge_root else settings.knowledge_root,
@@ -700,7 +706,7 @@ def import_package_cmd(
         claude_skills_path=Path(claude_skills_path) if claude_skills_path else settings.claude_skills_path,
     )
 
-    result = import_strategy_package(artifacts, pkg, conflict_policy=policy)
+    result = import_strategy_package(artifacts, pkg, sqlite=sqlite, conflict_policy=policy)
 
     table = Table(title=f"Import: {result.scenario_name}")
     table.add_column("Item", style="bold")

@@ -5,15 +5,15 @@ full roundtrip export→import cycle.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mts.knowledge.export import SkillPackage
-from mts.storage.artifacts import ArtifactStore, EMPTY_PLAYBOOK_SENTINEL
-
+from mts.storage.artifacts import ArtifactStore
+from mts.storage.sqlite_store import SQLiteStore
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -45,6 +45,15 @@ def _make_artifacts(tmp_path: Path) -> ArtifactStore:
         skills_root=tmp_path / "skills",
         claude_skills_path=tmp_path / ".claude" / "skills",
     )
+
+
+def _make_sqlite(tmp_path: Path) -> SQLiteStore:
+    db_path = tmp_path / "runs" / "mts.sqlite3"
+    db = SQLiteStore(db_path)
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations"
+    if migrations_dir.exists():
+        db.migrate(migrations_dir)
+    return db
 
 
 # ── StrategyPackage model tests ──────────────────────────────────────────
@@ -87,7 +96,7 @@ class TestStrategyPackageModel:
     def test_from_dict_rejects_missing_scenario(self) -> None:
         from mts.knowledge.package import StrategyPackage
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             StrategyPackage.from_dict({})
 
     def test_from_file_roundtrip(self, tmp_path: Path) -> None:
@@ -313,6 +322,87 @@ class TestImportStrategyPackage:
         content = skill_path.read_text(encoding="utf-8")
         assert "Lesson 1" in content
 
+    def test_import_skip_preserves_existing_skill_md(self, tmp_path: Path) -> None:
+        from mts.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
+
+        artifacts = _make_artifacts(tmp_path)
+        skill_dir = artifacts.skills_root / "grid-ctf-ops"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_path = skill_dir / "SKILL.md"
+        skill_path.write_text("# Existing skill\n\n## Operational Lessons\n\n- Keep me\n", encoding="utf-8")
+
+        pkg = StrategyPackage(
+            scenario_name="grid_ctf",
+            description="A CTF game.",
+            lessons=["Imported lesson"],
+        )
+        result = import_strategy_package(artifacts, pkg, conflict_policy=ConflictPolicy.SKIP)
+        assert result.skill_written is False
+        assert skill_path.read_text(encoding="utf-8") == "# Existing skill\n\n## Operational Lessons\n\n- Keep me\n"
+
+    def test_import_merge_keeps_existing_skill_and_adds_lessons(self, tmp_path: Path) -> None:
+        from mts.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
+
+        artifacts = _make_artifacts(tmp_path)
+        skill_dir = artifacts.skills_root / "grid-ctf-ops"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        skill_path = skill_dir / "SKILL.md"
+        skill_path.write_text(
+            "---\nname: grid-ctf-knowledge\ndescription: existing\n---\n\n"
+            "# Existing Skill\n\n## Operational Lessons\n\n- Keep me\n\n## Playbook\n\nOld\n",
+            encoding="utf-8",
+        )
+
+        pkg = StrategyPackage(
+            scenario_name="grid_ctf",
+            description="A CTF game.",
+            lessons=["Imported lesson"],
+        )
+        result = import_strategy_package(artifacts, pkg, conflict_policy=ConflictPolicy.MERGE)
+        assert result.skill_written is True
+        content = skill_path.read_text(encoding="utf-8")
+        assert "# Existing Skill" in content
+        assert "- Keep me" in content
+        assert "- Imported lesson" in content
+
+    def test_import_persists_snapshot_and_strategy_for_reexport(self, tmp_path: Path) -> None:
+        from mts.knowledge.export import export_strategy_package
+        from mts.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
+
+        artifacts = _make_artifacts(tmp_path)
+        sqlite = _make_sqlite(tmp_path)
+        pkg = StrategyPackage(
+            scenario_name="grid_ctf",
+            playbook="## Imported playbook",
+            best_strategy={"aggression": 0.9},
+            best_score=0.88,
+            best_elo=1700.0,
+            metadata={"completed_runs": 5, "has_snapshot": True, "source_run_id": "run_abc"},
+        )
+        result = import_strategy_package(
+            artifacts,
+            pkg,
+            sqlite=sqlite,
+            conflict_policy=ConflictPolicy.MERGE,
+        )
+        assert result.snapshot_written is True
+        assert sqlite.count_completed_runs("grid_ctf") == 1
+        snapshot = sqlite.get_best_knowledge_snapshot("grid_ctf")
+        assert snapshot is not None
+        assert snapshot["best_score"] == pytest.approx(0.88)
+        assert sqlite.get_best_competitor_output("grid_ctf") == '{"aggression": 0.9}'
+
+        ctx = MagicMock()
+        ctx.artifacts = artifacts
+        ctx.sqlite = sqlite
+        with patch("mts.knowledge.export.SCENARIO_REGISTRY", self._mock_registry()):
+            exported = export_strategy_package(ctx, "grid_ctf")
+        assert exported.best_strategy == {"aggression": 0.9}
+        assert exported.best_score == pytest.approx(0.88)
+        assert exported.best_elo == pytest.approx(1700.0)
+        assert exported.metadata.completed_runs == 5
+        assert exported.metadata.source_run_id == snapshot["run_id"]
+
     def test_import_result_reports_actions(self, tmp_path: Path) -> None:
         from mts.knowledge.package import ConflictPolicy, ImportResult, StrategyPackage, import_strategy_package
 
@@ -338,6 +428,14 @@ class TestImportStrategyPackage:
         assert result.hints_written is False
         assert result.harness_written == []
 
+    @staticmethod
+    def _mock_registry() -> dict[str, object]:
+        class ScenarioStub:
+            def describe_rules(self) -> str:
+                return "Rules"
+
+        return {"grid_ctf": ScenarioStub}
+
 
 # ── export_strategy_package tests ────────────────────────────────────────
 
@@ -346,7 +444,6 @@ class TestExportStrategyPackage:
     @pytest.fixture()
     def tool_ctx(self, tmp_path: Path) -> MagicMock:
         """Minimal MtsToolContext mock for export tests."""
-        from mts.knowledge.export import SkillPackage
         from mts.mcp.tools import MtsToolContext
 
         ctx = MagicMock(spec=MtsToolContext)
@@ -379,7 +476,7 @@ class TestExportStrategyPackage:
         assert pkg.scenario_name == "grid_ctf"
 
     def test_export_includes_format_version(self, tool_ctx: MagicMock) -> None:
-        from mts.knowledge.package import PACKAGE_FORMAT_VERSION, StrategyPackage
+        from mts.knowledge.package import PACKAGE_FORMAT_VERSION
 
         with patch("mts.knowledge.export.SCENARIO_REGISTRY", self._mock_registry()):
             from mts.knowledge.export import export_strategy_package
@@ -406,7 +503,7 @@ class TestExportStrategyPackage:
 
 class TestExportImportRoundtrip:
     def test_roundtrip_preserves_all_fields(self, tmp_path: Path) -> None:
-        from mts.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
+        from mts.knowledge.package import StrategyPackage
 
         original = StrategyPackage(
             scenario_name="grid_ctf",
@@ -436,7 +533,12 @@ class TestExportImportRoundtrip:
     def test_roundtrip_harness_content_intact(self, tmp_path: Path) -> None:
         from mts.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
 
-        harness_code = "def validate_strategy(strategy, scenario):\n    if strategy['aggression'] > 1:\n        return False, ['too aggressive']\n    return True, []\n"
+        harness_code = (
+            "def validate_strategy(strategy, scenario):\n"
+            "    if strategy['aggression'] > 1:\n"
+            "        return False, ['too aggressive']\n"
+            "    return True, []\n"
+        )
         pkg = StrategyPackage(
             scenario_name="grid_ctf",
             harness={"aggression_check": harness_code},
