@@ -16,6 +16,7 @@ from mts.harness.evaluation.runner import EvaluationRunner
 from mts.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from mts.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from mts.harness.evaluation.types import EvaluationResult
+from mts.harness.pipeline.validity_gate import ValidityGate
 from mts.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from mts.knowledge.fresh_start import execute_fresh_start
 from mts.knowledge.harness_quality import compute_harness_quality
@@ -249,6 +250,46 @@ def stage_tournament(
     gate_decision = "rollback"
     tournament = None
     use_rapid = settings.exploration_mode == "rapid"
+
+    # --- Tier 1: Validity gate (AC-160) ---
+    if settings.two_tier_gating_enabled:
+        validity_gate = ValidityGate(
+            harness_loader=None,
+            scenario=scenario,
+            max_retries=settings.validity_max_retries,
+        )
+        validity_result = validity_gate.check(current_strategy)
+        if not validity_result.passed:
+            events.emit("validity_check_failed", {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+                "errors": validity_result.errors,
+                "retry_budget_remaining": validity_result.retry_budget_remaining,
+            })
+            can_retry = validity_gate.consume_retry()
+            if not can_retry:
+                # Validity budget exhausted: rollback without tournament
+                gate_decision = "rollback"
+                gate_delta = 0.0
+                events.emit("gate_decided", {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "decision": gate_decision,
+                    "delta": gate_delta,
+                    "tier": "validity",
+                })
+                ctx.score_history.append(0.0)
+                ctx.gate_decision_history.append(gate_decision)
+                ctx.gate_decision = gate_decision
+                ctx.gate_delta = gate_delta
+                ctx.current_strategy = current_strategy
+                ctx.attempt = attempt
+                return ctx
+        else:
+            events.emit("validity_check_passed", {
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+            })
 
     while True:
         events.emit("tournament_started", {
