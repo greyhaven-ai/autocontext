@@ -799,7 +799,7 @@ def _validate_and_persist_artifact(
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = artifacts_dir / f"{validated.id}.json"
     artifact_path.write_text(validated.model_dump_json(indent=2), encoding="utf-8")
-    if artifact_type == "harness":
+    if isinstance(validated, HarnessArtifact):
         ctx.artifacts.write_harness(validated.scenario, f"openclaw_{validated.id}", validated.source_code)
 
     return validated.id, str(artifact_path)

@@ -38,6 +38,11 @@ def _runner(preset: str | None = None) -> GenerationRunner:
     return runner
 
 
+def _get_custom_scenarios_dir() -> Path:
+    """Return the default directory for scaffolded custom scenarios."""
+    return Path("knowledge") / "_custom_scenarios"
+
+
 @app.command()
 def run(
     scenario: str = typer.Option("grid_ctf", "--scenario"),
@@ -417,6 +422,72 @@ def train(
     )
     console.print(f"[dim]scenario={scenario} data={data} budget={time_budget}s[/dim]")
     raise typer.Exit(code=2)
+
+
+@app.command("new-scenario")
+def new_scenario(
+    list_templates: bool = typer.Option(False, "--list", help="List available templates"),
+    template: str | None = typer.Option(None, "--template", help="Template to scaffold from"),
+    name: str | None = typer.Option(None, "--name", help="Name for the new scenario"),
+    judge_model: str | None = typer.Option(None, "--judge-model", help="Override judge model"),
+    non_interactive: bool = typer.Option(False, "--non-interactive", help="Use defaults, skip prompts"),
+) -> None:
+    """Scaffold a new scenario from the template library."""
+    from mts.scenarios.templates import TemplateLoader
+
+    loader = TemplateLoader()
+
+    if list_templates:
+        templates = loader.list_templates()
+        table = Table(title="Available Scenario Templates")
+        table.add_column("Name", style="bold")
+        table.add_column("Description")
+        table.add_column("Output Format")
+        table.add_column("Max Rounds", justify="right")
+        for t in templates:
+            table.add_row(t.name, t.description, t.output_format, str(t.max_rounds))
+        console.print(table)
+        return
+
+    # Scaffolding mode requires both --template and --name
+    if template is None:
+        console.print("[red]--template is required when not using --list[/red]")
+        raise typer.Exit(code=1)
+    if name is None:
+        console.print("[red]--name is required when scaffolding a scenario[/red]")
+        raise typer.Exit(code=1)
+
+    # Validate template exists
+    try:
+        loader.get_template(template)
+    except KeyError:
+        console.print(f"[red]Template '{template}' not found. Use --list to see available templates.[/red]")
+        raise typer.Exit(code=1) from None
+
+    # Build overrides
+    overrides: dict[str, object] = {}
+    if judge_model is not None:
+        overrides["judge_model"] = judge_model
+
+    # Scaffold to target directory
+    target_dir = _get_custom_scenarios_dir() / name
+    try:
+        loader.scaffold(template_name=template, target_dir=target_dir, overrides=overrides or None)
+    except Exception as e:
+        console.print(f"[red]Failed to scaffold scenario: {e}[/red]")
+        raise typer.Exit(code=1) from None
+
+    from mts.scenarios import SCENARIO_REGISTRY
+    from mts.scenarios.custom.registry import load_all_custom_scenarios
+
+    loaded = load_all_custom_scenarios(target_dir.parent.parent)
+    registered = loaded.get(name)
+    if registered is not None:
+        SCENARIO_REGISTRY[name] = registered
+
+    console.print(f"[green]Scenario '{name}' created from template '{template}'[/green]")
+    console.print(f"[dim]Files scaffolded to: {target_dir}[/dim]")
+    console.print("[dim]Available to agent-task tooling after scaffold/load via the custom scenario registry.[/dim]")
 
 
 if __name__ == "__main__":

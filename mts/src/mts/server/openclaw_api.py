@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -63,7 +63,7 @@ def evaluate_strategy_endpoint(body: EvaluateRequest) -> dict[str, Any]:
 @router.post("/validate")
 def validate_strategy_endpoint(
     body: ValidateRequest,
-    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
 ) -> dict[str, Any]:
     """Check a strategy against scenario constraints and harness validators."""
     from mts.mcp.tools import validate_strategy_against_harness
@@ -77,7 +77,7 @@ def validate_strategy_endpoint(
 @router.post("/artifacts")
 def publish_artifact_endpoint(
     body: dict[str, Any],
-    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
 ) -> dict[str, Any]:
     """Publish an artifact (harness, policy, or distilled model)."""
     from mts.mcp.tools import publish_artifact
@@ -90,9 +90,9 @@ def publish_artifact_endpoint(
 
 @router.get("/artifacts")
 def list_artifacts_endpoint(
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
     scenario: str | None = None,
     artifact_type: str | None = None,
-    ctx: MtsToolContext = Depends(get_openclaw_ctx),
 ) -> list[dict[str, Any]]:
     """List published artifacts with optional filters."""
     from mts.mcp.tools import list_artifacts
@@ -103,7 +103,7 @@ def list_artifacts_endpoint(
 @router.get("/artifacts/{artifact_id}")
 def fetch_artifact_endpoint(
     artifact_id: str,
-    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
 ) -> dict[str, Any]:
     """Fetch a published artifact by its ID."""
     from mts.mcp.tools import fetch_artifact
@@ -116,7 +116,7 @@ def fetch_artifact_endpoint(
 
 @router.get("/distill")
 def distill_status_endpoint(
-    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
 ) -> dict[str, Any]:
     """Check status of distillation workflows."""
     from mts.mcp.tools import distill_status
@@ -127,7 +127,7 @@ def distill_status_endpoint(
 @router.post("/distill")
 def trigger_distillation_endpoint(
     body: TriggerDistillRequest,
-    ctx: MtsToolContext = Depends(get_openclaw_ctx),
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
 ) -> dict[str, Any]:
     """Trigger a distillation workflow for a scenario."""
     from mts.mcp.tools import trigger_distillation

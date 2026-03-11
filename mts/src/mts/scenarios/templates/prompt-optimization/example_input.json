@@ -1,0 +1,10 @@
+{
+  "task_description": "Summarize technical documents into executive-friendly bullet points",
+  "initial_prompt": "Summarize the following document.",
+  "target_audience": "C-suite executives",
+  "constraints": {
+    "max_bullets": 5,
+    "tone": "professional",
+    "include_metrics": true
+  }
+}
