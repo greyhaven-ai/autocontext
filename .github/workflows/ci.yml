@@ -23,7 +23,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-caching: true
+          enable-cache: true
       - name: Install
         run: uv sync --group dev
       - name: Ruff
@@ -44,7 +44,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-caching: true
+          enable-cache: true
       - name: Install
         run: uv sync --group dev
       - name: Tests
@@ -71,7 +71,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-caching: true
+          enable-cache: true
       - name: Install
         run: uv sync --group dev
       - name: Deterministic scenario runs
@@ -108,7 +108,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-caching: true
+          enable-cache: true
       - name: Install
         run: uv sync --group dev
       - name: Live PrimeIntellect verification
