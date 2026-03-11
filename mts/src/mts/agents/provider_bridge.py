@@ -132,8 +132,33 @@ def create_role_client(provider_type: str, settings: AppSettings) -> LanguageMod
 
         return AgentSdkClient(config=AgentSdkConfig(connect_mcp_server=settings.agent_sdk_connect_mcp))
 
+    if provider_type == "openclaw":
+        agent = _build_openclaw_agent(settings)
+        from mts.openclaw.agent_adapter import OpenClawClient
+
+        return OpenClawClient(
+            agent=agent,
+            max_retries=int(getattr(settings, "openclaw_max_retries", 2)),
+            timeout_seconds=float(getattr(settings, "openclaw_timeout_seconds", 30.0)),
+            retry_base_delay=float(getattr(settings, "openclaw_retry_base_delay", 0.25)),
+        )
+
     # LLMProvider-based providers — use the bridge
     if provider_type in ("mlx", "openai", "openai-compatible", "ollama", "vllm"):
         return _create_provider_bridge(provider_type, settings)
 
     raise ValueError(f"unsupported role provider: {provider_type!r}")
+
+
+def _build_openclaw_agent(settings: AppSettings) -> object:
+    """Build an OpenClaw agent instance from settings.
+
+    Returns an object satisfying OpenClawAgentProtocol. Currently returns
+    a stub that callers must replace; real implementations will be provided
+    by the OpenClaw SDK or custom agent classes.
+    """
+    raise NotImplementedError(
+        "OpenClaw agent construction requires an agent instance. "
+        "Use OpenClawClient(agent=your_agent) directly, or provide "
+        "a factory via _build_openclaw_agent."
+    )
