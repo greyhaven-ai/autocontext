@@ -1,0 +1,62 @@
+name: rag-accuracy
+description: >-
+  Optimize RAG pipeline configuration for retrieval relevance. The agent
+  tunes parameters like chunk size, overlap, top-k, and embedding strategy
+  to maximize retrieval accuracy and answer grounding.
+task_prompt: >-
+  You are optimizing a Retrieval-Augmented Generation (RAG) pipeline.
+  Given the following configuration parameters and a set of test queries,
+  produce an optimized configuration that maximizes retrieval relevance
+  and answer quality.
+
+  Current configuration:
+  - chunk_size: 512 tokens
+  - chunk_overlap: 50 tokens
+  - top_k: 5
+  - embedding_model: "text-embedding-3-small"
+  - reranking: disabled
+  - hybrid_search: disabled
+
+  Test domain: Technical documentation for a cloud platform.
+
+  Produce an optimized configuration with explanations for each parameter
+  choice. Include the rationale for trade-offs between recall and precision.
+judge_rubric: >-
+  Evaluate the RAG configuration optimization on these dimensions:
+  1. Retrieval relevance (0.0-1.0): Do the parameter choices maximize the
+     likelihood of retrieving relevant chunks for diverse query types?
+  2. Answer grounding (0.0-1.0): Does the configuration support well-grounded
+     answers with proper context windows?
+  3. Citation accuracy (0.0-1.0): Does the configuration facilitate accurate
+     source attribution and chunk traceability?
+  4. Hallucination detection (0.0-1.0): Does the configuration include
+     mechanisms to reduce and detect hallucinated content?
+  5. Parameter justification (0.0-1.0): Are parameter choices well-justified
+     with clear trade-off analysis?
+
+  Overall score is a weighted average: retrieval_relevance 0.3,
+  answer_grounding 0.25, citation_accuracy 0.2,
+  hallucination_detection 0.15, parameter_justification 0.1.
+output_format: json_schema
+max_rounds: 2
+quality_threshold: 0.8
+revision_prompt: >-
+  Review the judge feedback on your RAG configuration. Pay special attention
+  to retrieval relevance and hallucination detection scores. Adjust parameters
+  and add missing mechanisms as suggested.
+rubric_dimensions:
+  - name: retrieval_relevance
+    description: Do parameter choices maximize retrieval of relevant chunks?
+    weight: 0.3
+  - name: answer_grounding
+    description: Does configuration support well-grounded answers?
+    weight: 0.25
+  - name: citation_accuracy
+    description: Does configuration facilitate source attribution?
+    weight: 0.2
+  - name: hallucination_detection
+    description: Are there mechanisms to reduce and detect hallucinations?
+    weight: 0.15
+  - name: parameter_justification
+    description: Are parameter choices well-justified?
+    weight: 0.1

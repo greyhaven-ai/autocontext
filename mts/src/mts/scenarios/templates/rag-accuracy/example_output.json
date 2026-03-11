@@ -1,0 +1,28 @@
+{
+  "optimized_config": {
+    "chunk_size": 256,
+    "chunk_overlap": 64,
+    "top_k": 8,
+    "embedding_model": "text-embedding-3-large",
+    "reranking": true,
+    "reranker_model": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+    "hybrid_search": true,
+    "hybrid_alpha": 0.7,
+    "metadata_filters": ["doc_type", "section", "version"]
+  },
+  "rationale": {
+    "chunk_size": "Smaller chunks (256) improve precision for technical docs with dense information",
+    "chunk_overlap": "25% overlap preserves context at chunk boundaries",
+    "top_k": "Higher k (8) with reranking gives better recall without sacrificing precision",
+    "reranking": "Cross-encoder reranking significantly improves relevance ordering",
+    "hybrid_search": "Combining dense and sparse retrieval handles both semantic and keyword queries"
+  },
+  "score": 0.82,
+  "dimension_scores": {
+    "retrieval_relevance": 0.85,
+    "answer_grounding": 0.8,
+    "citation_accuracy": 0.78,
+    "hallucination_detection": 0.82,
+    "parameter_justification": 0.85
+  }
+}
