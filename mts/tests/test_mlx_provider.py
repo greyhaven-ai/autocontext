@@ -176,8 +176,8 @@ class TestGeneration:
 
         # Should use the call-level temperature, not the default
         mock_gen.assert_called_once()
-        call_kwargs = mock_gen.call_args
-        assert call_kwargs[1].get("temperature") == 0.3 or call_kwargs[0][1] == 0.3 if len(call_kwargs[0]) > 1 else True
+        _, kwargs = mock_gen.call_args
+        assert kwargs["temperature"] == 0.3
 
     @patch("mts.providers.mlx_provider._load_model_and_tokenizer")
     def test_complete_uses_max_tokens(self, mock_load: MagicMock, tmp_path: Path) -> None:
@@ -346,3 +346,84 @@ class TestAutoRegressiveSampling:
             result = provider._generate("prompt", temperature=0.8, max_tokens=max_t)
 
         assert isinstance(result, str)
+
+
+# ── Registry wiring tests ──────────────────────────────────────────────
+
+
+class TestRegistryWiring:
+    """Verify MLXProvider is reachable through the provider factory."""
+
+    @patch("mts.providers.mlx_provider._load_model_and_tokenizer")
+    def test_create_provider_mlx(self, mock_load: MagicMock, tmp_path: Path) -> None:
+        """create_provider('mlx', model=<path>) returns an MLXProvider."""
+        from mts.providers.registry import create_provider
+
+        _write_fake_checkpoint(tmp_path / "model")
+        mock_load.return_value = (_fake_model(), _fake_tokenizer())
+
+        provider = create_provider("mlx", model=str(tmp_path / "model"))
+        assert provider.name == "mlx"
+        assert provider.default_model() == str(tmp_path / "model")
+
+    @patch("mts.providers.mlx_provider._load_model_and_tokenizer")
+    def test_create_provider_mlx_case_insensitive(self, mock_load: MagicMock, tmp_path: Path) -> None:
+        """create_provider('MLX') should also work (case-insensitive)."""
+        from mts.providers.registry import create_provider
+
+        _write_fake_checkpoint(tmp_path / "model")
+        mock_load.return_value = (_fake_model(), _fake_tokenizer())
+
+        provider = create_provider("MLX", model=str(tmp_path / "model"))
+        assert provider.name == "mlx"
+
+    def test_create_provider_mlx_no_path_raises(self) -> None:
+        """create_provider('mlx') without model path should raise ProviderError."""
+        from mts.providers.registry import create_provider
+
+        with pytest.raises(ProviderError, match="model_path|model path|does not exist"):
+            create_provider("mlx")
+
+    @patch("mts.providers.mlx_provider._load_model_and_tokenizer")
+    def test_get_provider_mlx_from_settings(self, mock_load: MagicMock, tmp_path: Path) -> None:
+        """get_provider() with judge_provider='mlx' creates an MLXProvider."""
+        from mts.config.settings import AppSettings
+        from mts.providers.registry import get_provider
+
+        _write_fake_checkpoint(tmp_path / "model")
+        mock_load.return_value = (_fake_model(), _fake_tokenizer())
+
+        settings = AppSettings(
+            judge_provider="mlx",
+            mlx_model_path=str(tmp_path / "model"),
+            mlx_temperature=0.5,
+            mlx_max_tokens=256,
+        )
+        provider = get_provider(settings)
+        assert provider.name == "mlx"
+        assert provider._temperature == 0.5
+        assert provider._max_tokens == 256
+
+    @patch("mts.providers.mlx_provider._load_model_and_tokenizer")
+    def test_get_provider_mlx_uses_settings_defaults(self, mock_load: MagicMock, tmp_path: Path) -> None:
+        """get_provider() should forward mlx_temperature and mlx_max_tokens from settings."""
+        from mts.config.settings import AppSettings
+        from mts.providers.registry import get_provider
+
+        _write_fake_checkpoint(tmp_path / "model")
+        mock_load.return_value = (_fake_model(), _fake_tokenizer())
+
+        settings = AppSettings(
+            judge_provider="mlx",
+            mlx_model_path=str(tmp_path / "model"),
+        )
+        provider = get_provider(settings)
+        assert provider._temperature == 0.8  # default
+        assert provider._max_tokens == 512  # default
+
+    def test_error_message_includes_mlx_in_supported_list(self) -> None:
+        """Unknown provider error should list 'mlx' as a supported type."""
+        from mts.providers.registry import create_provider
+
+        with pytest.raises(ProviderError, match="mlx"):
+            create_provider("magic-llm")
