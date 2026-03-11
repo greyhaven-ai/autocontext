@@ -15,7 +15,7 @@ import json
 import re
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mts.training import HAS_MLX
 
@@ -155,10 +155,11 @@ if HAS_MLX:
             return self.special_tokens["<|end|>"]
 
         def encode(self, text: str) -> list[int]:
-            return self._encoding.encode(text, allowed_special=set(self.special_tokens))
+            token_ids = self._encoding.encode(text, allowed_special=set(self.special_tokens))
+            return cast(list[int], token_ids)
 
         def decode(self, token_ids: list[int]) -> str:
-            return self._encoding.decode(token_ids)
+            return cast(str, self._encoding.decode(token_ids))
 
     def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> AutoresearchTokenizer:
         """Train a BPE tokenizer on the given corpus.
@@ -328,7 +329,7 @@ if HAS_MLX:
 
         if not hasattr(model, "cfg"):
             # Test doubles may not expose a sampling surface; fall back to the tokenizer stub.
-            return tokenizer.decode([seed] * 32)
+            return cast(str, tokenizer.decode([seed] * 32))
 
         prompt = (
             f"<|scenario|>{_resolve_scenario_name(scenario)}"
@@ -348,13 +349,14 @@ if HAS_MLX:
             if end_token_id is not None and next_token == end_token_id:
                 break
 
-        return tokenizer.decode(token_ids)
+        return cast(str, tokenizer.decode(token_ids))
 
     def _resolve_scenario_name(scenario: Any) -> str:
         value = getattr(scenario, "name", None)
         if isinstance(value, str) and value.strip():
             return value
-        return scenario.__class__.__name__.lower()
+        scenario_name = cast(str, scenario.__class__.__name__)
+        return scenario_name.lower()
 
     def _resolve_scenario_context(scenario: Any) -> str:
         task_prompt = getattr(scenario, "get_task_prompt", None)
