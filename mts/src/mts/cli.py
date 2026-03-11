@@ -15,6 +15,7 @@ from rich.table import Table
 
 from mts.config import load_settings
 from mts.config.presets import VALID_PRESET_NAMES
+from mts.config.settings import AppSettings
 from mts.loop.generation_runner import GenerationRunner
 from mts.storage import SQLiteStore
 
@@ -36,6 +37,46 @@ def _runner(preset: str | None = None) -> GenerationRunner:
     runner = GenerationRunner(settings)
     runner.migrate(Path(__file__).resolve().parents[2] / "migrations")
     return runner
+
+
+def _resolve_export_artifact_roots(
+    *,
+    settings: AppSettings,
+    resolved_db: Path,
+    runs_root: str | None,
+    knowledge_root: str | None,
+    skills_root: str | None,
+    claude_skills_path: str | None,
+) -> tuple[Path, Path, Path, Path]:
+    """Resolve artifact roots that match the DB being exported.
+
+    When exporting from an alternate DB path, default to the DB's workspace
+    layout instead of silently mixing it with the current process settings.
+    """
+    default_runs_root = settings.runs_root
+    default_knowledge_root = settings.knowledge_root
+    default_skills_root = settings.skills_root
+    default_claude_skills_path = settings.claude_skills_path
+
+    using_default_db = resolved_db == settings.db_path
+    if using_default_db:
+        base_runs_root = default_runs_root
+        base_knowledge_root = default_knowledge_root
+        base_skills_root = default_skills_root
+        base_claude_skills_path = default_claude_skills_path
+    else:
+        workspace_root = resolved_db.parent.parent if resolved_db.parent.name == "runs" else resolved_db.parent
+        base_runs_root = workspace_root / "runs"
+        base_knowledge_root = workspace_root / "knowledge"
+        base_skills_root = workspace_root / "skills"
+        base_claude_skills_path = workspace_root / ".claude" / "skills"
+
+    return (
+        Path(runs_root) if runs_root is not None else base_runs_root,
+        Path(knowledge_root) if knowledge_root is not None else base_knowledge_root,
+        Path(skills_root) if skills_root is not None else base_skills_root,
+        Path(claude_skills_path) if claude_skills_path is not None else base_claude_skills_path,
+    )
 
 
 @app.command()
@@ -428,6 +469,14 @@ def export_training_data_cmd(
     include_matches: bool = typer.Option(False, "--include-matches", help="Include per-match records"),
     kept_only: bool = typer.Option(False, "--kept-only", help="Only export generations that advanced"),
     db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
+    runs_root: str | None = typer.Option(None, "--runs-root", help="Override runs root for artifact lookup"),
+    knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root for playbooks and hints"),
+    skills_root: str | None = typer.Option(None, "--skills-root", help="Override skills root for artifact lookup"),
+    claude_skills_path: str | None = typer.Option(
+        None,
+        "--claude-skills-path",
+        help="Override Claude skills path for artifact lookup",
+    ),
 ) -> None:
     """Export strategy-level training data as JSONL."""
     import dataclasses
@@ -450,12 +499,22 @@ def export_training_data_cmd(
     settings = load_settings()
     resolved_db = Path(db_path) if db_path is not None else settings.db_path
     sqlite = SQLiteStore(resolved_db)
+    resolved_runs_root, resolved_knowledge_root, resolved_skills_root, resolved_claude_skills_path = (
+        _resolve_export_artifact_roots(
+            settings=settings,
+            resolved_db=resolved_db,
+            runs_root=runs_root,
+            knowledge_root=knowledge_root,
+            skills_root=skills_root,
+            claude_skills_path=claude_skills_path,
+        )
+    )
 
     artifacts = ArtifactStore(
-        runs_root=settings.runs_root,
-        knowledge_root=settings.knowledge_root,
-        skills_root=settings.skills_root,
-        claude_skills_path=settings.claude_skills_path,
+        runs_root=resolved_runs_root,
+        knowledge_root=resolved_knowledge_root,
+        skills_root=resolved_skills_root,
+        claude_skills_path=resolved_claude_skills_path,
     )
 
     output_path = Path(output)

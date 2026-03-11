@@ -105,6 +105,28 @@ def test_cli_output_is_valid_jsonl(tmp_path: Path) -> None:
         assert "score" in parsed
 
 
+def test_cli_db_override_uses_matching_artifact_roots(tmp_path: Path) -> None:
+    _, artifacts, db_path = _setup_db(tmp_path)
+    artifacts.write_playbook("grid_ctf", "## Guide\nUse the local temp artifacts.")
+    artifacts.write_hints("grid_ctf", "Temp hint.")
+    output_file = tmp_path / "out.jsonl"
+
+    result = runner.invoke(
+        app,
+        [
+            "export-training-data",
+            "--run-id", "run-1",
+            "--output", str(output_file),
+            "--db-path", str(db_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    first = json.loads(output_file.read_text(encoding="utf-8").splitlines()[0])
+    assert "local temp artifacts" in first["context"]["playbook"]
+    assert "Temp hint." in first["context"]["hints"]
+
+
 def test_cli_error_when_no_run_id_or_scenario(tmp_path: Path) -> None:
     _, _, db_path = _setup_db(tmp_path)
     output_file = tmp_path / "out.jsonl"
@@ -162,6 +184,6 @@ def test_cli_include_matches_flag(tmp_path: Path) -> None:
     # 2 training records + 1 match record (gen 1 has 1 match)
     assert len(lines) == 3
     # The match record should have a "seed" field
-    match_lines = [json.loads(l) for l in lines if "seed" in json.loads(l)]
+    match_lines = [json.loads(line) for line in lines if "seed" in json.loads(line)]
     assert len(match_lines) == 1
     assert match_lines[0]["seed"] == 42
