@@ -107,10 +107,12 @@ class PolicyExecutor:
         scenario: ScenarioInterface,
         *,
         timeout_per_match: float = 30.0,
+        max_moves_per_match: int = 128,
         safe_builtins: bool = True,
     ) -> None:
         self._scenario = scenario
         self._timeout_per_match = timeout_per_match
+        self._max_moves_per_match = max(1, max_moves_per_match)
         self._safe_builtins = safe_builtins
 
     def _build_namespace(self) -> dict[str, Any]:
@@ -154,13 +156,64 @@ class PolicyExecutor:
         choose_action: Callable[..., dict[str, Any]],
         seed: int | None,
     ) -> PolicyMatchResult:
-        """Execute one match: init state, call policy, validate, step, score."""
+        """Execute one match by repeatedly stepping until the scenario terminates."""
         scenario = self._scenario
         state = scenario.initial_state(seed=seed)
+        moves_played = 0
 
-        # Call the policy — re-raise _PolicyTimeout so the outer handler catches it
         try:
-            action = choose_action(state)
+            while not scenario.is_terminal(state):
+                if moves_played >= self._max_moves_per_match:
+                    return PolicyMatchResult(
+                        score=0.0,
+                        normalized_score=0.0,
+                        had_illegal_actions=False,
+                        illegal_action_count=0,
+                        errors=[f"policy exceeded max moves ({self._max_moves_per_match})"],
+                        moves_played=moves_played,
+                        replay=None,
+                    )
+
+                try:
+                    action = choose_action(state)
+                except _PolicyTimeout:
+                    raise
+                except Exception as exc:
+                    return PolicyMatchResult(
+                        score=0.0,
+                        normalized_score=0.0,
+                        had_illegal_actions=False,
+                        illegal_action_count=0,
+                        errors=[f"policy raised exception: {exc}"],
+                        moves_played=moves_played,
+                        replay=None,
+                    )
+
+                if not isinstance(action, dict):
+                    return PolicyMatchResult(
+                        score=0.0,
+                        normalized_score=0.0,
+                        had_illegal_actions=True,
+                        illegal_action_count=1,
+                        errors=[f"choose_action must return a dict, got {type(action).__name__}"],
+                        moves_played=moves_played,
+                        replay=None,
+                    )
+
+                valid, reason = scenario.validate_actions(state, "challenger", action)
+                if not valid:
+                    return PolicyMatchResult(
+                        score=0.0,
+                        normalized_score=0.0,
+                        had_illegal_actions=True,
+                        illegal_action_count=1,
+                        errors=[],
+                        moves_played=moves_played,
+                        replay=None,
+                    )
+
+                state = scenario.step(state, action)
+                moves_played += 1
         except _PolicyTimeout:
             raise
         except Exception as exc:
@@ -169,37 +222,12 @@ class PolicyExecutor:
                 normalized_score=0.0,
                 had_illegal_actions=False,
                 illegal_action_count=0,
-                errors=[f"policy raised exception: {exc}"],
-                moves_played=0,
+                errors=[f"scenario execution failed: {exc}"],
+                moves_played=moves_played,
                 replay=None,
             )
 
-        if not isinstance(action, dict):
-            return PolicyMatchResult(
-                score=0.0,
-                normalized_score=0.0,
-                had_illegal_actions=True,
-                illegal_action_count=1,
-                errors=[f"choose_action must return a dict, got {type(action).__name__}"],
-                moves_played=0,
-                replay=None,
-            )
-
-        # Validate actions
-        valid, reason = scenario.validate_actions(state, "challenger", action)
-        if not valid:
-            return PolicyMatchResult(
-                score=0.0,
-                normalized_score=0.0,
-                had_illegal_actions=True,
-                illegal_action_count=1,
-                errors=[],
-                moves_played=0,
-                replay=None,
-            )
-
-        # Step the scenario via execute_match
-        result = scenario.execute_match(action, seed=seed if seed is not None else 0)
+        result = scenario.get_result(state)
         score = result.score
         # Normalize score to [0, 1] — scores from scenarios are already in [0, 1]
         normalized_score = max(0.0, min(1.0, score))
@@ -217,7 +245,7 @@ class PolicyExecutor:
             had_illegal_actions=False,
             illegal_action_count=0,
             errors=[],
-            moves_played=1,
+            moves_played=moves_played,
             replay=replay,
         )
 
