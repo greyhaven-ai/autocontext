@@ -30,6 +30,8 @@ jobs:
         run: uv run ruff check src tests
       - name: Mypy
         run: uv run mypy src
+      - name: Protocol parity check
+        run: uv run python ../scripts/generate_protocol.py --check
 
   test:
     runs-on: ubuntu-latest
