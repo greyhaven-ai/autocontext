@@ -93,22 +93,11 @@ class SolveManager:
     def _build_creator(self) -> Any:
         """Build a ScenarioCreator following the same pattern as server/app.py."""
         try:
-            from mts.agents.llm_client import AnthropicClient, DeterministicDevClient, LanguageModelClient
+            from mts.agents.llm_client import build_client_from_settings
             from mts.agents.subagent_runtime import SubagentRuntime
             from mts.scenarios.custom.creator import ScenarioCreator
 
-            provider = self._settings.agent_provider
-            client: LanguageModelClient
-            if provider == "deterministic":
-                client = DeterministicDevClient()
-            elif provider == "anthropic":
-                api_key = self._settings.anthropic_api_key
-                if not api_key:
-                    return None
-                client = AnthropicClient(api_key)
-            else:
-                return None
-
+            client = build_client_from_settings(self._settings)
             runtime = SubagentRuntime(client)
             return ScenarioCreator(
                 runtime=runtime,

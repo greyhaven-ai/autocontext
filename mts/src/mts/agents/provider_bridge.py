@@ -78,7 +78,7 @@ def _create_provider_bridge(provider_type: str, settings: AppSettings) -> Langua
     if provider_type == "mlx":
         from mts.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
 
-        provider = MLXProvider(
+        provider: LLMProvider = MLXProvider(
             model_path=getattr(settings, "mlx_model_path", ""),
             temperature=getattr(settings, "mlx_temperature", 0.8),
             max_tokens=getattr(settings, "mlx_max_tokens", 512),

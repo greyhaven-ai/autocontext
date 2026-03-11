@@ -31,6 +31,8 @@ def build_mts_dag() -> RoleDAG:
 
 def build_role_handler(
     orch: AgentOrchestrator,
+    generation: int = 1,
+    scenario_name: str = "",
     tool_context: str = "",
     strategy_interface: str = "",
 ) -> RoleHandler:
@@ -38,23 +40,51 @@ def build_role_handler(
 
     def handler(name: str, prompt: str, completed: dict[str, RoleExecution]) -> RoleExecution:
         if name == "competitor":
-            _raw_text, exec_result = orch.competitor.run(prompt, tool_context=tool_context)
-            return exec_result
+            model = orch.resolve_model("competitor", generation=generation, scenario_name=scenario_name)
+            original_model = orch.competitor.model
+            if model is not None:
+                orch.competitor.model = model
+            try:
+                _raw_text, exec_result = orch.competitor.run(prompt, tool_context=tool_context)
+                return exec_result
+            finally:
+                orch.competitor.model = original_model
         elif name == "translator":
             competitor_exec = completed.get("competitor")
             raw_text = competitor_exec.content if competitor_exec else ""
             _strategy, exec_result = orch.translator.translate(raw_text, strategy_interface)
             return exec_result
         elif name == "analyst":
-            return orch.analyst.run(prompt)
+            model = orch.resolve_model("analyst", generation=generation)
+            original_model = orch.analyst.model
+            if model is not None:
+                orch.analyst.model = model
+            try:
+                return orch.analyst.run(prompt)
+            finally:
+                orch.analyst.model = original_model
         elif name == "architect":
-            return orch.architect.run(prompt)
+            model = orch.resolve_model("architect", generation=generation)
+            original_model = orch.architect.model
+            if model is not None:
+                orch.architect.model = model
+            try:
+                return orch.architect.run(prompt)
+            finally:
+                orch.architect.model = original_model
         elif name == "coach":
             analyst_exec = completed.get("analyst")
             enriched = prompt
             if analyst_exec:
                 enriched = orch._enrich_coach_prompt(prompt, analyst_exec.content)
-            return orch.coach.run(enriched)
+            model = orch.resolve_model("coach", generation=generation)
+            original_model = orch.coach.model
+            if model is not None:
+                orch.coach.model = model
+            try:
+                return orch.coach.run(enriched)
+            finally:
+                orch.coach.model = original_model
         else:
             raise ValueError(f"Unknown role: {name}")
 

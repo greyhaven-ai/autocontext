@@ -100,6 +100,11 @@ class AppSettings(BaseModel):
     tier_sonnet_model: str = Field(default="claude-sonnet-4-5-20250929")
     tier_opus_model: str = Field(default="claude-opus-4-6")
     tier_competitor_haiku_max_gen: int = Field(default=3, ge=1)
+    tier_harness_aware_enabled: bool = Field(
+        default=False,
+        description="Allow strong harness coverage to demote competitor model tier",
+    )
+    tier_harness_coverage_demotion_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     # Agent task judge settings
     judge_model: str = Field(default="claude-sonnet-4-20250514")
     judge_samples: int = Field(default=1, ge=1)
@@ -230,6 +235,10 @@ class AppSettings(BaseModel):
     analyst_provider: str = Field(default="", description="Provider override for analyst role")
     coach_provider: str = Field(default="", description="Provider override for coach role")
     architect_provider: str = Field(default="", description="Provider override for architect role")
+    # MLX local model inference (AC-182)
+    mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
+    mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
+    mlx_max_tokens: int = Field(default=512, ge=1, description="Max generation tokens for MLX model")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod

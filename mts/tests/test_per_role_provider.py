@@ -294,6 +294,10 @@ class TestOrchestratorPerRoleWiring:
         from mts.agents.orchestrator import AgentOrchestrator
         from mts.config.settings import AppSettings
 
+        class _Worker:
+            def __init__(self, **kwargs: object) -> None:
+                self.kwargs = kwargs
+
         default_client = MagicMock(spec=LanguageModelClient)
         role_client = MagicMock(spec=LanguageModelClient)
         settings = AppSettings(agent_provider="deterministic")
@@ -301,7 +305,6 @@ class TestOrchestratorPerRoleWiring:
         orch._role_clients["competitor"] = role_client
 
         context = SimpleNamespace(variables={}, summary="summary")
-        backend_worker = object()
 
         with (
             patch("mts.rlm.session.make_llm_batch", return_value="batch") as mock_batch,
@@ -317,7 +320,7 @@ class TestOrchestratorPerRoleWiring:
                 model="model",
                 system_tpl="{variable_summary}",
                 context=context,
-                worker_cls=lambda **kwargs: backend_worker,
+                worker_cls=_Worker,
             )
 
         mock_batch.assert_called_once_with(role_client, settings.rlm_sub_model)

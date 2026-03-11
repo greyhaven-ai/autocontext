@@ -11,6 +11,7 @@ MLX-dependent code is behind import guards.
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 from collections.abc import Iterator
@@ -32,6 +33,15 @@ SPECIAL_TOKEN_STRINGS = (
     "<|end|>",
 )
 
+_BPE_PAT = (
+    r"(?i:'s|'t|'re|'ve|'m|'ll|'d)"
+    r"|[^\r\n\p{L}\p{N}]?\p{L}+"
+    r"|\p{N}{1,3}"
+    r"| ?[^\s\p{L}\p{N}]+[\r\n]*"
+    r"|\s*[\r\n]+"
+    r"|\s+"
+)
+
 
 def build_special_tokens(base_vocab_size: int) -> dict[str, int]:
     """Map the autoresearch special tokens above the base tokenizer range."""
@@ -45,6 +55,35 @@ def total_vocab_size(base_vocab_size: int) -> int:
     """Return the embedding/output vocab size including special tokens."""
 
     return base_vocab_size + len(SPECIAL_TOKEN_STRINGS)
+
+
+def serialize_tokenizer(tokenizer: Any) -> dict[str, Any]:
+    """Serialize an AutoresearchTokenizer-compatible object to JSON data."""
+    encoding = getattr(tokenizer, "_encoding", None)
+    if encoding is None:
+        raise ValueError("tokenizer is missing underlying encoding")
+    mergeable_ranks = getattr(encoding, "_mergeable_ranks", None)
+    if mergeable_ranks is None:
+        raise ValueError("tokenizer encoding is missing mergeable ranks")
+
+    pat_str = getattr(encoding, "_pat_str", _BPE_PAT)
+    base_vocab_size = int(getattr(tokenizer, "base_vocab_size", BASE_VOCAB_SIZE))
+    encoded_ranks = {
+        base64.b64encode(token_bytes).decode("ascii"): token_id
+        for token_bytes, token_id in mergeable_ranks.items()
+    }
+    return {
+        "type": "BPE",
+        "base_vocab_size": base_vocab_size,
+        "pat_str": pat_str,
+        "mergeable_ranks": encoded_ranks,
+    }
+
+
+def save_tokenizer_json(tokenizer: Any, path: Path) -> None:
+    """Persist tokenizer metadata in the format expected by MLXProvider."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(serialize_tokenizer(tokenizer), indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _extract_strategy_json(text: str) -> dict[str, Any] | None:
@@ -191,14 +230,6 @@ if HAS_MLX:
         # Special tokens for our format
         special_tokens = build_special_tokens(vocab_size)
 
-        _BPE_PAT = (
-            r"(?i:'s|'t|'re|'ve|'m|'ll|'d)"
-            r"|[^\r\n\p{L}\p{N}]?\p{L}+"
-            r"|\p{N}{1,3}"
-            r"| ?[^\s\p{L}\p{N}]+[\r\n]*"
-            r"|\s*[\r\n]+"
-            r"|\s+"
-        )
         enc = tiktoken.Encoding(
             name="mts_autoresearch",
             pat_str=_BPE_PAT,
