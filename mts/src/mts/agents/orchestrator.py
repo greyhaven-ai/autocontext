@@ -138,6 +138,41 @@ def apply_dag_changes(dag: RoleDAG, changes: list[dict[str, Any]]) -> tuple[int,
     return applied, skipped
 
 
+def _apply_role_overrides(orch: AgentOrchestrator, settings: AppSettings) -> None:
+    """Apply per-role provider overrides to an orchestrator's runners.
+
+    For each role with a non-empty ``{role}_provider`` setting, create a
+    dedicated LanguageModelClient and SubagentRuntime, then reassign the
+    runner to use it.
+    """
+    from mts.agents.provider_bridge import create_role_client
+
+    role_overrides: dict[str, str] = {
+        "competitor": settings.competitor_provider,
+        "analyst": settings.analyst_provider,
+        "coach": settings.coach_provider,
+        "architect": settings.architect_provider,
+    }
+
+    runner_map = {
+        "competitor": "competitor",
+        "analyst": "analyst",
+        "coach": "coach",
+        "architect": "architect",
+    }
+
+    for role, provider_type in role_overrides.items():
+        if not provider_type:
+            continue
+        client = create_role_client(provider_type, settings)
+        if client is None:
+            continue
+        runtime = SubagentRuntime(client=client)
+        runner = getattr(orch, runner_map[role])
+        runner.runtime = runtime
+        LOGGER.info("role '%s' using per-role provider: %s", role, provider_type)
+
+
 class AgentOrchestrator:
     """Runs competitor/analyst/coach/architect role sequence."""
 
@@ -196,7 +231,13 @@ class AgentOrchestrator:
             client = AgentSdkClient(config=sdk_config)
         else:
             raise ValueError(f"unsupported agent provider: {settings.agent_provider}")
-        return cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite)
+
+        orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite)
+
+        # Apply per-role provider overrides (AC-184)
+        _apply_role_overrides(orch, settings)
+
+        return orch
 
     def run_generation(
         self,

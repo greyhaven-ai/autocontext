@@ -225,6 +225,11 @@ class AppSettings(BaseModel):
     validity_max_retries: int = Field(
         default=3, ge=0, description="Max validity retries before falling through to tournament",
     )
+    # Per-role provider overrides (AC-184) — empty = use MTS_AGENT_PROVIDER
+    competitor_provider: str = Field(default="", description="Provider override for competitor role")
+    analyst_provider: str = Field(default="", description="Provider override for analyst role")
+    coach_provider: str = Field(default="", description="Provider override for coach role")
+    architect_provider: str = Field(default="", description="Provider override for architect role")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
