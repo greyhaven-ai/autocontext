@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import textwrap
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -332,6 +333,69 @@ class TestPolicyRefinementLoopRefine:
         result = loop.refine(_GOOD_OTHELLO_POLICY)
         assert result.best_heuristic > 0.0
         assert result.iterations >= 1
+
+    def test_uses_stable_evaluation_seeds_each_iteration(self) -> None:
+        """Each refinement iteration should compare policies on the same seeds."""
+        scenario = GridCtfScenario()
+        executor = MagicMock(spec=PolicyExecutor)
+        executor.execute_batch.side_effect = [
+            [
+                PolicyMatchResult(
+                    score=0.6,
+                    normalized_score=0.6,
+                    had_illegal_actions=False,
+                    illegal_action_count=0,
+                    errors=[],
+                    moves_played=1,
+                    replay=None,
+                ),
+                PolicyMatchResult(
+                    score=0.7,
+                    normalized_score=0.7,
+                    had_illegal_actions=False,
+                    illegal_action_count=0,
+                    errors=[],
+                    moves_played=1,
+                    replay=None,
+                ),
+            ],
+            [
+                PolicyMatchResult(
+                    score=0.8,
+                    normalized_score=0.8,
+                    had_illegal_actions=False,
+                    illegal_action_count=0,
+                    errors=[],
+                    moves_played=1,
+                    replay=None,
+                ),
+                PolicyMatchResult(
+                    score=0.9,
+                    normalized_score=0.9,
+                    had_illegal_actions=False,
+                    illegal_action_count=0,
+                    errors=[],
+                    moves_played=1,
+                    replay=None,
+                ),
+            ],
+        ]
+        provider = _DeterministicProvider([_GOOD_GRID_CTF_POLICY])
+        loop = PolicyRefinementLoop(
+            scenario,
+            executor,
+            provider,
+            max_iterations=2,
+            matches_per_iteration=2,
+            convergence_window=10,
+        )
+
+        loop.refine(_GOOD_GRID_CTF_POLICY)
+
+        first_call = executor.execute_batch.call_args_list[0]
+        second_call = executor.execute_batch.call_args_list[1]
+        assert first_call.kwargs["seeds"] == [0, 1]
+        assert second_call.kwargs["seeds"] == [0, 1]
 
 
 class TestPolicyRefinementLoopConvergence:

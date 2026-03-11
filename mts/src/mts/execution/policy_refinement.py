@@ -144,15 +144,15 @@ class PolicyRefinementLoop:
         self._provider = provider
         self._max_iterations = max(1, max_iterations)
         self._matches_per_iteration = max(1, matches_per_iteration)
+        self._evaluation_seeds = list(range(self._matches_per_iteration))
         self._convergence_window = max(2, convergence_window)
         self._convergence_epsilon = convergence_epsilon
         self._model = model
 
     def _evaluate_policy(self, policy_source: str, iteration: int) -> tuple[list[PolicyMatchResult], float]:
         """Evaluate a policy by running matches and computing heuristic."""
-        # Use iteration-derived seeds for determinism across iterations
-        seeds = list(range(iteration * 1000, iteration * 1000 + self._matches_per_iteration))
-        results = self._executor.execute_batch(policy_source, seeds=seeds)
+        del iteration  # evaluation uses a fixed seed set per refinement run
+        results = self._executor.execute_batch(policy_source, seeds=list(self._evaluation_seeds))
         heuristic = compute_heuristic(results)
         return results, heuristic
 

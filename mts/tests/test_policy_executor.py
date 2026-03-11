@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import textwrap
+from typing import Any
 
 import pytest
 
 from mts.execution.policy_executor import PolicyExecutor, PolicyMatchResult
 from mts.scenarios.grid_ctf import GridCtfScenario
 from mts.scenarios.othello import OthelloScenario
+from mts.scenarios.base import Result
 
 # ── PolicyMatchResult dataclass ───────────────────────────────────────────────
 
@@ -254,6 +256,124 @@ class TestPolicyExecutorGridCtf:
         """)
         result = executor.execute_match(policy, seed=42)
         assert result.replay is not None
+
+    def test_multi_turn_policy_runs_until_terminal(self) -> None:
+        """Policies should be invoked once per turn until the scenario ends."""
+
+        class _MultiTurnScenario:
+            name = "multi_turn"
+
+            def describe_rules(self) -> str:
+                return "Reach turn 3."
+
+            def describe_strategy_interface(self) -> str:
+                return "{move: int}"
+
+            def describe_evaluation_criteria(self) -> str:
+                return "Higher score is better."
+
+            def initial_state(self, seed: int | None = None) -> dict[str, Any]:
+                return {"seed": seed or 0, "turn": 0, "terminal": False}
+
+            def get_observation(self, state: dict[str, Any], player_id: str) -> Any:
+                raise NotImplementedError
+
+            def validate_actions(self, state: dict[str, Any], player_id: str, actions: dict[str, Any]) -> tuple[bool, str]:
+                return ("move" in actions, "missing move" if "move" not in actions else "ok")
+
+            def step(self, state: dict[str, Any], actions: dict[str, Any]) -> dict[str, Any]:
+                next_turn = state["turn"] + 1
+                return {
+                    **state,
+                    "turn": next_turn,
+                    "terminal": next_turn >= 3,
+                    "timeline": [*state.get("timeline", []), {"turn": next_turn, "move": actions["move"]}],
+                    "score": 0.25 * next_turn,
+                }
+
+            def is_terminal(self, state: dict[str, Any]) -> bool:
+                return bool(state["terminal"])
+
+            def get_result(self, state: dict[str, Any]) -> Result:
+                return Result(
+                    score=float(state["score"]),
+                    winner="challenger",
+                    summary="done",
+                    replay=list(state.get("timeline", [])),
+                    metrics={"turns": float(state["turn"])},
+                    validation_errors=[],
+                )
+
+            def replay_to_narrative(self, replay: list[dict[str, Any]]) -> str:
+                return "multi turn"
+
+            def render_frame(self, state: dict[str, Any]) -> dict[str, Any]:
+                return state
+
+        scenario = _MultiTurnScenario()
+        executor = PolicyExecutor(scenario)
+        policy = textwrap.dedent("""\
+            def choose_action(state):
+                return {"move": state["turn"] + 1}
+        """)
+
+        result = executor.execute_match(policy, seed=42)
+
+        assert result.score == 0.75
+        assert result.moves_played == 3
+        assert result.errors == []
+
+    def test_non_terminal_policy_is_stopped_by_move_budget(self) -> None:
+        """A scenario that never terminates should hit the executor move budget."""
+
+        class _LoopScenario:
+            name = "loop"
+
+            def describe_rules(self) -> str:
+                return "Never terminates."
+
+            def describe_strategy_interface(self) -> str:
+                return "{move: int}"
+
+            def describe_evaluation_criteria(self) -> str:
+                return "n/a"
+
+            def initial_state(self, seed: int | None = None) -> dict[str, Any]:
+                return {"seed": seed or 0, "turn": 0, "terminal": False}
+
+            def get_observation(self, state: dict[str, Any], player_id: str) -> Any:
+                raise NotImplementedError
+
+            def validate_actions(self, state: dict[str, Any], player_id: str, actions: dict[str, Any]) -> tuple[bool, str]:
+                return True, "ok"
+
+            def step(self, state: dict[str, Any], actions: dict[str, Any]) -> dict[str, Any]:
+                return {**state, "turn": state["turn"] + 1}
+
+            def is_terminal(self, state: dict[str, Any]) -> bool:
+                return False
+
+            def get_result(self, state: dict[str, Any]) -> Result:
+                return Result(score=0.0, winner=None, summary="loop", replay=[], metrics={}, validation_errors=[])
+
+            def replay_to_narrative(self, replay: list[dict[str, Any]]) -> str:
+                return "loop"
+
+            def render_frame(self, state: dict[str, Any]) -> dict[str, Any]:
+                return state
+
+        scenario = _LoopScenario()
+        executor = PolicyExecutor(scenario, max_moves_per_match=3)
+        policy = textwrap.dedent("""\
+            def choose_action(state):
+                return {"move": 1}
+        """)
+
+        result = executor.execute_match(policy, seed=1)
+
+        assert result.score == 0.0
+        assert result.moves_played == 3
+        assert any("max moves" in error for error in result.errors)
 
 
 # ── Execution with othello ────────────────────────────────────────────────────
