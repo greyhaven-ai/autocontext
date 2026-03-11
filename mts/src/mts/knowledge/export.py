@@ -6,7 +6,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mts.knowledge.package import StrategyPackage
 
 from mts.mcp.tools import MtsToolContext
 from mts.scenarios import SCENARIO_REGISTRY
@@ -333,3 +336,22 @@ def _clean_lessons(raw_bullets: list[str]) -> list[str]:
         if content:
             cleaned.append(content)
     return cleaned
+
+
+def export_strategy_package(ctx: MtsToolContext, scenario_name: str) -> StrategyPackage:
+    """Export a versioned, portable StrategyPackage for a scenario.
+
+    Wraps the existing export_skill_package() with format versioning and
+    provenance metadata for AC-189.
+    """
+    from mts.knowledge.package import StrategyPackage
+
+    skill_pkg = export_skill_package(ctx, scenario_name)
+
+    # Determine source_run_id from the best knowledge snapshot
+    source_run_id: str | None = None
+    snapshot = ctx.sqlite.get_best_knowledge_snapshot(scenario_name)
+    if snapshot:
+        source_run_id = snapshot.get("run_id")
+
+    return StrategyPackage.from_skill_package(skill_pkg, source_run_id=source_run_id)
