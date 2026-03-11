@@ -130,7 +130,7 @@ export const ResumeCmdSchema = z.object({
 
 export const InjectHintCmdSchema = z.object({
   type: z.literal("inject_hint"),
-  text: z.string(),
+  text: z.string().min(1),
 });
 
 export const OverrideGateCmdSchema = z.object({
@@ -141,13 +141,13 @@ export const OverrideGateCmdSchema = z.object({
 export const ChatAgentCmdSchema = z.object({
   type: z.literal("chat_agent"),
   role: z.string(),
-  message: z.string(),
+  message: z.string().min(1),
 });
 
 export const StartRunCmdSchema = z.object({
   type: z.literal("start_run"),
   scenario: z.string(),
-  generations: z.number().int(),
+  generations: z.number().int().gt(0),
 });
 
 export const ListScenariosCmdSchema = z.object({
@@ -156,7 +156,7 @@ export const ListScenariosCmdSchema = z.object({
 
 export const CreateScenarioCmdSchema = z.object({
   type: z.literal("create_scenario"),
-  description: z.string(),
+  description: z.string().min(1),
 });
 
 export const ConfirmScenarioCmdSchema = z.object({
@@ -165,7 +165,7 @@ export const ConfirmScenarioCmdSchema = z.object({
 
 export const ReviseScenarioCmdSchema = z.object({
   type: z.literal("revise_scenario"),
-  feedback: z.string(),
+  feedback: z.string().min(1),
 });
 
 export const CancelScenarioCmdSchema = z.object({

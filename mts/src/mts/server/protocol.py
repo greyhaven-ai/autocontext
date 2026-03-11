@@ -206,7 +206,7 @@ class InjectHintCmd(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["inject_hint"] = "inject_hint"
-    text: str
+    text: str = Field(min_length=1)
 
 
 class OverrideGateCmd(BaseModel):
@@ -221,7 +221,7 @@ class ChatAgentCmd(BaseModel):
 
     type: Literal["chat_agent"] = "chat_agent"
     role: str
-    message: str
+    message: str = Field(min_length=1)
 
 
 class StartRunCmd(BaseModel):
@@ -229,7 +229,7 @@ class StartRunCmd(BaseModel):
 
     type: Literal["start_run"] = "start_run"
     scenario: str
-    generations: int
+    generations: int = Field(gt=0)
 
 
 class ListScenariosCmd(BaseModel):
@@ -242,7 +242,7 @@ class CreateScenarioCmd(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["create_scenario"] = "create_scenario"
-    description: str
+    description: str = Field(min_length=1)
 
 
 class ConfirmScenarioCmd(BaseModel):
@@ -255,7 +255,7 @@ class ReviseScenarioCmd(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["revise_scenario"] = "revise_scenario"
-    feedback: str
+    feedback: str = Field(min_length=1)
 
 
 class CancelScenarioCmd(BaseModel):

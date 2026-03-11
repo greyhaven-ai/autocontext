@@ -33,6 +33,24 @@ def _write_json_schema(schema: dict[str, Any], path: Path) -> None:
 
 def _json_schema_to_zod_type(prop: dict[str, Any], defs: dict[str, Any]) -> str:
     """Convert a JSON Schema property to a Zod type string."""
+    def _apply_string_constraints(base: str) -> str:
+        if "minLength" in prop:
+            base += f".min({prop['minLength']})"
+        if "maxLength" in prop:
+            base += f".max({prop['maxLength']})"
+        return base
+
+    def _apply_numeric_constraints(base: str) -> str:
+        if "exclusiveMinimum" in prop:
+            base += f".gt({prop['exclusiveMinimum']})"
+        elif "minimum" in prop:
+            base += f".gte({prop['minimum']})"
+        if "exclusiveMaximum" in prop:
+            base += f".lt({prop['exclusiveMaximum']})"
+        elif "maximum" in prop:
+            base += f".lte({prop['maximum']})"
+        return base
+
     if "$ref" in prop:
         ref_name = prop["$ref"].split("/")[-1]
         return f"{ref_name}Schema"
@@ -68,11 +86,11 @@ def _json_schema_to_zod_type(prop: dict[str, Any], defs: dict[str, Any]) -> str:
     schema_type = prop.get("type", "unknown")
 
     if schema_type == "string":
-        return "z.string()"
+        return _apply_string_constraints("z.string()")
     if schema_type == "integer":
-        return "z.number().int()"
+        return _apply_numeric_constraints("z.number().int()")
     if schema_type == "number":
-        return "z.number()"
+        return _apply_numeric_constraints("z.number()")
     if schema_type == "boolean":
         return "z.boolean()"
     if schema_type == "null":
@@ -81,7 +99,12 @@ def _json_schema_to_zod_type(prop: dict[str, Any], defs: dict[str, Any]) -> str:
     if schema_type == "array":
         items = prop.get("items", {})
         item_type = _json_schema_to_zod_type(items, defs)
-        return f"z.array({item_type})"
+        base = f"z.array({item_type})"
+        if "minItems" in prop:
+            base += f".min({prop['minItems']})"
+        if "maxItems" in prop:
+            base += f".max({prop['maxItems']})"
+        return base
 
     if schema_type == "object":
         additional = prop.get("additionalProperties")
