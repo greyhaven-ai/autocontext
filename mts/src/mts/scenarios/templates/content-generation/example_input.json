@@ -1,0 +1,11 @@
+{
+  "topic": "Benefits and trade-offs of microservices architecture",
+  "audience": "software engineers",
+  "word_count": {"min": 800, "max": 1200},
+  "target_keywords": ["microservices", "scalability", "deployment", "monitoring"],
+  "requirements": [
+    "Include at least 3 concrete examples or case studies",
+    "Address both benefits and challenges",
+    "Include actionable recommendations"
+  ]
+}

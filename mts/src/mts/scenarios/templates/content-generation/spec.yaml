@@ -1,0 +1,57 @@
+name: content-generation
+description: >-
+  Optimize article and blog content generation for quality and engagement.
+  The agent produces written content evaluated on readability, engagement,
+  factual accuracy, structure, and keyword integration.
+task_prompt: >-
+  Write a technical blog post about the benefits and trade-offs of
+  microservices architecture for a software engineering audience.
+
+  Requirements:
+  - Length: 800-1200 words
+  - Include at least 3 concrete examples or case studies
+  - Address both benefits and challenges
+  - Include actionable recommendations
+  - Target keywords: microservices, scalability, deployment, monitoring
+
+  Produce a well-structured, engaging article that balances technical
+  depth with readability.
+judge_rubric: >-
+  Evaluate the generated content on these dimensions:
+  1. Readability (0.0-1.0): Is the content well-written, clear, and
+     accessible to the target audience? Good flow and transitions?
+  2. Engagement (0.0-1.0): Does the content capture and maintain reader
+     interest? Are there compelling hooks, examples, and narrative elements?
+  3. Factual accuracy (0.0-1.0): Are technical claims correct and
+     well-supported? No hallucinated facts or statistics?
+  4. Structure (0.0-1.0): Is the content well-organized with clear sections,
+     logical progression, introduction, body, and conclusion?
+  5. Keyword integration (0.0-1.0): Are target keywords naturally integrated
+     without keyword stuffing? Do they appear in headings and key positions?
+
+  Overall score is a weighted average: readability 0.25, engagement 0.2,
+  factual_accuracy 0.25, structure 0.15, keyword_integration 0.15.
+output_format: free_text
+max_rounds: 2
+quality_threshold: 0.85
+revision_prompt: >-
+  Review the judge feedback and improve your article. Focus on the
+  lowest-scoring dimensions. Strengthen factual claims with specific
+  examples, improve transitions between sections, and ensure keywords
+  are naturally integrated.
+rubric_dimensions:
+  - name: readability
+    description: Is the content clear and accessible to the target audience?
+    weight: 0.25
+  - name: engagement
+    description: Does the content capture and maintain reader interest?
+    weight: 0.2
+  - name: factual_accuracy
+    description: Are technical claims correct and well-supported?
+    weight: 0.25
+  - name: structure
+    description: Is the content well-organized with clear sections?
+    weight: 0.15
+  - name: keyword_integration
+    description: Are target keywords naturally integrated?
+    weight: 0.15

@@ -1,0 +1,28 @@
+{
+  "title": "Microservices Architecture: A Practical Guide to Benefits and Trade-offs",
+  "content_preview": "In 2023, Netflix processes over 2 billion API requests daily through their microservices architecture...",
+  "word_count": 1050,
+  "keywords_used": {
+    "microservices": 8,
+    "scalability": 4,
+    "deployment": 5,
+    "monitoring": 3
+  },
+  "sections": [
+    "Introduction",
+    "The Case for Microservices",
+    "Real-World Success Stories",
+    "The Hidden Costs",
+    "When Microservices Make Sense",
+    "Actionable Recommendations",
+    "Conclusion"
+  ],
+  "score": 0.86,
+  "dimension_scores": {
+    "readability": 0.88,
+    "engagement": 0.85,
+    "factual_accuracy": 0.82,
+    "structure": 0.9,
+    "keyword_integration": 0.85
+  }
+}
