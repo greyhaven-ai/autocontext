@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -112,11 +111,13 @@ class TestImportCommand:
         return pkg_file
 
     def test_import_from_file(self, tmp_path: Path) -> None:
+        _, _, db_path = _setup_db_and_artifacts(tmp_path)
         pkg_file = self._write_package_file(tmp_path)
 
         result = runner.invoke(app, [
             "import-package",
             str(pkg_file),
+            "--db-path", str(db_path),
             "--knowledge-root", str(tmp_path / "knowledge"),
             "--skills-root", str(tmp_path / "skills"),
             "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
@@ -128,12 +129,14 @@ class TestImportCommand:
         assert "Imported Playbook" in playbook_path.read_text(encoding="utf-8")
 
     def test_import_with_scenario_override(self, tmp_path: Path) -> None:
+        _, _, db_path = _setup_db_and_artifacts(tmp_path)
         pkg_file = self._write_package_file(tmp_path, scenario_name="grid_ctf")
 
         result = runner.invoke(app, [
             "import-package",
             str(pkg_file),
             "--scenario", "othello",
+            "--db-path", str(db_path),
             "--knowledge-root", str(tmp_path / "knowledge"),
             "--skills-root", str(tmp_path / "skills"),
             "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
@@ -144,6 +147,7 @@ class TestImportCommand:
         assert playbook_path.exists()
 
     def test_import_with_conflict_overwrite(self, tmp_path: Path) -> None:
+        _, _, db_path = _setup_db_and_artifacts(tmp_path)
         # Pre-populate existing playbook
         knowledge_root = tmp_path / "knowledge"
         (knowledge_root / "grid_ctf").mkdir(parents=True)
@@ -155,6 +159,7 @@ class TestImportCommand:
             "import-package",
             str(pkg_file),
             "--conflict", "overwrite",
+            "--db-path", str(db_path),
             "--knowledge-root", str(knowledge_root),
             "--skills-root", str(tmp_path / "skills"),
             "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
@@ -164,12 +169,14 @@ class TestImportCommand:
         assert "New playbook" in content
 
     def test_import_invalid_json_fails(self, tmp_path: Path) -> None:
+        _, _, db_path = _setup_db_and_artifacts(tmp_path)
         bad_file = tmp_path / "bad.json"
         bad_file.write_text("not json at all", encoding="utf-8")
 
         result = runner.invoke(app, [
             "import-package",
             str(bad_file),
+            "--db-path", str(db_path),
             "--knowledge-root", str(tmp_path / "knowledge"),
             "--skills-root", str(tmp_path / "skills"),
             "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
@@ -177,11 +184,49 @@ class TestImportCommand:
         assert result.exit_code != 0
 
     def test_import_missing_file_fails(self, tmp_path: Path) -> None:
+        _, _, db_path = _setup_db_and_artifacts(tmp_path)
         result = runner.invoke(app, [
             "import-package",
             str(tmp_path / "does_not_exist.json"),
+            "--db-path", str(db_path),
             "--knowledge-root", str(tmp_path / "knowledge"),
             "--skills-root", str(tmp_path / "skills"),
             "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
         ])
         assert result.exit_code != 0
+
+    def test_import_restores_exportable_snapshot(self, tmp_path: Path) -> None:
+        _, _, db_path = _setup_db_and_artifacts(tmp_path)
+        pkg_file = self._write_package_file(
+            tmp_path,
+            best_strategy={"aggression": 0.8},
+            best_score=0.91,
+            best_elo=1725.0,
+            metadata={"completed_runs": 4, "has_snapshot": True},
+        )
+
+        result = runner.invoke(app, [
+            "import-package",
+            str(pkg_file),
+            "--db-path", str(db_path),
+            "--knowledge-root", str(tmp_path / "knowledge"),
+            "--skills-root", str(tmp_path / "skills"),
+            "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
+        ])
+        assert result.exit_code == 0, result.output
+
+        export_file = tmp_path / "roundtrip.json"
+        export_result = runner.invoke(app, [
+            "export",
+            "--scenario", "grid_ctf",
+            "--output", str(export_file),
+            "--db-path", str(db_path),
+            "--knowledge-root", str(tmp_path / "knowledge"),
+            "--skills-root", str(tmp_path / "skills"),
+            "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
+        ])
+        assert export_result.exit_code == 0, export_result.output
+        data = json.loads(export_file.read_text(encoding="utf-8"))
+        assert data["best_strategy"] == {"aggression": 0.8}
+        assert data["best_score"] == pytest.approx(0.91)
+        assert data["metadata"]["completed_runs"] == 4

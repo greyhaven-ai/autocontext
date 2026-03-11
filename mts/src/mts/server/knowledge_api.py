@@ -62,10 +62,10 @@ def export_skill(scenario_name: str, format: str = "skill") -> dict[str, Any]:
 
             from mts.knowledge.export import export_strategy_package
 
-            pkg = export_strategy_package(_get_ctx(), scenario_name)
-            return _json.loads(pkg.to_json())
-        pkg = export_skill_package(_get_ctx(), scenario_name)
-        return pkg.to_dict()
+            strategy_pkg = export_strategy_package(_get_ctx(), scenario_name)
+            return _json.loads(strategy_pkg.to_json())
+        skill_pkg = export_skill_package(_get_ctx(), scenario_name)
+        return skill_pkg.to_dict()
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -85,7 +85,8 @@ def import_package(body: ImportRequest) -> dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid package: {exc}") from exc
     policy = ConflictPolicy(body.conflict_policy)
-    result = import_strategy_package(_get_ctx().artifacts, pkg, conflict_policy=policy)
+    ctx = _get_ctx()
+    result = import_strategy_package(ctx.artifacts, pkg, sqlite=ctx.sqlite, conflict_policy=policy)
     return result.model_dump()
 
 
