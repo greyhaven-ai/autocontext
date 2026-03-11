@@ -1,8 +1,4 @@
-"""Scenario template library for ready-to-use agent task scenarios.
-
-Provides pre-built templates that can be scaffolded into new scenarios
-and registered in the SCENARIO_REGISTRY.
-"""
+"""Scenario template library for ready-to-use agent task scenarios."""
 from __future__ import annotations
 
 import shutil
@@ -12,6 +8,9 @@ from typing import Any
 
 import yaml
 
+from mts.config import load_settings
+from mts.execution.judge import LLMJudge
+from mts.providers.registry import get_provider
 from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from mts.scenarios.custom.agent_task_spec import AgentTaskSpec
 
@@ -101,18 +100,23 @@ class TemplateSpec:
 
 
 class _TemplateAgentTask(AgentTaskInterface):
-    """A concrete AgentTaskInterface backed by a TemplateSpec.
+    """Concrete in-memory task implementation for a template."""
 
-    Provides a deterministic evaluate_output that uses simple keyword
-    heuristics so templates work without an LLM provider.
-    """
-
-    def __init__(self, spec: TemplateSpec) -> None:
+    def __init__(self, spec: TemplateSpec, *, scenario_name: str) -> None:
         self._spec = spec
+        self.name = scenario_name
+
+    def _pinned_dimensions(self) -> list[str] | None:
+        if not self._spec.rubric_dimensions:
+            return None
+        return [dim.name for dim in self._spec.rubric_dimensions]
 
     def get_task_prompt(self, state: dict[str, Any]) -> str:
         """Return the task prompt for the agent."""
-        return self._spec.task_prompt
+        prompt = self._spec.task_prompt
+        if self._spec.sample_input:
+            prompt += f"\n\n## Input Data\n{self._spec.sample_input}"
+        return prompt
 
     def evaluate_output(
         self,
@@ -123,16 +127,27 @@ class _TemplateAgentTask(AgentTaskInterface):
         calibration_examples: list[dict[str, Any]] | None = None,
         pinned_dimensions: list[str] | None = None,
     ) -> AgentTaskResult:
-        """Simple heuristic evaluation for smoke testing without an LLM."""
-        score = min(1.0, max(0.1, len(output) / 500.0))
-        dims: dict[str, float] = {}
-        if self._spec.rubric_dimensions:
-            for dim in self._spec.rubric_dimensions:
-                dims[dim.name] = score
+        """Evaluate the output with the configured judge provider."""
+        settings = load_settings()
+        provider = get_provider(settings)
+        judge = LLMJudge(
+            model=self._spec.judge_model,
+            rubric=self._spec.judge_rubric,
+            provider=provider,
+        )
+        result = judge.evaluate(
+            task_prompt=self.get_task_prompt(state),
+            agent_output=output,
+            reference_context=reference_context or self._spec.reference_context,
+            required_concepts=required_concepts or self._spec.required_concepts,
+            calibration_examples=calibration_examples or self._spec.calibration_examples,
+            pinned_dimensions=pinned_dimensions or self._pinned_dimensions(),
+        )
         return AgentTaskResult(
-            score=score,
-            reasoning="Heuristic evaluation based on output length",
-            dimension_scores=dims,
+            score=result.score,
+            reasoning=result.reasoning,
+            dimension_scores=result.dimension_scores,
+            internal_retries=result.internal_retries,
         )
 
     def get_rubric(self) -> str:
@@ -141,11 +156,57 @@ class _TemplateAgentTask(AgentTaskInterface):
 
     def initial_state(self, seed: int | None = None) -> dict[str, Any]:
         """Return the initial state for this task."""
-        return {"seed": seed or 0, "template": self._spec.name}
+        state: dict[str, Any] = {
+            "seed": seed or 0,
+            "task_name": self.name,
+            "template": self._spec.name,
+            "output_format": self._spec.output_format,
+        }
+        if self._spec.sample_input:
+            state["sample_input"] = self._spec.sample_input
+        return state
 
     def describe_task(self) -> str:
         """Return a human-readable description of the task."""
         return self._spec.description
+
+    def prepare_context(self, state: dict[str, Any]) -> dict[str, Any]:
+        if self._spec.reference_context:
+            state["reference_context"] = self._spec.reference_context
+        return state
+
+    def revise_output(
+        self,
+        output: str,
+        judge_result: AgentTaskResult,
+        state: dict[str, Any],
+    ) -> str:
+        if not self._spec.revision_prompt and self._spec.max_rounds <= 1:
+            return output
+
+        settings = load_settings()
+        provider = get_provider(settings)
+        revision_instruction = self._spec.revision_prompt or (
+            "Revise the following output based on the judge's feedback. "
+            "Maintain what works and fix what does not."
+        )
+        prompt = (
+            f"{revision_instruction}\n\n"
+            f"## Original Output\n{output}\n\n"
+            f"## Judge Score: {judge_result.score:.2f}\n"
+            f"## Judge Feedback\n{judge_result.reasoning}\n\n"
+            f"## Task\n{self.get_task_prompt(state)}\n\n"
+            "Produce an improved version:"
+        )
+        result = provider.complete(
+            system_prompt=(
+                "You are revising content based on expert feedback. Improve the output. "
+                "Return only the revised content."
+            ),
+            user_prompt=prompt,
+            model=self._spec.judge_model,
+        )
+        return result.text
 
 
 class TemplateLoader:
@@ -180,7 +241,7 @@ class TemplateLoader:
     def load_as_agent_task(self, template_name: str, scenario_name: str | None = None) -> AgentTaskInterface:
         """Load a template as a concrete AgentTaskInterface instance."""
         spec = self.get_template(template_name)
-        return _TemplateAgentTask(spec)
+        return _TemplateAgentTask(spec, scenario_name=scenario_name or template_name)
 
     def scaffold(
         self,
@@ -198,7 +259,6 @@ class TemplateLoader:
         Returns:
             The target directory path.
         """
-        spec = self.get_template(template_name)
         source_dir = self._template_dir / template_name
 
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -217,7 +277,10 @@ class TemplateLoader:
             spec_path.write_text(yaml.dump(data, default_flow_style=False), encoding="utf-8")
 
         # Generate agent_task.py
-        self._generate_agent_task_module(spec, target_dir)
+        spec_data = yaml.safe_load((target_dir / "spec.yaml").read_text(encoding="utf-8"))
+        if not isinstance(spec_data, dict):
+            raise ValueError(f"Invalid template spec at {target_dir / 'spec.yaml'}")
+        self._generate_agent_task_module(TemplateSpec.from_dict(spec_data), target_dir)
 
         # Write scenario_type.txt marker
         (target_dir / "scenario_type.txt").write_text("agent_task", encoding="utf-8")
@@ -229,27 +292,50 @@ class TemplateLoader:
         rubric_escaped = spec.judge_rubric.replace('"""', r'\"\"\"')
         prompt_escaped = spec.task_prompt.replace('"""', r'\"\"\"')
         desc_escaped = spec.description.replace('"""', r'\"\"\"')
-
-        # Build dimension scores code
-        if spec.rubric_dimensions:
-            dim_entries = ", ".join(
-                f'"{d.name}": score' for d in spec.rubric_dimensions
-            )
-            dim_code = f"        dimension_scores = {{{dim_entries}}}"
-        else:
-            dim_code = "        dimension_scores = {}"
+        sample_input_escaped = (spec.sample_input or "").replace('"""', r'\"\"\"')
+        reference_context_escaped = (spec.reference_context or "").replace('"""', r'\"\"\"')
+        revision_prompt_escaped = (spec.revision_prompt or "").replace('"""', r'\"\"\"')
+        required_concepts_repr = repr(spec.required_concepts)
+        calibration_examples_repr = repr(spec.calibration_examples)
+        output_format_repr = repr(spec.output_format)
+        judge_model_repr = repr(spec.judge_model)
+        max_rounds_repr = repr(spec.max_rounds)
+        quality_threshold_repr = repr(spec.quality_threshold)
+        pinned_dimensions_repr = repr([dim.name for dim in spec.rubric_dimensions] if spec.rubric_dimensions else None)
+        scenario_name_repr = repr(target_dir.name)
 
         source = f'''"""Auto-generated agent task from template: {spec.name}."""
 from __future__ import annotations
 
+from mts.config import load_settings
+from mts.execution.judge import LLMJudge
+from mts.providers.registry import get_provider
 from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 
 class TemplateAgentTask(AgentTaskInterface):
     """Agent task generated from the {spec.name} template."""
 
+    name = {scenario_name_repr}
+    _description = """{desc_escaped}"""
+    _task_prompt = """{prompt_escaped}"""
+    _rubric = """{rubric_escaped}"""
+    _output_format = {output_format_repr}
+    _judge_model = {judge_model_repr}
+    _max_rounds = {max_rounds_repr}
+    _quality_threshold = {quality_threshold_repr}
+    _reference_context = """{reference_context_escaped}"""
+    _required_concepts = {required_concepts_repr}
+    _calibration_examples = {calibration_examples_repr}
+    _revision_prompt = """{revision_prompt_escaped}"""
+    _sample_input = """{sample_input_escaped}"""
+    _pinned_dimensions = {pinned_dimensions_repr}
+
     def get_task_prompt(self, state: dict) -> str:
-        return """{prompt_escaped}"""
+        prompt = self._task_prompt
+        if self._sample_input:
+            prompt += "\\n\\n## Input Data\\n" + self._sample_input
+        return prompt
 
     def evaluate_output(
         self,
@@ -260,22 +346,81 @@ class TemplateAgentTask(AgentTaskInterface):
         calibration_examples: list[dict] | None = None,
         pinned_dimensions: list[str] | None = None,
     ) -> AgentTaskResult:
-        score = min(1.0, max(0.1, len(output) / 500.0))
-{dim_code}
+        settings = load_settings()
+        provider = get_provider(settings)
+        judge = LLMJudge(
+            model=self._judge_model,
+            rubric=self._rubric,
+            provider=provider,
+        )
+        result = judge.evaluate(
+            task_prompt=self.get_task_prompt(state),
+            agent_output=output,
+            reference_context=reference_context or (self._reference_context or None),
+            required_concepts=required_concepts or self._required_concepts,
+            calibration_examples=calibration_examples or self._calibration_examples,
+            pinned_dimensions=pinned_dimensions or self._pinned_dimensions,
+        )
         return AgentTaskResult(
-            score=score,
-            reasoning="Heuristic evaluation based on output length",
-            dimension_scores=dimension_scores,
+            score=result.score,
+            reasoning=result.reasoning,
+            dimension_scores=result.dimension_scores,
+            internal_retries=result.internal_retries,
         )
 
     def get_rubric(self) -> str:
-        return """{rubric_escaped}"""
+        return self._rubric
 
     def initial_state(self, seed: int | None = None) -> dict:
-        return {{"seed": seed or 0, "template": "{spec.name}"}}
+        state = {{
+            "seed": seed or 0,
+            "task_name": self.name,
+            "template": "{spec.name}",
+            "output_format": self._output_format,
+        }}
+        if self._sample_input:
+            state["sample_input"] = self._sample_input
+        return state
 
     def describe_task(self) -> str:
-        return """{desc_escaped}"""
+        return self._description
+
+    def prepare_context(self, state: dict) -> dict:
+        if self._reference_context:
+            state["reference_context"] = self._reference_context
+        return state
+
+    def revise_output(
+        self,
+        output: str,
+        judge_result: AgentTaskResult,
+        state: dict,
+    ) -> str:
+        if not self._revision_prompt and self._max_rounds <= 1:
+            return output
+        settings = load_settings()
+        provider = get_provider(settings)
+        revision_instruction = self._revision_prompt or (
+            "Revise the following output based on the judge's feedback. "
+            "Maintain what works and fix what does not."
+        )
+        prompt = (
+            f"{{revision_instruction}}\\n\\n"
+            f"## Original Output\\n{{output}}\\n\\n"
+            f"## Judge Score: {{judge_result.score:.2f}}\\n"
+            f"## Judge Feedback\\n{{judge_result.reasoning}}\\n\\n"
+            f"## Task\\n{{self.get_task_prompt(state)}}\\n\\n"
+            "Produce an improved version:"
+        )
+        result = provider.complete(
+            system_prompt=(
+                "You are revising content based on expert feedback. Improve the output. "
+                "Return only the revised content."
+            ),
+            user_prompt=prompt,
+            model=self._judge_model,
+        )
+        return result.text
 '''
         (target_dir / "agent_task.py").write_text(source, encoding="utf-8")
 

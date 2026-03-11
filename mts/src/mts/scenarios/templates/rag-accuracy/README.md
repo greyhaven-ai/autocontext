@@ -18,8 +18,8 @@ This template sets up an agent task where the goal is to produce an optimized RA
 # Scaffold a new scenario from this template
 mts new-scenario --template rag-accuracy --name my-rag-task
 
-# Run with deterministic provider
-MTS_AGENT_PROVIDER=deterministic uv run mts run --scenario my-rag-task --gens 3
+# The scaffolded task is written under knowledge/_custom_scenarios/my-rag-task
+# and becomes available to Autocontext's agent-task tooling after load/restart.
 ```
 
 ## Customization
