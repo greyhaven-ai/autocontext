@@ -209,18 +209,42 @@ class TestStageStagedValidation:
         assert result.gate_decision == ""
 
     def test_code_strategy_with_choose_action_passes(self) -> None:
-        """A code strategy with choose_action should pass syntax and contract."""
+        """Code strategies should be unwrapped and validated as executable code."""
         from mts.loop.stage_staged_validation import stage_staged_validation
 
         code = "def choose_action(state):\n    return {'action': 'move'}\n"
         ctx = _make_ctx(strategy={"__code__": code})
-        # The staged pipeline validates the strategy dict, not the code inside it.
-        # Dict with __code__ key should pass syntax (it's a dict) and contract (no scenario contract).
         result = stage_staged_validation(ctx, events=_make_events(), sqlite=_make_sqlite())
 
         assert result.staged_validation_results is not None
-        for sr in result.staged_validation_results:
-            assert sr.status in (StageStatus.PASSED, StageStatus.SKIPPED)
+        assert [sr.name for sr in result.staged_validation_results] == [
+            "syntax",
+            "contract",
+            "deterministic",
+            "edge_case",
+            "evaluation_ready",
+        ]
+        assert [sr.status for sr in result.staged_validation_results] == [
+            StageStatus.PASSED,
+            StageStatus.PASSED,
+            StageStatus.PASSED,
+            StageStatus.SKIPPED,
+            StageStatus.PASSED,
+        ]
+
+    def test_code_strategy_missing_choose_action_fails_contract(self) -> None:
+        """Wrapped code should fail executable validation when the entry point is missing."""
+        from mts.loop.stage_staged_validation import stage_staged_validation
+
+        ctx = _make_ctx(strategy={"__code__": "def helper():\n    return {}\n"})
+        result = stage_staged_validation(ctx, events=_make_events(), sqlite=_make_sqlite())
+
+        assert result.staged_validation_results is not None
+        failed = [r for r in result.staged_validation_results if r.status is StageStatus.FAILED]
+        assert len(failed) == 1
+        assert failed[0].name == "contract"
+        assert failed[0].error_code == "missing_entry_point"
+        assert result.gate_decision == "retry"
 
     def test_skipped_stages_do_not_block(self) -> None:
         """Stages that skip (e.g., no edge fixtures) should not cause failure."""

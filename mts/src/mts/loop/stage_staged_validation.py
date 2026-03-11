@@ -45,7 +45,8 @@ def stage_staged_validation(
     })
 
     runner = ValidationRunner(pipeline=default_pipeline())
-    results = runner.validate(candidate=ctx.current_strategy, scenario=ctx.scenario)
+    candidate = _candidate_for_validation(ctx.current_strategy)
+    results = runner.validate(candidate=candidate, scenario=ctx.scenario)
 
     # Attach to context
     ctx.staged_validation_results = results
@@ -102,3 +103,12 @@ def stage_staged_validation(
         ctx.gate_decision = "retry"
 
     return ctx
+
+
+def _candidate_for_validation(candidate: object) -> object:
+    """Normalize strategy wrappers into the artifact shape expected by the runner."""
+    if isinstance(candidate, dict):
+        code = candidate.get("__code__")
+        if isinstance(code, str):
+            return code
+    return candidate

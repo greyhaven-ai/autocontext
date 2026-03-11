@@ -152,10 +152,6 @@ class GenerationPipeline:
                 sqlite=self._sqlite,
             )
 
-            # Skip tournament if staged validation failed
-            if ctx.gate_decision == "retry" and ctx.staged_validation_results is not None:
-                return ctx
-
             # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
             harness_loader = None
             if ctx.settings.harness_validators_enabled:
