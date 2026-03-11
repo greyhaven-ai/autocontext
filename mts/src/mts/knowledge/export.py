@@ -6,7 +6,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mts.knowledge.package import StrategyPackage
 
 from mts.mcp.tools import MtsToolContext
 from mts.scenarios import SCENARIO_REGISTRY
@@ -333,3 +336,35 @@ def _clean_lessons(raw_bullets: list[str]) -> list[str]:
         if content:
             cleaned.append(content)
     return cleaned
+
+
+def export_strategy_package(ctx: MtsToolContext, scenario_name: str) -> StrategyPackage:
+    """Export a versioned, portable StrategyPackage for a scenario.
+
+    Wraps the existing export_skill_package() with format versioning and
+    provenance metadata for AC-189.
+    """
+    from mts.knowledge.package import StrategyPackage, read_package_metadata
+
+    skill_pkg = export_skill_package(ctx, scenario_name)
+    imported_meta = read_package_metadata(ctx.artifacts, scenario_name)
+
+    # Determine source_run_id from the best knowledge snapshot
+    source_run_id: str | None = None
+    snapshot = ctx.sqlite.get_best_knowledge_snapshot(scenario_name)
+    if snapshot:
+        source_run_id = snapshot.get("run_id")
+    elif isinstance(imported_meta.get("metadata"), dict):
+        source_run_id = imported_meta["metadata"].get("source_run_id")
+
+    pkg = StrategyPackage.from_skill_package(skill_pkg, source_run_id=source_run_id)
+    imported_meta_payload = imported_meta.get("metadata")
+    if isinstance(imported_meta_payload, dict):
+        pkg.metadata.completed_runs = max(
+            pkg.metadata.completed_runs,
+            int(imported_meta_payload.get("completed_runs", 0)),
+        )
+        pkg.metadata.has_snapshot = bool(
+            pkg.metadata.has_snapshot or imported_meta_payload.get("has_snapshot", False),
+        )
+    return pkg

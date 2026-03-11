@@ -606,5 +606,121 @@ def new_scenario(
     console.print("[dim]Available to agent-task tooling after scaffold/load via the custom scenario registry.[/dim]")
 
 
+@app.command("export")
+def export_cmd(
+    scenario: str = typer.Option(..., "--scenario", help="Scenario to export"),
+    output: str = typer.Option("", "--output", help="Output JSON file path (default: <scenario>_package.json)"),
+    db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
+    runs_root: str | None = typer.Option(None, "--runs-root", help="Override runs root"),
+    knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root"),
+    skills_root: str | None = typer.Option(None, "--skills-root", help="Override skills root"),
+    claude_skills_path: str | None = typer.Option(None, "--claude-skills-path", help="Override Claude skills path"),
+) -> None:
+    """Export a portable strategy package for a scenario."""
+    from mts.knowledge.export import export_strategy_package
+    from mts.mcp.tools import MtsToolContext
+    from mts.storage.artifacts import ArtifactStore
+
+    settings = load_settings()
+    resolved_db = Path(db_path) if db_path is not None else settings.db_path
+    resolved_runs, resolved_knowledge, resolved_skills, resolved_claude = _resolve_export_artifact_roots(
+        settings=settings,
+        resolved_db=resolved_db,
+        runs_root=runs_root,
+        knowledge_root=knowledge_root,
+        skills_root=skills_root,
+        claude_skills_path=claude_skills_path,
+    )
+
+    sqlite = SQLiteStore(resolved_db)
+    migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
+    if migrations_dir.exists():
+        sqlite.migrate(migrations_dir)
+    artifacts = ArtifactStore(
+        runs_root=resolved_runs,
+        knowledge_root=resolved_knowledge,
+        skills_root=resolved_skills,
+        claude_skills_path=resolved_claude,
+    )
+    ctx = MtsToolContext.__new__(MtsToolContext)
+    ctx.settings = settings
+    ctx.sqlite = sqlite
+    ctx.artifacts = artifacts
+
+    try:
+        pkg = export_strategy_package(ctx, scenario)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    output_path = Path(output) if output else Path(f"{scenario}_package.json")
+    pkg.to_file(output_path)
+    console.print(f"[green]Exported {scenario} package to {output_path}[/green]")
+    console.print(f"[dim]best_score={pkg.best_score:.4f} lessons={len(pkg.lessons)} harness={len(pkg.harness)}[/dim]")
+
+
+@app.command("import-package")
+def import_package_cmd(
+    package_file: str = typer.Argument(..., help="Path to the strategy package JSON file"),
+    scenario: str | None = typer.Option(None, "--scenario", help="Override target scenario name"),
+    conflict: str = typer.Option("merge", "--conflict", help="Conflict policy: overwrite, merge, or skip"),
+    db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
+    knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root"),
+    skills_root: str | None = typer.Option(None, "--skills-root", help="Override skills root"),
+    claude_skills_path: str | None = typer.Option(None, "--claude-skills-path", help="Override Claude skills path"),
+) -> None:
+    """Import a strategy package into scenario knowledge."""
+    from mts.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
+    from mts.storage.artifacts import ArtifactStore
+
+    pkg_path = Path(package_file)
+    if not pkg_path.exists():
+        console.print(f"[red]File not found: {pkg_path}[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        pkg = StrategyPackage.from_file(pkg_path)
+    except Exception as exc:
+        console.print(f"[red]Invalid package file: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if scenario:
+        pkg = pkg.model_copy(update={"scenario_name": scenario})
+
+    try:
+        policy = ConflictPolicy(conflict)
+    except ValueError as exc:
+        console.print(f"[red]Invalid conflict policy: {conflict!r}. Use overwrite, merge, or skip.[/red]")
+        raise typer.Exit(code=1) from exc
+
+    settings = load_settings()
+    resolved_db = Path(db_path) if db_path is not None else settings.db_path
+    sqlite = SQLiteStore(resolved_db)
+    migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
+    if migrations_dir.exists():
+        sqlite.migrate(migrations_dir)
+    artifacts = ArtifactStore(
+        runs_root=settings.runs_root,
+        knowledge_root=Path(knowledge_root) if knowledge_root else settings.knowledge_root,
+        skills_root=Path(skills_root) if skills_root else settings.skills_root,
+        claude_skills_path=Path(claude_skills_path) if claude_skills_path else settings.claude_skills_path,
+    )
+
+    result = import_strategy_package(artifacts, pkg, sqlite=sqlite, conflict_policy=policy)
+
+    table = Table(title=f"Import: {result.scenario_name}")
+    table.add_column("Item", style="bold")
+    table.add_column("Status")
+    table.add_row("Playbook", "[green]written[/green]" if result.playbook_written else "[dim]skipped[/dim]")
+    table.add_row("Hints", "[green]written[/green]" if result.hints_written else "[dim]skipped[/dim]")
+    table.add_row("SKILL.md", "[green]written[/green]" if result.skill_written else "[dim]skipped[/dim]")
+    if result.harness_written:
+        table.add_row("Harness written", ", ".join(result.harness_written))
+    if result.harness_skipped:
+        table.add_row("Harness skipped", ", ".join(result.harness_skipped))
+    table.add_row("Conflict policy", result.conflict_policy)
+    console.print(table)
+
+
 if __name__ == "__main__":
     app()

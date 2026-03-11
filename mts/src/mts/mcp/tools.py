@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import cast
 
 from mts.config import AppSettings
 from mts.execution.harness_loader import HarnessLoader
@@ -937,6 +938,37 @@ def trigger_distillation(
     )
 
     return {"job_id": job_id, "status": "pending", "scenario": scenario}
+
+
+def export_package(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]:
+    """Export a versioned, portable strategy package for a scenario."""
+    from mts.knowledge.export import export_strategy_package
+
+    try:
+        pkg = export_strategy_package(ctx, scenario_name)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return cast(dict[str, object], json.loads(pkg.to_json()))
+
+
+def import_package(
+    ctx: MtsToolContext,
+    package_data: dict[str, object],
+    conflict_policy: str = "merge",
+) -> dict[str, object]:
+    """Import a strategy package into scenario knowledge."""
+    from mts.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
+
+    try:
+        pkg = StrategyPackage.from_dict(package_data)
+    except Exception as exc:
+        return {"error": f"Invalid package data: {exc}"}
+    try:
+        policy = ConflictPolicy(conflict_policy)
+    except ValueError:
+        return {"error": f"Invalid conflict_policy: {conflict_policy!r}. Must be overwrite, merge, or skip."}
+    result = import_strategy_package(ctx.artifacts, pkg, sqlite=ctx.sqlite, conflict_policy=policy)
+    return result.model_dump()
 
 
 def get_capabilities() -> dict[str, object]:
