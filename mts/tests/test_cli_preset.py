@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -11,6 +12,13 @@ from mts.config.presets import apply_preset
 from mts.config.settings import load_settings
 
 runner = CliRunner()
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _normalize_help_output(output: str) -> str:
+    """Strip terminal styling so help assertions survive Rich/CI rendering."""
+
+    return _ANSI_ESCAPE_RE.sub("", output)
 
 
 def test_cli_preset_rapid_applies_values() -> None:
@@ -22,7 +30,7 @@ def test_cli_preset_rapid_applies_values() -> None:
     # Verify the CLI flag is accepted
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--preset" in result.output
+    assert "--preset" in _normalize_help_output(result.output)
 
 
 def test_cli_preset_overrides_env_var() -> None:
@@ -41,13 +49,14 @@ def test_cli_preset_overrides_env_var() -> None:
 
     # The CLI --preset flag should override MTS_PRESET
     result = runner.invoke(app, ["run", "--help"])
-    assert "--preset" in result.output
+    normalized_output = _normalize_help_output(result.output)
+    assert "--preset" in normalized_output
     # Check valid presets are documented
-    assert "quick" in result.output.lower() or "rapid" in result.output.lower()
+    assert "quick" in normalized_output.lower() or "rapid" in normalized_output.lower()
 
 
 def test_cli_run_help_documents_presets() -> None:
     """mts run --help should document available presets."""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--preset" in result.output
+    assert "--preset" in _normalize_help_output(result.output)
