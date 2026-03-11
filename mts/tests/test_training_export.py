@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mts.storage.sqlite_store import SQLiteStore
 from mts.storage.artifacts import ArtifactStore
-from mts.training.types import MatchRecord, TrainingRecord
+from mts.storage.sqlite_store import SQLiteStore
 from mts.training.export import export_training_data
+from mts.training.types import MatchRecord, TrainingRecord
 
 
 def _make_stores(tmp_path: Path) -> tuple[SQLiteStore, ArtifactStore]:
@@ -120,6 +120,18 @@ def test_strategy_json_preserved_exactly(tmp_path: Path) -> None:
     records = list(export_training_data(db, artifacts, run_id="run-1"))
     assert len(records) == 1
     assert records[0].strategy == strategy
+
+
+def test_latest_competitor_output_wins_for_generation(tmp_path: Path) -> None:
+    db, artifacts = _make_stores(tmp_path)
+    _seed_run(db, artifacts, generations=[
+        {"index": 1, "score": 0.5, "gate": "advance", "strategy": '{"aggression": 0.1}'},
+    ])
+    db.append_agent_output("run-1", 1, "competitor", '{"aggression": 0.9}')
+
+    records = list(export_training_data(db, artifacts, run_id="run-1"))
+    assert len(records) == 1
+    assert records[0].strategy == '{"aggression": 0.9}'
 
 
 def test_context_fields_populated(tmp_path: Path) -> None:
