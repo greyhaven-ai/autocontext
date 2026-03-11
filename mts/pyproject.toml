@@ -25,6 +25,7 @@ dependencies = [
 mcp = ["mcp>=1.0.0"]
 agent-sdk = ["claude-agent-sdk>=0.1.0"]
 monty = ["pydantic-monty>=0.0.7"]
+mlx = ["mlx>=0.30.0", "rustbpe>=0.1.0", "tiktoken>=0.11.0", "safetensors>=0.4.0"]
 openai = ["openai>=1.0.0"]
 all = ["mts-control-plane[mcp,agent-sdk,monty,openai]"]
 
@@ -50,6 +51,7 @@ markers = [
     "slow: tests that run a full generation loop or multi-generation pipeline",
     "integration: multi-component integration tests",
     "live: tests requiring external API keys or services",
+    "mlx: tests requiring MLX to be installed",
 ]
 
 [tool.ruff]
@@ -67,5 +69,5 @@ warn_unused_configs = true
 exclude = "(^tests/)|(^migrations/)"
 
 [[tool.mypy.overrides]]
-module = ["pydantic_monty", "mcp.*", "claude_agent_sdk"]
+module = ["pydantic_monty", "mcp.*", "claude_agent_sdk", "mlx", "mlx.*", "rustbpe", "tiktoken", "safetensors", "safetensors.*", "numpy", "numpy.*"]
 ignore_missing_imports = true

@@ -384,5 +384,26 @@ def mcp_serve() -> None:
     run_server()
 
 
+@app.command()
+def train(
+    scenario: str = typer.Option("grid_ctf", "--scenario", help="Scenario to train on"),
+    data: str = typer.Option("training_data.jsonl", "--data", help="Path to JSONL training data"),
+    time_budget: int = typer.Option(300, "--time-budget", help="Training time budget in seconds"),
+) -> None:
+    """Train an MLX model to distill strategy knowledge (requires MLX)."""
+
+    from mts.training import HAS_MLX
+
+    if not HAS_MLX:
+        console.print("[red]MLX is not installed. Install with: uv sync --group dev --extra mlx[/red]")
+        raise typer.Exit(code=1)
+    console.print(
+        "[yellow]The distillation scaffold is installed, but the end-to-end training runner "
+        "is not wired yet. Use the exported data path directly until the runner lands.[/yellow]"
+    )
+    console.print(f"[dim]scenario={scenario} data={data} budget={time_budget}s[/dim]")
+    raise typer.Exit(code=2)
+
+
 if __name__ == "__main__":
     app()
