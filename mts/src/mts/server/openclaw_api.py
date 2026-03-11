@@ -145,3 +145,51 @@ def capabilities_endpoint() -> dict[str, Any]:
     from mts.mcp.tools import get_capabilities
 
     return get_capabilities()  # type: ignore[return-value]
+
+
+# -- Discovery & capability advertisement (AC-195) --
+
+
+@router.get("/discovery/capabilities")
+def discovery_capabilities_endpoint(
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> dict[str, Any]:
+    """Full capability advertisement: version, runtime health, scenarios, artifacts."""
+    from mts.mcp.tools import skill_advertise_capabilities
+
+    return skill_advertise_capabilities(ctx)  # type: ignore[return-value]
+
+
+@router.get("/discovery/scenario/{scenario_name}")
+def discovery_scenario_endpoint(
+    scenario_name: str,
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> dict[str, Any]:
+    """Per-scenario capabilities: evaluation mode, harness, playbook, best scores."""
+    from mts.mcp.tools import skill_scenario_capabilities
+
+    try:
+        return skill_scenario_capabilities(ctx, scenario_name)  # type: ignore[return-value]
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Scenario '{scenario_name}' not found") from None
+
+
+@router.get("/discovery/health")
+def discovery_health_endpoint(
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> dict[str, Any]:
+    """Runtime health: executor mode, provider, harness mode, available models."""
+    from mts.mcp.tools import skill_runtime_health
+
+    return skill_runtime_health(ctx)  # type: ignore[return-value]
+
+
+@router.get("/discovery/scenario/{scenario_name}/artifacts")
+def discovery_scenario_artifacts_endpoint(
+    scenario_name: str,
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> list[dict[str, Any]]:
+    """All artifacts associated with a specific scenario."""
+    from mts.mcp.tools import skill_scenario_artifact_lookup
+
+    return skill_scenario_artifact_lookup(ctx, scenario_name)  # type: ignore[return-value]
