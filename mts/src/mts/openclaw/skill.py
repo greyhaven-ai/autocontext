@@ -1,6 +1,7 @@
 """ClawHub skill wrapper — high-level interface for MTS (AC-192)."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from mts.knowledge.search import search_strategies
@@ -53,6 +54,12 @@ _MCP_TOOL_NAMES: list[str] = [
     "mts_skill_discover_artifacts",
 ]
 
+_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+    "and", "or", "not", "this", "that", "these", "those", "it", "its", "how", "when", "where",
+    "why", "what", "which",
+})
+
 
 def _build_scenario_info(name: str) -> ScenarioInfo:
     """Inspect a scenario from the registry and return ScenarioInfo."""
@@ -75,6 +82,65 @@ def _build_scenario_info(name: str) -> ScenarioInfo:
         description=description,
         strategy_interface="",
     )
+
+
+def _tokenize(text: str) -> list[str]:
+    return [w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOPWORDS]
+
+
+def _registry_score(info: ScenarioInfo, query: str) -> tuple[float, str]:
+    terms = _tokenize(query)
+    if not terms:
+        return 0.0, ""
+
+    weighted_fields: list[tuple[str, float, str]] = [
+        (info.name.lower(), 3.0, "name"),
+        (info.display_name.lower(), 3.0, "display_name"),
+        (info.description.lower(), 2.0, "description"),
+        (info.strategy_interface.lower(), 1.5, "strategy_interface"),
+    ]
+
+    total = 0.0
+    reasons: list[str] = []
+    matched_terms: set[str] = set()
+    for text, weight, field_name in weighted_fields:
+        text_tokens = set(re.findall(r"[a-z0-9]+", text))
+        for term in terms:
+            if term in text_tokens:
+                total += weight
+                matched_terms.add(term)
+                if len(reasons) < 3:
+                    reasons.append(f"'{term}' in {field_name}")
+
+    if not matched_terms:
+        return 0.0, ""
+
+    max_possible = sum(weight for _, weight, _ in weighted_fields) * len(terms)
+    score = total / max_possible if max_possible > 0 else 0.0
+    if len(matched_terms) > 1:
+        score *= 1.0 + 0.5 * (len(matched_terms) / len(terms))
+    return min(score, 1.0), "; ".join(reasons)
+
+
+def _rank_scenarios(
+    ctx: MtsToolContext,
+    scenarios: list[ScenarioInfo],
+    query: str,
+) -> list[tuple[ScenarioInfo, float, str]]:
+    solved_results = {r.scenario_name: r for r in search_strategies(ctx, query, top_k=len(scenarios))}
+    ranked: list[tuple[ScenarioInfo, float, str]] = []
+    for scenario in scenarios:
+        local_score, local_reason = _registry_score(scenario, query)
+        solved = solved_results.get(scenario.name)
+        if solved is not None:
+            score = solved.relevance_score
+            reason = solved.match_reason or local_reason
+        else:
+            score = local_score
+            reason = local_reason
+        ranked.append((scenario, score, reason))
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    return ranked
 
 
 class MtsSkillWrapper:
@@ -104,29 +170,13 @@ class MtsSkillWrapper:
 
         if not query:
             return all_scenarios
-
-        results = search_strategies(self.ctx, query, top_k=len(all_scenarios))
-        matched_names = [r.scenario_name for r in results]
-
-        # Order: matched scenarios first (by relevance), then unmatched
-        ordered: list[ScenarioInfo] = []
-        seen: set[str] = set()
-        for name in matched_names:
-            for s in all_scenarios:
-                if s.name == name and name not in seen:
-                    ordered.append(s)
-                    seen.add(name)
-        for s in all_scenarios:
-            if s.name not in seen:
-                ordered.append(s)
-        return ordered
+        return [scenario for scenario, _, _ in _rank_scenarios(self.ctx, all_scenarios, query)]
 
     def select_scenario(self, description: str) -> ScenarioRecommendation:
         """Recommend the best scenario for a problem description."""
         all_scenarios = [_build_scenario_info(name) for name in sorted(SCENARIO_REGISTRY)]
-        results = search_strategies(self.ctx, description, top_k=5)
-
-        if not results:
+        ranked = _rank_scenarios(self.ctx, all_scenarios, description)
+        if not ranked:
             # Fallback: return first scenario with zero confidence
             fallback = all_scenarios[0] if all_scenarios else None
             return ScenarioRecommendation(
@@ -135,21 +185,20 @@ class MtsSkillWrapper:
                 reasoning="No matching scenarios found; returning first available.",
                 alternatives=all_scenarios[1:] if len(all_scenarios) > 1 else [],
             )
-
-        best = results[0]
-        # Build alternatives from remaining results
-        alternatives: list[ScenarioInfo] = []
-        for r in results[1:]:
-            for s in all_scenarios:
-                if s.name == r.scenario_name:
-                    alternatives.append(s)
-                    break
+        best_scenario, best_score, best_reason = ranked[0]
+        if best_score <= 0.0:
+            return ScenarioRecommendation(
+                scenario_name=best_scenario.name,
+                confidence=0.0,
+                reasoning="No matching scenarios found; returning first available.",
+                alternatives=[scenario for scenario, _, _ in ranked[1:]],
+            )
 
         return ScenarioRecommendation(
-            scenario_name=best.scenario_name,
-            confidence=min(best.relevance_score, 1.0),
-            reasoning=best.match_reason,
-            alternatives=alternatives,
+            scenario_name=best_scenario.name,
+            confidence=min(best_score, 1.0),
+            reasoning=best_reason,
+            alternatives=[scenario for scenario, _, _ in ranked[1:5]],
         )
 
     def evaluate(
@@ -166,6 +215,18 @@ class MtsSkillWrapper:
                 strategy=strategy,
                 valid=False,
                 validation_errors=[f"Scenario '{scenario_name}' not found in registry"],
+            )
+
+        scenario = SCENARIO_REGISTRY[scenario_name]()
+        if not hasattr(scenario, "execute_match"):
+            return EvaluationResult(
+                scenario_name=scenario_name,
+                strategy=strategy,
+                valid=False,
+                validation_errors=[
+                    f"Scenario '{scenario_name}' is an agent task scenario. "
+                    "Use judge-based output evaluation instead of skill_evaluate()."
+                ],
             )
 
         # Step 1: validate
@@ -188,6 +249,15 @@ class MtsSkillWrapper:
 
         # Step 2: evaluate
         er: dict[str, Any] = evaluate_strategy(scenario_name, strategy, num_matches, seed_base)
+        if "error" in er:
+            return EvaluationResult(
+                scenario_name=scenario_name,
+                strategy=strategy,
+                valid=False,
+                validation_errors=[str(er["error"])],
+                harness_passed=harness_passed,
+                harness_errors=harness_errors,
+            )
         return EvaluationResult(
             scenario_name=scenario_name,
             strategy=strategy,

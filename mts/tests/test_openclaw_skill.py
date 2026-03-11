@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mts.openclaw.models import (
     ArtifactSummary,
@@ -43,6 +44,7 @@ def _task() -> MagicMock:
     del s.describe_rules
     del s.describe_strategy_interface
     del s.describe_evaluation_criteria
+    del s.execute_match
     del s.validate_actions
     del s.initial_state
     return s
@@ -76,7 +78,7 @@ class TestModels:
         assert info.scenario_type == "game"
 
     def test_scenario_info_rejects_bad_type(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ScenarioInfo(
                 name="x", display_name="X", scenario_type="bad_type",  # type: ignore[arg-type]
                 description="", strategy_interface="",
@@ -179,6 +181,13 @@ class TestDiscoverScenarios:
             results = MtsSkillWrapper(_ctx()).discover_scenarios(query="grid capture flag")
         assert results[0].name == "grid_ctf"
 
+    def test_query_ranks_unsolved_registry_scenarios(self, reg: dict[str, Any]) -> None:
+        with patch(_REG, reg), \
+             patch("mts.openclaw.skill.search_strategies") as mock_search:
+            mock_search.return_value = []
+            results = MtsSkillWrapper(_ctx()).discover_scenarios(query="summary document writing")
+        assert results[0].name == "summarize_doc"
+
     def test_query_no_match_returns_all(self, reg: dict[str, Any]) -> None:
         with patch(_REG, reg), \
              patch("mts.openclaw.skill.search_strategies") as mock_search:
@@ -231,6 +240,14 @@ class TestSelectScenario:
             rec = MtsSkillWrapper(_ctx()).select_scenario("grid")
         assert rec.confidence == pytest.approx(0.75)
 
+    def test_select_scenario_uses_registry_ranking_when_search_index_empty(self, reg: dict[str, Any]) -> None:
+        with patch(_REG, reg), \
+             patch("mts.openclaw.skill.search_strategies") as mock_search:
+            mock_search.return_value = []
+            rec = MtsSkillWrapper(_ctx()).select_scenario("write a summary of a document")
+        assert rec.scenario_name == "summarize_doc"
+        assert rec.confidence > 0.0
+
 
 # ---------------------------------------------------------------------------
 # TestEvaluate
@@ -281,6 +298,12 @@ class TestEvaluate:
         assert result.valid is False
         assert any("not found" in e.lower() for e in result.validation_errors)
 
+    def test_agent_task_evaluation_returns_explicit_error(self, reg: dict[str, Any]) -> None:
+        with patch(_REG, reg):
+            result = MtsSkillWrapper(_ctx()).evaluate("summarize_doc", {"output": "summary"})
+        assert result.valid is False
+        assert any("agent task" in e.lower() for e in result.validation_errors)
+
     def test_result_has_all_fields(self, reg: dict[str, Any]) -> None:
         with patch(_REG, reg), \
              patch("mts.openclaw.skill.validate_strategy_against_harness") as mv, \
@@ -292,6 +315,16 @@ class TestEvaluate:
         data = result.model_dump()
         assert "scenario_name" in data
         assert "scores" in data
+
+    def test_evaluate_propagates_runtime_errors(self, reg: dict[str, Any]) -> None:
+        with patch(_REG, reg), \
+             patch("mts.openclaw.skill.validate_strategy_against_harness") as mv, \
+             patch("mts.openclaw.skill.evaluate_strategy") as me:
+            mv.return_value = {"valid": True, "reason": "", "harness_passed": True, "harness_errors": []}
+            me.return_value = {"error": "evaluation failed"}
+            result = MtsSkillWrapper(_ctx()).evaluate("grid_ctf", {"x": 1})
+        assert result.valid is False
+        assert result.validation_errors == ["evaluation failed"]
 
 
 # ---------------------------------------------------------------------------
