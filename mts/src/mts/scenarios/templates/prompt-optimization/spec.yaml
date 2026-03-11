@@ -1,0 +1,55 @@
+name: prompt-optimization
+description: >-
+  Optimize a system prompt for a given task. The agent iteratively refines
+  a system prompt to maximize output quality as measured by clarity,
+  specificity, constraint coverage, output format compliance, and
+  edge-case handling.
+task_prompt: >-
+  You are given the following task description and an initial system prompt.
+  Your goal is to optimize the system prompt so that an LLM using it produces
+  the highest quality output for the described task.
+
+  Task: Summarize technical documents into executive-friendly bullet points.
+
+  Initial system prompt: "Summarize the following document."
+
+  Produce an improved system prompt that is clear, specific, includes output
+  format constraints, handles edge cases, and maximizes the quality of the
+  generated summaries.
+judge_rubric: >-
+  Evaluate the optimized system prompt on these dimensions:
+  1. Clarity (0.0-1.0): Is the prompt unambiguous and easy to follow?
+  2. Specificity (0.0-1.0): Does the prompt provide concrete instructions
+     rather than vague directives?
+  3. Constraint coverage (0.0-1.0): Does the prompt specify output format,
+     length limits, tone, and audience?
+  4. Output format compliance (0.0-1.0): Does the prompt define a clear
+     output structure (e.g., bullet points, sections)?
+  5. Edge-case handling (0.0-1.0): Does the prompt address what to do with
+     ambiguous, missing, or conflicting information?
+
+  Overall score is a weighted average: clarity 0.2, specificity 0.25,
+  constraint_coverage 0.25, format_compliance 0.15, edge_case_handling 0.15.
+output_format: free_text
+max_rounds: 3
+quality_threshold: 0.85
+revision_prompt: >-
+  Review the judge feedback and improve your system prompt. Focus on the
+  lowest-scoring dimensions. Make the prompt more specific and add explicit
+  handling for edge cases.
+rubric_dimensions:
+  - name: clarity
+    description: Is the prompt unambiguous and easy to follow?
+    weight: 0.2
+  - name: specificity
+    description: Does the prompt provide concrete instructions?
+    weight: 0.25
+  - name: constraint_coverage
+    description: Does the prompt specify output format, length, tone, audience?
+    weight: 0.25
+  - name: format_compliance
+    description: Does the prompt define a clear output structure?
+    weight: 0.15
+  - name: edge_case_handling
+    description: Does the prompt address ambiguous or missing information?
+    weight: 0.15

@@ -1,0 +1,16 @@
+{
+  "current_config": {
+    "chunk_size": 512,
+    "chunk_overlap": 50,
+    "top_k": 5,
+    "embedding_model": "text-embedding-3-small",
+    "reranking": false,
+    "hybrid_search": false
+  },
+  "domain": "cloud platform technical documentation",
+  "test_queries": [
+    "How do I configure auto-scaling for my web service?",
+    "What are the pricing tiers for the database service?",
+    "Explain the difference between VPC peering and Transit Gateway"
+  ]
+}
