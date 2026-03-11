@@ -155,6 +155,15 @@ class TestDeterministicStage:
         result = stage.run(candidate=code, scenario=None)
         assert result.status is StageStatus.SKIPPED
 
+    def test_timeout_while_executing_code_fails_fast(self) -> None:
+        stage = DeterministicStage(order=2, timeout_seconds=0.01)
+        code = "def choose_action(state):\n    while True:\n        pass\n"
+        scenario = MagicMock()
+        scenario.initial_state.return_value = {}
+        result = stage.run(candidate=code, scenario=scenario)
+        assert result.passed is False
+        assert result.error_code == "timeout"
+
 
 # ── EdgeCaseStage tests ──────────────────────────────────────────────────
 
@@ -194,6 +203,29 @@ class TestEdgeCaseStage:
         # If scenario says valid but fixture says expected_valid=False, that's a mismatch
         assert result.passed is False
         assert result.error_code == "edge_case_mismatch"
+
+    def test_code_candidate_executes_against_edge_fixtures(self) -> None:
+        scenario = MagicMock()
+        scenario.get_edge_fixtures.return_value = [
+            {"state": {"allowed": True}, "expected_valid": True},
+            {"state": {"allowed": False}, "expected_valid": False},
+        ]
+
+        def validate_actions(state: dict[str, bool], _player_id: str, actions: dict[str, str]) -> tuple[bool, str]:
+            if state["allowed"]:
+                return (actions.get("action") == "move", "expected move")
+            return (False, "blocked" if actions.get("action") == "invalid" else "expected invalid")
+
+        scenario.validate_actions.side_effect = validate_actions
+        stage = EdgeCaseStage(order=3, timeout_seconds=0.05)
+        code = (
+            "def choose_action(state):\n"
+            "    if state['allowed']:\n"
+            "        return {'action': 'move'}\n"
+            "    return {'action': 'invalid'}\n"
+        )
+        result = stage.run(candidate=code, scenario=scenario)
+        assert result.passed is True
 
 
 # ── EvaluationReadyStage tests ───────────────────────────────────────────
