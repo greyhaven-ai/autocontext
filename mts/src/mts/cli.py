@@ -14,14 +14,24 @@ from rich.console import Console
 from rich.table import Table
 
 from mts.config import load_settings
+from mts.config.presets import VALID_PRESET_NAMES
 from mts.loop.generation_runner import GenerationRunner
 from mts.storage import SQLiteStore
 
 app = typer.Typer(help="MTS control-plane CLI")
 console = Console()
 
+_PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides MTS_PRESET env var."
 
-def _runner() -> GenerationRunner:
+
+def _apply_preset_env(preset: str | None) -> None:
+    """Set MTS_PRESET env var from CLI flag so load_settings() picks it up."""
+    if preset is not None:
+        os.environ["MTS_PRESET"] = preset
+
+
+def _runner(preset: str | None = None) -> GenerationRunner:
+    _apply_preset_env(preset)
     settings = load_settings()
     runner = GenerationRunner(settings)
     runner.migrate(Path(__file__).resolve().parents[2] / "migrations")
@@ -35,16 +45,20 @@ def run(
     run_id: str | None = typer.Option(None, "--run-id"),
     serve: bool = typer.Option(False, "--serve", help="Start interactive server alongside generation loop"),
     port: int = typer.Option(8000, "--port", help="Server port (only used with --serve)"),
+    preset: str | None = typer.Option(None, "--preset", help=_PRESET_HELP),
 ) -> None:
     """Run generation loop."""
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+    if preset:
+        console.print(f"[dim]Active preset: {preset}[/dim]")
+
     if serve:
         from mts.loop.controller import LoopController
         from mts.server.app import create_app
 
-        runner = _runner()
+        runner = _runner(preset)
         controller = LoopController()
         runner.controller = controller
 
@@ -59,7 +73,7 @@ def run(
         console.print(f"[dim]Connect TUI: cd tui && bun run start -- --url ws://localhost:{port}/ws/interactive[/dim]")
         uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
     else:
-        summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
+        summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
         table = Table(title="MTS Run Summary")
         table.add_column("Run ID")
         table.add_column("Scenario")
