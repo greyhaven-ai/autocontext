@@ -467,6 +467,50 @@ def mts_import_package(package_data: str, conflict_policy: str = "merge") -> str
     ))
 
 
+# -- ClawHub skill wrapper tools (AC-192) --
+
+
+@mcp.tool()
+def mts_skill_manifest() -> str:
+    """Get the ClawHub skill manifest for this MTS instance.
+    Returns name, version, capabilities, scenarios, and tool list."""
+    return json.dumps(tools.skill_manifest(_get_ctx()))
+
+
+@mcp.tool()
+def mts_skill_discover(query: str | None = None) -> str:
+    """Discover available scenarios, optionally filtered by natural language query."""
+    return json.dumps(tools.skill_discover_scenarios(_get_ctx(), query))
+
+
+@mcp.tool()
+def mts_skill_select(description: str) -> str:
+    """Recommend the best scenario for a problem description.
+    Returns the top match with confidence score and alternatives."""
+    return json.dumps(tools.skill_select_scenario(_get_ctx(), description))
+
+
+@mcp.tool()
+def mts_skill_evaluate(
+    scenario_name: str, strategy: str, num_matches: int = 3, seed_base: int = 42,
+) -> str:
+    """Full validate + evaluate workflow for a strategy.
+    strategy should be a JSON string. Returns validation + tournament results."""
+    return json.dumps(tools.skill_evaluate(
+        _get_ctx(), scenario_name, json.loads(strategy), num_matches, seed_base,
+    ))
+
+
+@mcp.tool()
+def mts_skill_discover_artifacts(
+    scenario: str | None = None, artifact_type: str | None = None,
+) -> str:
+    """Find published artifacts with optional scenario and type filters."""
+    return json.dumps(tools.skill_discover_artifacts(
+        _get_ctx(), scenario=scenario, artifact_type=artifact_type,
+    ))
+
+
 def run_server() -> None:
     """Synchronous entry point for the MCP server."""
     mcp.run(transport="stdio")
