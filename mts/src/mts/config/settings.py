@@ -100,6 +100,11 @@ class AppSettings(BaseModel):
     tier_sonnet_model: str = Field(default="claude-sonnet-4-5-20250929")
     tier_opus_model: str = Field(default="claude-opus-4-6")
     tier_competitor_haiku_max_gen: int = Field(default=3, ge=1)
+    tier_harness_aware_enabled: bool = Field(
+        default=False,
+        description="Allow strong harness coverage to demote competitor model tier",
+    )
+    tier_harness_coverage_demotion_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     # Agent task judge settings
     judge_model: str = Field(default="claude-sonnet-4-20250514")
     judge_samples: int = Field(default=1, ge=1)
