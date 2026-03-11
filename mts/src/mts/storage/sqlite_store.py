@@ -208,7 +208,7 @@ class SQLiteStore:
                 SELECT generation_index, role, content
                 FROM agent_outputs
                 WHERE run_id = ? AND role = ?
-                ORDER BY generation_index
+                ORDER BY generation_index, rowid
                 """,
                 (run_id, role),
             ).fetchall()

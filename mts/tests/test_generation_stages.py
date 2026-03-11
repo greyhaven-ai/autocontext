@@ -833,6 +833,42 @@ class TestStageTournamentAttempt:
         assert isinstance(result.attempt, int)
         assert result.attempt >= 0
 
+    def test_stage_tournament_persists_revised_competitor_output(self) -> None:
+        """Retry-learned competitor strategies should be durable for export."""
+        ctx = _make_tournament_ctx(strategy={"aggression": 0.2})
+        ctx.prompts = MagicMock(competitor="Improve the strategy.")
+        ctx.strategy_interface = '{"aggression": float}'
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.side_effect = [
+            MagicMock(decision="retry", reason="not enough improvement"),
+            MagicMock(decision="advance", reason="improved"),
+        ]
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+        agents = MagicMock()
+        agents.competitor.run.return_value = ('{"aggression": 0.9}', None)
+        agents.translator.translate.return_value = ({"aggression": 0.9}, None)
+
+        result = stage_tournament(
+            ctx,
+            supervisor=supervisor,
+            gate=gate,
+            events=events,
+            sqlite=sqlite,
+            artifacts=artifacts,
+            agents=agents,
+        )
+
+        sqlite.append_agent_output.assert_called_once_with(
+            "run_tourn",
+            1,
+            "competitor",
+            '{"aggression": 0.9}',
+        )
+        assert result.current_strategy == {"aggression": 0.9}
+
 
 # ---------- TestStageAgentGenerationEvents ----------
 

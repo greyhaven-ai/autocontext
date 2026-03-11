@@ -501,8 +501,20 @@ def stage_tournament(
                         valid, reason = scenario.validate_actions(state, "challenger", revised_strategy)
                         if valid:
                             current_strategy = revised_strategy
+                            sqlite.append_agent_output(
+                                ctx.run_id,
+                                ctx.generation,
+                                "competitor",
+                                json.dumps(revised_strategy, sort_keys=True),
+                            )
                     else:
                         current_strategy = revised_strategy
+                        sqlite.append_agent_output(
+                            ctx.run_id,
+                            ctx.generation,
+                            "competitor",
+                            json.dumps(revised_strategy, sort_keys=True),
+                        )
                 except Exception:
                     LOGGER.debug("retry-learning competitor re-invocation failed", exc_info=True)
             time.sleep(settings.retry_backoff_seconds * attempt)
