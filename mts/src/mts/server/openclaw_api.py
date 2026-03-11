@@ -193,3 +193,13 @@ def discovery_scenario_artifacts_endpoint(
     from mts.mcp.tools import skill_scenario_artifact_lookup
 
     return skill_scenario_artifact_lookup(ctx, scenario_name)  # type: ignore[return-value]
+
+
+@router.get("/skill/manifest")
+def skill_manifest_endpoint(
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> dict[str, Any]:
+    """Return the ClawHub skill manifest for this MTS instance."""
+    from mts.mcp.tools import skill_manifest
+
+    return skill_manifest(ctx)  # type: ignore[return-value]
