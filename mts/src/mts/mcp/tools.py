@@ -1017,3 +1017,53 @@ def get_capabilities() -> dict[str, object]:
             },
         ],
     }
+
+
+# -- ClawHub skill wrapper functions (AC-192) --
+
+
+def skill_manifest(ctx: MtsToolContext) -> dict[str, object]:
+    """Return the ClawHub skill manifest for this MTS instance."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    return MtsSkillWrapper(ctx).manifest().model_dump()
+
+
+def skill_discover_scenarios(ctx: MtsToolContext, query: str | None = None) -> list[dict[str, object]]:
+    """Discover available scenarios, optionally filtered by query."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    results = MtsSkillWrapper(ctx).discover_scenarios(query)
+    return [r.model_dump() for r in results]
+
+
+def skill_select_scenario(ctx: MtsToolContext, description: str) -> dict[str, object]:
+    """Recommend the best scenario for a problem description."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    return MtsSkillWrapper(ctx).select_scenario(description).model_dump()
+
+
+def skill_evaluate(
+    ctx: MtsToolContext,
+    scenario_name: str,
+    strategy: dict[str, object],
+    num_matches: int = 3,
+    seed_base: int = 42,
+) -> dict[str, object]:
+    """Full validate + evaluate workflow."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    return MtsSkillWrapper(ctx).evaluate(scenario_name, strategy, num_matches, seed_base).model_dump()
+
+
+def skill_discover_artifacts(
+    ctx: MtsToolContext,
+    scenario: str | None = None,
+    artifact_type: str | None = None,
+) -> list[dict[str, object]]:
+    """Find published artifacts with enriched metadata."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    results = MtsSkillWrapper(ctx).discover_artifacts(scenario, artifact_type)
+    return [r.model_dump() for r in results]

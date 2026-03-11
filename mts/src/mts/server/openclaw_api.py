@@ -145,3 +145,13 @@ def capabilities_endpoint() -> dict[str, Any]:
     from mts.mcp.tools import get_capabilities
 
     return get_capabilities()  # type: ignore[return-value]
+
+
+@router.get("/skill/manifest")
+def skill_manifest_endpoint(
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> dict[str, Any]:
+    """Return the ClawHub skill manifest for this MTS instance."""
+    from mts.mcp.tools import skill_manifest
+
+    return skill_manifest(ctx)  # type: ignore[return-value]
