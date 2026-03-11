@@ -25,6 +25,7 @@ from mts.harness.validation.staged import (
 )
 
 LOGGER = logging.getLogger(__name__)
+DEFAULT_STAGE_TIMEOUT_SECONDS = 5.0
 
 
 # ── Concrete stages ──────────────────────────────────────────────────────
@@ -132,7 +133,7 @@ class ContractStage(ValidationStage):
             if callable(validate_fn):
                 initial_state_fn = getattr(scenario, "initial_state", None)
                 state = initial_state_fn() if callable(initial_state_fn) else {}
-                valid, reason = validate_fn(state, "validator", candidate)
+                valid, reason = validate_fn(state, "challenger", candidate)
                 if not valid:
                     return StageResult(
                         stage=self.order, name=self.name, status=StageStatus.FAILED,
@@ -149,6 +150,10 @@ class ContractStage(ValidationStage):
 
 class DeterministicStage(ValidationStage):
     """Stage 2: execute candidate twice with same seed and compare outputs."""
+
+    def __init__(self, order: int, *, timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS) -> None:
+        super().__init__(order)
+        self._timeout_seconds = timeout_seconds
 
     @property
     def name(self) -> str:
@@ -173,7 +178,14 @@ class DeterministicStage(ValidationStage):
 
         if isinstance(candidate, str):
             try:
-                fn = _load_choose_action(candidate)
+                fn = _load_choose_action(candidate, timeout_seconds=self._timeout_seconds)
+            except TimeoutError:
+                return StageResult(
+                    stage=self.order, name=self.name, status=StageStatus.FAILED,
+                    duration_ms=_elapsed(t0),
+                    error="timed out while loading choose_action",
+                    error_code="timeout",
+                )
             except Exception as exc:
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
@@ -186,8 +198,15 @@ class DeterministicStage(ValidationStage):
             state = initial_state_fn() if callable(initial_state_fn) else {}
 
             try:
-                result1 = fn(dict(state))
-                result2 = fn(dict(state))
+                result1 = _run_choose_action(fn, dict(state), timeout_seconds=self._timeout_seconds)
+                result2 = _run_choose_action(fn, dict(state), timeout_seconds=self._timeout_seconds)
+            except TimeoutError:
+                return StageResult(
+                    stage=self.order, name=self.name, status=StageStatus.FAILED,
+                    duration_ms=_elapsed(t0),
+                    error="timed out while executing choose_action",
+                    error_code="timeout",
+                )
             except Exception as exc:
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
@@ -212,6 +231,10 @@ class DeterministicStage(ValidationStage):
 
 class EdgeCaseStage(ValidationStage):
     """Stage 3: test candidate against scenario-provided edge fixtures."""
+
+    def __init__(self, order: int, *, timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS) -> None:
+        super().__init__(order)
+        self._timeout_seconds = timeout_seconds
 
     @property
     def name(self) -> str:
@@ -248,10 +271,56 @@ class EdgeCaseStage(ValidationStage):
                 duration_ms=_elapsed(t0),
             )
 
+        choose_action: Any | None = None
+        if isinstance(candidate, str):
+            try:
+                choose_action = _load_choose_action(candidate, timeout_seconds=self._timeout_seconds)
+            except TimeoutError:
+                return StageResult(
+                    stage=self.order, name=self.name, status=StageStatus.FAILED,
+                    duration_ms=_elapsed(t0),
+                    error="timed out while loading choose_action",
+                    error_code="timeout",
+                )
+            except Exception as exc:
+                return StageResult(
+                    stage=self.order, name=self.name, status=StageStatus.FAILED,
+                    duration_ms=_elapsed(t0),
+                    error=f"failed to load code: {exc}",
+                    error_code="load_error",
+                )
+
         for fixture in fixtures:
             state = fixture.get("state", {})
             expected_valid = fixture.get("expected_valid", True)
-            valid, _reason = validate_fn(state, "edge_case_tester", candidate)
+            actions: Any = candidate
+            if choose_action is not None:
+                try:
+                    actions = _run_choose_action(choose_action, dict(state), timeout_seconds=self._timeout_seconds)
+                except TimeoutError:
+                    return StageResult(
+                        stage=self.order, name=self.name, status=StageStatus.FAILED,
+                        duration_ms=_elapsed(t0),
+                        error=f"timed out while executing choose_action for state={state!r}",
+                        error_code="timeout",
+                    )
+                except Exception as exc:
+                    return StageResult(
+                        stage=self.order, name=self.name, status=StageStatus.FAILED,
+                        duration_ms=_elapsed(t0),
+                        error=f"choose_action raised on edge fixture: {exc}",
+                        error_code="execution_error",
+                    )
+
+                if not isinstance(actions, dict):
+                    return StageResult(
+                        stage=self.order, name=self.name, status=StageStatus.FAILED,
+                        duration_ms=_elapsed(t0),
+                        error=f"choose_action must return dict, got {type(actions).__name__}",
+                        error_code="invalid_return_type",
+                    )
+
+            valid, _reason = validate_fn(state, "challenger", actions)
 
             if bool(valid) != bool(expected_valid):
                 return StageResult(
@@ -273,6 +342,10 @@ class EdgeCaseStage(ValidationStage):
 class EvaluationReadyStage(ValidationStage):
     """Stage 4: minimum executable check before full tournament/task evaluation."""
 
+    def __init__(self, order: int, *, timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS) -> None:
+        super().__init__(order)
+        self._timeout_seconds = timeout_seconds
+
     @property
     def name(self) -> str:
         return "evaluation_ready"
@@ -290,7 +363,14 @@ class EvaluationReadyStage(ValidationStage):
         # Code candidate — try to execute choose_action once
         if isinstance(candidate, str):
             try:
-                fn = _load_choose_action(candidate)
+                fn = _load_choose_action(candidate, timeout_seconds=self._timeout_seconds)
+            except TimeoutError:
+                return StageResult(
+                    stage=self.order, name=self.name, status=StageStatus.FAILED,
+                    duration_ms=_elapsed(t0),
+                    error="timed out while loading choose_action",
+                    error_code="timeout",
+                )
             except Exception as exc:
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
@@ -303,7 +383,7 @@ class EvaluationReadyStage(ValidationStage):
             state = initial_state_fn() if callable(initial_state_fn) else {}
 
             try:
-                result = fn(state)
+                result = _run_choose_action(fn, state, timeout_seconds=self._timeout_seconds)
                 if not isinstance(result, dict):
                     return StageResult(
                         stage=self.order, name=self.name, status=StageStatus.FAILED,
@@ -311,6 +391,13 @@ class EvaluationReadyStage(ValidationStage):
                         error=f"choose_action must return dict, got {type(result).__name__}",
                         error_code="invalid_return_type",
                     )
+            except TimeoutError:
+                return StageResult(
+                    stage=self.order, name=self.name, status=StageStatus.FAILED,
+                    duration_ms=_elapsed(t0),
+                    error="timed out while executing choose_action",
+                    error_code="timeout",
+                )
             except Exception as exc:
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
@@ -427,13 +514,35 @@ def _elapsed(t0: float) -> float:
     return (time.monotonic() - t0) * 1000
 
 
-def _load_choose_action(source: str) -> Any:
+def _load_choose_action(source: str, *, timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS) -> Any:
     """Load code and extract choose_action function."""
-    from mts.execution.harness_loader import _SAFE_BUILTINS, _exec_harness_source
+    from mts.execution.harness_loader import _SAFE_BUILTINS, _exec_harness_source, _HarnessTimeout, _run_with_timeout
 
     namespace: dict[str, Any] = {"__builtins__": dict(_SAFE_BUILTINS)}
-    _exec_harness_source(source, namespace)
+    try:
+        _run_with_timeout(
+            lambda: _exec_harness_source(source, namespace),
+            timeout_seconds,
+        )
+    except _HarnessTimeout as exc:
+        raise TimeoutError("loading choose_action timed out") from exc
+
     fn = namespace.get("choose_action")
     if not callable(fn):
         raise ValueError("choose_action not found or not callable")
     return fn
+
+
+def _run_choose_action(
+    fn: Any,
+    state: dict[str, Any],
+    *,
+    timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS,
+) -> Any:
+    """Run choose_action with the same timeout discipline as harness loading."""
+    from mts.execution.harness_loader import _HarnessTimeout, _run_with_timeout
+
+    try:
+        return _run_with_timeout(lambda: fn(state), timeout_seconds)
+    except _HarnessTimeout as exc:
+        raise TimeoutError("choose_action timed out") from exc
