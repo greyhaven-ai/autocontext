@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass(slots=True)
 class SessionNotebook:
+    session_id: str
     scenario_name: str
     current_objective: str = ""
     current_hypotheses: list[str] = field(default_factory=list)

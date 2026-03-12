@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from autocontext.config import load_settings
 from autocontext.storage.artifacts import ArtifactStore
@@ -16,14 +16,15 @@ notebook_router = APIRouter(prefix="/api/notebooks", tags=["notebooks"])
 
 
 class NotebookBody(BaseModel):
-    current_objective: str = ""
-    current_hypotheses: list[str] = Field(default_factory=list)
+    scenario_name: str | None = None
+    current_objective: str | None = None
+    current_hypotheses: list[str] | None = None
     best_run_id: str | None = None
     best_generation: int | None = None
     best_score: float | None = None
-    unresolved_questions: list[str] = Field(default_factory=list)
-    operator_observations: list[str] = Field(default_factory=list)
-    follow_ups: list[str] = Field(default_factory=list)
+    unresolved_questions: list[str] | None = None
+    operator_observations: list[str] | None = None
+    follow_ups: list[str] | None = None
 
 
 def _get_store(request: Request) -> SQLiteStore:
@@ -50,51 +51,58 @@ def list_notebooks(request: Request) -> list[dict[str, Any]]:
     return store.list_notebooks()
 
 
-@notebook_router.get("/{scenario_name}")
-def get_notebook(scenario_name: str, request: Request) -> dict[str, Any]:
+@notebook_router.get("/{session_id}")
+def get_notebook(session_id: str, request: Request) -> dict[str, Any]:
     store = _get_store(request)
-    nb = store.get_notebook(scenario_name)
+    nb = store.get_notebook(session_id)
     if nb is None:
-        raise HTTPException(status_code=404, detail=f"Notebook not found: {scenario_name}")
+        raise HTTPException(status_code=404, detail=f"Notebook not found: {session_id}")
     return nb
 
 
-@notebook_router.put("/{scenario_name}")
-def upsert_notebook(scenario_name: str, body: NotebookBody, request: Request) -> dict[str, Any]:
+@notebook_router.put("/{session_id}")
+def upsert_notebook(session_id: str, body: NotebookBody, request: Request) -> dict[str, Any]:
     store = _get_store(request)
+    existing = store.get_notebook(session_id)
+    scenario_name = body.scenario_name or (str(existing["scenario_name"]) if existing is not None else None)
+    if not scenario_name:
+        raise HTTPException(status_code=400, detail="scenario_name is required when creating a notebook")
     store.upsert_notebook(
+        session_id=session_id,
         scenario_name=scenario_name,
         current_objective=body.current_objective,
-        current_hypotheses=body.current_hypotheses if body.current_hypotheses else None,
+        current_hypotheses=body.current_hypotheses,
         best_run_id=body.best_run_id,
         best_generation=body.best_generation,
         best_score=body.best_score,
-        unresolved_questions=body.unresolved_questions if body.unresolved_questions else None,
-        operator_observations=body.operator_observations if body.operator_observations else None,
-        follow_ups=body.follow_ups if body.follow_ups else None,
+        unresolved_questions=body.unresolved_questions,
+        operator_observations=body.operator_observations,
+        follow_ups=body.follow_ups,
     )
     # Sync to filesystem
-    nb = store.get_notebook(scenario_name)
+    nb = store.get_notebook(session_id)
     if nb is not None:
         artifacts = _get_artifacts(request)
-        artifacts.write_notebook(scenario_name, nb)
+        artifacts.write_notebook(session_id, nb)
 
     # Emit event
-    _emit_notebook_event(request, scenario_name)
+    _emit_notebook_event(request, session_id, scenario_name)
 
-    return nb or {"scenario_name": scenario_name}
+    return nb or {"session_id": session_id, "scenario_name": scenario_name}
 
 
-@notebook_router.delete("/{scenario_name}")
-def delete_notebook(scenario_name: str, request: Request) -> dict[str, str]:
+@notebook_router.delete("/{session_id}")
+def delete_notebook(session_id: str, request: Request) -> dict[str, str]:
     store = _get_store(request)
-    deleted = store.delete_notebook(scenario_name)
+    deleted = store.delete_notebook(session_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Notebook not found: {scenario_name}")
-    return {"status": "deleted", "scenario_name": scenario_name}
+        raise HTTPException(status_code=404, detail=f"Notebook not found: {session_id}")
+    artifacts = _get_artifacts(request)
+    artifacts.delete_notebook(session_id)
+    return {"status": "deleted", "session_id": session_id}
 
 
-def _emit_notebook_event(request: Request, scenario_name: str) -> None:
+def _emit_notebook_event(request: Request, session_id: str, scenario_name: str) -> None:
     """Emit notebook_updated event if event stream is configured."""
     settings = getattr(request.app.state, "app_settings", None)
     if settings is None:
@@ -105,4 +113,8 @@ def _emit_notebook_event(request: Request, scenario_name: str) -> None:
     from autocontext.loop.events import EventStreamEmitter
 
     emitter = EventStreamEmitter(event_path)
-    emitter.emit("notebook_updated", {"scenario_name": scenario_name}, channel="notebook")
+    emitter.emit(
+        "notebook_updated",
+        {"session_id": session_id, "scenario_name": scenario_name},
+        channel="notebook",
+    )

@@ -28,7 +28,8 @@ class TestSessionNotebookType:
     def test_default_fields(self) -> None:
         from autocontext.notebook.types import SessionNotebook
 
-        nb = SessionNotebook(scenario_name="grid_ctf")
+        nb = SessionNotebook(session_id="session-1", scenario_name="grid_ctf")
+        assert nb.session_id == "session-1"
         assert nb.scenario_name == "grid_ctf"
         assert nb.current_objective == ""
         assert nb.current_hypotheses == []
@@ -45,6 +46,7 @@ class TestSessionNotebookType:
         from autocontext.notebook.types import SessionNotebook
 
         nb = SessionNotebook(
+            session_id="session-1",
             scenario_name="othello",
             current_objective="maximize corner control",
             current_hypotheses=["corners are key", "edges matter"],
@@ -69,13 +71,15 @@ class TestSessionNotebookType:
 class TestNotebookStore:
     def test_upsert_and_get(self, store: SQLiteStore) -> None:
         store.upsert_notebook(
+            session_id="session-1",
             scenario_name="grid_ctf",
             current_objective="test objective",
             current_hypotheses=["h1", "h2"],
             best_score=0.75,
         )
-        nb = store.get_notebook("grid_ctf")
+        nb = store.get_notebook("session-1")
         assert nb is not None
+        assert nb["session_id"] == "session-1"
         assert nb["scenario_name"] == "grid_ctf"
         assert nb["current_objective"] == "test objective"
         assert nb["current_hypotheses"] == ["h1", "h2"]
@@ -86,44 +90,56 @@ class TestNotebookStore:
         assert nb is None
 
     def test_upsert_updates_existing(self, store: SQLiteStore) -> None:
-        store.upsert_notebook(scenario_name="grid_ctf", current_objective="first")
-        store.upsert_notebook(scenario_name="grid_ctf", current_objective="second")
-        nb = store.get_notebook("grid_ctf")
+        store.upsert_notebook(session_id="session-1", scenario_name="grid_ctf", current_objective="first")
+        store.upsert_notebook(session_id="session-1", scenario_name="grid_ctf", current_objective="second")
+        nb = store.get_notebook("session-1")
         assert nb is not None
         assert nb["current_objective"] == "second"
 
     def test_upsert_partial_update(self, store: SQLiteStore) -> None:
         store.upsert_notebook(
+            session_id="session-1",
             scenario_name="grid_ctf",
             current_objective="obj1",
             best_score=0.5,
         )
         store.upsert_notebook(
+            session_id="session-1",
             scenario_name="grid_ctf",
             best_score=0.9,
         )
-        nb = store.get_notebook("grid_ctf")
+        nb = store.get_notebook("session-1")
         assert nb is not None
-        # The objective should still be there since partial update
+        assert nb["current_objective"] == "obj1"
         assert nb["best_score"] == 0.9
 
     def test_list_notebooks(self, store: SQLiteStore) -> None:
-        store.upsert_notebook(scenario_name="grid_ctf", current_objective="obj1")
-        store.upsert_notebook(scenario_name="othello", current_objective="obj2")
+        store.upsert_notebook(session_id="session-1", scenario_name="grid_ctf", current_objective="obj1")
+        store.upsert_notebook(session_id="session-2", scenario_name="othello", current_objective="obj2")
         notebooks = store.list_notebooks()
         assert len(notebooks) == 2
+        session_ids = {nb["session_id"] for nb in notebooks}
         names = {nb["scenario_name"] for nb in notebooks}
+        assert session_ids == {"session-1", "session-2"}
         assert names == {"grid_ctf", "othello"}
+
+    def test_multiple_sessions_can_share_scenario(self, store: SQLiteStore) -> None:
+        store.upsert_notebook(session_id="session-1", scenario_name="grid_ctf", current_objective="obj1")
+        store.upsert_notebook(session_id="session-2", scenario_name="grid_ctf", current_objective="obj2")
+        notebooks = store.list_notebooks()
+        assert len(notebooks) == 2
+        assert {nb["session_id"] for nb in notebooks} == {"session-1", "session-2"}
+        assert {nb["scenario_name"] for nb in notebooks} == {"grid_ctf"}
 
     def test_list_notebooks_empty(self, store: SQLiteStore) -> None:
         notebooks = store.list_notebooks()
         assert notebooks == []
 
     def test_delete_notebook(self, store: SQLiteStore) -> None:
-        store.upsert_notebook(scenario_name="grid_ctf", current_objective="obj")
-        deleted = store.delete_notebook("grid_ctf")
+        store.upsert_notebook(session_id="session-1", scenario_name="grid_ctf", current_objective="obj")
+        deleted = store.delete_notebook("session-1")
         assert deleted is True
-        assert store.get_notebook("grid_ctf") is None
+        assert store.get_notebook("session-1") is None
 
     def test_delete_nonexistent(self, store: SQLiteStore) -> None:
         deleted = store.delete_notebook("nonexistent")
@@ -131,13 +147,14 @@ class TestNotebookStore:
 
     def test_json_list_fields_roundtrip(self, store: SQLiteStore) -> None:
         store.upsert_notebook(
+            session_id="session-1",
             scenario_name="grid_ctf",
             current_hypotheses=["h1", "h2"],
             unresolved_questions=["q1"],
             operator_observations=["obs1", "obs2"],
             follow_ups=["f1"],
         )
-        nb = store.get_notebook("grid_ctf")
+        nb = store.get_notebook("session-1")
         assert nb is not None
         assert nb["current_hypotheses"] == ["h1", "h2"]
         assert nb["unresolved_questions"] == ["q1"]
@@ -145,8 +162,8 @@ class TestNotebookStore:
         assert nb["follow_ups"] == ["f1"]
 
     def test_timestamps_are_set(self, store: SQLiteStore) -> None:
-        store.upsert_notebook(scenario_name="grid_ctf")
-        nb = store.get_notebook("grid_ctf")
+        store.upsert_notebook(session_id="session-1", scenario_name="grid_ctf")
+        nb = store.get_notebook("session-1")
         assert nb is not None
         assert nb["created_at"] != ""
         assert nb["updated_at"] != ""
@@ -175,12 +192,13 @@ class TestNotebookArtifacts:
         art = artifacts
         assert isinstance(art, ArtifactStore)
         data = {
+            "session_id": "session-1",
             "scenario_name": "grid_ctf",
             "current_objective": "test",
             "current_hypotheses": ["h1"],
         }
-        art.write_notebook("grid_ctf", data)
-        result = art.read_notebook("grid_ctf")
+        art.write_notebook("session-1", data)
+        result = art.read_notebook("session-1")
         assert result is not None
         assert result["current_objective"] == "test"
         assert result["current_hypotheses"] == ["h1"]
@@ -198,11 +216,22 @@ class TestNotebookArtifacts:
 
         art = artifacts
         assert isinstance(art, ArtifactStore)
-        art.write_notebook("grid_ctf", {"scenario_name": "grid_ctf"})
-        path = tmp_path / "knowledge" / "grid_ctf" / "notebook.json"
+        art.write_notebook("session-1", {"session_id": "session-1", "scenario_name": "grid_ctf"})
+        path = tmp_path / "runs" / "sessions" / "session-1" / "notebook.json"
         assert path.exists()
         content = json.loads(path.read_text(encoding="utf-8"))
         assert content["scenario_name"] == "grid_ctf"
+
+    def test_delete_removes_file(self, artifacts: object, tmp_path: Path) -> None:
+        from autocontext.storage.artifacts import ArtifactStore
+
+        art = artifacts
+        assert isinstance(art, ArtifactStore)
+        art.write_notebook("session-1", {"session_id": "session-1", "scenario_name": "grid_ctf"})
+        path = tmp_path / "runs" / "sessions" / "session-1" / "notebook.json"
+        assert path.exists()
+        art.delete_notebook("session-1")
+        assert not path.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -245,17 +274,19 @@ class TestNotebookAPI:
 
     def test_put_and_get(self, client: TestClient) -> None:
         body = {
+            "scenario_name": "grid_ctf",
             "current_objective": "maximize score",
             "current_hypotheses": ["h1"],
             "best_score": 0.8,
         }
-        resp = client.put("/api/notebooks/grid_ctf", json=body)
+        resp = client.put("/api/notebooks/session-1", json=body)
         assert resp.status_code == 200
         data = resp.json()
+        assert data["session_id"] == "session-1"
         assert data["scenario_name"] == "grid_ctf"
         assert data["current_objective"] == "maximize score"
 
-        resp = client.get("/api/notebooks/grid_ctf")
+        resp = client.get("/api/notebooks/session-1")
         assert resp.status_code == 200
         assert resp.json()["current_objective"] == "maximize score"
 
@@ -264,31 +295,41 @@ class TestNotebookAPI:
         assert resp.status_code == 404
 
     def test_delete(self, client: TestClient) -> None:
-        client.put("/api/notebooks/grid_ctf", json={"current_objective": "obj"})
-        resp = client.delete("/api/notebooks/grid_ctf")
+        client.put("/api/notebooks/session-1", json={"scenario_name": "grid_ctf", "current_objective": "obj"})
+        resp = client.delete("/api/notebooks/session-1")
         assert resp.status_code == 200
 
-        resp = client.get("/api/notebooks/grid_ctf")
+        resp = client.get("/api/notebooks/session-1")
         assert resp.status_code == 404
+
+    def test_create_requires_scenario_name(self, client: TestClient) -> None:
+        resp = client.put("/api/notebooks/session-1", json={"current_objective": "obj"})
+        assert resp.status_code == 400
 
     def test_delete_nonexistent(self, client: TestClient) -> None:
         resp = client.delete("/api/notebooks/nonexistent")
         assert resp.status_code == 404
 
     def test_put_partial_update(self, client: TestClient) -> None:
-        client.put("/api/notebooks/grid_ctf", json={"current_objective": "first", "best_score": 0.5})
-        client.put("/api/notebooks/grid_ctf", json={"best_score": 0.9})
-        resp = client.get("/api/notebooks/grid_ctf")
+        client.put(
+            "/api/notebooks/session-1",
+            json={"scenario_name": "grid_ctf", "current_objective": "first", "best_score": 0.5},
+        )
+        client.put("/api/notebooks/session-1", json={"best_score": 0.9})
+        resp = client.get("/api/notebooks/session-1")
         assert resp.status_code == 200
+        assert resp.json()["current_objective"] == "first"
         assert resp.json()["best_score"] == 0.9
 
     def test_list_multiple(self, client: TestClient) -> None:
-        client.put("/api/notebooks/grid_ctf", json={"current_objective": "obj1"})
-        client.put("/api/notebooks/othello", json={"current_objective": "obj2"})
+        client.put("/api/notebooks/session-1", json={"scenario_name": "grid_ctf", "current_objective": "obj1"})
+        client.put("/api/notebooks/session-2", json={"scenario_name": "othello", "current_objective": "obj2"})
         resp = client.get("/api/notebooks/")
         assert resp.status_code == 200
         names = {nb["scenario_name"] for nb in resp.json()}
         assert names == {"grid_ctf", "othello"}
+        session_ids = {nb["session_id"] for nb in resp.json()}
+        assert session_ids == {"session-1", "session-2"}
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +343,7 @@ class TestNotebookInjection:
         from autocontext.notebook.types import SessionNotebook
 
         nb = SessionNotebook(
+            session_id="session-1",
             scenario_name="grid_ctf",
             current_objective="maximize flag captures",
             current_hypotheses=["corners matter", "speed is key"],
@@ -326,7 +368,7 @@ class TestNotebookInjection:
         from autocontext.notebook.injection import format_notebook_context
         from autocontext.notebook.types import SessionNotebook
 
-        nb = SessionNotebook(scenario_name="grid_ctf")
+        nb = SessionNotebook(session_id="session-1", scenario_name="grid_ctf")
         result = format_notebook_context(nb)
         # Should return something, even for empty notebook
         assert "grid_ctf" in result
@@ -336,6 +378,7 @@ class TestNotebookInjection:
         from autocontext.notebook.types import SessionNotebook
 
         nb = SessionNotebook(
+            session_id="session-1",
             scenario_name="othello",
             current_objective="improve corner control",
         )

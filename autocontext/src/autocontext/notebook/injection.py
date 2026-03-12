@@ -6,7 +6,8 @@ from autocontext.notebook.types import SessionNotebook
 def format_notebook_context(notebook: SessionNotebook) -> str:
     """Render a SessionNotebook as markdown for prompt injection."""
     sections: list[str] = []
-    sections.append(f"## Session Notebook: {notebook.scenario_name}")
+    sections.append(f"## Session Notebook: {notebook.session_id}")
+    sections.append(f"\n### Scenario\n{notebook.scenario_name}")
 
     if notebook.current_objective:
         sections.append(f"\n### Current Objective\n{notebook.current_objective}")

@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS session_notebooks (
-    scenario_name TEXT PRIMARY KEY,
+    session_id TEXT PRIMARY KEY,
+    scenario_name TEXT NOT NULL,
     current_objective TEXT NOT NULL DEFAULT '',
     current_hypotheses TEXT NOT NULL DEFAULT '[]',
     best_run_id TEXT,
@@ -11,3 +12,4 @@ CREATE TABLE IF NOT EXISTS session_notebooks (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+CREATE INDEX IF NOT EXISTS idx_session_notebooks_scenario ON session_notebooks(scenario_name);

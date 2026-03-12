@@ -744,15 +744,21 @@ class ArtifactStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
-    def read_notebook(self, scenario_name: str) -> dict[str, object] | None:
-        """Read notebook JSON from knowledge/<scenario>/notebook.json."""
-        path = self.knowledge_root / scenario_name / "notebook.json"
+    def read_notebook(self, session_id: str) -> dict[str, object] | None:
+        """Read notebook JSON from runs/sessions/<session_id>/notebook.json."""
+        path = self.runs_root / "sessions" / session_id / "notebook.json"
         if not path.exists():
             return None
         return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
 
-    def write_notebook(self, scenario_name: str, notebook: dict[str, object]) -> None:
-        """Write notebook JSON to knowledge/<scenario>/notebook.json."""
-        path = self.knowledge_root / scenario_name / "notebook.json"
+    def write_notebook(self, session_id: str, notebook: dict[str, object]) -> None:
+        """Write notebook JSON to runs/sessions/<session_id>/notebook.json."""
+        path = self.runs_root / "sessions" / session_id / "notebook.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(notebook, indent=2), encoding="utf-8")
+
+    def delete_notebook(self, session_id: str) -> None:
+        """Delete the file-backed notebook artifact if it exists."""
+        path = self.runs_root / "sessions" / session_id / "notebook.json"
+        if path.exists():
+            path.unlink()
