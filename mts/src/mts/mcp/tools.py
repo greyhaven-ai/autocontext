@@ -1017,3 +1017,87 @@ def get_capabilities() -> dict[str, object]:
             },
         ],
     }
+
+# -- Discovery & capability advertisement (AC-195) --
+
+
+def skill_advertise_capabilities(ctx: MtsToolContext) -> dict[str, object]:
+    """Return full capability advertisement: version, runtime, scenarios, artifacts."""
+    from mts.openclaw.discovery import advertise_capabilities
+
+    ad = advertise_capabilities(ctx)
+    return cast(dict[str, object], ad.model_dump())
+
+
+def skill_scenario_capabilities(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]:
+    """Return per-scenario capability info: evaluation mode, harness, playbook, etc."""
+    from mts.openclaw.discovery import discover_scenario_capabilities
+
+    caps = discover_scenario_capabilities(ctx, scenario_name)
+    return cast(dict[str, object], caps.model_dump())
+
+
+def skill_runtime_health(ctx: MtsToolContext) -> dict[str, object]:
+    """Return runtime health: executor mode, provider, harness mode, models."""
+    from mts.openclaw.discovery import get_runtime_health
+
+    health = get_runtime_health(ctx.settings)
+    return cast(dict[str, object], health.model_dump())
+
+
+def skill_scenario_artifact_lookup(ctx: MtsToolContext, scenario_name: str) -> list[dict[str, object]]:
+    """Return all artifacts associated with a scenario."""
+    from mts.openclaw.discovery import scenario_artifact_lookup
+
+    artifacts = scenario_artifact_lookup(ctx, scenario_name)
+    return [cast(dict[str, object], a.model_dump()) for a in artifacts]
+
+
+# -- ClawHub skill wrapper functions (AC-192) --
+
+
+def skill_manifest(ctx: MtsToolContext) -> dict[str, object]:
+    """Return the ClawHub skill manifest for this MTS instance."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    return MtsSkillWrapper(ctx).manifest().model_dump()
+
+
+def skill_discover_scenarios(ctx: MtsToolContext, query: str | None = None) -> list[dict[str, object]]:
+    """Discover available scenarios, optionally filtered by query."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    results = MtsSkillWrapper(ctx).discover_scenarios(query)
+    return [r.model_dump() for r in results]
+
+
+def skill_select_scenario(ctx: MtsToolContext, description: str) -> dict[str, object]:
+    """Recommend the best scenario for a problem description."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    return MtsSkillWrapper(ctx).select_scenario(description).model_dump()
+
+
+def skill_evaluate(
+    ctx: MtsToolContext,
+    scenario_name: str,
+    strategy: dict[str, object],
+    num_matches: int = 3,
+    seed_base: int = 42,
+) -> dict[str, object]:
+    """Full validate + evaluate workflow."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    return MtsSkillWrapper(ctx).evaluate(scenario_name, strategy, num_matches, seed_base).model_dump()
+
+
+def skill_discover_artifacts(
+    ctx: MtsToolContext,
+    scenario: str | None = None,
+    artifact_type: str | None = None,
+) -> list[dict[str, object]]:
+    """Find published artifacts with enriched metadata."""
+    from mts.openclaw.skill import MtsSkillWrapper
+
+    results = MtsSkillWrapper(ctx).discover_artifacts(scenario, artifact_type)
+    return [r.model_dump() for r in results]
