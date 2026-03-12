@@ -18,6 +18,7 @@ def test_pipeline_calls_probe_when_enabled() -> None:
         events=MagicMock(),
         curator=None,
     )
+    pipeline._orchestrator.resolve_role_execution.return_value = (MagicMock(), None)
 
     mock_ctx = MagicMock()
     mock_ctx.generation = 2  # Skip startup verification
@@ -52,6 +53,7 @@ def test_pipeline_skips_probe_when_disabled() -> None:
         events=MagicMock(),
         curator=None,
     )
+    pipeline._orchestrator.resolve_role_execution.return_value = (MagicMock(), None)
 
     mock_ctx = MagicMock()
     mock_ctx.generation = 2
@@ -87,6 +89,7 @@ def test_pipeline_continues_after_staged_validation_retry_signal() -> None:
         events=MagicMock(),
         curator=None,
     )
+    pipeline._orchestrator.resolve_role_execution.return_value = (MagicMock(), None)
 
     mock_ctx = MagicMock()
     mock_ctx.generation = 2
