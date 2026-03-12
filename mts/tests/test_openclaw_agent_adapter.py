@@ -9,7 +9,6 @@ import pytest
 
 from mts.harness.core.types import ModelResponse, RoleUsage
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -145,8 +144,7 @@ class TestOpenClawAgentProtocol:
                 return _make_trace(output="done")
 
         agent = MyAgent()
-        # Should satisfy the protocol structurally
-        assert hasattr(agent, "execute")
+        assert isinstance(agent, OpenClawAgentProtocol)
         result = agent.execute(prompt="test", model="m", max_tokens=100, temperature=0.0)
         assert result["output"] == "done"
 
@@ -288,7 +286,7 @@ class TestRetryBehavior:
         assert agent.execute.call_count == 2
 
     def test_exhausts_retries_then_raises(self) -> None:
-        from mts.openclaw.agent_adapter import OpenClawClient, OpenClawAdapterError
+        from mts.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
         agent = MagicMock()
         agent.execute.side_effect = RuntimeError("always fails")
@@ -300,7 +298,7 @@ class TestRetryBehavior:
         assert agent.execute.call_count == 3  # 1 initial + 2 retries
 
     def test_no_retry_when_max_retries_zero(self) -> None:
-        from mts.openclaw.agent_adapter import OpenClawClient, OpenClawAdapterError
+        from mts.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
         agent = MagicMock()
         agent.execute.side_effect = RuntimeError("fail")
@@ -339,7 +337,7 @@ class TestRetryBehavior:
 
 class TestTimeoutBehavior:
     def test_timeout_raises_adapter_error(self) -> None:
-        from mts.openclaw.agent_adapter import OpenClawClient, OpenClawAdapterError
+        from mts.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
         def slow_execute(**kwargs: Any) -> dict[str, Any]:
             time.sleep(1.0)
@@ -353,7 +351,7 @@ class TestTimeoutBehavior:
             client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
 
     def test_timeout_returns_promptly(self) -> None:
-        from mts.openclaw.agent_adapter import OpenClawClient, OpenClawAdapterError
+        from mts.openclaw.agent_adapter import OpenClawAdapterError, OpenClawClient
 
         def slow_execute(**kwargs: Any) -> dict[str, Any]:
             time.sleep(1.0)
@@ -416,7 +414,7 @@ class TestProviderBridgeRegistration:
         from mts.agents.provider_bridge import create_role_client
 
         settings = MagicMock()
-        settings.openclaw_agent_factory = "tests.test_openclaw_agent_adapter:build_test_openclaw_agent"
+        settings.openclaw_agent_factory = "test_openclaw_agent_adapter:build_test_openclaw_agent"
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
@@ -434,7 +432,7 @@ class TestProviderBridgeRegistration:
         from mts.agents.provider_bridge import create_role_client
 
         settings = MagicMock()
-        settings.openclaw_agent_factory = "tests.test_openclaw_agent_adapter:build_test_openclaw_agent"
+        settings.openclaw_agent_factory = "test_openclaw_agent_adapter:build_test_openclaw_agent"
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
@@ -477,10 +475,11 @@ class TestOpenClawSettings:
 
     def test_settings_from_env(self) -> None:
         import os
+
         from mts.config.settings import load_settings
 
         env = {
-            "MTS_OPENCLAW_AGENT_FACTORY": "tests.test_openclaw_agent_adapter:build_test_openclaw_agent",
+            "MTS_OPENCLAW_AGENT_FACTORY": "test_openclaw_agent_adapter:build_test_openclaw_agent",
             "MTS_OPENCLAW_TIMEOUT_SECONDS": "60.0",
             "MTS_OPENCLAW_MAX_RETRIES": "5",
             "MTS_OPENCLAW_RETRY_BASE_DELAY": "0.5",
@@ -488,7 +487,7 @@ class TestOpenClawSettings:
         with patch.dict(os.environ, env, clear=False):
             s = load_settings()
 
-        assert s.openclaw_agent_factory == "tests.test_openclaw_agent_adapter:build_test_openclaw_agent"
+        assert s.openclaw_agent_factory == "test_openclaw_agent_adapter:build_test_openclaw_agent"
         assert s.openclaw_timeout_seconds == 60.0
         assert s.openclaw_max_retries == 5
         assert s.openclaw_retry_base_delay == 0.5

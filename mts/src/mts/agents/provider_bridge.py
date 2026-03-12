@@ -10,6 +10,7 @@ import importlib
 import inspect
 import os
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from mts.harness.core.llm_client import LanguageModelClient
@@ -96,7 +97,7 @@ def _create_provider_bridge(provider_type: str, settings: AppSettings) -> Langua
     return ProviderBridgeClient(provider, use_provider_default_model=use_provider_default_model)
 
 
-def _load_openclaw_factory(factory_path: str) -> object:
+def _load_openclaw_factory(factory_path: str) -> Callable[..., object]:
     """Load a module:callable factory reference for OpenClaw agents."""
     module_name, sep, attr_name = factory_path.partition(":")
     if not sep or not module_name or not attr_name:
@@ -105,9 +106,12 @@ def _load_openclaw_factory(factory_path: str) -> object:
         )
     module = importlib.import_module(module_name)
     try:
-        return getattr(module, attr_name)
+        factory = getattr(module, attr_name)
     except AttributeError as exc:
         raise ValueError(f"OpenClaw factory {factory_path!r} not found") from exc
+    if not callable(factory):
+        raise ValueError(f"OpenClaw factory {factory_path!r} is not callable")
+    return factory
 
 
 def create_role_client(provider_type: str, settings: AppSettings) -> LanguageModelClient | None:
