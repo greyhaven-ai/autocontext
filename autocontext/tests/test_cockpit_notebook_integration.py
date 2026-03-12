@@ -381,9 +381,7 @@ class TestCockpitReadOnlyEndpointsUnchanged:
 class TestCockpitNotebookEventEmission:
     def test_put_emits_event(self, cockpit_env: dict[str, Any]) -> None:
         """PUT writes a notebook_updated event to the event stream."""
-        events_dir = cockpit_env["tmp_path"] / "runs"
-        events_dir.mkdir(parents=True, exist_ok=True)
-        event_path = events_dir / "events.ndjson"
+        event_path = cockpit_env["tmp_path"] / "runs" / "events.ndjson"
 
         cockpit_env["client"].put(
             "/api/cockpit/notebooks/sess-ev",
@@ -396,4 +394,20 @@ class TestCockpitNotebookEventEmission:
         event = json.loads(lines[-1])
         assert event["event"] == "notebook_updated"
         assert event["payload"]["session_id"] == "sess-ev"
+        assert event["payload"]["source"] == "cockpit"
+
+    def test_delete_emits_event(self, cockpit_env: dict[str, Any]) -> None:
+        """DELETE writes a notebook_deleted event to the event stream."""
+        event_path = cockpit_env["tmp_path"] / "runs" / "events.ndjson"
+        cockpit_env["client"].put(
+            "/api/cockpit/notebooks/sess-del-ev",
+            json={"scenario_name": "grid_ctf"},
+        )
+
+        resp = cockpit_env["client"].delete("/api/cockpit/notebooks/sess-del-ev")
+        assert resp.status_code == 200
+        lines = [line for line in event_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        event = json.loads(lines[-1])
+        assert event["event"] == "notebook_deleted"
+        assert event["payload"]["session_id"] == "sess-del-ev"
         assert event["payload"]["source"] == "cockpit"

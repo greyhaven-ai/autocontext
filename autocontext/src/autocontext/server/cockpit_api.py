@@ -53,8 +53,7 @@ def _emit_cockpit_notebook_event(request: Request, session_id: str, scenario_nam
     if settings is None:
         return
     event_path: Path = settings.event_stream_path
-    if not event_path.parent.exists():
-        return
+    event_path.parent.mkdir(parents=True, exist_ok=True)
     from autocontext.loop.events import EventStreamEmitter
 
     emitter = EventStreamEmitter(event_path)
@@ -125,11 +124,26 @@ def cockpit_update_notebook(session_id: str, body: NotebookUpdateBody, request: 
 def cockpit_delete_notebook(session_id: str, request: Request) -> dict[str, str]:
     """Delete a notebook from cockpit."""
     store = _get_store(request)
+    existing = store.get_notebook(session_id)
+    scenario_name = str(existing["scenario_name"]) if existing is not None else ""
     deleted = store.delete_notebook(session_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Notebook not found: {session_id}")
     artifacts = _get_artifacts(request)
     artifacts.delete_notebook(session_id)
+    if scenario_name:
+        settings = getattr(request.app.state, "app_settings", None)
+        if settings is not None:
+            event_path: Path = settings.event_stream_path
+            event_path.parent.mkdir(parents=True, exist_ok=True)
+            from autocontext.loop.events import EventStreamEmitter
+
+            emitter = EventStreamEmitter(event_path)
+            emitter.emit(
+                "notebook_deleted",
+                {"session_id": session_id, "scenario_name": scenario_name, "source": "cockpit"},
+                channel="cockpit",
+            )
     return {"status": "deleted", "session_id": session_id}
 
 
