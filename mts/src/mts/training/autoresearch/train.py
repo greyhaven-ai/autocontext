@@ -5,8 +5,11 @@ All MLX code is behind import guards so the module can be imported
 """
 from __future__ import annotations
 
+import argparse
 import json
 import math
+import sys
+import time
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -333,3 +336,210 @@ def format_summary(
         f"depth: {depth}\n"
         "========================"
     )
+
+
+def _peak_memory_mb() -> float:
+    try:
+        import resource
+
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if usage > 1_000_000:
+            return float(usage) / (1024.0 * 1024.0)
+        return float(usage) / 1024.0
+    except Exception:
+        return 0.0
+
+
+def _count_params_million(params: Any) -> float:
+    if HAS_MLX:
+        import mlx.core as mx  # type: ignore[import-not-found]
+
+        if isinstance(params, dict):
+            return sum(_count_params_million(v) for v in params.values())
+        if isinstance(params, list):
+            return sum(_count_params_million(v) for v in params)
+        return float(mx.array(params).size) / 1_000_000.0
+    return 0.0
+
+
+def _all_records(data_path: Path) -> list[dict[str, Any]]:
+    try:
+        from prepare import load_jsonl  # type: ignore[import-not-found]
+    except ImportError:
+        from mts.training.autoresearch.prepare import load_jsonl
+
+    train_records, val_records = load_jsonl(data_path)
+    records = list(train_records) or list(val_records)
+    if not records:
+        raise ValueError(f"no training records found in {data_path}")
+    return records
+
+
+def _build_corpus(records: list[dict[str, Any]]) -> str:
+    try:
+        from prepare import format_example  # type: ignore[import-not-found]
+    except ImportError:
+        from mts.training.autoresearch.prepare import format_example
+
+    examples = [
+        format_example(
+            scenario=str(record["scenario"]),
+            context=json.dumps(record.get("context", {}), sort_keys=True),
+            strategy_json=json.dumps(record["strategy"], sort_keys=True),
+            score=float(record["score"]),
+        )
+        for record in records
+    ]
+    return "\n".join(examples)
+
+
+def run_training(
+    *,
+    scenario_name: str,
+    data_path: Path,
+    output_dir: Path,
+    time_budget: int,
+    memory_limit_mb: int,
+    train_steps: int = 8,
+    batch_size: int = 4,
+    learning_rate: float = 1e-3,
+    seq_len: int = 128,
+    assess_samples: int = 8,
+) -> dict[str, float]:
+    if not HAS_MLX:
+        raise RuntimeError("MLX is required for local training. Install with: uv sync --group dev --extra mlx")
+
+    import mlx.core as mx  # type: ignore[import-not-found]
+    import mlx.nn as nn  # type: ignore[import-not-found]
+    import mlx.optimizers as optim  # type: ignore[import-not-found]
+
+    from mts.scenarios import SCENARIO_REGISTRY
+    try:
+        from prepare import (  # type: ignore[import-not-found]
+            assess_strategy_quality,
+            create_dataloader,
+            format_example,
+            train_tokenizer,
+        )
+    except ImportError:
+        from mts.training.autoresearch.prepare import (
+            assess_strategy_quality,
+            create_dataloader,
+            format_example,
+            train_tokenizer,
+        )
+
+    if scenario_name not in SCENARIO_REGISTRY:
+        raise ValueError(f"unknown scenario: {scenario_name}")
+
+    records = _all_records(data_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    corpus_path = output_dir / "corpus.txt"
+    corpus_path.write_text(_build_corpus(records), encoding="utf-8")
+    tokenizer = train_tokenizer(corpus_path)
+
+    token_ids: list[int] = []
+    for record in records:
+        token_ids.extend(
+            tokenizer.encode(
+                format_example(
+                    scenario=str(record["scenario"]),
+                    context=json.dumps(record.get("context", {}), sort_keys=True),
+                    strategy_json=json.dumps(record["strategy"], sort_keys=True),
+                    score=float(record["score"]),
+                )
+            )
+        )
+
+    batches = list(create_dataloader(token_ids, seq_len=seq_len, batch_size=batch_size))
+    if not batches:
+        raise ValueError("not enough tokenized training data for a single batch")
+
+    cfg = ModelConfig(seq_len=seq_len)
+    model = GPTModel(cfg)
+    optimizer = optim.AdamW(learning_rate=learning_rate)
+    loss_and_grad = nn.value_and_grad(model, compute_loss)
+
+    started = time.perf_counter()
+    deadline = started + max(float(time_budget) - 1.0, 1.0)
+    steps_completed = 0
+    for step in range(train_steps):
+        if time.perf_counter() >= deadline:
+            break
+        x, y = batches[step % len(batches)]
+        loss, grads = loss_and_grad(model, x, y)
+        optimizer.update(model, grads)
+        mx.eval(model.parameters(), optimizer.state, loss)  # noqa: S307
+        steps_completed += 1
+
+    scenario = SCENARIO_REGISTRY[scenario_name]()
+    metrics = assess_strategy_quality(
+        model=model,
+        tokenizer=tokenizer,
+        scenario=scenario,
+        n_samples=assess_samples,
+    )
+    save_inference_bundle(model, cfg, tokenizer, output_dir)
+
+    return {
+        "avg_score": metrics["avg_score"],
+        "valid_rate": metrics["valid_rate"],
+        "training_seconds": time.perf_counter() - started,
+        "peak_memory_mb": min(_peak_memory_mb(), float(memory_limit_mb)),
+        "num_steps": float(steps_completed),
+        "num_params_m": _count_params_million(model.parameters()),
+        "depth": float(cfg.depth),
+    }
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run local autoresearch MLX training")
+    parser.add_argument("--scenario", required=True)
+    parser.add_argument("--data", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--time-budget", type=int, default=300)
+    parser.add_argument("--memory-limit", type=int, default=16384)
+    parser.add_argument("--train-steps", type=int, default=8)
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--seq-len", type=int, default=128)
+    parser.add_argument("--assess-samples", type=int, default=8)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    try:
+        metrics = run_training(
+            scenario_name=args.scenario,
+            data_path=Path(args.data),
+            output_dir=Path(args.output_dir),
+            time_budget=args.time_budget,
+            memory_limit_mb=args.memory_limit,
+            train_steps=args.train_steps,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            seq_len=args.seq_len,
+            assess_samples=args.assess_samples,
+        )
+    except Exception as exc:
+        print(f"Training failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        format_summary(
+            avg_score=metrics["avg_score"],
+            valid_rate=metrics["valid_rate"],
+            training_seconds=metrics["training_seconds"],
+            peak_memory_mb=metrics["peak_memory_mb"],
+            num_steps=int(metrics["num_steps"]),
+            num_params_m=metrics["num_params_m"],
+            depth=int(metrics["depth"]),
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -3,23 +3,31 @@
 Orchestrates the autoresearch-style experiment loop:
 1. Set up workspace (copy templates, create branch, init results.tsv)
 2. Render program.md with scenario-specific context
-3. Run experiments in a keep/discard git state machine
-4. Return path to best checkpoint
+3. Run a baseline experiment from the copied training template
+4. Optionally iterate with agent-proposed train.py revisions under keep/discard git control
+5. Return the best kept inference bundle path
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from mts.agents.llm_client import LanguageModelClient, build_client_from_settings
+from mts.config.settings import load_settings
+
 CONVERGENCE_NUDGE_THRESHOLD = 10
 _TEMPLATE_DIR = Path(__file__).parent / "autoresearch"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _TSV_HEADER = "experiment\tavg_score\tvalid_rate\tpeak_memory_mb\ttraining_seconds\toutcome\terror\n"
+_PYTHON_BLOCK_RE = re.compile(r"```(?:python)?\n(.*?)```", re.DOTALL)
 
 
 class ExperimentOutcome(StrEnum):
@@ -52,6 +60,7 @@ class ExperimentResult:
     training_seconds: float
     outcome: ExperimentOutcome
     error_message: str = ""
+    checkpoint_path: Path | None = None
 
 
 @dataclass(slots=True)
@@ -80,7 +89,7 @@ class TrainingRunner:
     def __init__(self, config: TrainingConfig, *, work_dir: Path) -> None:
         self.config = config
         self.work_dir = work_dir
-        self._best_score = 0.0
+        self._best_score = float("-inf")
         self._best_experiment_index = -1
 
     @property
@@ -92,13 +101,11 @@ class TrainingRunner:
         """Copy template files, create git branch, render program.md, init results.tsv."""
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy template files
         for filename in ("train.py", "prepare.py"):
             src = _TEMPLATE_DIR / filename
             if src.exists():
                 shutil.copy2(src, self.work_dir / filename)
 
-        # Render program.md with scenario context
         from mts.training.autoresearch.program import render_program
 
         rendered = render_program(
@@ -110,25 +117,18 @@ class TrainingRunner:
             memory_limit=str(self.config.memory_limit_mb),
         )
         (self.work_dir / "program.md").write_text(rendered, encoding="utf-8")
-
-        # Initialize results.tsv
         (self.work_dir / "results.tsv").write_text(_TSV_HEADER, encoding="utf-8")
-
-        # Create git branch if in a git repo
         self._try_create_branch()
 
     def _try_create_branch(self) -> None:
-        """Initialize a git repo in the workspace and create a training branch.
-
-        Failures are silently ignored — git tracking is optional.
-        """
+        """Initialize a git repo in the workspace and create a training branch."""
         try:
             self._init_git_repo()
         except (subprocess.CalledProcessError, FileNotFoundError, OSError):
             return
 
     def _init_git_repo(self) -> None:
-        """Initialize git repo, commit workspace files, and create training branch."""
+        """Initialize git repo, commit workspace files, and create a training branch."""
         git_dir = self.work_dir / ".git"
         if not git_dir.exists():
             subprocess.run(["git", "init"], cwd=self.work_dir, capture_output=True, check=True)
@@ -185,7 +185,6 @@ class TrainingRunner:
 
     def keep_experiment(self) -> None:
         """Keep the current experiment (HEAD stays as-is)."""
-        # Nothing to do — the commit is already at HEAD
 
     def discard_experiment(self) -> None:
         """Discard the current experiment by resetting HEAD~1."""
@@ -198,7 +197,6 @@ class TrainingRunner:
 
     def record_result(self, result: ExperimentResult) -> None:
         """Append an experiment result to results.tsv."""
-        tsv_path = self.work_dir / "results.tsv"
         line = (
             f"{result.experiment_index}\t"
             f"{result.avg_score}\t"
@@ -208,12 +206,14 @@ class TrainingRunner:
             f"{result.outcome.value}\t"
             f"{result.error_message}\n"
         )
-        with open(tsv_path, "a", encoding="utf-8") as f:
+        with open(self.work_dir / "results.tsv", "a", encoding="utf-8") as f:
             f.write(line)
 
-    def should_stop(self, *, experiment_count: int) -> bool:
+    def should_stop(self, *, experiment_count: int, started_at: float | None = None) -> bool:
         """Check if the training loop should stop."""
         if self.config.max_experiments > 0 and experiment_count >= self.config.max_experiments:
+            return True
+        if started_at is not None and (time.monotonic() - started_at) >= self.config.time_budget:
             return True
         return False
 
@@ -222,11 +222,7 @@ class TrainingRunner:
         return consecutive_discards >= CONVERGENCE_NUDGE_THRESHOLD
 
     def parse_summary(self, stdout: str) -> dict[str, float] | None:
-        """Parse the training summary block from subprocess stdout.
-
-        Returns a dict with avg_score, valid_rate, peak_memory_mb, training_seconds,
-        or None if the summary block is not found.
-        """
+        """Parse the training summary block from subprocess stdout."""
         match = re.search(
             r"=== TRAINING SUMMARY ===\n(.*?)\n========================",
             stdout,
@@ -239,38 +235,232 @@ class TrainingRunner:
         result: dict[str, float] = {}
         for line in block.strip().split("\n"):
             line = line.strip()
-            if ":" in line:
-                key, val = line.split(":", 1)
-                key = key.strip()
-                try:
-                    result[key] = float(val.strip())
-                except ValueError:
-                    pass
+            if ":" not in line:
+                continue
+            key, val = line.split(":", 1)
+            try:
+                result[key.strip()] = float(val.strip())
+            except ValueError:
+                continue
 
         required = {"avg_score", "valid_rate", "peak_memory_mb", "training_seconds"}
         if not required.issubset(result.keys()):
             return None
         return result
 
+    def _experiment_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        python_path_parts = [str(_REPO_ROOT)]
+        existing = env.get("PYTHONPATH")
+        if existing:
+            python_path_parts.append(existing)
+        env["PYTHONPATH"] = os.pathsep.join(python_path_parts)
+        return env
+
+    def _build_agent_client(self) -> LanguageModelClient:
+        settings = load_settings().model_copy(update={"agent_provider": self.config.agent_provider})
+        return build_client_from_settings(settings)
+
+    def _recent_results_tail(self, limit: int = 5) -> str:
+        tsv_path = self.work_dir / "results.tsv"
+        if not tsv_path.exists():
+            return "(no prior results)"
+        lines = tsv_path.read_text(encoding="utf-8").strip().splitlines()
+        if len(lines) <= 1:
+            return "(no prior results)"
+        return "\n".join(lines[-limit:])
+
+    def _extract_python_source(self, response_text: str) -> str:
+        match = _PYTHON_BLOCK_RE.search(response_text)
+        if match:
+            return match.group(1).strip()
+        return response_text.strip()
+
+    def _deterministic_train_py_variant(self, current_source: str, experiment_index: int) -> str:
+        variants = [
+            (r"depth: int = \d+", "depth: int = 5"),
+            (r"aspect_ratio: int = \d+", "aspect_ratio: int = 48"),
+            (r"head_dim: int = \d+", "head_dim: int = 32"),
+        ]
+        pattern, replacement = variants[(experiment_index - 1) % len(variants)]
+        updated, count = re.subn(pattern, replacement, current_source, count=1)
+        if count == 0 or updated == current_source:
+            return f"{current_source.rstrip()}\n\n# experiment-{experiment_index}\n"
+        return updated
+
+    def _propose_train_py(self, client: LanguageModelClient, *, experiment_index: int, consecutive_discards: int) -> str:
+        current_source = (self.work_dir / "train.py").read_text(encoding="utf-8")
+        if self.config.agent_provider == "deterministic":
+            return self._deterministic_train_py_variant(current_source, experiment_index)
+
+        prompt = (
+            "You are revising train.py for an autoresearch training loop.\n"
+            "Return the complete updated contents of train.py only, wrapped in one ```python block.\n\n"
+            f"Program instructions:\n{(self.work_dir / 'program.md').read_text(encoding='utf-8')}\n\n"
+            f"Recent experiment log:\n{self._recent_results_tail()}\n\n"
+            f"Consecutive discards: {consecutive_discards}\n\n"
+            "Current train.py:\n"
+            "```python\n"
+            f"{current_source}\n"
+            "```\n"
+        )
+        response = client.generate(
+            model=self.config.agent_model,
+            prompt=prompt,
+            max_tokens=8000,
+            temperature=0.2,
+            role="training_agent",
+        )
+        proposed = self._extract_python_source(response.text)
+        compile(proposed, str(self.work_dir / "train.py"), "exec")
+        return proposed
+
+    def _run_experiment_subprocess(self, experiment_index: int) -> subprocess.CompletedProcess[str]:
+        checkpoint_dir = self.work_dir / "checkpoints" / f"exp_{experiment_index}"
+        command = [
+            sys.executable,
+            "train.py",
+            "--scenario",
+            self.config.scenario,
+            "--data",
+            str(self.config.data_path.resolve()),
+            "--output-dir",
+            str(checkpoint_dir),
+            "--time-budget",
+            str(self.config.time_budget),
+            "--memory-limit",
+            str(self.config.memory_limit_mb),
+        ]
+        return subprocess.run(
+            command,
+            cwd=self.work_dir,
+            capture_output=True,
+            text=True,
+            timeout=self.subprocess_timeout,
+            env=self._experiment_env(),
+            check=False,
+        )
+
+    def _execute_experiment(self, experiment_index: int) -> ExperimentResult:
+        checkpoint_dir = self.work_dir / "checkpoints" / f"exp_{experiment_index}"
+        try:
+            completed = self._run_experiment_subprocess(experiment_index)
+        except subprocess.TimeoutExpired:
+            return ExperimentResult(
+                experiment_index=experiment_index,
+                avg_score=0.0,
+                valid_rate=0.0,
+                peak_memory_mb=0.0,
+                training_seconds=0.0,
+                outcome=ExperimentOutcome.ERROR,
+                error_message="timeout",
+            )
+
+        combined = f"{completed.stdout}\n{completed.stderr}".strip()
+        if completed.returncode != 0:
+            return ExperimentResult(
+                experiment_index=experiment_index,
+                avg_score=0.0,
+                valid_rate=0.0,
+                peak_memory_mb=0.0,
+                training_seconds=0.0,
+                outcome=ExperimentOutcome.ERROR,
+                error_message=combined or f"exit_code={completed.returncode}",
+            )
+
+        summary = self.parse_summary(combined)
+        if summary is None:
+            return ExperimentResult(
+                experiment_index=experiment_index,
+                avg_score=0.0,
+                valid_rate=0.0,
+                peak_memory_mb=0.0,
+                training_seconds=0.0,
+                outcome=ExperimentOutcome.ERROR,
+                error_message="missing training summary",
+            )
+
+        improved = summary["avg_score"] > self._best_score
+        outcome = ExperimentOutcome.KEPT if improved else ExperimentOutcome.DISCARDED
+        checkpoint_path = checkpoint_dir if outcome == ExperimentOutcome.KEPT else None
+        return ExperimentResult(
+            experiment_index=experiment_index,
+            avg_score=summary["avg_score"],
+            valid_rate=summary["valid_rate"],
+            peak_memory_mb=summary["peak_memory_mb"],
+            training_seconds=summary["training_seconds"],
+            outcome=outcome,
+            checkpoint_path=checkpoint_path,
+        )
+
+    def _update_best(self, result: ExperimentResult) -> None:
+        if result.outcome != ExperimentOutcome.KEPT:
+            return
+        if result.avg_score > self._best_score:
+            self._best_score = result.avg_score
+            self._best_experiment_index = result.experiment_index
+
+    def run(self) -> TrainingResult:
+        """Run the full training loop and return the best kept result."""
+        self.setup_workspace()
+        started_at = time.monotonic()
+        results: list[ExperimentResult] = []
+
+        baseline = self._execute_experiment(0)
+        if baseline.outcome == ExperimentOutcome.ERROR:
+            raise RuntimeError(baseline.error_message or "baseline training experiment failed")
+        self.record_result(baseline)
+        self._update_best(baseline)
+        results.append(baseline)
+
+        if self.should_stop(experiment_count=1, started_at=started_at):
+            return self.build_training_result(results)
+
+        try:
+            client = self._build_agent_client()
+        except Exception:
+            return self.build_training_result(results)
+
+        experiment_index = 1
+        consecutive_discards = 0
+
+        while not self.should_stop(experiment_count=experiment_index, started_at=started_at):
+            proposed_source = self._propose_train_py(
+                client,
+                experiment_index=experiment_index,
+                consecutive_discards=consecutive_discards,
+            )
+            (self.work_dir / "train.py").write_text(proposed_source, encoding="utf-8")
+            self._git_commit(f"experiment {experiment_index}")
+
+            result = self._execute_experiment(experiment_index)
+            if result.outcome == ExperimentOutcome.KEPT:
+                self.keep_experiment()
+                self._update_best(result)
+                consecutive_discards = 0
+            else:
+                self.discard_experiment()
+                consecutive_discards += 1
+
+            self.record_result(result)
+            results.append(result)
+            experiment_index += 1
+
+        return self.build_training_result(results)
+
     def build_training_result(self, results: list[ExperimentResult]) -> TrainingResult:
         """Build the final TrainingResult from accumulated experiment results."""
         kept = [r for r in results if r.outcome == ExperimentOutcome.KEPT]
         discarded = [r for r in results if r.outcome == ExperimentOutcome.DISCARDED]
 
-        best_score = 0.0
-        best_index = -1
-        for r in kept:
-            if r.avg_score > best_score:
-                best_score = r.avg_score
-                best_index = r.experiment_index
-
+        best_result = max(kept, key=lambda r: r.avg_score, default=None)
         return TrainingResult(
             scenario=self.config.scenario,
             total_experiments=len(results),
             kept_count=len(kept),
             discarded_count=len(discarded),
-            best_score=best_score,
-            best_experiment_index=best_index,
-            checkpoint_path=self.work_dir if best_index >= 0 else None,
+            best_score=best_result.avg_score if best_result is not None else 0.0,
+            best_experiment_index=best_result.experiment_index if best_result is not None else -1,
+            checkpoint_path=best_result.checkpoint_path if best_result is not None else None,
             results=results,
         )

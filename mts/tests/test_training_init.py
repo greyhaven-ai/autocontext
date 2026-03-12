@@ -4,6 +4,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+from mts.training import HAS_MLX
+
 
 def test_training_has_mlx_flag_exists() -> None:
     """training/__init__.py exports HAS_MLX boolean."""
@@ -13,7 +15,7 @@ def test_training_has_mlx_flag_exists() -> None:
 
 
 def test_mts_train_runs_successfully() -> None:
-    """Running `mts train` sets up workspace and exits cleanly."""
+    """Running `mts train` either trains or fails honestly when MLX is unavailable."""
     result = subprocess.run(
         [sys.executable, "-m", "mts.cli", "train"],
         capture_output=True,
@@ -21,7 +23,11 @@ def test_mts_train_runs_successfully() -> None:
         timeout=30,
     )
     combined = result.stdout + result.stderr
-    assert result.returncode == 0, f"Expected exit 0, got {result.returncode}:\n{combined}"
-    assert "training summary" in combined.lower(), (
-        f"Expected training summary in output, got:\n{combined}"
-    )
+    if HAS_MLX:
+        assert result.returncode == 0, f"Expected exit 0, got {result.returncode}:\n{combined}"
+        assert "training summary" in combined.lower(), (
+            f"Expected training summary in output, got:\n{combined}"
+        )
+    else:
+        assert result.returncode == 1, f"Expected honest failure without MLX, got {result.returncode}:\n{combined}"
+        assert "mlx is required" in combined.lower(), f"Expected MLX guidance in output, got:\n{combined}"
