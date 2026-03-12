@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -90,6 +91,14 @@ def _get_custom_scenarios_dir() -> Path:
     return Path("knowledge") / "_custom_scenarios"
 
 
+def _write_json_stdout(payload: object) -> None:
+    sys.stdout.write(json.dumps(payload) + "\n")
+
+
+def _write_json_stderr(message: str) -> None:
+    sys.stderr.write(json.dumps({"error": message}) + "\n")
+
+
 @app.command()
 def run(
     scenario: str = typer.Option("grid_ctf", "--scenario"),
@@ -103,6 +112,10 @@ def run(
     """Run generation loop."""
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    if serve and json_output:
+        _write_json_stderr("--json cannot be used with --serve")
+        raise typer.Exit(code=2)
 
     if preset and not json_output:
         console.print(f"[dim]Active preset: {preset}[/dim]")
@@ -126,9 +139,18 @@ def run(
         console.print(f"[dim]Connect TUI: cd tui && bun run start -- --url ws://localhost:{port}/ws/interactive[/dim]")
         uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
     else:
-        summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
+        try:
+            summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
+        except KeyboardInterrupt:
+            if json_output:
+                _write_json_stderr("run interrupted")
+            raise typer.Exit(code=1) from None
+        except Exception as exc:
+            if json_output:
+                _write_json_stderr(str(exc))
+            raise typer.Exit(code=1) from exc
         if json_output:
-            sys.stdout.write(json.dumps(dataclasses.asdict(summary)) + "\n")
+            _write_json_stdout(dataclasses.asdict(summary))
         else:
             table = Table(title="AutoContext Run Summary")
             table.add_column("Run ID")
@@ -155,9 +177,18 @@ def resume(
 ) -> None:
     """Resume an existing run idempotently."""
 
-    summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
+    try:
+        summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
+    except KeyboardInterrupt:
+        if json_output:
+            _write_json_stderr("resume interrupted")
+        raise typer.Exit(code=1) from None
+    except Exception as exc:
+        if json_output:
+            _write_json_stderr(str(exc))
+        raise typer.Exit(code=1) from exc
     if json_output:
-        sys.stdout.write(json.dumps(dataclasses.asdict(summary)) + "\n")
+        _write_json_stdout(dataclasses.asdict(summary))
     else:
         console.print(f"Resumed {summary.run_id} with {summary.generations_executed} executed generation(s).")
 
@@ -496,15 +527,16 @@ def mcp_serve() -> None:
     run_server()
 
 
-def _run_training(config: TrainingConfig) -> TrainingResult:
+def _run_training(config: TrainingConfig, *, json_output: bool = False) -> TrainingResult:
     """Run the training loop. Extracted for testability."""
     from autocontext.training.runner import TrainingRunner
 
     runner = TrainingRunner(config, work_dir=Path("runs") / f"train_{config.scenario}")
-    console.print(f"[green]Training workspace:[/green] {runner.work_dir}")
-    console.print(
-        f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]"
-    )
+    if not json_output:
+        console.print(f"[green]Training workspace:[/green] {runner.work_dir}")
+        console.print(
+            f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]"
+        )
     return runner.run()
 
 
@@ -535,27 +567,27 @@ def train(
     )
 
     try:
-        result = _run_training(config)
+        result = _run_training(config, json_output=json_output)
     except KeyboardInterrupt:
         if not json_output:
             console.print("\n[yellow]Training interrupted.[/yellow]")
         raise typer.Exit(code=1) from None
     except Exception as exc:
         if json_output:
-            sys.stderr.write(json.dumps({"error": str(exc)}) + "\n")
+            _write_json_stderr(str(exc))
         else:
             console.print(f"[red]Training failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
     if json_output:
-        sys.stdout.write(json.dumps({
+        _write_json_stdout({
             "scenario": result.scenario,
             "total_experiments": result.total_experiments,
             "kept_count": result.kept_count,
             "discarded_count": result.discarded_count,
             "best_score": result.best_score,
             "checkpoint_path": str(result.checkpoint_path) if result.checkpoint_path else None,
-        }) + "\n")
+        })
     else:
         # Summary
         table = Table(title="Training Summary")
@@ -754,20 +786,23 @@ def export_cmd(
     try:
         pkg = export_strategy_package(ctx, scenario)
     except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
+        if json_output:
+            _write_json_stderr(str(exc))
+        else:
+            console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
     output_path = Path(output) if output else Path(f"{scenario}_package.json")
     pkg.to_file(output_path)
 
     if json_output:
-        sys.stdout.write(json.dumps({
+        _write_json_stdout({
             "scenario": scenario,
             "output_path": str(output_path),
             "best_score": pkg.best_score,
             "lessons_count": len(pkg.lessons),
             "harness_count": len(pkg.harness),
-        }) + "\n")
+        })
     else:
         console.print(f"[green]Exported {scenario} package to {output_path}[/green]")
         console.print(f"[dim]best_score={pkg.best_score:.4f} lessons={len(pkg.lessons)} harness={len(pkg.harness)}[/dim]")
@@ -791,7 +826,7 @@ def import_package_cmd(
     pkg_path = Path(package_file)
     if not pkg_path.exists():
         if json_output:
-            sys.stderr.write(json.dumps({"error": f"File not found: {pkg_path}"}) + "\n")
+            _write_json_stderr(f"File not found: {pkg_path}")
         else:
             console.print(f"[red]File not found: {pkg_path}[/red]")
         raise typer.Exit(code=1)
@@ -800,7 +835,7 @@ def import_package_cmd(
         pkg = StrategyPackage.from_file(pkg_path)
     except Exception as exc:
         if json_output:
-            sys.stderr.write(json.dumps({"error": f"Invalid package file: {exc}"}) + "\n")
+            _write_json_stderr(f"Invalid package file: {exc}")
         else:
             console.print(f"[red]Invalid package file: {exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -812,7 +847,7 @@ def import_package_cmd(
         policy = ConflictPolicy(conflict)
     except ValueError as exc:
         if json_output:
-            sys.stderr.write(json.dumps({"error": f"Invalid conflict policy: {conflict!r}"}) + "\n")
+            _write_json_stderr(f"Invalid conflict policy: {conflict!r}")
         else:
             console.print(f"[red]Invalid conflict policy: {conflict!r}. Use overwrite, merge, or skip.[/red]")
         raise typer.Exit(code=1) from exc
@@ -833,7 +868,7 @@ def import_package_cmd(
     result = import_strategy_package(artifacts, pkg, sqlite=sqlite, conflict_policy=policy)
 
     if json_output:
-        sys.stdout.write(json.dumps({
+        _write_json_stdout({
             "scenario_name": result.scenario_name,
             "playbook_written": result.playbook_written,
             "hints_written": result.hints_written,
@@ -841,7 +876,7 @@ def import_package_cmd(
             "harness_written": result.harness_written,
             "harness_skipped": result.harness_skipped,
             "conflict_policy": result.conflict_policy,
-        }) + "\n")
+        })
     else:
         table = Table(title=f"Import: {result.scenario_name}")
         table.add_column("Item", style="bold")
@@ -864,16 +899,6 @@ def wait(
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Wait for a monitor condition to fire (AC-209 integration)."""
-    try:
-        from autocontext.monitor.engine import MonitorEngine, set_engine
-    except ImportError:
-        msg = "Monitor module not available"
-        if json_output:
-            sys.stderr.write(json.dumps({"error": msg}) + "\n")
-        else:
-            console.print(f"[red]{msg}[/red]")
-        raise typer.Exit(code=1) from None
-
     settings = load_settings()
     store = SQLiteStore(settings.db_path)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
@@ -885,42 +910,37 @@ def wait(
     if condition is None:
         msg = f"Monitor condition '{condition_id}' not found"
         if json_output:
-            sys.stderr.write(json.dumps({"error": msg}) + "\n")
+            _write_json_stderr(msg)
         else:
             console.print(f"[red]{msg}[/red]")
         raise typer.Exit(code=1)
 
-    # Create lightweight engine for waiting
-    from autocontext.loop.events import EventStreamEmitter
+    deadline = time.monotonic() + timeout
+    alert = store.get_latest_monitor_alert(condition_id)
+    while alert is None and time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        time.sleep(min(0.1, max(remaining, 0.0)))
+        alert = store.get_latest_monitor_alert(condition_id)
 
-    emitter = EventStreamEmitter(settings.event_stream_path)
-    engine = MonitorEngine(sqlite=store, emitter=emitter)
-    set_engine(engine)
-    engine.start()
-
-    try:
-        fired = engine.wait_for_alert(condition_id, timeout=timeout)
-    finally:
-        engine.stop()
+    fired = alert is not None
 
     if fired:
-        alert = store.get_latest_monitor_alert(condition_id)
         if json_output:
-            sys.stdout.write(json.dumps({
+            _write_json_stdout({
                 "fired": True,
                 "condition_id": condition_id,
                 "alert": alert,
-            }) + "\n")
+            })
         else:
             detail = alert.get("detail", "") if alert else ""
             console.print(f"[green]Alert fired:[/green] {detail}")
     else:
         if json_output:
-            sys.stdout.write(json.dumps({
+            _write_json_stdout({
                 "fired": False,
                 "condition_id": condition_id,
                 "timeout_seconds": timeout,
-            }) + "\n")
+            })
         else:
             console.print(f"[yellow]Timed out after {timeout}s waiting for condition {condition_id}[/yellow]")
         raise typer.Exit(code=1)

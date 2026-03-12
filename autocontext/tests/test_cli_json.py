@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,10 @@ from autocontext.storage.sqlite_store import SQLiteStore
 
 runner = CliRunner()
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def _make_settings(tmp_path: Path):
@@ -91,6 +96,26 @@ class TestRunJson:
         assert data["best_score"] == 0.9
         assert data["current_elo"] == 1200.0
 
+    def test_run_json_error_writes_to_stderr(self) -> None:
+        """run --json failures should emit structured stderr and exit 1."""
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run.side_effect = RuntimeError("run exploded")
+
+        with patch("autocontext.cli._runner", return_value=mock_runner_instance):
+            result = runner.invoke(app, ["run", "--json", "--scenario", "grid_ctf"])
+
+        assert result.exit_code == 1
+        error_data = json.loads(result.stderr.strip())
+        assert error_data["error"] == "run exploded"
+
+    def test_run_json_rejects_serve_mode(self) -> None:
+        """run --json --serve should fail because interactive mode is not machine-readable."""
+        result = runner.invoke(app, ["run", "--json", "--serve", "--scenario", "grid_ctf"])
+
+        assert result.exit_code == 2
+        error_data = json.loads(result.stderr.strip())
+        assert "--json cannot be used with --serve" in error_data["error"]
+
 
 # ---------------------------------------------------------------------------
 # 2. resume --json
@@ -120,6 +145,18 @@ class TestResumeJson:
         assert data["run_id"] == "resume-001"
         assert data["scenario"] == "grid_ctf"
         assert data["generations_executed"] == 2
+
+    def test_resume_json_error_writes_to_stderr(self) -> None:
+        """resume --json failures should emit structured stderr and exit 1."""
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run.side_effect = RuntimeError("resume exploded")
+
+        with patch("autocontext.cli._runner", return_value=mock_runner_instance):
+            result = runner.invoke(app, ["resume", "resume-001", "--json"])
+
+        assert result.exit_code == 1
+        error_data = json.loads(result.stderr.strip())
+        assert error_data["error"] == "resume exploded"
 
 
 # ---------------------------------------------------------------------------
@@ -436,18 +473,14 @@ class TestWaitJson:
         with (
             patch("autocontext.cli.load_settings", return_value=settings),
             patch("autocontext.cli.SQLiteStore") as MockStoreClass,
+            patch("autocontext.cli.time.sleep"),
         ):
             mock_store = MockStoreClass.return_value
             mock_store.get_monitor_condition.return_value = {"id": "cond-1", "name": "test-cond"}
             mock_store.migrate = MagicMock()
+            mock_store.get_latest_monitor_alert.return_value = None
 
-            with patch("autocontext.monitor.engine.MonitorEngine") as MockEngine:
-                instance = MockEngine.return_value
-                instance.wait_for_alert.return_value = False
-                instance.start = MagicMock()
-                instance.stop = MagicMock()
-
-                result = runner.invoke(app, ["wait", "cond-1", "--timeout", "0.1", "--json"])
+            result = runner.invoke(app, ["wait", "cond-1", "--timeout", "0.1", "--json"])
 
         assert result.exit_code == 1
         data = json.loads(result.output.strip())
@@ -463,23 +496,21 @@ class TestWaitJson:
         with (
             patch("autocontext.cli.load_settings", return_value=settings),
             patch("autocontext.cli.SQLiteStore") as MockStoreClass,
+            patch("autocontext.cli.time.sleep"),
         ):
             mock_store = MockStoreClass.return_value
             mock_store.get_monitor_condition.return_value = {"id": "cond-2", "name": "test-cond-2"}
             mock_store.migrate = MagicMock()
-            mock_store.get_latest_monitor_alert.return_value = {
-                "id": "alert-1",
-                "detail": "Score exceeded 0.8",
-                "fired_at": "2026-01-01T00:00:00Z",
-            }
+            mock_store.get_latest_monitor_alert.side_effect = [
+                None,
+                {
+                    "id": "alert-1",
+                    "detail": "Score exceeded 0.8",
+                    "fired_at": "2026-01-01T00:00:00Z",
+                },
+            ]
 
-            with patch("autocontext.monitor.engine.MonitorEngine") as MockEngine:
-                instance = MockEngine.return_value
-                instance.wait_for_alert.return_value = True
-                instance.start = MagicMock()
-                instance.stop = MagicMock()
-
-                result = runner.invoke(app, ["wait", "cond-2", "--timeout", "5", "--json"])
+            result = runner.invoke(app, ["wait", "cond-2", "--timeout", "5", "--json"])
 
         assert result.exit_code == 0, result.output
         data = json.loads(result.output.strip())
@@ -510,18 +541,14 @@ class TestWaitJson:
         with (
             patch("autocontext.cli.load_settings", return_value=settings),
             patch("autocontext.cli.SQLiteStore") as MockStoreClass,
+            patch("autocontext.cli.time.sleep"),
         ):
             mock_store = MockStoreClass.return_value
             mock_store.get_monitor_condition.return_value = {"id": "cond-h", "name": "human-test"}
             mock_store.migrate = MagicMock()
+            mock_store.get_latest_monitor_alert.return_value = None
 
-            with patch("autocontext.monitor.engine.MonitorEngine") as MockEngine:
-                instance = MockEngine.return_value
-                instance.wait_for_alert.return_value = False
-                instance.start = MagicMock()
-                instance.stop = MagicMock()
-
-                result = runner.invoke(app, ["wait", "cond-h", "--timeout", "0.1"])
+            result = runner.invoke(app, ["wait", "cond-h", "--timeout", "0.1"])
 
         assert result.exit_code == 1
         assert "Timed out" in result.output
@@ -533,22 +560,20 @@ class TestWaitJson:
         with (
             patch("autocontext.cli.load_settings", return_value=settings),
             patch("autocontext.cli.SQLiteStore") as MockStoreClass,
+            patch("autocontext.cli.time.sleep"),
         ):
             mock_store = MockStoreClass.return_value
             mock_store.get_monitor_condition.return_value = {"id": "cond-f", "name": "fire-test"}
             mock_store.migrate = MagicMock()
-            mock_store.get_latest_monitor_alert.return_value = {
-                "id": "alert-h",
-                "detail": "Score exceeded threshold",
-            }
+            mock_store.get_latest_monitor_alert.side_effect = [
+                None,
+                {
+                    "id": "alert-h",
+                    "detail": "Score exceeded threshold",
+                },
+            ]
 
-            with patch("autocontext.monitor.engine.MonitorEngine") as MockEngine:
-                instance = MockEngine.return_value
-                instance.wait_for_alert.return_value = True
-                instance.start = MagicMock()
-                instance.stop = MagicMock()
-
-                result = runner.invoke(app, ["wait", "cond-f", "--timeout", "5"])
+            result = runner.invoke(app, ["wait", "cond-f", "--timeout", "5"])
 
         assert result.exit_code == 0, result.output
         assert "Alert fired" in result.output
@@ -593,9 +618,9 @@ class TestFlagPresence:
     def test_json_flag_in_run_help(self) -> None:
         """--json flag should appear in run command help."""
         result = runner.invoke(app, ["run", "--help"])
-        assert "--json" in result.output
+        assert "--json" in _strip_ansi(result.output)
 
     def test_json_flag_in_list_help(self) -> None:
         """--json flag should appear in list command help."""
         result = runner.invoke(app, ["list", "--help"])
-        assert "--json" in result.output
+        assert "--json" in _strip_ansi(result.output)
