@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
+from autocontext.consultation.runner import ConsultationRunner
+from autocontext.consultation.types import ConsultationRequest as ConsReq
+from autocontext.consultation.types import ConsultationTrigger
+from autocontext.providers.base import LLMProvider
+from autocontext.providers.registry import create_provider
+from autocontext.providers.retry import RetryProvider
 from autocontext.server.changelog import build_changelog
 from autocontext.server.writeup import generate_writeup
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
+
+LOGGER = logging.getLogger(__name__)
 
 cockpit_router = APIRouter(prefix="/api/cockpit", tags=["cockpit"])
 
@@ -249,3 +259,150 @@ def writeup(run_id: str, request: Request) -> dict[str, Any]:
         "scenario_name": run_dict["scenario"],
         "writeup_markdown": md,
     }
+
+
+# ---------------------------------------------------------------------------
+# Operator-requested consultation (AC-220)
+# ---------------------------------------------------------------------------
+
+
+class ConsultationRequestBody(BaseModel):
+    context_summary: str = ""
+    generation: int | None = None
+
+
+def _create_cockpit_consultation_provider(settings: Any) -> LLMProvider | None:
+    """Create consultation provider from settings, or None if not configured."""
+    if not settings.consultation_api_key:
+        return None
+    return create_provider(
+        provider_type=settings.consultation_provider,
+        api_key=settings.consultation_api_key,
+        base_url=settings.consultation_base_url or None,
+        model=settings.consultation_model,
+    )
+
+
+@cockpit_router.post("/runs/{run_id}/consult")
+def request_consultation(run_id: str, body: ConsultationRequestBody, request: Request) -> dict[str, Any]:
+    """Request an explicit operator consultation for a run."""
+    store = _get_store(request)
+    settings = getattr(request.app.state, "app_settings", None)
+    if settings is None:
+        raise HTTPException(status_code=500, detail="Settings not configured")
+
+    if not settings.consultation_enabled:
+        raise HTTPException(status_code=400, detail="Consultation is not enabled")
+
+    # Validate run exists
+    with store.connect() as conn:
+        run_row = conn.execute("SELECT run_id, scenario FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+    if not run_row:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+
+    # Determine generation
+    generation = body.generation
+    if generation is None:
+        with store.connect() as conn:
+            gen_row = conn.execute(
+                "SELECT MAX(generation_index) as max_gen FROM generations WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            generation = gen_row["max_gen"] if gen_row and gen_row["max_gen"] is not None else 0
+
+    # Check cost budget
+    if settings.consultation_cost_budget > 0:
+        spent = store.get_total_consultation_cost(run_id)
+        if spent >= settings.consultation_cost_budget:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Consultation budget exceeded (spent ${spent:.2f} of ${settings.consultation_cost_budget:.2f})",
+            )
+
+    # Build provider
+    provider = _create_cockpit_consultation_provider(settings)
+    if provider is None:
+        raise HTTPException(status_code=503, detail="Consultation provider not configured (missing API key)")
+
+    # Gather context from generations
+    with store.connect() as conn:
+        gen_rows = conn.execute(
+            "SELECT generation_index, mean_score, best_score, elo, gate_decision "
+            "FROM generations WHERE run_id = ? ORDER BY generation_index ASC",
+            (run_id,),
+        ).fetchall()
+
+    score_history = [float(g["best_score"]) for g in gen_rows]
+    gate_history = [str(g["gate_decision"]) for g in gen_rows]
+
+    # Get current best strategy summary
+    strategy_summary = ""
+    with store.connect() as conn:
+        strat_row = conn.execute(
+            "SELECT content FROM agent_outputs WHERE run_id = ? AND role = 'competitor' "
+            "ORDER BY generation_index DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if strat_row:
+            strategy_summary = str(strat_row["content"])[:500]
+
+    # Build consultation request
+    context = body.context_summary or f"Operator-requested consultation for run {run_id} at generation {generation}"
+
+    cons_request = ConsReq(
+        run_id=run_id,
+        generation=generation,
+        trigger=ConsultationTrigger.OPERATOR_REQUEST,
+        context_summary=context,
+        current_strategy_summary=strategy_summary,
+        score_history=score_history,
+        gate_history=gate_history,
+    )
+
+    runner = ConsultationRunner(RetryProvider(provider))
+
+    try:
+        result = runner.consult(cons_request)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Consultation call failed: {exc}") from exc
+
+    # Persist
+    row_id = store.insert_consultation(
+        run_id=run_id,
+        generation_index=generation,
+        trigger=ConsultationTrigger.OPERATOR_REQUEST.value,
+        context_summary=context,
+        critique=result.critique,
+        alternative_hypothesis=result.alternative_hypothesis,
+        tiebreak_recommendation=result.tiebreak_recommendation,
+        suggested_next_action=result.suggested_next_action,
+        raw_response=result.raw_response,
+        model_used=result.model_used,
+        cost_usd=result.cost_usd,
+    )
+
+    # Write advisory artifact
+    artifacts = _get_artifacts(request)
+    advisory_dir = artifacts.generation_dir(run_id, generation)
+    advisory_path = advisory_dir / "operator_consultation.md"
+    artifacts.write_markdown(advisory_path, result.to_advisory_markdown())
+
+    return {
+        "consultation_id": row_id,
+        "run_id": run_id,
+        "generation": generation,
+        "trigger": "operator_request",
+        "critique": result.critique,
+        "alternative_hypothesis": result.alternative_hypothesis,
+        "tiebreak_recommendation": result.tiebreak_recommendation,
+        "suggested_next_action": result.suggested_next_action,
+        "model_used": result.model_used,
+        "cost_usd": result.cost_usd,
+        "advisory_markdown": result.to_advisory_markdown(),
+    }
+
+
+@cockpit_router.get("/runs/{run_id}/consultations")
+def list_consultations(run_id: str, request: Request) -> list[dict[str, Any]]:
+    """List all consultations for a run."""
+    store = _get_store(request)
+    return store.get_consultations_for_run(run_id)
