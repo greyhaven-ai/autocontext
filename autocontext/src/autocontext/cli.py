@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -88,6 +91,14 @@ def _get_custom_scenarios_dir() -> Path:
     return Path("knowledge") / "_custom_scenarios"
 
 
+def _write_json_stdout(payload: object) -> None:
+    sys.stdout.write(json.dumps(payload) + "\n")
+
+
+def _write_json_stderr(message: str) -> None:
+    sys.stderr.write(json.dumps({"error": message}) + "\n")
+
+
 @app.command()
 def run(
     scenario: str = typer.Option("grid_ctf", "--scenario"),
@@ -96,12 +107,17 @@ def run(
     serve: bool = typer.Option(False, "--serve", help="Start interactive server alongside generation loop"),
     port: int = typer.Option(8000, "--port", help="Server port (only used with --serve)"),
     preset: str | None = typer.Option(None, "--preset", help=_PRESET_HELP),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Run generation loop."""
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    if preset:
+    if serve and json_output:
+        _write_json_stderr("--json cannot be used with --serve")
+        raise typer.Exit(code=2)
+
+    if preset and not json_output:
         console.print(f"[dim]Active preset: {preset}[/dim]")
 
     if serve:
@@ -123,29 +139,58 @@ def run(
         console.print(f"[dim]Connect TUI: cd tui && bun run start -- --url ws://localhost:{port}/ws/interactive[/dim]")
         uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
     else:
-        summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
-        table = Table(title="AutoContext Run Summary")
-        table.add_column("Run ID")
-        table.add_column("Scenario")
-        table.add_column("Generations")
-        table.add_column("Best Score")
-        table.add_column("Elo")
-        table.add_row(
-            summary.run_id,
-            summary.scenario,
-            str(summary.generations_executed),
-            f"{summary.best_score:.4f}",
-            f"{summary.current_elo:.2f}",
-        )
-        console.print(table)
+        try:
+            summary = _runner(preset).run(scenario_name=scenario, generations=gens, run_id=run_id)
+        except KeyboardInterrupt:
+            if json_output:
+                _write_json_stderr("run interrupted")
+            raise typer.Exit(code=1) from None
+        except Exception as exc:
+            if json_output:
+                _write_json_stderr(str(exc))
+            raise typer.Exit(code=1) from exc
+        if json_output:
+            _write_json_stdout(dataclasses.asdict(summary))
+        else:
+            table = Table(title="AutoContext Run Summary")
+            table.add_column("Run ID")
+            table.add_column("Scenario")
+            table.add_column("Generations")
+            table.add_column("Best Score")
+            table.add_column("Elo")
+            table.add_row(
+                summary.run_id,
+                summary.scenario,
+                str(summary.generations_executed),
+                f"{summary.best_score:.4f}",
+                f"{summary.current_elo:.2f}",
+            )
+            console.print(table)
 
 
 @app.command()
-def resume(run_id: str = typer.Argument(...), scenario: str = typer.Option("grid_ctf"), gens: int = typer.Option(1)) -> None:
+def resume(
+    run_id: str = typer.Argument(...),
+    scenario: str = typer.Option("grid_ctf"),
+    gens: int = typer.Option(1),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
     """Resume an existing run idempotently."""
 
-    summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
-    console.print(f"Resumed {summary.run_id} with {summary.generations_executed} executed generation(s).")
+    try:
+        summary = _runner().run(scenario_name=scenario, generations=gens, run_id=run_id)
+    except KeyboardInterrupt:
+        if json_output:
+            _write_json_stderr("resume interrupted")
+        raise typer.Exit(code=1) from None
+    except Exception as exc:
+        if json_output:
+            _write_json_stderr(str(exc))
+        raise typer.Exit(code=1) from exc
+    if json_output:
+        _write_json_stdout(dataclasses.asdict(summary))
+    else:
+        console.print(f"Resumed {summary.run_id} with {summary.generations_executed} executed generation(s).")
 
 
 @app.command()
@@ -175,7 +220,9 @@ def benchmark(scenario: str = typer.Option("grid_ctf"), runs: int = typer.Option
 
 
 @app.command("list")
-def list_runs() -> None:
+def list_runs(
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
     """List recent runs."""
 
     settings = load_settings()
@@ -185,27 +232,35 @@ def list_runs() -> None:
             "SELECT run_id, scenario, target_generations, executor_mode, status, created_at "
             "FROM runs ORDER BY created_at DESC LIMIT 20"
         ).fetchall()
-    table = Table(title="Recent Runs")
-    table.add_column("Run ID")
-    table.add_column("Scenario")
-    table.add_column("Target Gens")
-    table.add_column("Executor")
-    table.add_column("Status")
-    table.add_column("Created At")
-    for row in rows:
-        table.add_row(
-            row["run_id"],
-            row["scenario"],
-            str(row["target_generations"]),
-            row["executor_mode"],
-            row["status"],
-            row["created_at"],
-        )
-    console.print(table)
+
+    if json_output:
+        result = [dict(row) for row in rows]
+        sys.stdout.write(json.dumps(result) + "\n")
+    else:
+        table = Table(title="Recent Runs")
+        table.add_column("Run ID")
+        table.add_column("Scenario")
+        table.add_column("Target Gens")
+        table.add_column("Executor")
+        table.add_column("Status")
+        table.add_column("Created At")
+        for row in rows:
+            table.add_row(
+                row["run_id"],
+                row["scenario"],
+                str(row["target_generations"]),
+                row["executor_mode"],
+                row["status"],
+                row["created_at"],
+            )
+        console.print(table)
 
 
 @app.command()
-def status(run_id: str = typer.Argument(...)) -> None:
+def status(
+    run_id: str = typer.Argument(...),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
     """Show generation status for a run."""
 
     settings = load_settings()
@@ -216,27 +271,43 @@ def status(run_id: str = typer.Argument(...)) -> None:
             "FROM generations WHERE run_id = ? ORDER BY generation_index ASC",
             (run_id,),
         ).fetchall()
-    table = Table(title=f"Run Status: {run_id}")
-    table.add_column("Gen")
-    table.add_column("Mean")
-    table.add_column("Best")
-    table.add_column("Elo")
-    table.add_column("W")
-    table.add_column("L")
-    table.add_column("Gate")
-    table.add_column("Status")
-    for row in rows:
-        table.add_row(
-            str(row["generation_index"]),
-            f"{row['mean_score']:.4f}",
-            f"{row['best_score']:.4f}",
-            f"{row['elo']:.2f}",
-            str(row["wins"]),
-            str(row["losses"]),
-            row["gate_decision"],
-            row["status"],
-        )
-    console.print(table)
+
+    if json_output:
+        generations = []
+        for row in rows:
+            generations.append({
+                "generation": row["generation_index"],
+                "mean_score": row["mean_score"],
+                "best_score": row["best_score"],
+                "elo": row["elo"],
+                "wins": row["wins"],
+                "losses": row["losses"],
+                "gate_decision": row["gate_decision"],
+                "status": row["status"],
+            })
+        sys.stdout.write(json.dumps({"run_id": run_id, "generations": generations}) + "\n")
+    else:
+        table = Table(title=f"Run Status: {run_id}")
+        table.add_column("Gen")
+        table.add_column("Mean")
+        table.add_column("Best")
+        table.add_column("Elo")
+        table.add_column("W")
+        table.add_column("L")
+        table.add_column("Gate")
+        table.add_column("Status")
+        for row in rows:
+            table.add_row(
+                str(row["generation_index"]),
+                f"{row['mean_score']:.4f}",
+                f"{row['best_score']:.4f}",
+                f"{row['elo']:.2f}",
+                str(row["wins"]),
+                str(row["losses"]),
+                row["gate_decision"],
+                row["status"],
+            )
+        console.print(table)
 
 
 @app.command()
@@ -258,6 +329,7 @@ def ecosystem(
     provider_b: str = typer.Option("agent_sdk", "--provider-b"),
     rlm_a: bool = typer.Option(True, "--rlm-a/--no-rlm-a"),
     rlm_b: bool = typer.Option(False, "--rlm-b/--no-rlm-b"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Run ecosystem loop alternating provider modes across cycles."""
 
@@ -270,38 +342,45 @@ def ecosystem(
         EcosystemPhase(provider=provider_b, rlm_enabled=rlm_b, generations=gens_per_cycle),
     ]
     config = EcosystemConfig(scenario=scenario, cycles=cycles, gens_per_cycle=gens_per_cycle, phases=phases)
-    runner = EcosystemRunner(settings, config)
-    runner.migrate(Path(__file__).resolve().parents[2] / "migrations")
-    summary = runner.run()
+    eco_runner = EcosystemRunner(settings, config)
+    eco_runner.migrate(Path(__file__).resolve().parents[2] / "migrations")
+    summary = eco_runner.run()
 
-    table = Table(title="Ecosystem Summary")
-    table.add_column("Run ID")
-    table.add_column("Scenario")
-    table.add_column("Provider")
-    table.add_column("Gens")
-    table.add_column("Best Score")
-    table.add_column("Elo")
-    for rs in summary.run_summaries:
-        with SQLiteStore(settings.db_path).connect() as conn:
-            row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = ?", (rs.run_id,)).fetchone()
-        provider_label = row["agent_provider"] if row else "?"
-        table.add_row(
-            rs.run_id,
-            rs.scenario,
-            provider_label,
-            str(rs.generations_executed),
-            f"{rs.best_score:.4f}",
-            f"{rs.current_elo:.2f}",
-        )
-    console.print(table)
+    if json_output:
+        runs_data = []
+        for rs in summary.run_summaries:
+            runs_data.append(dataclasses.asdict(rs))
+        traj_data = [{"run_id": rid, "best_score": score} for rid, score in summary.score_trajectory()]
+        sys.stdout.write(json.dumps({"runs": runs_data, "trajectory": traj_data}) + "\n")
+    else:
+        table = Table(title="Ecosystem Summary")
+        table.add_column("Run ID")
+        table.add_column("Scenario")
+        table.add_column("Provider")
+        table.add_column("Gens")
+        table.add_column("Best Score")
+        table.add_column("Elo")
+        for rs in summary.run_summaries:
+            with SQLiteStore(settings.db_path).connect() as conn:
+                row = conn.execute("SELECT agent_provider FROM runs WHERE run_id = ?", (rs.run_id,)).fetchone()
+            provider_label = row["agent_provider"] if row else "?"
+            table.add_row(
+                rs.run_id,
+                rs.scenario,
+                provider_label,
+                str(rs.generations_executed),
+                f"{rs.best_score:.4f}",
+                f"{rs.current_elo:.2f}",
+            )
+        console.print(table)
 
-    trajectory = summary.score_trajectory()
-    traj_table = Table(title="Score Trajectory")
-    traj_table.add_column("Run ID")
-    traj_table.add_column("Best Score")
-    for run_id, score in trajectory:
-        traj_table.add_row(run_id, f"{score:.4f}")
-    console.print(traj_table)
+        score_traj = summary.score_trajectory()
+        traj_table = Table(title="Score Trajectory")
+        traj_table.add_column("Run ID")
+        traj_table.add_column("Best Score")
+        for run_id_val, score in score_traj:
+            traj_table.add_row(run_id_val, f"{score:.4f}")
+        console.print(traj_table)
 
 
 @app.command()
@@ -448,15 +527,16 @@ def mcp_serve() -> None:
     run_server()
 
 
-def _run_training(config: TrainingConfig) -> TrainingResult:
+def _run_training(config: TrainingConfig, *, json_output: bool = False) -> TrainingResult:
     """Run the training loop. Extracted for testability."""
     from autocontext.training.runner import TrainingRunner
 
     runner = TrainingRunner(config, work_dir=Path("runs") / f"train_{config.scenario}")
-    console.print(f"[green]Training workspace:[/green] {runner.work_dir}")
-    console.print(
-        f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]"
-    )
+    if not json_output:
+        console.print(f"[green]Training workspace:[/green] {runner.work_dir}")
+        console.print(
+            f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]"
+        )
     return runner.run()
 
 
@@ -469,6 +549,7 @@ def train(
     memory_limit: int = typer.Option(16384, "--memory-limit", help="Peak memory cap in MB"),
     agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
     agent_model: str = typer.Option("claude-sonnet-4-20250514", "--agent-model", help="Model for training agent"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Launch the autoresearch-style training loop."""
     from autocontext.training.runner import TrainingConfig
@@ -486,24 +567,38 @@ def train(
     )
 
     try:
-        result = _run_training(config)
+        result = _run_training(config, json_output=json_output)
     except KeyboardInterrupt:
-        console.print("\n[yellow]Training interrupted.[/yellow]")
+        if not json_output:
+            console.print("\n[yellow]Training interrupted.[/yellow]")
         raise typer.Exit(code=1) from None
     except Exception as exc:
-        console.print(f"[red]Training failed:[/red] {exc}")
+        if json_output:
+            _write_json_stderr(str(exc))
+        else:
+            console.print(f"[red]Training failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
-    # Summary
-    table = Table(title="Training Summary")
-    table.add_column("Metric")
-    table.add_column("Value")
-    table.add_row("Scenario", result.scenario)
-    table.add_row("Total experiments", str(result.total_experiments))
-    table.add_row("Kept / Discarded", f"{result.kept_count} / {result.discarded_count}")
-    table.add_row("Best score", f"{result.best_score:.4f}")
-    table.add_row("Checkpoint", str(result.checkpoint_path) if result.checkpoint_path else "(none)")
-    console.print(table)
+    if json_output:
+        _write_json_stdout({
+            "scenario": result.scenario,
+            "total_experiments": result.total_experiments,
+            "kept_count": result.kept_count,
+            "discarded_count": result.discarded_count,
+            "best_score": result.best_score,
+            "checkpoint_path": str(result.checkpoint_path) if result.checkpoint_path else None,
+        })
+    else:
+        # Summary
+        table = Table(title="Training Summary")
+        table.add_column("Metric")
+        table.add_column("Value")
+        table.add_row("Scenario", result.scenario)
+        table.add_row("Total experiments", str(result.total_experiments))
+        table.add_row("Kept / Discarded", f"{result.kept_count} / {result.discarded_count}")
+        table.add_row("Best score", f"{result.best_score:.4f}")
+        table.add_row("Checkpoint", str(result.checkpoint_path) if result.checkpoint_path else "(none)")
+        console.print(table)
 
 
 @app.command("export-training-data")
@@ -525,7 +620,6 @@ def export_training_data_cmd(
     ),
 ) -> None:
     """Export strategy-level training data as JSONL."""
-    import dataclasses
 
     from autocontext.storage.artifacts import ArtifactStore
     from autocontext.training.export import export_training_data
@@ -656,6 +750,7 @@ def export_cmd(
     knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root"),
     skills_root: str | None = typer.Option(None, "--skills-root", help="Override skills root"),
     claude_skills_path: str | None = typer.Option(None, "--claude-skills-path", help="Override Claude skills path"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Export a portable strategy package for a scenario."""
     from autocontext.knowledge.export import export_strategy_package
@@ -691,13 +786,26 @@ def export_cmd(
     try:
         pkg = export_strategy_package(ctx, scenario)
     except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
+        if json_output:
+            _write_json_stderr(str(exc))
+        else:
+            console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
     output_path = Path(output) if output else Path(f"{scenario}_package.json")
     pkg.to_file(output_path)
-    console.print(f"[green]Exported {scenario} package to {output_path}[/green]")
-    console.print(f"[dim]best_score={pkg.best_score:.4f} lessons={len(pkg.lessons)} harness={len(pkg.harness)}[/dim]")
+
+    if json_output:
+        _write_json_stdout({
+            "scenario": scenario,
+            "output_path": str(output_path),
+            "best_score": pkg.best_score,
+            "lessons_count": len(pkg.lessons),
+            "harness_count": len(pkg.harness),
+        })
+    else:
+        console.print(f"[green]Exported {scenario} package to {output_path}[/green]")
+        console.print(f"[dim]best_score={pkg.best_score:.4f} lessons={len(pkg.lessons)} harness={len(pkg.harness)}[/dim]")
 
 
 @app.command("import-package")
@@ -709,6 +817,7 @@ def import_package_cmd(
     knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root"),
     skills_root: str | None = typer.Option(None, "--skills-root", help="Override skills root"),
     claude_skills_path: str | None = typer.Option(None, "--claude-skills-path", help="Override Claude skills path"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Import a strategy package into scenario knowledge."""
     from autocontext.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
@@ -716,13 +825,19 @@ def import_package_cmd(
 
     pkg_path = Path(package_file)
     if not pkg_path.exists():
-        console.print(f"[red]File not found: {pkg_path}[/red]")
+        if json_output:
+            _write_json_stderr(f"File not found: {pkg_path}")
+        else:
+            console.print(f"[red]File not found: {pkg_path}[/red]")
         raise typer.Exit(code=1)
 
     try:
         pkg = StrategyPackage.from_file(pkg_path)
     except Exception as exc:
-        console.print(f"[red]Invalid package file: {exc}[/red]")
+        if json_output:
+            _write_json_stderr(f"Invalid package file: {exc}")
+        else:
+            console.print(f"[red]Invalid package file: {exc}[/red]")
         raise typer.Exit(code=1) from exc
 
     if scenario:
@@ -731,7 +846,10 @@ def import_package_cmd(
     try:
         policy = ConflictPolicy(conflict)
     except ValueError as exc:
-        console.print(f"[red]Invalid conflict policy: {conflict!r}. Use overwrite, merge, or skip.[/red]")
+        if json_output:
+            _write_json_stderr(f"Invalid conflict policy: {conflict!r}")
+        else:
+            console.print(f"[red]Invalid conflict policy: {conflict!r}. Use overwrite, merge, or skip.[/red]")
         raise typer.Exit(code=1) from exc
 
     settings = load_settings()
@@ -749,18 +867,83 @@ def import_package_cmd(
 
     result = import_strategy_package(artifacts, pkg, sqlite=sqlite, conflict_policy=policy)
 
-    table = Table(title=f"Import: {result.scenario_name}")
-    table.add_column("Item", style="bold")
-    table.add_column("Status")
-    table.add_row("Playbook", "[green]written[/green]" if result.playbook_written else "[dim]skipped[/dim]")
-    table.add_row("Hints", "[green]written[/green]" if result.hints_written else "[dim]skipped[/dim]")
-    table.add_row("SKILL.md", "[green]written[/green]" if result.skill_written else "[dim]skipped[/dim]")
-    if result.harness_written:
-        table.add_row("Harness written", ", ".join(result.harness_written))
-    if result.harness_skipped:
-        table.add_row("Harness skipped", ", ".join(result.harness_skipped))
-    table.add_row("Conflict policy", result.conflict_policy)
-    console.print(table)
+    if json_output:
+        _write_json_stdout({
+            "scenario_name": result.scenario_name,
+            "playbook_written": result.playbook_written,
+            "hints_written": result.hints_written,
+            "skill_written": result.skill_written,
+            "harness_written": result.harness_written,
+            "harness_skipped": result.harness_skipped,
+            "conflict_policy": result.conflict_policy,
+        })
+    else:
+        table = Table(title=f"Import: {result.scenario_name}")
+        table.add_column("Item", style="bold")
+        table.add_column("Status")
+        table.add_row("Playbook", "[green]written[/green]" if result.playbook_written else "[dim]skipped[/dim]")
+        table.add_row("Hints", "[green]written[/green]" if result.hints_written else "[dim]skipped[/dim]")
+        table.add_row("SKILL.md", "[green]written[/green]" if result.skill_written else "[dim]skipped[/dim]")
+        if result.harness_written:
+            table.add_row("Harness written", ", ".join(result.harness_written))
+        if result.harness_skipped:
+            table.add_row("Harness skipped", ", ".join(result.harness_skipped))
+        table.add_row("Conflict policy", result.conflict_policy)
+        console.print(table)
+
+
+@app.command()
+def wait(
+    condition_id: str = typer.Argument(..., help="Monitor condition ID to wait on"),
+    timeout: float = typer.Option(30.0, "--timeout", help="Timeout in seconds"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
+    """Wait for a monitor condition to fire (AC-209 integration)."""
+    settings = load_settings()
+    store = SQLiteStore(settings.db_path)
+    migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
+    if migrations_dir.exists():
+        store.migrate(migrations_dir)
+
+    # Check condition exists
+    condition = store.get_monitor_condition(condition_id)
+    if condition is None:
+        msg = f"Monitor condition '{condition_id}' not found"
+        if json_output:
+            _write_json_stderr(msg)
+        else:
+            console.print(f"[red]{msg}[/red]")
+        raise typer.Exit(code=1)
+
+    deadline = time.monotonic() + timeout
+    alert = store.get_latest_monitor_alert(condition_id)
+    while alert is None and time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        time.sleep(min(0.1, max(remaining, 0.0)))
+        alert = store.get_latest_monitor_alert(condition_id)
+
+    fired = alert is not None
+
+    if fired:
+        if json_output:
+            _write_json_stdout({
+                "fired": True,
+                "condition_id": condition_id,
+                "alert": alert,
+            })
+        else:
+            detail = alert.get("detail", "") if alert else ""
+            console.print(f"[green]Alert fired:[/green] {detail}")
+    else:
+        if json_output:
+            _write_json_stdout({
+                "fired": False,
+                "condition_id": condition_id,
+                "timeout_seconds": timeout,
+            })
+        else:
+            console.print(f"[yellow]Timed out after {timeout}s waiting for condition {condition_id}[/yellow]")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
