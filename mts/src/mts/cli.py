@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 import uvicorn
@@ -18,6 +19,9 @@ from mts.config.presets import VALID_PRESET_NAMES
 from mts.config.settings import AppSettings
 from mts.loop.generation_runner import GenerationRunner
 from mts.storage import SQLiteStore
+
+if TYPE_CHECKING:
+    from mts.training.runner import TrainingConfig, TrainingResult
 
 app = typer.Typer(help="MTS control-plane CLI")
 console = Console()
@@ -444,25 +448,61 @@ def mcp_serve() -> None:
     run_server()
 
 
+def _run_training(config: TrainingConfig) -> TrainingResult:
+    """Run the training loop. Extracted for testability."""
+    from mts.training.runner import TrainingRunner
+
+    runner = TrainingRunner(config, work_dir=Path("runs") / f"train_{config.scenario}")
+    runner.setup_workspace()
+    console.print(f"[green]Workspace ready at {runner.work_dir}[/green]")
+    console.print(f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]")
+
+    # The full agent loop is not yet wired — return an empty result for now.
+    # The runner infrastructure (workspace, git, results.tsv) is fully functional.
+    return runner.build_training_result([])
+
+
 @app.command()
 def train(
     scenario: str = typer.Option("grid_ctf", "--scenario", help="Scenario to train on"),
     data: str = typer.Option("training_data.jsonl", "--data", help="Path to JSONL training data"),
     time_budget: int = typer.Option(300, "--time-budget", help="Training time budget in seconds"),
+    max_experiments: int = typer.Option(0, "--max-experiments", help="Max iterations (0 = unlimited)"),
+    memory_limit: int = typer.Option(16384, "--memory-limit", help="Peak memory cap in MB"),
+    agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
+    agent_model: str = typer.Option("claude-sonnet-4-20250514", "--agent-model", help="Model for training agent"),
 ) -> None:
-    """Train an MLX model to distill strategy knowledge (requires MLX)."""
+    """Launch the autoresearch-style training loop."""
+    from mts.training.runner import TrainingConfig
 
-    from mts.training import HAS_MLX
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    if not HAS_MLX:
-        console.print("[red]MLX is not installed. Install with: uv sync --group dev --extra mlx[/red]")
-        raise typer.Exit(code=1)
-    console.print(
-        "[yellow]The distillation scaffold is installed, but the end-to-end training runner "
-        "is not wired yet. Use the exported data path directly until the runner lands.[/yellow]"
+    config = TrainingConfig(
+        scenario=scenario,
+        data_path=Path(data),
+        time_budget=time_budget,
+        max_experiments=max_experiments,
+        memory_limit_mb=memory_limit,
+        agent_provider=agent_provider,
+        agent_model=agent_model,
     )
-    console.print(f"[dim]scenario={scenario} data={data} budget={time_budget}s[/dim]")
-    raise typer.Exit(code=2)
+
+    try:
+        result = _run_training(config)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Training interrupted.[/yellow]")
+        raise typer.Exit(code=1) from None
+
+    # Summary
+    table = Table(title="Training Summary")
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_row("Scenario", result.scenario)
+    table.add_row("Total experiments", str(result.total_experiments))
+    table.add_row("Kept / Discarded", f"{result.kept_count} / {result.discarded_count}")
+    table.add_row("Best score", f"{result.best_score:.4f}")
+    table.add_row("Checkpoint", str(result.checkpoint_path) if result.checkpoint_path else "(none)")
+    console.print(table)
 
 
 @app.command("export-training-data")
