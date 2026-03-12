@@ -352,6 +352,28 @@ class AgentOrchestrator:
             return client, provider_config.model
         return client, model or provider_config.model
 
+    def resolve_role_execution(
+        self,
+        role: str,
+        *,
+        generation: int,
+        retry_count: int = 0,
+        is_plateau: bool = False,
+        scenario_name: str = "",
+    ) -> tuple[LanguageModelClient, str | None]:
+        """Resolve the effective client and model for a role execution.
+
+        This is the stable public wrapper for non-runner pipeline stages that need
+        to respect per-role overrides and automatic routing decisions.
+        """
+        return self._resolve_role_execution(
+            role,
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            scenario_name=scenario_name,
+        )
+
     @contextmanager
     def _use_role_runtime(
         self,

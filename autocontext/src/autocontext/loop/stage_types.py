@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from autocontext.agents.types import AgentOutputs
     from autocontext.config.settings import AppSettings
+    from autocontext.execution.policy_refinement import PolicyRefinementResult
     from autocontext.harness.evaluation.types import EvaluationSummary
     from autocontext.knowledge.tuning import TuningConfig
     from autocontext.prompts.templates import PromptBundle
@@ -54,6 +55,9 @@ class GenerationContext:
     # Staged validation results (AC-200)
     staged_validation_results: list[Any] | None = None
     staged_validation_metrics: dict[str, Any] | None = None
+
+    # Policy refinement result (AC-156)
+    policy_refinement_result: PolicyRefinementResult | None = None
 
 
 @dataclass(slots=True)

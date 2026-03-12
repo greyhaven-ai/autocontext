@@ -27,10 +27,12 @@ from autocontext.knowledge.stagnation import StagnationDetector
 from autocontext.knowledge.tuning import TuningConfig, parse_tuning_proposal
 from autocontext.loop.stage_types import GenerationContext
 from autocontext.prompts.templates import build_prompt_bundle
+from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 if TYPE_CHECKING:
     from autocontext.agents.curator import KnowledgeCurator
+    from autocontext.agents.llm_client import LanguageModelClient
     from autocontext.agents.orchestrator import AgentOrchestrator
     from autocontext.backpressure import BackpressureGate
     from autocontext.execution.supervisor import ExecutionSupervisor
@@ -39,6 +41,33 @@ if TYPE_CHECKING:
     from autocontext.storage import ArtifactStore, SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
+
+
+class _ClientAsProvider(LLMProvider):
+    """Adapts LanguageModelClient → LLMProvider for policy refinement."""
+
+    def __init__(self, client: LanguageModelClient, model: str = "") -> None:
+        self._client = client
+        self._model = model
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> CompletionResult:
+        resp = self._client.generate(
+            model=model or self._model,
+            prompt=f"{system_prompt}\n\n{user_prompt}",
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return CompletionResult(text=resp.text, model=model or self._model)
+
+    def default_model(self) -> str:
+        return self._model
 
 
 def _load_validity_harness_loader(
@@ -74,6 +103,91 @@ def _build_empty_tournament(ctx: GenerationContext) -> EvaluationSummary:
         elo_after=ctx.challenger_elo,
         results=[],
     )
+
+
+def stage_policy_refinement(
+    ctx: GenerationContext,
+    *,
+    client: LanguageModelClient,
+    model: str | None,
+    events: EventStreamEmitter,
+    sqlite: SQLiteStore,
+) -> GenerationContext:
+    """Stage 2.6: Optionally refine code strategies via iterative evaluation (AC-156)."""
+    settings = ctx.settings
+
+    # Skip conditions
+    if not settings.policy_refinement_enabled:
+        return ctx
+    if not settings.code_strategies_enabled:
+        return ctx
+    if "__code__" not in ctx.current_strategy:
+        return ctx
+    if not hasattr(ctx.scenario, "execute_match"):
+        return ctx
+
+    from autocontext.execution.policy_executor import PolicyExecutor
+    from autocontext.execution.policy_refinement import PolicyRefinementLoop
+
+    initial_code = ctx.current_strategy["__code__"]
+
+    events.emit("policy_refinement_started", {
+        "run_id": ctx.run_id,
+        "generation": ctx.generation,
+    })
+
+    try:
+        effective_model = settings.policy_refinement_model or model or ""
+        provider = _ClientAsProvider(client, model=effective_model)
+        executor = PolicyExecutor(
+            ctx.scenario,
+            timeout_per_match=settings.policy_refinement_timeout_per_match,
+        )
+        loop = PolicyRefinementLoop(
+            ctx.scenario,
+            executor,
+            provider,
+            max_iterations=settings.policy_refinement_max_iterations,
+            matches_per_iteration=settings.policy_refinement_matches_per_iteration,
+            convergence_window=settings.policy_refinement_convergence_window,
+            convergence_epsilon=settings.policy_refinement_convergence_epsilon,
+            model=effective_model,
+        )
+
+        result = loop.refine(initial_code)
+
+        ctx.current_strategy = dict(ctx.current_strategy)
+        ctx.current_strategy["__code__"] = result.best_policy
+        if ctx.outputs is not None:
+            ctx.outputs = dataclasses.replace(ctx.outputs, strategy=ctx.current_strategy)
+            if ctx.outputs.competitor_output is not None:
+                ctx.outputs.competitor_output.strategy = dict(ctx.current_strategy)
+                ctx.outputs.competitor_output.raw_text = result.best_policy
+        ctx.policy_refinement_result = result
+        sqlite.append_agent_output(
+            ctx.run_id,
+            ctx.generation,
+            "competitor",
+            json.dumps(ctx.current_strategy, sort_keys=True),
+        )
+
+        events.emit("policy_refinement_completed", {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "iterations": result.iterations,
+            "best_heuristic": result.best_heuristic,
+            "converged": result.converged,
+            "total_matches_run": result.total_matches_run,
+        })
+    except Exception:
+        LOGGER.warning("policy refinement failed, using original strategy", exc_info=True)
+        events.emit("policy_refinement_failed", {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "error": "refinement exception",
+        })
+
+    return ctx
 
 
 def _revise_strategy_for_validity_failure(
