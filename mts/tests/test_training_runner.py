@@ -342,6 +342,84 @@ class TestTrainingResult:
 
 
 # ---------------------------------------------------------------------------
+# Training loop
+# ---------------------------------------------------------------------------
+
+
+class TestTrainingLoop:
+    def test_run_raises_on_failed_baseline(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", max_experiments=1)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        failed = ExperimentResult(
+            experiment_index=0,
+            avg_score=0.0,
+            valid_rate=0.0,
+            peak_memory_mb=0.0,
+            training_seconds=0.0,
+            outcome=ExperimentOutcome.ERROR,
+            error_message="MLX is required",
+        )
+
+        with patch.object(runner, "_execute_experiment", return_value=failed):
+            with pytest.raises(RuntimeError, match="MLX is required"):
+                runner.run()
+
+    def test_run_keeps_best_and_discards_regressions(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", max_experiments=3)
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        baseline = ExperimentResult(
+            experiment_index=0,
+            avg_score=0.5,
+            valid_rate=1.0,
+            peak_memory_mb=1024.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.KEPT,
+            checkpoint_path=tmp_path / "workspace" / "checkpoints" / "exp_0",
+        )
+        regressed = ExperimentResult(
+            experiment_index=1,
+            avg_score=0.4,
+            valid_rate=1.0,
+            peak_memory_mb=1024.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.DISCARDED,
+        )
+        improved = ExperimentResult(
+            experiment_index=2,
+            avg_score=0.8,
+            valid_rate=1.0,
+            peak_memory_mb=1024.0,
+            training_seconds=1.0,
+            outcome=ExperimentOutcome.KEPT,
+            checkpoint_path=tmp_path / "workspace" / "checkpoints" / "exp_2",
+        )
+
+        with (
+            patch.object(runner, "_execute_experiment", side_effect=[baseline, regressed, improved]),
+            patch.object(runner, "_build_agent_client", return_value=object()),  # type: ignore[arg-type]
+            patch.object(
+                runner,
+                "_propose_train_py",
+                side_effect=["# experiment 1\n", "# experiment 2\n"],
+            ),
+            patch.object(runner, "discard_experiment") as mock_discard,
+        ):
+            result = runner.run()
+
+        assert result.total_experiments == 3
+        assert result.kept_count == 2
+        assert result.discarded_count == 1
+        assert result.best_score == pytest.approx(0.8)
+        assert result.best_experiment_index == 2
+        assert result.checkpoint_path == improved.checkpoint_path
+        mock_discard.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # CLI (AC-180)
 # ---------------------------------------------------------------------------
 

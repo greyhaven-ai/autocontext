@@ -453,13 +453,11 @@ def _run_training(config: TrainingConfig) -> TrainingResult:
     from mts.training.runner import TrainingRunner
 
     runner = TrainingRunner(config, work_dir=Path("runs") / f"train_{config.scenario}")
-    runner.setup_workspace()
-    console.print(f"[green]Workspace ready at {runner.work_dir}[/green]")
-    console.print(f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]")
-
-    # The full agent loop is not yet wired — return an empty result for now.
-    # The runner infrastructure (workspace, git, results.tsv) is fully functional.
-    return runner.build_training_result([])
+    console.print(f"[green]Training workspace:[/green] {runner.work_dir}")
+    console.print(
+        f"[dim]scenario={config.scenario} budget={config.time_budget}s max_experiments={config.max_experiments}[/dim]"
+    )
+    return runner.run()
 
 
 @app.command()
@@ -492,6 +490,9 @@ def train(
     except KeyboardInterrupt:
         console.print("\n[yellow]Training interrupted.[/yellow]")
         raise typer.Exit(code=1) from None
+    except Exception as exc:
+        console.print(f"[red]Training failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
 
     # Summary
     table = Table(title="Training Summary")
