@@ -64,5 +64,14 @@ npm test
 ## Pull Requests
 
 - Keep changes scoped to one feature or cleanup theme.
+- Prefer reviewable PRs. If a change is broad, split it into preparatory cleanup and feature follow-ups.
+- Avoid mixing renames, refactors, and behavior changes in the same PR unless the branch would be unmergeable otherwise.
 - Update docs and examples when renaming commands, env vars, or package paths.
 - Include verification notes for the checks you ran.
+
+## Repository Rules
+
+- `main` is intended to stay protected and merge-only.
+- Contributor PRs should pass `lint`, `test`, and `smoke` before merge.
+- Open a draft PR early for large work so maintainers can steer scope before review.
+- Keep local workspace artifacts, assistant scratch files, and private notes out of the repo. The root `.claude/` directory is intentionally ignored.

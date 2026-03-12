@@ -25,6 +25,7 @@ node_modules/
 # Worktrees
 .worktrees/
 /mts/
+/.claude/
 
 # Runtime outputs
 runs/*
