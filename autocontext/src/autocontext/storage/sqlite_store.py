@@ -72,14 +72,16 @@ class SQLiteStore:
         losses: int,
         gate_decision: str,
         status: str,
+        duration_seconds: float | None = None,
     ) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO generations(
-                    run_id, generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status
+                    run_id, generation_index, mean_score, best_score, elo, wins, losses,
+                    gate_decision, status, duration_seconds
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, generation_index) DO UPDATE SET
                     mean_score = excluded.mean_score,
                     best_score = excluded.best_score,
@@ -88,9 +90,37 @@ class SQLiteStore:
                     losses = excluded.losses,
                     gate_decision = excluded.gate_decision,
                     status = excluded.status,
+                    duration_seconds = excluded.duration_seconds,
                     updated_at = datetime('now')
                 """,
-                (run_id, generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status),
+                (
+                    run_id,
+                    generation_index,
+                    mean_score,
+                    best_score,
+                    elo,
+                    wins,
+                    losses,
+                    gate_decision,
+                    status,
+                    duration_seconds,
+                ),
+            )
+
+    def update_generation_duration(
+        self,
+        run_id: str,
+        generation_index: int,
+        duration_seconds: float,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE generations
+                SET duration_seconds = ?, updated_at = datetime('now')
+                WHERE run_id = ? AND generation_index = ?
+                """,
+                (duration_seconds, run_id, generation_index),
             )
 
     def insert_match(

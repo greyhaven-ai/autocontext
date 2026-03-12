@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,7 @@ from autocontext.loop.stage_staged_validation import stage_staged_validation
 from autocontext.loop.stage_tree_search import stage_tree_search
 from autocontext.loop.stage_types import GenerationContext
 from autocontext.loop.stages import (
+    _build_empty_tournament,
     stage_agent_generation,
     stage_curator_gate,
     stage_knowledge_setup,
@@ -36,6 +38,43 @@ if TYPE_CHECKING:
     from autocontext.storage import ArtifactStore, SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _time_remaining(ctx: GenerationContext) -> float | None:
+    """Return seconds remaining in the time budget, or None if unlimited."""
+    budget = ctx.settings.generation_time_budget_seconds
+    if budget <= 0:
+        return None
+    elapsed = time.monotonic() - ctx.generation_start_time
+    return max(0.0, budget - elapsed)
+
+
+def _over_budget(ctx: GenerationContext) -> bool:
+    """True if the generation has exceeded its time budget."""
+    remaining = _time_remaining(ctx)
+    return remaining is not None and remaining <= 0
+
+
+def _rollback_for_budget(ctx: GenerationContext, events: EventStreamEmitter) -> GenerationContext:
+    """Stop the generation before tournament work once the budget is exhausted."""
+    ctx.tournament = _build_empty_tournament(ctx)
+    ctx.gate_decision = "rollback"
+    ctx.gate_delta = 0.0
+    ctx.score_history.append(0.0)
+    ctx.gate_decision_history.append("rollback")
+    events.emit("generation_budget_exhausted", {
+        "run_id": ctx.run_id,
+        "generation": ctx.generation,
+        "budget_seconds": ctx.settings.generation_time_budget_seconds,
+    })
+    events.emit("gate_decided", {
+        "run_id": ctx.run_id,
+        "generation": ctx.generation,
+        "decision": "rollback",
+        "delta": 0.0,
+        "tier": "budget",
+    })
+    return ctx
 
 
 class GenerationPipeline:
@@ -72,6 +111,7 @@ class GenerationPipeline:
 
     def run_generation(self, ctx: GenerationContext) -> GenerationContext:
         """Execute all stages for a single generation."""
+        ctx.generation_start_time = time.monotonic()
 
         def _on_role_event(role: str, status: str) -> None:
             self._events.emit("role_event", {
@@ -156,62 +196,69 @@ class GenerationPipeline:
                     self._controller.respond_chat(role, response)
 
             # Stage 2.3: Staged validation (progressive checks before tournament)
-            ctx = stage_staged_validation(
-                ctx,
-                events=self._events,
-                sqlite=self._sqlite,
-            )
+            if not _over_budget(ctx):
+                ctx = stage_staged_validation(
+                    ctx,
+                    events=self._events,
+                    sqlite=self._sqlite,
+                )
 
             # Stage 2.4: Pre-validation (optional — dry-run self-play before tournament)
-            harness_loader = None
-            if ctx.settings.harness_validators_enabled:
-                from autocontext.execution.harness_loader import HarnessLoader
+            if not _over_budget(ctx):
+                harness_loader = None
+                if ctx.settings.harness_validators_enabled:
+                    from autocontext.execution.harness_loader import HarnessLoader
 
-                h_dir = self._artifacts.harness_dir(ctx.scenario_name)
-                if h_dir.exists():
-                    harness_loader = HarnessLoader(h_dir, timeout_seconds=ctx.settings.harness_timeout_seconds)
-                    harness_loader.load()
+                    h_dir = self._artifacts.harness_dir(ctx.scenario_name)
+                    if h_dir.exists():
+                        harness_loader = HarnessLoader(h_dir, timeout_seconds=ctx.settings.harness_timeout_seconds)
+                        harness_loader.load()
 
-            ctx = stage_prevalidation(
-                ctx,
-                events=self._events,
-                agents=self._orchestrator,
-                harness_loader=harness_loader,
-                artifacts=self._artifacts,
-            )
+                ctx = stage_prevalidation(
+                    ctx,
+                    events=self._events,
+                    agents=self._orchestrator,
+                    harness_loader=harness_loader,
+                    artifacts=self._artifacts,
+                )
 
             # Stage 2.5: Probe (optional — refine strategy from observation)
-            ctx = stage_probe(
-                ctx,
-                agents=self._orchestrator,
-                events=self._events,
-                supervisor=self._supervisor,
-            )
+            if not _over_budget(ctx):
+                ctx = stage_probe(
+                    ctx,
+                    agents=self._orchestrator,
+                    events=self._events,
+                    supervisor=self._supervisor,
+                )
 
             # Stage 2.6: Policy refinement (optional — refine code strategies via zero-LLM evaluation)
-            refinement_client, refinement_model = self._orchestrator.resolve_role_execution(
-                "competitor",
-                generation=ctx.generation,
-                scenario_name=ctx.scenario_name,
-            )
-            ctx = stage_policy_refinement(
-                ctx,
-                client=refinement_client,
-                model=refinement_model,
-                events=self._events,
-                sqlite=self._sqlite,
-            )
+            if not _over_budget(ctx):
+                refinement_client, refinement_model = self._orchestrator.resolve_role_execution(
+                    "competitor",
+                    generation=ctx.generation,
+                    scenario_name=ctx.scenario_name,
+                )
+                ctx = stage_policy_refinement(
+                    ctx,
+                    client=refinement_client,
+                    model=refinement_model,
+                    events=self._events,
+                    sqlite=self._sqlite,
+                )
 
             # Stage 3: Tournament + gate
-            ctx = stage_tournament(
-                ctx,
-                supervisor=self._supervisor,
-                gate=self._gate,
-                events=self._events,
-                sqlite=self._sqlite,
-                artifacts=self._artifacts,
-                agents=self._orchestrator,
-            )
+            if _over_budget(ctx):
+                ctx = _rollback_for_budget(ctx, self._events)
+            else:
+                ctx = stage_tournament(
+                    ctx,
+                    supervisor=self._supervisor,
+                    gate=self._gate,
+                    events=self._events,
+                    sqlite=self._sqlite,
+                    artifacts=self._artifacts,
+                    agents=self._orchestrator,
+                )
 
         # Stage 3b: Stagnation check
         ctx = stage_stagnation_check(
@@ -255,8 +302,8 @@ class GenerationPipeline:
             curator=self._curator,
         )
 
-        # Stage 6: Knowledge coherence verification (optional)
-        if ctx.settings.coherence_check_enabled:
+        # Stage 6: Knowledge coherence verification (optional, skipped under time pressure)
+        if ctx.settings.coherence_check_enabled and not _over_budget(ctx):
             coherence = check_coherence(
                 scenario_name=ctx.scenario_name,
                 knowledge_root=self._artifacts.knowledge_root,
@@ -282,4 +329,18 @@ class GenerationPipeline:
             except Exception:
                 LOGGER.debug("meta_optimizer.record_generation failed", exc_info=True)
 
+        # Record generation timing (AC-174)
+        ctx.generation_elapsed_seconds = time.monotonic() - ctx.generation_start_time
+        self._sqlite.update_generation_duration(
+            ctx.run_id,
+            ctx.generation,
+            ctx.generation_elapsed_seconds,
+        )
+        self._events.emit("generation_timing", {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "elapsed_seconds": round(ctx.generation_elapsed_seconds, 2),
+            "budget_seconds": ctx.settings.generation_time_budget_seconds,
+            "over_budget": _over_budget(ctx),
+        })
         return ctx

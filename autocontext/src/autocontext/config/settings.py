@@ -43,6 +43,11 @@ class AppSettings(BaseModel):
     backpressure_plateau_window: int = Field(default=3, ge=1)
     backpressure_plateau_relaxation: float = Field(default=0.5, ge=0.0, le=1.0)
     default_generations: int = Field(default=1, ge=1)
+    generation_time_budget_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="Soft stage-boundary time budget per generation in seconds (0 = unlimited)",
+    )
     seed_base: int = Field(default=1000)
     max_retries: int = Field(default=2, ge=0)
     retry_backoff_seconds: float = Field(default=0.25, ge=0)

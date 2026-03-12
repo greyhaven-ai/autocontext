@@ -59,6 +59,10 @@ class GenerationContext:
     # Policy refinement result (AC-156)
     policy_refinement_result: PolicyRefinementResult | None = None
 
+    # AC-174: generation timing
+    generation_start_time: float = 0.0
+    generation_elapsed_seconds: float = 0.0
+
 
 @dataclass(slots=True)
 class StageResult:
