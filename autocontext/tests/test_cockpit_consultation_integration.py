@@ -55,11 +55,6 @@ def _seed_run(store: SQLiteStore, run_id: str = "test-run", gens: int = 2) -> No
         store.upsert_generation(run_id, 2, 0.6, 0.7, 1050.0, 3, 0, "advance", "completed", 45.0)
 
 
-def _seed_competitor_output(store: SQLiteStore, run_id: str = "test-run") -> None:
-    """Add competitor output so strategy summary can be extracted."""
-    store.append_agent_output(run_id, 2, "competitor", '{"aggression": 0.7}')
-
-
 def _make_settings(tmp_path: Path, **overrides: Any) -> AppSettings:
     """Build AppSettings with consultation enabled by default."""
     defaults: dict[str, Any] = {
@@ -255,6 +250,17 @@ class TestConsultEndpointSpecificGeneration:
         data = resp.json()
         assert data["generation"] == 1
 
+    def test_missing_generation_returns_404(self, cockpit_consultation_env: dict[str, Any]) -> None:
+        env = cockpit_consultation_env
+        _seed_run(env["store"])
+
+        mock_provider = _mock_create_provider()
+        with patch("autocontext.server.cockpit_api._create_cockpit_consultation_provider", return_value=mock_provider):
+            resp = env["client"].post("/api/cockpit/runs/test-run/consult", json={"generation": 99})
+
+        assert resp.status_code == 404
+        assert "generation 99" in resp.json()["detail"].lower()
+
 
 class TestConsultEndpointDefaultGeneration:
     """POST without generation defaults to latest."""
@@ -270,6 +276,17 @@ class TestConsultEndpointDefaultGeneration:
         assert resp.status_code == 200
         data = resp.json()
         assert data["generation"] == 2  # latest of 2 seeded generations
+
+    def test_no_generations_returns_400(self, cockpit_consultation_env: dict[str, Any]) -> None:
+        env = cockpit_consultation_env
+        env["store"].create_run("empty-run", "grid_ctf", 5, "local")
+
+        mock_provider = _mock_create_provider()
+        with patch("autocontext.server.cockpit_api._create_cockpit_consultation_provider", return_value=mock_provider):
+            resp = env["client"].post("/api/cockpit/runs/empty-run/consult", json={})
+
+        assert resp.status_code == 400
+        assert "no generations yet" in resp.json()["detail"].lower()
 
 
 class TestConsultEndpointContextSummary:
@@ -291,6 +308,21 @@ class TestConsultEndpointContextSummary:
         call_args = mock_provider.complete.call_args
         user_prompt = call_args[0][1] if len(call_args[0]) > 1 else call_args.kwargs.get("user_prompt", "")
         assert "Why is my score stuck at 0.7?" in user_prompt
+
+    def test_uses_latest_competitor_output_for_strategy_summary(self, cockpit_consultation_env: dict[str, Any]) -> None:
+        env = cockpit_consultation_env
+        _seed_run(env["store"])
+        env["store"].append_agent_output("test-run", 2, "competitor", '{"aggression": 0.2}')
+        env["store"].append_agent_output("test-run", 2, "competitor", '{"aggression": 0.9}')
+
+        mock_provider = _mock_create_provider()
+        with patch("autocontext.server.cockpit_api._create_cockpit_consultation_provider", return_value=mock_provider):
+            resp = env["client"].post("/api/cockpit/runs/test-run/consult", json={})
+
+        assert resp.status_code == 200
+        call_args = mock_provider.complete.call_args
+        user_prompt = call_args[0][1] if len(call_args[0]) > 1 else call_args.kwargs.get("user_prompt", "")
+        assert '"aggression": 0.9' in user_prompt
 
 
 class TestConsultEndpointPersistence:
@@ -331,12 +363,28 @@ class TestConsultEndpointArtifact:
 
         # Check that the advisory markdown file was created
         advisory_path = (
-            env["tmp_path"] / "runs" / "test-run" / "generations" / "gen_2" / "operator_consultation.md"
+            env["tmp_path"] / "runs" / "test-run" / "generations" / "gen_2" / "consultation.md"
         )
         assert advisory_path.exists()
         content = advisory_path.read_text(encoding="utf-8")
         assert "## Critique" in content
         assert "Test critique content" in content
+
+    def test_existing_consultation_artifact_is_appended(self, cockpit_consultation_env: dict[str, Any]) -> None:
+        env = cockpit_consultation_env
+        _seed_run(env["store"])
+        advisory_path = env["tmp_path"] / "runs" / "test-run" / "generations" / "gen_2" / "consultation.md"
+        advisory_path.parent.mkdir(parents=True, exist_ok=True)
+        advisory_path.write_text("## Critique\nExisting automatic consultation\n", encoding="utf-8")
+
+        mock_provider = _mock_create_provider()
+        with patch("autocontext.server.cockpit_api._create_cockpit_consultation_provider", return_value=mock_provider):
+            resp = env["client"].post("/api/cockpit/runs/test-run/consult", json={})
+
+        assert resp.status_code == 200
+        content = advisory_path.read_text(encoding="utf-8")
+        assert "Existing automatic consultation" in content
+        assert "Operator Requested Consultation" in content
 
 
 class TestConsultEndpointProviderFailure:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -16,8 +15,6 @@ from autocontext.server.changelog import build_changelog
 from autocontext.server.writeup import generate_writeup
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
-
-LOGGER = logging.getLogger(__name__)
 
 cockpit_router = APIRouter(prefix="/api/cockpit", tags=["cockpit"])
 
@@ -307,7 +304,23 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
             gen_row = conn.execute(
                 "SELECT MAX(generation_index) as max_gen FROM generations WHERE run_id = ?", (run_id,)
             ).fetchone()
-            generation = gen_row["max_gen"] if gen_row and gen_row["max_gen"] is not None else 0
+            if gen_row is None or gen_row["max_gen"] is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot request consultation for a run with no generations yet",
+                )
+            generation = int(gen_row["max_gen"])
+    else:
+        with store.connect() as conn:
+            existing_generation = conn.execute(
+                "SELECT 1 FROM generations WHERE run_id = ? AND generation_index = ?",
+                (run_id, generation),
+            ).fetchone()
+        if existing_generation is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Generation {generation} not found for run '{run_id}'",
+            )
 
     # Check cost budget
     if settings.consultation_cost_budget > 0:
@@ -338,9 +351,22 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
     strategy_summary = ""
     with store.connect() as conn:
         strat_row = conn.execute(
-            "SELECT content FROM agent_outputs WHERE run_id = ? AND role = 'competitor' "
-            "ORDER BY generation_index DESC LIMIT 1",
-            (run_id,),
+            """
+            SELECT ao.content
+            FROM agent_outputs ao
+            JOIN (
+                SELECT run_id, generation_index, MAX(rowid) AS max_rowid
+                FROM agent_outputs
+                WHERE run_id = ? AND role = 'competitor'
+                GROUP BY run_id, generation_index
+            ) latest ON ao.run_id = latest.run_id
+                AND ao.generation_index = latest.generation_index
+                AND ao.rowid = latest.max_rowid
+            WHERE ao.run_id = ? AND ao.role = 'competitor'
+            ORDER BY ao.generation_index DESC
+            LIMIT 1
+            """,
+            (run_id, run_id),
         ).fetchone()
         if strat_row:
             strategy_summary = str(strat_row["content"])[:500]
@@ -383,8 +409,12 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
     # Write advisory artifact
     artifacts = _get_artifacts(request)
     advisory_dir = artifacts.generation_dir(run_id, generation)
-    advisory_path = advisory_dir / "operator_consultation.md"
-    artifacts.write_markdown(advisory_path, result.to_advisory_markdown())
+    advisory_path = advisory_dir / "consultation.md"
+    advisory_markdown = result.to_advisory_markdown()
+    if advisory_path.exists():
+        artifacts.append_markdown(advisory_path, advisory_markdown, heading="Operator Requested Consultation")
+    else:
+        artifacts.write_markdown(advisory_path, advisory_markdown)
 
     return {
         "consultation_id": row_id,
