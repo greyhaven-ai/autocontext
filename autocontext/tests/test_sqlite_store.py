@@ -76,3 +76,22 @@ def test_append_generation_agent_activity_batches_outputs_and_metrics(tmp_path: 
             "status": "completed",
         },
     ]
+
+
+def test_latest_competitor_output_is_canonical_for_generation_queries(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.create_run("run-1", "grid_ctf", 1, "local")
+    store.upsert_generation("run-1", 1, 0.4, 0.5, 1000.0, 1, 0, "advance", "completed")
+    store.append_agent_output("run-1", 1, "competitor", '{"aggression": 0.2}')
+    store.append_agent_output("run-1", 1, "competitor", '{"aggression": 0.9}')
+
+    history = store.get_strategy_score_history("run-1")
+    assert history == [
+        {
+            "generation_index": 1,
+            "content": '{"aggression": 0.9}',
+            "best_score": 0.5,
+            "gate_decision": "advance",
+        },
+    ]
+    assert store.get_best_competitor_output("grid_ctf") == '{"aggression": 0.9}'

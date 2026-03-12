@@ -109,7 +109,9 @@ def stage_policy_refinement(
     ctx: GenerationContext,
     *,
     client: LanguageModelClient,
+    model: str | None,
     events: EventStreamEmitter,
+    sqlite: SQLiteStore,
 ) -> GenerationContext:
     """Stage 2.6: Optionally refine code strategies via iterative evaluation (AC-156)."""
     settings = ctx.settings
@@ -135,7 +137,8 @@ def stage_policy_refinement(
     })
 
     try:
-        provider = _ClientAsProvider(client, model=settings.policy_refinement_model)
+        effective_model = settings.policy_refinement_model or model or ""
+        provider = _ClientAsProvider(client, model=effective_model)
         executor = PolicyExecutor(
             ctx.scenario,
             timeout_per_match=settings.policy_refinement_timeout_per_match,
@@ -148,14 +151,25 @@ def stage_policy_refinement(
             matches_per_iteration=settings.policy_refinement_matches_per_iteration,
             convergence_window=settings.policy_refinement_convergence_window,
             convergence_epsilon=settings.policy_refinement_convergence_epsilon,
-            model=settings.policy_refinement_model,
+            model=effective_model,
         )
 
         result = loop.refine(initial_code)
 
         ctx.current_strategy = dict(ctx.current_strategy)
         ctx.current_strategy["__code__"] = result.best_policy
+        if ctx.outputs is not None:
+            ctx.outputs = dataclasses.replace(ctx.outputs, strategy=ctx.current_strategy)
+            if ctx.outputs.competitor_output is not None:
+                ctx.outputs.competitor_output.strategy = dict(ctx.current_strategy)
+                ctx.outputs.competitor_output.raw_text = result.best_policy
         ctx.policy_refinement_result = result
+        sqlite.append_agent_output(
+            ctx.run_id,
+            ctx.generation,
+            "competitor",
+            json.dumps(ctx.current_strategy, sort_keys=True),
+        )
 
         events.emit("policy_refinement_completed", {
             "run_id": ctx.run_id,
