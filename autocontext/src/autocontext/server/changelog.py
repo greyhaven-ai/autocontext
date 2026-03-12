@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
+from autocontext.agents.coach import parse_coach_sections
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
 
@@ -40,6 +41,14 @@ def build_changelog(
             architect_by_gen[gen_idx] = []
         architect_by_gen[gen_idx].append(str(ao["content"]))
 
+    coach_outputs = sqlite.get_agent_outputs_by_role(run_id, "coach")
+    playbook_changed_gens: set[int] = set()
+    for coach_output in coach_outputs:
+        gen_idx = cast(int, coach_output["generation_index"])
+        playbook, _, _ = parse_coach_sections(str(coach_output["content"]))
+        if playbook.strip():
+            playbook_changed_gens.add(gen_idx)
+
     result_gens: list[dict[str, Any]] = []
     for i, gen in enumerate(generations):
         if i == 0:
@@ -62,7 +71,7 @@ def build_changelog(
             "elo_delta": round(gen["elo"] - prev_elo, 6),
             "gate_decision": gen["gate_decision"],
             "new_tools": new_tools,
-            "playbook_changed": i > 0,  # Simplified: assume playbook changes after gen 1
+            "playbook_changed": gen_idx in playbook_changed_gens,
             "duration_seconds": gen.get("duration_seconds"),
         }
         result_gens.append(entry)

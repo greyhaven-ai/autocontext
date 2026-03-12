@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -11,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from autocontext.config.settings import AppSettings
 from autocontext.server.changelog import build_changelog
 from autocontext.server.cockpit_api import cockpit_router
 from autocontext.server.writeup import generate_writeup
@@ -18,14 +18,6 @@ from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
-
-ENV_KEYS = [
-    "AUTOCONTEXT_DB_PATH",
-    "AUTOCONTEXT_RUNS_ROOT",
-    "AUTOCONTEXT_KNOWLEDGE_ROOT",
-    "AUTOCONTEXT_SKILLS_ROOT",
-    "AUTOCONTEXT_CLAUDE_SKILLS_PATH",
-]
 
 
 def _make_store(tmp_path: Path) -> SQLiteStore:
@@ -63,24 +55,25 @@ def _seed_agent_outputs(store: SQLiteStore, run_id: str = "run1") -> None:
 
 @pytest.fixture()
 def cockpit_env(tmp_path: Path) -> Generator[dict[str, Any], None, None]:
-    """Set env vars for cockpit API and yield store, artifacts, client."""
-    os.environ["AUTOCONTEXT_DB_PATH"] = str(tmp_path / "test.db")
-    os.environ["AUTOCONTEXT_RUNS_ROOT"] = str(tmp_path / "runs")
-    os.environ["AUTOCONTEXT_KNOWLEDGE_ROOT"] = str(tmp_path / "knowledge")
-    os.environ["AUTOCONTEXT_SKILLS_ROOT"] = str(tmp_path / "skills")
-    os.environ["AUTOCONTEXT_CLAUDE_SKILLS_PATH"] = str(tmp_path / ".claude" / "skills")
+    """Build an app with explicit state-backed store/settings for cockpit API."""
 
     store = _make_store(tmp_path)
     artifacts = _make_artifacts(tmp_path)
+    settings = AppSettings(
+        db_path=tmp_path / "test.db",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
 
     app = FastAPI()
+    app.state.store = store
+    app.state.app_settings = settings
     app.include_router(cockpit_router)
     client = TestClient(app)
 
     yield {"store": store, "artifacts": artifacts, "client": client, "tmp_path": tmp_path}
-
-    for key in ENV_KEYS:
-        os.environ.pop(key, None)
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +198,24 @@ class TestChangelog:
         result = build_changelog("run1", store, artifacts)
         for gen in result["generations"]:
             assert "duration_seconds" in gen
+
+    def test_playbook_changed_tracks_real_coach_outputs(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        artifacts = _make_artifacts(tmp_path)
+        _seed_run(store)
+        store.append_agent_output(
+            "run1",
+            2,
+            "coach",
+            "<!-- PLAYBOOK_START -->Use flanking.<!-- PLAYBOOK_END -->",
+        )
+
+        result = build_changelog("run1", store, artifacts)
+        gen1 = next(g for g in result["generations"] if g["generation"] == 1)
+        gen2 = next(g for g in result["generations"] if g["generation"] == 2)
+
+        assert gen1["playbook_changed"] is False
+        assert gen2["playbook_changed"] is True
 
 
 # ---------------------------------------------------------------------------

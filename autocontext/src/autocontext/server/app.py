@@ -16,7 +16,6 @@ from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.server.cockpit_api import cockpit_router
 from autocontext.server.knowledge_api import router as knowledge_router
-from autocontext.server.notebook_api import notebook_router
 from autocontext.server.openclaw_api import router as openclaw_router
 from autocontext.server.protocol import (
     AckMsg,
@@ -109,7 +108,6 @@ def create_app(
     application = FastAPI(title="AutoContext Dashboard API", version="0.1.0")
     application.include_router(cockpit_router)
     application.include_router(knowledge_router)
-    application.include_router(notebook_router)
     application.include_router(openclaw_router)
     app_settings = load_settings()
     application.state.app_settings = app_settings

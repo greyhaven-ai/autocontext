@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
-from autocontext.config.settings import load_settings
 from autocontext.server.changelog import build_changelog
 from autocontext.server.writeup import generate_writeup
 from autocontext.storage.artifacts import ArtifactStore
@@ -13,18 +11,18 @@ from autocontext.storage.sqlite_store import SQLiteStore
 
 cockpit_router = APIRouter(prefix="/api/cockpit", tags=["cockpit"])
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 
-
-def _get_store() -> SQLiteStore:
-    settings = load_settings()
-    store = SQLiteStore(settings.db_path)
-    store.migrate(MIGRATIONS_DIR)
+def _get_store(request: Request) -> SQLiteStore:
+    store = getattr(request.app.state, "store", None)
+    if not isinstance(store, SQLiteStore):
+        raise HTTPException(status_code=500, detail="Application store is not configured")
     return store
 
 
-def _get_artifacts() -> ArtifactStore:
-    settings = load_settings()
+def _get_artifacts(request: Request) -> ArtifactStore:
+    settings = getattr(request.app.state, "app_settings", None)
+    if settings is None:
+        raise HTTPException(status_code=500, detail="Application settings are not configured")
     return ArtifactStore(
         runs_root=settings.runs_root,
         knowledge_root=settings.knowledge_root,
@@ -34,9 +32,9 @@ def _get_artifacts() -> ArtifactStore:
 
 
 @cockpit_router.get("/runs")
-def list_runs() -> list[dict[str, Any]]:
+def list_runs(request: Request) -> list[dict[str, Any]]:
     """List recent runs with summary info."""
-    store = _get_store()
+    store = _get_store(request)
     with store.connect() as conn:
         runs = conn.execute(
             "SELECT run_id, scenario, target_generations, status, created_at, updated_at "
@@ -77,9 +75,9 @@ def list_runs() -> list[dict[str, Any]]:
 
 
 @cockpit_router.get("/runs/{run_id}/status")
-def run_status(run_id: str) -> dict[str, Any]:
+def run_status(run_id: str, request: Request) -> dict[str, Any]:
     """Detailed run status with generation-level breakdown."""
-    store = _get_store()
+    store = _get_store(request)
 
     with store.connect() as conn:
         run_row = conn.execute(
@@ -127,17 +125,17 @@ def run_status(run_id: str) -> dict[str, Any]:
 
 
 @cockpit_router.get("/runs/{run_id}/changelog")
-def changelog(run_id: str) -> dict[str, Any]:
+def changelog(run_id: str, request: Request) -> dict[str, Any]:
     """What changed between consecutive generations."""
-    store = _get_store()
-    artifacts = _get_artifacts()
+    store = _get_store(request)
+    artifacts = _get_artifacts(request)
     return build_changelog(run_id, store, artifacts)
 
 
 @cockpit_router.get("/runs/{run_id}/compare/{gen_a}/{gen_b}")
-def compare_generations(run_id: str, gen_a: int, gen_b: int) -> dict[str, Any]:
+def compare_generations(run_id: str, gen_a: int, gen_b: int, request: Request) -> dict[str, Any]:
     """Compare two generations side-by-side."""
-    store = _get_store()
+    store = _get_store(request)
 
     with store.connect() as conn:
         row_a = conn.execute(
@@ -180,9 +178,9 @@ def compare_generations(run_id: str, gen_a: int, gen_b: int) -> dict[str, Any]:
 
 
 @cockpit_router.get("/runs/{run_id}/resume")
-def resume_info(run_id: str) -> dict[str, Any]:
+def resume_info(run_id: str, request: Request) -> dict[str, Any]:
     """Resume affordances for a run."""
-    store = _get_store()
+    store = _get_store(request)
 
     with store.connect() as conn:
         run_row = conn.execute(
@@ -229,10 +227,10 @@ def resume_info(run_id: str) -> dict[str, Any]:
 
 
 @cockpit_router.get("/writeup/{run_id}")
-def writeup(run_id: str) -> dict[str, Any]:
+def writeup(run_id: str, request: Request) -> dict[str, Any]:
     """Lightweight writeup assembled from existing artifacts."""
-    store = _get_store()
-    artifacts = _get_artifacts()
+    store = _get_store(request)
+    artifacts = _get_artifacts(request)
 
     with store.connect() as conn:
         run_row = conn.execute(
