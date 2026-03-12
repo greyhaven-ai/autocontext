@@ -87,6 +87,16 @@ class AppSettings(BaseModel):
     code_strategies_enabled: bool = Field(
         default=False, description="Competitor emits Python code instead of JSON params",
     )
+    # Policy refinement (AC-156)
+    policy_refinement_enabled: bool = Field(
+        default=False, description="Refine code strategies via iterative zero-LLM evaluation",
+    )
+    policy_refinement_max_iterations: int = Field(default=50, ge=1)
+    policy_refinement_matches_per_iteration: int = Field(default=5, ge=1)
+    policy_refinement_convergence_window: int = Field(default=5, ge=2)
+    policy_refinement_convergence_epsilon: float = Field(default=0.01, ge=0.0)
+    policy_refinement_model: str = Field(default="")
+    policy_refinement_timeout_per_match: float = Field(default=5.0, ge=0.1)
     # Meta-optimization
     audit_enabled: bool = Field(default=True)
     audit_log_path: Path = Field(default=Path("runs/audit.ndjson"))

@@ -17,6 +17,7 @@ from autocontext.loop.stages import (
     stage_curator_gate,
     stage_knowledge_setup,
     stage_persistence,
+    stage_policy_refinement,
     stage_stagnation_check,
     stage_tournament,
 )
@@ -185,6 +186,13 @@ class GenerationPipeline:
                 agents=self._orchestrator,
                 events=self._events,
                 supervisor=self._supervisor,
+            )
+
+            # Stage 2.6: Policy refinement (optional — refine code strategies via zero-LLM evaluation)
+            ctx = stage_policy_refinement(
+                ctx,
+                client=self._orchestrator.client,
+                events=self._events,
             )
 
             # Stage 3: Tournament + gate
