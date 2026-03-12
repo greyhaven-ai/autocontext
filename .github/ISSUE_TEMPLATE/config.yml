@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage and support
+    url: https://github.com/greyhaven-ai/autocontext/blob/main/SUPPORT.md
+    about: Read the support guidance before opening an issue.
+  - name: Security policy
+    url: https://github.com/greyhaven-ai/autocontext/blob/main/SECURITY.md
+    about: Use the private security reporting process for vulnerabilities.

@@ -20,7 +20,7 @@ export function Header({ connected, runId, scenario, paused, currentExecutor, ag
     >
       <Box gap={2}>
         <Text bold color="cyan">
-          MTS Live
+          AutoContext Live
         </Text>
         <Text dimColor>{runId ?? "no run"}</Text>
         <Text dimColor>{scenario ?? ""}</Text>
