@@ -245,9 +245,9 @@ class AppSettings(BaseModel):
     validity_max_retries: int = Field(
         default=3, ge=0, description="Max validity retries before falling through to tournament",
     )
-    # Role routing (AC-204) — "auto" or "off"
+    # Role routing (AC-204) -- "auto" or "off"
     role_routing: str = Field(default="off", description="Role routing mode: 'auto' or 'off'")
-    # Per-role provider overrides (AC-184) — empty = use AUTOCONTEXT_AGENT_PROVIDER
+    # Per-role provider overrides (AC-184) -- empty = use AUTOCONTEXT_AGENT_PROVIDER
     competitor_provider: str = Field(default="", description="Provider override for competitor role")
     analyst_provider: str = Field(default="", description="Provider override for analyst role")
     coach_provider: str = Field(default="", description="Provider override for coach role")
@@ -283,6 +283,10 @@ class AppSettings(BaseModel):
     consultation_cost_budget: float = Field(default=0.0, ge=0.0, description="Max USD per run (0=unlimited)")
     # Session notebook (AC-211)
     notebook_enabled: bool = Field(default=True, description="Enable session notebook feature")
+    # Monitor conditions (AC-209)
+    monitor_enabled: bool = Field(default=True, description="Enable monitor condition engine")
+    monitor_heartbeat_timeout: float = Field(default=300.0, ge=1.0, description="Default heartbeat timeout (seconds)")
+    monitor_max_conditions: int = Field(default=100, ge=1, description="Max active conditions")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
@@ -298,7 +302,7 @@ def load_settings() -> AppSettings:
     """Load settings from env vars and preset overrides.
 
     Priority: env var ``AUTOCONTEXT_<FIELD_NAME_UPPER>`` > preset > field default.
-    Pydantic handles type coercion (str→int, str→bool, str→Path, etc.).
+    Pydantic handles type coercion (str->int, str->bool, str->Path, etc.).
     """
     preset_name = os.getenv("AUTOCONTEXT_PRESET", "")
     preset = apply_preset(preset_name)

@@ -116,7 +116,17 @@ export const ScenarioErrorMsgSchema = z.object({
   stage: z.string(),
 });
 
-export const ServerMessageSchema = z.discriminatedUnion("type", [HelloMsgSchema, EventMsgSchema, StateMsgSchema, ChatResponseMsgSchema, EnvironmentsMsgSchema, RunAcceptedMsgSchema, AckMsgSchema, ErrorMsgSchema, ScenarioGeneratingMsgSchema, ScenarioPreviewMsgSchema, ScenarioReadyMsgSchema, ScenarioErrorMsgSchema]);
+export const MonitorAlertMsgSchema = z.object({
+  type: z.literal("monitor_alert"),
+  alert_id: z.string(),
+  condition_id: z.string(),
+  condition_name: z.string(),
+  condition_type: z.string(),
+  scope: z.string(),
+  detail: z.string(),
+});
+
+export const ServerMessageSchema = z.discriminatedUnion("type", [HelloMsgSchema, EventMsgSchema, StateMsgSchema, ChatResponseMsgSchema, EnvironmentsMsgSchema, RunAcceptedMsgSchema, AckMsgSchema, ErrorMsgSchema, ScenarioGeneratingMsgSchema, ScenarioPreviewMsgSchema, ScenarioReadyMsgSchema, ScenarioErrorMsgSchema, MonitorAlertMsgSchema]);
 
 // --- Client -> Server messages ---
 

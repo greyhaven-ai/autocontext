@@ -16,6 +16,7 @@ from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.server.cockpit_api import cockpit_router
 from autocontext.server.knowledge_api import router as knowledge_router
+from autocontext.server.monitor_api import monitor_router
 from autocontext.server.notebook_api import notebook_router
 from autocontext.server.openclaw_api import router as openclaw_router
 from autocontext.server.protocol import (
@@ -111,6 +112,7 @@ def create_app(
     application.include_router(knowledge_router)
     application.include_router(notebook_router)
     application.include_router(openclaw_router)
+    application.include_router(monitor_router)
     app_settings = load_settings()
     application.state.app_settings = app_settings
     store = SQLiteStore(app_settings.db_path)
@@ -120,6 +122,20 @@ def create_app(
     application.state.store = store
     application.state.migrations_dir = migrations_dir
     scenario_creator = _build_scenario_creator(app_settings)
+
+    # Monitor engine (AC-209)
+    monitor_engine = None
+    if app_settings.monitor_enabled:
+        try:
+            from autocontext.monitor.engine import MonitorEngine, set_engine
+
+            monitor_engine = MonitorEngine(sqlite=store, emitter=events)
+            monitor_engine.start()
+            set_engine(monitor_engine)
+            LOGGER.info("Monitor engine started")
+        except Exception:
+            LOGGER.warning("failed to initialize MonitorEngine", exc_info=True)
+    application.state.monitor_engine = monitor_engine
 
     def _read_replay_file(run_id: str, generation: int) -> Path:
         replay_dir = app_settings.runs_root / run_id / "generations" / f"gen_{generation}" / "replays"
@@ -182,7 +198,7 @@ def create_app(
     async def ws_interactive(websocket: WebSocket) -> None:
         await websocket.accept()
 
-        # Protocol version handshake — always first message
+        # Protocol version handshake -- always first message
         await websocket.send_json(HelloMsg().model_dump())
 
         if controller is None or events is None:
@@ -373,6 +389,12 @@ def create_app(
                 push_task.cancel()
         finally:
             events.unsubscribe(_on_event)
+
+    @application.on_event("shutdown")
+    def _shutdown_monitor() -> None:
+        if monitor_engine is not None:
+            monitor_engine.stop()
+            LOGGER.info("Monitor engine stopped")
 
     dashboard = _dashboard_dir()
     if dashboard.exists():

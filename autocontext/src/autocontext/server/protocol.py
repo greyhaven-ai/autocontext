@@ -1,4 +1,4 @@
-"""WebSocket protocol models for the AutoContext TUI ↔ Server boundary.
+"""WebSocket protocol models for the AutoContext TUI <-> Server boundary.
 
 This module is the single source of truth for the protocol. All message types
 that flow over ``/ws/interactive`` are defined here as Pydantic models.
@@ -168,6 +168,20 @@ class ScenarioErrorMsg(BaseModel):
     stage: str
 
 
+class MonitorAlertMsg(BaseModel):
+    """Pushed to WebSocket clients when a monitor condition fires (AC-209)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["monitor_alert"] = "monitor_alert"
+    alert_id: str
+    condition_id: str
+    condition_name: str
+    condition_type: str
+    scope: str
+    detail: str
+
+
 ServerMessage = Annotated[
     HelloMsg
     | EventMsg
@@ -180,7 +194,8 @@ ServerMessage = Annotated[
     | ScenarioGeneratingMsg
     | ScenarioPreviewMsg
     | ScenarioReadyMsg
-    | ScenarioErrorMsg,
+    | ScenarioErrorMsg
+    | MonitorAlertMsg,
     Field(discriminator="type"),
 ]
 

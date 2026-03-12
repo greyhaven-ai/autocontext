@@ -1,4 +1,4 @@
-"""AutoContext MCP server — exposes scenario, knowledge, and run tools via stdio."""
+"""AutoContext MCP server -- exposes scenario, knowledge, and run tools via stdio."""
 
 from __future__ import annotations
 
@@ -574,6 +574,54 @@ def autocontext_skill_discover_artifacts(
     return json.dumps(tools.skill_discover_artifacts(
         _get_ctx(), scenario=scenario, artifact_type=artifact_type,
     ))
+
+
+# -- Monitor conditions (AC-209) --
+
+
+@mcp.tool()
+def autocontext_create_monitor_tool(
+    name: str,
+    condition_type: str,
+    params_json: str = "{}",
+    scope: str = "global",
+) -> str:
+    """Create a new monitor condition to watch for events."""
+    return json.dumps(tools.autocontext_create_monitor(name, condition_type, params_json, scope))
+
+
+@mcp.tool()
+def autocontext_list_monitors_tool(
+    scope: str | None = None,
+    active_only: bool = True,
+) -> str:
+    """List active monitor conditions."""
+    return json.dumps(tools.autocontext_list_monitors(scope, active_only))
+
+
+@mcp.tool()
+def autocontext_delete_monitor_tool(condition_id: str) -> str:
+    """Deactivate a monitor condition."""
+    return json.dumps(tools.autocontext_delete_monitor(condition_id))
+
+
+@mcp.tool()
+def autocontext_list_monitor_alerts_tool(
+    condition_id: str | None = None,
+    scope: str | None = None,
+    limit: int = 100,
+) -> str:
+    """List monitor alerts with optional filters."""
+    return json.dumps(tools.autocontext_list_monitor_alerts(condition_id, scope, limit))
+
+
+@mcp.tool()
+def autocontext_wait_for_monitor_tool(
+    condition_id: str,
+    timeout_seconds: float = 30.0,
+) -> str:
+    """Wait for a monitor condition to fire. Blocks until alert or timeout."""
+    return json.dumps(tools.autocontext_wait_for_monitor(condition_id, timeout_seconds))
 
 
 def run_server() -> None:

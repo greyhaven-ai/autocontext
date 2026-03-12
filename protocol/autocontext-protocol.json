@@ -233,6 +233,52 @@
         "title": "HelloMsg",
         "type": "object"
       },
+      "MonitorAlertMsg": {
+        "additionalProperties": false,
+        "description": "Pushed to WebSocket clients when a monitor condition fires (AC-209).",
+        "properties": {
+          "type": {
+            "const": "monitor_alert",
+            "default": "monitor_alert",
+            "title": "Type",
+            "type": "string"
+          },
+          "alert_id": {
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "condition_id": {
+            "title": "Condition Id",
+            "type": "string"
+          },
+          "condition_name": {
+            "title": "Condition Name",
+            "type": "string"
+          },
+          "condition_type": {
+            "title": "Condition Type",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alert_id",
+          "condition_id",
+          "condition_name",
+          "condition_type",
+          "scope",
+          "detail"
+        ],
+        "title": "MonitorAlertMsg",
+        "type": "object"
+      },
       "RunAcceptedMsg": {
         "additionalProperties": false,
         "properties": {
@@ -496,6 +542,7 @@
         "error": "#/$defs/ErrorMsg",
         "event": "#/$defs/EventMsg",
         "hello": "#/$defs/HelloMsg",
+        "monitor_alert": "#/$defs/MonitorAlertMsg",
         "run_accepted": "#/$defs/RunAcceptedMsg",
         "scenario_error": "#/$defs/ScenarioErrorMsg",
         "scenario_generating": "#/$defs/ScenarioGeneratingMsg",
@@ -541,6 +588,9 @@
       },
       {
         "$ref": "#/$defs/ScenarioErrorMsg"
+      },
+      {
+        "$ref": "#/$defs/MonitorAlertMsg"
       }
     ]
   },
