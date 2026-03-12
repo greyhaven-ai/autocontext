@@ -157,6 +157,18 @@ class TestEvaluators:
         alert = evaluate_metric_threshold("generation_completed", {"mean_score": 0.95}, cond)
         assert alert is None
 
+    def test_metric_threshold_respects_run_scope(self) -> None:
+        from autocontext.monitor.evaluators import evaluate_metric_threshold
+        from autocontext.monitor.types import ConditionType, MonitorCondition
+
+        cond = MonitorCondition(
+            id="c1", name="run-high", condition_type=ConditionType.METRIC_THRESHOLD,
+            params={"metric": "best_score", "threshold": 0.8, "direction": "above"},
+            scope="run:target-run",
+        )
+        alert = evaluate_metric_threshold("generation_completed", {"best_score": 0.95, "run_id": "other-run"}, cond)
+        assert alert is None
+
     def test_stall_window_fires(self) -> None:
         from autocontext.monitor.evaluators import evaluate_stall_window
         from autocontext.monitor.types import ConditionType, MonitorCondition
@@ -397,6 +409,52 @@ class TestMonitorEngine:
         finally:
             engine.stop()
 
+    def test_engine_wait_for_existing_alert_returns_immediately(self, sqlite_store: SQLiteStore, emitter: Any) -> None:
+        from autocontext.monitor.engine import MonitorEngine
+        from autocontext.monitor.types import ConditionType, MonitorCondition
+
+        cond = MonitorCondition(
+            id="c1", name="high score", condition_type=ConditionType.METRIC_THRESHOLD,
+            params={"metric": "best_score", "threshold": 0.8, "direction": "above"},
+            scope="global",
+        )
+        sqlite_store.insert_monitor_condition(cond)
+        engine = MonitorEngine(sqlite=sqlite_store, emitter=emitter)
+        engine.start()
+        try:
+            engine._on_event("generation_completed", {"best_score": 0.95})
+            result = engine.wait_for_alert("c1", timeout=0.01)
+            assert result is True
+        finally:
+            engine.stop()
+
+    def test_heartbeat_alert_fires_once_per_silence_window(self, sqlite_store: SQLiteStore, emitter: Any) -> None:
+        from autocontext.monitor.engine import MonitorEngine
+        from autocontext.monitor.types import ConditionType, MonitorCondition
+
+        cond = MonitorCondition(
+            id="hb1", name="heartbeat", condition_type=ConditionType.HEARTBEAT_LOST,
+            params={"timeout_seconds": 0.01},
+            scope="global",
+        )
+        sqlite_store.insert_monitor_condition(cond)
+        engine = MonitorEngine(sqlite=sqlite_store, emitter=emitter)
+        engine.start()
+        try:
+            engine._last_event_time = time.monotonic() - 1.0
+            engine._check_heartbeat()
+            engine._check_heartbeat()
+            alerts = sqlite_store.list_monitor_alerts(condition_id="hb1")
+            assert len(alerts) == 1
+
+            engine._on_event("generation_completed", {"run_id": "r1"})
+            engine._last_event_time = time.monotonic() - 1.0
+            engine._check_heartbeat()
+            alerts = sqlite_store.list_monitor_alerts(condition_id="hb1")
+            assert len(alerts) == 2
+        finally:
+            engine.stop()
+
     def test_engine_deactivated_condition_not_evaluated(self, sqlite_store: SQLiteStore, emitter: Any) -> None:
         from autocontext.monitor.engine import MonitorEngine
         from autocontext.monitor.types import ConditionType, MonitorCondition
@@ -615,6 +673,7 @@ def monitor_app(tmp_path: Path) -> TestClient:
 
     app = FastAPI()
     app.state.store = store
+    app.state.app_settings = AppSettings()
     app.state.monitor_engine = None  # will set per-test if needed
     app.include_router(monitor_router)
     return TestClient(app)
@@ -680,6 +739,7 @@ class TestMonitorRestAPI:
 
         app = FastAPI()
         app.state.store = store
+        app.state.app_settings = AppSettings()
         app.state.monitor_engine = engine
         app.include_router(monitor_router)
         client = TestClient(app)
@@ -710,6 +770,7 @@ class TestMonitorRestAPI:
 
         app = FastAPI()
         app.state.store = store
+        app.state.app_settings = AppSettings()
         app.state.monitor_engine = engine
         app.include_router(monitor_router)
         client = TestClient(app)
@@ -736,6 +797,89 @@ class TestMonitorRestAPI:
             assert data["fired"] is True
         finally:
             engine.stop()
+
+    def test_wait_returns_existing_alert_immediately(self, tmp_path: Path) -> None:
+        from autocontext.monitor.engine import MonitorEngine
+        from autocontext.monitor.types import ConditionType, MonitorCondition
+        from autocontext.server.monitor_api import monitor_router
+
+        store = SQLiteStore(tmp_path / "test.db")
+        store.migrate(MIGRATIONS_DIR)
+        engine = MonitorEngine(sqlite=store)
+        engine.start()
+
+        app = FastAPI()
+        app.state.store = store
+        app.state.app_settings = AppSettings()
+        app.state.monitor_engine = engine
+        app.include_router(monitor_router)
+        client = TestClient(app)
+
+        try:
+            cond = MonitorCondition(
+                id="cwait", name="wait-fire", condition_type=ConditionType.METRIC_THRESHOLD,
+                params={"metric": "best_score", "threshold": 0.8, "direction": "above"},
+                scope="global",
+            )
+            store.insert_monitor_condition(cond)
+            engine._on_event("generation_completed", {"best_score": 0.95})
+            resp = client.post("/api/monitors/cwait/wait", params={"timeout": "0.01"})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["fired"] is True
+            assert data["alert"] is not None
+        finally:
+            engine.stop()
+
+    def test_create_monitor_applies_heartbeat_default(self, tmp_path: Path) -> None:
+        from autocontext.server.monitor_api import monitor_router
+
+        store = SQLiteStore(tmp_path / "test.db")
+        store.migrate(MIGRATIONS_DIR)
+
+        app = FastAPI()
+        app.state.store = store
+        app.state.app_settings = AppSettings(monitor_heartbeat_timeout=42.0)
+        app.state.monitor_engine = None
+        app.include_router(monitor_router)
+        client = TestClient(app)
+
+        resp = client.post("/api/monitors", json={
+            "name": "hb",
+            "condition_type": "heartbeat_lost",
+            "params": {},
+            "scope": "global",
+        })
+        assert resp.status_code == 201
+        created = store.get_monitor_condition(resp.json()["id"])
+        assert created is not None
+        assert created["params"]["timeout_seconds"] == 42.0
+
+    def test_create_monitor_enforces_max_conditions(self, tmp_path: Path) -> None:
+        from autocontext.server.monitor_api import monitor_router
+
+        store = SQLiteStore(tmp_path / "test.db")
+        store.migrate(MIGRATIONS_DIR)
+
+        app = FastAPI()
+        app.state.store = store
+        app.state.app_settings = AppSettings(monitor_max_conditions=1)
+        app.state.monitor_engine = None
+        app.include_router(monitor_router)
+        client = TestClient(app)
+
+        first = client.post("/api/monitors", json={
+            "name": "one",
+            "condition_type": "metric_threshold",
+            "params": {"metric": "best_score", "threshold": 0.8, "direction": "above"},
+        })
+        assert first.status_code == 201
+        second = client.post("/api/monitors", json={
+            "name": "two",
+            "condition_type": "metric_threshold",
+            "params": {"metric": "best_score", "threshold": 0.9, "direction": "above"},
+        })
+        assert second.status_code == 409
 
 
 # ===========================================================================

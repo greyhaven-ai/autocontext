@@ -129,7 +129,12 @@ def create_app(
         try:
             from autocontext.monitor.engine import MonitorEngine, set_engine
 
-            monitor_engine = MonitorEngine(sqlite=store, emitter=events)
+            monitor_engine = MonitorEngine(
+                sqlite=store,
+                emitter=events,
+                default_heartbeat_timeout=app_settings.monitor_heartbeat_timeout,
+                max_conditions=app_settings.monitor_max_conditions,
+            )
             monitor_engine.start()
             set_engine(monitor_engine)
             LOGGER.info("Monitor engine started")
@@ -393,7 +398,10 @@ def create_app(
     @application.on_event("shutdown")
     def _shutdown_monitor() -> None:
         if monitor_engine is not None:
+            from autocontext.monitor.engine import clear_engine
+
             monitor_engine.stop()
+            clear_engine()
             LOGGER.info("Monitor engine stopped")
 
     dashboard = _dashboard_dir()

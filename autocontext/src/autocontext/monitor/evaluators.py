@@ -12,6 +12,15 @@ from typing import Any
 from autocontext.monitor.types import MonitorAlert, MonitorCondition, make_id
 
 
+def _scope_matches(payload: dict[str, Any], scope: str) -> bool:
+    """Return whether the payload matches the condition scope."""
+    if scope == "global":
+        return True
+    if scope.startswith("run:"):
+        return str(payload.get("run_id", "")) == scope[4:]
+    return False
+
+
 def evaluate_metric_threshold(
     event: str,
     payload: dict[str, Any],
@@ -24,6 +33,9 @@ def evaluate_metric_threshold(
         threshold: numeric threshold
         direction: "above" or "below"
     """
+    if not _scope_matches(payload, condition.scope):
+        return None
+
     metric_key = condition.params.get("metric", "")
     threshold = float(condition.params.get("threshold", 0))
     direction = condition.params.get("direction", "above")
@@ -60,6 +72,9 @@ def evaluate_stall_window(
     Params:
         window: int, number of consecutive non-advance decisions to trigger
     """
+    if not _scope_matches(payload, condition.scope):
+        return None
+
     window = int(condition.params.get("window", 3))
 
     if len(gate_history) < window:
@@ -97,6 +112,9 @@ def evaluate_artifact_created(
     Params:
         path: filesystem path to check
     """
+    if not _scope_matches(payload, condition.scope):
+        return None
+
     target = condition.params.get("path", "")
     if not target or not Path(target).exists():
         return None
@@ -125,12 +143,8 @@ def evaluate_process_exit(
     if event not in ("run_completed", "process_exit"):
         return None
 
-    # Scope matching: "run:<id>" must match payload run_id, "global" matches all
-    if condition.scope.startswith("run:"):
-        expected_run = condition.scope[4:]
-        actual_run = str(payload.get("run_id", ""))
-        if actual_run != expected_run:
-            return None
+    if not _scope_matches(payload, condition.scope):
+        return None
 
     return MonitorAlert(
         id=make_id(),
@@ -148,13 +162,15 @@ def evaluate_heartbeat_lost(
     condition: MonitorCondition,
     last_event_time: float,
     now: float,
+    *,
+    default_timeout_seconds: float = 300.0,
 ) -> MonitorAlert | None:
     """Fire when no event has been received for longer than timeout_seconds.
 
     Params:
         timeout_seconds: float, seconds of silence before firing
     """
-    timeout = float(condition.params.get("timeout_seconds", 300.0))
+    timeout = float(condition.params.get("timeout_seconds", default_timeout_seconds))
     elapsed = now - last_event_time
 
     if elapsed <= timeout:

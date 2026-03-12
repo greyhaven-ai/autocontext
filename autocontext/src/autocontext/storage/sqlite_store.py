@@ -934,6 +934,24 @@ class SQLiteStore:
                 results.append(d)
             return results
 
+    def count_monitor_conditions(
+        self,
+        *,
+        active_only: bool = True,
+        scope: str | None = None,
+    ) -> int:
+        """Count monitor conditions with optional filters."""
+        query = "SELECT COUNT(*) AS cnt FROM monitor_conditions WHERE 1=1"
+        params: list[Any] = []
+        if active_only:
+            query += " AND active = 1"
+        if scope is not None:
+            query += " AND scope = ?"
+            params.append(scope)
+        with self.connect() as conn:
+            row = conn.execute(query, params).fetchone()
+            return int(row["cnt"]) if row is not None else 0
+
     def get_monitor_condition(self, condition_id: str) -> dict[str, Any] | None:
         """Get a single monitor condition by id. Returns parsed params."""
         import json as _json
@@ -1017,3 +1035,8 @@ class SQLiteStore:
                 d["payload"] = _json.loads(raw_payload) if isinstance(raw_payload, str) else {}
                 results.append(d)
             return results
+
+    def get_latest_monitor_alert(self, condition_id: str) -> dict[str, Any] | None:
+        """Return the newest alert for a condition, if one exists."""
+        alerts = self.list_monitor_alerts(condition_id=condition_id, limit=1)
+        return alerts[0] if alerts else None

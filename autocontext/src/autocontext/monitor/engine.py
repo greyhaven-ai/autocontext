@@ -32,14 +32,20 @@ class MonitorEngine:
         sqlite: SQLiteStore,
         emitter: EventStreamEmitter | None = None,
         notifier: Notifier | None = None,
+        *,
+        default_heartbeat_timeout: float = 300.0,
+        max_conditions: int = 100,
     ) -> None:
         self._sqlite = sqlite
         self._emitter = emitter
         self._notifier = notifier
+        self._default_heartbeat_timeout = default_heartbeat_timeout
+        self._max_conditions = max_conditions
         self._running = False
         self._heartbeat_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._last_event_time = time.monotonic()
+        self._heartbeat_fired_conditions: set[str] = set()
         # Waiters: condition_id -> list of threading.Event
         self._waiters: dict[str, list[threading.Event]] = {}
         self._waiters_lock = threading.Lock()
@@ -49,6 +55,7 @@ class MonitorEngine:
         self._running = True
         self._stop_event.clear()
         self._last_event_time = time.monotonic()
+        self._heartbeat_fired_conditions.clear()
         if self._emitter is not None:
             self._emitter.subscribe(self._on_event)
         # Start heartbeat daemon thread
@@ -69,6 +76,7 @@ class MonitorEngine:
         if self._heartbeat_thread is not None:
             self._heartbeat_thread.join(timeout=3.0)
             self._heartbeat_thread = None
+        self._heartbeat_fired_conditions.clear()
         # Unblock all waiters
         with self._waiters_lock:
             for events in self._waiters.values():
@@ -94,19 +102,36 @@ class MonitorEngine:
             if row["condition_type"] != ConditionType.HEARTBEAT_LOST:
                 continue
             cond = self._row_to_condition(row)
-            alert = evaluate_heartbeat_lost(cond, self._last_event_time, now)
+            if cond.id in self._heartbeat_fired_conditions:
+                continue
+            alert = evaluate_heartbeat_lost(
+                cond,
+                self._last_event_time,
+                now,
+                default_timeout_seconds=self._default_heartbeat_timeout,
+            )
             if alert is not None:
                 self._fire_alert(alert)
 
     def _on_event(self, event: str, payload: dict[str, object]) -> None:
         """Callback from EventStreamEmitter — evaluate all active conditions."""
         self._last_event_time = time.monotonic()
+        self._heartbeat_fired_conditions.clear()
         conditions = self._sqlite.list_monitor_conditions(active_only=True)
         for row in conditions:
             cond = self._row_to_condition(row)
             alert = self._evaluate_condition(event, payload, cond)
             if alert is not None:
                 self._fire_alert(alert)
+
+    def create_condition(self, condition: MonitorCondition) -> str:
+        """Validate and persist a new condition using engine defaults."""
+        active_conditions = self._sqlite.count_monitor_conditions(active_only=True)
+        if active_conditions >= self._max_conditions:
+            raise ValueError(f"maximum active monitor conditions reached ({self._max_conditions})")
+        if condition.condition_type == ConditionType.HEARTBEAT_LOST and "timeout_seconds" not in condition.params:
+            condition.params = {**condition.params, "timeout_seconds": self._default_heartbeat_timeout}
+        return self._sqlite.insert_monitor_condition(condition)
 
     def _evaluate_condition(
         self,
@@ -136,6 +161,8 @@ class MonitorEngine:
             self._sqlite.insert_monitor_alert(alert)
         except Exception:
             LOGGER.warning("failed to persist monitor alert %s", alert.id, exc_info=True)
+        if alert.condition_type == ConditionType.HEARTBEAT_LOST:
+            self._heartbeat_fired_conditions.add(alert.condition_id)
 
         # Emit event through the emitter
         if self._emitter is not None:
@@ -180,6 +207,8 @@ class MonitorEngine:
 
         Returns True if an alert fired, False if timed out.
         """
+        if self._sqlite.get_latest_monitor_alert(condition_id) is not None:
+            return True
         ev = threading.Event()
         with self._waiters_lock:
             self._waiters.setdefault(condition_id, []).append(ev)
@@ -223,3 +252,9 @@ def set_engine(engine: MonitorEngine) -> None:
     """Set the global MonitorEngine instance."""
     global _engine
     _engine = engine
+
+
+def clear_engine() -> None:
+    """Clear the global MonitorEngine instance."""
+    global _engine
+    _engine = None

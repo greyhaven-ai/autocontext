@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from autocontext.monitor.types import ConditionType, MonitorCondition, make_id
 
@@ -16,7 +16,7 @@ monitor_router = APIRouter(prefix="/api/monitors", tags=["monitors"])
 class CreateMonitorBody(BaseModel):
     name: str
     condition_type: str
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = Field(default_factory=dict)
     scope: str = "global"
 
 
@@ -24,6 +24,8 @@ class CreateMonitorBody(BaseModel):
 def create_monitor(body: CreateMonitorBody, request: Request, response: Response) -> dict[str, Any]:
     """Create a new monitor condition."""
     store = request.app.state.store
+    app_settings = getattr(request.app.state, "app_settings", None)
+    engine = getattr(request.app.state, "monitor_engine", None)
     condition_id = make_id()
     cond = MonitorCondition(
         id=condition_id,
@@ -32,7 +34,19 @@ def create_monitor(body: CreateMonitorBody, request: Request, response: Response
         params=body.params,
         scope=body.scope,
     )
-    store.insert_monitor_condition(cond)
+    try:
+        if engine is not None:
+            engine.create_condition(cond)
+        else:
+            max_conditions = app_settings.monitor_max_conditions if app_settings is not None else 100
+            if store.count_monitor_conditions(active_only=True) >= max_conditions:
+                raise HTTPException(status_code=409, detail=f"maximum active monitor conditions reached ({max_conditions})")
+            if cond.condition_type == ConditionType.HEARTBEAT_LOST and "timeout_seconds" not in cond.params:
+                default_timeout = app_settings.monitor_heartbeat_timeout if app_settings is not None else 300.0
+                cond.params = {**cond.params, "timeout_seconds": default_timeout}
+            store.insert_monitor_condition(cond)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     response.headers["Location"] = f"/api/monitors/{condition_id}"
     row = store.get_monitor_condition(condition_id)
     return row if row else {"id": condition_id, "name": body.name}

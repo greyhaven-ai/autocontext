@@ -1226,7 +1226,7 @@ def autocontext_create_monitor(
         params=params,
         scope=scope,
     )
-    engine._sqlite.insert_monitor_condition(cond)
+    engine.create_condition(cond)
     return {"id": cid, "name": name, "condition_type": condition_type, "scope": scope}
 
 
