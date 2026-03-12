@@ -1,5 +1,5 @@
 /**
- * @greyhaven/mts — Always-on agent evaluation harness.
+ * @greyhaven/autoctx — AutoContext TypeScript toolkit.
  */
 
 // Core types
