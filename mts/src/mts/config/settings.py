@@ -230,6 +230,8 @@ class AppSettings(BaseModel):
     validity_max_retries: int = Field(
         default=3, ge=0, description="Max validity retries before falling through to tournament",
     )
+    # Role routing (AC-204) — "auto" or "off"
+    role_routing: str = Field(default="off", description="Role routing mode: 'auto' or 'off'")
     # Per-role provider overrides (AC-184) — empty = use MTS_AGENT_PROVIDER
     competitor_provider: str = Field(default="", description="Provider override for competitor role")
     analyst_provider: str = Field(default="", description="Provider override for analyst role")
