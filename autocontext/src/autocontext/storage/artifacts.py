@@ -743,3 +743,16 @@ class ArtifactStore:
         path = self.knowledge_root / scenario_name / "tuning.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+
+    def read_notebook(self, scenario_name: str) -> dict[str, object] | None:
+        """Read notebook JSON from knowledge/<scenario>/notebook.json."""
+        path = self.knowledge_root / scenario_name / "notebook.json"
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+    def write_notebook(self, scenario_name: str, notebook: dict[str, object]) -> None:
+        """Write notebook JSON to knowledge/<scenario>/notebook.json."""
+        path = self.knowledge_root / scenario_name / "notebook.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(notebook, indent=2), encoding="utf-8")

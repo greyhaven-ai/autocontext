@@ -281,6 +281,8 @@ class AppSettings(BaseModel):
     consultation_base_url: str = Field(default="", description="Base URL for consultation provider")
     consultation_stagnation_threshold: int = Field(default=3, ge=2, description="Consecutive rollback/retry to trigger")
     consultation_cost_budget: float = Field(default=0.0, ge=0.0, description="Max USD per run (0=unlimited)")
+    # Session notebook (AC-211)
+    notebook_enabled: bool = Field(default=True, description="Enable session notebook feature")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
