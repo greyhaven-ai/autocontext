@@ -1,11 +1,15 @@
 """Tests for PipelineEngine-backed orchestrator codepath."""
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 from mts.agents.llm_client import DeterministicDevClient
 from mts.agents.orchestrator import AgentOrchestrator
 from mts.agents.pipeline_adapter import build_mts_dag, build_role_handler
 from mts.config.settings import AppSettings
-from mts.harness.core.types import RoleExecution
+from mts.harness.core.llm_client import LanguageModelClient
+from mts.harness.core.types import RoleExecution, RoleUsage
 from mts.prompts.templates import PromptBundle
 
 
@@ -66,6 +70,42 @@ class TestBuildRoleHandler:
         result = handler("competitor", _make_prompt_bundle().competitor, {})
         assert isinstance(result, RoleExecution)
         assert result.role == "competitor"
+
+    def test_handler_uses_local_runtime_when_role_routing_is_auto(self, tmp_path: Path) -> None:
+        client = DeterministicDevClient()
+        local_model = tmp_path / "mlx-bundle"
+        local_model.mkdir()
+        settings = AppSettings(
+            agent_provider="deterministic",
+            role_routing="auto",
+            mlx_model_path=str(local_model),
+        )
+        orch = AgentOrchestrator(client=client, settings=settings)
+        handler = build_role_handler(orch, generation=1, scenario_name="grid_ctf")
+
+        seen: dict[str, object] = {}
+
+        def fake_run(prompt: str, tool_context: str = "") -> tuple[str, RoleExecution]:
+            seen["client"] = orch.competitor.runtime.client
+            seen["model"] = orch.competitor.model
+            return "", RoleExecution(
+                role="competitor",
+                content="{}",
+                usage=RoleUsage(input_tokens=0, output_tokens=0, latency_ms=0, model="local"),
+                subagent_id="test",
+                status="completed",
+            )
+
+        orch.competitor.run = fake_run  # type: ignore[method-assign]
+
+        mock_local_client = MagicMock(spec=LanguageModelClient)
+        with patch("mts.agents.provider_bridge.create_role_client", return_value=mock_local_client) as mock_create:
+            result = handler("competitor", _make_prompt_bundle().competitor, {})
+
+        assert result.role == "competitor"
+        assert seen["client"] is mock_local_client
+        assert seen["model"] == str(local_model)
+        mock_create.assert_called_once_with("mlx", settings, model_override=str(local_model))
 
 
 class TestPipelineOrchestratorIntegration:

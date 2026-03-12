@@ -4,7 +4,9 @@ import json as _json
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mts.agents.analyst import AnalystRunner
@@ -15,16 +17,18 @@ from mts.agents.curator import KnowledgeCurator
 from mts.agents.llm_client import LanguageModelClient, build_client_from_settings
 from mts.agents.model_router import ModelRouter, TierConfig
 from mts.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from mts.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from mts.agents.subagent_runtime import SubagentRuntime
 from mts.agents.translator import StrategyTranslator
 from mts.agents.types import AgentOutputs, RoleExecution
 from mts.config.settings import AppSettings
+from mts.execution.harness_coverage import HarnessCoverage
 from mts.harness.orchestration.dag import RoleDAG
 from mts.harness.orchestration.types import RoleSpec
 from mts.prompts.templates import PromptBundle
 
 if TYPE_CHECKING:
-    from mts.execution.harness_coverage import HarnessCoverage
+    from mts.agents.role_router import ProviderConfig
 
 LOGGER = logging.getLogger(__name__)
 
@@ -191,6 +195,7 @@ class AgentOrchestrator:
         self.settings = settings
         self._artifacts = artifacts
         self._harness_coverage_cache: dict[str, HarnessCoverage | None] = {}
+        self._routed_clients: dict[tuple[str, str | None], LanguageModelClient] = {}
         runtime = SubagentRuntime(client=client)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor)
         self.translator = StrategyTranslator(runtime, settings.model_translator)
@@ -201,6 +206,7 @@ class AgentOrchestrator:
         if settings.curator_enabled:
             self.curator = KnowledgeCurator(runtime, settings.model_curator)
         self._role_clients: dict[str, LanguageModelClient] = {}
+        self._role_router = RoleRouter(settings)
 
         self._model_router = ModelRouter(TierConfig(
             enabled=settings.tier_routing_enabled,
@@ -238,6 +244,142 @@ class AgentOrchestrator:
 
     def _client_for_role(self, role: str) -> LanguageModelClient:
         return self._role_clients.get(role, self.client)
+
+    def _configured_role_provider(self, role: str) -> str:
+        providers = {
+            "competitor": self.settings.competitor_provider,
+            "analyst": self.settings.analyst_provider,
+            "coach": self.settings.coach_provider,
+            "architect": self.settings.architect_provider,
+        }
+        return providers.get(role, "").strip().lower()
+
+    def _available_local_models(self) -> list[str]:
+        model_path = self.settings.mlx_model_path.strip()
+        if not model_path:
+            return []
+        return [model_path] if Path(model_path).exists() else []
+
+    def _resolve_role_provider_config(
+        self,
+        role: str,
+        *,
+        generation: int,
+        retry_count: int = 0,
+        is_plateau: bool = False,
+        scenario_name: str = "",
+    ) -> ProviderConfig | None:
+        if self.settings.role_routing != "auto":
+            return None
+        context = RoutingContext(
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            available_local_models=self._available_local_models(),
+            scenario_name=scenario_name,
+        )
+        return self._role_router.route(role, context=context)
+
+    def _client_for_provider_config(self, role: str, config: ProviderConfig) -> LanguageModelClient:
+        if (
+            config.provider_type == self.settings.agent_provider
+            and config.provider_class != ProviderClass.LOCAL
+            and not self._configured_role_provider(role)
+        ):
+            return self.client
+
+        explicit_provider = self._configured_role_provider(role)
+        if explicit_provider and explicit_provider == config.provider_type.lower():
+            explicit_client = self._role_clients.get(role)
+            if explicit_client is not None and (
+                config.provider_class != ProviderClass.LOCAL
+                or config.model == self.settings.mlx_model_path
+            ):
+                return explicit_client
+
+        if (
+            config.provider_type == self.settings.agent_provider
+            and config.provider_class == ProviderClass.LOCAL
+            and config.model == self.settings.mlx_model_path
+            and not explicit_provider
+        ):
+            return self.client
+
+        from mts.agents.provider_bridge import create_role_client
+
+        key = (config.provider_type.lower(), config.model)
+        cached = self._routed_clients.get(key)
+        if cached is not None:
+            return cached
+        client = create_role_client(
+            config.provider_type,
+            self.settings,
+            model_override=config.model,
+        )
+        if client is None:
+            return self._client_for_role(role)
+        self._routed_clients[key] = client
+        return client
+
+    def _resolve_role_execution(
+        self,
+        role: str,
+        *,
+        generation: int,
+        retry_count: int = 0,
+        is_plateau: bool = False,
+        scenario_name: str = "",
+    ) -> tuple[LanguageModelClient, str | None]:
+        client = self._client_for_role(role)
+        model = self.resolve_model(
+            role,
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            scenario_name=scenario_name,
+        )
+        provider_config = self._resolve_role_provider_config(
+            role,
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            scenario_name=scenario_name,
+        )
+        if provider_config is None:
+            return client, model
+        client = self._client_for_provider_config(role, provider_config)
+        if provider_config.provider_class == ProviderClass.LOCAL:
+            return client, provider_config.model
+        return client, model or provider_config.model
+
+    @contextmanager
+    def _use_role_runtime(
+        self,
+        role: str,
+        runner: Any,
+        *,
+        generation: int,
+        retry_count: int = 0,
+        is_plateau: bool = False,
+        scenario_name: str = "",
+    ) -> Any:
+        original_client = runner.runtime.client
+        original_model = runner.model
+        client, model = self._resolve_role_execution(
+            role,
+            generation=generation,
+            retry_count=retry_count,
+            is_plateau=is_plateau,
+            scenario_name=scenario_name,
+        )
+        runner.runtime.client = client
+        if model is not None:
+            runner.model = model
+        try:
+            yield model
+        finally:
+            runner.runtime.client = original_client
+            runner.model = original_model
 
     def run_generation(
         self,
@@ -292,19 +434,26 @@ class AgentOrchestrator:
             if self.settings.code_strategies_enabled:
                 from mts.prompts.templates import code_strategy_competitor_suffix
                 competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
-            original_model = self.competitor.model
-            self.competitor.model = competitor_model
-            try:
+            with self._use_role_runtime(
+                "competitor",
+                self.competitor,
+                generation=generation_index,
+                scenario_name=scenario_name,
+            ):
                 raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
-            finally:
-                self.competitor.model = original_model
             _notify("competitor", "completed")
 
         _notify("translator", "started")
-        if self.settings.code_strategies_enabled:
-            strategy, translator_exec = self.translator.translate_code(raw_text)
-        else:
-            strategy, translator_exec = self.translator.translate(raw_text, strategy_interface)
+        with self._use_role_runtime(
+            "translator",
+            self.translator,
+            generation=generation_index,
+            scenario_name=scenario_name,
+        ):
+            if self.settings.code_strategies_enabled:
+                strategy, translator_exec = self.translator.translate_code(raw_text)
+            else:
+                strategy, translator_exec = self.translator.translate(raw_text, strategy_interface)
         _notify("translator", "completed")
         architect_prompt = prompts.architect
         if generation_index % self.settings.architect_every_n_gens != 0:
@@ -322,40 +471,50 @@ class AgentOrchestrator:
             _notify("coach", "started")
             enriched_coach_prompt = self._enrich_coach_prompt(prompts.coach, analyst_exec.content)
             with ThreadPoolExecutor(max_workers=1) as pool:
-                coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
-                coach_exec = coach_future.result()
+                with self._use_role_runtime(
+                    "coach",
+                    self.coach,
+                    generation=generation_index,
+                    scenario_name=scenario_name,
+                ):
+                    coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
+                    coach_exec = coach_future.result()
             _notify("coach", "completed")
         else:
             # Analyst runs first; its output enriches the coach prompt
             _notify("analyst", "started")
-            analyst_model = self.resolve_model("analyst", generation=generation_index) or self.analyst.model
-            original_analyst_model = self.analyst.model
-            self.analyst.model = analyst_model
-            try:
+            with self._use_role_runtime(
+                "analyst",
+                self.analyst,
+                generation=generation_index,
+                scenario_name=scenario_name,
+            ):
                 analyst_exec = self.analyst.run(prompts.analyst)
-            finally:
-                self.analyst.model = original_analyst_model
             _notify("analyst", "completed")
             enriched_coach_prompt = self._enrich_coach_prompt(prompts.coach, analyst_exec.content)
             _notify("coach", "started")
             _notify("architect", "started")
-            coach_model = self.resolve_model("coach", generation=generation_index) or self.coach.model
-            architect_model = self.resolve_model("architect", generation=generation_index) or self.architect.model
-            original_coach_model = self.coach.model
-            original_architect_model = self.architect.model
-            self.coach.model = coach_model
-            self.architect.model = architect_model
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                try:
+            with (
+                self._use_role_runtime(
+                    "coach",
+                    self.coach,
+                    generation=generation_index,
+                    scenario_name=scenario_name,
+                ),
+                self._use_role_runtime(
+                    "architect",
+                    self.architect,
+                    generation=generation_index,
+                    scenario_name=scenario_name,
+                ),
+            ):
+                with ThreadPoolExecutor(max_workers=2) as pool:
                     coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
                     architect_future = pool.submit(self.architect.run, architect_prompt)
                     coach_exec = coach_future.result()
                     _notify("coach", "completed")
                     architect_exec = architect_future.result()
                     _notify("architect", "completed")
-                finally:
-                    self.coach.model = original_coach_model
-                    self.architect.model = original_architect_model
 
         tools = parse_architect_tool_specs(architect_exec.content)
         harness_specs = parse_architect_harness_specs(architect_exec.content)
@@ -516,6 +675,8 @@ class AgentOrchestrator:
         system_tpl: str,
         context: Any,
         worker_cls: type,
+        *,
+        client: LanguageModelClient | None = None,
     ) -> tuple[RoleExecution, list[Any]]:
         """Build and run a single RLM REPL session for the given role.
 
@@ -526,7 +687,7 @@ class AgentOrchestrator:
 
         settings = self.settings
         ns = dict(context.variables)
-        role_client = self._client_for_role(role)
+        role_client = client or self._client_for_role(role)
         ns["llm_batch"] = make_llm_batch(role_client, settings.rlm_sub_model)
         worker = worker_cls(
             namespace=ns,
@@ -571,7 +732,11 @@ class AgentOrchestrator:
         backend = _resolve_rlm_backend(self.settings)
 
         # Reset deterministic client turn counter if applicable
-        competitor_client = self._client_for_role("competitor")
+        competitor_client, resolved_model = self._resolve_role_execution(
+            "competitor",
+            generation=generation_index,
+            scenario_name=scenario_name,
+        )
         if hasattr(competitor_client, "reset_rlm_turns"):
             competitor_client.reset_rlm_turns()
 
@@ -581,17 +746,14 @@ class AgentOrchestrator:
             scenario_rules=scenario_rules,
             current_strategy=current_strategy,
         )
-        resolved_model = model or self.resolve_model(
-            "competitor",
-            generation=generation_index,
-            scenario_name=scenario_name,
-        ) or self.settings.model_competitor
+        resolved_model = model or resolved_model or self.settings.model_competitor
         competitor_exec, exec_history = self._run_single_rlm_session(
             role="competitor",
             model=resolved_model,
             system_tpl=backend.competitor_tpl,
             context=competitor_ctx,
             worker_cls=backend.worker_cls,
+            client=competitor_client,
         )
 
         # Store RLM trial summary for experiment log
@@ -624,7 +786,11 @@ class AgentOrchestrator:
         backend = _resolve_rlm_backend(self.settings)
 
         # Reset deterministic client turn counter if applicable
-        analyst_client = self._client_for_role("analyst")
+        analyst_client, analyst_model = self._resolve_role_execution(
+            "analyst",
+            generation=generation_index,
+            scenario_name=scenario_name,
+        )
         if hasattr(analyst_client, "reset_rlm_turns"):
             analyst_client.reset_rlm_turns()
 
@@ -636,14 +802,19 @@ class AgentOrchestrator:
         )
         analyst_exec, _ = self._run_single_rlm_session(
             role="analyst",
-            model=self.settings.model_analyst,
+            model=analyst_model or self.settings.model_analyst,
             system_tpl=backend.analyst_tpl,
             context=analyst_ctx,
             worker_cls=backend.worker_cls,
+            client=analyst_client,
         )
 
         # Reset turn counter between roles for deterministic client
-        architect_client = self._client_for_role("architect")
+        architect_client, architect_model = self._resolve_role_execution(
+            "architect",
+            generation=generation_index,
+            scenario_name=scenario_name,
+        )
         if hasattr(architect_client, "reset_rlm_turns"):
             architect_client.reset_rlm_turns()
 
@@ -654,10 +825,11 @@ class AgentOrchestrator:
         )
         architect_exec, _ = self._run_single_rlm_session(
             role="architect",
-            model=self.settings.model_architect,
+            model=architect_model or self.settings.model_architect,
             system_tpl=backend.architect_tpl,
             context=architect_ctx,
             worker_cls=backend.worker_cls,
+            client=architect_client,
         )
 
         return analyst_exec, architect_exec

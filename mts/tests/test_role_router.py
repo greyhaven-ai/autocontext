@@ -4,9 +4,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # TestProviderClass
 # ---------------------------------------------------------------------------
@@ -69,7 +66,6 @@ class TestRoutingContext:
         assert ctx.retry_count == 0
         assert ctx.is_plateau is False
         assert ctx.available_local_models == []
-        assert ctx.available_code_policies == []
         assert ctx.scenario_name == ""
 
     def test_with_artifacts(self) -> None:
@@ -77,11 +73,9 @@ class TestRoutingContext:
 
         ctx = RoutingContext(
             available_local_models=["distilled_grid_ctf"],
-            available_code_policies=["grid_ctf_policy"],
             scenario_name="grid_ctf",
         )
         assert len(ctx.available_local_models) == 1
-        assert len(ctx.available_code_policies) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +138,7 @@ def _settings(**overrides: Any) -> MagicMock:
     s.tier_haiku_model = "claude-haiku-4-5-20251001"
     s.tier_sonnet_model = "claude-sonnet-4-5-20250929"
     s.tier_opus_model = "claude-opus-4-6"
+    s.mlx_model_path = overrides.get("mlx_model_path", "/tmp/distilled-model")
     return s
 
 
@@ -278,16 +273,16 @@ class TestRoleRouterLocalArtifacts:
         cfg = router.route("competitor", context=ctx)
         assert cfg.provider_class == ProviderClass.LOCAL
 
-    def test_translator_uses_code_policy_when_available(self) -> None:
+    def test_translator_uses_local_when_available(self) -> None:
         from mts.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 
         router = RoleRouter(_settings())
         ctx = RoutingContext(
-            available_code_policies=["grid_ctf_policy"],
+            available_local_models=["/tmp/distilled-model"],
             scenario_name="grid_ctf",
         )
         cfg = router.route("translator", context=ctx)
-        assert cfg.provider_class == ProviderClass.CODE_POLICY
+        assert cfg.provider_class == ProviderClass.LOCAL
 
     def test_analyst_uses_local_when_available(self) -> None:
         from mts.agents.role_router import ProviderClass, RoleRouter, RoutingContext

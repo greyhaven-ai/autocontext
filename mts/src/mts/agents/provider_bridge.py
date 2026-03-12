@@ -74,15 +74,21 @@ def _provider_api_key(provider_type: str, settings: AppSettings) -> str | None:
     return settings.judge_api_key
 
 
-def _create_provider_bridge(provider_type: str, settings: AppSettings) -> LanguageModelClient:
+def _create_provider_bridge(
+    provider_type: str,
+    settings: AppSettings,
+    *,
+    model_override: str | None = None,
+) -> LanguageModelClient:
     """Create a ProviderBridgeClient for a given provider type."""
     from mts.providers.registry import create_provider
 
     if provider_type == "mlx":
         from mts.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
 
+        model_path = str(model_override or getattr(settings, "mlx_model_path", ""))
         provider: LLMProvider = MLXProvider(
-            model_path=getattr(settings, "mlx_model_path", ""),
+            model_path=model_path,
             temperature=getattr(settings, "mlx_temperature", 0.8),
             max_tokens=getattr(settings, "mlx_max_tokens", 512),
         )
@@ -114,7 +120,12 @@ def _load_openclaw_factory(factory_path: str) -> Callable[..., object]:
     return cast(Callable[..., object], factory)
 
 
-def create_role_client(provider_type: str, settings: AppSettings) -> LanguageModelClient | None:
+def create_role_client(
+    provider_type: str,
+    settings: AppSettings,
+    *,
+    model_override: str | None = None,
+) -> LanguageModelClient | None:
     """Create a LanguageModelClient for a per-role provider override.
 
     Args:
@@ -165,7 +176,7 @@ def create_role_client(provider_type: str, settings: AppSettings) -> LanguageMod
 
     # LLMProvider-based providers — use the bridge
     if provider_type in ("mlx", "openai", "openai-compatible", "ollama", "vllm"):
-        return _create_provider_bridge(provider_type, settings)
+        return _create_provider_bridge(provider_type, settings, model_override=model_override)
 
     raise ValueError(f"unsupported role provider: {provider_type!r}")
 
