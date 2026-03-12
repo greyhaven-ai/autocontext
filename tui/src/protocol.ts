@@ -1,5 +1,5 @@
 // Re-export all protocol types from the auto-generated file.
-// The single source of truth is mts/src/mts/server/protocol.py.
+// The single source of truth is autocontext/src/autocontext/server/protocol.py.
 // Run `python scripts/generate_protocol.py` to regenerate.
 export {
   // Shared models

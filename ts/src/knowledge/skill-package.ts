@@ -1,6 +1,6 @@
 /**
  * SkillPackage — portable knowledge packages for external agents.
- * Port of mts/src/mts/knowledge/export.py
+ * Port of autocontext/src/autocontext/knowledge/export.py
  */
 
 export interface SkillPackageData {
@@ -226,7 +226,7 @@ export function exportAgentTaskSkill(opts: {
 }
 
 /**
- * Clean lesson bullets: strip MTS-internal noise, keeping prescriptive rules.
+ * Clean lesson bullets: strip AutoContext-internal noise, keeping prescriptive rules.
  */
 export function cleanLessons(rawBullets: string[]): string[] {
   const cleaned: string[] = [];

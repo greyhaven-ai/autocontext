@@ -1,6 +1,6 @@
 /**
  * AgentTaskValidator — validates AgentTaskSpec for completeness.
- * Port of mts/src/mts/scenarios/custom/agent_task_validator.py
+ * Port of autocontext/src/autocontext/scenarios/custom/agent_task_validator.py
  *
  * Note: In TS we don't do code generation/execution validation.
  * Instead we use Zod for spec validation and a factory for instantiation.

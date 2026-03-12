@@ -1,6 +1,6 @@
 /**
  * Claude Code CLI runtime — wraps `claude -p` for agent execution.
- * Port of mts/src/mts/runtimes/claude_cli.py
+ * Port of autocontext/src/autocontext/runtimes/claude_cli.py
  */
 
 import { execFile } from "node:child_process";

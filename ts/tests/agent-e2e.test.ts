@@ -1,7 +1,7 @@
 /**
  * Agent Self-Improvement E2E tests.
  *
- * Exercises the full MTS pipeline: task creation → judge evaluation →
+ * Exercises the full AutoContext pipeline: task creation → judge evaluation →
  * improvement loop → task queue → skill export, all with mock providers.
  */
 
@@ -97,7 +97,7 @@ function makeMockProvider(opts?: {
 }
 
 function createTempStore(): { store: SQLiteStore; tmpDir: string } {
-  const tmpDir = mkdtempSync(join(tmpdir(), "mts-e2e-"));
+  const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-e2e-"));
   const store = new SQLiteStore(join(tmpDir, "test.db"));
   store.migrate(MIGRATIONS_DIR);
   return { store, tmpDir };

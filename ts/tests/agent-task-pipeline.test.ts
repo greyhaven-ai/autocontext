@@ -249,7 +249,7 @@ describe("AgentTaskCreator", () => {
     const response = mockLlmResponse(SAMPLE_SPEC);
     const provider = makeMockProvider(response);
 
-    const tmpDir = mkdtempSync(join(tmpdir(), "mts-creator-"));
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-"));
     const creator = new AgentTaskCreator({
       provider,
       knowledgeRoot: tmpDir,
@@ -294,7 +294,7 @@ describe("AgentTaskCreator", () => {
     const fullResponse = `${SPEC_START}\n${JSON.stringify(data, null, 2)}\n${SPEC_END}`;
     const provider = makeMockProvider(fullResponse);
 
-    const tmpDir = mkdtempSync(join(tmpdir(), "mts-creator-ref-"));
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-ref-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
     await creator.create("Write about recursive language models");
 

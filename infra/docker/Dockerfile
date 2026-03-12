@@ -5,8 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY mts /app/mts
+COPY autocontext /app/autocontext
 
-RUN pip install --no-cache-dir -e "/app/mts[dev]"
+RUN pip install --no-cache-dir -e "/app/autocontext[dev]"
 
-ENTRYPOINT ["mts"]
+ENTRYPOINT ["autoctx"]

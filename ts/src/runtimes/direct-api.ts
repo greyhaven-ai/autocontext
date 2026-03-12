@@ -1,6 +1,6 @@
 /**
  * Direct API runtime — uses an LLMProvider for generation/revision.
- * Port of mts/src/mts/runtimes/direct_api.py
+ * Port of autocontext/src/autocontext/runtimes/direct_api.py
  */
 
 import type { LLMProvider } from "../types/index.js";

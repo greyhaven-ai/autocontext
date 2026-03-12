@@ -1,6 +1,6 @@
 /**
  * AgentTaskCreator — orchestrates the full agent task creation pipeline.
- * Port of mts/src/mts/scenarios/custom/agent_task_creator.py
+ * Port of autocontext/src/autocontext/scenarios/custom/agent_task_creator.py
  *
  * Pipeline: NL description → LLM designs spec → validate → factory → save
  */

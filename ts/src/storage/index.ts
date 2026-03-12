@@ -1,5 +1,5 @@
 /**
- * SQLite storage for MTS task queue.
+ * SQLite storage for AutoContext task queue.
  * Uses better-sqlite3 for synchronous access (same as Python's sqlite3).
  */
 

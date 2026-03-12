@@ -1,6 +1,6 @@
 /**
  * Core types for the RLM (REPL-Loop Mode) module.
- * Mirrors Python mts.harness.repl.types with Zod-first validation.
+ * Mirrors Python autocontext.harness.repl.types with Zod-first validation.
  */
 
 import { z } from "zod";

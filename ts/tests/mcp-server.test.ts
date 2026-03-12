@@ -9,7 +9,7 @@ import type { LLMProvider } from "../src/types/index.js";
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
 function createStore(): SQLiteStore {
-  const dir = mkdtempSync(join(tmpdir(), "mts-mcp-"));
+  const dir = mkdtempSync(join(tmpdir(), "autocontext-mcp-"));
   const store = new SQLiteStore(join(dir, "test.db"));
   store.migrate(MIGRATIONS_DIR);
   return store;

@@ -9,7 +9,7 @@ import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
 function createStore(): SQLiteStore {
-  const dir = mkdtempSync(join(tmpdir(), "mts-runner-"));
+  const dir = mkdtempSync(join(tmpdir(), "autocontext-runner-"));
   const store = new SQLiteStore(join(dir, "test.db"));
   store.migrate(MIGRATIONS_DIR);
   return store;
