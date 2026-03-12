@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * MTS CLI — command-line interface for the evaluation harness.
+ * AutoContext CLI — command-line interface for the evaluation harness.
  *
  * Commands:
- *   mts judge     — one-shot evaluation
- *   mts improve   — run improvement loop
- *   mts queue     — add task to background queue
- *   mts status    — check queue status
- *   mts serve     — start MCP server on stdio
+ *   autoctx judge     — one-shot evaluation
+ *   autoctx improve   — run improvement loop
+ *   autoctx queue     — add task to background queue
+ *   autoctx status    — check queue status
+ *   autoctx serve     — start MCP server on stdio
  */
 
 import { parseArgs } from "node:util";
@@ -20,7 +20,7 @@ function getMigrationsDir(): string {
 }
 
 const HELP = `
-mts — always-on agent evaluation harness
+autoctx — always-on agent evaluation harness
 
 Commands:
   judge       One-shot evaluation of output against a rubric
@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   }
 
   // All commands need a database
-  const dbPath = process.env.MTS_DB_PATH ?? resolve("mts.db");
+  const dbPath = process.env.AUTOCONTEXT_DB_PATH ?? resolve("autocontext.db");
 
   switch (command) {
     case "judge":
@@ -83,7 +83,7 @@ async function getProvider() {
     process.exit(1);
   }
 
-  const model = process.env.MTS_MODEL ?? "claude-sonnet-4-20250514";
+  const model = process.env.AUTOCONTEXT_MODEL ?? "claude-sonnet-4-20250514";
 
   // Simple fetch-based Anthropic provider
   const provider = {
@@ -154,7 +154,7 @@ async function cmdJudge(_dbPath: string): Promise<void> {
   });
 
   if (values.help || !values.prompt || !values.output || !values.rubric) {
-    console.log("mts judge -p <task-prompt> -o <agent-output> -r <rubric>");
+    console.log("autoctx judge -p <task-prompt> -o <agent-output> -r <rubric>");
     process.exit(values.help ? 0 : 1);
   }
 
@@ -190,7 +190,7 @@ async function cmdImprove(_dbPath: string): Promise<void> {
   });
 
   if (values.help || !values.prompt || !values.output || !values.rubric) {
-    console.log("mts improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold] [--min-rounds N] [-v]");
+    console.log("autoctx improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold] [--min-rounds N] [-v]");
     process.exit(values.help ? 0 : 1);
   }
 
@@ -251,7 +251,7 @@ async function cmdQueue(dbPath: string): Promise<void> {
   });
 
   if (values.help || !values.spec) {
-    console.log("mts queue -s <spec-name> [-p prompt] [-r rubric] [--priority N] [--min-rounds N]");
+    console.log("autoctx queue -s <spec-name> [-p prompt] [-r rubric] [--priority N] [--min-rounds N]");
     process.exit(values.help ? 0 : 1);
   }
 

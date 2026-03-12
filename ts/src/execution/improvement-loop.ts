@@ -1,6 +1,6 @@
 /**
  * Multi-step improvement loop for agent tasks.
- * Port of mts/src/mts/execution/improvement_loop.py
+ * Port of autocontext/src/autocontext/execution/improvement_loop.py
  */
 
 import type {

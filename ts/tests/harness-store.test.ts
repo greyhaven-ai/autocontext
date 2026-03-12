@@ -13,7 +13,7 @@ describe("HarnessStore", () => {
   let store: HarnessStore;
 
   beforeEach(() => {
-    knowledgeRoot = mkdtempSync(join(tmpdir(), "mts-harness-test-"));
+    knowledgeRoot = mkdtempSync(join(tmpdir(), "autocontext-harness-test-"));
     store = new HarnessStore(knowledgeRoot, "grid_ctf");
   });
 

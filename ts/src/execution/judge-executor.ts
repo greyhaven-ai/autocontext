@@ -1,6 +1,6 @@
 /**
  * JudgeExecutor — evaluates agent output by delegating to AgentTaskInterface.
- * Port of mts/src/mts/execution/judge_executor.py
+ * Port of autocontext/src/autocontext/execution/judge_executor.py
  */
 
 import type { AgentTaskInterface, AgentTaskResult } from "../types/index.js";
