@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from autocontext.config import load_settings
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
+from autocontext.server.cockpit_api import cockpit_router
 from autocontext.server.knowledge_api import router as knowledge_router
 from autocontext.server.openclaw_api import router as openclaw_router
 from autocontext.server.protocol import (
@@ -105,11 +106,17 @@ def create_app(
 ) -> FastAPI:
     """Factory that creates the FastAPI app, optionally wired to a LoopController."""
     application = FastAPI(title="AutoContext Dashboard API", version="0.1.0")
+    application.include_router(cockpit_router)
     application.include_router(knowledge_router)
     application.include_router(openclaw_router)
     app_settings = load_settings()
     application.state.app_settings = app_settings
     store = SQLiteStore(app_settings.db_path)
+    migrations_dir = Path(__file__).resolve().parents[3] / "migrations"
+    if migrations_dir.exists():
+        store.migrate(migrations_dir)
+    application.state.store = store
+    application.state.migrations_dir = migrations_dir
     scenario_creator = _build_scenario_creator(app_settings)
 
     def _read_replay_file(run_id: str, generation: int) -> Path:
