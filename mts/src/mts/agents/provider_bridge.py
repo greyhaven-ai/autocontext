@@ -11,7 +11,7 @@ import inspect
 import os
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from mts.harness.core.llm_client import LanguageModelClient
 from mts.harness.core.types import ModelResponse, RoleUsage
@@ -111,7 +111,7 @@ def _load_openclaw_factory(factory_path: str) -> Callable[..., object]:
         raise ValueError(f"OpenClaw factory {factory_path!r} not found") from exc
     if not callable(factory):
         raise ValueError(f"OpenClaw factory {factory_path!r} is not callable")
-    return factory
+    return cast(Callable[..., object], factory)
 
 
 def create_role_client(provider_type: str, settings: AppSettings) -> LanguageModelClient | None:
