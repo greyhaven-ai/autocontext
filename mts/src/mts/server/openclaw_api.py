@@ -44,6 +44,14 @@ class ValidateRequest(BaseModel):
 class TriggerDistillRequest(BaseModel):
     scenario: str
     source_artifact_ids: list[str] = Field(default_factory=list)
+    training_config: dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateDistillJobRequest(BaseModel):
+    status: str
+    result_artifact_id: str | None = None
+    error_message: str | None = None
+    training_metrics: dict[str, Any] | None = None
 
 
 # -- Endpoints --
@@ -117,11 +125,12 @@ def fetch_artifact_endpoint(
 @router.get("/distill")
 def distill_status_endpoint(
     ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+    scenario: str | None = None,
 ) -> dict[str, Any]:
-    """Check status of distillation workflows."""
+    """Check status of distillation workflows, optionally filtered by scenario."""
     from mts.mcp.tools import distill_status
 
-    return distill_status(ctx)  # type: ignore[return-value]
+    return distill_status(ctx, scenario=scenario)  # type: ignore[return-value]
 
 
 @router.post("/distill")
@@ -132,11 +141,49 @@ def trigger_distillation_endpoint(
     """Trigger a distillation workflow for a scenario."""
     from mts.mcp.tools import trigger_distillation
 
-    return trigger_distillation(  # type: ignore[return-value]
+    result = trigger_distillation(
         ctx,
         scenario=body.scenario,
         source_artifact_ids=body.source_artifact_ids,
+        training_config=body.training_config or None,
     )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=str(result["error"]))
+    return result  # type: ignore[return-value]
+
+
+@router.get("/distill/{job_id}")
+def get_distill_job_endpoint(
+    job_id: str,
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> dict[str, Any]:
+    """Get details of a specific distillation job."""
+    from mts.mcp.tools import get_distill_job
+
+    result = get_distill_job(ctx, job_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=str(result["error"]))
+    return result  # type: ignore[return-value]
+
+
+@router.patch("/distill/{job_id}")
+def update_distill_job_endpoint(
+    job_id: str,
+    body: UpdateDistillJobRequest,
+    ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
+) -> dict[str, Any]:
+    """Update a distillation job status (sidecar reporting endpoint)."""
+    from mts.mcp.tools import update_distill_job
+
+    result = update_distill_job(
+        ctx, job_id, body.status,
+        result_artifact_id=body.result_artifact_id,
+        error_message=body.error_message,
+        training_metrics=body.training_metrics,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=str(result["error"]))
+    return result  # type: ignore[return-value]
 
 
 @router.get("/capabilities")

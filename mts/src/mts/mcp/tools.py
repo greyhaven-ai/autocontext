@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from mts.config import AppSettings
 from mts.execution.harness_loader import HarnessLoader
 from mts.knowledge.trajectory import ScoreTrajectoryBuilder
 from mts.scenarios import SCENARIO_REGISTRY
 from mts.storage import ArtifactStore, SQLiteStore
+
+if TYPE_CHECKING:
+    from mts.openclaw.distill import DistillJob
 
 
 class MtsToolContext:
@@ -886,58 +889,155 @@ def list_artifacts(
 
 def distill_status(
     ctx: MtsToolContext,
+    scenario: str | None = None,
 ) -> dict[str, object]:
     """Return the status of distillation workflows.
 
-    Distillation is a placeholder for future training sidecar integration.
-    Currently returns an empty job list.
+    Uses DistillJobManager for structured job lifecycle tracking.
+    Optionally filters by scenario name.
     """
-    jobs_dir = ctx.settings.knowledge_root / "_openclaw_distill_jobs"
-    jobs: list[dict[str, object]] = []
-    if jobs_dir.exists():
-        import json as _json
+    from mts.openclaw.distill import DistillJobManager
 
-        for path in sorted(jobs_dir.glob("*.json")):
-            try:
-                data: dict[str, object] = _json.loads(path.read_text(encoding="utf-8"))
-                jobs.append(data)
-            except Exception:
-                continue
-
-    return {
-        "active_jobs": len([j for j in jobs if j.get("status") in ("pending", "running")]),
-        "jobs": jobs,
-    }
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    jobs: list[DistillJob] = [_sync_distill_job(ctx, mgr, job) for job in mgr.list_jobs(scenario=scenario)]
+    job_dicts: list[dict[str, object]] = [
+        j.model_dump() for j in jobs
+    ]
+    active = sum(1 for j in jobs if j.status in ("pending", "running"))
+    return {"active_jobs": active, "jobs": job_dicts}
 
 
 def trigger_distillation(
     ctx: MtsToolContext,
     scenario: str,
     source_artifact_ids: list[str] | None = None,
+    training_config: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Trigger a distillation workflow for a scenario.
 
-    Creates a pending distillation job. The actual training would be handled
-    by the training sidecar (future integration).
+    Creates a job record and launches the configured distillation sidecar.
     """
-    import json as _json
-    import uuid
+    from mts.openclaw.distill import DistillJobError, DistillJobManager, load_distill_sidecar
 
-    job_id = uuid.uuid4().hex
-    jobs_dir = ctx.settings.knowledge_root / "_openclaw_distill_jobs"
-    jobs_dir.mkdir(parents=True, exist_ok=True)
-
-    job: dict[str, object] = {
-        "job_id": job_id,
-        "scenario": scenario,
-        "source_artifact_ids": source_artifact_ids or [],
-        "status": "pending",
-    }
-    (jobs_dir / f"{job_id}.json").write_text(
-        _json.dumps(job, indent=2), encoding="utf-8"
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    job = mgr.create_job(
+        scenario=scenario,
+        source_artifact_ids=source_artifact_ids,
+        training_config=dict(training_config) if training_config else None,
     )
+    sidecar = load_distill_sidecar(ctx.settings, cwd=ctx.settings.knowledge_root.parent)
+    if sidecar is None:
+        failed = mgr.transition(
+            job.job_id,
+            "failed",
+            error_message=(
+                "No distillation sidecar configured. Set "
+                "MTS_OPENCLAW_DISTILL_SIDECAR_FACTORY or MTS_OPENCLAW_DISTILL_SIDECAR_COMMAND."
+            ),
+        )
+        assert failed is not None
+        return {
+            "error": failed.error_message,
+            "job_id": failed.job_id,
+            "status": failed.status,
+            "scenario": failed.scenario,
+        }
+    try:
+        sidecar.launch(job.job_id, job.scenario, job.training_config)
+        launched_job = mgr.transition(job.job_id, "running")
+    except (DistillJobError, OSError, ValueError) as exc:
+        failed = mgr.transition(job.job_id, "failed", error_message=str(exc))
+        assert failed is not None
+        return {
+            "error": str(exc),
+            "job_id": failed.job_id,
+            "status": failed.status,
+            "scenario": failed.scenario,
+        }
+    if launched_job is None:
+        return {"error": f"Distillation job '{job.job_id}' not found after launch"}
+    return launched_job.model_dump()  # type: ignore[return-value]
 
-    return {"job_id": job_id, "status": "pending", "scenario": scenario}
+
+def get_distill_job(
+    ctx: MtsToolContext,
+    job_id: str,
+) -> dict[str, object]:
+    """Fetch a single distillation job by ID."""
+    from mts.openclaw.distill import DistillJobManager
+
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    job = mgr.get_job(job_id)
+    if job is None:
+        return {"error": f"Distillation job '{job_id}' not found"}
+    job = _sync_distill_job(ctx, mgr, job)
+    return job.model_dump()  # type: ignore[return-value]
+
+
+def update_distill_job(
+    ctx: MtsToolContext,
+    job_id: str,
+    status: str,
+    *,
+    result_artifact_id: str | None = None,
+    error_message: str | None = None,
+    training_metrics: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Update a distillation job status with lifecycle validation."""
+    from mts.openclaw.distill import DistillJobError, DistillJobManager
+
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    try:
+        job = mgr.transition(
+            job_id,
+            status,  # type: ignore[arg-type]
+            result_artifact_id=result_artifact_id,
+            error_message=error_message,
+            training_metrics=dict(training_metrics) if training_metrics else None,
+        )
+    except DistillJobError as exc:
+        return {"error": str(exc)}
+
+    if job is None:
+        return {"error": f"Distillation job '{job_id}' not found"}
+    return job.model_dump()  # type: ignore[return-value]
+
+
+def _sync_distill_job(
+    ctx: MtsToolContext,
+    mgr: object,
+    job: object,
+) -> DistillJob:
+    """Poll the configured sidecar for an active job and persist any new state."""
+    from mts.openclaw.distill import DistillJob, DistillJobError, DistillJobManager, load_distill_sidecar
+
+    assert isinstance(mgr, DistillJobManager)
+    assert isinstance(job, DistillJob)
+    if job.status not in ("pending", "running"):
+        return job
+    sidecar = load_distill_sidecar(ctx.settings, cwd=ctx.settings.knowledge_root.parent)
+    if sidecar is None:
+        return job
+    try:
+        update = sidecar.poll(job.job_id)
+    except Exception:
+        return job
+    status = update.get("status")
+    if status not in ("pending", "running", "completed", "failed"):
+        return job
+    if status == job.status:
+        return job
+    try:
+        synced = mgr.transition(
+            job.job_id,
+            status,
+            result_artifact_id=cast(str | None, update.get("result_artifact_id")),
+            error_message=cast(str | None, update.get("error_message")),
+            training_metrics=cast(dict[str, object] | None, update.get("training_metrics")),
+        )
+    except DistillJobError:
+        return job
+    return synced or job
 
 
 def export_package(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]:
