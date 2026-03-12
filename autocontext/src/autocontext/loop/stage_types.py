@@ -63,6 +63,9 @@ class GenerationContext:
     generation_start_time: float = 0.0
     generation_elapsed_seconds: float = 0.0
 
+    # Consultation result (AC-212)
+    consultation_result: Any | None = None
+
 
 @dataclass(slots=True)
 class StageResult:

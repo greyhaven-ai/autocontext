@@ -273,6 +273,14 @@ class AppSettings(BaseModel):
         default="",
         description="Command template to launch an external distillation sidecar job",
     )
+    # Provider consultation (AC-212)
+    consultation_enabled: bool = Field(default=False, description="Enable provider consultation on stall/uncertainty")
+    consultation_provider: str = Field(default="anthropic", description="Provider type for consultation")
+    consultation_model: str = Field(default="claude-sonnet-4-20250514", description="Model for consultation calls")
+    consultation_api_key: str = Field(default="", description="API key for consultation provider")
+    consultation_base_url: str = Field(default="", description="Base URL for consultation provider")
+    consultation_stagnation_threshold: int = Field(default=3, ge=2, description="Consecutive rollback/retry to trigger")
+    consultation_cost_budget: float = Field(default=0.0, ge=0.0, description="Max USD per run (0=unlimited)")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
