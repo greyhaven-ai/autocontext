@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 from unittest.mock import MagicMock
 
@@ -107,7 +108,8 @@ class TestStageSkipConditions:
         ctx = self._make_ctx(settings=_make_settings(policy_refinement_enabled=False))
         events = MagicMock()
         client = MagicMock()
-        result = stage_policy_refinement(ctx, client=client, events=events)
+        sqlite = MagicMock()
+        result = stage_policy_refinement(ctx, client=client, model="model-a", events=events, sqlite=sqlite)
         assert result.policy_refinement_result is None
         events.emit.assert_not_called()
 
@@ -120,7 +122,8 @@ class TestStageSkipConditions:
         )
         events = MagicMock()
         client = MagicMock()
-        result = stage_policy_refinement(ctx, client=client, events=events)
+        sqlite = MagicMock()
+        result = stage_policy_refinement(ctx, client=client, model="model-a", events=events, sqlite=sqlite)
         assert result.policy_refinement_result is None
         events.emit.assert_not_called()
 
@@ -132,7 +135,8 @@ class TestStageSkipConditions:
         ctx = self._make_ctx(scenario=mock_scenario)
         events = MagicMock()
         client = MagicMock()
-        result = stage_policy_refinement(ctx, client=client, events=events)
+        sqlite = MagicMock()
+        result = stage_policy_refinement(ctx, client=client, model="model-a", events=events, sqlite=sqlite)
         assert result.policy_refinement_result is None
         events.emit.assert_not_called()
 
@@ -178,13 +182,22 @@ class TestStageExecution:
         ctx = self._make_ctx()
         events = MagicMock()
         client = self._make_deterministic_client()
+        sqlite = MagicMock()
 
-        result = stage_policy_refinement(ctx, client=client, events=events)
+        result = stage_policy_refinement(ctx, client=client, model="resolved-model", events=events, sqlite=sqlite)
 
         assert result.policy_refinement_result is not None
         assert isinstance(result.policy_refinement_result, PolicyRefinementResult)
         assert result.policy_refinement_result.best_heuristic > 0.0
         assert "__code__" in result.current_strategy
+        client.generate.assert_called()
+        assert client.generate.call_args.kwargs["model"] == "resolved-model"
+        sqlite.append_agent_output.assert_called_once_with(
+            "r1",
+            1,
+            "competitor",
+            json.dumps(result.current_strategy, sort_keys=True),
+        )
 
     def test_emits_started_and_completed_events(self) -> None:
         from autocontext.loop.stages import stage_policy_refinement
@@ -192,8 +205,9 @@ class TestStageExecution:
         ctx = self._make_ctx()
         events = MagicMock()
         client = self._make_deterministic_client()
+        sqlite = MagicMock()
 
-        stage_policy_refinement(ctx, client=client, events=events)
+        stage_policy_refinement(ctx, client=client, model="resolved-model", events=events, sqlite=sqlite)
 
         event_names = [call.args[0] for call in events.emit.call_args_list]
         assert "policy_refinement_started" in event_names
@@ -208,12 +222,14 @@ class TestStageExecution:
         # Client that raises on generate
         client = MagicMock()
         client.generate.side_effect = RuntimeError("LLM down")
+        sqlite = MagicMock()
 
         # Should not raise — fallback to original
-        result = stage_policy_refinement(ctx, client=client, events=events)
+        result = stage_policy_refinement(ctx, client=client, model="resolved-model", events=events, sqlite=sqlite)
 
         assert result.current_strategy["__code__"] == original_code
         assert result.policy_refinement_result is None
+        sqlite.append_agent_output.assert_not_called()
         event_names = [call.args[0] for call in events.emit.call_args_list]
         assert "policy_refinement_failed" in event_names
 

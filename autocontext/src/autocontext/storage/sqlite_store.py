@@ -362,6 +362,14 @@ class SQLiteStore:
                 SELECT ao.generation_index, ao.content, g.best_score, g.gate_decision
                 FROM agent_outputs ao
                 JOIN generations g ON ao.run_id = g.run_id AND ao.generation_index = g.generation_index
+                JOIN (
+                    SELECT run_id, generation_index, MAX(rowid) AS max_rowid
+                    FROM agent_outputs
+                    WHERE role = 'competitor'
+                    GROUP BY run_id, generation_index
+                ) latest ON ao.run_id = latest.run_id
+                    AND ao.generation_index = latest.generation_index
+                    AND ao.rowid = latest.max_rowid
                 WHERE ao.run_id = ? AND ao.role = 'competitor' AND g.status = 'completed'
                 ORDER BY ao.generation_index
                 """,
@@ -426,6 +434,14 @@ class SQLiteStore:
                 FROM agent_outputs ao
                 JOIN generations g ON ao.run_id = g.run_id AND ao.generation_index = g.generation_index
                 JOIN runs r ON g.run_id = r.run_id
+                JOIN (
+                    SELECT run_id, generation_index, MAX(rowid) AS max_rowid
+                    FROM agent_outputs
+                    WHERE role = 'competitor'
+                    GROUP BY run_id, generation_index
+                ) latest ON ao.run_id = latest.run_id
+                    AND ao.generation_index = latest.generation_index
+                    AND ao.rowid = latest.max_rowid
                 WHERE r.scenario = ? AND ao.role = 'competitor' AND g.status = 'completed'
                 ORDER BY g.best_score DESC
                 LIMIT 1

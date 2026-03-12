@@ -189,10 +189,17 @@ class GenerationPipeline:
             )
 
             # Stage 2.6: Policy refinement (optional — refine code strategies via zero-LLM evaluation)
+            refinement_client, refinement_model = self._orchestrator.resolve_role_execution(
+                "competitor",
+                generation=ctx.generation,
+                scenario_name=ctx.scenario_name,
+            )
             ctx = stage_policy_refinement(
                 ctx,
-                client=self._orchestrator.client,
+                client=refinement_client,
+                model=refinement_model,
                 events=self._events,
+                sqlite=self._sqlite,
             )
 
             # Stage 3: Tournament + gate
