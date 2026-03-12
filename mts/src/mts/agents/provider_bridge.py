@@ -6,9 +6,12 @@ LanguageModelClient.
 """
 from __future__ import annotations
 
+import importlib
+import inspect
 import os
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 
 from mts.harness.core.llm_client import LanguageModelClient
 from mts.harness.core.types import ModelResponse, RoleUsage
@@ -94,6 +97,23 @@ def _create_provider_bridge(provider_type: str, settings: AppSettings) -> Langua
     return ProviderBridgeClient(provider, use_provider_default_model=use_provider_default_model)
 
 
+def _load_openclaw_factory(factory_path: str) -> Callable[..., object]:
+    """Load a module:callable factory reference for OpenClaw agents."""
+    module_name, sep, attr_name = factory_path.partition(":")
+    if not sep or not module_name or not attr_name:
+        raise ValueError(
+            "MTS_OPENCLAW_AGENT_FACTORY must be in the form 'module:callable'",
+        )
+    module = importlib.import_module(module_name)
+    try:
+        factory = getattr(module, attr_name)
+    except AttributeError as exc:
+        raise ValueError(f"OpenClaw factory {factory_path!r} not found") from exc
+    if not callable(factory):
+        raise ValueError(f"OpenClaw factory {factory_path!r} is not callable")
+    return cast(Callable[..., object], factory)
+
+
 def create_role_client(provider_type: str, settings: AppSettings) -> LanguageModelClient | None:
     """Create a LanguageModelClient for a per-role provider override.
 
@@ -132,8 +152,45 @@ def create_role_client(provider_type: str, settings: AppSettings) -> LanguageMod
 
         return AgentSdkClient(config=AgentSdkConfig(connect_mcp_server=settings.agent_sdk_connect_mcp))
 
+    if provider_type == "openclaw":
+        agent = _build_openclaw_agent(settings)
+        from mts.openclaw.agent_adapter import OpenClawClient
+
+        return OpenClawClient(
+            agent=agent,
+            max_retries=int(getattr(settings, "openclaw_max_retries", 2)),
+            timeout_seconds=float(getattr(settings, "openclaw_timeout_seconds", 30.0)),
+            retry_base_delay=float(getattr(settings, "openclaw_retry_base_delay", 0.25)),
+        )
+
     # LLMProvider-based providers — use the bridge
     if provider_type in ("mlx", "openai", "openai-compatible", "ollama", "vllm"):
         return _create_provider_bridge(provider_type, settings)
 
     raise ValueError(f"unsupported role provider: {provider_type!r}")
+
+
+def _build_openclaw_agent(settings: AppSettings) -> object:
+    """Build an OpenClaw agent instance from settings.
+
+    The factory is configured via ``MTS_OPENCLAW_AGENT_FACTORY=module:callable``.
+    The callable may accept ``settings`` or no arguments.
+    """
+    factory_path = settings.openclaw_agent_factory.strip()
+    if not factory_path:
+        raise ValueError(
+            "OpenClaw per-role override requires MTS_OPENCLAW_AGENT_FACTORY=module:callable",
+        )
+
+    factory = _load_openclaw_factory(factory_path)
+    signature = inspect.signature(factory)
+    if len(signature.parameters) == 0:
+        agent = factory()
+    else:
+        agent = factory(settings)
+
+    if not hasattr(agent, "execute"):
+        raise ValueError(
+            f"OpenClaw factory {factory_path!r} did not return an agent with an execute(...) method",
+        )
+    return agent
