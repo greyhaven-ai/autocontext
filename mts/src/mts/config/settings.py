@@ -239,6 +239,14 @@ class AppSettings(BaseModel):
     mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
     mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
     mlx_max_tokens: int = Field(default=512, ge=1, description="Max generation tokens for MLX model")
+    # OpenClaw agent adapter (AC-193)
+    openclaw_agent_factory: str = Field(
+        default="",
+        description="Import path to OpenClaw agent factory or class as module:callable",
+    )
+    openclaw_timeout_seconds: float = Field(default=30.0, ge=1.0, description="Timeout for OpenClaw agent execution")
+    openclaw_max_retries: int = Field(default=2, ge=0, description="Max retries on OpenClaw agent failure")
+    openclaw_retry_base_delay: float = Field(default=0.25, ge=0.0, description="Base delay for retry backoff")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
