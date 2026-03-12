@@ -1,6 +1,6 @@
 /**
  * StrategyValidator — pre-validates strategies via self-play dry-run.
- * Port of mts/src/mts/execution/strategy_validator.py (TypeScript port)
+ * Port of autocontext/src/autocontext/execution/strategy_validator.py (TypeScript port)
  */
 
 import { z } from "zod";

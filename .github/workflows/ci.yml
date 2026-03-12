@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: mts
+        working-directory: autocontext
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: mts
+        working-directory: autocontext
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,13 +50,13 @@ jobs:
       - name: Install
         run: uv sync --group dev
       - name: Tests
-        run: uv run pytest --cov=src/mts --cov-report=html:htmlcov -m "not live"
+        run: uv run pytest --cov=src/autocontext --cov-report=html:htmlcov -m "not live"
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: mts/htmlcov/
+          path: autocontext/htmlcov/
           retention-days: 14
 
   smoke:
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: mts
+        working-directory: autocontext
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -78,17 +78,17 @@ jobs:
         run: uv sync --group dev
       - name: Deterministic scenario runs
         env:
-          MTS_AGENT_PROVIDER: deterministic
+          AUTOCONTEXT_AGENT_PROVIDER: deterministic
         run: |
-          uv run python -m mts.cli run --scenario grid_ctf --gens 3 --run-id ci_smoke_grid
-          uv run python -m mts.cli run --scenario othello --gens 1 --run-id ci_smoke_othello
+          uv run python -m autocontext.cli run --scenario grid_ctf --gens 3 --run-id ci_smoke_grid
+          uv run python -m autocontext.cli run --scenario othello --gens 1 --run-id ci_smoke_othello
       - name: Dashboard API smoke
         env:
-          MTS_AGENT_PROVIDER: deterministic
+          AUTOCONTEXT_AGENT_PROVIDER: deterministic
         run: |
           cleanup() { kill $SERVER_PID 2>/dev/null || true; }
           trap cleanup EXIT
-          uv run mts serve --host 127.0.0.1 --port 8010 &
+          uv run autoctx serve --host 127.0.0.1 --port 8010 &
           SERVER_PID=$!
           sleep 2
           curl -fsS http://127.0.0.1:8010/health
@@ -98,10 +98,10 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: mts
+        working-directory: autocontext
     env:
-      MTS_PRIMEINTELLECT_API_KEY: ${{ secrets.MTS_PRIMEINTELLECT_API_KEY }}
-      MTS_ANTHROPIC_API_KEY: ${{ secrets.MTS_ANTHROPIC_API_KEY }}
+      AUTOCONTEXT_PRIMEINTELLECT_API_KEY: ${{ secrets.AUTOCONTEXT_PRIMEINTELLECT_API_KEY }}
+      AUTOCONTEXT_ANTHROPIC_API_KEY: ${{ secrets.AUTOCONTEXT_ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -114,9 +114,9 @@ jobs:
       - name: Install
         run: uv sync --group dev
       - name: Live PrimeIntellect verification
-        if: ${{ env.MTS_PRIMEINTELLECT_API_KEY != '' && env.MTS_ANTHROPIC_API_KEY != '' }}
+        if: ${{ env.AUTOCONTEXT_PRIMEINTELLECT_API_KEY != '' && env.AUTOCONTEXT_ANTHROPIC_API_KEY != '' }}
         env:
-          MTS_EXECUTOR_MODE: primeintellect
-          MTS_PRIMEINTELLECT_API_BASE: https://api.primeintellect.ai
-          MTS_AGENT_PROVIDER: anthropic
-        run: uv run mts run --scenario grid_ctf --gens 1 --run-id ci_prime_live
+          AUTOCONTEXT_EXECUTOR_MODE: primeintellect
+          AUTOCONTEXT_PRIMEINTELLECT_API_BASE: https://api.primeintellect.ai
+          AUTOCONTEXT_AGENT_PROVIDER: anthropic
+        run: uv run autoctx run --scenario grid_ctf --gens 1 --run-id ci_prime_live

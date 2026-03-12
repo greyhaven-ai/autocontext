@@ -17,9 +17,9 @@ function mockProvider(responseText: string): LLMProvider {
   };
 }
 
-const PROMPT = "Write a one-paragraph summary of what MTS does";
+const PROMPT = "Write a one-paragraph summary of what AutoContext does";
 const OUTPUT =
-  "MTS is an iterative strategy generation system that uses multi-agent " +
+  "AutoContext is an iterative strategy generation system that uses multi-agent " +
   "collaboration to evolve strategies through tournament matches and LLM " +
   "judge evaluation with Elo-based progression gating.";
 const RUBRIC =
@@ -31,7 +31,7 @@ function makeResponse(
 ) {
   const data = {
     score,
-    reasoning: "The summary accurately captures the core MTS loop.",
+    reasoning: "The summary accurately captures the core AutoContext loop.",
     dimensions: dims,
   };
   return `<!-- JUDGE_RESULT_START -->\n${JSON.stringify(data)}\n<!-- JUDGE_RESULT_END -->`;

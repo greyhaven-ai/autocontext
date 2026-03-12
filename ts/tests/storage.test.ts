@@ -7,7 +7,7 @@ import { SQLiteStore } from "../src/storage/index.js";
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
 
 function createStore(): SQLiteStore {
-  const dir = mkdtempSync(join(tmpdir(), "mts-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "autocontext-test-"));
   const store = new SQLiteStore(join(dir, "test.db"));
   store.migrate(MIGRATIONS_DIR);
   return store;

@@ -1,6 +1,6 @@
 /**
  * Harness file versioning and persistence for TypeScript.
- * Port of mts/src/mts/storage/artifacts.py harness methods.
+ * Port of autocontext/src/autocontext/storage/artifacts.py harness methods.
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";

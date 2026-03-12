@@ -1,4 +1,4 @@
-app = "mts-control-plane"
+app = "autocontext"
 primary_region = "ord"
 
 [build]
@@ -6,12 +6,12 @@ primary_region = "ord"
   dockerfile = "infra/docker/Dockerfile"
 
 [env]
-  MTS_DB_PATH = "/data/runs/mts.sqlite3"
-  MTS_RUNS_ROOT = "/data/runs"
-  MTS_KNOWLEDGE_ROOT = "/data/knowledge"
-  MTS_SKILLS_ROOT = "/data/skills"
-  MTS_EXECUTOR_MODE = "local"
-  MTS_AGENT_PROVIDER = "deterministic"
+  AUTOCONTEXT_DB_PATH = "/data/runs/autocontext.sqlite3"
+  AUTOCONTEXT_RUNS_ROOT = "/data/runs"
+  AUTOCONTEXT_KNOWLEDGE_ROOT = "/data/knowledge"
+  AUTOCONTEXT_SKILLS_ROOT = "/data/skills"
+  AUTOCONTEXT_EXECUTOR_MODE = "local"
+  AUTOCONTEXT_AGENT_PROVIDER = "deterministic"
 
 [[mounts]]
   source = "mts_data"

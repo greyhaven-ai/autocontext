@@ -1,7 +1,7 @@
 /**
  * HypothesisTree — multi-hypothesis strategy search with Thompson sampling.
  *
- * Port of mts/src/mts/loop/hypothesis_tree.py
+ * Port of autocontext/src/autocontext/loop/hypothesis_tree.py
  */
 
 import { z } from "zod";

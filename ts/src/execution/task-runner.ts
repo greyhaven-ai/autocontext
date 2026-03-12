@@ -1,6 +1,6 @@
 /**
  * Task runner daemon for always-on evaluation.
- * Port of mts/src/mts/execution/task_runner.py
+ * Port of autocontext/src/autocontext/execution/task_runner.py
  */
 
 import { randomUUID } from "node:crypto";

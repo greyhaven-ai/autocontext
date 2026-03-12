@@ -1,6 +1,6 @@
 /**
  * AgentTaskSpec — specification for an agent task scenario.
- * Port of mts/src/mts/scenarios/custom/agent_task_spec.py
+ * Port of autocontext/src/autocontext/scenarios/custom/agent_task_spec.py
  */
 
 import { z } from "zod";

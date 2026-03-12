@@ -1,1 +1,1 @@
-/Users/jayscambler/Repositories/MTS/mts/skills/grid_ctf_ops.md
+/Users/jayscambler/Repositories/MTS/autocontext/skills/grid_ctf_ops.md

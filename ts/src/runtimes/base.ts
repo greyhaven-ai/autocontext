@@ -1,6 +1,6 @@
 /**
  * Agent runtime interfaces and types.
- * Port of mts/src/mts/runtimes/base.py
+ * Port of autocontext/src/autocontext/runtimes/base.py
  */
 
 export interface AgentOutput {
