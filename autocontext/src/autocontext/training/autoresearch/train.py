@@ -366,7 +366,7 @@ def _all_records(data_path: Path) -> list[dict[str, Any]]:
     try:
         from prepare import load_jsonl  # type: ignore[import-not-found]
     except ImportError:
-        from mts.training.autoresearch.prepare import load_jsonl
+        from autocontext.training.autoresearch.prepare import load_jsonl
 
     train_records, val_records = load_jsonl(data_path)
     records = list(train_records) or list(val_records)
@@ -379,7 +379,7 @@ def _build_corpus(records: list[dict[str, Any]]) -> str:
     try:
         from prepare import format_example  # type: ignore[import-not-found]
     except ImportError:
-        from mts.training.autoresearch.prepare import format_example
+        from autocontext.training.autoresearch.prepare import format_example
 
     examples = [
         format_example(
@@ -413,7 +413,7 @@ def run_training(
     import mlx.nn as nn  # type: ignore[import-not-found]
     import mlx.optimizers as optim  # type: ignore[import-not-found]
 
-    from mts.scenarios import SCENARIO_REGISTRY
+    from autocontext.scenarios import SCENARIO_REGISTRY
     try:
         from prepare import (  # type: ignore[import-not-found]
             assess_strategy_quality,
@@ -422,7 +422,7 @@ def run_training(
             train_tokenizer,
         )
     except ImportError:
-        from mts.training.autoresearch.prepare import (
+        from autocontext.training.autoresearch.prepare import (
             assess_strategy_quality,
             create_dataloader,
             format_example,

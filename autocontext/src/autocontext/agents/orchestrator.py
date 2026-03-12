@@ -305,7 +305,7 @@ class AgentOrchestrator:
         ):
             return self.client
 
-    from autocontext.agents.provider_bridge import create_role_client
+        from autocontext.agents.provider_bridge import create_role_client
 
         key = (config.provider_type.lower(), config.model)
         cached = self._routed_clients.get(key)
