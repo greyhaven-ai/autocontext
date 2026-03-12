@@ -11,23 +11,29 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from subprocess import CompletedProcess
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from typer.testing import CliRunner
+
+from autocontext.agents import AgentOrchestrator
+from autocontext.agents.provider_bridge import ProviderBridgeClient
+from autocontext.cli import app
 from autocontext.config import AppSettings
 from autocontext.loop import GenerationRunner
 from autocontext.providers.base import CompletionResult
+from autocontext.providers.mlx_provider import MLXProvider
 from autocontext.scenarios.grid_ctf import GridCtfScenario
 from autocontext.training.export import export_training_data
 from autocontext.training.runner import (
-    ExperimentOutcome,
-    ExperimentResult,
     TrainingConfig,
     TrainingRunner,
 )
 from autocontext.training.types import TrainingRecord
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
+_CLI_RUNNER = CliRunner()
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +96,32 @@ def _write_fake_checkpoint(model_dir: Path) -> None:
         "seq_len": 2048,
     }))
     (model_dir / "model.safetensors").write_bytes(b"FAKE_WEIGHTS")
-    (model_dir / "tokenizer.json").write_text(json.dumps({"type": "BPE"}))
+    (model_dir / "tokenizer.json").write_text(json.dumps({
+        "type": "BPE",
+        "base_vocab_size": 8192,
+        "pat_str": ".*",
+        "mergeable_ranks": {
+            "YQ==": 0,
+            "Yg==": 1,
+        },
+    }))
+
+
+def _fake_training_completed_process() -> CompletedProcess[str]:
+    """Build a successful train.py subprocess result with a valid summary block."""
+    return CompletedProcess(
+        args=["python", "train.py"],
+        returncode=0,
+        stdout=(
+            "=== TRAINING SUMMARY ===\n"
+            "avg_score: 0.72\n"
+            "valid_rate: 0.95\n"
+            "peak_memory_mb: 2048.0\n"
+            "training_seconds: 45.0\n"
+            "========================\n"
+        ),
+        stderr="",
+    )
 
 
 def _run_deterministic_loop(tmp_path: Path, *, generations: int = 3, run_id: str = "e2e_run") -> GenerationRunner:
@@ -157,36 +188,32 @@ class TestStage2Export:
 
 
 class TestStage3Training:
-    def test_training_runner_baseline(self, tmp_path: Path) -> None:
-        """Training runner with mocked experiment returns a valid result."""
+    def test_train_cli_runs_real_runner_path(self, tmp_path: Path) -> None:
+        """The CLI drives the real runner path down to subprocess summary parsing."""
         data_path = tmp_path / "train_data.jsonl"
         data_path.write_text("{}\n")
-        work_dir = tmp_path / "train_work"
+        with (
+            patch("autocontext.training.runner.TrainingRunner.setup_workspace", autospec=True) as mock_setup,
+            patch(
+                "autocontext.training.runner.TrainingRunner._run_experiment_subprocess",
+                return_value=_fake_training_completed_process(),
+            ),
+        ):
+            mock_setup.side_effect = lambda runner: runner.work_dir.mkdir(parents=True, exist_ok=True)
+            result = _CLI_RUNNER.invoke(
+                app,
+                [
+                    "train",
+                    "--scenario", "grid_ctf",
+                    "--data", str(data_path),
+                    "--max-experiments", "1",
+                    "--agent-provider", "deterministic",
+                ],
+            )
 
-        config = TrainingConfig(
-            scenario="grid_ctf",
-            data_path=data_path,
-            max_experiments=1,
-            agent_provider="deterministic",
-        )
-        runner = TrainingRunner(config, work_dir=work_dir)
-
-        kept_result = ExperimentResult(
-            experiment_index=0,
-            avg_score=0.72,
-            valid_rate=0.95,
-            peak_memory_mb=2048.0,
-            training_seconds=45.0,
-            outcome=ExperimentOutcome.KEPT,
-            checkpoint_path=work_dir / "checkpoints" / "exp_0",
-        )
-
-        with patch.object(runner, "_execute_experiment", return_value=kept_result):
-            result = runner.run()
-
-        assert result.total_experiments == 1
-        assert result.kept_count == 1
-        assert result.best_score == 0.72
+        assert result.exit_code == 0, result.output
+        assert "Training Summary" in result.output
+        assert "0.7200" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +280,7 @@ class TestFullPipeline:
         ))
         assert len(records) >= 1
 
-        # Stage 3: Write records to JSONL + run training (mocked)
+        # Stage 3: Write records to JSONL + run the real training loop entrypoint
         data_path = tmp_path / "exported_data.jsonl"
         with open(data_path, "w", encoding="utf-8") as f:
             for rec in records:
@@ -272,37 +299,49 @@ class TestFullPipeline:
             max_experiments=1,
             agent_provider="deterministic",
         )
-        train_runner = TrainingRunner(train_config, work_dir=train_work)
-
         checkpoint_dir = train_work / "checkpoints" / "exp_0"
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
         _write_fake_checkpoint(checkpoint_dir)
 
-        kept = ExperimentResult(
-            experiment_index=0,
-            avg_score=0.72,
-            valid_rate=0.95,
-            peak_memory_mb=2048.0,
-            training_seconds=45.0,
-            outcome=ExperimentOutcome.KEPT,
-            checkpoint_path=checkpoint_dir,
-        )
-        with patch.object(train_runner, "_execute_experiment", return_value=kept):
+        with (
+            patch("autocontext.training.runner.TrainingRunner.setup_workspace", autospec=True) as mock_setup,
+            patch(
+                "autocontext.training.runner.TrainingRunner._run_experiment_subprocess",
+                return_value=_fake_training_completed_process(),
+            ),
+        ):
+            mock_setup.side_effect = lambda runner: runner.work_dir.mkdir(parents=True, exist_ok=True)
+            train_runner = TrainingRunner(train_config, work_dir=train_work)
             train_result = train_runner.run()
 
         assert train_result.best_score > 0
         assert train_result.checkpoint_path is not None
 
-        # Stage 4: Deploy MLXProvider from checkpoint
+        # Stage 4: Route the competitor to the local MLX client from the trained checkpoint
         mock_load.return_value = (_fake_model(), _fake_tokenizer())
+        routed_settings = _make_settings(
+            tmp_path,
+            agent_provider="deterministic",
+            role_routing="auto",
+            mlx_model_path=str(train_result.checkpoint_path),
+        )
+        orchestrator = AgentOrchestrator.from_settings(routed_settings)
+        client, model = orchestrator.resolve_role_execution(
+            "competitor",
+            generation=1,
+            scenario_name="grid_ctf",
+        )
 
-        from autocontext.providers.mlx_provider import MLXProvider
-
-        provider = MLXProvider(model_path=str(train_result.checkpoint_path))
+        assert isinstance(client, ProviderBridgeClient)
+        assert model == str(train_result.checkpoint_path)
 
         strategy_json = json.dumps({"aggression": 0.55, "defense": 0.35, "path_bias": 0.45})
-        with patch.object(provider, "_generate", return_value=strategy_json):
-            completion = provider.complete("", "Generate a grid_ctf strategy")
+        with patch.object(MLXProvider, "_generate", return_value=strategy_json):
+            completion = client.generate(
+                model=model or "",
+                prompt="Generate a grid_ctf strategy",
+                max_tokens=128,
+                temperature=0.0,
+            )
         assert completion.text
 
         # Stage 5: Parse output → validate → execute match
@@ -350,16 +389,11 @@ class TestEdgeCases:
             agent_provider="deterministic",
         )
         runner = TrainingRunner(config, work_dir=work_dir)
-
-        result_obj = ExperimentResult(
-            experiment_index=0,
-            avg_score=0.65,
-            valid_rate=0.90,
-            peak_memory_mb=1024.0,
-            training_seconds=30.0,
-            outcome=ExperimentOutcome.KEPT,
-        )
-        with patch.object(runner, "_execute_experiment", return_value=result_obj):
+        with (
+            patch.object(runner, "setup_workspace") as mock_setup,
+            patch.object(runner, "_run_experiment_subprocess", return_value=_fake_training_completed_process()),
+        ):
+            mock_setup.side_effect = lambda: work_dir.mkdir(parents=True, exist_ok=True)
             result = runner.run()
 
         assert result.total_experiments == 1
