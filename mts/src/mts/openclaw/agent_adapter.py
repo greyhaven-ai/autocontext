@@ -8,12 +8,12 @@ Provides:
 """
 from __future__ import annotations
 
+import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from queue import Empty, Queue
+from typing import Any, Protocol, cast, runtime_checkable
 
 from mts.harness.core.llm_client import LanguageModelClient
 from mts.harness.core.types import ModelResponse, RoleExecution, RoleUsage
@@ -231,20 +231,38 @@ class OpenClawClient(LanguageModelClient):
         max_tokens: int,
         temperature: float,
     ) -> dict[str, Any]:
-        """Execute with thread-based timeout enforcement."""
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(
-                self.agent.execute,
-                prompt=prompt,
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                tools=None,
-            )
+        """Execute with a hard caller-facing timeout.
+
+        The worker runs on a daemon thread so a timed-out agent does not block
+        the main harness loop while it finishes in the background.
+        """
+        result_queue: Queue[tuple[str, Any]] = Queue(maxsize=1)
+
+        def _run() -> None:
             try:
-                result: dict[str, Any] = future.result(timeout=self.timeout_seconds)
-                return result
-            except FuturesTimeoutError as exc:
-                raise OpenClawAdapterError(
-                    f"OpenClaw agent timed out after {self.timeout_seconds}s",
-                ) from exc
+                result = self.agent.execute(
+                    prompt=prompt,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    tools=None,
+                )
+            except Exception as exc:  # pragma: no cover - surfaced via queue
+                result_queue.put(("error", exc))
+                return
+            result_queue.put(("result", result))
+
+        worker = threading.Thread(target=_run, daemon=True)
+        worker.start()
+        worker.join(timeout=self.timeout_seconds)
+        if worker.is_alive():
+            raise OpenClawAdapterError(
+                f"OpenClaw agent timed out after {self.timeout_seconds}s",
+            )
+        try:
+            status, payload = result_queue.get_nowait()
+        except Empty as exc:  # pragma: no cover - defensive guard
+            raise OpenClawAdapterError("OpenClaw agent exited without returning a trace") from exc
+        if status == "error":
+            raise OpenClawAdapterError(str(payload)) from cast(Exception, payload)
+        return cast(dict[str, Any], payload)

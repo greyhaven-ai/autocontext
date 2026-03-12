@@ -6,6 +6,8 @@ LanguageModelClient.
 """
 from __future__ import annotations
 
+import importlib
+import inspect
 import os
 import time
 from typing import TYPE_CHECKING
@@ -94,6 +96,20 @@ def _create_provider_bridge(provider_type: str, settings: AppSettings) -> Langua
     return ProviderBridgeClient(provider, use_provider_default_model=use_provider_default_model)
 
 
+def _load_openclaw_factory(factory_path: str) -> object:
+    """Load a module:callable factory reference for OpenClaw agents."""
+    module_name, sep, attr_name = factory_path.partition(":")
+    if not sep or not module_name or not attr_name:
+        raise ValueError(
+            "MTS_OPENCLAW_AGENT_FACTORY must be in the form 'module:callable'",
+        )
+    module = importlib.import_module(module_name)
+    try:
+        return getattr(module, attr_name)
+    except AttributeError as exc:
+        raise ValueError(f"OpenClaw factory {factory_path!r} not found") from exc
+
+
 def create_role_client(provider_type: str, settings: AppSettings) -> LanguageModelClient | None:
     """Create a LanguageModelClient for a per-role provider override.
 
@@ -153,12 +169,24 @@ def create_role_client(provider_type: str, settings: AppSettings) -> LanguageMod
 def _build_openclaw_agent(settings: AppSettings) -> object:
     """Build an OpenClaw agent instance from settings.
 
-    Returns an object satisfying OpenClawAgentProtocol. Currently returns
-    a stub that callers must replace; real implementations will be provided
-    by the OpenClaw SDK or custom agent classes.
+    The factory is configured via ``MTS_OPENCLAW_AGENT_FACTORY=module:callable``.
+    The callable may accept ``settings`` or no arguments.
     """
-    raise NotImplementedError(
-        "OpenClaw agent construction requires an agent instance. "
-        "Use OpenClawClient(agent=your_agent) directly, or provide "
-        "a factory via _build_openclaw_agent."
-    )
+    factory_path = settings.openclaw_agent_factory.strip()
+    if not factory_path:
+        raise ValueError(
+            "OpenClaw per-role override requires MTS_OPENCLAW_AGENT_FACTORY=module:callable",
+        )
+
+    factory = _load_openclaw_factory(factory_path)
+    signature = inspect.signature(factory)
+    if len(signature.parameters) == 0:
+        agent = factory()
+    else:
+        agent = factory(settings)
+
+    if not hasattr(agent, "execute"):
+        raise ValueError(
+            f"OpenClaw factory {factory_path!r} did not return an agent with an execute(...) method",
+        )
+    return agent
