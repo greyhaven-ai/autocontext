@@ -47,6 +47,7 @@ def test_pipeline_calls_probe_when_enabled() -> None:
         patch("autocontext.loop.generation_pipeline.stage_policy_refinement", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_tournament", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_stagnation_check", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_consultation", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_curator_gate", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_persistence", return_value=mock_ctx),
     ):
@@ -72,6 +73,7 @@ def test_pipeline_skips_probe_when_disabled() -> None:
         patch("autocontext.loop.generation_pipeline.stage_policy_refinement", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_tournament", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_stagnation_check", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_consultation", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_curator_gate", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_persistence", return_value=mock_ctx),
     ):
@@ -100,6 +102,7 @@ def test_pipeline_continues_after_staged_validation_retry_signal() -> None:
         patch("autocontext.loop.generation_pipeline.stage_policy_refinement", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_tournament", return_value=mock_ctx) as mock_tournament,
         patch("autocontext.loop.generation_pipeline.stage_stagnation_check", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_consultation", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_curator_gate", return_value=mock_ctx),
         patch("autocontext.loop.generation_pipeline.stage_persistence", return_value=mock_ctx),
     ):
@@ -108,3 +111,29 @@ def test_pipeline_continues_after_staged_validation_retry_signal() -> None:
     mock_prevalidation.assert_called_once()
     mock_probe.assert_called_once()
     mock_tournament.assert_called_once()
+
+
+def test_pipeline_calls_consultation_after_stagnation_check() -> None:
+    """Pipeline wires stage_consultation into the live post-tournament flow."""
+    pipeline = _make_pipeline()
+
+    mock_ctx = MagicMock()
+    mock_ctx.generation = 2
+    _configure_pipeline_settings(mock_ctx, probe_matches=1)
+
+    with (
+        patch("autocontext.loop.generation_pipeline.stage_knowledge_setup", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_agent_generation", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_staged_validation", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_prevalidation", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_probe", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_policy_refinement", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_tournament", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_stagnation_check", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_consultation", return_value=mock_ctx) as mock_consultation,
+        patch("autocontext.loop.generation_pipeline.stage_curator_gate", return_value=mock_ctx),
+        patch("autocontext.loop.generation_pipeline.stage_persistence", return_value=mock_ctx),
+    ):
+        pipeline.run_generation(mock_ctx)
+
+    mock_consultation.assert_called_once()

@@ -12,14 +12,13 @@ from autocontext.consultation.runner import ConsultationRunner
 from autocontext.consultation.triggers import detect_consultation_triggers
 from autocontext.consultation.types import ConsultationRequest
 from autocontext.loop.stage_types import GenerationContext
-from autocontext.providers.callable_wrapper import CallableProvider
 from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 
 if TYPE_CHECKING:
     from autocontext.harness.core.events import EventStreamEmitter
     from autocontext.providers.base import LLMProvider
-    from autocontext.storage.sqlite_store import SQLiteStore
+    from autocontext.storage import ArtifactStore, SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +27,7 @@ def stage_consultation(
     ctx: GenerationContext,
     *,
     sqlite: SQLiteStore,
+    artifacts: ArtifactStore,
     events: EventStreamEmitter,
 ) -> GenerationContext:
     """Optionally consult secondary provider when triggers are active."""
@@ -62,6 +62,14 @@ def stage_consultation(
 
     # Build provider
     provider = _create_consultation_provider(ctx)
+    if provider is None:
+        events.emit("consultation_skipped_unconfigured", {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "provider": ctx.settings.consultation_provider,
+        })
+        return ctx
+
     runner = ConsultationRunner(RetryProvider(provider))
 
     request = ConsultationRequest(
@@ -94,6 +102,8 @@ def stage_consultation(
         model_used=result.model_used,
         cost_usd=result.cost_usd,
     )
+    advisory_path = artifacts.generation_dir(ctx.run_id, ctx.generation) / "consultation.md"
+    artifacts.write_markdown(advisory_path, result.to_advisory_markdown())
 
     events.emit("consultation_completed", {
         "run_id": ctx.run_id,
@@ -107,15 +117,11 @@ def stage_consultation(
     return ctx
 
 
-def _create_consultation_provider(ctx: GenerationContext) -> LLMProvider:
-    """Create provider for consultation calls, falling back to a deterministic stub."""
+def _create_consultation_provider(ctx: GenerationContext) -> LLMProvider | None:
+    """Create provider for consultation calls, or None if consultation is not configured."""
     settings = ctx.settings
-    # If no API key, use a deterministic stub for testing
     if not settings.consultation_api_key:
-        return CallableProvider(
-            lambda _s, _u: "## Critique\nNo API key configured for consultation.",
-            model_name="deterministic-stub",
-        )
+        return None
     return create_provider(
         provider_type=settings.consultation_provider,
         api_key=settings.consultation_api_key,

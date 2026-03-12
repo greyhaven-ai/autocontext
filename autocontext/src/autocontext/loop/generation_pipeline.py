@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from autocontext.consultation.stage import stage_consultation
 from autocontext.knowledge.coherence import check_coherence
 from autocontext.loop.stage_preflight import stage_preflight
 from autocontext.loop.stage_prevalidation import stage_prevalidation
@@ -281,6 +282,14 @@ class GenerationPipeline:
                 )
             except Exception:
                 LOGGER.debug("meta_optimizer.record_gate_decision failed", exc_info=True)
+
+        # Stage 3c: Optional provider consultation after stalls/uncertainty
+        ctx = stage_consultation(
+            ctx,
+            sqlite=self._sqlite,
+            artifacts=self._artifacts,
+            events=self._events,
+        )
 
         # Stage 4: Curator quality gate
         ctx = stage_curator_gate(

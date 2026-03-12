@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from autocontext.config.settings import AppSettings
 from autocontext.providers.callable_wrapper import CallableProvider
+from autocontext.storage import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
 
 if TYPE_CHECKING:
@@ -40,6 +41,16 @@ def sqlite_store(tmp_path: Path) -> SQLiteStore:
     store.create_run("run-1", "grid_ctf", 5, "local")
     store.upsert_generation("run-1", 1, 0.5, 0.7, 1000.0, 1, 0, "advance", "completed")
     return store
+
+
+@pytest.fixture()
+def artifact_store(tmp_path: Path) -> ArtifactStore:
+    return ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
 
 
 @pytest.fixture()
@@ -507,16 +518,24 @@ class TestStageConsultation:
             replay_narrative="",
         )
 
-    def test_disabled_returns_ctx_unchanged(self, sqlite_store: SQLiteStore) -> None:
+    def test_disabled_returns_ctx_unchanged(
+        self,
+        sqlite_store: SQLiteStore,
+        artifact_store: ArtifactStore,
+    ) -> None:
         from autocontext.consultation.stage import stage_consultation
 
         ctx = self._make_ctx(consultation_enabled=False)
         events = MagicMock()
-        result = stage_consultation(ctx, sqlite=sqlite_store, events=events)
+        result = stage_consultation(ctx, sqlite=sqlite_store, artifacts=artifact_store, events=events)
         assert result is ctx
         assert result.consultation_result is None
 
-    def test_no_triggers_returns_ctx_unchanged(self, sqlite_store: SQLiteStore) -> None:
+    def test_no_triggers_returns_ctx_unchanged(
+        self,
+        sqlite_store: SQLiteStore,
+        artifact_store: ArtifactStore,
+    ) -> None:
         from autocontext.consultation.stage import stage_consultation
 
         ctx = self._make_ctx(
@@ -524,24 +543,41 @@ class TestStageConsultation:
             score_history=[0.3, 0.5, 0.7],
         )
         events = MagicMock()
-        result = stage_consultation(ctx, sqlite=sqlite_store, events=events)
+        result = stage_consultation(ctx, sqlite=sqlite_store, artifacts=artifact_store, events=events)
         assert result.consultation_result is None
 
-    def test_triggers_run_consultation(self, sqlite_store: SQLiteStore) -> None:
+    def test_triggers_run_consultation(
+        self,
+        sqlite_store: SQLiteStore,
+        artifact_store: ArtifactStore,
+        monkeypatch: pytest.MonkeyPatch,
+        mock_provider: CallableProvider,
+    ) -> None:
         from autocontext.consultation.stage import stage_consultation
 
         ctx = self._make_ctx()
         events = MagicMock()
-        result = stage_consultation(ctx, sqlite=sqlite_store, events=events)
+        ctx.settings.consultation_api_key = "test-key"
+        monkeypatch.setattr(
+            "autocontext.consultation.stage._create_consultation_provider",
+            lambda _ctx: mock_provider,
+        )
+        result = stage_consultation(ctx, sqlite=sqlite_store, artifacts=artifact_store, events=events)
 
         assert result.consultation_result is not None
         # Should have persisted to DB
         rows = sqlite_store.get_consultations_for_run("run-1")
         assert len(rows) >= 1
+        advisory_path = artifact_store.generation_dir("run-1", 3) / "consultation.md"
+        assert advisory_path.exists()
         # Should have emitted events
         assert events.emit.call_count >= 1
 
-    def test_budget_exceeded_skips_consultation(self, sqlite_store: SQLiteStore) -> None:
+    def test_budget_exceeded_skips_consultation(
+        self,
+        sqlite_store: SQLiteStore,
+        artifact_store: ArtifactStore,
+    ) -> None:
         from autocontext.consultation.stage import stage_consultation
 
         # Pre-fill some cost
@@ -554,14 +590,20 @@ class TestStageConsultation:
 
         ctx = self._make_ctx(consultation_cost_budget=0.50)
         events = MagicMock()
-        result = stage_consultation(ctx, sqlite=sqlite_store, events=events)
+        result = stage_consultation(ctx, sqlite=sqlite_store, artifacts=artifact_store, events=events)
 
         assert result.consultation_result is None
         # Should emit a budget-exceeded event
         event_names = [call.args[0] for call in events.emit.call_args_list]
         assert "consultation_skipped_budget" in event_names
 
-    def test_budget_zero_means_unlimited(self, sqlite_store: SQLiteStore) -> None:
+    def test_budget_zero_means_unlimited(
+        self,
+        sqlite_store: SQLiteStore,
+        artifact_store: ArtifactStore,
+        monkeypatch: pytest.MonkeyPatch,
+        mock_provider: CallableProvider,
+    ) -> None:
         from autocontext.consultation.stage import stage_consultation
 
         # Pre-fill large cost but budget=0 means unlimited
@@ -574,10 +616,32 @@ class TestStageConsultation:
 
         ctx = self._make_ctx(consultation_cost_budget=0.0)
         events = MagicMock()
-        result = stage_consultation(ctx, sqlite=sqlite_store, events=events)
+        ctx.settings.consultation_api_key = "test-key"
+        monkeypatch.setattr(
+            "autocontext.consultation.stage._create_consultation_provider",
+            lambda _ctx: mock_provider,
+        )
+        result = stage_consultation(ctx, sqlite=sqlite_store, artifacts=artifact_store, events=events)
 
         # Should NOT be skipped
         assert result.consultation_result is not None
+
+    def test_unconfigured_provider_skips_without_persisting(
+        self,
+        sqlite_store: SQLiteStore,
+        artifact_store: ArtifactStore,
+    ) -> None:
+        from autocontext.consultation.stage import stage_consultation
+
+        ctx = self._make_ctx()
+        events = MagicMock()
+
+        result = stage_consultation(ctx, sqlite=sqlite_store, artifacts=artifact_store, events=events)
+
+        assert result.consultation_result is None
+        assert sqlite_store.get_consultations_for_run("run-1") == []
+        event_names = [call.args[0] for call in events.emit.call_args_list]
+        assert "consultation_skipped_unconfigured" in event_names
 
 
 # ===========================================================================
