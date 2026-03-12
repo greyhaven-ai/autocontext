@@ -14,8 +14,8 @@ def test_training_has_mlx_flag_exists() -> None:
     assert isinstance(HAS_MLX, bool)
 
 
-def test_mts_train_without_mlx_gives_clear_error() -> None:
-    """Running `mts train` exits with an honest message for the current environment."""
+def test_mts_train_runs_successfully() -> None:
+    """Running `mts train` either trains or fails honestly when MLX is unavailable."""
     result = subprocess.run(
         [sys.executable, "-m", "mts.cli", "train"],
         capture_output=True,
@@ -23,13 +23,11 @@ def test_mts_train_without_mlx_gives_clear_error() -> None:
         timeout=30,
     )
     combined = result.stdout + result.stderr
-    assert result.returncode != 0
-
-    if not HAS_MLX:
-        assert "mlx" in combined.lower() or "uv sync" in combined.lower(), (
-            f"Expected helpful MLX install message, got:\n{combined}"
+    if HAS_MLX:
+        assert result.returncode == 0, f"Expected exit 0, got {result.returncode}:\n{combined}"
+        assert "training summary" in combined.lower(), (
+            f"Expected training summary in output, got:\n{combined}"
         )
     else:
-        assert "runner" in combined.lower() or "not wired" in combined.lower(), (
-            f"Expected clear scaffold-not-wired message, got:\n{combined}"
-        )
+        assert result.returncode == 1, f"Expected honest failure without MLX, got {result.returncode}:\n{combined}"
+        assert "mlx is required" in combined.lower(), f"Expected MLX guidance in output, got:\n{combined}"
