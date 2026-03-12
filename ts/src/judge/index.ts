@@ -1,6 +1,6 @@
 /**
  * LLM-based judge for evaluating agent task outputs.
- * Port of mts/src/mts/execution/judge.py
+ * Port of autocontext/src/autocontext/execution/judge.py
  */
 
 import type { LLMProvider, JudgeResult } from "../types/index.js";

@@ -32,8 +32,8 @@ knowledge/*
 !knowledge/.gitkeep
 skills/*
 !skills/.gitkeep
-mts/runs/
-mts/knowledge/
+autocontext/runs/
+autocontext/knowledge/
 
 # Database artifacts
 *.sqlite3

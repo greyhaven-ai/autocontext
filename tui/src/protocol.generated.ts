@@ -1,4 +1,4 @@
-// AUTO-GENERATED from mts/src/mts/server/protocol.py
+// AUTO-GENERATED from autocontext/src/autocontext/server/protocol.py
 // Do not edit manually. Run: python scripts/generate_protocol.py
 //
 // Protocol version: 1

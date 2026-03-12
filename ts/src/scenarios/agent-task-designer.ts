@@ -1,6 +1,6 @@
 /**
  * AgentTaskDesigner — generates AgentTaskSpec from natural language.
- * Port of mts/src/mts/scenarios/custom/agent_task_designer.py
+ * Port of autocontext/src/autocontext/scenarios/custom/agent_task_designer.py
  */
 
 import type { AgentTaskSpec } from "./agent-task-spec.js";

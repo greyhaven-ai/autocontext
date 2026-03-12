@@ -1,6 +1,6 @@
 /**
  * RLM (REPL-Loop Mode) module — multi-turn LLM REPL session for agent roles.
- * TypeScript port of Python mts.rlm / mts.harness.repl.
+ * TypeScript port of Python autocontext.rlm / mts.harness.repl.
  */
 
 export { RlmSession, extractCode } from "./session.js";

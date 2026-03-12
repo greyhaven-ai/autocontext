@@ -1,6 +1,6 @@
 /**
  * RLM Session — drives the multi-turn REPL conversation loop for one agent role.
- * Mirrors Python mts.harness.repl.session.RlmSession.
+ * Mirrors Python autocontext.harness.repl.session.RlmSession.
  */
 
 import type { ReplWorker, LlmComplete, ExecutionRecord } from "./types.js";

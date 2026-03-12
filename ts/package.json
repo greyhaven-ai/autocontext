@@ -1,12 +1,12 @@
 {
-  "name": "@greyhaven/mts",
+  "name": "@greyhaven/autoctx",
   "version": "0.1.0",
-  "description": "MTS — always-on agent evaluation harness",
+  "description": "AutoContext — always-on agent evaluation harness",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "mts": "dist/cli/index.js"
+    "autoctx": "dist/cli/index.js"
   },
   "exports": {
     ".": {

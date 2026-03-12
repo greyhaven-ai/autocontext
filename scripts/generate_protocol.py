@@ -2,8 +2,8 @@
 """Generate protocol artifacts from the server protocol source of truth.
 
 This script:
-1. Exports the JSON Schema from mts.server.protocol (the single source of truth)
-2. Writes protocol/mts-protocol.json (committed, for cross-language validation)
+1. Exports the JSON Schema from autocontext.server.protocol (the single source of truth)
+2. Writes protocol/autocontext-protocol.json (committed, for cross-language validation)
 3. Generates tui/src/protocol.generated.ts (Zod schemas derived from the JSON Schema)
 
 Usage:
@@ -17,12 +17,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Ensure the mts package is importable
+# Ensure the autocontext package is importable
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MTS_SRC = REPO_ROOT / "mts" / "src"
-sys.path.insert(0, str(MTS_SRC))
+AUTOCONTEXT_SRC = REPO_ROOT / "autocontext" / "src"
+sys.path.insert(0, str(AUTOCONTEXT_SRC))
 
-from mts.server.protocol import export_json_schema  # noqa: E402
+from autocontext.server.protocol import export_json_schema  # noqa: E402
 
 
 def _write_json_schema(schema: dict[str, Any], path: Path) -> None:
@@ -247,7 +247,7 @@ def _topo_sort_shared(names: list[str], defs: dict[str, Any]) -> list[str]:
 def generate_typescript(schema: dict[str, Any]) -> str:
     """Generate TUI protocol TypeScript (Zod schemas) from the JSON Schema."""
     lines: list[str] = [
-        "// AUTO-GENERATED from mts/src/mts/server/protocol.py",
+        "// AUTO-GENERATED from autocontext/src/autocontext/server/protocol.py",
         "// Do not edit manually. Run: python scripts/generate_protocol.py",
         "//",
         f"// Protocol version: {schema['protocol_version']}",
@@ -321,7 +321,7 @@ def generate_typescript(schema: dict[str, Any]) -> str:
 
 def check_parity(schema: dict[str, Any]) -> bool:
     """Check that committed artifacts match the live schema. Returns True if in sync."""
-    json_path = REPO_ROOT / "protocol" / "mts-protocol.json"
+    json_path = REPO_ROOT / "protocol" / "autocontext-protocol.json"
     ts_path = REPO_ROOT / "tui" / "src" / "protocol.generated.ts"
 
     ok = True
@@ -365,7 +365,7 @@ def main() -> None:
         return
 
     # Write JSON Schema
-    json_path = REPO_ROOT / "protocol" / "mts-protocol.json"
+    json_path = REPO_ROOT / "protocol" / "autocontext-protocol.json"
     _write_json_schema(schema, json_path)
     print(f"Wrote {json_path}")
 
