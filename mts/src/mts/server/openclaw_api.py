@@ -141,12 +141,15 @@ def trigger_distillation_endpoint(
     """Trigger a distillation workflow for a scenario."""
     from mts.mcp.tools import trigger_distillation
 
-    return trigger_distillation(  # type: ignore[return-value]
+    result = trigger_distillation(
         ctx,
         scenario=body.scenario,
         source_artifact_ids=body.source_artifact_ids,
         training_config=body.training_config or None,
     )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=str(result["error"]))
+    return result  # type: ignore[return-value]
 
 
 @router.get("/distill/{job_id}")

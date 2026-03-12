@@ -239,6 +239,15 @@ class AppSettings(BaseModel):
     mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
     mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
     mlx_max_tokens: int = Field(default=512, ge=1, description="Max generation tokens for MLX model")
+    # OpenClaw distillation sidecar (AC-208)
+    openclaw_distill_sidecar_factory: str = Field(
+        default="",
+        description="Import path to distillation sidecar factory as module:callable",
+    )
+    openclaw_distill_sidecar_command: str = Field(
+        default="",
+        description="Command template to launch an external distillation sidecar job",
+    )
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
