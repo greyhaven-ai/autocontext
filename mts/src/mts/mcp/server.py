@@ -435,9 +435,48 @@ def mts_list_artifacts(
 
 
 @mcp.tool()
-def mts_distill_status() -> str:
-    """Check status of distillation workflows."""
-    return json.dumps(tools.distill_status(_get_ctx()))
+def mts_distill_status(scenario: str | None = None) -> str:
+    """Check status of distillation workflows, optionally filtered by scenario."""
+    return json.dumps(tools.distill_status(_get_ctx(), scenario=scenario))
+
+
+@mcp.tool()
+def mts_trigger_distillation(
+    scenario: str,
+    source_artifact_ids: str | None = None,
+    training_config: str | None = None,
+) -> str:
+    """Trigger a distillation workflow for a scenario.
+    source_artifact_ids and training_config should be JSON strings."""
+    ids = json.loads(source_artifact_ids) if source_artifact_ids else None
+    config = json.loads(training_config) if training_config else None
+    return json.dumps(tools.trigger_distillation(
+        _get_ctx(), scenario, source_artifact_ids=ids, training_config=config,
+    ))
+
+
+@mcp.tool()
+def mts_get_distill_job(job_id: str) -> str:
+    """Get details of a specific distillation job by ID."""
+    return json.dumps(tools.get_distill_job(_get_ctx(), job_id))
+
+
+@mcp.tool()
+def mts_update_distill_job(
+    job_id: str,
+    status: str,
+    result_artifact_id: str | None = None,
+    error_message: str | None = None,
+    training_metrics: str | None = None,
+) -> str:
+    """Update a distillation job status. training_metrics should be a JSON string."""
+    metrics = json.loads(training_metrics) if training_metrics else None
+    return json.dumps(tools.update_distill_job(
+        _get_ctx(), job_id, status,
+        result_artifact_id=result_artifact_id,
+        error_message=error_message,
+        training_metrics=metrics,
+    ))
 
 
 @mcp.tool()

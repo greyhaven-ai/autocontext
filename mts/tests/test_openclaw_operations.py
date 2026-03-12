@@ -6,6 +6,7 @@ and corresponding REST endpoints.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +18,15 @@ from mts.artifacts import (
 )
 from mts.config import AppSettings
 from mts.mcp.tools import MtsToolContext
+
+
+class _TestDistillSidecar:
+    def launch(self, job_id: str, scenario: str, config: dict[str, object]) -> None:
+        del job_id, scenario, config
+
+    def poll(self, job_id: str) -> dict[str, object]:
+        del job_id
+        return {}
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -338,13 +348,14 @@ class TestDistillStatus:
     def test_trigger_distillation(self, tool_ctx: MtsToolContext) -> None:
         from mts.mcp.tools import trigger_distillation
 
-        result = trigger_distillation(
-            tool_ctx,
-            scenario="grid_ctf",
-            source_artifact_ids=[],
-        )
+        with patch("mts.openclaw.distill.load_distill_sidecar", return_value=_TestDistillSidecar()):
+            result = trigger_distillation(
+                tool_ctx,
+                scenario="grid_ctf",
+                source_artifact_ids=[],
+            )
         assert "job_id" in result
-        assert result["status"] == "pending"
+        assert result["status"] == "running"
 
 
 # ---------------------------------------------------------------------------
