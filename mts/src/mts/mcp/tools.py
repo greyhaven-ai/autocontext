@@ -886,58 +886,86 @@ def list_artifacts(
 
 def distill_status(
     ctx: MtsToolContext,
+    scenario: str | None = None,
 ) -> dict[str, object]:
     """Return the status of distillation workflows.
 
-    Distillation is a placeholder for future training sidecar integration.
-    Currently returns an empty job list.
+    Uses DistillJobManager for structured job lifecycle tracking.
+    Optionally filters by scenario name.
     """
-    jobs_dir = ctx.settings.knowledge_root / "_openclaw_distill_jobs"
-    jobs: list[dict[str, object]] = []
-    if jobs_dir.exists():
-        import json as _json
+    from mts.openclaw.distill import DistillJobManager
 
-        for path in sorted(jobs_dir.glob("*.json")):
-            try:
-                data: dict[str, object] = _json.loads(path.read_text(encoding="utf-8"))
-                jobs.append(data)
-            except Exception:
-                continue
-
-    return {
-        "active_jobs": len([j for j in jobs if j.get("status") in ("pending", "running")]),
-        "jobs": jobs,
-    }
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    jobs = mgr.list_jobs(scenario=scenario)
+    job_dicts: list[dict[str, object]] = [
+        j.model_dump() for j in jobs  # type: ignore[misc]
+    ]
+    active = sum(1 for j in jobs if j.status in ("pending", "running"))
+    return {"active_jobs": active, "jobs": job_dicts}
 
 
 def trigger_distillation(
     ctx: MtsToolContext,
     scenario: str,
     source_artifact_ids: list[str] | None = None,
+    training_config: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Trigger a distillation workflow for a scenario.
 
-    Creates a pending distillation job. The actual training would be handled
-    by the training sidecar (future integration).
+    Creates a pending distillation job with full lifecycle tracking.
     """
-    import json as _json
-    import uuid
+    from mts.openclaw.distill import DistillJobManager
 
-    job_id = uuid.uuid4().hex
-    jobs_dir = ctx.settings.knowledge_root / "_openclaw_distill_jobs"
-    jobs_dir.mkdir(parents=True, exist_ok=True)
-
-    job: dict[str, object] = {
-        "job_id": job_id,
-        "scenario": scenario,
-        "source_artifact_ids": source_artifact_ids or [],
-        "status": "pending",
-    }
-    (jobs_dir / f"{job_id}.json").write_text(
-        _json.dumps(job, indent=2), encoding="utf-8"
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    job = mgr.create_job(
+        scenario=scenario,
+        source_artifact_ids=source_artifact_ids,
+        training_config=dict(training_config) if training_config else None,
     )
+    return {"job_id": job.job_id, "status": job.status, "scenario": job.scenario}
 
-    return {"job_id": job_id, "status": "pending", "scenario": scenario}
+
+def get_distill_job(
+    ctx: MtsToolContext,
+    job_id: str,
+) -> dict[str, object]:
+    """Fetch a single distillation job by ID."""
+    from mts.openclaw.distill import DistillJobManager
+
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    job = mgr.get_job(job_id)
+    if job is None:
+        return {"error": f"Distillation job '{job_id}' not found"}
+    return job.model_dump()  # type: ignore[return-value]
+
+
+def update_distill_job(
+    ctx: MtsToolContext,
+    job_id: str,
+    status: str,
+    *,
+    result_artifact_id: str | None = None,
+    error_message: str | None = None,
+    training_metrics: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Update a distillation job status with lifecycle validation."""
+    from mts.openclaw.distill import DistillJobError, DistillJobManager
+
+    mgr = DistillJobManager(ctx.settings.knowledge_root)
+    try:
+        job = mgr.transition(
+            job_id,
+            status,  # type: ignore[arg-type]
+            result_artifact_id=result_artifact_id,
+            error_message=error_message,
+            training_metrics=dict(training_metrics) if training_metrics else None,
+        )
+    except DistillJobError as exc:
+        return {"error": str(exc)}
+
+    if job is None:
+        return {"error": f"Distillation job '{job_id}' not found"}
+    return job.model_dump()  # type: ignore[return-value]
 
 
 def export_package(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]:
