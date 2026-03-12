@@ -45,6 +45,24 @@ def _make_trace(
     }
 
 
+class _FactoryAgent:
+    def execute(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        return _make_trace(output=f"factory:{prompt}", model=model)
+
+
+def build_test_openclaw_agent(settings: Any) -> _FactoryAgent:
+    del settings
+    return _FactoryAgent()
+
+
 # ---------------------------------------------------------------------------
 # TestOpenClawExecutionTrace
 # ---------------------------------------------------------------------------
@@ -334,6 +352,24 @@ class TestTimeoutBehavior:
         with pytest.raises(OpenClawAdapterError, match="timed out"):
             client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
 
+    def test_timeout_returns_promptly(self) -> None:
+        from mts.openclaw.agent_adapter import OpenClawClient, OpenClawAdapterError
+
+        def slow_execute(**kwargs: Any) -> dict[str, Any]:
+            time.sleep(1.0)
+            return _make_trace()
+
+        agent = MagicMock()
+        agent.execute.side_effect = slow_execute
+        client = OpenClawClient(agent=agent, max_retries=0, timeout_seconds=0.05)
+
+        t0 = time.monotonic()
+        with pytest.raises(OpenClawAdapterError, match="timed out"):
+            client.generate(model="m", prompt="p", max_tokens=100, temperature=0.0)
+        elapsed = time.monotonic() - t0
+
+        assert elapsed < 0.5
+
 
 # ---------------------------------------------------------------------------
 # TestTraceToEvaluationRecord
@@ -379,35 +415,45 @@ class TestProviderBridgeRegistration:
     def test_openclaw_provider_creates_client(self) -> None:
         from mts.agents.provider_bridge import create_role_client
 
-        mock_agent = MagicMock()
-        mock_agent.execute.return_value = _make_trace()
         settings = MagicMock()
+        settings.openclaw_agent_factory = "tests.test_openclaw_agent_adapter:build_test_openclaw_agent"
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
 
-        with patch("mts.agents.provider_bridge._build_openclaw_agent", return_value=mock_agent):
-            client = create_role_client("openclaw", settings)
+        client = create_role_client("openclaw", settings)
 
         assert client is not None
         from mts.openclaw.agent_adapter import OpenClawClient
 
         assert isinstance(client, OpenClawClient)
+        response = client.generate(model="agent-model", prompt="ping", max_tokens=32, temperature=0.0)
+        assert response.text == "factory:ping"
 
     def test_openclaw_provider_case_insensitive(self) -> None:
         from mts.agents.provider_bridge import create_role_client
 
-        mock_agent = MagicMock()
-        mock_agent.execute.return_value = _make_trace()
         settings = MagicMock()
+        settings.openclaw_agent_factory = "tests.test_openclaw_agent_adapter:build_test_openclaw_agent"
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
 
-        with patch("mts.agents.provider_bridge._build_openclaw_agent", return_value=mock_agent):
-            client = create_role_client("OpenClaw", settings)
+        client = create_role_client("OpenClaw", settings)
 
         assert client is not None
+
+    def test_openclaw_provider_requires_factory_setting(self) -> None:
+        from mts.agents.provider_bridge import create_role_client
+
+        settings = MagicMock()
+        settings.openclaw_agent_factory = ""
+        settings.openclaw_timeout_seconds = 30.0
+        settings.openclaw_max_retries = 2
+        settings.openclaw_retry_base_delay = 0.25
+
+        with pytest.raises(ValueError, match="MTS_OPENCLAW_AGENT_FACTORY"):
+            create_role_client("openclaw", settings)
 
 
 # ---------------------------------------------------------------------------
@@ -420,9 +466,11 @@ class TestOpenClawSettings:
         from mts.config.settings import AppSettings
 
         s = AppSettings()
+        assert hasattr(s, "openclaw_agent_factory")
         assert hasattr(s, "openclaw_timeout_seconds")
         assert hasattr(s, "openclaw_max_retries")
         assert hasattr(s, "openclaw_retry_base_delay")
+        assert s.openclaw_agent_factory == ""
         assert s.openclaw_timeout_seconds == 30.0
         assert s.openclaw_max_retries == 2
         assert s.openclaw_retry_base_delay == 0.25
@@ -432,6 +480,7 @@ class TestOpenClawSettings:
         from mts.config.settings import load_settings
 
         env = {
+            "MTS_OPENCLAW_AGENT_FACTORY": "tests.test_openclaw_agent_adapter:build_test_openclaw_agent",
             "MTS_OPENCLAW_TIMEOUT_SECONDS": "60.0",
             "MTS_OPENCLAW_MAX_RETRIES": "5",
             "MTS_OPENCLAW_RETRY_BASE_DELAY": "0.5",
@@ -439,6 +488,7 @@ class TestOpenClawSettings:
         with patch.dict(os.environ, env, clear=False):
             s = load_settings()
 
+        assert s.openclaw_agent_factory == "tests.test_openclaw_agent_adapter:build_test_openclaw_agent"
         assert s.openclaw_timeout_seconds == 60.0
         assert s.openclaw_max_retries == 5
         assert s.openclaw_retry_base_delay == 0.5
