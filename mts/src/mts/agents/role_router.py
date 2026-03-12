@@ -1,8 +1,7 @@
 """Capability- and cost-aware role routing (AC-204).
 
-Routes agent roles to providers based on capability requirements,
-execution cost, and available local artifacts (distilled models,
-code policies).
+Routes agent roles to executable providers based on capability requirements,
+execution cost, and available local artifacts (distilled models).
 
 Usage:
     MTS_ROLE_ROUTING=auto  — automatic provider selection per role
@@ -46,7 +45,6 @@ class RoutingContext:
     retry_count: int = 0
     is_plateau: bool = False
     available_local_models: list[str] = field(default_factory=list)
-    available_code_policies: list[str] = field(default_factory=list)
     scenario_name: str = ""
 
 
@@ -56,7 +54,6 @@ _COST_TABLE: dict[ProviderClass, float] = {
     ProviderClass.MID_TIER: 0.003,
     ProviderClass.FAST: 0.001,
     ProviderClass.LOCAL: 0.0,
-    ProviderClass.CODE_POLICY: 0.0,
 }
 
 # Default routing table: role → ordered list of preferred provider classes
@@ -64,23 +61,26 @@ _COST_TABLE: dict[ProviderClass, float] = {
 DEFAULT_ROUTING_TABLE: dict[str, list[ProviderClass]] = {
     "competitor": [ProviderClass.FRONTIER, ProviderClass.LOCAL],
     "analyst": [ProviderClass.MID_TIER, ProviderClass.LOCAL],
-    "coach": [ProviderClass.MID_TIER],
+    "coach": [ProviderClass.MID_TIER, ProviderClass.LOCAL],
     "architect": [ProviderClass.FRONTIER],
     "curator": [ProviderClass.FAST],
-    "translator": [ProviderClass.FAST, ProviderClass.CODE_POLICY],
+    "translator": [ProviderClass.FAST, ProviderClass.LOCAL],
 }
 
 # Roles that can be served by local artifacts when available
 _LOCAL_ELIGIBLE_ROLES: set[str] = {"competitor", "analyst", "coach", "translator"}
 
-# Roles where code policies can replace LLM calls
-_CODE_POLICY_ELIGIBLE_ROLES: set[str] = {"translator"}
-
 # Provider type inferred from provider class when using the default provider
 _EXPLICIT_PROVIDER_CLASS: dict[str, ProviderClass] = {
+    "anthropic": ProviderClass.FRONTIER,
     "mlx": ProviderClass.LOCAL,
     "openclaw": ProviderClass.FRONTIER,
     "deterministic": ProviderClass.FAST,
+    "agent_sdk": ProviderClass.FRONTIER,
+    "openai": ProviderClass.MID_TIER,
+    "openai-compatible": ProviderClass.MID_TIER,
+    "ollama": ProviderClass.MID_TIER,
+    "vllm": ProviderClass.MID_TIER,
 }
 
 
@@ -98,8 +98,7 @@ class RoleRouter:
             ProviderClass.FRONTIER: settings.tier_opus_model,
             ProviderClass.MID_TIER: settings.tier_sonnet_model,
             ProviderClass.FAST: settings.tier_haiku_model,
-            ProviderClass.LOCAL: "",  # provider-default
-            ProviderClass.CODE_POLICY: "",
+            ProviderClass.LOCAL: settings.mlx_model_path,
         }
         self._role_models: dict[str, str] = {
             "competitor": settings.model_competitor,
@@ -185,9 +184,7 @@ class RoleRouter:
         # First pass: check if any artifact-backed preference is satisfied
         for pref in preferences:
             if pref == ProviderClass.LOCAL and role in _LOCAL_ELIGIBLE_ROLES and ctx.available_local_models:
-                return self._config_for_class(role, ProviderClass.LOCAL)
-            if pref == ProviderClass.CODE_POLICY and role in _CODE_POLICY_ELIGIBLE_ROLES and ctx.available_code_policies:
-                return self._config_for_class(role, ProviderClass.CODE_POLICY)
+                return self._config_for_class(role, ProviderClass.LOCAL, local_model_path=ctx.available_local_models[0])
 
         # Second pass: use the first API-backed preference
         for pref in preferences:
@@ -197,21 +194,20 @@ class RoleRouter:
         # Fallback
         return self._config_for_class(role, preferences[0] if preferences else ProviderClass.MID_TIER)
 
-    def _config_for_class(self, role: str, provider_class: ProviderClass) -> ProviderConfig:
+    def _config_for_class(
+        self,
+        role: str,
+        provider_class: ProviderClass,
+        *,
+        local_model_path: str | None = None,
+    ) -> ProviderConfig:
         """Build a ProviderConfig for a resolved provider class."""
         if provider_class == ProviderClass.LOCAL:
             return ProviderConfig(
                 provider_type="mlx",
-                model=None,
+                model=local_model_path or self._settings.mlx_model_path or None,
                 provider_class=ProviderClass.LOCAL,
                 estimated_cost_per_1k_tokens=_COST_TABLE[ProviderClass.LOCAL],
-            )
-        if provider_class == ProviderClass.CODE_POLICY:
-            return ProviderConfig(
-                provider_type="code_policy",
-                model=None,
-                provider_class=ProviderClass.CODE_POLICY,
-                estimated_cost_per_1k_tokens=_COST_TABLE[ProviderClass.CODE_POLICY],
             )
         return ProviderConfig(
             provider_type=self._settings.agent_provider,
@@ -227,16 +223,19 @@ class RoleRouter:
         )
         return ProviderConfig(
             provider_type=provider_type,
-            model=self._role_models.get(role),
+            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._role_models.get(role),
             provider_class=provider_class,
             estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
 
     def _config_for_default(self, role: str) -> ProviderConfig:
         """Build config when routing is disabled — use default provider + model."""
+        provider_class = _EXPLICIT_PROVIDER_CLASS.get(
+            self._settings.agent_provider.lower(), ProviderClass.MID_TIER,
+        )
         return ProviderConfig(
             provider_type=self._settings.agent_provider,
-            model=self._role_models.get(role),
-            provider_class=ProviderClass.MID_TIER,
-            estimated_cost_per_1k_tokens=_COST_TABLE[ProviderClass.MID_TIER],
+            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._role_models.get(role),
+            provider_class=provider_class,
+            estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
