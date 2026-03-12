@@ -2,15 +2,13 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mts.config.settings import AppSettings
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,6 +27,27 @@ def _ctx(tmp_path: Path) -> Any:
     from mts.mcp.tools import MtsToolContext
 
     return MtsToolContext(_settings(tmp_path))
+
+
+class _FakeSidecar:
+    def __init__(self) -> None:
+        self.launched: list[tuple[str, str, dict[str, Any]]] = []
+        self.poll_results: dict[str, dict[str, Any]] = {}
+
+    def launch(self, job_id: str, scenario: str, config: dict[str, Any]) -> None:
+        self.launched.append((job_id, scenario, dict(config)))
+
+    def poll(self, job_id: str) -> dict[str, Any]:
+        return dict(self.poll_results.get(job_id, {}))
+
+
+@pytest.fixture
+def fake_sidecar(monkeypatch: pytest.MonkeyPatch) -> _FakeSidecar:
+    from mts.openclaw import distill as distill_module
+
+    sidecar = _FakeSidecar()
+    monkeypatch.setattr(distill_module, "load_distill_sidecar", lambda *args, **kwargs: sidecar)
+    return sidecar
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +96,7 @@ class TestDistillJobModel:
     def test_job_rejects_bad_status(self) -> None:
         from mts.openclaw.distill import DistillJob
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             DistillJob(scenario="s", status="invalid")  # type: ignore[arg-type]
 
     def test_job_training_config_and_metrics(self) -> None:
@@ -200,7 +219,7 @@ class TestDistillJobManager:
         assert mgr.transition("nonexistent", "running") is None
 
     def test_transition_invalid_state(self, tmp_path: Path) -> None:
-        from mts.openclaw.distill import DistillJobManager, DistillJobError
+        from mts.openclaw.distill import DistillJobError, DistillJobManager
 
         mgr = DistillJobManager(tmp_path / "knowledge")
         job = mgr.create_job("grid_ctf")
@@ -208,13 +227,32 @@ class TestDistillJobManager:
         with pytest.raises(DistillJobError, match="Invalid transition"):
             mgr.transition(job.job_id, "completed")
 
-    def test_transition_from_terminal_state(self, tmp_path: Path) -> None:
-        from mts.openclaw.distill import DistillJobManager, DistillJobError
+    def test_completed_requires_result_artifact(self, tmp_path: Path) -> None:
+        from mts.openclaw.distill import DistillJobError, DistillJobManager
 
         mgr = DistillJobManager(tmp_path / "knowledge")
         job = mgr.create_job("grid_ctf")
         mgr.transition(job.job_id, "running")
-        mgr.transition(job.job_id, "completed")
+
+        with pytest.raises(DistillJobError, match="result_artifact_id"):
+            mgr.transition(job.job_id, "completed")
+
+    def test_failed_requires_error_message(self, tmp_path: Path) -> None:
+        from mts.openclaw.distill import DistillJobError, DistillJobManager
+
+        mgr = DistillJobManager(tmp_path / "knowledge")
+        job = mgr.create_job("grid_ctf")
+
+        with pytest.raises(DistillJobError, match="error_message"):
+            mgr.transition(job.job_id, "failed")
+
+    def test_transition_from_terminal_state(self, tmp_path: Path) -> None:
+        from mts.openclaw.distill import DistillJobError, DistillJobManager
+
+        mgr = DistillJobManager(tmp_path / "knowledge")
+        job = mgr.create_job("grid_ctf")
+        mgr.transition(job.job_id, "running")
+        mgr.transition(job.job_id, "completed", result_artifact_id="art_123")
         # completed → running is not valid
         with pytest.raises(DistillJobError, match="Invalid transition"):
             mgr.transition(job.job_id, "running")
@@ -228,7 +266,7 @@ class TestDistillJobManager:
         mgr.transition(j2.job_id, "running")
         j3 = mgr.create_job("scenario3")
         mgr.transition(j3.job_id, "running")
-        mgr.transition(j3.job_id, "completed")
+        mgr.transition(j3.job_id, "completed", result_artifact_id="art_456")
 
         assert mgr.active_job_count() == 2  # 1 pending + 1 running
 
@@ -250,8 +288,7 @@ class TestDistillSidecarProtocol:
                 return {"status": "running"}
 
         sidecar = MySidecar()
-        assert hasattr(sidecar, "launch")
-        assert hasattr(sidecar, "poll")
+        assert isinstance(sidecar, DistillSidecarProtocol)
 
 
 # ---------------------------------------------------------------------------
@@ -260,15 +297,16 @@ class TestDistillSidecarProtocol:
 
 
 class TestUpdatedToolFunctions:
-    def test_trigger_distillation_uses_manager(self, tmp_path: Path) -> None:
+    def test_trigger_distillation_launches_sidecar(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import trigger_distillation
 
         ctx = _ctx(tmp_path)
         result = trigger_distillation(ctx, "grid_ctf", source_artifact_ids=["a1"])
 
-        assert result["status"] == "pending"
+        assert result["status"] == "running"
         assert "job_id" in result
         assert result["scenario"] == "grid_ctf"
+        assert fake_sidecar.launched == [(str(result["job_id"]), "grid_ctf", {})]
         # Job file should have full schema
         jobs_dir = tmp_path / "knowledge" / "_openclaw_distill_jobs"
         files = list(jobs_dir.glob("*.json"))
@@ -277,7 +315,7 @@ class TestUpdatedToolFunctions:
         assert "created_at" in data
         assert "source_artifact_ids" in data
 
-    def test_trigger_distillation_with_training_config(self, tmp_path: Path) -> None:
+    def test_trigger_distillation_with_training_config(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import trigger_distillation
 
         ctx = _ctx(tmp_path)
@@ -287,12 +325,22 @@ class TestUpdatedToolFunctions:
             training_config={"epochs": 20, "lr": 0.001},
         )
 
-        assert result["status"] == "pending"
+        assert result["status"] == "running"
+        assert fake_sidecar.launched[0][2]["epochs"] == 20
         jobs_dir = tmp_path / "knowledge" / "_openclaw_distill_jobs"
         data = json.loads(list(jobs_dir.glob("*.json"))[0].read_text())
         assert data["training_config"]["epochs"] == 20
 
-    def test_distill_status_returns_full_jobs(self, tmp_path: Path) -> None:
+    def test_trigger_distillation_errors_without_sidecar(self, tmp_path: Path) -> None:
+        from mts.mcp.tools import trigger_distillation
+
+        ctx = _ctx(tmp_path)
+        result = trigger_distillation(ctx, "grid_ctf")
+
+        assert "error" in result
+        assert result["status"] == "failed"
+
+    def test_distill_status_returns_full_jobs(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import distill_status, trigger_distillation
 
         ctx = _ctx(tmp_path)
@@ -308,7 +356,7 @@ class TestUpdatedToolFunctions:
             assert "created_at" in job
             assert "status" in job
 
-    def test_distill_status_filters_by_scenario(self, tmp_path: Path) -> None:
+    def test_distill_status_filters_by_scenario(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import distill_status, trigger_distillation
 
         ctx = _ctx(tmp_path)
@@ -319,6 +367,23 @@ class TestUpdatedToolFunctions:
         assert len(status["jobs"]) == 1
         assert status["jobs"][0]["scenario"] == "grid_ctf"
 
+    def test_distill_status_polls_sidecar_updates(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
+        from mts.mcp.tools import distill_status, trigger_distillation
+
+        ctx = _ctx(tmp_path)
+        result = trigger_distillation(ctx, "grid_ctf")
+        job_id = str(result["job_id"])
+        fake_sidecar.poll_results[job_id] = {
+            "status": "completed",
+            "result_artifact_id": "distilled_123",
+            "training_metrics": {"loss": 0.01},
+        }
+
+        status = distill_status(ctx)
+        assert status["active_jobs"] == 0
+        assert status["jobs"][0]["status"] == "completed"
+        assert status["jobs"][0]["result_artifact_id"] == "distilled_123"
+
 
 # ---------------------------------------------------------------------------
 # TestJobLifecycleIntegration
@@ -326,7 +391,7 @@ class TestUpdatedToolFunctions:
 
 
 class TestJobLifecycleIntegration:
-    def test_full_lifecycle_pending_to_completed(self, tmp_path: Path) -> None:
+    def test_full_lifecycle_running_to_completed(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import distill_status, trigger_distillation, update_distill_job
 
         ctx = _ctx(tmp_path)
@@ -335,15 +400,11 @@ class TestJobLifecycleIntegration:
         result = trigger_distillation(ctx, "grid_ctf", source_artifact_ids=["a1"])
         job_id = str(result["job_id"])
 
-        # 2. Check pending
+        # 2. Check running
         status = distill_status(ctx)
         assert status["active_jobs"] == 1
 
-        # 3. Transition to running
-        updated = update_distill_job(ctx, job_id, "running")
-        assert updated["status"] == "running"
-
-        # 4. Complete with artifact
+        # 3. Complete with artifact
         updated = update_distill_job(
             ctx,
             job_id,
@@ -354,11 +415,11 @@ class TestJobLifecycleIntegration:
         assert updated["status"] == "completed"
         assert updated["result_artifact_id"] == "distilled_model_001"
 
-        # 5. Status should show 0 active
+        # 4. Status should show 0 active
         status = distill_status(ctx)
         assert status["active_jobs"] == 0
 
-    def test_full_lifecycle_pending_to_failed(self, tmp_path: Path) -> None:
+    def test_full_lifecycle_running_to_failed(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import distill_status, trigger_distillation, update_distill_job
 
         ctx = _ctx(tmp_path)
@@ -366,7 +427,6 @@ class TestJobLifecycleIntegration:
         result = trigger_distillation(ctx, "grid_ctf")
         job_id = str(result["job_id"])
 
-        update_distill_job(ctx, job_id, "running")
         updated = update_distill_job(ctx, job_id, "failed", error_message="CUDA OOM")
 
         assert updated["status"] == "failed"
@@ -375,7 +435,7 @@ class TestJobLifecycleIntegration:
         status = distill_status(ctx)
         assert status["active_jobs"] == 0
 
-    def test_get_distill_job_endpoint(self, tmp_path: Path) -> None:
+    def test_get_distill_job_endpoint(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import get_distill_job, trigger_distillation
 
         ctx = _ctx(tmp_path)
@@ -385,7 +445,7 @@ class TestJobLifecycleIntegration:
         job = get_distill_job(ctx, job_id)
         assert job["job_id"] == job_id
         assert job["scenario"] == "grid_ctf"
-        assert job["status"] == "pending"
+        assert job["status"] == "running"
 
     def test_get_distill_job_not_found(self, tmp_path: Path) -> None:
         from mts.mcp.tools import get_distill_job
@@ -394,14 +454,14 @@ class TestJobLifecycleIntegration:
         result = get_distill_job(ctx, "nonexistent")
         assert "error" in result
 
-    def test_update_distill_job_invalid_transition(self, tmp_path: Path) -> None:
+    def test_update_distill_job_invalid_transition(self, tmp_path: Path, fake_sidecar: _FakeSidecar) -> None:
         from mts.mcp.tools import trigger_distillation, update_distill_job
 
         ctx = _ctx(tmp_path)
         result = trigger_distillation(ctx, "grid_ctf")
         job_id = str(result["job_id"])
 
-        # pending → completed is invalid
+        # running → completed without artifact is invalid
         updated = update_distill_job(ctx, job_id, "completed")
         assert "error" in updated
 

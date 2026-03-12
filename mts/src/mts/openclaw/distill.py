@@ -8,12 +8,22 @@ Provides:
 """
 from __future__ import annotations
 
+import importlib
+import inspect
+import json
+import os
+import shlex
+import subprocess
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from mts.config.settings import AppSettings
 
 
 class DistillJobError(Exception):
@@ -24,7 +34,7 @@ DistillJobStatus = Literal["pending", "running", "completed", "failed"]
 
 # Valid state transitions: source → set of allowed targets
 _VALID_TRANSITIONS: dict[str, set[str]] = {
-    "pending": {"running"},
+    "pending": {"running", "failed"},
     "running": {"completed", "failed"},
     "completed": set(),
     "failed": set(),
@@ -58,6 +68,74 @@ class DistillSidecarProtocol(Protocol):
     def poll(self, job_id: str) -> dict[str, Any]:
         """Poll job status from the sidecar."""
         ...
+
+
+class CommandDistillSidecar:
+    """Launches an external sidecar command and relies on API callbacks for progress."""
+
+    def __init__(self, command_template: str, *, cwd: Path) -> None:
+        self._command_template = command_template
+        self._cwd = cwd
+
+    def launch(self, job_id: str, scenario: str, config: dict[str, Any]) -> None:
+        command = shlex.split(
+            self._command_template.format(job_id=job_id, scenario=scenario),
+        )
+        env = os.environ.copy()
+        env["MTS_DISTILL_JOB_ID"] = job_id
+        env["MTS_DISTILL_SCENARIO"] = scenario
+        env["MTS_DISTILL_TRAINING_CONFIG"] = json.dumps(config, sort_keys=True)
+        subprocess.Popen(  # noqa: S603
+            command,
+            cwd=self._cwd,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    def poll(self, job_id: str) -> dict[str, Any]:
+        del job_id
+        return {}
+
+
+def _load_factory(factory_path: str) -> Callable[..., object]:
+    module_name, sep, attr_name = factory_path.partition(":")
+    if not sep or not module_name or not attr_name:
+        raise DistillJobError(
+            "MTS_OPENCLAW_DISTILL_SIDECAR_FACTORY must be in the form 'module:callable'",
+        )
+    module = importlib.import_module(module_name)
+    try:
+        factory = getattr(module, attr_name)
+    except AttributeError as exc:
+        raise DistillJobError(f"Distill sidecar factory {factory_path!r} not found") from exc
+    if not callable(factory):
+        raise DistillJobError(f"Distill sidecar factory {factory_path!r} is not callable")
+    return cast(Callable[..., object], factory)
+
+
+def load_distill_sidecar(settings: AppSettings, *, cwd: Path | None = None) -> DistillSidecarProtocol | None:
+    """Resolve the configured distillation sidecar, if any."""
+    factory_path = settings.openclaw_distill_sidecar_factory.strip()
+    if factory_path:
+        factory = _load_factory(factory_path)
+        signature = inspect.signature(factory)
+        if len(signature.parameters) == 0:
+            sidecar = factory()
+        else:
+            sidecar = factory(settings)
+        if not isinstance(sidecar, DistillSidecarProtocol):
+            raise DistillJobError(
+                f"Distill sidecar factory {factory_path!r} did not return a DistillSidecarProtocol implementation",
+            )
+        return sidecar
+
+    command_template = settings.openclaw_distill_sidecar_command.strip()
+    if command_template:
+        return CommandDistillSidecar(command_template, cwd=cwd or settings.knowledge_root.parent)
+    return None
 
 
 class DistillJobManager:
@@ -144,6 +222,10 @@ class DistillJobManager:
                 f"Invalid transition: {job.status} → {target_status} "
                 f"(allowed: {allowed or 'none — terminal state'})"
             )
+        if target_status == "completed" and not (result_artifact_id or job.result_artifact_id):
+            raise DistillJobError("Completed distill jobs require a result_artifact_id")
+        if target_status == "failed" and not (error_message or job.error_message):
+            raise DistillJobError("Failed distill jobs require an error_message")
 
         now = datetime.now(UTC).isoformat()
         job.status = target_status
