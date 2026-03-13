@@ -222,9 +222,10 @@ if HAS_MLX:
         import tiktoken  # type: ignore[import-not-found]
 
         text = corpus_path.read_text(encoding="utf-8")
-        # Train BPE merges
-        trainer = rustbpe.BPETrainer(vocab_size=vocab_size)
-        merges = trainer.train(text)
+        # Train BPE merges using rustbpe's Tokenizer API
+        tokenizer = rustbpe.Tokenizer()
+        tokenizer.train_from_iterator([text], vocab_size=vocab_size)
+        merges = {bytes(k): v for k, v in tokenizer.get_mergeable_ranks()}
 
         # Build tiktoken encoding from the merges
         # Special tokens for our format
@@ -232,7 +233,7 @@ if HAS_MLX:
 
         enc = tiktoken.Encoding(
             name="mts_autoresearch",
-            pat_str=_BPE_PAT,
+            pat_str=tokenizer.get_pattern(),
             mergeable_ranks=merges,
             special_tokens=special_tokens,
         )
