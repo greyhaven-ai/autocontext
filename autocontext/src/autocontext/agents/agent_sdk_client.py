@@ -11,10 +11,10 @@ from autocontext.agents.types import RoleUsage
 
 # Per-role tool permissions
 ROLE_TOOL_CONFIG: dict[str, list[str]] = {
-    "competitor": ["Read", "Glob", "Grep"],
-    "analyst": ["Read", "Glob", "Grep", "Bash"],
-    "coach": ["Read", "Glob", "Grep"],
-    "architect": ["Read", "Glob", "Grep", "Bash"],
+    "competitor": ["Read", "Glob", "Grep", "consult_library"],
+    "analyst": ["Read", "Glob", "Grep", "Bash", "consult_library"],
+    "coach": ["Read", "Glob", "Grep", "consult_library"],
+    "architect": ["Read", "Glob", "Grep", "Bash", "consult_library"],
     "translator": [],
     "curator": ["Read", "Glob", "Grep"],
 }
