@@ -1,9 +1,11 @@
-# tests/test_agent_outputs_library.py
+"""Tests for librarian/archivist fields on AgentOutputs."""
+from __future__ import annotations
+
 from autocontext.agents.contracts import ArchivistOutput, LibrarianOutput
 from autocontext.agents.types import AgentOutputs
 
 
-def test_agent_outputs_library_defaults():
+def test_agent_outputs_library_defaults() -> None:
     out = AgentOutputs(
         strategy={},
         analysis_markdown="",
@@ -20,7 +22,7 @@ def test_agent_outputs_library_defaults():
     assert out.library_advisories == []
 
 
-def test_agent_outputs_with_library_data():
+def test_agent_outputs_with_library_data() -> None:
     lib_out = LibrarianOutput(
         raw_markdown="text",
         book_name="ddd",

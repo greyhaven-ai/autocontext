@@ -1,4 +1,6 @@
-# tests/test_contracts_library.py
+"""Tests for LibrarianFlag, LibrarianOutput, ArchivistDecision, ArchivistOutput dataclasses."""
+from __future__ import annotations
+
 from autocontext.agents.contracts import (
     ArchivistDecision,
     ArchivistOutput,
@@ -7,7 +9,12 @@ from autocontext.agents.contracts import (
 )
 
 
-def test_librarian_flag_fields():
+# ---------------------------------------------------------------------------
+# LibrarianFlag
+# ---------------------------------------------------------------------------
+
+
+def test_librarian_flag_fields() -> None:
     flag = LibrarianFlag(
         severity="violation",
         description="Couples scoring to movement",
@@ -18,7 +25,12 @@ def test_librarian_flag_fields():
     assert flag.cited_section == "ch03-s02-dependency-inversion"
 
 
-def test_librarian_output_defaults():
+# ---------------------------------------------------------------------------
+# LibrarianOutput
+# ---------------------------------------------------------------------------
+
+
+def test_librarian_output_defaults() -> None:
     out = LibrarianOutput(
         raw_markdown="# Advisory",
         book_name="clean-architecture",
@@ -31,7 +43,7 @@ def test_librarian_output_defaults():
     assert out.flags == []
 
 
-def test_librarian_output_with_flags():
+def test_librarian_output_with_flags() -> None:
     flag = LibrarianFlag(
         severity="concern",
         description="Minor coupling",
@@ -49,7 +61,12 @@ def test_librarian_output_with_flags():
     assert out.flags[0].severity == "concern"
 
 
-def test_archivist_decision_fields():
+# ---------------------------------------------------------------------------
+# ArchivistDecision
+# ---------------------------------------------------------------------------
+
+
+def test_archivist_decision_fields() -> None:
     dec = ArchivistDecision(
         flag_source="librarian_clean_arch",
         book_name="clean-architecture",
@@ -61,7 +78,12 @@ def test_archivist_decision_fields():
     assert dec.flag_source == "librarian_clean_arch"
 
 
-def test_archivist_output_defaults():
+# ---------------------------------------------------------------------------
+# ArchivistOutput
+# ---------------------------------------------------------------------------
+
+
+def test_archivist_output_defaults() -> None:
     out = ArchivistOutput(
         raw_markdown="# Synthesis",
         decisions=[],
@@ -71,7 +93,7 @@ def test_archivist_output_defaults():
     assert out.decisions == []
 
 
-def test_archivist_output_with_decisions():
+def test_archivist_output_with_decisions() -> None:
     dec = ArchivistDecision(
         flag_source="librarian_ddd",
         book_name="ddd",

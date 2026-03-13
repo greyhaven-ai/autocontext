@@ -1,8 +1,10 @@
-# tests/test_settings_library.py
+"""Tests for library/librarian/archivist configuration settings."""
+from __future__ import annotations
+
 from autocontext.config.settings import AppSettings, load_settings
 
 
-def test_library_defaults():
+def test_library_defaults() -> None:
     s = AppSettings()
     assert s.library_root == "knowledge/_library"
     assert s.library_books == []
@@ -15,13 +17,13 @@ def test_library_defaults():
     assert s.ingestion_model == "claude-opus-4-6"
 
 
-def test_library_books_from_env(monkeypatch):
+def test_library_books_from_env(monkeypatch) -> None:
     monkeypatch.setenv("AUTOCONTEXT_LIBRARY_BOOKS", "clean-arch,ddd")
     s = load_settings()
     assert s.library_books == ["clean-arch", "ddd"]
 
 
-def test_library_books_empty_string(monkeypatch):
+def test_library_books_empty_string(monkeypatch) -> None:
     monkeypatch.setenv("AUTOCONTEXT_LIBRARY_BOOKS", "")
     s = load_settings()
     assert s.library_books == []
