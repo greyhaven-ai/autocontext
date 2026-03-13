@@ -58,7 +58,9 @@ competitor -> translator --> analyst -----------> coach
                          |-> librarian_N -|
 ```
 
-All librarians run in parallel with analyst and architect (depend on `translator`). The archivist depends on all librarian nodes and only runs if any librarian flags severity `"violation"`. Coach depends on analyst + archivist (or librarians if archivist was skipped).
+All librarians run in parallel with analyst and architect (depend on `translator`). The archivist is always present in the DAG (depends on all librarian nodes) but its handler returns a no-op `ArchivistOutput` with empty decisions when no librarian flags severity `"violation"`. Coach depends on analyst and archivist (archivist is always in the DAG, so this is a static edge).
+
+Librarians and archivist execute during Stage 2 (agent generation) as DAG nodes. The archivist's decisions are then evaluated as a gate check at Stage 3b. This is a data-flow concern — the archivist runs once during Stage 2, and its output is consumed at Stage 3b.
 
 ## Book Ingestion
 
@@ -101,11 +103,7 @@ Images are opt-in. If the user supplies `--images <path>`, image files are copie
 
 For books that fit in a single context window (~under 150k tokens), a single call reads the full text and produces `reference.md`.
 
-For larger books, multi-pass ingestion:
-- Pass 1: chapters 1-N (filling ~120k tokens) -> partial reference
-- Pass 2: chapters N+1-M + partial reference from pass 1 -> extended reference
-- Pass 3 (if needed): remaining chapters + extended reference -> complete reference
-- Max passes controlled by `AUTOCONTEXT_INGESTION_MAX_PASSES`
+Most books (up to ~300 pages / ~100k tokens of markdown) fit in a single context window. Multi-pass ingestion for larger books is deferred to a follow-up — v1 requires books to fit in one pass. If a book exceeds the context window, `add-book` reports the token count and fails with a clear message.
 
 The ingestion prompt asks for: core thesis, key principles (numbered), chapter-by-chapter notes, decision framework, and red lines (what the book considers genuinely harmful). The red lines section directly feeds the librarian's ability to flag violations.
 
@@ -116,6 +114,8 @@ Post-ingestion checks:
 - Token count of reference is under 25k
 - All source chapters are mentioned in chapter notes
 - If `--images` was used, image references in chunks resolve to actual files
+
+If validation fails, `add-book` reports the specific failure, removes any partially-written files from `knowledge/_library/books/<name>/`, and exits with a non-zero status. The user can retry. No partial ingestion state is left behind.
 
 ## Agent Roles
 
@@ -151,6 +151,21 @@ class LibrarianOutput:
 
 Librarians are instructed to only flag things that are genuinely harmful to the project's goals, not stylistic preferences.
 
+**Output format (parsed by `parse_librarian_output`):**
+
+```markdown
+<!-- ADVISORY_START -->
+Recommendations grounded in the book's principles...
+<!-- ADVISORY_END -->
+
+<!-- FLAGS_START -->
+## Flag: [severity: concern|violation]
+**Section:** ch03-s02-dependency-inversion
+**Issue:** The strategy couples scoring directly to movement logic...
+**Recommendation:** Invert the dependency so that...
+<!-- FLAGS_END -->
+```
+
 **Three operating modes:**
 1. Ingestion — reads full book, produces reference (one-time, at `/add-book`)
 2. Proactive review — DAG role, reviews strategy each generation
@@ -184,6 +199,21 @@ class ArchivistOutput:
     parse_success: bool = True
 ```
 
+**Output format (parsed by `parse_archivist_output`):**
+
+```markdown
+<!-- SYNTHESIS_START -->
+Overall assessment across librarian inputs...
+<!-- SYNTHESIS_END -->
+
+<!-- DECISIONS_START -->
+## Decision: [source: librarian_clean_arch] [verdict: soft_flag|hard_gate|dismissed]
+**Book:** Clean Architecture
+**Reasoning:** The cited principle applies here because...
+**Passage:** "The original text from the book..."
+<!-- DECISIONS_END -->
+```
+
 Verdicts:
 - `dismissed` — librarian was too conservative, strategy is fine
 - `soft_flag` — legitimate concern, injected as advisory into coach context
@@ -210,19 +240,52 @@ Routing:
 - `book_name` provided -> that librarian answers from its `reference.md`
 - `book_name` is None -> archivist identifies relevant book(s), spot-pulls sections, synthesizes
 
+Consultation calls are synchronous LLM calls executed during the calling agent's turn. The `consult_library` handler makes a direct `provider.query()` call with the librarian's reference (or archivist context) and returns the result as a tool response. This is a lightweight single-turn call, not a full agent execution.
+
 All agents see a library availability block in their system prompt listing active book titles with one-line descriptions. Calls are logged to `consultation_log.md`.
 
 Cost control: `AUTOCONTEXT_LIBRARY_MAX_CONSULTS_PER_ROLE` caps queries per agent per generation (default 3).
 
+## Prompt Integration
+
+The existing `PromptBundle` dataclass is frozen with four fields (`competitor`, `analyst`, `coach`, `architect`). Librarian prompts are passed separately via a `LibraryPromptBundle`:
+
+```python
+@dataclass(frozen=True)
+class LibraryPromptBundle:
+    librarian_prompts: dict[str, str]   # book_name -> assembled prompt
+    archivist_prompt: str
+    library_context_block: str          # Injected into all agent prompts
+```
+
+`build_prompt_bundle()` gains an optional `active_books` parameter. When books are active, it:
+1. Assembles per-librarian prompts (reference + strategy + playbook + cumulative notes)
+2. Assembles the archivist prompt template (populated at execution time with librarian outputs)
+3. Generates a `library_context_block` listing active books with descriptions, appended to all agent prompts
+4. Returns both `PromptBundle` and `LibraryPromptBundle`
+
+The `library_context_block` includes the `consult_library` tool description so all agents know it is available.
+
+## Pipeline Integration
+
+Library support uses the pipeline engine path (`_run_via_pipeline` in `orchestrator.py`). The legacy `ThreadPoolExecutor` codepath does not gain library support — this is acceptable because the pipeline engine is the forward path and the legacy codepath is retained only for backwards compatibility with non-DAG configurations.
+
+`build_mts_dag()` gains an `active_books: list[str]` parameter. When books are provided, it dynamically adds one `RoleSpec` per book (e.g., `librarian_clean_arch`) depending on `translator`, plus an `archivist` node depending on all librarian nodes. Coach's dependency list is extended to include `archivist`.
+
+The `build_role_handler()` function maps librarian role names to `LibrarianRunner.run()` and `archivist` to `ArchivistRunner.run()`. The archivist handler checks for violations in librarian outputs and returns a no-op if none exist.
+
+For Agent SDK mode (`AUTOCONTEXT_AGENT_PROVIDER=agent_sdk`): `consult_library` is registered as a tool in the `per_role_tools` configuration passed to `claude_agent_sdk.query()`. The tool handler is a synchronous wrapper around the same `provider.query()` call used in non-SDK mode. Agent SDK mode is supported for `consult_library` but the librarian/archivist DAG roles themselves use the standard pipeline engine, not the Agent SDK tool loop.
+
 ## Gate Integration
 
-The archivist gate inserts after backpressure and before stagnation check:
+The archivist gate inserts after backpressure and before stagnation check. Current stage numbering in `generation_pipeline.py` is adjusted:
 
 ```
 Stage 3:  Tournament (Elo scoring)
 Stage 3a: Backpressure gate (advance/retry/rollback)
-Stage 3b: Archivist gate (NEW)
-Stage 3c: Stagnation check
+Stage 3b: Archivist gate (NEW — only evaluates archivist output from Stage 2)
+Stage 3c: Stagnation check (was 3b)
+Stage 3d: Consultation (was 3c)
 Stage 4:  Curator gate
 ```
 
@@ -289,7 +352,6 @@ AUTOCONTEXT_ARCHIVIST_PROVIDER             # Per-role provider override
 
 # Ingestion
 AUTOCONTEXT_INGESTION_MODEL                # Model for initial book reading (default: opus)
-AUTOCONTEXT_INGESTION_MAX_PASSES           # Max sequential passes for large books (default: 3)
 ```
 
 ## Files Changed
