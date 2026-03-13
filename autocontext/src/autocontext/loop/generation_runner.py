@@ -169,6 +169,23 @@ class GenerationRunner:
         """Generate and persist a session report for a completed run."""
         trajectory_rows = self.sqlite.get_generation_trajectory(run_id)
         dead_ends_count = self._count_dead_ends(scenario_name)
+        current_generation = max(
+            (int(row.get("generation_index", 0)) for row in trajectory_rows),
+            default=0,
+        )
+        structured_lessons = self.artifacts.lesson_store.read_lessons(scenario_name)
+        stale_lessons_count = 0
+        superseded_lessons_count = 0
+        if structured_lessons:
+            stale_lessons_count = len(
+                self.artifacts.lesson_store.get_stale_lessons(
+                    scenario_name,
+                    current_generation=current_generation,
+                )
+            )
+            superseded_lessons_count = sum(
+                1 for lesson in structured_lessons if lesson.is_superseded()
+            )
         report = generate_session_report(
             run_id=run_id,
             scenario=scenario_name,
@@ -176,6 +193,8 @@ class GenerationRunner:
             exploration_mode=self.settings.exploration_mode,
             duration_seconds=duration_seconds,
             dead_ends_found=dead_ends_count,
+            stale_lessons_count=stale_lessons_count,
+            superseded_lessons_count=superseded_lessons_count,
         )
         markdown = report.to_markdown()
         self.artifacts.write_session_report(scenario_name, run_id, markdown)

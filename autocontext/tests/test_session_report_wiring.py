@@ -318,3 +318,32 @@ class TestSessionReportPlacement:
 
         assert mark_idx < report_idx, "Report should be written after mark_run_completed"
         assert report_idx < event_idx, "Report should be written before run_completed event"
+
+
+class TestSessionReportLessonHealth:
+    """Structured lesson health is included when lessons exist."""
+
+    def test_report_includes_structured_lesson_health(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path, session_reports_enabled=True)
+        runner, mocks = _make_runner_with_mocks(settings)
+
+        mocks["sqlite"].get_generation_trajectory.return_value = [
+            {"generation_index": 12, "best_score": 0.7, "elo": 1100, "delta": 0.1, "gate_decision": "advance"},
+        ]
+        mocks["artifacts"].read_dead_ends.return_value = ""
+        mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
+
+        stale_lesson = MagicMock()
+        stale_lesson.is_superseded.return_value = False
+        superseded_lesson = MagicMock()
+        superseded_lesson.is_superseded.return_value = True
+
+        mocks["artifacts"].lesson_store.read_lessons.return_value = [stale_lesson, superseded_lesson]
+        mocks["artifacts"].lesson_store.get_stale_lessons.return_value = [stale_lesson]
+
+        _run_with_pipeline_mock(runner, mocks, "grid_ctf", 1, "test_lesson_health")
+
+        markdown = mocks["artifacts"].write_session_report.call_args[0][2]
+        assert "Lesson Health" in markdown
+        assert "Stale lessons: 1" in markdown
+        assert "Superseded lessons: 1" in markdown

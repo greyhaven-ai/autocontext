@@ -81,3 +81,54 @@ def test_contradictory_lessons_flagged(tmp_path: Path) -> None:
         skills_root=tmp_path / "skills",
     )
     assert any("contradict" in i.lower() for i in report.issues)
+
+
+def test_structured_lessons_take_precedence_over_legacy_skill_text(tmp_path: Path) -> None:
+    """Applicable structured lessons should drive coherence checks when present."""
+    from autocontext.knowledge.lessons import ApplicabilityMeta, Lesson, LessonStore
+
+    knowledge = tmp_path / "grid_ctf"
+    knowledge.mkdir()
+    (knowledge / "playbook.md").write_text("# Playbook\nContent.\n")
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "grid-ctf-ops"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "## Operational Lessons\n"
+        "- Always increase aggression above 0.8\n"
+        "- Never increase aggression above 0.7\n"
+    )
+
+    store = LessonStore(knowledge_root=tmp_path, skills_root=skills_root)
+    store.write_lessons(
+        "grid_ctf",
+        [
+            Lesson(
+                id="fresh",
+                text="- Always increase aggression above 0.8",
+                meta=ApplicabilityMeta(
+                    created_at="2026-03-13T10:00:00Z",
+                    generation=5,
+                    best_score=0.8,
+                    last_validated_gen=5,
+                ),
+            ),
+            Lesson(
+                id="invalidated",
+                text="- Never increase aggression above 0.7",
+                meta=ApplicabilityMeta(
+                    created_at="2026-03-13T10:00:00Z",
+                    generation=5,
+                    best_score=0.8,
+                    last_validated_gen=-1,
+                ),
+            ),
+        ],
+    )
+
+    report = check_coherence(
+        scenario_name="grid_ctf",
+        knowledge_root=tmp_path,
+        skills_root=skills_root,
+    )
+    assert not any("contradict" in i.lower() for i in report.issues)

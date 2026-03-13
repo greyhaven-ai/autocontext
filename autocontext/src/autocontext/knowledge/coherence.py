@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from autocontext.knowledge.lessons import LessonStore
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,8 +82,20 @@ def _check_lesson_contradictions(lessons: list[str]) -> list[str]:
     return issues
 
 
-def _read_lessons(scenario_name: str, skills_root: Path) -> list[str]:
-    """Read operational lessons from SKILL.md."""
+def _read_lessons(scenario_name: str, knowledge_root: Path, skills_root: Path) -> list[str]:
+    """Read operational lessons, preferring structured lessons when present."""
+    lesson_store = LessonStore(knowledge_root=knowledge_root, skills_root=skills_root)
+    structured = lesson_store.read_lessons(scenario_name)
+    if structured:
+        current_generation = lesson_store.current_generation(scenario_name)
+        return [
+            lesson.text.strip()
+            for lesson in lesson_store.get_applicable_lessons(
+                scenario_name,
+                current_generation=current_generation,
+            )
+        ]
+
     skill_dir = skills_root / f"{scenario_name.replace('_', '-')}-ops"
     skill_path = skill_dir / "SKILL.md"
     if not skill_path.exists():
@@ -120,7 +134,7 @@ def check_coherence(
     report.issues.extend(_check_tools(playbook_content, knowledge_dir))
 
     if skills_root is not None:
-        lessons = _read_lessons(scenario_name, skills_root)
+        lessons = _read_lessons(scenario_name, knowledge_root, skills_root)
         report.issues.extend(_check_lesson_contradictions(lessons))
 
     for issue in report.issues:

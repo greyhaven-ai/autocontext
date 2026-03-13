@@ -72,6 +72,8 @@ class Lesson:
 
     def is_stale(self, current_generation: int, staleness_window: int = 10) -> bool:
         """A lesson is stale if not validated within staleness_window generations."""
+        if self.meta.last_validated_gen < 0:
+            return True
         return (current_generation - self.meta.last_validated_gen) > staleness_window
 
     def is_superseded(self) -> bool:
@@ -112,6 +114,16 @@ class LessonStore:
             return []
         data = json.loads(path.read_text(encoding="utf-8"))
         return [Lesson.from_dict(entry) for entry in data]
+
+    def current_generation(self, scenario: str) -> int:
+        """Best-effort current generation derived from structured lessons."""
+        lessons = self.read_lessons(scenario)
+        if not lessons:
+            return 0
+        return max(
+            max(lesson.meta.generation, lesson.meta.last_validated_gen)
+            for lesson in lessons
+        )
 
     def write_lessons(self, scenario: str, lessons: list[Lesson]) -> None:
         path = self._lessons_path(scenario)

@@ -89,6 +89,8 @@ def generate_session_report(
     exploration_mode: str = "linear",
     duration_seconds: float = 0.0,
     dead_ends_found: int = 0,
+    stale_lessons_count: int = 0,
+    superseded_lessons_count: int = 0,
 ) -> SessionReport:
     """Generate a session report from trajectory data."""
     if not trajectory_rows:
@@ -103,6 +105,8 @@ def generate_session_report(
             duration_seconds=duration_seconds,
             exploration_mode=exploration_mode,
             dead_ends_found=dead_ends_found,
+            stale_lessons_count=stale_lessons_count,
+            superseded_lessons_count=superseded_lessons_count,
         )
 
     first = trajectory_rows[0]
@@ -140,4 +144,6 @@ def generate_session_report(
         top_improvements=top_improvements,
         dead_ends_found=dead_ends_found,
         exploration_mode=exploration_mode,
+        stale_lessons_count=stale_lessons_count,
+        superseded_lessons_count=superseded_lessons_count,
     )

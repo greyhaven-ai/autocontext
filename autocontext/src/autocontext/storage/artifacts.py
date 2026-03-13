@@ -145,6 +145,17 @@ class ArtifactStore:
         in the prompt bundle, so we avoid duplication here.  Claude Code
         reads the full SKILL.md (with bundled resources) on its own.
         """
+        structured_lessons = self.lesson_store.read_lessons(scenario_name)
+        if structured_lessons:
+            current_generation = self.lesson_store.current_generation(scenario_name)
+            applicable = self.lesson_store.get_applicable_lessons(
+                scenario_name,
+                current_generation=current_generation,
+            )
+            if applicable:
+                return "\n".join(lesson.text.strip() for lesson in applicable).strip()
+            return ""
+
         skill_path = self._skill_dir(scenario_name) / "SKILL.md"
         if not skill_path.exists():
             return ""

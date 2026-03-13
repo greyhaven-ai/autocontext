@@ -195,6 +195,18 @@ class TestLesson:
         lesson = Lesson(id="L1", text="- obsolete", meta=meta)
         assert not lesson.is_applicable(current_generation=15, staleness_window=10)
 
+    def test_not_applicable_when_schema_invalidated(self) -> None:
+        from autocontext.knowledge.lessons import ApplicabilityMeta, Lesson
+
+        meta = ApplicabilityMeta(
+            created_at="2026-03-13T10:00:00Z",
+            generation=5,
+            best_score=0.8,
+            last_validated_gen=-1,
+        )
+        lesson = Lesson(id="L1", text="- invalidated", meta=meta)
+        assert not lesson.is_applicable(current_generation=5, staleness_window=10)
+
 
 # ---------------------------------------------------------------------------
 # 3. LessonStore — read/write/add
@@ -777,3 +789,31 @@ class TestArtifactStoreLessonIntegration:
         assert lesson.id
         lessons = artifact_store.lesson_store.read_lessons("grid_ctf")
         assert len(lessons) == 1
+
+    def test_read_skills_prefers_applicable_structured_lessons(self, artifact_store) -> None:
+        from autocontext.knowledge.lessons import ApplicabilityMeta
+
+        artifact_store.lesson_store.add_lesson(
+            "grid_ctf",
+            "- still valid",
+            ApplicabilityMeta(
+                created_at="2026-03-13T10:00:00Z",
+                generation=4,
+                best_score=0.72,
+                last_validated_gen=4,
+            ),
+        )
+        artifact_store.lesson_store.add_lesson(
+            "grid_ctf",
+            "- invalidated by schema change",
+            ApplicabilityMeta(
+                created_at="2026-03-13T11:00:00Z",
+                generation=4,
+                best_score=0.72,
+                last_validated_gen=-1,
+            ),
+        )
+
+        skills = artifact_store.read_skills("grid_ctf")
+        assert "- still valid" in skills
+        assert "- invalidated by schema change" not in skills
