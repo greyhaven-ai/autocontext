@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from autocontext.harness.storage.versioned_store import VersionedFileStore
+from autocontext.knowledge.lessons import LessonStore
 from autocontext.storage.buffered_writer import BufferedWriter
 
 LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,16 @@ class ArtifactStore:
         if enable_buffered_writes:
             self._writer = BufferedWriter()
             self._writer.start()
+
+    @property
+    def lesson_store(self) -> LessonStore:
+        """Lazily create a LessonStore for structured lesson management (AC-236)."""
+        if not hasattr(self, "_lesson_store"):
+            self._lesson_store = LessonStore(
+                knowledge_root=self.knowledge_root,
+                skills_root=self.skills_root,
+            )
+        return self._lesson_store
 
     def _playbook_store(self, scenario_name: str) -> VersionedFileStore:
         """Lazily create a per-scenario VersionedFileStore with legacy naming."""

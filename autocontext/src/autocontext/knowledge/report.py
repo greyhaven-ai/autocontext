@@ -26,6 +26,8 @@ class SessionReport:
     top_improvements: list[dict[str, object]] = field(default_factory=list)
     dead_ends_found: int = 0
     exploration_mode: str = "linear"
+    stale_lessons_count: int = 0
+    superseded_lessons_count: int = 0
 
     def to_markdown(self) -> str:
         """Render report as markdown."""
@@ -69,6 +71,13 @@ class SessionReport:
         lines.append("## Dead Ends Discovered")
         lines.append(f"{self.dead_ends_found} dead ends identified.")
         lines.append("")
+
+        # Lesson health (AC-236)
+        if self.stale_lessons_count > 0 or self.superseded_lessons_count > 0:
+            lines.append("## Lesson Health")
+            lines.append(f"- Stale lessons: {self.stale_lessons_count}")
+            lines.append(f"- Superseded lessons: {self.superseded_lessons_count}")
+            lines.append("")
 
         return "\n".join(lines)
 
