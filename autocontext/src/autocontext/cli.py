@@ -9,6 +9,8 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,11 +22,28 @@ from rich.table import Table
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
+from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.loop.generation_runner import GenerationRunner
+from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.storage import SQLiteStore
 
 if TYPE_CHECKING:
+    from autocontext.providers.base import LLMProvider
     from autocontext.training.runner import TrainingConfig, TrainingResult
+
+
+@dataclass(slots=True)
+class AgentTaskRunSummary:
+    """Result summary for an agent-task execution via the CLI."""
+
+    run_id: str
+    scenario: str
+    best_score: float
+    best_output: str
+    total_rounds: int
+    met_threshold: bool
+    termination_reason: str
 
 app = typer.Typer(help="AutoContext control-plane CLI")
 console = Console()
@@ -99,6 +118,58 @@ def _write_json_stderr(message: str) -> None:
     sys.stderr.write(json.dumps({"error": message}) + "\n")
 
 
+def _is_agent_task(scenario_name: str) -> bool:
+    """Check if a scenario name maps to an AgentTaskInterface class."""
+    cls = SCENARIO_REGISTRY.get(scenario_name)
+    if cls is None:
+        return False
+    return isinstance(cls, type) and issubclass(cls, AgentTaskInterface)
+
+
+def _get_provider_for_agent_task(settings: AppSettings) -> LLMProvider:
+    """Create an LLM provider for agent-task execution."""
+    from autocontext.providers.registry import get_provider
+
+    return get_provider(settings)
+
+
+def _run_agent_task(
+    scenario_name: str,
+    settings: AppSettings,
+    max_rounds: int,
+    run_id: str | None,
+) -> AgentTaskRunSummary:
+    """Execute an agent-task scenario through ImprovementLoop."""
+    cls = SCENARIO_REGISTRY[scenario_name]
+    instance = cls()
+    # Runtime-validated: _is_agent_task() already confirmed this
+    task: AgentTaskInterface = instance  # type: ignore[assignment]
+
+    provider = _get_provider_for_agent_task(settings)
+    state = task.initial_state()
+    prompt = task.get_task_prompt(state)
+
+    initial_output = provider.complete(
+        system_prompt="Complete the task precisely.",
+        user_prompt=prompt,
+        model=settings.judge_model,
+    ).text
+
+    loop = ImprovementLoop(task=task, max_rounds=max_rounds)
+    result = loop.run(initial_output=initial_output, state=state)
+
+    active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
+    return AgentTaskRunSummary(
+        run_id=active_run_id,
+        scenario=scenario_name,
+        best_score=result.best_score,
+        best_output=result.best_output,
+        total_rounds=result.total_rounds,
+        met_threshold=result.met_threshold,
+        termination_reason=result.termination_reason,
+    )
+
+
 @app.command()
 def run(
     scenario: str = typer.Option("grid_ctf", "--scenario"),
@@ -119,6 +190,49 @@ def run(
 
     if preset and not json_output:
         console.print(f"[dim]Active preset: {preset}[/dim]")
+
+    # Agent-task scenario detection (AC-231)
+    if _is_agent_task(scenario):
+        if serve:
+            msg = "--serve is not supported for agent-task scenarios"
+            if json_output:
+                _write_json_stderr(msg)
+            else:
+                console.print(f"[red]{msg}[/red]")
+            raise typer.Exit(code=2)
+
+        _apply_preset_env(preset)
+        settings = load_settings()
+        try:
+            task_summary = _run_agent_task(scenario, settings, max_rounds=gens, run_id=run_id)
+        except KeyboardInterrupt:
+            if json_output:
+                _write_json_stderr("run interrupted")
+            raise typer.Exit(code=1) from None
+        except Exception as exc:
+            if json_output:
+                _write_json_stderr(str(exc))
+            raise typer.Exit(code=1) from exc
+        if json_output:
+            _write_json_stdout(dataclasses.asdict(task_summary))
+        else:
+            table = Table(title="Agent Task Result")
+            table.add_column("Run ID")
+            table.add_column("Scenario")
+            table.add_column("Best Score")
+            table.add_column("Rounds")
+            table.add_column("Threshold Met")
+            table.add_column("Termination")
+            table.add_row(
+                task_summary.run_id,
+                task_summary.scenario,
+                f"{task_summary.best_score:.4f}",
+                str(task_summary.total_rounds),
+                str(task_summary.met_threshold),
+                task_summary.termination_reason,
+            )
+            console.print(table)
+        return
 
     if serve:
         from autocontext.loop.controller import LoopController
