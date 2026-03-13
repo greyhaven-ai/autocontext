@@ -19,6 +19,7 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
+from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
@@ -26,7 +27,7 @@ from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
-from autocontext.storage import SQLiteStore
+from autocontext.storage import ArtifactStore, SQLiteStore
 
 if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
@@ -63,6 +64,23 @@ def _runner(preset: str | None = None) -> GenerationRunner:
     runner = GenerationRunner(settings)
     runner.migrate(Path(__file__).resolve().parents[2] / "migrations")
     return runner
+
+
+def _sqlite_from_settings(settings: AppSettings) -> SQLiteStore:
+    sqlite = SQLiteStore(settings.db_path)
+    sqlite.migrate(Path(__file__).resolve().parents[2] / "migrations")
+    return sqlite
+
+
+def _artifacts_from_settings(settings: AppSettings) -> ArtifactStore:
+    return ArtifactStore(
+        settings.runs_root,
+        settings.knowledge_root,
+        settings.skills_root,
+        settings.claude_skills_path,
+        max_playbook_versions=settings.playbook_max_versions,
+        enable_buffered_writes=True,
+    )
 
 
 def _resolve_export_artifact_roots(
@@ -126,11 +144,31 @@ def _is_agent_task(scenario_name: str) -> bool:
     return isinstance(cls, type) and issubclass(cls, AgentTaskInterface)
 
 
-def _get_provider_for_agent_task(settings: AppSettings) -> LLMProvider:
-    """Create an LLM provider for agent-task execution."""
-    from autocontext.providers.registry import get_provider
+def _resolve_agent_task_runtime(settings: AppSettings, scenario_name: str) -> tuple[LLMProvider, str]:
+    """Resolve the effective competitor runtime for direct agent-task execution."""
+    from autocontext.providers.callable_wrapper import CallableProvider
 
-    return get_provider(settings)
+    sqlite = _sqlite_from_settings(settings)
+    artifacts = _artifacts_from_settings(settings)
+    orchestrator = AgentOrchestrator.from_settings(settings, artifacts=artifacts, sqlite=sqlite)
+    client, model = orchestrator.resolve_role_execution(
+        "competitor",
+        generation=1,
+        scenario_name=scenario_name,
+    )
+    resolved_model = model or settings.model_competitor or settings.agent_default_model
+
+    def _llm_fn(system_prompt: str, user_prompt: str) -> str:
+        response = client.generate(
+            model=resolved_model,
+            prompt=f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt,
+            max_tokens=4096,
+            temperature=0.0,
+            role="competitor",
+        )
+        return response.text
+
+    return CallableProvider(_llm_fn, model_name=resolved_model), resolved_model
 
 
 def _run_agent_task(
@@ -140,25 +178,77 @@ def _run_agent_task(
     run_id: str | None,
 ) -> AgentTaskRunSummary:
     """Execute an agent-task scenario through ImprovementLoop."""
+    sqlite = _sqlite_from_settings(settings)
     cls = SCENARIO_REGISTRY[scenario_name]
     instance = cls()
     # Runtime-validated: _is_agent_task() already confirmed this
     task: AgentTaskInterface = instance  # type: ignore[assignment]
 
-    provider = _get_provider_for_agent_task(settings)
-    state = task.initial_state()
+    provider, provider_model = _resolve_agent_task_runtime(settings, scenario_name)
+    state = task.prepare_context(task.initial_state())
+    context_errors = task.validate_context(state)
+    if context_errors:
+        raise ValueError(f"Context validation failed: {'; '.join(context_errors)}")
     prompt = task.get_task_prompt(state)
 
     initial_output = provider.complete(
         system_prompt="Complete the task precisely.",
         user_prompt=prompt,
-        model=settings.judge_model,
+        model=provider_model,
     ).text
 
     loop = ImprovementLoop(task=task, max_rounds=max_rounds)
-    result = loop.run(initial_output=initial_output, state=state)
-
     active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
+    sqlite.create_run(
+        active_run_id,
+        scenario_name,
+        1,
+        "agent_task",
+        agent_provider=settings.agent_provider,
+    )
+    sqlite.upsert_generation(
+        active_run_id,
+        1,
+        mean_score=0.0,
+        best_score=0.0,
+        elo=0.0,
+        wins=0,
+        losses=0,
+        gate_decision="running",
+        status="running",
+    )
+    sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
+
+    try:
+        result = loop.run(initial_output=initial_output, state=state)
+    except Exception:
+        sqlite.upsert_generation(
+            active_run_id,
+            1,
+            mean_score=0.0,
+            best_score=0.0,
+            elo=0.0,
+            wins=0,
+            losses=0,
+            gate_decision="failed",
+            status="failed",
+        )
+        raise
+
+    sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
+    sqlite.upsert_generation(
+        active_run_id,
+        1,
+        mean_score=result.best_score,
+        best_score=result.best_score,
+        elo=0.0,
+        wins=0,
+        losses=0,
+        gate_decision=result.termination_reason,
+        status="completed",
+        duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
+    )
+
     return AgentTaskRunSummary(
         run_id=active_run_id,
         scenario=scenario_name,
