@@ -10,9 +10,11 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass, field
 
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
+from autocontext.runtimes.pi_artifacts import PiExecutionTrace
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +95,7 @@ class PiCLIRuntime(AgentRuntime):
     def _invoke(self, prompt: str, args: list[str]) -> AgentOutput:
         """Execute pi --print and parse the result."""
         logger.info("invoking pi CLI: %s", " ".join(args[:4]) + "...")
+        t0 = time.monotonic()
 
         try:
             result = subprocess.run(
@@ -109,6 +112,8 @@ class PiCLIRuntime(AgentRuntime):
             logger.error("pi CLI not found at %r", self._config.pi_command)
             return AgentOutput(text="", metadata={"error": "pi_not_found"})
 
+        duration_ms = int((time.monotonic() - t0) * 1000)
+
         if result.returncode != 0:
             logger.warning("pi CLI exited with code %d: %s", result.returncode, result.stderr[:200])
             if not result.stdout.strip():
@@ -117,7 +122,22 @@ class PiCLIRuntime(AgentRuntime):
                     metadata={"error": "nonzero_exit", "exit_code": result.returncode, "stderr": result.stderr[:500]},
                 )
 
-        return self._parse_output(result.stdout, result.returncode)
+        output = self._parse_output(result.stdout, result.returncode)
+
+        # Attach PiExecutionTrace for artifact persistence (AC-224)
+        trace = PiExecutionTrace(
+            session_id=output.session_id or "",
+            prompt_context=prompt,
+            raw_output=result.stdout,
+            normalized_output=output.text,
+            exit_code=result.returncode,
+            duration_ms=duration_ms,
+            cost_usd=output.cost_usd or 0.0,
+            model=output.model or "pi",
+        )
+        output.metadata["pi_trace"] = trace
+
+        return output
 
     def _parse_output(self, raw: str, exit_code: int) -> AgentOutput:
         """Parse output from pi --print."""

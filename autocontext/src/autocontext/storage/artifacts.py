@@ -762,3 +762,37 @@ class ArtifactStore:
         path = self.runs_root / "sessions" / session_id / "notebook.json"
         if path.exists():
             path.unlink()
+
+    # --- Pi session artifacts (AC-224) ----------------------------------------
+
+    def persist_pi_session(self, run_id: str, generation: int, trace: object) -> Path:
+        """Persist a PiExecutionTrace to the generation directory.
+
+        Writes:
+        - pi_session.json — serialized trace
+        - pi_output.txt  — raw output for replay
+
+        Args:
+            run_id: The run identifier.
+            generation: Generation index.
+            trace: A PiExecutionTrace instance (duck-typed to avoid circular import).
+
+        Returns:
+            Path to the pi_session.json file.
+        """
+        gen_dir = self.generation_dir(run_id, generation)
+        trace_dict: dict[str, object] = trace.to_dict()  # type: ignore[union-attr]
+        session_path = gen_dir / "pi_session.json"
+        self.write_json(session_path, trace_dict)
+        output_path = gen_dir / "pi_output.txt"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_output = str(trace_dict.get("raw_output", ""))
+        output_path.write_text(raw_output, encoding="utf-8")
+        return session_path
+
+    def read_pi_session(self, run_id: str, generation: int) -> dict[str, object] | None:
+        """Read a persisted Pi session trace, or None if missing."""
+        session_path = self.generation_dir(run_id, generation) / "pi_session.json"
+        if not session_path.exists():
+            return None
+        return json.loads(session_path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
