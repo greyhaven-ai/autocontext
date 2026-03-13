@@ -164,6 +164,7 @@ AutoContext exposes:
 
 ## Additional Docs
 
+- [Agent integration guide](docs/agent-integration.md) — CLI-first integration for external agents, MCP fallback, JSON output reference
 - [Sandbox modes](docs/sandbox.md)
 - [MLX host training](docs/mlx-training.md)
 - [Demo data notes](demo_data/README.md)
