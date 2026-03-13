@@ -27,7 +27,6 @@ autoctx status <run_id> --json
 autoctx run --scenario grid_ctf --gens 3 --json
 autoctx export --scenario grid_ctf --json
 autoctx train --scenario grid_ctf --data data.jsonl --json
-autoctx wait <condition_id> --timeout 30 --json
 ```
 
 **Contract:**
@@ -104,24 +103,24 @@ Returns an array of run summaries:
 ]
 ```
 
-#### `autoctx wait` — Wait for a condition (async workflows)
+#### Monitoring long-running work
 
-The `wait` command blocks until a monitor condition fires or times out. This is essential for agent workflows that need to react to events:
+The CLI does not currently expose a dedicated `wait` command. For now, external agents should poll `autoctx status --json` (and related read surfaces such as `list --json`) until the desired condition is visible.
+
+Simple polling pattern:
 
 ```bash
-# Wait up to 60 seconds for a condition
-autoctx wait <condition_id> --timeout 60 --json
+while true; do
+  current=$(autoctx status "$RUN_ID" --json)
+  state=$(echo "$current" | jq -r '.generations[-1].status // "unknown"')
+  if [ "$state" = "completed" ] || [ "$state" = "failed" ]; then
+    break
+  fi
+  sleep 5
+done
 ```
 
-On success (condition fires):
-```json
-{"fired": true, "condition_id": "cond_abc", "alert": {"detail": "score threshold met"}}
-```
-
-On timeout (exit code 1):
-```json
-{"fired": false, "condition_id": "cond_abc", "timeout_seconds": 60}
-```
+If you need event-driven waiting today, prefer the Python SDK / monitor layer or REST/MCP monitoring surfaces rather than assuming a CLI `wait` subcommand exists.
 
 #### `autoctx export` — Export a strategy package
 
@@ -347,7 +346,7 @@ Response:
 
 ## Python SDK (Programmatic)
 
-For Python agents that want to skip the CLI, the `autocontext.sdk` module provides a typed interface:
+For Python agents that want to skip the CLI, the package also exposes a typed SDK:
 
 ```python
 from autocontext.sdk import AutoContext
@@ -357,12 +356,12 @@ ac = AutoContext()
 # List available scenarios
 scenarios = ac.list_scenarios()
 
-# Evaluate agent output
+# Evaluate a strategy
 result = ac.evaluate(
     scenario="grid_ctf",
     strategy={"type": "aggressive", "target": "flag"},
 )
-print(f"Score: {result.score}")
+print(f"Best score: {result.best_score}")
 
 # Export a strategy package
 package = ac.export_package("grid_ctf")
@@ -370,7 +369,7 @@ package = ac.export_package("grid_ctf")
 
 ## TypeScript CLI
 
-The TypeScript port provides a parallel CLI for Node.js environments:
+The TypeScript package also publishes a parallel CLI for Node.js environments:
 
 ```bash
 npx autoctx judge -p "Write a haiku" -o "output text" -r "evaluate quality"
@@ -379,4 +378,7 @@ npx autoctx status
 npx autoctx serve  # MCP server on stdio
 ```
 
-See the [TypeScript README](../ts/README.md) for setup details.
+Key entrypoints live in:
+
+- `ts/src/cli/index.ts`
+- `ts/src/index.ts`

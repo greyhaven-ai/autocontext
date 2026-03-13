@@ -63,7 +63,7 @@ class TestIntegrationGuideContent:
 
     def test_documents_key_commands(self) -> None:
         """Guide should reference the main CLI commands agents will use."""
-        for cmd in ("run", "status", "wait", "export", "train"):
+        for cmd in ("run", "status", "export", "train"):
             assert cmd in self.content.lower(), f"Guide should mention the '{cmd}' command"
 
     def test_documents_json_stdout_stderr_contract(self) -> None:
@@ -104,15 +104,18 @@ class TestIntegrationGuideContent:
         """Guide should mention provider configuration for non-Anthropic usage."""
         assert "AUTOCONTEXT_" in self.content
 
-    def test_documents_wait_command(self) -> None:
-        """Guide should document the wait command for async agent workflows."""
-        assert "wait" in self.content.lower()
-        # Should show the --timeout flag
-        assert "--timeout" in self.content
+    def test_documents_monitoring_guidance(self) -> None:
+        """Guide should explain how to monitor async workflows without inventing a CLI command."""
+        assert "poll" in self.content.lower() or "monitor" in self.content.lower()
+        assert "status --json" in self.content or "autoctx status" in self.content
 
     def test_documents_error_json_format(self) -> None:
         """Guide should show the error JSON format."""
         assert '"error"' in self.content
+
+    def test_typescript_section_does_not_link_missing_readme(self) -> None:
+        """Guide should not point to a TypeScript README that does not exist."""
+        assert "../ts/README.md" not in self.content
 
 
 # ---------------------------------------------------------------------------
