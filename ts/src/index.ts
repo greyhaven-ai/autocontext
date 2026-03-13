@@ -30,6 +30,20 @@ export {
   ProviderError,
 } from "./types/index.js";
 
+// Providers
+export {
+  createAnthropicProvider,
+  createOpenAICompatibleProvider,
+  createProvider,
+  resolveProviderConfig,
+} from "./providers/index.js";
+export type {
+  AnthropicProviderOpts,
+  OpenAICompatibleProviderOpts,
+  CreateProviderOpts,
+  ProviderConfig,
+} from "./providers/index.js";
+
 // Judge
 export { LLMJudge, parseJudgeResponse } from "./judge/index.js";
 export type { LLMJudgeOpts, ParsedJudge } from "./judge/index.js";

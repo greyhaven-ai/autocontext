@@ -74,72 +74,17 @@ async function main(): Promise<void> {
 }
 
 async function getProvider() {
-  // Dynamic import to avoid loading heavy deps for --help
-  const { ProviderError } = await import("../types/index.js");
+  const { resolveProviderConfig, createProvider } = await import("../providers/index.js");
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error("ANTHROPIC_API_KEY environment variable required");
+  try {
+    const config = resolveProviderConfig();
+    const provider = createProvider(config);
+    const model = provider.defaultModel();
+    return { provider, model };
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
-
-  const model = process.env.AUTOCONTEXT_MODEL ?? "claude-sonnet-4-20250514";
-
-  // Simple fetch-based Anthropic provider
-  const provider = {
-    name: "anthropic-cli",
-    defaultModel: () => model,
-    complete: async (opts: {
-      systemPrompt: string;
-      userPrompt: string;
-      model?: string;
-      temperature?: number;
-      maxTokens?: number;
-    }) => {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: opts.model ?? model,
-          max_tokens: opts.maxTokens ?? 4096,
-          temperature: opts.temperature ?? 0,
-          system: opts.systemPrompt,
-          messages: [{ role: "user", content: opts.userPrompt }],
-        }),
-      });
-
-      if (!res.ok) {
-        const body = await res.text();
-        throw new ProviderError(`Anthropic API error ${res.status}: ${body.slice(0, 200)}`);
-      }
-
-      const data = (await res.json()) as {
-        content: Array<{ type: string; text: string }>;
-        model: string;
-        usage: { input_tokens: number; output_tokens: number };
-      };
-
-      const text = data.content
-        .filter((c) => c.type === "text")
-        .map((c) => c.text)
-        .join("");
-
-      return {
-        text,
-        model: data.model,
-        usage: {
-          input: data.usage.input_tokens,
-          output: data.usage.output_tokens,
-        },
-      };
-    },
-  };
-
-  return { provider, model };
 }
 
 async function cmdJudge(_dbPath: string): Promise<void> {
