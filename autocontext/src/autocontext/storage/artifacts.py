@@ -10,6 +10,7 @@ from pathlib import Path
 
 from autocontext.harness.storage.versioned_store import VersionedFileStore
 from autocontext.knowledge.lessons import LessonStore
+from autocontext.knowledge.mutation_log import MutationLog
 from autocontext.storage.buffered_writer import BufferedWriter
 
 LOGGER = logging.getLogger(__name__)
@@ -37,6 +38,13 @@ class ArtifactStore:
         if enable_buffered_writes:
             self._writer = BufferedWriter()
             self._writer.start()
+
+    @property
+    def mutation_log(self) -> MutationLog:
+        """Lazily create a MutationLog for append-only context audit (AC-235)."""
+        if not hasattr(self, "_mutation_log"):
+            self._mutation_log = MutationLog(knowledge_root=self.knowledge_root)
+        return self._mutation_log
 
     @property
     def lesson_store(self) -> LessonStore:
