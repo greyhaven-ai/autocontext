@@ -19,6 +19,7 @@ from autocontext.harness.core.types import ModelResponse, RoleUsage
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
     from autocontext.providers.base import LLMProvider
+    from autocontext.runtimes.base import AgentRuntime
 
 
 class ProviderBridgeClient(LanguageModelClient):
@@ -60,6 +61,40 @@ class ProviderBridgeClient(LanguageModelClient):
                 output_tokens=result.usage.get("output_tokens", 0),
                 latency_ms=elapsed_ms,
                 model=usage_model,
+            ),
+        )
+
+
+class RuntimeBridgeClient(LanguageModelClient):
+    """Adapts an AgentRuntime to the LanguageModelClient interface.
+
+    This bridge enables any AgentRuntime (PiCLI, ClaudeCLI, etc.)
+    to be used as a client for agent role runners.
+    """
+
+    def __init__(self, runtime: AgentRuntime) -> None:
+        self._runtime = runtime
+
+    def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        del max_tokens, temperature, role
+        t0 = time.monotonic()
+        output = self._runtime.generate(prompt)
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        return ModelResponse(
+            text=output.text,
+            usage=RoleUsage(
+                input_tokens=max(1, len(prompt) // 4),
+                output_tokens=max(1, len(output.text) // 4),
+                latency_ms=elapsed_ms,
+                model=output.model or model,
             ),
         )
 
@@ -173,6 +208,17 @@ def create_role_client(
             timeout_seconds=float(getattr(settings, "openclaw_timeout_seconds", 30.0)),
             retry_base_delay=float(getattr(settings, "openclaw_retry_base_delay", 0.25)),
         )
+
+    if provider_type == "pi":
+        from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
+
+        config = PiCLIConfig(
+            pi_command=settings.pi_command,
+            timeout=settings.pi_timeout,
+            workspace=settings.pi_workspace,
+            model=settings.pi_model,
+        )
+        return RuntimeBridgeClient(PiCLIRuntime(config))
 
     # LLMProvider-based providers — use the bridge
     if provider_type in ("mlx", "openai", "openai-compatible", "ollama", "vllm"):
