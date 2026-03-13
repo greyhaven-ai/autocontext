@@ -5,6 +5,10 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "migrations"
+  ],
   "bin": {
     "autoctx": "dist/cli/index.js"
   },
@@ -23,7 +27,18 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/greyhaven-ai/autocontext.git"
+  },
+  "homepage": "https://github.com/greyhaven-ai/autocontext/tree/main/ts",
+  "bugs": {
+    "url": "https://github.com/greyhaven-ai/autocontext/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "tsx": "^4.21.0",

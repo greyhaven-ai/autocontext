@@ -7,7 +7,20 @@ name = "autoctx"
 version = "0.1.0"
 description = "AutoContext control plane for iterative strategy evolution."
 readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
+keywords = ["agents", "evaluation", "harness", "llm", "optimization", "autocontext"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "anthropic>=0.66.0",
   "fastapi>=0.116.1",
@@ -39,6 +52,12 @@ dev = [
 
 [project.scripts]
 autoctx = "autocontext.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/greyhaven-ai/autocontext"
+Repository = "https://github.com/greyhaven-ai/autocontext"
+Issues = "https://github.com/greyhaven-ai/autocontext/issues"
+Documentation = "https://github.com/greyhaven-ai/autocontext/tree/main/autocontext/docs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocontext"]

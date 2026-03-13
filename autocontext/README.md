@@ -100,7 +100,11 @@ uv run autoctx train \
   --time-budget 300
 ```
 
+MLX training is host-only. It must run on an Apple Silicon macOS machine with Metal access. It will not run correctly inside a Docker sandbox on macOS.
+
 If you only want to inspect generated training data first, export without training and open the JSONL directly.
+
+For host setup details and OpenClaw automation via a file-based watcher bridge, see [docs/mlx-training.md](docs/mlx-training.md).
 
 ## Configuration
 
@@ -161,5 +165,6 @@ AutoContext exposes:
 ## Additional Docs
 
 - [Sandbox modes](docs/sandbox.md)
+- [MLX host training](docs/mlx-training.md)
 - [Demo data notes](demo_data/README.md)
 - [Repository overview](../README.md)
