@@ -37,18 +37,6 @@ Prescriptive rules derived from what worked and what failed:
 - Generation 3 ROLLBACK after 2 retries (score=0.7339, delta=-0.0491, threshold=0.005). Strategy: {"aggression": 0.62, "defense": 0.52, "path_bias": 0.58}. Narrative: Capture phase ended with progress 0.61, defender survival 0.96, and energy efficiency 0.87.. Avoid this approach.
 - Generation 4 ROLLBACK after 2 retries (score=0.7669, delta=-0.0161, threshold=0.005). Strategy: {"aggression": 0.62, "defense": 0.52, "path_bias": 0.58}. Narrative: Capture phase ended with progress 0.66, defender survival 0.96, and energy efficiency 0.87.. Avoid this approach.
 - Generation 5 ROLLBACK after 2 retries (score=0.7396, delta=-0.0434, threshold=0.005). Strategy: {"aggression": 0.62, "defense": 0.52, "path_bias": 0.58}. Narrative: Capture phase ended with progress 0.62, defender survival 0.96, and energy efficiency 0.87.. Avoid this approach.
-- Cross-tier parameter transfer is the #1 catastrophic failure mode. Parameters validated at one resource_density tier produce degraded or zero scores at different tiers. ALWAYS verify tier before parameter selection.
-- When resource_density < 0.20 (critical_low), total commitment (aggression + defense) MUST stay ≤ 1.05. Target ≤ 1.00 for a 5% safety buffer. Commitment of 1.14 in critical_low caused efficiency to drop to 0.87 and score regression.
-- When resource_density is moderate (0.40–0.60), total commitment ceiling is 1.20. Target ≤ 1.15 with 4–6% buffer.
-- The scoring formula (score ≈ capture + (efficiency - 0.5) × 0.39) makes energy efficiency extremely valuable. Losing 4% efficiency costs ~1.5 score points.
-- Conservative baseline (agg=0.50, def=0.50, pb=0.48) scored 0.7198 at density≈0.147, bias≈0.648 — proven viable in critical_low tier. This is the anchor for this environment.
-- Strategy {agg=0.62, def=0.52, pb=0.58} failed 4 consecutive times in critical_low tier (commitment=1.14, efficiency=0.87, score≈0.74). This strategy is BLOCKED for critical_low environments.
-- Path_bias for asymmetric enemy (bias > 0.6): use [0.45, 0.50]. Path_bias 0.58 wasted energy in low-resource conditions.
-- Rollback loops occur when the system reverts to a strategy from a different tier. After rollback, validate the fallback strategy against current tier requirements before redeployment.
-- Incremental changes (±0.02) from a proven baseline within the same resource tier are the only validated safe optimization method. Large jumps (±0.09+) led to rollbacks.
-- Energy efficiency of 0.90 at commitment=1.00 in critical_low confirms the ceiling is accurate; incremental increases to 1.01–1.03 are viable but risky.
-- Perfect defender survival (1.00) signals defensive over-allocation. Optimal target is 0.95–0.99.
-- When aggression exceeds 0.65 without proportional defense (≥ 0.52), defender survival drops and energy efficiency declines.
 
 ## Bundled Resources
 
