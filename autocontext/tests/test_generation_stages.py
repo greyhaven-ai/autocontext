@@ -13,6 +13,7 @@ from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.agents.types import AgentOutputs
 from autocontext.config.settings import AppSettings
 from autocontext.execution.supervisor import ExecutionSupervisor
+from autocontext.harness.core.types import RoleExecution, RoleUsage
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
 from autocontext.loop.stage_types import GenerationContext, StageResult
 from autocontext.loop.stages import (
@@ -699,6 +700,40 @@ class TestStagePersistence:
 
         persist_call = artifacts.persist_generation.call_args
         assert persist_call[1]["coach_playbook"] == "My awesome playbook"
+
+    def test_persists_pi_traces_by_role(self) -> None:
+        ctx = _make_persistence_ctx()
+        ctx.outputs.role_executions = [
+            RoleExecution(
+                role="competitor",
+                content="result",
+                usage=RoleUsage(input_tokens=1, output_tokens=1, latency_ms=1, model="pi"),
+                subagent_id="competitor-1",
+                status="completed",
+                metadata={"pi_trace": MagicMock()},
+            )
+        ]
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        artifacts.persist_pi_session.assert_called_once_with(
+            ctx.run_id,
+            ctx.generation,
+            ctx.outputs.role_executions[0].metadata["pi_trace"],
+            role="competitor",
+        )
 
     def test_rollback_generates_rollback_lesson(self) -> None:
         """On rollback, persist_skill_note receives a lesson containing 'ROLLBACK'."""

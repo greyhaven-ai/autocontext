@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from autocontext.agents.llm_client import build_client_from_settings
+from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.agents.provider_bridge import ProviderBridgeClient, _provider_api_key, create_role_client
+from autocontext.agents.role_router import ProviderClass, ProviderConfig
 from autocontext.config.settings import AppSettings
 
 # ---------------------------------------------------------------------------
@@ -156,3 +158,28 @@ def test_unsupported_provider_raises() -> None:
     s = AppSettings(agent_provider="unsupported-xyz")
     with pytest.raises(ValueError, match="unsupported agent provider"):
         build_client_from_settings(s)
+
+
+def test_orchestrator_creates_routed_client_for_nondefault_openai_model() -> None:
+    settings = AppSettings(
+        agent_provider="openai-compatible",
+        agent_api_key="test-key",
+        agent_default_model="gpt-4o-mini",
+    )
+    with patch("autocontext.providers.openai_compat.OpenAICompatibleProvider") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        orch = AgentOrchestrator.from_settings(settings)
+        client = orch._client_for_provider_config(
+            "competitor",
+            ProviderConfig(
+                provider_type="openai-compatible",
+                model="gpt-4.1",
+                provider_class=ProviderClass.MID_TIER,
+                estimated_cost_per_1k_tokens=0.003,
+            ),
+        )
+
+    assert client is not orch.client
+    assert mock_cls.call_count == 2
+    assert mock_cls.call_args_list[0].kwargs["default_model_name"] == "gpt-4o-mini"
+    assert mock_cls.call_args_list[1].kwargs["default_model_name"] == "gpt-4.1"

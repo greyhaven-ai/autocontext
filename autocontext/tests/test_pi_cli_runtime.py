@@ -6,8 +6,11 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from autocontext.agents.provider_bridge import RuntimeBridgeClient, create_role_client
 from autocontext.config.settings import AppSettings
+from autocontext.runtimes.base import AgentOutput
 from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
 
 # ---------------------------------------------------------------------------
@@ -204,6 +207,16 @@ def test_runtime_bridge_client_delegates() -> None:
     assert resp.text == "bridge output"
     assert resp.usage.model == "pi"
     mock_runtime.generate.assert_called_once_with("test")
+
+
+def test_runtime_bridge_client_raises_on_runtime_error() -> None:
+    mock_runtime = MagicMock()
+    mock_runtime.name = "PiCLIRuntime"
+    mock_runtime.generate.return_value = AgentOutput(text="", metadata={"error": "timeout"})
+
+    client = RuntimeBridgeClient(mock_runtime)
+    with pytest.raises(RuntimeError, match="PiCLIRuntime failed: timeout"):
+        client.generate(model="ignored", prompt="test", max_tokens=100, temperature=0.5)
 
 
 # ---------------------------------------------------------------------------

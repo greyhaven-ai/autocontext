@@ -87,6 +87,10 @@ class RuntimeBridgeClient(LanguageModelClient):
         del max_tokens, temperature, role
         t0 = time.monotonic()
         output = self._runtime.generate(prompt)
+        error = output.metadata.get("error")
+        if error:
+            detail = output.metadata.get("detail") or output.metadata.get("stderr") or ""
+            raise RuntimeError(f"{self._runtime.name} failed: {error}{f' ({detail})' if detail else ''}")
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         return ModelResponse(
             text=output.text,
@@ -96,6 +100,7 @@ class RuntimeBridgeClient(LanguageModelClient):
                 latency_ms=elapsed_ms,
                 model=output.model or model,
             ),
+            metadata=dict(output.metadata),
         )
 
 
@@ -132,7 +137,8 @@ def _create_provider_bridge(
         provider = create_provider(
             provider_type=provider_type,
             api_key=_provider_api_key(provider_type, settings),
-            base_url=settings.judge_base_url,
+            base_url=settings.agent_base_url or settings.judge_base_url,
+            model=model_override or settings.agent_default_model,
         )
         use_provider_default_model = True
     return ProviderBridgeClient(provider, use_provider_default_model=use_provider_default_model)

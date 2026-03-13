@@ -281,10 +281,16 @@ class AgentOrchestrator:
         return self._role_router.route(role, context=context)
 
     def _client_for_provider_config(self, role: str, config: ProviderConfig) -> LanguageModelClient:
+        default_provider = self.settings.agent_provider.lower()
+        openai_like_default = default_provider in ("openai", "openai-compatible", "ollama", "vllm")
         if (
             config.provider_type == self.settings.agent_provider
             and config.provider_class != ProviderClass.LOCAL
             and not self._configured_role_provider(role)
+            and (
+                not openai_like_default
+                or config.model in (None, "", self.settings.agent_default_model)
+            )
         ):
             return self.client
 

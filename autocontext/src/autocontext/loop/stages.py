@@ -995,6 +995,12 @@ def stage_persistence(
         coach_playbook=outputs.coach_playbook if gate_decision == "advance" else "",
     )
 
+    # Persist Pi runtime traces for replay/debugging when present.
+    for role_execution in outputs.role_executions:
+        trace = role_execution.metadata.get("pi_trace")
+        if trace is not None:
+            artifacts.persist_pi_session(run_id, generation, trace, role=role_execution.role)
+
     # 5. Write skill note + dead-end tracking
     _persist_skill_note(ctx, artifacts=artifacts)
 

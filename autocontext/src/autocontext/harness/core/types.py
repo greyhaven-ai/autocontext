@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -20,9 +21,11 @@ class RoleExecution:
     usage: RoleUsage
     subagent_id: str
     status: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
 class ModelResponse:
     text: str
     usage: RoleUsage
+    metadata: dict[str, Any] = field(default_factory=dict)

@@ -765,12 +765,12 @@ class ArtifactStore:
 
     # --- Pi session artifacts (AC-224) ----------------------------------------
 
-    def persist_pi_session(self, run_id: str, generation: int, trace: object) -> Path:
+    def persist_pi_session(self, run_id: str, generation: int, trace: object, *, role: str = "") -> Path:
         """Persist a PiExecutionTrace to the generation directory.
 
         Writes:
-        - pi_session.json — serialized trace
-        - pi_output.txt  — raw output for replay
+        - pi_session.json / pi_{role}_session.json — serialized trace
+        - pi_output.txt / pi_{role}_output.txt  — raw output for replay
 
         Args:
             run_id: The run identifier.
@@ -782,17 +782,19 @@ class ArtifactStore:
         """
         gen_dir = self.generation_dir(run_id, generation)
         trace_dict: dict[str, object] = trace.to_dict()  # type: ignore[attr-defined]
-        session_path = gen_dir / "pi_session.json"
+        prefix = f"pi_{role}" if role else "pi"
+        session_path = gen_dir / f"{prefix}_session.json"
         self.write_json(session_path, trace_dict)
-        output_path = gen_dir / "pi_output.txt"
+        output_path = gen_dir / f"{prefix}_output.txt"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         raw_output = str(trace_dict.get("raw_output", ""))
         output_path.write_text(raw_output, encoding="utf-8")
         return session_path
 
-    def read_pi_session(self, run_id: str, generation: int) -> dict[str, object] | None:
+    def read_pi_session(self, run_id: str, generation: int, *, role: str = "") -> dict[str, object] | None:
         """Read a persisted Pi session trace, or None if missing."""
-        session_path = self.generation_dir(run_id, generation) / "pi_session.json"
+        prefix = f"pi_{role}" if role else "pi"
+        session_path = self.generation_dir(run_id, generation) / f"{prefix}_session.json"
         if not session_path.exists():
             return None
         return json.loads(session_path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]

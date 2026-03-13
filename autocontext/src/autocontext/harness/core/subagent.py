@@ -38,4 +38,5 @@ class SubagentRuntime:
             usage=response.usage,
             subagent_id=f"{task.role}-{uuid.uuid4().hex[:10]}",
             status="completed",
+            metadata=dict(response.metadata),
         )

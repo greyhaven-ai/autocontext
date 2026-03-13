@@ -188,3 +188,25 @@ def test_generation_dir_layout(tmp_path: Path) -> None:
     # Verify files are in the same gen_dir
     assert (gen_dir / "pi_session.json").exists()
     assert (gen_dir / "pi_output.txt").exists()
+
+
+def test_persist_pi_session_per_role_does_not_overwrite(tmp_path: Path) -> None:
+    store = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+    )
+    competitor_trace = PiExecutionTrace(session_id="comp", raw_output="competitor")
+    analyst_trace = PiExecutionTrace(session_id="analyst", raw_output="analyst")
+
+    store.persist_pi_session("run-1", 3, competitor_trace, role="competitor")
+    store.persist_pi_session("run-1", 3, analyst_trace, role="analyst")
+
+    gen_dir = store.generation_dir("run-1", 3)
+    assert (gen_dir / "pi_competitor_session.json").exists()
+    assert (gen_dir / "pi_competitor_output.txt").read_text(encoding="utf-8") == "competitor"
+    assert (gen_dir / "pi_analyst_session.json").exists()
+    assert (gen_dir / "pi_analyst_output.txt").read_text(encoding="utf-8") == "analyst"
+    assert store.read_pi_session("run-1", 3, role="competitor")["session_id"] == "comp"
+    assert store.read_pi_session("run-1", 3, role="analyst")["session_id"] == "analyst"
