@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from autocontext.config.settings import AppSettings
 
 
@@ -225,6 +227,77 @@ class TestSessionReportDuration:
         markdown = mocks["artifacts"].write_session_report.call_args[0][2]
         # Duration should appear in the report -- it will be very small (< 1s) in test
         assert "Duration:" in markdown
+
+
+class TestMutationLogWiring:
+    """Mutation log is appended and checkpointed from the live runner path."""
+
+    def test_run_appends_outcome_and_creates_checkpoint(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path, session_reports_enabled=False)
+        runner, mocks = _make_runner_with_mocks(settings)
+        mocks["artifacts"].mutation_log = MagicMock()
+        mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
+
+        with patch("autocontext.loop.generation_pipeline.GenerationPipeline") as mock_pipeline_cls:
+            mock_pipeline = MagicMock()
+            mock_pipeline_cls.return_value = mock_pipeline
+
+            def fake_run_gen(ctx: Any) -> Any:
+                ctx.gate_decision = "advance"
+                ctx.previous_best = 0.42
+                ctx.challenger_elo = 1042.0
+                return ctx
+
+            mock_pipeline.run_generation.side_effect = fake_run_gen
+
+            with patch.object(runner, "_scenario") as mock_scenario:
+                mock_scenario.return_value = mocks["scenario"]
+                runner.run("grid_ctf", generations=1, run_id="test_mutation_success")
+
+        mocks["artifacts"].mutation_log.append.assert_called_once()
+        append_args = mocks["artifacts"].mutation_log.append.call_args
+        assert append_args[0][0] == "grid_ctf"
+        entry = append_args[0][1]
+        assert entry.mutation_type == "run_outcome"
+        assert entry.generation == 1
+        assert entry.run_id == "test_mutation_success"
+        assert entry.payload == {
+            "gate_decision": "advance",
+            "best_score": 0.42,
+            "elo": 1042.0,
+        }
+
+        mocks["artifacts"].mutation_log.create_checkpoint.assert_called_once_with(
+            "grid_ctf",
+            generation=1,
+            run_id="test_mutation_success",
+        )
+
+    def test_run_logs_failed_generation_outcome(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path, session_reports_enabled=False)
+        runner, mocks = _make_runner_with_mocks(settings)
+        mocks["artifacts"].mutation_log = MagicMock()
+        mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
+
+        with patch("autocontext.loop.generation_pipeline.GenerationPipeline") as mock_pipeline_cls:
+            mock_pipeline = MagicMock()
+            mock_pipeline_cls.return_value = mock_pipeline
+            mock_pipeline.run_generation.side_effect = RuntimeError("boom")
+
+            with patch.object(runner, "_scenario") as mock_scenario:
+                mock_scenario.return_value = mocks["scenario"]
+                with pytest.raises(RuntimeError, match="boom"):
+                    runner.run("grid_ctf", generations=1, run_id="test_mutation_failure")
+
+        mocks["artifacts"].mutation_log.append.assert_called_once()
+        append_args = mocks["artifacts"].mutation_log.append.call_args
+        assert append_args[0][0] == "grid_ctf"
+        entry = append_args[0][1]
+        assert entry.mutation_type == "run_outcome"
+        assert entry.generation == 1
+        assert entry.run_id == "test_mutation_failure"
+        assert entry.payload == {"status": "failed", "error": "boom"}
+        mocks["artifacts"].mutation_log.create_checkpoint.assert_not_called()
 
 
 class TestSessionReportDeadEnds:

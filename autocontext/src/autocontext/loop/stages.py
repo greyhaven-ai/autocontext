@@ -304,6 +304,15 @@ def stage_knowledge_setup(
                 _apply_tuning_to_settings(ctx, validated)
 
     experiment_log = "" if ablation else trajectory_builder.build_experiment_log(ctx.run_id)
+    mutation_replay = "" if ablation else artifacts.read_mutation_replay(ctx.scenario_name)
+    if not isinstance(mutation_replay, str):
+        mutation_replay = ""
+    if mutation_replay:
+        experiment_log = (
+            f"{experiment_log}\n\n{mutation_replay}".strip()
+            if experiment_log
+            else mutation_replay
+        )
 
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
     strategy_interface = scenario.describe_strategy_interface()
