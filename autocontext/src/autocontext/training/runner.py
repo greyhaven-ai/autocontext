@@ -262,6 +262,21 @@ class TrainingRunner:
         settings = load_settings().model_copy(update={"agent_provider": self.config.agent_provider})
         return build_client_from_settings(settings)
 
+    def _resolve_agent_model(self) -> str:
+        """Resolve the effective model for the training-agent prompt revision loop.
+
+        The training loop uses the lower-level LanguageModelClient interface, so
+        unlike provider-backed complete() calls it cannot rely on an empty string
+        to trigger provider-default fallback.
+        """
+        if self.config.agent_model:
+            return self.config.agent_model
+
+        settings = load_settings().model_copy(update={"agent_provider": self.config.agent_provider})
+        if self.config.agent_provider in {"openai", "openai-compatible", "ollama", "vllm"}:
+            return settings.agent_default_model
+        return settings.model_competitor
+
     def _recent_results_tail(self, limit: int = 5) -> str:
         tsv_path = self.work_dir / "results.tsv"
         if not tsv_path.exists():
@@ -306,7 +321,7 @@ class TrainingRunner:
             "```\n"
         )
         response = client.generate(
-            model=self.config.agent_model,
+            model=self._resolve_agent_model(),
             prompt=prompt,
             max_tokens=8000,
             temperature=0.2,

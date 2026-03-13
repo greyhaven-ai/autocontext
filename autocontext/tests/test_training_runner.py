@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
+from autocontext.config.settings import AppSettings
 from autocontext.training.runner import (
     ExperimentOutcome,
     ExperimentResult,
@@ -417,6 +418,52 @@ class TestTrainingLoop:
         assert result.best_experiment_index == 2
         assert result.checkpoint_path == improved.checkpoint_path
         mock_discard.assert_called_once()
+
+    def test_propose_train_py_uses_competitor_model_when_agent_model_empty(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            agent_provider="anthropic",
+            agent_model="",
+        )
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        (workspace / "train.py").write_text("print('hello')\n", encoding="utf-8")
+        (workspace / "program.md").write_text("program", encoding="utf-8")
+        (workspace / "results.tsv").write_text("experiment\tavg_score\n", encoding="utf-8")
+        runner = TrainingRunner(cfg, work_dir=workspace)
+
+        class StubClient:
+            def __init__(self) -> None:
+                self.model: str | None = None
+
+            def generate(
+                self,
+                *,
+                model: str,
+                prompt: str,
+                max_tokens: int,
+                temperature: float,
+                role: str = "",
+            ) -> object:
+                del prompt, max_tokens, temperature, role
+                self.model = model
+
+                class Response:
+                    text = "```python\nprint('updated')\n```"
+
+                return Response()
+
+        client = StubClient()
+        with patch(
+            "autocontext.training.runner.load_settings",
+            return_value=AppSettings(model_competitor="fallback-competitor"),
+        ):
+            updated = runner._propose_train_py(client, experiment_index=1, consecutive_discards=0)
+
+        assert client.model == "fallback-competitor"
+        assert "updated" in updated
 
 
 # ---------------------------------------------------------------------------
