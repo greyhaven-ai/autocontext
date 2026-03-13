@@ -1,5 +1,5 @@
 /**
- * @greyhaven/autoctx — AutoContext TypeScript toolkit.
+ * autoctx — AutoContext TypeScript toolkit.
  */
 
 // Core types

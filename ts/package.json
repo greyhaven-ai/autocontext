@@ -1,5 +1,5 @@
 {
-  "name": "@greyhaven/autoctx",
+  "name": "autoctx",
   "version": "0.1.0",
   "description": "AutoContext — always-on agent evaluation harness",
   "type": "module",
