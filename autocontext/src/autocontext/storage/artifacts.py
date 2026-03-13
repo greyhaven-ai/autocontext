@@ -781,7 +781,7 @@ class ArtifactStore:
             Path to the pi_session.json file.
         """
         gen_dir = self.generation_dir(run_id, generation)
-        trace_dict: dict[str, object] = trace.to_dict()  # type: ignore[union-attr]
+        trace_dict: dict[str, object] = trace.to_dict()  # type: ignore[attr-defined]
         session_path = gen_dir / "pi_session.json"
         self.write_json(session_path, trace_dict)
         output_path = gen_dir / "pi_output.txt"
