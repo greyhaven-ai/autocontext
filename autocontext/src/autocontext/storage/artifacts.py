@@ -755,6 +755,19 @@ class ArtifactStore:
             reports.append(WeaknessReport.from_dict(data))
         return reports
 
+    def read_latest_weakness_reports_markdown(self, scenario_name: str, max_reports: int = 2) -> str:
+        """Read recent weakness reports and concatenate them as markdown."""
+        from autocontext.knowledge.weakness import WeaknessReport
+
+        reports = self.read_latest_weakness_reports(scenario_name, max_reports=max_reports)
+        if not reports:
+            return ""
+        markdown_parts: list[str] = []
+        for report in reports:
+            if isinstance(report, WeaknessReport):
+                markdown_parts.append(report.to_markdown())
+        return "\n\n".join(markdown_parts)
+
     def read_latest_session_reports(self, scenario_name: str, max_reports: int = 2) -> str:
         """Read the most recent session reports, concatenated."""
         reports_dir = self.knowledge_root / scenario_name / "reports"

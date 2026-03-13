@@ -21,7 +21,6 @@ WEAKNESS_CATEGORIES = frozenset({
     "match_variance",
     "stagnation_risk",
     "dead_end_pattern",
-    "strategy_repetition",
 })
 
 

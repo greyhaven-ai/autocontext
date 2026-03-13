@@ -3,7 +3,7 @@
 Verifies:
 1. Weakness and WeaknessReport dataclass construction and serialization.
 2. WeaknessAnalyzer detects score regressions, validation failures, match variance,
-   strategy repetition, stagnation risk, and dead-end patterns.
+   stagnation risk, and dead-end patterns.
 3. WeaknessReport markdown rendering for operator visibility.
 4. Integration with ArtifactStore for persistence.
 """
@@ -505,3 +505,26 @@ class TestArtifactStoreWeaknessIntegration:
 
         latest = artifact_store.read_latest_weakness_reports("grid_ctf", max_reports=2)
         assert len(latest) == 2
+
+    def test_read_latest_weakness_reports_markdown(self, artifact_store) -> None:
+        from autocontext.knowledge.weakness import Weakness, WeaknessReport
+
+        report = WeaknessReport(
+            run_id="run_md",
+            scenario="grid_ctf",
+            total_generations=4,
+            weaknesses=[
+                Weakness(
+                    category="dead_end_pattern",
+                    severity="high",
+                    affected_generations=[2, 4],
+                    description="Repeated rollbacks detected",
+                    evidence={"rollback_ratio": 0.5},
+                ),
+            ],
+        )
+        artifact_store.write_weakness_report("grid_ctf", "run_md", report)
+
+        markdown = artifact_store.read_latest_weakness_reports_markdown("grid_ctf")
+        assert "# Weakness Report: run_md" in markdown
+        assert "dead_end_pattern" in markdown
