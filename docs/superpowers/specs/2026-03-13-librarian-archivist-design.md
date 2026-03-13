@@ -274,7 +274,7 @@ Library support uses the pipeline engine path (`_run_via_pipeline` in `orchestra
 
 The `build_role_handler()` function maps librarian role names to `LibrarianRunner.run()` and `archivist` to `ArchivistRunner.run()`. The archivist handler checks for violations in librarian outputs and returns a no-op if none exist.
 
-For Agent SDK mode (`AUTOCONTEXT_AGENT_PROVIDER=agent_sdk`): `consult_library` is registered as a tool in the `per_role_tools` configuration passed to `claude_agent_sdk.query()`. The tool handler is a synchronous wrapper around the same `provider.query()` call used in non-SDK mode. Agent SDK mode is supported for `consult_library` but the librarian/archivist DAG roles themselves use the standard pipeline engine, not the Agent SDK tool loop.
+For Agent SDK mode (`AUTOCONTEXT_AGENT_PROVIDER=agent_sdk`): `consult_library` is registered via a new `per_role_tools` mechanism added to `agents/agent_sdk_client.py`. This mechanism does not exist today and must be created — it extends the tool list passed to `claude_agent_sdk.query()` on a per-role basis. The tool handler is a synchronous wrapper around the same `provider.query()` call used in non-SDK mode. Agent SDK mode is supported for `consult_library` but the librarian/archivist DAG roles themselves use the standard pipeline engine, not the Agent SDK tool loop.
 
 ## Gate Integration
 
@@ -354,6 +354,33 @@ AUTOCONTEXT_ARCHIVIST_PROVIDER             # Per-role provider override
 AUTOCONTEXT_INGESTION_MODEL                # Model for initial book reading (default: opus)
 ```
 
+## Role Routing
+
+The `RoleRouter` in `agents/role_router.py` uses hardcoded role names in `DEFAULT_ROUTING_TABLE` and model/provider lookups. Librarian roles are dynamically named (`librarian_clean_arch`, `librarian_ddd`, etc.), so routing uses prefix-based lookup:
+
+- Any role name starting with `librarian_` resolves to `ProviderClass.MID_TIER` in the routing table, `settings.model_librarian` for model, and `settings.librarian_provider` for provider override.
+- The `archivist` role resolves to `ProviderClass.FRONTIER`, `settings.model_archivist`, and `settings.archivist_provider`.
+
+The `_role_models()` and `_role_providers()` methods gain a prefix fallback: if exact match fails, try prefix match against `librarian_` before returning the default.
+
+## Aggregated Output
+
+The `AgentOutputs` dataclass in `agents/types.py` gains these fields:
+
+```python
+# Library outputs
+librarian_outputs: list[LibrarianOutput] = field(default_factory=list)
+archivist_output: ArchivistOutput | None = None
+library_advisories: list[str] = field(default_factory=list)  # Collected advisory text for coach
+```
+
+Downstream consumers:
+- **Coach prompt builder** reads `library_advisories` to inject literature-grounded recommendations.
+- **Archivist gate (Stage 3b)** reads `archivist_output.decisions` and checks for `hard_gate` verdicts.
+- **Persistence** reads `librarian_outputs` to write per-book `gen_N.md` and update `cumulative_notes.md`.
+
+The controller gate override (which runs after stagnation check) can also override an archivist `hard_gate`, consistent with its ability to override any gate decision.
+
 ## Files Changed
 
 | Area | Files | Change |
@@ -371,7 +398,7 @@ AUTOCONTEXT_INGESTION_MODEL                # Model for initial book reading (def
 | Knowledge | `knowledge/export.py` | Include library info in skill packages |
 | Pipeline | `loop/generation_pipeline.py` | Archivist gate stage (3b) |
 | CLI | `cli.py` | `add-book`, `list-books`, `remove-book`, `--books` on `run` |
-| Routing | `agents/role_router.py` | Librarian/archivist in routing table |
+| Routing | `agents/role_router.py` | Librarian/archivist in routing table (prefix-based) |
 | Existing agents | `competitor.py`, `analyst.py`, `coach.py`, `architect.py` | `consult_library` tool permissions |
 | Docs | `CLAUDE.md`, `README.md`, `autocontext/README.md`, `CONTRIBUTING.md` | Document new roles, commands, config |
 
