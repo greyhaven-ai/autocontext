@@ -182,6 +182,7 @@ class TestCreateClientForProvider:
             provider_type="openai",
             api_key="openai-key",
             base_url="http://localhost:8000/v1",
+            model="gpt-4o",
         )
 
     def test_empty_provider_returns_none(self) -> None:
