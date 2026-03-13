@@ -9,9 +9,11 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import shlex
 from collections.abc import Mapping
 from typing import Any
 
+from autocontext.execution.executors.local import LocalExecutor
 from autocontext.integrations.ssh.client import SSHClient
 from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result, ScenarioInterface
 
@@ -32,11 +34,13 @@ class SSHExecutor:
         allow_fallback: bool = True,
         max_retries: int = 2,
         backoff_seconds: float = 0.75,
+        fallback_executor: LocalExecutor | None = None,
     ) -> None:
         self.client = client
         self.allow_fallback = allow_fallback
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds
+        self.fallback_executor = fallback_executor or LocalExecutor()
 
     def execute(
         self,
@@ -67,7 +71,7 @@ class SSHExecutor:
                     f"SSH execution failed on {self.client.config.name}: "
                     f"exit {result.exit_code} — {result.stderr[:200]}"
                 )
-            return self._fallback_response(scenario.name, seed)
+            return self._execute_local_fallback(scenario, strategy, seed, limits)
 
         try:
             parsed = json.loads(result.stdout)
@@ -81,7 +85,7 @@ class SSHExecutor:
             logger.warning("SSH output parse error on %s: %s", self.client.config.name, exc)
             if not self.allow_fallback:
                 raise RuntimeError(f"SSH output parse error: {exc}") from exc
-            return self._fallback_response(scenario.name, seed)
+            return self._execute_local_fallback(scenario, strategy, seed, limits)
 
     def _build_eval_command(
         self,
@@ -94,34 +98,33 @@ class SSHExecutor:
         payload = {"scenario_name": scenario_name, "strategy": strategy, "seed": seed}
         encoded = base64.b64encode(json.dumps(payload, sort_keys=True).encode()).decode()
         working_dir = self.client.config.working_directory
+        script = (
+            "import base64, json; "
+            f"payload = json.loads(base64.b64decode({encoded!r}).decode()); "
+            "from autocontext.scenarios import SCENARIO_REGISTRY; "
+            "scenario_cls = SCENARIO_REGISTRY[payload['scenario_name']]; "
+            "scenario = scenario_cls(); "
+            "result = scenario.execute_match(payload['strategy'], payload['seed']); "
+            "replay = {'scenario': scenario.name, 'seed': payload['seed'], "
+            "'narrative': scenario.replay_to_narrative(result.replay), 'timeline': result.replay}; "
+            "print(json.dumps({'result': result.model_dump(), 'replay': replay}))"
+        )
         return (
-            f"cd {working_dir} && "
-            f"python3 -c \""
-            f"import base64, json; "
-            f"payload = json.loads(base64.b64decode('{encoded}').decode()); "
-            f"from autocontext.scenarios import SCENARIO_REGISTRY; "
-            f"from autocontext.scenarios.base import ExecutionLimits; "
-            f"scenario = SCENARIO_REGISTRY[payload['scenario_name']]; "
-            f"result, replay = scenario.execute_match(payload['strategy'], {{}}, payload['seed']); "
-            f"print(json.dumps({{'result': result.model_dump(), 'replay': replay.model_dump()}}))"
-            f"\""
+            f"cd {shlex.quote(working_dir)} && "
+            f"PYTHONPATH=src python3 -c {shlex.quote(script)}"
         )
 
-    @staticmethod
-    def _fallback_response(scenario_name: str, seed: int) -> tuple[Result, ReplayEnvelope]:
-        """Return an explicit failure shape when remote execution fails."""
-        result = Result(
-            score=0.0,
-            winner="incumbent",
-            summary="SSH execution failed or unavailable",
-            replay=[{"event": "ssh_execution_failed"}],
-            metrics={"remote_available": 0.0},
-            validation_errors=["SSH execution failed"],
-        )
-        replay = ReplayEnvelope(
-            scenario=scenario_name,
+    def _execute_local_fallback(
+        self,
+        scenario: ScenarioInterface,
+        strategy: Mapping[str, Any],
+        seed: int,
+        limits: ExecutionLimits,
+    ) -> tuple[Result, ReplayEnvelope]:
+        logger.warning("Falling back to local execution for scenario %s after SSH failure", scenario.name)
+        return self.fallback_executor.execute(
+            scenario=scenario,
+            strategy=strategy,
             seed=seed,
-            narrative="Remote SSH execution failed; fallback result generated.",
-            timeline=[{"event": "ssh_execution_failed"}],
+            limits=limits,
         )
-        return result, replay

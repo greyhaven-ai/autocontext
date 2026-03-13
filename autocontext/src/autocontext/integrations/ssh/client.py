@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass
@@ -83,7 +84,7 @@ class SSHClient:
         parts: list[str] = []
         if self.config.environment:
             for key, value in sorted(self.config.environment.items()):
-                parts.append(f"{key}='{value}'")
+                parts.append(f"{key}={shlex.quote(value)}")
         parts.append(command)
         return " ".join(parts)
 
@@ -128,6 +129,26 @@ class SSHClient:
             return {"status": "error", "host": self.config.hostname, "error": result.stderr, "exit_code": result.exit_code}
         return {"status": "healthy", "host": self.config.hostname, "hostname": result.stdout.strip()}
 
+    def validate_runtime(self) -> None:
+        """Verify the remote host is reachable and can import the package."""
+        status = self.health_check()
+        if status["status"] != "healthy":
+            raise RuntimeError(f"SSH host {self.config.hostname} is not healthy: {status.get('error', status['status'])}")
+        self.ensure_working_directory()
+        probe_script = 'import autocontext; print("ok")'
+        probe = self.execute_command(
+            f"cd {shlex.quote(self.config.working_directory)} && "
+            "PYTHONPATH=src python3 -c "
+            f"{shlex.quote(probe_script)}",
+            timeout=float(self.config.connect_timeout),
+        )
+        if probe.exit_code != 0 or probe.stdout.strip() != "ok":
+            stderr = probe.stderr.strip() or probe.stdout.strip()
+            raise RuntimeError(
+                f"SSH runtime preflight failed on {self.config.hostname}: "
+                f"{stderr or f'exit {probe.exit_code}'}"
+            )
+
     def upload_file(self, local_path: Path, remote_path: str) -> None:
         """Upload a local file to the remote host via SCP."""
         args = self._scp_base_args() + [str(local_path), self._scp_target(remote_path)]
@@ -144,4 +165,8 @@ class SSHClient:
 
     def ensure_working_directory(self) -> None:
         """Create the working directory on the remote host if needed."""
-        self.execute_command(f"mkdir -p {self.config.working_directory}")
+        result = self.execute_command(f"mkdir -p {shlex.quote(self.config.working_directory)}")
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"Failed to create remote working directory {self.config.working_directory}: {result.stderr.strip()}"
+            )

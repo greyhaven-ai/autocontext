@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from autocontext.config.settings import AppSettings
+from autocontext.execution.executors.local import LocalExecutor
 from autocontext.execution.executors.ssh import SSHExecutor
 from autocontext.integrations.ssh.client import SSHClient, SSHCommandResult
 from autocontext.integrations.ssh.config import SSHHostCapabilities, SSHHostConfig
@@ -305,6 +306,60 @@ class TestSSHClientWorkingDir:
         assert "mkdir" in cmd_str
         assert "/home/user/ac" in cmd_str
 
+    def test_ensure_working_directory_failure_raises(self) -> None:
+        cfg = SSHHostConfig(name="test", hostname="testhost", working_directory="/home/user/ac")
+        client = SSHClient(cfg)
+        mock_result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="permission denied")
+
+        with patch("subprocess.run", return_value=mock_result):
+            with pytest.raises(RuntimeError, match="Failed to create remote working directory"):
+                client.ensure_working_directory()
+
+
+# ===========================================================================
+# SSHClient — runtime preflight
+# ===========================================================================
+
+
+class TestSSHClientRuntimePreflight:
+    def test_validate_runtime_success(self) -> None:
+        cfg = SSHHostConfig(name="test", hostname="testhost")
+        client = SSHClient(cfg)
+
+        with patch.object(client, "health_check", return_value={"status": "healthy", "host": "testhost"}):
+            with patch.object(client, "ensure_working_directory"):
+                with patch.object(
+                    client,
+                    "execute_command",
+                    return_value=SSHCommandResult(exit_code=0, stdout="ok\n", stderr="", duration_ms=25),
+                ) as mock_exec:
+                    client.validate_runtime()
+        command = mock_exec.call_args.args[0]
+        assert "PYTHONPATH=src" in command
+        assert "import autocontext; print(\"ok\")" in command
+
+    def test_validate_runtime_unhealthy_host_raises(self) -> None:
+        cfg = SSHHostConfig(name="test", hostname="testhost")
+        client = SSHClient(cfg)
+
+        with patch.object(client, "health_check", return_value={"status": "error", "error": "refused"}):
+            with pytest.raises(RuntimeError, match="not healthy"):
+                client.validate_runtime()
+
+    def test_validate_runtime_import_failure_raises(self) -> None:
+        cfg = SSHHostConfig(name="test", hostname="testhost")
+        client = SSHClient(cfg)
+
+        with patch.object(client, "health_check", return_value={"status": "healthy", "host": "testhost"}):
+            with patch.object(client, "ensure_working_directory"):
+                with patch.object(
+                    client,
+                    "execute_command",
+                    return_value=SSHCommandResult(exit_code=1, stdout="", stderr="ModuleNotFoundError", duration_ms=25),
+                ):
+                    with pytest.raises(RuntimeError, match="runtime preflight failed"):
+                        client.validate_runtime()
+
 
 # ===========================================================================
 # SSHExecutor — ExecutionEngine protocol
@@ -364,6 +419,22 @@ class TestSSHExecutor:
         executor.allow_fallback = True
         scenario = MagicMock()
         scenario.name = "grid_ctf"
+        local_result = Result(
+            score=0.8,
+            winner="challenger",
+            summary="local fallback",
+            replay=[],
+            metrics={},
+            validation_errors=[],
+        )
+        local_replay = ReplayEnvelope(
+            scenario="grid_ctf",
+            seed=1,
+            narrative="fallback replay",
+            timeline=[],
+        )
+        executor.fallback_executor = MagicMock(spec=LocalExecutor)
+        executor.fallback_executor.execute.return_value = (local_result, local_replay)
 
         mock_cmd_result = SSHCommandResult(
             exit_code=1, stdout="", stderr="error", duration_ms=100,
@@ -376,8 +447,9 @@ class TestSSHExecutor:
                     seed=1,
                     limits=ExecutionLimits(),
                 )
-        assert result.score == 0.0
-        assert "unavailable" in result.summary.lower() or "failed" in result.summary.lower()
+        assert result.score == 0.8
+        assert replay.narrative == "fallback replay"
+        executor.fallback_executor.execute.assert_called_once()
 
     def test_execute_nonzero_exit_without_fallback(self) -> None:
         executor, client = self._make_executor()
@@ -402,6 +474,22 @@ class TestSSHExecutor:
         executor, client = self._make_executor()
         scenario = MagicMock()
         scenario.name = "grid_ctf"
+        local_result = Result(
+            score=0.7,
+            winner="challenger",
+            summary="local fallback",
+            replay=[],
+            metrics={},
+            validation_errors=[],
+        )
+        local_replay = ReplayEnvelope(
+            scenario="grid_ctf",
+            seed=1,
+            narrative="fallback replay",
+            timeline=[],
+        )
+        executor.fallback_executor = MagicMock(spec=LocalExecutor)
+        executor.fallback_executor.execute.return_value = (local_result, local_replay)
 
         mock_cmd_result = SSHCommandResult(
             exit_code=0, stdout="not json", stderr="", duration_ms=100,
@@ -414,7 +502,8 @@ class TestSSHExecutor:
                     seed=1,
                     limits=ExecutionLimits(),
                 )
-        assert result.score == 0.0
+        assert result.score == 0.7
+        executor.fallback_executor.execute.assert_called_once()
 
     def test_execute_builds_eval_command(self) -> None:
         """Verify the executor sends a proper evaluation command."""
@@ -442,7 +531,12 @@ class TestSSHExecutor:
                     limits=ExecutionLimits(timeout_seconds=15.0),
                 )
         assert len(captured_cmd) == 1
-        assert "grid_ctf" in captured_cmd[0] or "autocontext" in captured_cmd[0].lower()
+        assert "base64.b64decode" in captured_cmd[0]
+        assert "PYTHONPATH=src" in captured_cmd[0]
+        assert "scenario_cls = SCENARIO_REGISTRY" in captured_cmd[0]
+        assert "scenario = scenario_cls()" in captured_cmd[0]
+        assert "execute_match(" in captured_cmd[0]
+        assert "{}, payload['seed']" not in captured_cmd[0]
 
     def test_execute_timeout_in_limits(self) -> None:
         """Timeout from limits is passed to execute_command."""
@@ -499,3 +593,57 @@ class TestSSHSettings:
         assert s.ssh_host == "gpu.lab"
         assert s.ssh_port == 2222
         assert s.ssh_allow_fallback is False
+
+
+# ===========================================================================
+# GenerationRunner — SSH wiring
+# ===========================================================================
+
+
+class TestGenerationRunnerSSHWiring:
+    def test_ssh_executor_mode_creates_ssh_executor_after_preflight(self) -> None:
+        from autocontext.execution.executors.ssh import SSHExecutor
+        from autocontext.loop.generation_runner import GenerationRunner
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            executor_mode="ssh",
+            ssh_host="gpu.lab",
+        )
+        with patch("autocontext.integrations.ssh.client.SSHClient.validate_runtime") as mock_validate:
+            runner = GenerationRunner(settings)
+        assert isinstance(runner.executor.executor, SSHExecutor)
+        mock_validate.assert_called_once()
+
+    def test_ssh_preflight_falls_back_to_local_when_allowed(self) -> None:
+        from autocontext.execution.executors.local import LocalExecutor
+        from autocontext.loop.generation_runner import GenerationRunner
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            executor_mode="ssh",
+            ssh_host="gpu.lab",
+            ssh_allow_fallback=True,
+        )
+        with patch(
+            "autocontext.integrations.ssh.client.SSHClient.validate_runtime",
+            side_effect=RuntimeError("boom"),
+        ):
+            runner = GenerationRunner(settings)
+        assert isinstance(runner.executor.executor, LocalExecutor)
+
+    def test_ssh_preflight_raises_when_fallback_disabled(self) -> None:
+        from autocontext.loop.generation_runner import GenerationRunner
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            executor_mode="ssh",
+            ssh_host="gpu.lab",
+            ssh_allow_fallback=False,
+        )
+        with patch(
+            "autocontext.integrations.ssh.client.SSHClient.validate_runtime",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                GenerationRunner(settings)

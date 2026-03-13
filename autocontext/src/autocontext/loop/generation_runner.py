@@ -105,12 +105,21 @@ class GenerationRunner:
                 connect_timeout=settings.ssh_connect_timeout,
                 command_timeout=settings.ssh_command_timeout,
             )
-            self.executor = ExecutionSupervisor(
-                executor=SSHExecutor(
-                    client=SSHClient(ssh_config),
-                    allow_fallback=settings.ssh_allow_fallback,
+            ssh_client = SSHClient(ssh_config)
+            try:
+                ssh_client.validate_runtime()
+            except RuntimeError as exc:
+                if not settings.ssh_allow_fallback:
+                    raise
+                LOGGER.warning("SSH executor preflight failed; falling back to local executor: %s", exc)
+                self.executor = ExecutionSupervisor(executor=LocalExecutor())
+            else:
+                self.executor = ExecutionSupervisor(
+                    executor=SSHExecutor(
+                        client=ssh_client,
+                        allow_fallback=settings.ssh_allow_fallback,
+                    )
                 )
-            )
         else:
             self.executor = ExecutionSupervisor(executor=LocalExecutor())
         self.events = EventStreamEmitter(settings.event_stream_path)
