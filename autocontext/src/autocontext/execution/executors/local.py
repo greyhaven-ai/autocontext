@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import resource
+import sys
 from collections.abc import Mapping
+
+if sys.platform != "win32":
+    import resource
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, TimeoutError
 from importlib import import_module
 from typing import Any
@@ -16,11 +19,12 @@ def _execute_in_subprocess(
     seed: int,
     max_memory_mb: int,
 ) -> Result:
-    memory_bytes = int(max_memory_mb * 1024 * 1024)
-    try:
-        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
-    except Exception:
-        pass
+    if sys.platform != "win32":
+        memory_bytes = int(max_memory_mb * 1024 * 1024)
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+        except Exception:
+            pass
     module = import_module(scenario_module)
     scenario_type = getattr(module, scenario_class)
     scenario: ScenarioInterface = scenario_type()
