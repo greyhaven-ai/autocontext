@@ -13,6 +13,7 @@ from autocontext.execution import ExecutionSupervisor
 from autocontext.execution.executors import LocalExecutor, PrimeIntellectExecutor
 from autocontext.harness.meta_optimizer import MetaOptimizer
 from autocontext.integrations.primeintellect import PrimeIntellectClient
+from autocontext.knowledge.mutation_log import MutationEntry
 from autocontext.knowledge.report import generate_session_report
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.loop.controller import LoopController
@@ -323,12 +324,36 @@ class GenerationRunner:
                         replay_narrative=replay_narrative,
                     )
                     ctx = pipeline.run_generation(ctx)
+                    self.artifacts.mutation_log.append(
+                        scenario_name,
+                        MutationEntry(
+                            mutation_type="run_outcome",
+                            generation=generation,
+                            payload={
+                                "gate_decision": ctx.gate_decision,
+                                "best_score": ctx.previous_best,
+                                "elo": ctx.challenger_elo,
+                            },
+                            run_id=active_run_id,
+                            description=f"Generation {generation} completed with {ctx.gate_decision or 'unknown'}",
+                        ),
+                    )
                     previous_best = ctx.previous_best
                     challenger_elo = ctx.challenger_elo
                     replay_narrative = ctx.replay_narrative
                     coach_competitor_hints = ctx.coach_competitor_hints
                     completed += 1
                 except Exception as exc:
+                    self.artifacts.mutation_log.append(
+                        scenario_name,
+                        MutationEntry(
+                            mutation_type="run_outcome",
+                            generation=generation,
+                            payload={"status": "failed", "error": str(exc)},
+                            run_id=active_run_id,
+                            description=f"Generation {generation} failed",
+                        ),
+                    )
                     self.sqlite.upsert_generation(
                         active_run_id,
                         generation,
@@ -346,6 +371,12 @@ class GenerationRunner:
                     )
                     raise
             self.sqlite.mark_run_completed(active_run_id)
+            if completed > 0:
+                self.artifacts.mutation_log.create_checkpoint(
+                    scenario_name,
+                    generation=completed,
+                    run_id=active_run_id,
+                )
             self.artifacts.flush_writes()
         finally:
             self.artifacts.shutdown_writer()

@@ -92,6 +92,7 @@ class MutationLog:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry.to_dict()) + "\n")
+        self.truncate(scenario)
 
     def read(
         self,
@@ -179,17 +180,18 @@ class MutationLog:
         return result
 
     def truncate(self, scenario: str) -> None:
-        """Bound the log to max_entries, preserving the last checkpoint and recent entries."""
+        """Bound the log to max_entries, preserving the last checkpoint when possible."""
         all_entries = self.read(scenario)
         if len(all_entries) <= self.max_entries:
             return
 
         checkpoint = self.get_last_checkpoint(scenario)
+        tail_start = len(all_entries) - self.max_entries
         if checkpoint is not None:
-            # Keep from checkpoint onward, capped at max_entries
-            keep_from = min(checkpoint.entry_index, len(all_entries) - self.max_entries)
+            # Preserve the checkpoint only if it fits within the retained tail.
+            keep_from = checkpoint.entry_index if checkpoint.entry_index >= tail_start else tail_start
         else:
-            keep_from = len(all_entries) - self.max_entries
+            keep_from = tail_start
 
         kept = all_entries[keep_from:]
         path = self._log_path(scenario)
@@ -197,6 +199,20 @@ class MutationLog:
             "".join(json.dumps(entry.to_dict()) + "\n" for entry in kept),
             encoding="utf-8",
         )
+
+    def replay_summary(self, scenario: str, *, max_entries: int = 10) -> str:
+        """Summarize recent mutations since the last checkpoint for prompt context."""
+        replayed = self.replay_after_checkpoint(scenario)
+        if not replayed:
+            return ""
+
+        lines = ["Context mutations since last checkpoint:"]
+        for entry in replayed[-max_entries:]:
+            detail = entry.description or entry.payload
+            lines.append(
+                f"- gen {entry.generation}: {entry.mutation_type} — {detail}"
+            )
+        return "\n".join(lines)
 
     def audit_summary(self, scenario: str) -> str:
         """Generate a human-readable audit summary."""

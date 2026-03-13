@@ -10,7 +10,7 @@ from pathlib import Path
 
 from autocontext.harness.storage.versioned_store import VersionedFileStore
 from autocontext.knowledge.lessons import LessonStore
-from autocontext.knowledge.mutation_log import MutationLog
+from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
 from autocontext.storage.buffered_writer import BufferedWriter
 
 LOGGER = logging.getLogger(__name__)
@@ -70,6 +70,27 @@ class ArtifactStore:
 
     def generation_dir(self, run_id: str, generation_index: int) -> Path:
         return self.runs_root / run_id / "generations" / f"gen_{generation_index}"
+
+    def _append_mutation(
+        self,
+        scenario_name: str,
+        *,
+        mutation_type: str,
+        payload: dict[str, object],
+        generation: int = 0,
+        run_id: str = "",
+        description: str = "",
+    ) -> None:
+        self.mutation_log.append(
+            scenario_name,
+            MutationEntry(
+                mutation_type=mutation_type,
+                generation=generation,
+                payload=payload,
+                run_id=run_id,
+                description=description,
+            ),
+        )
 
     def write_json(self, path: Path, payload: dict[str, object]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +156,12 @@ class ArtifactStore:
         # but the scenario directory itself may not exist yet).
         (self.knowledge_root / scenario_name).mkdir(parents=True, exist_ok=True)
         self._playbook_store(scenario_name).write("playbook.md", content.strip() + "\n")
+        self._append_mutation(
+            scenario_name,
+            mutation_type="playbook_updated",
+            payload={"content_length": len(content.strip())},
+            description="Playbook updated",
+        )
 
     def append_coach_history(self, scenario_name: str, generation_index: int, raw_content: str) -> None:
         """Append raw coach output to history file for audit trail."""
@@ -224,6 +251,10 @@ class ArtifactStore:
         """Write progress snapshot JSON."""
         path = self.knowledge_root / scenario_name / "progress.json"
         self.write_json(path, snapshot_dict)
+
+    def read_mutation_replay(self, scenario_name: str, *, max_entries: int = 10) -> str:
+        """Read a compact replay summary of mutations since the last checkpoint."""
+        return self.mutation_log.replay_summary(scenario_name, max_entries=max_entries)
 
     def read_progress(self, scenario_name: str) -> dict[str, object] | None:
         """Read progress snapshot, or None if missing."""
@@ -786,6 +817,14 @@ class ArtifactStore:
         path = self.runs_root / "sessions" / session_id / "notebook.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(notebook, indent=2), encoding="utf-8")
+        scenario_name = str(notebook.get("scenario_name", "")).strip()
+        if scenario_name:
+            self._append_mutation(
+                scenario_name,
+                mutation_type="notebook_updated",
+                payload={"session_id": session_id},
+                description=f"Notebook updated for session {session_id}",
+            )
 
     def delete_notebook(self, session_id: str) -> None:
         """Delete the file-backed notebook artifact if it exists."""

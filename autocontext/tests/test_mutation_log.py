@@ -364,13 +364,13 @@ class TestLogBounding:
     def test_truncate_preserves_last_checkpoint(self, log) -> None:
         from autocontext.knowledge.mutation_log import MutationEntry
 
-        for i in range(5):
+        for i in range(8):
             log.append(
                 "grid_ctf",
                 MutationEntry(mutation_type="run_outcome", generation=i + 1, payload={"i": i}),
             )
-        log.create_checkpoint("grid_ctf", generation=5, run_id="run_1")
-        for i in range(5, 15):
+        log.create_checkpoint("grid_ctf", generation=8, run_id="run_1")
+        for i in range(8, 13):
             log.append(
                 "grid_ctf",
                 MutationEntry(mutation_type="run_outcome", generation=i + 1, payload={"i": i}),
@@ -378,7 +378,7 @@ class TestLogBounding:
 
         log.truncate("grid_ctf")
         entries = log.read("grid_ctf")
-        # Should still include the checkpoint
+        # A recent checkpoint should be preserved when it still fits inside the bound.
         checkpoint_entries = [e for e in entries if e.mutation_type == "checkpoint"]
         assert len(checkpoint_entries) >= 1
 
@@ -392,6 +392,36 @@ class TestLogBounding:
             )
         log.truncate("grid_ctf")
         assert len(log.read("grid_ctf")) == 3
+
+    def test_append_enforces_bound_automatically(self, log) -> None:
+        from autocontext.knowledge.mutation_log import MutationEntry
+
+        for i in range(12):
+            log.append(
+                "grid_ctf",
+                MutationEntry(mutation_type="run_outcome", generation=i + 1, payload={"i": i}),
+            )
+
+        entries = log.read("grid_ctf")
+        assert len(entries) <= 10
+
+    def test_truncate_drops_old_checkpoint_when_needed_to_enforce_bound(self, log) -> None:
+        from autocontext.knowledge.mutation_log import MutationEntry
+
+        for i in range(5):
+            log.append(
+                "grid_ctf",
+                MutationEntry(mutation_type="run_outcome", generation=i + 1, payload={"i": i}),
+            )
+        log.create_checkpoint("grid_ctf", generation=5, run_id="run_1")
+        for i in range(5, 16):
+            log.append(
+                "grid_ctf",
+                MutationEntry(mutation_type="run_outcome", generation=i + 1, payload={"i": i}),
+            )
+
+        entries = log.read("grid_ctf")
+        assert len(entries) <= 10
 
 
 # ---------------------------------------------------------------------------
@@ -480,3 +510,40 @@ class TestArtifactStoreIntegration:
             MutationEntry(mutation_type="lesson_added", generation=1, payload={}),
         )
         assert len(artifact_store.mutation_log.read("grid_ctf")) == 1
+
+    def test_write_playbook_logs_mutation(self, artifact_store) -> None:
+        artifact_store.write_playbook("grid_ctf", "# Playbook\nUse center control.\n")
+        entries = artifact_store.mutation_log.read("grid_ctf", mutation_types=["playbook_updated"])
+        assert len(entries) == 1
+        assert entries[0].mutation_type == "playbook_updated"
+
+    def test_write_notebook_logs_mutation(self, artifact_store) -> None:
+        artifact_store.write_notebook(
+            "session_1",
+            {"scenario_name": "grid_ctf", "current_objective": "Test objective"},
+        )
+        entries = artifact_store.mutation_log.read("grid_ctf", mutation_types=["notebook_updated"])
+        assert len(entries) == 1
+        assert entries[0].payload["session_id"] == "session_1"
+
+    def test_read_mutation_replay_uses_post_checkpoint_entries(self, artifact_store) -> None:
+        from autocontext.knowledge.mutation_log import MutationEntry
+
+        artifact_store.mutation_log.append(
+            "grid_ctf",
+            MutationEntry(mutation_type="lesson_added", generation=1, payload={"id": "L1"}),
+        )
+        artifact_store.mutation_log.create_checkpoint("grid_ctf", generation=1, run_id="run_1")
+        artifact_store.mutation_log.append(
+            "grid_ctf",
+            MutationEntry(
+                mutation_type="playbook_updated",
+                generation=2,
+                payload={"id": "pb"},
+                description="Playbook updated",
+            ),
+        )
+
+        summary = artifact_store.read_mutation_replay("grid_ctf")
+        assert "Context mutations since last checkpoint" in summary
+        assert "playbook_updated" in summary
