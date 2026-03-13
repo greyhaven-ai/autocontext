@@ -16,6 +16,7 @@ from autocontext.integrations.primeintellect import PrimeIntellectClient
 from autocontext.knowledge.mutation_log import MutationEntry
 from autocontext.knowledge.report import generate_session_report
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
+from autocontext.knowledge.weakness import WeaknessAnalyzer
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.scenarios import SCENARIO_REGISTRY
@@ -199,6 +200,19 @@ class GenerationRunner:
         )
         markdown = report.to_markdown()
         self.artifacts.write_session_report(scenario_name, run_id, markdown)
+
+    def _generate_weakness_report(self, run_id: str, scenario_name: str) -> None:
+        """Generate and persist a weakness report for a completed run."""
+        trajectory_rows = self.sqlite.get_generation_trajectory(run_id)
+        match_rows = self.sqlite.get_matches_for_run(run_id)
+        analyzer = WeaknessAnalyzer()
+        report = analyzer.analyze(
+            run_id=run_id,
+            scenario=scenario_name,
+            trajectory=trajectory_rows,
+            match_data=match_rows,
+        )
+        self.artifacts.write_weakness_report(scenario_name, run_id, report)
 
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)
@@ -388,6 +402,10 @@ class GenerationRunner:
                 self._generate_session_report(active_run_id, scenario_name, duration)
             except Exception:
                 LOGGER.warning("failed to generate session report for run %s", active_run_id, exc_info=True)
+        try:
+            self._generate_weakness_report(active_run_id, scenario_name)
+        except Exception:
+            LOGGER.warning("failed to generate weakness report for run %s", active_run_id, exc_info=True)
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:

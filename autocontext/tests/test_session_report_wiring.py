@@ -189,6 +189,41 @@ class TestSessionReportPersistence:
         assert len(call_args[0][2]) > 0
 
 
+class TestWeaknessReportWiring:
+    """Weakness reports are generated from the live run completion path."""
+
+    def test_weakness_report_generated_on_run_completion(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path, session_reports_enabled=False)
+        runner, mocks = _make_runner_with_mocks(settings)
+
+        trajectory_rows = [
+            {"generation_index": 1, "best_score": 0.3, "elo": 1000, "delta": 0.0, "gate_decision": "advance"},
+            {"generation_index": 2, "best_score": 0.1, "elo": 980, "delta": -0.2, "gate_decision": "rollback"},
+            {"generation_index": 3, "best_score": 0.2, "elo": 990, "delta": 0.1, "gate_decision": "advance"},
+            {"generation_index": 4, "best_score": 0.05, "elo": 960, "delta": -0.15, "gate_decision": "rollback"},
+            {"generation_index": 5, "best_score": 0.04, "elo": 950, "delta": -0.01, "gate_decision": "rollback"},
+        ]
+        match_rows = [
+            {"generation_index": 2, "score": 0.1, "passed_validation": False, "validation_errors": '["bad action"]'},
+            {"generation_index": 4, "score": 0.05, "passed_validation": False, "validation_errors": '["bad action"]'},
+        ]
+        mocks["sqlite"].get_generation_trajectory.return_value = trajectory_rows
+        mocks["sqlite"].get_matches_for_run.return_value = match_rows
+        mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
+
+        _run_with_pipeline_mock(runner, mocks, "grid_ctf", 5, "test_weakness")
+
+        mocks["artifacts"].write_weakness_report.assert_called_once()
+        call_args = mocks["artifacts"].write_weakness_report.call_args
+        assert call_args[0][0] == "grid_ctf"
+        assert call_args[0][1] == "test_weakness"
+        report = call_args[0][2]
+        assert report.run_id == "test_weakness"
+        assert report.scenario == "grid_ctf"
+        assert report.total_generations == 5
+        assert report.weaknesses
+
+
 class TestSessionReportEmptyTrajectory:
     """Handles empty trajectory (0 completed generations) gracefully."""
 

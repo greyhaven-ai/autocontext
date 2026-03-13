@@ -717,6 +717,57 @@ class ArtifactStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
+    # --- Weakness reports (AC-196) -------------------------------------------
+
+    def _weakness_dir(self, scenario_name: str) -> Path:
+        return self.knowledge_root / scenario_name / "weakness_reports"
+
+    def write_weakness_report(self, scenario_name: str, run_id: str, report: object) -> None:
+        """Persist a WeaknessReport as JSON."""
+        wr_dir = self._weakness_dir(scenario_name)
+        wr_dir.mkdir(parents=True, exist_ok=True)
+        path = wr_dir / f"{run_id}.json"
+        self.write_json(path, report.to_dict())  # type: ignore[attr-defined]
+
+    def read_weakness_report(self, scenario_name: str, run_id: str) -> object | None:
+        """Read a WeaknessReport, or None if missing."""
+        from autocontext.knowledge.weakness import WeaknessReport
+
+        path = self._weakness_dir(scenario_name) / f"{run_id}.json"
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return WeaknessReport.from_dict(data)
+
+    def read_latest_weakness_reports(
+        self, scenario_name: str, max_reports: int = 2,
+    ) -> list[object]:
+        """Read most recent weakness reports for a scenario."""
+        from autocontext.knowledge.weakness import WeaknessReport
+
+        wr_dir = self._weakness_dir(scenario_name)
+        if not wr_dir.exists():
+            return []
+        files = sorted(wr_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        reports: list[object] = []
+        for path in files[:max_reports]:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            reports.append(WeaknessReport.from_dict(data))
+        return reports
+
+    def read_latest_weakness_reports_markdown(self, scenario_name: str, max_reports: int = 2) -> str:
+        """Read recent weakness reports and concatenate them as markdown."""
+        from autocontext.knowledge.weakness import WeaknessReport
+
+        reports = self.read_latest_weakness_reports(scenario_name, max_reports=max_reports)
+        if not reports:
+            return ""
+        markdown_parts: list[str] = []
+        for report in reports:
+            if isinstance(report, WeaknessReport):
+                markdown_parts.append(report.to_markdown())
+        return "\n\n".join(markdown_parts)
+
     def read_latest_session_reports(self, scenario_name: str, max_reports: int = 2) -> str:
         """Read the most recent session reports, concatenated."""
         reports_dir = self.knowledge_root / scenario_name / "reports"
