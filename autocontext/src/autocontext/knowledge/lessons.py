@@ -112,7 +112,16 @@ class LessonStore:
         path = self._lessons_path(scenario)
         if not path.exists():
             return []
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            raw = path.read_text(encoding="utf-8")
+            if not isinstance(raw, str):
+                return []
+            data = json.loads(raw)
+            if not isinstance(data, list):
+                return []
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            LOGGER.debug("unable to read structured lessons for %s from %s", scenario, path)
+            return []
         return [Lesson.from_dict(entry) for entry in data]
 
     def current_generation(self, scenario: str) -> int:
