@@ -1,7 +1,11 @@
 """Tests for LibraryPromptBundle and library context block builder."""
 from __future__ import annotations
 
-from autocontext.prompts.templates import LibraryPromptBundle, build_library_context_block
+from autocontext.prompts.templates import (
+    LibraryPromptBundle,
+    build_library_context_block,
+    inject_library_context,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -39,3 +43,23 @@ def test_library_context_block() -> None:
 def test_library_context_block_empty() -> None:
     block = build_library_context_block([])
     assert block == ""
+
+
+# ---------------------------------------------------------------------------
+# inject_library_context
+# ---------------------------------------------------------------------------
+
+
+def test_inject_library_context_appends() -> None:
+    original_prompt = "You are an analyst. Analyze the strategy."
+    books = [{"name": "clean-arch", "title": "Clean Architecture", "tags": ["architecture"]}]
+    result = inject_library_context(original_prompt, books)
+    assert "Available Literature" in result
+    assert "consult_library" in result
+    assert original_prompt in result
+
+
+def test_inject_library_context_no_books() -> None:
+    original_prompt = "You are an analyst."
+    result = inject_library_context(original_prompt, [])
+    assert result == original_prompt

@@ -4,8 +4,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from unittest.mock import MagicMock
+
 from autocontext.knowledge.ingestion import (
     chunk_markdown,
+    ingest_book,
     register_book,
     slugify,
     validate_ingestion,
@@ -212,3 +215,50 @@ def test_validate_ingestion_success(tmp_path: Path) -> None:
 
     errors = validate_ingestion(book_dir)
     assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# ingest_book (LLM call)
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_book_produces_reference(tmp_path: Path) -> None:
+    library_root = tmp_path / "_library"
+    book_md = tmp_path / "book.md"
+    book_md.write_text("# Chapter 1\n\nSome principles here.\n")
+
+    register_book(
+        source_path=book_md,
+        library_root=library_root,
+        book_name="test-ref",
+        title="Test Reference",
+    )
+
+    mock_provider = MagicMock()
+    mock_provider.query.return_value = MagicMock(
+        text="# Core Thesis\n\nThe book argues for X.\n\n# Key Principles\n\n1. Principle A\n"
+    )
+
+    ingest_book(
+        library_root=library_root,
+        book_name="test-ref",
+        provider=mock_provider,
+        model="claude-opus-4-6",
+    )
+
+    ref_path = library_root / "books" / "test-ref" / "reference.md"
+    assert ref_path.exists()
+    assert "Core Thesis" in ref_path.read_text()
+
+    meta = json.loads((library_root / "books" / "test-ref" / "meta.json").read_text())
+    assert meta["has_reference"] is True
+
+
+def test_ingest_book_not_registered(tmp_path: Path) -> None:
+    library_root = tmp_path / "_library"
+    mock_provider = MagicMock()
+    try:
+        ingest_book(library_root=library_root, book_name="missing", provider=mock_provider, model="m")
+        assert False, "Should have raised"
+    except FileNotFoundError:
+        pass

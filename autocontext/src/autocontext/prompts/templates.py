@@ -42,6 +42,14 @@ def build_library_context_block(books: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def inject_library_context(prompt: str, books: list[dict]) -> str:
+    """Append library context block to an agent prompt if books are active."""
+    block = build_library_context_block(books)
+    if not block:
+        return prompt
+    return f"{prompt}\n\n{block}"
+
+
 # Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
 _COMPETITOR_CONSTRAINT_SUFFIX = (
     "\n\nConstraints:\n"

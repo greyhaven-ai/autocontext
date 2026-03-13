@@ -259,6 +259,65 @@ def remove_book(library_root: Path, book_name: str) -> None:
     shutil.rmtree(book_dir)
 
 
+INGESTION_PROMPT = """\
+You are reading "{title}" by {author} in its entirety. Your job is to produce a comprehensive \
+internal reference document that captures everything someone would need to advise a software \
+project based on this book's principles.
+
+Structure your reference as:
+1. **Core Thesis** — The book's central argument in 2-3 sentences
+2. **Key Principles** — Numbered list of the book's most important rules/heuristics
+3. **Chapter Notes** — For each chapter: title, core argument, key takeaways, notable examples
+4. **Decision Framework** — When would this book say "do X" vs "do Y"? Extract the decision logic.
+5. **Red Lines** — What does this book consider genuinely harmful? What should never be done?
+
+Be thorough. This reference is your permanent memory of this book.
+
+--- BOOK TEXT ---
+
+{book_text}
+"""
+
+
+def ingest_book(
+    library_root: Path,
+    book_name: str,
+    provider: object,
+    model: str,
+) -> Path:
+    """Run the LLM ingestion call to produce reference.md.
+
+    Requires the book to be registered first (via register_book).
+    Returns the path to the generated reference.md.
+    Raises FileNotFoundError if book is not registered.
+    """
+    book_dir = library_root / "books" / book_name
+    if not book_dir.exists():
+        raise FileNotFoundError(f"Book '{book_name}' not registered. Run register_book first.")
+
+    meta_path = book_dir / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    book_text = (book_dir / "book.md").read_text(encoding="utf-8")
+    prompt = INGESTION_PROMPT.format(
+        title=meta.get("title", book_name),
+        author=meta.get("author", "Unknown"),
+        book_text=book_text,
+    )
+
+    messages = [{"role": "user", "content": prompt}]
+    response = provider.query(messages=messages, model=model, max_tokens=8000, temperature=0.2)  # type: ignore[union-attr]
+
+    ref_path = book_dir / "reference.md"
+    ref_path.write_text(response.text, encoding="utf-8")
+
+    # Update meta
+    meta["has_reference"] = True
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    return ref_path
+
+
 def list_books(library_root: Path) -> list[dict]:
     """List all books in the global library."""
     books_dir = library_root / "books"
