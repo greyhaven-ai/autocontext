@@ -20,7 +20,7 @@ const EXAMPLE_SPEC = {
     "and idiomatic Python? (3) Edge case handling — does it handle empty lists, " +
     "single-element lists, and duplicate values gracefully?",
   output_format: "code",
-  judge_model: "claude-sonnet-4-20250514",
+  judge_model: "",
   difficulty_tiers: null,
   reference_context: null,
   reference_sources: null,
@@ -67,7 +67,7 @@ ${SPEC_END}
   "task_prompt": "The full prompt given to the agent being evaluated",
   "judge_rubric": "Detailed rubric for the LLM judge to score the output",
   "output_format": "free_text | json_schema | code",
-  "judge_model": "claude-sonnet-4-20250514",
+  "judge_model": "",
   "difficulty_tiers": null,
   "reference_context": "Authoritative domain knowledge for judging factual accuracy (optional)",
   "reference_sources": ["list of source URLs or references (optional)"],

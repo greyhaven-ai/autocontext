@@ -64,7 +64,7 @@ class TestAgentTaskSpec:
         spec = AgentTaskSpec(task_prompt="Do X", judge_rubric="Evaluate X")
         assert spec.task_prompt == "Do X"
         assert spec.output_format == "free_text"
-        assert spec.judge_model == "claude-sonnet-4-20250514"
+        assert spec.judge_model == ""
         assert spec.difficulty_tiers is None
 
     def test_reference_context_fields(self) -> None:

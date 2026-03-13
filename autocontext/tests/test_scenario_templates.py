@@ -108,7 +108,7 @@ class TestTemplateSpec:
         }
         spec = TemplateSpec.from_dict(yaml_data)
         assert spec.output_format == "free_text"
-        assert spec.judge_model == "claude-sonnet-4-20250514"
+        assert spec.judge_model == ""
         assert spec.max_rounds == 1
         assert spec.quality_threshold == 0.9
 

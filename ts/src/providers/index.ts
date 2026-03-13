@@ -32,7 +32,7 @@ export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvide
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: callOpts.model ?? defaultModel,
+          model: callOpts.model || defaultModel,
           max_tokens: callOpts.maxTokens ?? 4096,
           temperature: callOpts.temperature ?? 0,
           system: callOpts.systemPrompt,
@@ -91,7 +91,7 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: callOpts.model ?? defaultModel,
+          model: callOpts.model || defaultModel,
           max_tokens: callOpts.maxTokens ?? 4096,
           temperature: callOpts.temperature ?? 0,
           messages: [

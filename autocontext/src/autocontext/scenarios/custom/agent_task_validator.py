@@ -34,9 +34,6 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
             f"output_format '{spec.output_format}' not in {_VALID_OUTPUT_FORMATS}"
         )
 
-    if not spec.judge_model or not spec.judge_model.strip():
-        errors.append("judge_model must not be empty")
-
     if spec.reference_context is not None and not spec.reference_context.strip():
         errors.append("reference_context, if provided, must not be empty")
 

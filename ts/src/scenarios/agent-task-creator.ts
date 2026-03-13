@@ -27,7 +27,7 @@ export class AgentTaskCreator {
 
   constructor(opts: AgentTaskCreatorOpts) {
     this.provider = opts.provider;
-    this.model = opts.model ?? "claude-sonnet-4-20250514";
+    this.model = opts.model ?? "";
     this.knowledgeRoot = opts.knowledgeRoot;
   }
 

@@ -31,7 +31,7 @@ SAMPLE_SPEC = AgentTaskSpec(
         "(3) Creativity — is it original and evocative?"
     ),
     output_format="free_text",
-    judge_model="claude-sonnet-4-20250514",
+    judge_model="test-model",
 )
 
 
@@ -207,7 +207,8 @@ class TestValidateSpec:
         errors = validate_spec(spec)
         assert errors == []
 
-    def test_empty_judge_model(self) -> None:
+    def test_empty_judge_model_is_valid(self) -> None:
+        """Empty judge_model is valid — means 'use provider default'."""
         spec = AgentTaskSpec(
             task_prompt="Do something",
             judge_rubric="Some rubric",
@@ -215,7 +216,7 @@ class TestValidateSpec:
             judge_model="",
         )
         errors = validate_spec(spec)
-        assert any("judge_model" in e for e in errors)
+        assert not any("judge_model" in e for e in errors)
 
 
 class TestValidateSyntax:

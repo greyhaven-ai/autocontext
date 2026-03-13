@@ -46,7 +46,7 @@ class TrainingConfig:
     max_experiments: int = 0
     memory_limit_mb: int = 16384
     agent_provider: str = "anthropic"
-    agent_model: str = "claude-sonnet-4-20250514"
+    agent_model: str = ""
 
 
 @dataclass(slots=True)

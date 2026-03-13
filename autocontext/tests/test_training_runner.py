@@ -31,7 +31,7 @@ class TestTrainingConfig:
         assert cfg.max_experiments == 0
         assert cfg.memory_limit_mb == 16384
         assert cfg.agent_provider == "anthropic"
-        assert cfg.agent_model == "claude-sonnet-4-20250514"
+        assert cfg.agent_model == ""
 
     def test_custom_values(self) -> None:
         cfg = TrainingConfig(

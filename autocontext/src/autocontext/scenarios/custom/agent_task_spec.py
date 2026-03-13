@@ -10,7 +10,7 @@ class AgentTaskSpec:
     task_prompt: str
     judge_rubric: str
     output_format: str = "free_text"  # free_text | json_schema | code
-    judge_model: str = "claude-sonnet-4-20250514"
+    judge_model: str = ""
     difficulty_tiers: list[dict] | None = None
     reference_context: str | None = None
     reference_sources: list[str] | None = None

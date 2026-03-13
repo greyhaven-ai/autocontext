@@ -22,7 +22,7 @@ _EXAMPLE_SPEC = {
         "single-element lists, and duplicate values gracefully?"
     ),
     "output_format": "code",
-    "judge_model": "claude-sonnet-4-20250514",
+    "judge_model": "",
     "difficulty_tiers": None,
     "reference_context": None,
     "reference_sources": None,
@@ -64,7 +64,7 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     '  "task_prompt": "The full prompt given to the agent being evaluated",\n'
     '  "judge_rubric": "Detailed rubric for the LLM judge to score the output",\n'
     '  "output_format": "free_text | json_schema | code",\n'
-    '  "judge_model": "claude-sonnet-4-20250514",\n'
+    '  "judge_model": "",\n'
     '  "difficulty_tiers": null,\n'
     '  "reference_context": "Authoritative domain knowledge for judging factual accuracy (optional, null if not needed)",\n'
     '  "reference_sources": ["list of source URLs or references (optional)"],\n'
@@ -123,7 +123,7 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
         task_prompt=data["task_prompt"],
         judge_rubric=data["judge_rubric"],
         output_format=data.get("output_format", "free_text"),
-        judge_model=data.get("judge_model", "claude-sonnet-4-20250514"),
+        judge_model=data.get("judge_model", ""),
         difficulty_tiers=data.get("difficulty_tiers"),
         reference_context=data.get("reference_context"),
         reference_sources=data.get("reference_sources"),

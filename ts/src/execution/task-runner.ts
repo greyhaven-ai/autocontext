@@ -85,7 +85,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
     private taskPrompt: string,
     private rubric: string,
     private provider: LLMProvider,
-    private model: string = "claude-sonnet-4-20250514",
+    private model: string = "",
     private revisionPrompt?: string,
   ) {}
 
@@ -198,7 +198,7 @@ export class TaskRunner {
   constructor(opts: TaskRunnerOpts) {
     this.store = opts.store;
     this.provider = opts.provider;
-    this.model = opts.model ?? "claude-sonnet-4-20250514";
+    this.model = opts.model ?? "";
     this.pollInterval = opts.pollInterval ?? 60;
     this.maxConsecutiveEmpty = opts.maxConsecutiveEmpty ?? 0;
     this.concurrency = Math.max(1, opts.concurrency ?? 1);

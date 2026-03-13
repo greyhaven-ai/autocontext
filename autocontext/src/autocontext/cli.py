@@ -752,7 +752,7 @@ def train(
     max_experiments: int = typer.Option(0, "--max-experiments", help="Max iterations (0 = unlimited)"),
     memory_limit: int = typer.Option(16384, "--memory-limit", help="Peak memory cap in MB"),
     agent_provider: str = typer.Option("anthropic", "--agent-provider", help="LLM provider for training agent"),
-    agent_model: str = typer.Option("claude-sonnet-4-20250514", "--agent-model", help="Model for training agent"),
+    agent_model: str = typer.Option("", "--agent-model", help="Model for training agent (empty = provider default)"),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Launch the autoresearch-style training loop."""

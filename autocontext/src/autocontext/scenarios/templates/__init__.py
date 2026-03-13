@@ -48,7 +48,7 @@ class TemplateSpec:
     task_prompt: str
     judge_rubric: str
     output_format: str = "free_text"
-    judge_model: str = "claude-sonnet-4-20250514"
+    judge_model: str = ""
     max_rounds: int = 1
     quality_threshold: float = 0.9
     reference_context: str | None = None
@@ -71,7 +71,7 @@ class TemplateSpec:
             task_prompt=data["task_prompt"],
             judge_rubric=data["judge_rubric"],
             output_format=data.get("output_format", "free_text"),
-            judge_model=data.get("judge_model", "claude-sonnet-4-20250514"),
+            judge_model=data.get("judge_model", ""),
             max_rounds=data.get("max_rounds", 1),
             quality_threshold=data.get("quality_threshold", 0.9),
             reference_context=data.get("reference_context"),

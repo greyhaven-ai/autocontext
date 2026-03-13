@@ -99,7 +99,7 @@ class SimpleAgentTask(AgentTaskInterface):
         task_prompt: str,
         rubric: str,
         provider: LLMProvider,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "",
         revision_prompt: str | None = None,
     ) -> None:
         self._task_prompt = task_prompt
@@ -198,7 +198,7 @@ class TaskRunner:
         self,
         store: SQLiteStore,
         provider: LLMProvider,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "",
         poll_interval: float = 60.0,
         max_consecutive_empty: int = 0,  # 0 = run forever
         notifier: Notifier | None = None,
