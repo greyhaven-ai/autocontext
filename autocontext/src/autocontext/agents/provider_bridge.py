@@ -68,10 +68,10 @@ def _provider_api_key(provider_type: str, settings: AppSettings) -> str | None:
     if provider_type == "anthropic":
         return settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
     if provider_type in ("openai", "openai-compatible"):
-        return settings.judge_api_key or os.getenv("OPENAI_API_KEY")
+        return settings.agent_api_key or settings.judge_api_key or os.getenv("OPENAI_API_KEY")
     if provider_type == "vllm":
-        return settings.judge_api_key or "no-key"
-    return settings.judge_api_key
+        return settings.agent_api_key or settings.judge_api_key or "no-key"
+    return settings.agent_api_key or settings.judge_api_key
 
 
 def _create_provider_bridge(

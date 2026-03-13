@@ -476,6 +476,19 @@ def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
             temperature=settings.mlx_temperature,
             max_tokens=settings.mlx_max_tokens,
         )
+    if settings.agent_provider in ("openai", "openai-compatible", "ollama", "vllm"):
+        from autocontext.agents.provider_bridge import ProviderBridgeClient
+        from autocontext.providers.registry import create_provider
+
+        api_key = settings.agent_api_key or settings.judge_api_key
+        base_url = settings.agent_base_url or settings.judge_base_url
+        provider = create_provider(
+            provider_type=settings.agent_provider,
+            api_key=api_key,
+            base_url=base_url or None,
+            model=settings.agent_default_model,
+        )
+        return ProviderBridgeClient(provider, use_provider_default_model=True)
     raise ValueError(f"unsupported agent provider: {settings.agent_provider}")
 
 
