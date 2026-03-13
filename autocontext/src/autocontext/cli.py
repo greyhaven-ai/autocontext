@@ -946,5 +946,92 @@ def wait(
         raise typer.Exit(code=1)
 
 
+@app.command("add-book")
+def add_book(
+    source: str = typer.Argument(..., help="Path to markdown file"),
+    title: str = typer.Option(..., "--title", help="Book title"),
+    name: str | None = typer.Option(None, "--name", help="Book name (slug, auto-generated from title if omitted)"),
+    author: str = typer.Option("", "--author", help="Author name"),
+    tags: list[str] = typer.Option([], "--tag", help="Tags for the book"),
+    images: str | None = typer.Option(None, "--images", help="Path to images directory"),
+) -> None:
+    """Ingest a book into the global library."""
+    from autocontext.knowledge.ingestion import register_book, slugify
+
+    settings = load_settings()
+    source_path = Path(source)
+    if not source_path.exists():
+        console.print(f"[red]File not found: {source}[/red]")
+        raise typer.Exit(1)
+
+    book_name = name or slugify(title)
+    library_root = Path(settings.library_root)
+    images_path = Path(images) if images else None
+
+    try:
+        meta = register_book(
+            source_path=source_path,
+            library_root=library_root,
+            book_name=book_name,
+            title=title,
+            author=author,
+            tags=tags,
+            images_path=images_path,
+        )
+    except FileExistsError:
+        console.print(f"[red]Book '{book_name}' already exists. Remove it first.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Registered:[/green] {book_name} ({meta['chapter_count']} chapters, ~{meta['token_count']} tokens)")
+
+
+@app.command("list-books")
+def list_books_cmd() -> None:
+    """List all books in the global library."""
+    from autocontext.knowledge.ingestion import list_books
+
+    settings = load_settings()
+    books = list_books(Path(settings.library_root))
+
+    if not books:
+        console.print("No books in library.")
+        return
+
+    table = Table(title="Library")
+    table.add_column("Name")
+    table.add_column("Title")
+    table.add_column("Chapters")
+    table.add_column("Tokens")
+    table.add_column("Tags")
+    table.add_column("Reference")
+
+    for b in books:
+        table.add_row(
+            b["name"],
+            b["title"],
+            str(b["chapter_count"]),
+            f"~{b['token_count']}",
+            ", ".join(b.get("tags", [])),
+            "yes" if b.get("has_reference") else "no",
+        )
+    console.print(table)
+
+
+@app.command("remove-book")
+def remove_book_cmd(
+    name: str = typer.Argument(..., help="Book name to remove"),
+) -> None:
+    """Remove a book from the global library."""
+    from autocontext.knowledge.ingestion import remove_book
+
+    settings = load_settings()
+    try:
+        remove_book(Path(settings.library_root), name)
+        console.print(f"[green]Removed:[/green] {name}")
+    except FileNotFoundError:
+        console.print(f"[red]Book '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
