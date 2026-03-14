@@ -100,6 +100,7 @@ def _inheritance_depth(cls: type) -> int:
 
 def _register_builtins() -> None:
     from autocontext.scenarios.agent_task import AgentTaskInterface
+    from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
     from autocontext.scenarios.base import ScenarioInterface
     from autocontext.scenarios.simulation import SimulationInterface
 
@@ -133,6 +134,16 @@ def _register_builtins() -> None:
         scenario_type_marker="simulation",
         capabilities=["fault_injection", "action_validation", "playbook", "tournament"],
         supports_playbook=True,
+    ))
+
+    register_family(ScenarioFamily(
+        name="artifact_editing",
+        description="Artifact-state-evaluated scenarios where agents modify files, configs, and schemas",
+        interface_class=ArtifactEditingInterface,
+        evaluation_mode="artifact_validation",
+        output_modes=["artifact_diff"],
+        scenario_type_marker="artifact_editing",
+        capabilities=["artifact_lineage", "diff_tracking", "validation_pipeline"],
     ))
 
 
