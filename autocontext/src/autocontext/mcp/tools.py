@@ -89,7 +89,7 @@ def run_match(name: str, strategy: dict[str, object], seed: int) -> dict[str, ob
     if not hasattr(scenario, "execute_match"):
         return {"error": "Agent task scenarios use judge evaluation; use evaluate_output() instead"}
     result = scenario.execute_match(strategy, seed)
-    return result.model_dump()
+    return cast(dict[str, object], result.model_dump())
 
 
 def run_tournament(name: str, strategy: dict[str, object], matches: int, seed_base: int) -> dict[str, object]:

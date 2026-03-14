@@ -140,9 +140,10 @@ def _is_agent_task(scenario_name: str) -> bool:
     """Check if a scenario name maps to the agent_task family."""
     if scenario_name not in SCENARIO_REGISTRY:
         return False
-    from autocontext.scenarios import get_registered_scenario_family
+    from autocontext.scenarios.families import detect_family
 
-    return get_registered_scenario_family(scenario_name).name == "agent_task"
+    family = detect_family(SCENARIO_REGISTRY[scenario_name]())
+    return family is not None and family.name == "agent_task"
 
 
 def _resolve_agent_task_runtime(settings: AppSettings, scenario_name: str) -> tuple[LLMProvider, str]:

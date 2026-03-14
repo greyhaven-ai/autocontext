@@ -5,6 +5,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from autocontext.agents import AgentOrchestrator
 from autocontext.backpressure import BackpressureGate, TrendAwareGate
@@ -137,7 +138,7 @@ class GenerationRunner:
         if cls is None:
             supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
             raise ValueError(f"Unknown scenario '{scenario_name}'. Supported: {supported}")
-        return cls()
+        return cast(ScenarioInterface, cls())
 
     def _chat_with_agent(self, role: str, message: str, prompts: object, tool_context: str) -> str:
         """One-shot chat with a specific agent role using current context."""
