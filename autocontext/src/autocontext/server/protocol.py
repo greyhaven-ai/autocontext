@@ -1,4 +1,4 @@
-"""WebSocket protocol models for the AutoContext TUI <-> Server boundary.
+"""WebSocket protocol models for the autocontext TUI <-> Server boundary.
 
 This module is the single source of truth for the protocol. All message types
 that flow over ``/ws/interactive`` are defined here as Pydantic models.

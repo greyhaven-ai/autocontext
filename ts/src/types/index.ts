@@ -1,5 +1,5 @@
 /**
- * Core types for AutoContext — mirrors Python dataclasses with Zod validation.
+ * Core types for autocontext — mirrors Python dataclasses with Zod validation.
  */
 
 import { z } from "zod";

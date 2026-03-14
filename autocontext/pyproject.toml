@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autoctx"
-version = "0.1.0"
-description = "AutoContext control plane for iterative strategy evolution."
+version = "0.1.2"
+description = "autocontext control plane for iterative strategy evolution."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
@@ -58,6 +58,9 @@ Homepage = "https://github.com/greyhaven-ai/autocontext"
 Repository = "https://github.com/greyhaven-ai/autocontext"
 Issues = "https://github.com/greyhaven-ai/autocontext/issues"
 Documentation = "https://github.com/greyhaven-ai/autocontext/tree/main/autocontext/docs"
+
+[tool.hatch.build]
+exclude = [".claude", ".claude/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocontext"]

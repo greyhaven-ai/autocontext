@@ -2,7 +2,7 @@
 
 ## Our Standard
 
-We want AutoContext to be a professional, constructive project for contributors, users, and maintainers. Participants are expected to communicate clearly, stay respectful, and keep technical disagreement focused on the work.
+We want autocontext to be a professional, constructive project for contributors, users, and maintainers. Participants are expected to communicate clearly, stay respectful, and keep technical disagreement focused on the work.
 
 Examples of behavior that contribute to a positive environment:
 

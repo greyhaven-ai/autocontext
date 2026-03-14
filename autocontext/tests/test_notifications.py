@@ -52,7 +52,7 @@ class TestStdoutNotifier:
         e = NotificationEvent(type=EventType.COMPLETION, task_name="test", score=0.80, round_count=2)
         n.notify(e)
         captured = capsys.readouterr()
-        assert "[AutoContext]" in captured.out
+        assert "[autocontext]" in captured.out
         assert "test" in captured.out
 
     def test_logger_mode(self):

@@ -1,4 +1,4 @@
-"""Notification system for AutoContext task results."""
+"""Notification system for autocontext task results."""
 
 from autocontext.notifications.base import EventType, NotificationEvent, Notifier
 from autocontext.notifications.callback import CallbackNotifier

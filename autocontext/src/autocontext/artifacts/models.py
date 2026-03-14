@@ -1,6 +1,6 @@
 """Portable artifact schemas for the OpenClaw/ClawHub contract.
 
-Defines Pydantic models for the three artifact types exchanged between AutoContext
+Defines Pydantic models for the three artifact types exchanged between autocontext
 and external systems: harnesses, code policies, and distilled local models.
 Each artifact carries provenance, versioning, and scenario compatibility
 metadata so consumers can discover and validate artifacts portably.
@@ -17,10 +17,10 @@ from pydantic import BaseModel, Field
 class ArtifactProvenance(BaseModel):
     """Tracks which run, generation, and settings produced an artifact."""
 
-    run_id: str = Field(..., min_length=1, description="AutoContext run that produced this artifact")
+    run_id: str = Field(..., min_length=1, description="autocontext run that produced this artifact")
     generation: int = Field(..., ge=0, description="Generation index within the run")
     scenario: str = Field(..., min_length=1, description="Scenario the artifact was produced for")
-    settings: dict[str, Any] = Field(default_factory=dict, description="Relevant AutoContext settings at creation time")
+    settings: dict[str, Any] = Field(default_factory=dict, description="Relevant autocontext settings at creation time")
 
 
 class _ArtifactBase(BaseModel):
@@ -39,7 +39,7 @@ class _ArtifactBase(BaseModel):
 class HarnessArtifact(_ArtifactBase):
     """A validation harness — source code that checks strategy correctness.
 
-    Harnesses are synthesized by AutoContext and can be published to ClawHub so that
+    Harnesses are synthesized by autocontext and can be published to ClawHub so that
     other agents can validate strategies against known constraints.
     """
 
@@ -52,7 +52,7 @@ class HarnessArtifact(_ArtifactBase):
 class PolicyArtifact(_ArtifactBase):
     """A code policy — executable strategy logic for a scenario.
 
-    Policies are the distilled output of AutoContext strategy evolution runs.
+    Policies are the distilled output of autocontext strategy evolution runs.
     They can be shared via ClawHub for benchmarking or warm-starting.
     """
 
@@ -63,10 +63,10 @@ class PolicyArtifact(_ArtifactBase):
 
 
 class DistilledModelArtifact(_ArtifactBase):
-    """A distilled local model — a smaller model trained on AutoContext data.
+    """A distilled local model — a smaller model trained on autocontext data.
 
     These are neural network checkpoints produced by knowledge distillation
-    from AutoContext strategy evolution trajectories.
+    from autocontext strategy evolution trajectories.
     """
 
     artifact_type: Literal["distilled_model"] = Field(default="distilled_model", frozen=True)

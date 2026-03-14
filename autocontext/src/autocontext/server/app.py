@@ -107,7 +107,7 @@ def create_app(
     run_manager: RunManager | None = None,
 ) -> FastAPI:
     """Factory that creates the FastAPI app, optionally wired to a LoopController."""
-    application = FastAPI(title="AutoContext Dashboard API", version="0.1.0")
+    application = FastAPI(title="autocontext Dashboard API", version="0.1.0")
     application.include_router(cockpit_router)
     application.include_router(knowledge_router)
     application.include_router(notebook_router)

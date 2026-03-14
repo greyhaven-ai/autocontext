@@ -1,6 +1,6 @@
-# AutoContext
+# autocontext
 
-AutoContext is a closed-loop system for improving agent behavior over repeated runs.
+autocontext is a closed-loop system for improving agent behavior over repeated runs.
 
 It executes tasks, evaluates outcomes, updates persistent knowledge, and optionally distills successful behavior into cheaper local runtimes. The goal is to move from frontier-model exploration toward validated, reusable, lower-cost execution.
 
@@ -8,7 +8,7 @@ It executes tasks, evaluates outcomes, updates persistent knowledge, and optiona
 
 Most agent systems start every run cold. They do not reliably carry forward what worked, what failed, and what should change next.
 
-AutoContext adds that missing feedback loop:
+autocontext adds that missing feedback loop:
 
 - run the task
 - analyze what happened

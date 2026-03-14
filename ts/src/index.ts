@@ -1,5 +1,5 @@
 /**
- * autoctx — AutoContext TypeScript toolkit.
+ * autoctx — autocontext TypeScript toolkit.
  */
 
 // Core types

@@ -1,4 +1,4 @@
-"""OpenClaw agent adapter for running agents inside the AutoContext harness (AC-193).
+"""OpenClaw agent adapter for running agents inside the autocontext harness (AC-193).
 
 Provides:
 - OpenClawAgentProtocol: structural typing for OpenClaw-compatible agents
@@ -47,7 +47,7 @@ class OpenClawExecutionTrace:
     """Structured capture of an OpenClaw agent execution.
 
     Maps the raw trace dict from an OpenClaw agent into typed fields
-    for AutoContext evaluation records.
+    for autocontext evaluation records.
     """
 
     output: str
@@ -88,7 +88,7 @@ class OpenClawExecutionTrace:
         )
 
     def to_role_usage(self) -> RoleUsage:
-        """Convert trace usage into AutoContext RoleUsage."""
+        """Convert trace usage into autocontext RoleUsage."""
         return RoleUsage(
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
@@ -97,7 +97,7 @@ class OpenClawExecutionTrace:
         )
 
     def to_evaluation_summary(self) -> dict[str, Any]:
-        """Build a summary dict suitable for AutoContext evaluation records."""
+        """Build a summary dict suitable for autocontext evaluation records."""
         return {
             "steps": len(self.steps),
             "tool_calls": len(self.tool_calls),
@@ -107,7 +107,7 @@ class OpenClawExecutionTrace:
         }
 
     def to_role_execution(self, role: str) -> RoleExecution:
-        """Convert trace into an AutoContext RoleExecution record."""
+        """Convert trace into an autocontext RoleExecution record."""
         return RoleExecution(
             role=role,
             content=self.output,
@@ -122,7 +122,7 @@ class OpenClawAgentProtocol(Protocol):
     """Structural typing protocol for OpenClaw-compatible agents.
 
     Any object with an `execute` method matching this signature can be
-    used as an OpenClaw agent inside the AutoContext harness.
+    used as an OpenClaw agent inside the autocontext harness.
     """
 
     def execute(
@@ -161,7 +161,7 @@ class OpenClawClient(LanguageModelClient):
         temperature: float,
         role: str = "",
     ) -> ModelResponse:
-        """Execute the OpenClaw agent and return an AutoContext ModelResponse."""
+        """Execute the OpenClaw agent and return an autocontext ModelResponse."""
         trace_dict = self._execute_with_retry(
             prompt=prompt,
             model=model,

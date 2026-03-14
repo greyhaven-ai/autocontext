@@ -173,7 +173,7 @@ class ArtifactStore:
         return self.skills_root / f"{scenario_name.replace('_', '-')}-ops"
 
     def read_skills(self, scenario_name: str) -> str:
-        """Read operational lessons for injection into AutoContext agent prompts.
+        """Read operational lessons for injection into autocontext agent prompts.
 
         Extracts only the ``## Operational Lessons`` section from SKILL.md.
         The playbook is already injected separately via ``current_playbook``
@@ -533,7 +533,7 @@ class ArtifactStore:
         skill_content = (
             f"---\nname: {kebab}-ops\ndescription: {desc}\n---\n\n"
             f"# {title} Operational Knowledge\n\n"
-            "Accumulated knowledge from AutoContext strategy evolution.\n\n"
+            "Accumulated knowledge from autocontext strategy evolution.\n\n"
             "## Operational Lessons\n\n"
             "Prescriptive rules derived from what worked and what failed:\n\n"
             f"{lessons_block}\n\n"

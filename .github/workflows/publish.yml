@@ -1,0 +1,80 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: autocontext
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Build Python package
+        run: uv build
+      - name: Upload Python dist
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-dist
+          path: autocontext/dist/*
+          retention-days: 7
+
+  publish-pypi:
+    needs: build-python
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download Python dist
+        uses: actions/download-artifact@v5
+        with:
+          name: python-dist
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  publish-npm:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Install dependencies
+        run: npm ci
+      - name: Show npm version
+        run: npm --version
+      - name: Build package
+        run: npm run build
+      - name: Publish to npm
+        run: npm publish --access public --provenance

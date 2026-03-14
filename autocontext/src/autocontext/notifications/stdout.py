@@ -19,8 +19,8 @@ class StdoutNotifier(Notifier):
         try:
             msg = event.summary
             if self._use_logger:
-                logger.info("AutoContext notification: %s", msg)
+                logger.info("autocontext notification: %s", msg)
             else:
-                print(f"[AutoContext] {msg}")
+                print(f"[autocontext] {msg}")
         except Exception:
             pass  # Fire and forget
