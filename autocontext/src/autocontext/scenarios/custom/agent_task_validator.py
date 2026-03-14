@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -11,6 +12,67 @@ from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
 _VALID_OUTPUT_FORMATS = {"free_text", "json_schema", "code"}
 
+# Words too common to signal domain intent.
+_INTENT_STOP_WORDS = frozenset({
+    "a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "at", "by",
+    "is", "are", "was", "be", "do", "does", "it", "we", "they", "i", "you",
+    "that", "can", "should", "could", "would", "will", "must", "with", "which",
+    "what", "how", "task", "agent", "system", "create", "build", "write", "make",
+    "good", "well", "very", "just", "also", "clear", "structured", "want", "need",
+})
+
+# Task-family keyword clusters — if description keywords fall in one cluster
+# but the spec's keywords fall in a different one, that signals drift.
+_TASK_FAMILIES: dict[str, frozenset[str]] = {
+    "code": frozenset({
+        "code", "coding", "python", "function", "algorithm", "program", "debug",
+        "debugging", "syntax", "compile", "runtime", "api", "endpoint", "scraper",
+        "refactor", "test", "tests", "testing", "unittest", "bug", "bugs",
+        "implementation", "implement", "software", "developer", "class", "method",
+    }),
+    "writing": frozenset({
+        "essay", "article", "blog", "write", "writing", "prose", "paragraph",
+        "narrative", "story", "fiction", "poetry", "haiku", "poem", "literary",
+        "persuasive", "rhetoric", "composition", "draft", "editorial", "recipe",
+        "cookbook", "cooking", "ingredients", "frosting", "cake", "baking",
+    }),
+    "analysis": frozenset({
+        "analysis", "analyze", "diagnostic", "diagnose", "investigate", "root",
+        "cause", "debugging", "logs", "monitoring", "crash", "error", "incident",
+        "forensic", "audit", "trace", "profiling", "performance", "bottleneck",
+    }),
+    "data": frozenset({
+        "data", "dataset", "classification", "classifier", "sentiment", "nlp",
+        "machine", "learning", "model", "training", "prediction", "regression",
+        "clustering", "neural", "deep", "statistics", "statistical", "inference",
+    }),
+    "design": frozenset({
+        "architecture", "design", "pattern", "microservices", "distributed",
+        "scalability", "infrastructure", "devops", "deployment", "kubernetes",
+        "docker", "cloud", "aws", "system", "systems",
+    }),
+}
+
+# Signals that the description is asking for code generation output.
+_CODE_INTENT_SIGNALS = frozenset({
+    "code", "function", "class", "algorithm", "program", "implement",
+    "script", "python", "javascript", "typescript", "java", "rust", "go",
+    "generate code", "write code", "coding", "scraper", "web scraper",
+})
+
+# Counter-signals: when present alongside code keywords, the task is about
+# evaluating/reviewing code (text output), not generating code.
+_CODE_EVALUATION_SIGNALS = frozenset({
+    "evaluate", "review", "assess", "analyze", "analyse", "audit", "quality",
+    "correctness", "diagnostic", "diagnose", "critique", "score", "grade",
+})
+
+# Signals that the description is asking for text/writing output.
+_TEXT_INTENT_SIGNALS = frozenset({
+    "essay", "article", "blog", "story", "write about", "persuasive",
+    "narrative", "poem", "haiku", "report", "documentation", "recipe",
+})
+
 _DATA_REFERENCE_PATTERNS = [
     "you will be provided with",
     "given the following data",
@@ -18,6 +80,104 @@ _DATA_REFERENCE_PATTERNS = [
     "using the provided",
     "based on the data below",
 ]
+
+
+def _extract_keywords(text: str) -> set[str]:
+    """Extract meaningful keywords from text, excluding stop words."""
+    words = re.sub(r"[^a-z0-9\s]", " ", text.lower()).split()
+    return {w for w in words if w not in _INTENT_STOP_WORDS and len(w) > 1}
+
+
+def _detect_task_family(keywords: set[str]) -> str | None:
+    """Return the best-matching task family for a set of keywords, or None."""
+    best_family: str | None = None
+    best_overlap = 0
+    for family, family_words in _TASK_FAMILIES.items():
+        overlap = len(keywords & family_words)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_family = family
+    return best_family if best_overlap >= 1 else None
+
+
+def _fuzzy_overlap(a: set[str], b: set[str], min_prefix: int = 4) -> set[str]:
+    """Find keywords that overlap exactly or share a common prefix (≥min_prefix chars).
+
+    Handles common morphological variants like "log"/"logs", "analysis"/"analyze".
+    """
+    matched: set[str] = set()
+    for word_a in a:
+        if word_a in b:
+            matched.add(word_a)
+            continue
+        if len(word_a) >= min_prefix:
+            for word_b in b:
+                if len(word_b) >= min_prefix:
+                    shorter = min(len(word_a), len(word_b))
+                    prefix_len = max(min_prefix, shorter - 2)
+                    if word_a[:prefix_len] == word_b[:prefix_len]:
+                        matched.add(word_a)
+                        break
+    return matched
+
+
+def validate_intent(
+    user_description: str,
+    spec: AgentTaskSpec,
+) -> list[str]:
+    """Validate that the generated spec matches the user's original intent.
+
+    Checks for:
+    1. Task-family drift (description domain vs spec domain)
+    2. Keyword overlap (core domain terms preserved in spec)
+    3. Output format compatibility
+    """
+    if not user_description or not user_description.strip():
+        return []
+
+    errors: list[str] = []
+    desc_lower = user_description.lower()
+    desc_keywords = _extract_keywords(user_description)
+    spec_keywords = _extract_keywords(spec.task_prompt + " " + spec.judge_rubric)
+
+    # --- 1. Task-family drift ---
+    desc_family = _detect_task_family(desc_keywords)
+    spec_family = _detect_task_family(spec_keywords)
+    if desc_family and spec_family and desc_family != spec_family:
+        errors.append(
+            f"intent mismatch: description suggests '{desc_family}' task family "
+            f"but generated spec resembles '{spec_family}'"
+        )
+
+    # --- 2. Keyword overlap ---
+    if desc_keywords and spec_keywords:
+        overlap = _fuzzy_overlap(desc_keywords, spec_keywords)
+        overlap_ratio = len(overlap) / len(desc_keywords) if desc_keywords else 1.0
+        if overlap_ratio == 0 and len(desc_keywords) >= 2:
+            errors.append(
+                "intent drift: no domain keywords from the description appear "
+                "in the generated task prompt or rubric"
+            )
+
+    # --- 3. Output format compatibility ---
+    desc_signals_code = any(sig in desc_lower for sig in _CODE_INTENT_SIGNALS)
+    desc_signals_text = any(sig in desc_lower for sig in _TEXT_INTENT_SIGNALS)
+    desc_signals_code_eval = any(sig in desc_lower for sig in _CODE_EVALUATION_SIGNALS)
+
+    # Only flag code→free_text mismatch when the description asks for code
+    # *generation*, not code *evaluation/review* (which produces text output).
+    if desc_signals_code and not desc_signals_text and not desc_signals_code_eval and spec.output_format == "free_text":
+        errors.append(
+            "format mismatch: description implies code output but "
+            "spec uses output_format='free_text'"
+        )
+    if desc_signals_text and not desc_signals_code and spec.output_format == "code":
+        errors.append(
+            "format mismatch: description implies text output but "
+            "spec uses output_format='code'"
+        )
+
+    return errors
 
 
 def validate_spec(spec: AgentTaskSpec) -> list[str]:

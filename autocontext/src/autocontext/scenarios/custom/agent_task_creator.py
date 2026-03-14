@@ -13,6 +13,7 @@ from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_
 from autocontext.scenarios.custom.agent_task_designer import design_agent_task
 from autocontext.scenarios.custom.agent_task_validator import (
     validate_execution,
+    validate_intent,
     validate_spec,
     validate_syntax,
 )
@@ -71,6 +72,11 @@ class AgentTaskCreator:
         spec_errors = validate_spec(spec)
         if spec_errors:
             raise ValueError(f"spec validation failed: {'; '.join(spec_errors)}")
+
+        # 2.5 Validate intent — catch task-family drift early (AC-242)
+        intent_errors = validate_intent(description, spec)
+        if intent_errors:
+            raise ValueError(f"intent validation failed: {'; '.join(intent_errors)}")
 
         # 3. Derive name and generate code
         name = self.derive_name(description)
