@@ -20,7 +20,7 @@ def render_program(
     Parameters
     ----------
     scenario:
-        Name of the AutoContext scenario (e.g. ``grid_ctf``).
+        Name of the autocontext scenario (e.g. ``grid_ctf``).
     strategy_schema:
         JSON schema or description of the strategy interface.
     playbook_summary:

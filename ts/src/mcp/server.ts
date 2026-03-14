@@ -1,5 +1,5 @@
 /**
- * MCP server for AutoContext — agent task evaluation tools.
+ * MCP server for autocontext — agent task evaluation tools.
  * Port of autocontext/src/autocontext/mcp/tools.py (agent task subset).
  */
 

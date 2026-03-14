@@ -46,7 +46,7 @@ class AgentTaskRunSummary:
     met_threshold: bool
     termination_reason: str
 
-app = typer.Typer(help="AutoContext control-plane CLI")
+app = typer.Typer(help="autocontext control-plane CLI")
 console = Console()
 
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
@@ -356,7 +356,7 @@ def run(
         if json_output:
             _write_json_stdout(dataclasses.asdict(summary))
         else:
-            table = Table(title="AutoContext Run Summary")
+            table = Table(title="autocontext Run Summary")
             table.add_column("Run ID")
             table.add_column("Scenario")
             table.add_column("Generations")
@@ -655,7 +655,7 @@ def ab_test(
     gens: int = typer.Option(3, "--gens", min=1, help="Generations per run"),
     seed: int = typer.Option(42, "--seed", help="Random seed for condition ordering"),
 ) -> None:
-    """Run paired A/B test comparing two AutoContext configurations."""
+    """Run paired A/B test comparing two autocontext configurations."""
     from autocontext.evaluation.ab_runner import ABTestConfig, ABTestRunner
     from autocontext.evaluation.ab_stats import mcnemar_test
 
@@ -721,7 +721,7 @@ def ab_test(
 
 @app.command("mcp-serve")
 def mcp_serve() -> None:
-    """Start AutoContext MCP server on stdio for Claude Code integration."""
+    """Start autocontext MCP server on stdio for Claude Code integration."""
 
     try:
         from autocontext.mcp.server import run_server

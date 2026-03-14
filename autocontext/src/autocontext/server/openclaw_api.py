@@ -188,7 +188,7 @@ def update_distill_job_endpoint(
 
 @router.get("/capabilities")
 def capabilities_endpoint() -> dict[str, Any]:
-    """Return capability metadata for this AutoContext instance."""
+    """Return capability metadata for this autocontext instance."""
     from autocontext.mcp.tools import get_capabilities
 
     return get_capabilities()  # type: ignore[return-value]
@@ -246,7 +246,7 @@ def discovery_scenario_artifacts_endpoint(
 def skill_manifest_endpoint(
     ctx: Annotated[MtsToolContext, Depends(get_openclaw_ctx)],
 ) -> dict[str, Any]:
-    """Return the ClawHub skill manifest for this AutoContext instance."""
+    """Return the ClawHub skill manifest for this autocontext instance."""
     from autocontext.mcp.tools import skill_manifest
 
     return skill_manifest(ctx)  # type: ignore[return-value]

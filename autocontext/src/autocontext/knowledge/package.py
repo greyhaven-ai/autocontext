@@ -38,7 +38,7 @@ class ConflictPolicy(StrEnum):
 class PackageMetadata(BaseModel):
     """Provenance and compatibility metadata for a strategy package."""
 
-    mts_version: str = Field(default="", description="AutoContext version that created this package")
+    mts_version: str = Field(default="", description="autocontext version that created this package")
     source_run_id: str | None = Field(default=None, description="Run that produced the best strategy")
     created_at: str = Field(
         default_factory=lambda: datetime.now(UTC).isoformat(),

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "autoctx"
 version = "0.1.0"
-description = "AutoContext control plane for iterative strategy evolution."
+description = "autocontext control plane for iterative strategy evolution."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"

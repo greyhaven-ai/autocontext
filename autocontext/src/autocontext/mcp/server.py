@@ -1,4 +1,4 @@
-"""AutoContext MCP server -- exposes scenario, knowledge, and run tools via stdio."""
+"""autocontext MCP server -- exposes scenario, knowledge, and run tools via stdio."""
 
 from __future__ import annotations
 

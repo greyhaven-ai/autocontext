@@ -226,7 +226,7 @@ export function exportAgentTaskSkill(opts: {
 }
 
 /**
- * Clean lesson bullets: strip AutoContext-internal noise, keeping prescriptive rules.
+ * Clean lesson bullets: strip autocontext-internal noise, keeping prescriptive rules.
  */
 export function cleanLessons(rawBullets: string[]): string[] {
   const cleaned: string[] = [];

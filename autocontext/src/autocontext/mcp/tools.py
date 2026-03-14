@@ -1,4 +1,4 @@
-"""MCP tool implementations — thin wrappers around existing AutoContext infrastructure."""
+"""MCP tool implementations — thin wrappers around existing autocontext infrastructure."""
 
 from __future__ import annotations
 
@@ -1072,10 +1072,10 @@ def import_package(
 
 
 def get_capabilities() -> dict[str, object]:
-    """Return capability metadata for this AutoContext instance.
+    """Return capability metadata for this autocontext instance.
 
     Lists all available OpenClaw operations and their descriptions,
-    enabling clients to discover what this AutoContext instance can do.
+    enabling clients to discover what this autocontext instance can do.
     """
     return {
         "version": _OPENCLAW_VERSION,
@@ -1157,7 +1157,7 @@ def skill_scenario_artifact_lookup(ctx: MtsToolContext, scenario_name: str) -> l
 
 
 def skill_manifest(ctx: MtsToolContext) -> dict[str, object]:
-    """Return the ClawHub skill manifest for this AutoContext instance."""
+    """Return the ClawHub skill manifest for this autocontext instance."""
     from autocontext.openclaw.skill import MtsSkillWrapper
 
     return MtsSkillWrapper(ctx).manifest().model_dump()

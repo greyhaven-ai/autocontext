@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * AutoContext CLI — command-line interface for the evaluation harness.
+ * autocontext CLI — command-line interface for the evaluation harness.
  *
  * Commands:
  *   autoctx judge     — one-shot evaluation

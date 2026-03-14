@@ -1,6 +1,6 @@
 # External Agent Integration Guide
 
-AutoContext provides three integration surfaces for external agents: the `autoctx` CLI, an MCP server, and a Python SDK. This guide covers them in order of recommended usage.
+autocontext provides three integration surfaces for external agents: the `autoctx` CLI, an MCP server, and a Python SDK. This guide covers them in order of recommended usage.
 
 ## Why CLI-First
 
@@ -190,7 +190,7 @@ Without `--json`, errors appear as formatted Rich console output on stderr.
 
 ### Provider Configuration
 
-Configure which LLM provider AutoContext uses via environment variables:
+Configure which LLM provider autocontext uses via environment variables:
 
 ```bash
 # Anthropic (default)
@@ -225,7 +225,7 @@ Key environment variables:
 
 ### Concrete CLI-First Integration Example
 
-An external agent integrating with AutoContext via CLI:
+An external agent integrating with autocontext via CLI:
 
 ```bash
 #!/usr/bin/env bash
@@ -268,7 +268,7 @@ Use MCP when your agent framework specifically requires a tool-catalog protocol 
 
 - Your agent runtime expects MCP tool discovery and invocation
 - You need interactive, stateful tool sessions (e.g., sandbox create/run/destroy)
-- You want to expose AutoContext as a tool provider in a multi-tool agent
+- You want to expose autocontext as a tool provider in a multi-tool agent
 
 ### When to Prefer CLI
 
