@@ -33,6 +33,7 @@ autocontext/                  # Python package root (pyproject.toml lives here)
   migrations/                 # SQLite migration SQL files (001-007, applied in filename order)
   dashboard/                  # Single-page HTML dashboard
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
+    _library/               # Global book library (ingested via add-book)
   skills/                     # Runtime-generated: operational skill notes per scenario
   runs/                       # Runtime-generated: SQLite DB, event stream, generation artifacts
 ts/                           # TypeScript port of autocontext modules
@@ -93,6 +94,11 @@ uv run autoctx replay <run_id> --generation 1  # print replay JSON
 uv run autoctx benchmark --scenario grid_ctf --runs 5
 uv run autoctx serve --host 127.0.0.1 --port 8000  # dashboard + API
 
+# Library management
+uv run autoctx add-book path/to/book.md --title "Clean Architecture" --tag architecture
+uv run autoctx list-books
+uv run autoctx remove-book clean-architecture
+
 # MCP server (stdio, for Claude Code integration)
 uv run autoctx mcp-serve
 
@@ -105,7 +111,7 @@ bash scripts/demo.sh
 
 ### Generation Loop (`loop/generation_runner.py`)
 
-Each generation: load scenario + knowledge → build score trajectory → orchestrate agents (competitor first, analyst/coach/architect in parallel, optional curator) → tournament matches with Elo → backpressure gate (`advance`/`retry`/`rollback`) → curator quality gate (`accept`/`reject`/`merge`) → persist to SQLite + artifacts → periodic lesson consolidation → cross-run snapshot on completion. Runs are idempotent; playbook updates only persist on `advance`.
+Each generation: load scenario + knowledge → build score trajectory → orchestrate agents (competitor first, analyst/coach/architect in parallel, librarians in parallel after translator, optional curator) → archivist gate (if books active: evaluate librarian flags, `hard_gate` triggers retry) → tournament matches with Elo → backpressure gate (`advance`/`retry`/`rollback`) → curator quality gate (`accept`/`reject`/`merge`) → persist to SQLite + artifacts → periodic lesson consolidation → cross-run snapshot on completion. Runs are idempotent; playbook updates only persist on `advance`.
 
 ### Agent Roles (`agents/`)
 
@@ -115,6 +121,8 @@ Each generation: load scenario + knowledge → build score trajectory → orches
 - **Coach** — Updates the accumulated playbook; output delimited by `<!-- PLAYBOOK_START/END -->`, `<!-- LESSONS_START/END -->`, `<!-- COMPETITOR_HINTS_START/END -->`
 - **Architect** — Proposes tooling improvements, persists generated tools to `knowledge/<scenario>/tools/`
 - **Curator** — Quality gate for playbook updates + lesson consolidation; uses `<!-- CURATOR_DECISION: accept|reject|merge -->` markers
+- **Librarian** — Bound to a single book. Reads full text at ingestion, produces internal reference. Reviews strategies each generation, advises based on literature, flags violations. Available via `consult_library` tool to other agents.
+- **Archivist** — Conditional arbiter. Only runs when a librarian escalates a violation. Spot-pulls original passages from chunked chapters. Decides: `dismissed`, `soft_flag`, or `hard_gate`.
 
 Agent SDK provider (`AUTOCONTEXT_AGENT_PROVIDER=agent_sdk`) uses `claude_agent_sdk.query()` with native tool loops and per-role tool permissions.
 
@@ -150,6 +158,8 @@ Code accessing the registry uses `hasattr`/`getattr` guards for the dual-interfa
 
 Per-scenario directory (`knowledge/<scenario>/`) stores: `playbook.md` (versioned, with rollback), `hints.md` (coach hints, persist across restarts), `analysis/gen_N.md`, `tools/` (architect-generated, old versions in `_archive/`), `snapshots/<run_id>/` (cross-run inheritance), `_custom_scenarios/`, `_agent_tasks/`. Score trajectory is injected into all agent prompts. Curator periodically consolidates lessons.
 
+**Library** (`knowledge/_library/`): Global book collection ingested via `add-book`. Per-scenario library state (librarian notes, archivist decisions, consultation logs) lives under `knowledge/<scenario>/library/`.
+
 **Knowledge API** (`knowledge/export.py`, `search.py`, `solver.py`): skill export as portable markdown+JSON packages, TF-IDF strategy search, solve-on-demand. Exposed via MCP tools (`autocontext_*` prefix — see `mcp/server.py`) and REST under `/api/knowledge/`.
 
 ### Storage, Server, MCP
@@ -171,6 +181,10 @@ All config via `AUTOCONTEXT_*` env vars, loaded in `config/settings.py` as Pydan
 - **Knowledge**: `AUTOCONTEXT_CROSS_RUN_INHERITANCE`, `AUTOCONTEXT_PLAYBOOK_MAX_VERSIONS`, `AUTOCONTEXT_ABLATION_NO_FEEDBACK`
 - **RLM**: `AUTOCONTEXT_RLM_ENABLED`, `AUTOCONTEXT_RLM_BACKEND`, `AUTOCONTEXT_RLM_MAX_TURNS`, `AUTOCONTEXT_RLM_SUB_MODEL`
 - **Judge**: `AUTOCONTEXT_JUDGE_PROVIDER`, `AUTOCONTEXT_JUDGE_MODEL`, `AUTOCONTEXT_JUDGE_SAMPLES`, `AUTOCONTEXT_JUDGE_TEMPERATURE`, `AUTOCONTEXT_JUDGE_BASE_URL`, `AUTOCONTEXT_JUDGE_API_KEY`
+- **Library**: `AUTOCONTEXT_LIBRARY_BOOKS`, `AUTOCONTEXT_LIBRARY_ROOT`
+- **Librarian**: `AUTOCONTEXT_MODEL_LIBRARIAN`, `AUTOCONTEXT_LIBRARIAN_PROVIDER`, `AUTOCONTEXT_LIBRARY_MAX_CONSULTS_PER_ROLE`
+- **Archivist**: `AUTOCONTEXT_MODEL_ARCHIVIST`, `AUTOCONTEXT_ARCHIVIST_PROVIDER`
+- **Ingestion**: `AUTOCONTEXT_INGESTION_MODEL`
 - **Notifications**: `AUTOCONTEXT_NOTIFY_WEBHOOK_URL`, `AUTOCONTEXT_NOTIFY_ON`
 
 ## Code Style

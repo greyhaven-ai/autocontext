@@ -309,6 +309,26 @@ class AppSettings(BaseModel):
     monitor_enabled: bool = Field(default=True, description="Enable monitor condition engine")
     monitor_heartbeat_timeout: float = Field(default=300.0, ge=1.0, description="Default heartbeat timeout (seconds)")
     monitor_max_conditions: int = Field(default=100, ge=1, description="Max active conditions")
+    # Library
+    library_root: str = Field(default="knowledge/_library")
+    library_books: list[str] = Field(default_factory=list)
+    # Librarian
+    librarian_enabled: bool = Field(default=True)
+    model_librarian: str = Field(default="claude-sonnet-4-5-20250929")
+    librarian_provider: str = Field(default="")
+    library_max_consults_per_role: int = Field(default=3)
+    # Archivist
+    model_archivist: str = Field(default="claude-opus-4-6")
+    archivist_provider: str = Field(default="")
+    # Ingestion
+    ingestion_model: str = Field(default="claude-opus-4-6")
+
+    @field_validator("library_books", mode="before")
+    @classmethod
+    def _parse_library_books(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str):
+            return [b.strip() for b in v.split(",") if b.strip()]
+        return v
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod

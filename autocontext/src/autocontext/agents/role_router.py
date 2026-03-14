@@ -65,6 +65,8 @@ DEFAULT_ROUTING_TABLE: dict[str, list[ProviderClass]] = {
     "architect": [ProviderClass.FRONTIER],
     "curator": [ProviderClass.FAST],
     "translator": [ProviderClass.FAST, ProviderClass.LOCAL],
+    "librarian": [ProviderClass.MID_TIER, ProviderClass.LOCAL],
+    "archivist": [ProviderClass.FRONTIER],
 }
 
 # Roles that can be served by local artifacts when available
@@ -107,13 +109,41 @@ class RoleRouter:
             "architect": settings.model_architect,
             "translator": settings.model_translator,
             "curator": settings.model_curator,
+            "librarian": settings.model_librarian,
+            "archivist": settings.model_archivist,
         }
         self._role_providers: dict[str, str] = {
             "competitor": settings.competitor_provider,
             "analyst": settings.analyst_provider,
             "coach": settings.coach_provider,
             "architect": settings.architect_provider,
+            "librarian": settings.librarian_provider,
+            "archivist": settings.archivist_provider,
         }
+
+    def _resolve_role_key(self, role: str, table: dict[str, str]) -> str:
+        """Lookup with prefix fallback for librarian_* roles."""
+        if role in table:
+            return table[role]
+        if role.startswith("librarian_"):
+            return table.get("librarian", "")
+        return table.get(role, "")
+
+    def _resolve_routing_table(self, role: str) -> list[ProviderClass]:
+        """Routing table lookup with prefix fallback for librarian_* roles."""
+        if role in self._table:
+            return self._table[role]
+        if role.startswith("librarian_"):
+            return self._table.get("librarian", [ProviderClass.MID_TIER])
+        return [ProviderClass.MID_TIER]
+
+    def resolve_model(self, role: str) -> str:
+        """Resolve model for a role, with prefix fallback."""
+        return self._resolve_role_key(role, self._role_models) or self._settings.model_competitor
+
+    def resolve_provider(self, role: str) -> str:
+        """Resolve provider override for a role, with prefix fallback."""
+        return self._resolve_role_key(role, self._role_providers)
 
     def route(
         self,
@@ -130,7 +160,7 @@ class RoleRouter:
         ctx = context or RoutingContext()
 
         # 1. Check explicit per-role override
-        explicit = self._role_providers.get(role, "")
+        explicit = self._resolve_role_key(role, self._role_providers)
         if explicit:
             return self._config_for_explicit(role, explicit)
 
@@ -179,7 +209,7 @@ class RoleRouter:
         role is eligible, since they reduce cost to zero. Otherwise the first
         API-backed preference in the table is used.
         """
-        preferences = self._table.get(role, [ProviderClass.MID_TIER])
+        preferences = self._resolve_routing_table(role)
 
         # First pass: check if any artifact-backed preference is satisfied
         for pref in preferences:
@@ -211,7 +241,7 @@ class RoleRouter:
             )
         return ProviderConfig(
             provider_type=self._settings.agent_provider,
-            model=self._class_to_model.get(provider_class, self._role_models.get(role)),
+            model=self._class_to_model.get(provider_class, self._resolve_role_key(role, self._role_models)),
             provider_class=provider_class,
             estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
@@ -223,7 +253,7 @@ class RoleRouter:
         )
         return ProviderConfig(
             provider_type=provider_type,
-            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._role_models.get(role),
+            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._resolve_role_key(role, self._role_models),
             provider_class=provider_class,
             estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
@@ -235,7 +265,7 @@ class RoleRouter:
         )
         return ProviderConfig(
             provider_type=self._settings.agent_provider,
-            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._role_models.get(role),
+            model=self._settings.mlx_model_path if provider_class == ProviderClass.LOCAL else self._resolve_role_key(role, self._role_models),
             provider_class=provider_class,
             estimated_cost_per_1k_tokens=_COST_TABLE.get(provider_class, 0.003),
         )
