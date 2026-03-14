@@ -59,6 +59,9 @@ Repository = "https://github.com/greyhaven-ai/autocontext"
 Issues = "https://github.com/greyhaven-ai/autocontext/issues"
 Documentation = "https://github.com/greyhaven-ai/autocontext/tree/main/autocontext/docs"
 
+[tool.hatch.build]
+exclude = [".claude", ".claude/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocontext"]
 
