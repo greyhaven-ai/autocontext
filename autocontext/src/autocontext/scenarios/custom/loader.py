@@ -5,8 +5,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from autocontext.scenarios.base import ScenarioInterface
 
-def load_custom_scenario(custom_dir: Path, name: str, interface_class: type[Any]) -> type[Any]:
+
+def load_custom_scenario(
+    custom_dir: Path,
+    name: str,
+    interface_class: type[Any] = ScenarioInterface,
+) -> type[Any]:
     module_name = f"autocontext.scenarios.custom.generated.{name}"
 
     if module_name in sys.modules:
