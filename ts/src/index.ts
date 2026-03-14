@@ -71,17 +71,35 @@ export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
 export type { ClaudeCLIConfig } from "./runtimes/index.js";
 
 // Scenarios
-export type { AgentTaskSpec, AgentTaskFactoryOpts, AgentTaskCreatorOpts } from "./scenarios/index.js";
+export type {
+  AgentTaskSpec,
+  AgentTaskFactoryOpts,
+  AgentTaskCreatorOpts,
+  CreatedScenario,
+  SimulationCreatorOpts,
+  SimulationScenarioHandle,
+  SimulationSpec,
+  SimulationActionSpec,
+} from "./scenarios/index.js";
 export {
   AgentTaskSpecSchema,
   parseRawSpec,
   parseAgentTaskSpec,
   designAgentTask,
+  SimulationSpecSchema,
+  SimulationActionSpecSchema,
+  parseRawSimulationSpec,
+  parseSimulationSpec,
+  designSimulation,
   validateSpec,
   createAgentTask,
   AgentTaskCreator,
+  SimulationCreator,
+  shouldUseSimulationFamily,
   SPEC_START,
   SPEC_END,
+  SIM_SPEC_START,
+  SIM_SPEC_END,
 } from "./scenarios/index.js";
 
 // Knowledge / Skill Export

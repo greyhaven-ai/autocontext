@@ -20,6 +20,8 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_spec,
     validate_syntax,
 )
+from autocontext.scenarios.custom.simulation_designer import SIM_SPEC_END, SIM_SPEC_START
+from autocontext.scenarios.simulation import SimulationInterface
 
 # --- Fixtures ---
 
@@ -50,6 +52,34 @@ def _mock_llm_response(spec: AgentTaskSpec) -> str:
     if spec.required_concepts is not None:
         data["required_concepts"] = spec.required_concepts
     return f"Here is the spec:\n{SPEC_START}\n{json.dumps(data, indent=2)}\n{SPEC_END}\n"
+
+
+def _mock_simulation_response() -> str:
+    data = {
+        "description": "Recover a multi-step API workflow.",
+        "environment_description": "Mock API orchestration environment.",
+        "initial_state_description": "No calls completed.",
+        "success_criteria": ["all required actions complete", "invalid order is recovered"],
+        "failure_modes": ["dependency mismatch", "partial side effects"],
+        "max_steps": 6,
+        "actions": [
+            {
+                "name": "book_flight",
+                "description": "Reserve a flight.",
+                "parameters": {"flight_id": "string"},
+                "preconditions": [],
+                "effects": ["flight_reserved"],
+            },
+            {
+                "name": "book_hotel",
+                "description": "Reserve a hotel.",
+                "parameters": {"hotel_id": "string"},
+                "preconditions": ["book_flight"],
+                "effects": ["hotel_reserved"],
+            },
+        ],
+    }
+    return f"{SIM_SPEC_START}\n{json.dumps(data, indent=2)}\n{SIM_SPEC_END}\n"
 
 
 # --- Tests ---
@@ -341,6 +371,40 @@ class TestAgentTaskCreator:
                 assert (scenario_dir / "agent_task_spec.json").exists()
                 assert (scenario_dir / "scenario_type.txt").exists()
                 assert (scenario_dir / "scenario_type.txt").read_text() == "agent_task"
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
+    def test_routes_simulation_like_requests_to_simulation_creator(self) -> None:
+        response_text = _mock_simulation_response()
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            instance = creator.create("Build a stateful API orchestration workflow with rollback")
+            registered_name = creator.derive_name("Build a stateful API orchestration workflow with rollback")
+            try:
+                assert isinstance(instance, SimulationInterface)
+                result = instance.execute_match(
+                    {
+                        "actions": [
+                            {"name": "book_flight", "parameters": {"flight_id": "F1"}},
+                            {"name": "book_hotel", "parameters": {"hotel_id": "H1"}},
+                        ]
+                    },
+                    seed=0,
+                )
+                assert result.score > 0.5
+                scenario_dir = Path(tmp) / "_custom_scenarios" / registered_name
+                assert (scenario_dir / "scenario.py").exists()
+                assert (scenario_dir / "spec.json").exists()
+                assert (scenario_dir / "scenario_type.txt").read_text() == "simulation"
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 

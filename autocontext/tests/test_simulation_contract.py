@@ -590,17 +590,17 @@ class TestRegistryCompatibility:
             del SCENARIO_REGISTRY["_test_mock_sim"]
 
     def test_detection_via_hasattr(self) -> None:
-        """Simulation scenarios are detected via hasattr guards."""
+        """Simulation scenarios expose both simulation and base scenario hooks."""
         sim = _MockSimulation()
         # Simulation-specific methods
         assert hasattr(sim, "evaluate_trace")
         assert hasattr(sim, "execute_action")
         assert hasattr(sim, "describe_environment")
         assert hasattr(sim, "get_available_actions")
-        # Should NOT have game-scenario-specific methods
-        assert not hasattr(sim, "execute_match")
-        assert not hasattr(sim, "validate_actions")
-        assert not hasattr(sim, "step")
+        # And now intentionally support the standard run-loop execution path.
+        assert hasattr(sim, "execute_match")
+        assert hasattr(sim, "validate_actions")
+        assert hasattr(sim, "step")
         # Should NOT have agent-task-specific methods
         assert not hasattr(sim, "evaluate_output")
         assert not hasattr(sim, "get_task_prompt")

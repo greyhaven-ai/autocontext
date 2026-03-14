@@ -11,6 +11,10 @@ import {
   SPEC_START,
   SPEC_END,
 } from "../src/scenarios/agent-task-designer.js";
+import {
+  SIM_SPEC_END,
+  SIM_SPEC_START,
+} from "../src/scenarios/simulation-designer.js";
 import { validateIntent, validateSpec } from "../src/scenarios/agent-task-validator.js";
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
@@ -38,6 +42,34 @@ function mockLlmResponse(spec: AgentTaskSpec): string {
     judge_model: spec.judgeModel,
   };
   return `Here is the spec:\n${SPEC_START}\n${JSON.stringify(data, null, 2)}\n${SPEC_END}\n`;
+}
+
+function mockSimulationResponse(): string {
+  const data = {
+    description: "Recover a multi-step API workflow.",
+    environment_description: "Mock API orchestration environment.",
+    initial_state_description: "No calls completed.",
+    success_criteria: ["all required actions complete", "invalid order is recovered"],
+    failure_modes: ["dependency mismatch", "partial side effects"],
+    max_steps: 6,
+    actions: [
+      {
+        name: "book_flight",
+        description: "Reserve a flight.",
+        parameters: { flight_id: "string" },
+        preconditions: [],
+        effects: ["flight_reserved"],
+      },
+      {
+        name: "book_hotel",
+        description: "Reserve a hotel.",
+        parameters: { hotel_id: "string" },
+        preconditions: ["book_flight"],
+        effects: ["hotel_reserved"],
+      },
+    ],
+  };
+  return `${SIM_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${SIM_SPEC_END}\n`;
 }
 
 function makeMockProvider(response = "mock output"): LLMProvider {
@@ -332,6 +364,21 @@ describe("AgentTaskCreator", () => {
     await expect(
       creator.create("Root cause analysis of server crashes with red herrings"),
     ).rejects.toThrow("intent validation failed");
+  });
+
+  it("routes simulation-like descriptions into a simulation scenario scaffold", async () => {
+    const provider = makeMockProvider(mockSimulationResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-sim-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Build a stateful API orchestration workflow with rollback");
+    expect("family" in scenario && scenario.family).toBe("simulation");
+
+    const name = creator.deriveName("Build a stateful API orchestration workflow with rollback");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe("simulation");
   });
 });
 

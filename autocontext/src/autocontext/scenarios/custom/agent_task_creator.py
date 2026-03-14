@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from autocontext.scenarios.agent_task import AgentTaskInterface
+from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
 from autocontext.scenarios.custom.agent_task_designer import design_agent_task
 from autocontext.scenarios.custom.agent_task_validator import (
@@ -18,6 +19,10 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_syntax,
 )
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
+from autocontext.scenarios.custom.simulation_creator import (
+    SimulationCreator,
+    should_use_simulation_family,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +63,17 @@ class AgentTaskCreator:
         name_words = unique[:3] if len(unique) >= 3 else unique[:2] if unique else ["custom"]
         return "_".join(name_words)
 
-    def create(self, description: str) -> AgentTaskInterface:
+    def create(self, description: str) -> AgentTaskInterface | ScenarioInterface:
         """Run the full pipeline: design → validate → codegen → validate → load → register.
 
         Returns:
-            An instance of the generated AgentTaskInterface subclass.
+            An instance of the generated scenario family implementation.
         """
+        name = self.derive_name(description)
+        if should_use_simulation_family(description):
+            logger.info("routing description to simulation creator")
+            return SimulationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+
         # 1. Design
         logger.info("designing agent task from description")
         spec = design_agent_task(description, self.llm_fn)
@@ -79,7 +89,6 @@ class AgentTaskCreator:
             raise ValueError(f"intent validation failed: {'; '.join(intent_errors)}")
 
         # 3. Derive name and generate code
-        name = self.derive_name(description)
         logger.info("generating code for agent task '%s'", name)
         source = generate_agent_task_class(spec, name=name)
 

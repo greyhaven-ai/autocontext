@@ -5,4 +5,15 @@ export { validateSpec } from "./agent-task-validator.js";
 export { createAgentTask } from "./agent-task-factory.js";
 export type { AgentTaskFactoryOpts } from "./agent-task-factory.js";
 export { AgentTaskCreator } from "./agent-task-creator.js";
-export type { AgentTaskCreatorOpts } from "./agent-task-creator.js";
+export type { AgentTaskCreatorOpts, CreatedScenario } from "./agent-task-creator.js";
+export {
+  SIM_SPEC_START,
+  SIM_SPEC_END,
+  SIMULATION_DESIGNER_SYSTEM,
+  parseSimulationSpec,
+  designSimulation,
+} from "./simulation-designer.js";
+export { SimulationCreator, shouldUseSimulationFamily } from "./simulation-creator.js";
+export type { SimulationCreatorOpts, SimulationScenarioHandle } from "./simulation-creator.js";
+export type { SimulationSpec, SimulationActionSpec } from "./simulation-spec.js";
+export { SimulationSpecSchema, SimulationActionSpecSchema, parseRawSimulationSpec } from "./simulation-spec.js";

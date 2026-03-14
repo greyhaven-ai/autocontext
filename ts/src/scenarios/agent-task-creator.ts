@@ -13,12 +13,21 @@ import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { designAgentTask } from "./agent-task-designer.js";
 import { validateIntent, validateSpec } from "./agent-task-validator.js";
 import { createAgentTask } from "./agent-task-factory.js";
+import {
+  type SimulationScenarioHandle,
+  shouldUseSimulationFamily,
+  SimulationCreator,
+} from "./simulation-creator.js";
 
 export interface AgentTaskCreatorOpts {
   provider: LLMProvider;
   model?: string;
   knowledgeRoot: string;
 }
+
+export type CreatedScenario =
+  | (AgentTaskInterface & { readonly name: string; readonly spec: AgentTaskSpec; readonly family?: "agent_task" })
+  | SimulationScenarioHandle;
 
 export class AgentTaskCreator {
   private provider: LLMProvider;
@@ -70,7 +79,16 @@ export class AgentTaskCreator {
   /**
    * Run the full pipeline: design → validate → create → save.
    */
-  async create(description: string): Promise<AgentTaskInterface & { readonly name: string; readonly spec: AgentTaskSpec }> {
+  async create(description: string): Promise<CreatedScenario> {
+    const name = this.deriveName(description);
+    if (shouldUseSimulationFamily(description)) {
+      return new SimulationCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+
     // 1. Design spec via LLM
     const llmFn = async (system: string, user: string): Promise<string> => {
       const result = await this.provider.complete({
@@ -95,7 +113,6 @@ export class AgentTaskCreator {
     }
 
     // 3. Derive name and create task
-    const name = this.deriveName(description);
     const task = createAgentTask({ spec, name, provider: this.provider });
 
     // 4. Save to disk
