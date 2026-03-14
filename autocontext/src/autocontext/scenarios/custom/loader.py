@@ -3,11 +3,10 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 
-from autocontext.scenarios.base import ScenarioInterface
 
-
-def load_custom_scenario(custom_dir: Path, name: str) -> type[ScenarioInterface]:
+def load_custom_scenario(custom_dir: Path, name: str, interface_class: type[Any]) -> type[Any]:
     module_name = f"autocontext.scenarios.custom.generated.{name}"
 
     if module_name in sys.modules:
@@ -29,10 +28,12 @@ def load_custom_scenario(custom_dir: Path, name: str) -> type[ScenarioInterface]
         attr = getattr(mod, attr_name)
         if (
             isinstance(attr, type)
-            and issubclass(attr, ScenarioInterface)
-            and attr is not ScenarioInterface
+            and issubclass(attr, interface_class)
+            and attr is not interface_class
             and getattr(attr, "name", None) == name
         ):
-            return attr  # type: ignore[return-value]
+            return attr
 
-    raise ImportError(f"no ScenarioInterface subclass with name='{name}' found in {module_name}")
+    raise ImportError(
+        f"no {interface_class.__name__} subclass with name='{name}' found in {module_name}"
+    )

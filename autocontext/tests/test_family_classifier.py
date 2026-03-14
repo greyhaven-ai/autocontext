@@ -120,6 +120,20 @@ class TestClassifySimulation:
         assert result.family_name == "simulation"
 
 
+class TestClassifyArtifactEditing:
+    def test_config_editing(self) -> None:
+        result = classify_scenario_family(
+            "Create a task where the agent must edit a YAML config file to add a missing database section"
+        )
+        assert result.family_name == "artifact_editing"
+
+    def test_schema_migration(self) -> None:
+        result = classify_scenario_family(
+            "Build an artifact editing scenario that updates a JSON schema and repairs a broken SQL migration"
+        )
+        assert result.family_name == "artifact_editing"
+
+
 # ---------------------------------------------------------------------------
 # classify_scenario_family — agent_task signals
 # ---------------------------------------------------------------------------

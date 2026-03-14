@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
 from autocontext.scenarios.custom.agent_task_creator import AgentTaskCreator
 from autocontext.scenarios.custom.agent_task_designer import (
@@ -19,6 +20,10 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_execution,
     validate_spec,
     validate_syntax,
+)
+from autocontext.scenarios.custom.artifact_editing_designer import (
+    ARTIFACT_SPEC_END,
+    ARTIFACT_SPEC_START,
 )
 from autocontext.scenarios.custom.simulation_designer import SIM_SPEC_END, SIM_SPEC_START
 from autocontext.scenarios.simulation import SimulationInterface
@@ -80,6 +85,26 @@ def _mock_simulation_response() -> str:
         ],
     }
     return f"{SIM_SPEC_START}\n{json.dumps(data, indent=2)}\n{SIM_SPEC_END}\n"
+
+
+def _mock_artifact_editing_response() -> str:
+    data = {
+        "task_description": "Update a YAML config to add a database section.",
+        "rubric": "Evaluate artifact correctness, validator success, and minimal unnecessary changes.",
+        "validation_rules": [
+            'config/app.yaml must contain "database:"',
+            'config/app.yaml must contain "host:"',
+            'config/app.yaml must contain "port:"',
+        ],
+        "artifacts": [
+            {
+                "path": "config/app.yaml",
+                "content": "app:\n  name: myapp\n  port: 8080\n",
+                "content_type": "yaml",
+            },
+        ],
+    }
+    return f"{ARTIFACT_SPEC_START}\n{json.dumps(data, indent=2)}\n{ARTIFACT_SPEC_END}\n"
 
 
 # --- Tests ---
@@ -421,6 +446,33 @@ class TestAgentTaskCreator:
             )
             with pytest.raises(ValueError, match="not yet supported for custom scaffolding"):
                 creator.create("Create a competitive two-player board game tournament")
+
+    def test_routes_artifact_editing_requests_to_artifact_creator(self) -> None:
+        response_text = _mock_artifact_editing_response()
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            instance = creator.create("Edit a YAML config file to add a database section")
+            registered_name = creator.derive_name("Edit a YAML config file to add a database section")
+            try:
+                assert isinstance(instance, ArtifactEditingInterface)
+                artifacts = instance.initial_artifacts()
+                assert artifacts[0].path == "config/app.yaml"
+                assert "database section" in instance.describe_task().lower()
+                scenario_dir = Path(tmp) / "_custom_scenarios" / registered_name
+                assert (scenario_dir / "scenario.py").exists()
+                assert (scenario_dir / "spec.json").exists()
+                assert (scenario_dir / "scenario_type.txt").read_text() == "artifact_editing"
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
 
     def test_end_to_end_with_reference_context(self) -> None:
         spec = AgentTaskSpec(

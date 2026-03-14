@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from autocontext.scenarios.agent_task import AgentTaskInterface
+from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
 from autocontext.scenarios.custom.agent_task_designer import design_agent_task
@@ -17,6 +18,7 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_execution,
     validate_intent,
 )
+from autocontext.scenarios.custom.artifact_editing_creator import ArtifactEditingCreator
 from autocontext.scenarios.custom.family_classifier import (
     classify_scenario_family,
     route_to_family,
@@ -68,7 +70,10 @@ class AgentTaskCreator:
         name_words = unique[:3] if len(unique) >= 3 else unique[:2] if unique else ["custom"]
         return "_".join(name_words)
 
-    def create(self, description: str) -> AgentTaskInterface | ScenarioInterface:
+    def create(
+        self,
+        description: str,
+    ) -> AgentTaskInterface | ScenarioInterface | ArtifactEditingInterface:
         """Run the full pipeline: design → validate → codegen → validate → load → register.
 
         Returns:
@@ -80,6 +85,9 @@ class AgentTaskCreator:
         if family.name == "simulation":
             logger.info("routing description to simulation creator")
             return SimulationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name == "artifact_editing":
+            logger.info("routing description to artifact-editing creator")
+            return ArtifactEditingCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
         if family.name != "agent_task":
             raise ValueError(
                 f"Scenario family '{family.name}' is not yet supported for custom scaffolding"

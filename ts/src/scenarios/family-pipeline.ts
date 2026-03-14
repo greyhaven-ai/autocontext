@@ -1,4 +1,5 @@
 import type { AgentTaskSpec } from "./agent-task-spec.js";
+import { ArtifactEditingSpecSchema, type ArtifactEditingSpec } from "./artifact-editing-spec.js";
 import { validateSpec as validateAgentTaskSpec } from "./agent-task-validator.js";
 import { type ScenarioFamilyName } from "./families.js";
 import { SimulationSpecSchema, type SimulationSpec } from "./simulation-spec.js";
@@ -41,9 +42,23 @@ const simulationPipeline: FamilyPipeline<SimulationSpec> = {
   },
 };
 
+const artifactEditingPipeline: FamilyPipeline<ArtifactEditingSpec> = {
+  familyName: "artifact_editing",
+  validateSpec(spec: ArtifactEditingSpec): string[] {
+    const result = ArtifactEditingSpecSchema.safeParse(spec);
+    if (!result.success) {
+      return result.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`,
+      );
+    }
+    return [];
+  },
+};
+
 const PIPELINE_REGISTRY = {
   agent_task: agentTaskPipeline,
   simulation: simulationPipeline,
+  artifact_editing: artifactEditingPipeline,
 } as const;
 
 export function hasPipeline(family: string): family is keyof typeof PIPELINE_REGISTRY {
@@ -59,7 +74,7 @@ export function getPipeline(family: string): (typeof PIPELINE_REGISTRY)[keyof ty
 
 export function validateForFamily(
   family: string,
-  spec: AgentTaskSpec | SimulationSpec,
+  spec: AgentTaskSpec | SimulationSpec | ArtifactEditingSpec,
 ): string[] {
   const pipeline = getPipeline(family);
   return pipeline.validateSpec(spec as never);

@@ -73,11 +73,11 @@ def _build_scenario_info(name: str) -> ScenarioInfo:
         if hasattr(instance, "describe_strategy_interface")
         else ""
     )
-    if family.name == "agent_task":
+    if family.name in {"agent_task", "artifact_editing"}:
         description = instance.describe_task()[:500] if hasattr(instance, "describe_task") else ""
     else:
         description = instance.describe_rules()[:500] if hasattr(instance, "describe_rules") else ""
-    scenario_type = cast(Literal["game", "agent_task", "simulation"], family.name)
+    scenario_type = cast(Literal["game", "agent_task", "simulation", "artifact_editing"], family.name)
     return ScenarioInfo(
         name=name,
         display_name=name.replace("_", " ").title(),

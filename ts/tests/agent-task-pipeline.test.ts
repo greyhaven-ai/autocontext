@@ -12,6 +12,10 @@ import {
   SPEC_END,
 } from "../src/scenarios/agent-task-designer.js";
 import {
+  ARTIFACT_SPEC_END,
+  ARTIFACT_SPEC_START,
+} from "../src/scenarios/artifact-editing-designer.js";
+import {
   SIM_SPEC_END,
   SIM_SPEC_START,
 } from "../src/scenarios/simulation-designer.js";
@@ -74,6 +78,26 @@ function mockSimulationResponse(): string {
     ],
   };
   return `${SIM_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${SIM_SPEC_END}\n`;
+}
+
+function mockArtifactEditingResponse(): string {
+  const data = {
+    task_description: "Update a YAML config to add a database section.",
+    rubric: "Evaluate artifact correctness, validator success, and minimal unnecessary changes.",
+    validation_rules: [
+      'config/app.yaml must contain "database:"',
+      'config/app.yaml must contain "host:"',
+      'config/app.yaml must contain "port:"',
+    ],
+    artifacts: [
+      {
+        path: "config/app.yaml",
+        content: "app:\n  name: myapp\n  port: 8080\n",
+        content_type: "yaml",
+      },
+    ],
+  };
+  return `${ARTIFACT_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${ARTIFACT_SPEC_END}\n`;
 }
 
 function makeMockProvider(response = "mock output"): LLMProvider {
@@ -218,6 +242,26 @@ describe("FamilyPipeline", () => {
       ],
     };
     expect(validateForFamily("simulation", spec)).toEqual([]);
+  });
+
+  it("validates artifact-editing specs through the family pipeline", () => {
+    const spec = {
+      taskDescription: "Update a YAML config to add a database section.",
+      rubric: "Evaluate artifact correctness, validator success, and minimal unnecessary changes.",
+      validationRules: [
+        'config/app.yaml must contain "database:"',
+        'config/app.yaml must contain "host:"',
+      ],
+      artifacts: [
+        {
+          path: "config/app.yaml",
+          content: "app:\n  name: myapp\n  port: 8080\n",
+          contentType: "yaml",
+          metadata: {},
+        },
+      ],
+    };
+    expect(validateForFamily("artifact_editing", spec)).toEqual([]);
   });
 
   it("rejects unsupported families instead of collapsing silently", () => {
@@ -423,6 +467,21 @@ describe("AgentTaskCreator", () => {
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("simulation"));
   });
 
+  it("routes artifact-editing descriptions into an artifact-editing scaffold", async () => {
+    const provider = makeMockProvider(mockArtifactEditingResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-artifact-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Edit a YAML config file to add a database section");
+    expect("family" in scenario && scenario.family).toBe("artifact_editing");
+
+    const name = creator.deriveName("Edit a YAML config file to add a database section");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("artifact_editing"));
+  });
+
   it("rejects classified-but-unsupported game families", async () => {
     const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-game-"));
@@ -432,6 +491,12 @@ describe("AgentTaskCreator", () => {
     await expect(
       creator.create("Create a competitive two-player board game"),
     ).rejects.toThrow("not yet supported for custom scaffolding");
+  });
+
+  it("classifies artifact-editing descriptions into the artifact_editing family", () => {
+    expect(
+      classifyScenarioFamily("Edit a YAML config file to add a database section").familyName,
+    ).toBe("artifact_editing");
   });
 });
 

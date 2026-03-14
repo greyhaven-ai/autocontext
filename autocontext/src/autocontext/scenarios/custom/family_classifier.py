@@ -181,10 +181,38 @@ _GAME_SIGNALS: dict[str, float] = {
     "player": 1.0,
 }
 
+_ARTIFACT_EDITING_SIGNALS: dict[str, float] = {
+    "edit file": 2.0,
+    "modify file": 2.0,
+    "update config": 2.0,
+    "configuration": 1.5,
+    "config file": 1.5,
+    "yaml": 1.5,
+    "json": 1.0,
+    "schema": 1.5,
+    "migration": 1.5,
+    "manifest": 1.5,
+    "patch": 1.0,
+    "refactor config": 2.0,
+    "fix config": 2.0,
+    "artifact": 1.5,
+    "file edit": 2.0,
+    "rewrite": 1.0,
+    "update policy": 1.5,
+    "change file": 1.5,
+    "modify yaml": 2.0,
+    "modify json": 2.0,
+    "config repair": 2.0,
+    "repair schema": 2.0,
+    "sql migration": 2.0,
+    "dockerfile": 1.5,
+}
+
 _FAMILY_SIGNAL_GROUPS: dict[str, dict[str, float]] = {
     "simulation": _SIMULATION_SIGNALS,
     "agent_task": _AGENT_TASK_SIGNALS,
     "game": _GAME_SIGNALS,
+    "artifact_editing": _ARTIFACT_EDITING_SIGNALS,
 }
 
 _DEFAULT_FAMILY_NAME = "agent_task"

@@ -117,10 +117,38 @@ const GAME_SIGNALS: Record<string, number> = {
   player: 1.0,
 };
 
+const ARTIFACT_EDITING_SIGNALS: Record<string, number> = {
+  "edit file": 2.0,
+  "modify file": 2.0,
+  "update config": 2.0,
+  configuration: 1.5,
+  "config file": 1.5,
+  yaml: 1.5,
+  json: 1.0,
+  schema: 1.5,
+  migration: 1.5,
+  manifest: 1.5,
+  patch: 1.0,
+  "refactor config": 2.0,
+  "fix config": 2.0,
+  artifact: 1.5,
+  "file edit": 2.0,
+  rewrite: 1.0,
+  "update policy": 1.5,
+  "change file": 1.5,
+  "modify yaml": 2.0,
+  "modify json": 2.0,
+  "config repair": 2.0,
+  "repair schema": 2.0,
+  "sql migration": 2.0,
+  dockerfile: 1.5,
+};
+
 const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> = {
   game: GAME_SIGNALS,
   agent_task: AGENT_TASK_SIGNALS,
   simulation: SIMULATION_SIGNALS,
+  artifact_editing: ARTIFACT_EDITING_SIGNALS,
 };
 
 const DEFAULT_FAMILY_NAME: ScenarioFamilyName = "agent_task";

@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
+from typing import cast
 
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.family_pipeline import (
@@ -17,6 +18,7 @@ from autocontext.scenarios.custom.simulation_codegen import generate_simulation_
 from autocontext.scenarios.custom.simulation_designer import design_simulation
 from autocontext.scenarios.custom.simulation_spec import SimulationSpec
 from autocontext.scenarios.families import get_family_marker
+from autocontext.scenarios.simulation import SimulationInterface
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +86,9 @@ class SimulationCreator:
         )
         (scenario_dir / "scenario_type.txt").write_text(get_family_marker("simulation"), encoding="utf-8")
 
-        cls = load_custom_scenario(custom_dir, name)
+        cls = load_custom_scenario(custom_dir, name, SimulationInterface)
         from autocontext.scenarios import SCENARIO_REGISTRY
 
         SCENARIO_REGISTRY[name] = cls
         logger.info("registered simulation scenario '%s'", name)
-        return cls()
+        return cast(ScenarioInterface, cls())

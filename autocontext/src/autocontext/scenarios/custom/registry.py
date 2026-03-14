@@ -53,7 +53,7 @@ def _load_family_class(custom_dir: Path, name: str, marker: str) -> type[Any]:
             raise FileNotFoundError(f"agent task source not found: {agent_task_file}")
         return _load_agent_task_class(custom_dir, name)
 
-    cls = load_custom_scenario(custom_dir, name)
+    cls = load_custom_scenario(custom_dir, name, family.interface_class)
     detected = detect_family(cls())
     if detected is None or detected.name != family.name:
         raise ImportError(

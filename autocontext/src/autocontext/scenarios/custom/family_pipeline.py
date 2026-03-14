@@ -321,7 +321,14 @@ class ArtifactEditingPipeline(FamilyPipeline):
         return {"task_description", "artifacts", "validation_rules", "rubric"}
 
     def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        from autocontext.scenarios.custom.artifact_editing_spec import (
+            ArtifactEditingSpec,
+            ArtifactSpecModel,
+        )
+
         errors = _check_required_fields(spec, self.required_spec_fields())
+        if errors:
+            return errors
 
         artifacts = spec.get("artifacts")
         if isinstance(artifacts, list):
@@ -342,6 +349,27 @@ class ArtifactEditingPipeline(FamilyPipeline):
         rules = spec.get("validation_rules")
         if isinstance(rules, list) and len(rules) == 0:
             errors.append("validation_rules must not be empty")
+
+        if errors:
+            return errors
+
+        try:
+            ArtifactEditingSpec(
+                task_description=str(spec["task_description"]),
+                rubric=str(spec["rubric"]),
+                validation_rules=[str(rule) for rule in spec["validation_rules"]],
+                artifacts=[
+                    ArtifactSpecModel(
+                        path=str(artifact["path"]),
+                        content=str(artifact["content"]),
+                        content_type=str(artifact["content_type"]),
+                        metadata=artifact.get("metadata", {}) if isinstance(artifact, dict) else {},
+                    )
+                    for artifact in spec["artifacts"]
+                ],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            return [f"invalid artifact_editing spec: {exc}"]
 
         return errors
 

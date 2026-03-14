@@ -13,6 +13,10 @@ import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { designAgentTask } from "./agent-task-designer.js";
 import { validateIntent } from "./agent-task-validator.js";
 import { createAgentTask } from "./agent-task-factory.js";
+import {
+  type ArtifactEditingScenarioHandle,
+  ArtifactEditingCreator,
+} from "./artifact-editing-creator.js";
 import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
 import { validateForFamily } from "./family-pipeline.js";
 import { getScenarioTypeMarker } from "./families.js";
@@ -29,6 +33,7 @@ export interface AgentTaskCreatorOpts {
 
 export type CreatedScenario =
   | (AgentTaskInterface & { readonly name: string; readonly spec: AgentTaskSpec; readonly family?: "agent_task" })
+  | ArtifactEditingScenarioHandle
   | SimulationScenarioHandle;
 
 export class AgentTaskCreator {
@@ -86,6 +91,13 @@ export class AgentTaskCreator {
     const family = routeToFamily(classifyScenarioFamily(description));
     if (family === "simulation") {
       return new SimulationCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "artifact_editing") {
+      return new ArtifactEditingCreator({
         provider: this.provider,
         model: this.model,
         knowledgeRoot: this.knowledgeRoot,
