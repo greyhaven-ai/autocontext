@@ -85,8 +85,9 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
 
                 settings = load_settings()
                 provider = get_provider(settings)
+                effective_model = self._judge_model or settings.judge_model or provider.default_model()
                 judge = LLMJudge(
-                    model=self._judge_model,
+                    model=effective_model,
                     rubric=self._rubric,
                     provider=provider,
                 )
@@ -94,7 +95,7 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                 ref_ctx = reference_context or self._reference_context
                 req_con = required_concepts or self._required_concepts
                 result = judge.evaluate(
-                    self._task_prompt,
+                    self.get_task_prompt(state),
                     output,
                     reference_context=ref_ctx,
                     required_concepts=req_con,

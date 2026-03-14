@@ -55,7 +55,7 @@ _EXAMPLE_SPEC = {
 AGENT_TASK_DESIGNER_SYSTEM = (
     "You are a scenario designer for AutoContext, an agent evaluation system. "
     "Given a natural language description, produce an AgentTaskSpec JSON "
-    "that defines a task prompt, evaluation rubric, output format, and judge model.\n\n"
+    "that defines a task prompt, evaluation rubric, output format, and optional judge model.\n\n"
     f"The output must be valid JSON wrapped in delimiters:\n"
     f"{SPEC_START}\n{{ ... }}\n{SPEC_END}\n\n"
     "## AgentTaskSpec Schema\n\n"
@@ -87,7 +87,7 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     "(e.g. an outage report, a code snippet, a dataset)\n"
     "- `judge_rubric` must list specific evaluation dimensions with criteria\n"
     "- `output_format` must be one of: free_text, json_schema, code\n"
-    "- `judge_model` should be a valid model identifier\n"
+    "- `judge_model` is optional; use an empty string to fall back to the configured judge/default provider model\n"
     "- `reference_context` (optional) — authoritative domain knowledge the judge should use to verify factual accuracy. "
     "Include this when the task requires domain-specific knowledge that the judge LLM may not have. "
     "When provided, the judge will score factual_accuracy as a mandatory dimension.\n"

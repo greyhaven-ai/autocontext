@@ -5,6 +5,7 @@ import importlib.util
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
@@ -106,13 +107,18 @@ def validate_syntax(source: str) -> list[str]:
 def validate_execution(source: str) -> list[str]:
     """Validate by importing and instantiating the generated class."""
     errors: list[str] = []
-
-    # Reject unresolved llm_fn placeholder — it always fails at runtime (AC-241).
-    if "llm_fn must be injected at runtime" in source:
-        errors.append(
-            "evaluate_output contains unresolved llm_fn placeholder; "
-            "use get_provider(load_settings()) instead"
-        )
+    try:
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "LLMJudge":
+                if any(keyword.arg == "llm_fn" for keyword in node.keywords):
+                    errors.append(
+                        "evaluate_output uses legacy llm_fn wiring; use provider= with runtime provider resolution"
+                    )
+                    break
+    except SyntaxError:
+        # Syntax issues are handled by validate_syntax().
+        pass
 
     with tempfile.TemporaryDirectory() as tmp:
         mod_path = Path(tmp) / "agent_task_mod.py"
@@ -189,5 +195,27 @@ def validate_execution(source: str) -> list[str]:
                 errors.append("validate_context() must return a list")
         except Exception as exc:
             errors.append(f"validate_context() raised: {exc}")
+
+        try:
+            mock_settings = MagicMock()
+            mock_settings.judge_model = "configured-judge-model"
+            mock_provider = MagicMock()
+            mock_provider.default_model.return_value = "provider-default-model"
+            mock_result = MagicMock()
+            mock_result.score = 0.5
+            mock_result.reasoning = "validator smoke test"
+            mock_result.dimension_scores = {}
+            mock_result.internal_retries = 0
+
+            with (
+                patch("autocontext.config.load_settings", return_value=mock_settings),
+                patch("autocontext.providers.registry.get_provider", return_value=mock_provider),
+                patch("autocontext.execution.judge.LLMJudge.evaluate", return_value=mock_result),
+            ):
+                eval_result = instance.evaluate_output("validator smoke output", prepared)
+                if not hasattr(eval_result, "score"):
+                    errors.append("evaluate_output() did not return an AgentTaskResult-like object")
+        except Exception as exc:
+            errors.append(f"evaluate_output() raised: {exc}")
 
     return errors

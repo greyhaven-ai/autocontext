@@ -41,6 +41,12 @@ class TestCodegenNoPlaceholder:
         assert "provider=provider" in source
         assert "llm_fn=" not in source
 
+    def test_generated_code_resolves_model_from_settings_when_empty(self) -> None:
+        """Generated evaluate_output should fall back to runtime judge model resolution."""
+        source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")
+        assert "settings.judge_model" in source
+        assert "provider.default_model()" in source
+
     def test_generated_code_syntax_valid(self) -> None:
         source = generate_agent_task_class(SAMPLE_SPEC, name="haiku_task")
         errors = validate_syntax(source)
@@ -116,6 +122,28 @@ class TestGeneratedEvaluateOutput:
             result = instance.evaluate_output("some output", {})
             assert result.score == 0.5
 
+    def test_evaluate_output_uses_runtime_judge_model_when_spec_model_empty(self) -> None:
+        """Empty judge_model should fall back to configured settings judge model."""
+        instance = self._build_instance()
+
+        mock_provider = MagicMock()
+        mock_provider.default_model.return_value = "provider-fallback-model"
+        mock_result = MagicMock()
+        mock_result.score = 0.6
+        mock_result.reasoning = "OK"
+        mock_result.dimension_scores = {}
+        mock_result.internal_retries = 0
+
+        with (
+            patch("autocontext.config.load_settings", return_value=MagicMock(judge_model="runtime-judge-model")),
+            patch("autocontext.providers.registry.get_provider", return_value=mock_provider),
+            patch("autocontext.execution.judge.LLMJudge.evaluate", return_value=mock_result),
+            patch("autocontext.execution.judge.LLMJudge.__init__", return_value=None) as mock_init,
+        ):
+            result = instance.evaluate_output("some output", {})
+            assert result.score == 0.6
+            assert mock_init.call_args.kwargs["model"] == "runtime-judge-model"
+
     def test_evaluate_output_passes_reference_context(self) -> None:
         """Reference context should be forwarded to the judge."""
         spec = AgentTaskSpec(
@@ -182,7 +210,7 @@ class TestGeneratedEvaluateOutput:
 
 class TestValidatorCatchesPlaceholder:
     def test_validator_rejects_llm_fn_placeholder(self) -> None:
-        """validate_execution should catch the broken llm_fn placeholder."""
+        """validate_execution should fail by exercising the broken eval path."""
         # Hand-craft source with the old broken pattern
         broken_source = '''\
 from __future__ import annotations
@@ -215,7 +243,7 @@ class BrokenAgentTask(AgentTaskInterface):
         return self._task_prompt
 '''
         errors = validate_execution(broken_source)
-        assert any("llm_fn" in e or "provider" in e for e in errors), (
+        assert any("evaluate_output()" in e or "llm_fn" in e for e in errors), (
             f"Expected validation error about llm_fn placeholder, got: {errors}"
         )
 
