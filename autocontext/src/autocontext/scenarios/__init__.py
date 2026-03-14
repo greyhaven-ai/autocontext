@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
-from autocontext.scenarios.base import ScenarioInterface
+from autocontext.scenarios.families import ScenarioFamily, detect_family
 from autocontext.scenarios.grid_ctf import GridCtfScenario
 from autocontext.scenarios.othello import OthelloScenario
 
-ScenarioFactory: TypeAlias = type[ScenarioInterface]
+ScenarioFactory: TypeAlias = type[Any]
 
 SCENARIO_REGISTRY: dict[str, ScenarioFactory] = {
     "grid_ctf": GridCtfScenario,
@@ -23,3 +23,12 @@ def _load_persisted_custom_scenarios() -> None:
 
 
 _load_persisted_custom_scenarios()
+
+
+def get_registered_scenario_family(name: str) -> ScenarioFamily:
+    """Return the registered family metadata for a scenario name."""
+    cls = SCENARIO_REGISTRY[name]
+    family = detect_family(cls())
+    if family is None:
+        raise TypeError(f"Unable to determine scenario family for '{name}'")
+    return family

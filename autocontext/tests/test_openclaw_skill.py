@@ -16,6 +16,15 @@ from autocontext.openclaw.models import (
     SkillManifest,
 )
 from autocontext.openclaw.skill import MtsSkillWrapper
+from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
+from autocontext.scenarios.base import Observation, Result, ScenarioInterface
+from autocontext.scenarios.simulation import (
+    ActionResult,
+    ActionSpec,
+    EnvironmentSpec,
+    SimulationInterface,
+    SimulationResult,
+)
 
 _REG = "autocontext.openclaw.skill.SCENARIO_REGISTRY"
 
@@ -25,29 +34,111 @@ _REG = "autocontext.openclaw.skill.SCENARIO_REGISTRY"
 # ---------------------------------------------------------------------------
 
 
-def _game() -> MagicMock:
-    s = MagicMock()
-    s.describe_rules.return_value = "Capture the flag on a grid."
-    s.describe_strategy_interface.return_value = '{"aggression": float, "defense": float}'
-    s.describe_evaluation_criteria.return_value = "Score = captures + survival"
-    del s.get_task_prompt
-    del s.get_rubric
-    del s.describe_task
-    return s
+class _GameScenario(ScenarioInterface):
+    name = "grid_ctf"
+
+    def describe_rules(self) -> str:
+        return "Capture the flag on a grid."
+
+    def describe_strategy_interface(self) -> str:
+        return '{"aggression": float, "defense": float}'
+
+    def describe_evaluation_criteria(self) -> str:
+        return "Score = captures + survival"
+
+    def initial_state(self, seed: int | None = None) -> dict[str, Any]:
+        return {}
+
+    def get_observation(self, state: Any, player_id: str) -> Observation:
+        return Observation(narrative="observe")
+
+    def validate_actions(self, state: Any, player_id: str, actions: Any) -> tuple[bool, str]:
+        return True, ""
+
+    def step(self, state: Any, actions: Any) -> dict[str, Any]:
+        return {"terminal": True}
+
+    def is_terminal(self, state: Any) -> bool:
+        return True
+
+    def get_result(self, state: Any) -> Result:
+        return Result(score=1.0, summary="ok")
+
+    def replay_to_narrative(self, replay: list[dict[str, Any]]) -> str:
+        return ""
+
+    def render_frame(self, state: Any) -> dict[str, Any]:
+        return {}
 
 
-def _task() -> MagicMock:
-    s = MagicMock()
-    s.describe_task.return_value = "Write a summary of the document."
-    s.get_rubric.return_value = "Clarity, completeness, accuracy"
-    s.get_task_prompt.return_value = "Summarize the following..."
-    del s.describe_rules
-    del s.describe_strategy_interface
-    del s.describe_evaluation_criteria
-    del s.execute_match
-    del s.validate_actions
-    del s.initial_state
-    return s
+class _TaskScenario(AgentTaskInterface):
+    def describe_task(self) -> str:
+        return "Write a summary of the document."
+
+    def get_task_prompt(self, state: dict) -> str:
+        return "Summarize the following..."
+
+    def evaluate_output(self, output: str, state: dict, **kwargs: Any) -> AgentTaskResult:
+        return AgentTaskResult(score=0.8, reasoning="ok")
+
+    def get_rubric(self) -> str:
+        return "Clarity, completeness, accuracy"
+
+    def initial_state(self, seed: int | None = None) -> dict:
+        return {}
+
+
+class _SimulationScenario(SimulationInterface):
+    name = "travel_workflow"
+
+    def describe_scenario(self) -> str:
+        return "Run a stateful workflow simulation."
+
+    def describe_environment(self) -> EnvironmentSpec:
+        return EnvironmentSpec(
+            name="travel",
+            description="travel workflow",
+            available_actions=[ActionSpec(name="noop", description="noop", parameters={})],
+            initial_state_description="empty",
+            success_criteria=["done"],
+        )
+
+    def initial_state(self, seed: int | None = None) -> dict[str, Any]:
+        return {"step": 0}
+
+    def get_available_actions(self, state: dict[str, Any]) -> list[ActionSpec]:
+        return [ActionSpec(name="noop", description="noop", parameters={})]
+
+    def execute_action(self, state: dict[str, Any], action: Any) -> tuple[ActionResult, dict[str, Any]]:
+        return ActionResult(success=True, output="ok", state_changes={}), {"step": 1}
+
+    def is_terminal(self, state: Any) -> bool:
+        return True
+
+    def evaluate_trace(self, trace: Any, final_state: dict[str, Any]) -> SimulationResult:
+        return SimulationResult(
+            score=1.0,
+            reasoning="ok",
+            dimension_scores={},
+            workflow_complete=True,
+            actions_taken=1,
+            actions_successful=1,
+        )
+
+    def get_rubric(self) -> str:
+        return "Score action ordering and recovery."
+
+
+def _game() -> _GameScenario:
+    return _GameScenario()
+
+
+def _task() -> _TaskScenario:
+    return _TaskScenario()
+
+
+def _simulation() -> _SimulationScenario:
+    return _SimulationScenario()
 
 
 def _ctx() -> MagicMock:
@@ -60,7 +151,11 @@ def _ctx() -> MagicMock:
 
 @pytest.fixture()
 def reg() -> dict[str, Any]:
-    return {"grid_ctf": lambda: _game(), "summarize_doc": lambda: _task()}
+    return {
+        "grid_ctf": lambda: _game(),
+        "summarize_doc": lambda: _task(),
+        "travel_workflow": lambda: _simulation(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +178,16 @@ class TestModels:
                 name="x", display_name="X", scenario_type="bad_type",  # type: ignore[arg-type]
                 description="", strategy_interface="",
             )
+
+    def test_scenario_info_accepts_simulation_type(self) -> None:
+        info = ScenarioInfo(
+            name="travel_workflow",
+            display_name="Travel Workflow",
+            scenario_type="simulation",
+            description="Stateful workflow simulation",
+            strategy_interface="{}",
+        )
+        assert info.scenario_type == "simulation"
 
     def test_evaluation_result_defaults(self) -> None:
         r = EvaluationResult(scenario_name="grid_ctf", strategy={"a": 1}, valid=True)
@@ -135,8 +240,10 @@ class TestSkillManifest:
         names = {s.name for s in m.scenarios}
         assert "grid_ctf" in names
         assert "summarize_doc" in names
+        assert "travel_workflow" in names
         assert next(s for s in m.scenarios if s.name == "grid_ctf").scenario_type == "game"
         assert next(s for s in m.scenarios if s.name == "summarize_doc").scenario_type == "agent_task"
+        assert next(s for s in m.scenarios if s.name == "travel_workflow").scenario_type == "simulation"
 
     def test_manifest_includes_mcp_tools(self, reg: dict[str, Any]) -> None:
         with patch(_REG, reg):
@@ -165,7 +272,7 @@ class TestDiscoverScenarios:
     def test_all_scenarios_when_no_query(self, reg: dict[str, Any]) -> None:
         with patch(_REG, reg):
             results = MtsSkillWrapper(_ctx()).discover_scenarios()
-        assert len(results) == 2
+        assert len(results) == 3
 
     def test_results_have_correct_types(self, reg: dict[str, Any]) -> None:
         with patch(_REG, reg):
@@ -173,6 +280,7 @@ class TestDiscoverScenarios:
         types = {r.scenario_type for r in results}
         assert "game" in types
         assert "agent_task" in types
+        assert "simulation" in types
 
     def test_query_filters_by_relevance(self, reg: dict[str, Any]) -> None:
         with patch(_REG, reg), \
@@ -193,7 +301,7 @@ class TestDiscoverScenarios:
              patch("autocontext.openclaw.skill.search_strategies") as mock_search:
             mock_search.return_value = []
             results = MtsSkillWrapper(_ctx()).discover_scenarios(query="zzz_unknown")
-        assert len(results) == 2
+        assert len(results) == 3
 
 
 # ---------------------------------------------------------------------------

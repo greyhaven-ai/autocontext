@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.loader import load_custom_scenario
+from autocontext.scenarios.families import detect_family, get_family_by_marker
 
 logger = logging.getLogger(__name__)
 
@@ -44,38 +44,45 @@ def _load_agent_task_class(custom_dir: Path, name: str) -> type[Any]:
     raise ImportError(f"no AgentTaskInterface subclass found in {module_name}")
 
 
-def load_all_custom_scenarios(knowledge_root: Path) -> dict[str, type[ScenarioInterface]]:
+def _load_family_class(custom_dir: Path, name: str, marker: str) -> type[Any]:
+    family = get_family_by_marker(marker)
+
+    if family.name == "agent_task":
+        agent_task_file = custom_dir / name / "agent_task.py"
+        if not agent_task_file.exists():
+            raise FileNotFoundError(f"agent task source not found: {agent_task_file}")
+        return _load_agent_task_class(custom_dir, name)
+
+    cls = load_custom_scenario(custom_dir, name)
+    detected = detect_family(cls())
+    if detected is None or detected.name != family.name:
+        raise ImportError(
+            f"loaded scenario '{name}' as family '{detected.name if detected else 'unknown'}', "
+            f"expected '{family.name}'"
+        )
+    return cls
+
+
+def load_all_custom_scenarios(knowledge_root: Path) -> dict[str, type[Any]]:
     custom_dir = knowledge_root / CUSTOM_SCENARIOS_DIR
     if not custom_dir.is_dir():
         return {}
 
-    loaded: dict[str, type[ScenarioInterface]] = {}
+    loaded: dict[str, type[Any]] = {}
     for entry in sorted(custom_dir.iterdir()):
         if not entry.is_dir():
             continue
         name = entry.name
 
-        # Check if this is an agent_task scenario
         type_file = entry / "scenario_type.txt"
-        if type_file.exists() and type_file.read_text().strip() == "agent_task":
-            agent_task_file = entry / "agent_task.py"
-            if not agent_task_file.exists():
-                continue
-            try:
-                cls = _load_agent_task_class(custom_dir, name)
-                loaded[name] = cls  # type: ignore[assignment]
-            except Exception:
-                logger.warning("failed to load agent task '%s'", name, exc_info=True)
-            continue
-
-        # Standard parametric scenario
-        spec_file = entry / "spec.json"
-        scenario_file = entry / "scenario.py"
-        if not spec_file.exists() or not scenario_file.exists():
-            continue
+        marker = type_file.read_text().strip() if type_file.exists() else "parametric"
         try:
-            cls = load_custom_scenario(custom_dir, name)
+            cls = _load_family_class(custom_dir, name, marker)
             loaded[name] = cls
+        except FileNotFoundError:
+            continue
+        except KeyError:
+            logger.warning("failed to load custom scenario '%s': unknown marker '%s'", name, marker)
         except Exception:
             logger.warning("failed to load custom scenario '%s'", name, exc_info=True)
 

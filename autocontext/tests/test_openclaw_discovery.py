@@ -9,6 +9,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from autocontext.config.settings import AppSettings, HarnessMode
+from autocontext.scenarios.simulation import (
+    ActionResult,
+    ActionSpec,
+    EnvironmentSpec,
+    SimulationInterface,
+    SimulationResult,
+)
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 # ---------------------------------------------------------------------------
@@ -58,6 +65,57 @@ class TestScenarioCapabilities:
         caps = discover_scenario_capabilities(mock_ctx, "grid_ctf")
         assert caps.evaluation_mode == "tournament"
         assert caps.scenario_name == "grid_ctf"
+
+    def test_simulation_scenario_detected(self, mock_ctx: MagicMock) -> None:
+        """Simulation scenarios should report trace_evaluation mode."""
+        from autocontext.openclaw.discovery import discover_scenario_capabilities
+
+        class _StubSimulation(SimulationInterface):
+            name = "travel_workflow"
+
+            def describe_scenario(self) -> str:
+                return "simulation"
+
+            def describe_environment(self) -> EnvironmentSpec:
+                return EnvironmentSpec(
+                    name="travel",
+                    description="travel",
+                    available_actions=[ActionSpec(name="noop", description="noop", parameters={})],
+                    initial_state_description="empty",
+                    success_criteria=["done"],
+                )
+
+            def initial_state(self, seed: int | None = None) -> dict[str, object]:
+                return {"step": 0}
+
+            def get_available_actions(self, state: dict[str, object]) -> list[ActionSpec]:
+                return [ActionSpec(name="noop", description="noop", parameters={})]
+
+            def execute_action(
+                self, state: dict[str, object], action: object
+            ) -> tuple[ActionResult, dict[str, object]]:
+                return ActionResult(success=True, output="ok", state_changes={}), {"step": 1}
+
+            def is_terminal(self, state: object) -> bool:
+                return True
+
+            def evaluate_trace(self, trace: object, final_state: dict[str, object]) -> SimulationResult:
+                return SimulationResult(
+                    score=1.0,
+                    reasoning="ok",
+                    dimension_scores={},
+                    workflow_complete=True,
+                    actions_taken=1,
+                    actions_successful=1,
+                )
+
+            def get_rubric(self) -> str:
+                return "rubric"
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("autocontext.scenarios.SCENARIO_REGISTRY", {"travel_workflow": _StubSimulation})
+            caps = discover_scenario_capabilities(mock_ctx, "travel_workflow")
+        assert caps.evaluation_mode == "trace_evaluation"
 
     def test_has_playbook_when_present(self, mock_ctx: MagicMock) -> None:
         """has_playbook should be True when a playbook file exists."""

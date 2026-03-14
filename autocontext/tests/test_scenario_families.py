@@ -18,6 +18,7 @@ from autocontext.scenarios.families import (
     ScenarioFamily,
     detect_family,
     get_family,
+    get_family_by_marker,
     list_families,
     register_family,
 )
@@ -270,6 +271,11 @@ class TestBuiltinFamilies:
     def test_simulation_scenario_type_marker(self) -> None:
         sim = get_family("simulation")
         assert sim.scenario_type_marker == "simulation"
+
+    def test_get_family_by_marker(self) -> None:
+        assert get_family_by_marker("parametric").name == "game"
+        assert get_family_by_marker("agent_task").name == "agent_task"
+        assert get_family_by_marker("simulation").name == "simulation"
 
 
 # ---------------------------------------------------------------------------

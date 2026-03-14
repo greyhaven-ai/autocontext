@@ -37,6 +37,10 @@ def register_family(family: ScenarioFamily) -> None:
     """Register a scenario family. Raises ValueError on duplicate."""
     if family.name in FAMILY_REGISTRY:
         raise ValueError(f"Scenario family '{family.name}' is already registered")
+    if any(existing.scenario_type_marker == family.scenario_type_marker for existing in FAMILY_REGISTRY.values()):
+        raise ValueError(
+            f"Scenario type marker '{family.scenario_type_marker}' is already registered"
+        )
     FAMILY_REGISTRY[family.name] = family
 
 
@@ -50,6 +54,14 @@ def get_family(name: str) -> ScenarioFamily:
 def list_families() -> list[ScenarioFamily]:
     """Return all registered families."""
     return list(FAMILY_REGISTRY.values())
+
+
+def get_family_by_marker(marker: str) -> ScenarioFamily:
+    """Look up a family by persisted scenario_type marker."""
+    for family in FAMILY_REGISTRY.values():
+        if family.scenario_type_marker == marker:
+            return family
+    raise KeyError(f"Unknown scenario type marker '{marker}'")
 
 
 def detect_family(scenario: Any) -> ScenarioFamily | None:

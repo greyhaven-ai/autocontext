@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal, cast
 
 from autocontext.knowledge.search import search_strategies
 from autocontext.mcp.tools import (
@@ -19,6 +19,7 @@ from autocontext.openclaw.models import (
     SkillManifest,
 )
 from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.scenarios.families import detect_family
 
 # MCP tools exposed by the server — advertised in the manifest.
 _MCP_TOOL_NAMES: list[str] = [
@@ -64,23 +65,25 @@ _STOPWORDS = frozenset({
 def _build_scenario_info(name: str) -> ScenarioInfo:
     """Inspect a scenario from the registry and return ScenarioInfo."""
     instance = SCENARIO_REGISTRY[name]()
-
-    if hasattr(instance, "describe_rules"):
-        return ScenarioInfo(
-            name=name,
-            display_name=name.replace("_", " ").title(),
-            scenario_type="game",
-            description=instance.describe_rules()[:500],
-            strategy_interface=instance.describe_strategy_interface() if hasattr(instance, "describe_strategy_interface") else "",
-        )
-
-    description = instance.describe_task()[:500] if hasattr(instance, "describe_task") else ""
+    family = detect_family(instance)
+    if family is None:
+        raise TypeError(f"Unable to determine scenario family for '{name}'")
+    strategy_interface = (
+        instance.describe_strategy_interface()
+        if hasattr(instance, "describe_strategy_interface")
+        else ""
+    )
+    if family.name == "agent_task":
+        description = instance.describe_task()[:500] if hasattr(instance, "describe_task") else ""
+    else:
+        description = instance.describe_rules()[:500] if hasattr(instance, "describe_rules") else ""
+    scenario_type = cast(Literal["game", "agent_task", "simulation"], family.name)
     return ScenarioInfo(
         name=name,
         display_name=name.replace("_", " ").title(),
-        scenario_type="agent_task",
+        scenario_type=scenario_type,
         description=description,
-        strategy_interface="",
+        strategy_interface=strategy_interface,
     )
 
 

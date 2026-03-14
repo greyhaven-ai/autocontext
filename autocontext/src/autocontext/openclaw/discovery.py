@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from autocontext.scenarios.families import detect_family
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 if TYPE_CHECKING:
@@ -142,10 +143,10 @@ def discover_scenario_capabilities(ctx: MtsToolContext, scenario_name: str) -> S
     if scenario_name not in SCENARIO_REGISTRY:
         raise KeyError(scenario_name)
 
-    scenario = SCENARIO_REGISTRY[scenario_name]()
-
-    # Determine evaluation mode
-    evaluation_mode = "tournament" if hasattr(scenario, "execute_match") else "judge"
+    family = detect_family(SCENARIO_REGISTRY[scenario_name]())
+    if family is None:
+        raise TypeError(f"Unable to determine scenario family for '{scenario_name}'")
+    evaluation_mode = "judge" if family.evaluation_mode == "llm_judge" else family.evaluation_mode
 
     # Check playbook
     has_playbook = False
