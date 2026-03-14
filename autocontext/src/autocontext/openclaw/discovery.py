@@ -1,6 +1,6 @@
 """Discovery and capability advertisement for ClawHub (AC-195).
 
-Allows external clients to discover what AutoContext can serve for a scenario:
+Allows external clients to discover what autocontext can serve for a scenario:
 scenario-to-artifact lookup, capability advertisement, runtime health,
 and client-friendly summaries for ClawHub UX.
 """

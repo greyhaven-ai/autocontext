@@ -2,7 +2,7 @@
 
 ## Overview
 
-AutoContext's `autoctx train` command uses [MLX](https://github.com/ml-explore/mlx) to fine-tune local models from exported run data. MLX requires direct access to Apple's Metal GPU framework, which means training must run on the macOS host, not inside a Docker sandbox.
+autocontext's `autoctx train` command uses [MLX](https://github.com/ml-explore/mlx) to fine-tune local models from exported run data. MLX requires direct access to Apple's Metal GPU framework, which means training must run on the macOS host, not inside a Docker sandbox.
 
 Docker containers on macOS run inside a Linux VM and cannot access Metal. The MLX Python package may install on Linux aarch64, but training cannot complete without a Metal-capable Apple Silicon host. Host-side Python environments also cannot be executed directly from the sandbox when they point to macOS-native binaries.
 

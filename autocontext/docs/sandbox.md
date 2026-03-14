@@ -1,6 +1,6 @@
 # Sandbox Modes
 
-AutoContext supports three execution modes for game scenarios, plus judge-based evaluation for agent tasks:
+autocontext supports three execution modes for game scenarios, plus judge-based evaluation for agent tasks:
 
 - `local` executor: runs strategies in a process pool with timeout controls, and applies memory limits in the subprocess path.
 - `primeintellect` executor: runs strategies remotely via PrimeIntellect sandbox lifecycle (create/wait/execute/delete).

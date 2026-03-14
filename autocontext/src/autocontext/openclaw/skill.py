@@ -1,4 +1,4 @@
-"""ClawHub skill wrapper — high-level interface for AutoContext (AC-192)."""
+"""ClawHub skill wrapper — high-level interface for autocontext (AC-192)."""
 from __future__ import annotations
 
 import re
@@ -144,7 +144,7 @@ def _rank_scenarios(
 
 
 class MtsSkillWrapper:
-    """High-level ClawHub skill interface for AutoContext.
+    """High-level ClawHub skill interface for autocontext.
 
     Wraps the low-level MCP tool functions into cohesive workflows
     that external agents can invoke through ClawHub discovery.

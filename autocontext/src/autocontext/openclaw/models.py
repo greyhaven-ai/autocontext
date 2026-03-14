@@ -21,7 +21,7 @@ class SkillManifest(BaseModel):
 
     name: str = Field(default="autocontext")
     version: str = Field(default="")
-    description: str = Field(default="AutoContext iterative strategy evolution and evaluation system")
+    description: str = Field(default="autocontext iterative strategy evolution and evaluation system")
     capabilities: list[str] = Field(default_factory=lambda: [
         "scenario_evaluation",
         "strategy_validation",

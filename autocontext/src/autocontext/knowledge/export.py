@@ -317,7 +317,7 @@ def _scenario_description(scenario: object) -> str:
 
 
 def _clean_lessons(raw_bullets: list[str]) -> list[str]:
-    """Strip AutoContext-internal noise from lesson bullets, keeping prescriptive rules."""
+    """Strip autocontext-internal noise from lesson bullets, keeping prescriptive rules."""
     cleaned: list[str] = []
     for bullet in raw_bullets:
         text = bullet.strip()

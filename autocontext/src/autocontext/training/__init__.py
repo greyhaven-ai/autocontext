@@ -1,4 +1,4 @@
-"""AutoContext training package — optional MLX-based distillation and autoresearch."""
+"""autocontext training package — optional MLX-based distillation and autoresearch."""
 from __future__ import annotations
 
 from autocontext.training.types import MatchRecord, TrainingRecord

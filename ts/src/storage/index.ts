@@ -1,5 +1,5 @@
 /**
- * SQLite storage for AutoContext task queue.
+ * SQLite storage for autocontext task queue.
  * Uses better-sqlite3 for synchronous access (same as Python's sqlite3).
  */
 

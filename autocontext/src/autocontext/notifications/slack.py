@@ -49,7 +49,7 @@ class SlackWebhookNotifier(Notifier):
             EventType.FAILURE: "❌",
         }.get(event.type, "📌")
 
-        header = f"{emoji} *AutoContext: {event.task_name}*"
+        header = f"{emoji} *autocontext: {event.task_name}*"
         blocks: list[dict] = [
             {"type": "section", "text": {"type": "mrkdwn", "text": header}},
             {"type": "section", "text": {"type": "mrkdwn", "text": event.summary}},
