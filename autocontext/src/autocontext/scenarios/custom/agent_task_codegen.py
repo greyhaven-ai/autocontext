@@ -43,8 +43,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
     source = textwrap.dedent(f'''\
         from __future__ import annotations
 
-        from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
         from autocontext.execution.judge import LLMJudge
+        from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 
         class {cls_name}(AgentTaskInterface):
@@ -80,13 +80,15 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                 calibration_examples: list[dict] | None = None,
                 pinned_dimensions: list[str] | None = None,
             ) -> AgentTaskResult:
-                def llm_fn(system: str, user: str) -> str:
-                    raise NotImplementedError("llm_fn must be injected at runtime")
+                from autocontext.config import load_settings
+                from autocontext.providers.registry import get_provider
 
+                settings = load_settings()
+                provider = get_provider(settings)
                 judge = LLMJudge(
                     model=self._judge_model,
                     rubric=self._rubric,
-                    llm_fn=llm_fn,
+                    provider=provider,
                 )
                 # Use passed-in context or fall back to class defaults
                 ref_ctx = reference_context or self._reference_context
@@ -143,7 +145,6 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
             ) -> str:
                 if not self._revision_prompt and self._max_rounds <= 1:
                     return output
-                # Default revision: return original (llm_fn must be injected at runtime)
                 return output
     ''')
     return source

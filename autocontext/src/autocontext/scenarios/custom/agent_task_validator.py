@@ -107,6 +107,13 @@ def validate_execution(source: str) -> list[str]:
     """Validate by importing and instantiating the generated class."""
     errors: list[str] = []
 
+    # Reject unresolved llm_fn placeholder — it always fails at runtime (AC-241).
+    if "llm_fn must be injected at runtime" in source:
+        errors.append(
+            "evaluate_output contains unresolved llm_fn placeholder; "
+            "use get_provider(load_settings()) instead"
+        )
+
     with tempfile.TemporaryDirectory() as tmp:
         mod_path = Path(tmp) / "agent_task_mod.py"
         mod_path.write_text(source, encoding="utf-8")
