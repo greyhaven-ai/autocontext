@@ -269,5 +269,5 @@ class TestCreatorIntentValidation:
             ) as mock_intent,
         ):
             with pytest.raises(ValueError, match="intent"):
-                creator.create("Root cause analysis of server crashes")
+                creator.create("Write a concise abstract summarizing a research paper")
             mock_intent.assert_called_once()
