@@ -391,6 +391,140 @@ class ArtifactEditingPipeline(FamilyPipeline):
         )
 
 
+class InvestigationPipeline(FamilyPipeline):
+    """Pipeline for investigation family scenarios."""
+
+    @property
+    def family_name(self) -> str:
+        return "investigation"
+
+    def required_spec_fields(self) -> set[str]:
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "evidence_pool_description",
+            "diagnosis_target",
+            "success_criteria",
+            "actions",
+        }
+
+    def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        errors = _check_required_fields(spec, self.required_spec_fields())
+
+        actions = spec.get("actions")
+        if isinstance(actions, list):
+            if len(actions) == 0:
+                errors.append("actions must not be empty")
+            else:
+                for i, action in enumerate(actions):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{i}] must be a dict")
+                    elif "name" not in action:
+                        errors.append(f"actions[{i}] missing 'name'")
+
+        criteria = spec.get("success_criteria")
+        if isinstance(criteria, list) and len(criteria) == 0:
+            errors.append("success_criteria must not be empty")
+
+        return errors
+
+    def validate_source(self, source: str) -> list[str]:
+        return _check_source_for_class(source, "InvestigationInterface")
+
+    def validate_contract(self, source: str) -> list[str]:
+        return _check_required_methods(
+            source,
+            "InvestigationInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+                "get_evidence_pool",
+                "evaluate_evidence_chain",
+                "evaluate_diagnosis",
+            },
+        )
+
+
+class WorkflowPipeline(FamilyPipeline):
+    """Pipeline for workflow family scenarios."""
+
+    @property
+    def family_name(self) -> str:
+        return "workflow"
+
+    def required_spec_fields(self) -> set[str]:
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "workflow_steps",
+            "success_criteria",
+            "actions",
+        }
+
+    def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        errors = _check_required_fields(spec, self.required_spec_fields())
+
+        workflow_steps = spec.get("workflow_steps")
+        if isinstance(workflow_steps, list):
+            if len(workflow_steps) == 0:
+                errors.append("workflow_steps must not be empty")
+            else:
+                for i, step in enumerate(workflow_steps):
+                    if not isinstance(step, dict):
+                        errors.append(f"workflow_steps[{i}] must be a dict")
+                    elif "name" not in step:
+                        errors.append(f"workflow_steps[{i}] missing 'name'")
+
+        actions = spec.get("actions")
+        if isinstance(actions, list):
+            if len(actions) == 0:
+                errors.append("actions must not be empty")
+            else:
+                for i, action in enumerate(actions):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{i}] must be a dict")
+                    elif "name" not in action:
+                        errors.append(f"actions[{i}] missing 'name'")
+
+        criteria = spec.get("success_criteria")
+        if isinstance(criteria, list) and len(criteria) == 0:
+            errors.append("success_criteria must not be empty")
+
+        return errors
+
+    def validate_source(self, source: str) -> list[str]:
+        return _check_source_for_class(source, "WorkflowInterface")
+
+    def validate_contract(self, source: str) -> list[str]:
+        return _check_required_methods(
+            source,
+            "WorkflowInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+                "get_workflow_steps",
+                "execute_step",
+                "execute_compensation",
+                "get_side_effects",
+                "evaluate_workflow",
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # Built-in pipeline registration
 # ---------------------------------------------------------------------------
@@ -399,6 +533,8 @@ def _register_builtins() -> None:
     register_pipeline(AgentTaskPipeline())
     register_pipeline(SimulationPipeline())
     register_pipeline(ArtifactEditingPipeline())
+    register_pipeline(InvestigationPipeline())
+    register_pipeline(WorkflowPipeline())
 
 
 _register_builtins()

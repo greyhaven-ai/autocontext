@@ -156,7 +156,7 @@ class TestUnsupportedFamilyError:
     def test_no_silent_collapse(self) -> None:
         """Core requirement from AC-247 comment: no silent collapse into agent_task."""
         with pytest.raises(UnsupportedFamilyError):
-            get_pipeline("investigation")
+            get_pipeline("mystery_family")
 
 
 # ---------------------------------------------------------------------------
