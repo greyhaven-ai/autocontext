@@ -11,7 +11,7 @@ import type { AgentTaskInterface } from "../types/index.js";
 import type { LLMProvider } from "../types/index.js";
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { designAgentTask } from "./agent-task-designer.js";
-import { validateSpec } from "./agent-task-validator.js";
+import { validateIntent, validateSpec } from "./agent-task-validator.js";
 import { createAgentTask } from "./agent-task-factory.js";
 
 export interface AgentTaskCreatorOpts {
@@ -87,6 +87,11 @@ export class AgentTaskCreator {
     const errors = validateSpec(spec);
     if (errors.length > 0) {
       throw new Error(`spec validation failed: ${errors.join("; ")}`);
+    }
+
+    const intentErrors = validateIntent(description, spec);
+    if (intentErrors.length > 0) {
+      throw new Error(`intent validation failed: ${intentErrors.join("; ")}`);
     }
 
     // 3. Derive name and create task

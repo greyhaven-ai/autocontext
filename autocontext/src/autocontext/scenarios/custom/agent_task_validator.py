@@ -73,6 +73,13 @@ _TEXT_INTENT_SIGNALS = frozenset({
     "narrative", "poem", "haiku", "report", "documentation", "recipe",
 })
 
+# Signals that the description is asking for a structured JSON-shaped output.
+_JSON_INTENT_SIGNALS = frozenset({
+    "json", "json schema", "structured output", "structured response",
+    "return a schema", "return schema", "fields", "field names", "key value",
+    "key-value", "object with", "array of", "machine readable", "machine-readable",
+})
+
 _DATA_REFERENCE_PATTERNS = [
     "you will be provided with",
     "given the following data",
@@ -163,6 +170,7 @@ def validate_intent(
     desc_signals_code = any(sig in desc_lower for sig in _CODE_INTENT_SIGNALS)
     desc_signals_text = any(sig in desc_lower for sig in _TEXT_INTENT_SIGNALS)
     desc_signals_code_eval = any(sig in desc_lower for sig in _CODE_EVALUATION_SIGNALS)
+    desc_signals_json = any(sig in desc_lower for sig in _JSON_INTENT_SIGNALS)
 
     # Only flag code→free_text mismatch when the description asks for code
     # *generation*, not code *evaluation/review* (which produces text output).
@@ -175,6 +183,11 @@ def validate_intent(
         errors.append(
             "format mismatch: description implies text output but "
             "spec uses output_format='code'"
+        )
+    if desc_signals_json and spec.output_format != "json_schema":
+        errors.append(
+            "format mismatch: description implies structured JSON output but "
+            f"spec uses output_format='{spec.output_format}'"
         )
 
     return errors

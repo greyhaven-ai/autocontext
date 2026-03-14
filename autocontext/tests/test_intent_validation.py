@@ -133,6 +133,31 @@ class TestOutputFormatCompatibility:
         assert len(errors) > 0
         assert any("format" in e.lower() for e in errors)
 
+    def test_json_schema_for_structured_task(self) -> None:
+        """output_format='json_schema' is valid when the task explicitly asks for JSON."""
+        errors = validate_intent(
+            user_description="Return a JSON schema with fields severity, owner, and next_steps",
+            spec=AgentTaskSpec(
+                task_prompt="Summarize the incident as a JSON object with severity, owner, and next_steps fields.",
+                judge_rubric="Score schema completeness, field accuracy, and machine readability.",
+                output_format="json_schema",
+            ),
+        )
+        assert errors == []
+
+    def test_free_text_for_structured_task(self) -> None:
+        """A task that explicitly asks for JSON should reject free_text output."""
+        errors = validate_intent(
+            user_description="Produce a machine-readable JSON response with fields title and score",
+            spec=AgentTaskSpec(
+                task_prompt="Write a short summary of the result and mention the score.",
+                judge_rubric="Score clarity and coverage.",
+                output_format="free_text",
+            ),
+        )
+        assert len(errors) > 0
+        assert any("json" in e.lower() or "structured" in e.lower() for e in errors)
+
 
 # ---------------------------------------------------------------------------
 # Name coherence (derived name vs spec content)

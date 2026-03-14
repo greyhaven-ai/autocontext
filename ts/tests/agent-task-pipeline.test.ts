@@ -11,7 +11,7 @@ import {
   SPEC_START,
   SPEC_END,
 } from "../src/scenarios/agent-task-designer.js";
-import { validateSpec } from "../src/scenarios/agent-task-validator.js";
+import { validateIntent, validateSpec } from "../src/scenarios/agent-task-validator.js";
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
@@ -135,6 +135,19 @@ describe("Validator", () => {
     const errors = validateSpec({ ...SAMPLE_SPEC, judgeRubric: "" });
     expect(errors.length).toBeGreaterThan(0);
     expect(errors.some((e) => e.includes("judge_rubric") || e.includes("judgeRubric"))).toBe(true);
+  });
+
+  it("flags free_text when the description explicitly requests JSON", () => {
+    const errors = validateIntent(
+      "Produce a machine-readable JSON response with fields title and score",
+      {
+        ...SAMPLE_SPEC,
+        taskPrompt: "Write a short summary of the result and mention the score.",
+        judgeRubric: "Score clarity and coverage.",
+        outputFormat: "free_text",
+      },
+    );
+    expect(errors.some((e) => e.includes("structured JSON output"))).toBe(true);
   });
 });
 
@@ -304,6 +317,21 @@ describe("AgentTaskCreator", () => {
     expect(specData.reference_context).toBe("RLM = Recursive Language Model");
     expect(specData.reference_sources).toEqual(["https://example.com/rlm"]);
     expect(specData.required_concepts).toEqual(["context folding"]);
+  });
+
+  it("rejects drifted specs before task creation", async () => {
+    const driftedSpec: AgentTaskSpec = {
+      ...SAMPLE_SPEC,
+      taskPrompt: "Write a detailed recipe for chocolate cake.",
+      judgeRubric: "Evaluate recipe completeness and presentation.",
+    };
+    const provider = makeMockProvider(mockLlmResponse(driftedSpec));
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-drift-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    await expect(
+      creator.create("Root cause analysis of server crashes with red herrings"),
+    ).rejects.toThrow("intent validation failed");
   });
 });
 
