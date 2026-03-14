@@ -64,6 +64,11 @@ def get_family_by_marker(marker: str) -> ScenarioFamily:
     raise KeyError(f"Unknown scenario type marker '{marker}'")
 
 
+def get_family_marker(name: str) -> str:
+    """Return the persisted scenario_type marker for a family."""
+    return get_family(name).scenario_type_marker
+
+
 def detect_family(scenario: Any) -> ScenarioFamily | None:
     """Detect which family a scenario instance belongs to.
 

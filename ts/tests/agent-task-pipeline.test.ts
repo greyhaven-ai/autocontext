@@ -15,6 +15,7 @@ import {
   SIM_SPEC_END,
   SIM_SPEC_START,
 } from "../src/scenarios/simulation-designer.js";
+import { getScenarioTypeMarker } from "../src/scenarios/families.js";
 import { validateIntent, validateSpec } from "../src/scenarios/agent-task-validator.js";
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
@@ -309,7 +310,7 @@ describe("AgentTaskCreator", () => {
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "agent_task_spec.json"))).toBe(true);
     expect(existsSync(join(scenarioDir, "scenario_type.txt"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe("agent_task");
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("agent_task"));
 
     const specData = JSON.parse(readFileSync(join(scenarioDir, "agent_task_spec.json"), "utf-8"));
     expect(specData.task_prompt).toBe(SAMPLE_SPEC.taskPrompt);
@@ -378,7 +379,7 @@ describe("AgentTaskCreator", () => {
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe("simulation");
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("simulation"));
   });
 });
 

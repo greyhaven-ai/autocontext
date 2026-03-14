@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
+import { getScenarioTypeMarker } from "./families.js";
 import type { SimulationSpec } from "./simulation-spec.js";
 import { designSimulation } from "./simulation-designer.js";
 
@@ -173,13 +174,13 @@ export class SimulationCreator {
     if (!existsSync(scenarioDir)) mkdirSync(scenarioDir, { recursive: true });
 
     writeFileSync(join(scenarioDir, "scenario.py"), generateScenarioSource(spec, name), "utf-8");
-    writeFileSync(join(scenarioDir, "scenario_type.txt"), "simulation", "utf-8");
+    writeFileSync(join(scenarioDir, "scenario_type.txt"), getScenarioTypeMarker("simulation"), "utf-8");
     writeFileSync(
       join(scenarioDir, "spec.json"),
       JSON.stringify(
         {
           name,
-          scenario_type: "simulation",
+          scenario_type: getScenarioTypeMarker("simulation"),
           description: spec.description,
           environment_description: spec.environmentDescription,
           initial_state_description: spec.initialStateDescription,

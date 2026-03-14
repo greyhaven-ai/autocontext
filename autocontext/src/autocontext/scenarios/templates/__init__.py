@@ -13,6 +13,7 @@ from autocontext.execution.judge import LLMJudge
 from autocontext.providers.registry import get_provider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+from autocontext.scenarios.families import get_family_marker
 
 TEMPLATE_DIR = Path(__file__).parent
 
@@ -283,7 +284,7 @@ class TemplateLoader:
         self._generate_agent_task_module(TemplateSpec.from_dict(spec_data), target_dir)
 
         # Write scenario_type.txt marker
-        (target_dir / "scenario_type.txt").write_text("agent_task", encoding="utf-8")
+        (target_dir / "scenario_type.txt").write_text(get_family_marker("agent_task"), encoding="utf-8")
 
         return target_dir
 

@@ -23,6 +23,7 @@ from autocontext.scenarios.custom.simulation_creator import (
     SimulationCreator,
     should_use_simulation_family,
 )
+from autocontext.scenarios.families import get_family_marker
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ class AgentTaskCreator:
 
         # Mark as agent_task type
         type_file = scenario_dir / "scenario_type.txt"
-        type_file.write_text("agent_task", encoding="utf-8")
+        type_file.write_text(get_family_marker("agent_task"), encoding="utf-8")
 
         # 7. Load and register
         cls = self._load_agent_task(custom_dir, name)

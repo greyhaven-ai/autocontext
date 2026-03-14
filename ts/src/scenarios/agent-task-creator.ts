@@ -13,6 +13,7 @@ import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { designAgentTask } from "./agent-task-designer.js";
 import { validateIntent, validateSpec } from "./agent-task-validator.js";
 import { createAgentTask } from "./agent-task-factory.js";
+import { getScenarioTypeMarker } from "./families.js";
 import {
   type SimulationScenarioHandle,
   shouldUseSimulationFamily,
@@ -145,7 +146,7 @@ export class AgentTaskCreator {
       JSON.stringify(specData, null, 2),
       "utf-8",
     );
-    writeFileSync(join(scenarioDir, "scenario_type.txt"), "agent_task", "utf-8");
+    writeFileSync(join(scenarioDir, "scenario_type.txt"), getScenarioTypeMarker("agent_task"), "utf-8");
 
     return task;
   }

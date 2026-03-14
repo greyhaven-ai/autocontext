@@ -17,3 +17,4 @@ export { SimulationCreator, shouldUseSimulationFamily } from "./simulation-creat
 export type { SimulationCreatorOpts, SimulationScenarioHandle } from "./simulation-creator.js";
 export type { SimulationSpec, SimulationActionSpec } from "./simulation-spec.js";
 export { SimulationSpecSchema, SimulationActionSpecSchema, parseRawSimulationSpec } from "./simulation-spec.js";
+export { getScenarioTypeMarker, SCENARIO_TYPE_MARKERS } from "./families.js";

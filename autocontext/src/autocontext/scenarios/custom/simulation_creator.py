@@ -11,6 +11,7 @@ from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.simulation_codegen import generate_simulation_class
 from autocontext.scenarios.custom.simulation_designer import design_simulation
 from autocontext.scenarios.custom.simulation_spec import SimulationSpec
+from autocontext.scenarios.families import get_family_marker
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class SimulationCreator:
             json.dumps(
                 {
                     "name": name,
-                    "scenario_type": "simulation",
+                    "scenario_type": get_family_marker("simulation"),
                     "description": spec.description,
                     "environment_description": spec.environment_description,
                     "initial_state_description": spec.initial_state_description,
@@ -83,7 +84,7 @@ class SimulationCreator:
             ),
             encoding="utf-8",
         )
-        (scenario_dir / "scenario_type.txt").write_text("simulation", encoding="utf-8")
+        (scenario_dir / "scenario_type.txt").write_text(get_family_marker("simulation"), encoding="utf-8")
 
         cls = load_custom_scenario(custom_dir, name)
         from autocontext.scenarios import SCENARIO_REGISTRY
