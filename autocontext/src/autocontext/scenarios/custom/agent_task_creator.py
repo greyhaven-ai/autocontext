@@ -18,11 +18,12 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_spec,
     validate_syntax,
 )
-from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
-from autocontext.scenarios.custom.simulation_creator import (
-    SimulationCreator,
-    should_use_simulation_family,
+from autocontext.scenarios.custom.family_classifier import (
+    classify_scenario_family,
+    route_to_family,
 )
+from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
+from autocontext.scenarios.custom.simulation_creator import SimulationCreator
 from autocontext.scenarios.families import get_family_marker
 
 logger = logging.getLogger(__name__)
@@ -71,9 +72,15 @@ class AgentTaskCreator:
             An instance of the generated scenario family implementation.
         """
         name = self.derive_name(description)
-        if should_use_simulation_family(description):
+        classification = classify_scenario_family(description)
+        family = route_to_family(classification)
+        if family.name == "simulation":
             logger.info("routing description to simulation creator")
             return SimulationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name != "agent_task":
+            raise ValueError(
+                f"Scenario family '{family.name}' is not yet supported for custom scaffolding"
+            )
 
         # 1. Design
         logger.info("designing agent task from description")

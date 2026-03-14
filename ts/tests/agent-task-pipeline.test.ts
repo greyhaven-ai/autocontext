@@ -15,6 +15,7 @@ import {
   SIM_SPEC_END,
   SIM_SPEC_START,
 } from "../src/scenarios/simulation-designer.js";
+import { classifyScenarioFamily } from "../src/scenarios/family-classifier.js";
 import { getScenarioTypeMarker } from "../src/scenarios/families.js";
 import { validateIntent, validateSpec } from "../src/scenarios/agent-task-validator.js";
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
@@ -363,7 +364,7 @@ describe("AgentTaskCreator", () => {
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
     await expect(
-      creator.create("Root cause analysis of server crashes with red herrings"),
+      creator.create("Write a concise abstract summarizing a research paper"),
     ).rejects.toThrow("intent validation failed");
   });
 
@@ -380,6 +381,17 @@ describe("AgentTaskCreator", () => {
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("simulation"));
+  });
+
+  it("rejects classified-but-unsupported game families", async () => {
+    const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-game-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    expect(classifyScenarioFamily("Create a competitive two-player board game").familyName).toBe("game");
+    await expect(
+      creator.create("Create a competitive two-player board game"),
+    ).rejects.toThrow("not yet supported for custom scaffolding");
   });
 });
 

@@ -1,6 +1,7 @@
-export type ScenarioFamilyName = "agent_task" | "simulation";
+export type ScenarioFamilyName = "game" | "agent_task" | "simulation";
 
 export const SCENARIO_TYPE_MARKERS: Record<ScenarioFamilyName, string> = {
+  game: "parametric",
   agent_task: "agent_task",
   simulation: "simulation",
 };

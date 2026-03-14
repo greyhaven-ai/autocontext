@@ -408,6 +408,20 @@ class TestAgentTaskCreator:
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 
+    def test_rejects_classified_but_unsupported_game_families(self) -> None:
+        response_text = _mock_llm_response(SAMPLE_SPEC)
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            with pytest.raises(ValueError, match="not yet supported for custom scaffolding"):
+                creator.create("Create a competitive two-player board game tournament")
+
     def test_end_to_end_with_reference_context(self) -> None:
         spec = AgentTaskSpec(
             task_prompt="Write about RLMs",

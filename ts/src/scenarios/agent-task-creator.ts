@@ -13,10 +13,10 @@ import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { designAgentTask } from "./agent-task-designer.js";
 import { validateIntent, validateSpec } from "./agent-task-validator.js";
 import { createAgentTask } from "./agent-task-factory.js";
+import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
 import { getScenarioTypeMarker } from "./families.js";
 import {
   type SimulationScenarioHandle,
-  shouldUseSimulationFamily,
   SimulationCreator,
 } from "./simulation-creator.js";
 
@@ -82,12 +82,16 @@ export class AgentTaskCreator {
    */
   async create(description: string): Promise<CreatedScenario> {
     const name = this.deriveName(description);
-    if (shouldUseSimulationFamily(description)) {
+    const family = routeToFamily(classifyScenarioFamily(description));
+    if (family === "simulation") {
       return new SimulationCreator({
         provider: this.provider,
         model: this.model,
         knowledgeRoot: this.knowledgeRoot,
       }).create(description, name);
+    }
+    if (family !== "agent_task") {
+      throw new Error(`Scenario family '${family}' is not yet supported for custom scaffolding`);
     }
 
     // 1. Design spec via LLM

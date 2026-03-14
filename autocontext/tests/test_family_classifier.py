@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import pytest
 
+from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.family_classifier import (
+    _DEFAULT_FAMILY_NAME,
     FamilyCandidate,
     FamilyClassification,
     LowConfidenceError,
     classify_scenario_family,
     route_to_family,
 )
-from autocontext.scenarios.families import ScenarioFamily
+from autocontext.scenarios.families import FAMILY_REGISTRY, ScenarioFamily, list_families, register_family
 
 # ---------------------------------------------------------------------------
 # FamilyCandidate / FamilyClassification data models
@@ -203,9 +205,25 @@ class TestClassificationAlternatives:
             "Create a scenario for testing API orchestration with rollback"
         )
         all_names = {result.family_name} | {a.family_name for a in result.alternatives}
-        assert "game" in all_names
-        assert "agent_task" in all_names
-        assert "simulation" in all_names
+        assert all_names == {family.name for family in list_families()}
+
+    def test_registered_families_drive_low_signal_alternatives(self) -> None:
+        temp_family = ScenarioFamily(
+            name="_test_family",
+            description="Temporary test family",
+            interface_class=ScenarioInterface,
+            evaluation_mode="custom",
+            output_modes=["free_text"],
+            scenario_type_marker="_test_family",
+        )
+        register_family(temp_family)
+        try:
+            result = classify_scenario_family("do something unusual")
+            all_names = {result.family_name} | {a.family_name for a in result.alternatives}
+            assert "_test_family" in all_names
+            assert result.family_name == _DEFAULT_FAMILY_NAME
+        finally:
+            FAMILY_REGISTRY.pop("_test_family", None)
 
 
 # ---------------------------------------------------------------------------

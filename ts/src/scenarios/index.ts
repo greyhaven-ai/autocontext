@@ -6,6 +6,8 @@ export { createAgentTask } from "./agent-task-factory.js";
 export type { AgentTaskFactoryOpts } from "./agent-task-factory.js";
 export { AgentTaskCreator } from "./agent-task-creator.js";
 export type { AgentTaskCreatorOpts, CreatedScenario } from "./agent-task-creator.js";
+export { classifyScenarioFamily, routeToFamily, LowConfidenceError } from "./family-classifier.js";
+export type { FamilyCandidate, FamilyClassification } from "./family-classifier.js";
 export {
   SIM_SPEC_START,
   SIM_SPEC_END,

@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from autocontext.scenarios.families import ScenarioFamily, get_family
+from autocontext.scenarios.families import ScenarioFamily, get_family, list_families
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -181,6 +181,14 @@ _GAME_SIGNALS: dict[str, float] = {
     "player": 1.0,
 }
 
+_FAMILY_SIGNAL_GROUPS: dict[str, dict[str, float]] = {
+    "simulation": _SIMULATION_SIGNALS,
+    "agent_task": _AGENT_TASK_SIGNALS,
+    "game": _GAME_SIGNALS,
+}
+
+_DEFAULT_FAMILY_NAME = "agent_task"
+
 
 def _extract_words(text: str) -> list[str]:
     """Extract lowercase words, excluding stop words."""
@@ -223,33 +231,39 @@ def classify_scenario_family(description: str) -> FamilyClassification:
         raise ValueError("description must be non-empty")
 
     text_lower = description.lower()
+    registered_families = [family.name for family in list_families()]
+    if not registered_families:
+        raise ValueError("no scenario families are registered")
 
-    sim_score, sim_matched = _score_signals(text_lower, _SIMULATION_SIGNALS)
-    task_score, task_matched = _score_signals(text_lower, _AGENT_TASK_SIGNALS)
-    game_score, game_matched = _score_signals(text_lower, _GAME_SIGNALS)
-
-    raw_scores = {
-        "simulation": sim_score,
-        "agent_task": task_score,
-        "game": game_score,
-    }
-    matched_signals = {
-        "simulation": sim_matched,
-        "agent_task": task_matched,
-        "game": game_matched,
-    }
+    raw_scores: dict[str, float] = {}
+    matched_signals: dict[str, list[str]] = {}
+    for family_name in registered_families:
+        score, matched = _score_signals(text_lower, _FAMILY_SIGNAL_GROUPS.get(family_name, {}))
+        raw_scores[family_name] = score
+        matched_signals[family_name] = matched
 
     total = sum(raw_scores.values())
     if total == 0:
-        # No signals matched — default to agent_task with low confidence
+        # No signals matched — default to agent_task with low confidence if available.
+        default_family = (
+            _DEFAULT_FAMILY_NAME
+            if _DEFAULT_FAMILY_NAME in registered_families
+            else registered_families[0]
+        )
+        alternatives = [
+            FamilyCandidate(
+                family_name=family_name,
+                confidence=0.1,
+                rationale=f"No {family_name} signals",
+            )
+            for family_name in registered_families
+            if family_name != default_family
+        ]
         return FamilyClassification(
-            family_name="agent_task",
+            family_name=default_family,
             confidence=0.2,
-            rationale="No strong signals detected; defaulting to agent_task",
-            alternatives=[
-                FamilyCandidate(family_name="simulation", confidence=0.1, rationale="No simulation signals"),
-                FamilyCandidate(family_name="game", confidence=0.1, rationale="No game signals"),
-            ],
+            rationale=f"No strong signals detected; defaulting to {default_family}",
+            alternatives=alternatives,
         )
 
     # Normalize to confidences
