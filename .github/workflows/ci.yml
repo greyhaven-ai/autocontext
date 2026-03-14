@@ -16,12 +16,12 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install
@@ -39,12 +39,12 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install
@@ -53,7 +53,7 @@ jobs:
         run: uv run pytest --cov=src/autocontext --cov-report=html:htmlcov -m "not live"
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: autocontext/htmlcov/
@@ -66,12 +66,12 @@ jobs:
       run:
         working-directory: autocontext
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install
@@ -103,12 +103,12 @@ jobs:
       AUTOCONTEXT_PRIMEINTELLECT_API_KEY: ${{ secrets.AUTOCONTEXT_PRIMEINTELLECT_API_KEY }}
       AUTOCONTEXT_ANTHROPIC_API_KEY: ${{ secrets.AUTOCONTEXT_ANTHROPIC_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install
