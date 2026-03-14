@@ -260,7 +260,7 @@ class TestCreatorIntentValidation:
                 return_value=bad_spec,
             ),
             patch(
-                "autocontext.scenarios.custom.agent_task_creator.validate_spec",
+                "autocontext.scenarios.custom.agent_task_creator.validate_for_family",
                 return_value=[],
             ),
             patch(
