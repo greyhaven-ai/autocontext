@@ -3,9 +3,14 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
 
 from autocontext.scenarios.base import ScenarioInterface
+from autocontext.scenarios.custom.family_pipeline import (
+    validate_for_family,
+    validate_source_for_family,
+)
 from autocontext.scenarios.custom.loader import load_custom_scenario
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.simulation_codegen import generate_simulation_class
@@ -27,19 +32,7 @@ def should_use_simulation_family(description: str) -> bool:
 
 
 def validate_simulation_spec(spec: SimulationSpec) -> list[str]:
-    errors: list[str] = []
-    if not spec.description.strip():
-        errors.append("description is required")
-    if not spec.environment_description.strip():
-        errors.append("environment_description is required")
-    if len(spec.actions) < 2:
-        errors.append("simulation must define at least two actions")
-    names = [action.name for action in spec.actions]
-    if len(names) != len(set(names)):
-        errors.append("action names must be unique")
-    if spec.max_steps <= 0:
-        errors.append("max_steps must be positive")
-    return errors
+    return validate_for_family("simulation", asdict(spec))
 
 
 class SimulationCreator:
@@ -57,7 +50,12 @@ class SimulationCreator:
         scenario_dir = custom_dir / name
         scenario_dir.mkdir(parents=True, exist_ok=True)
 
-        (scenario_dir / "scenario.py").write_text(generate_simulation_class(spec, name=name), encoding="utf-8")
+        source = generate_simulation_class(spec, name=name)
+        source_errors = validate_source_for_family("simulation", source)
+        if source_errors:
+            raise ValueError(f"simulation source validation failed: {'; '.join(source_errors)}")
+
+        (scenario_dir / "scenario.py").write_text(source, encoding="utf-8")
         (scenario_dir / "spec.json").write_text(
             json.dumps(
                 {

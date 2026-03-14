@@ -16,11 +16,13 @@ import {
   SIM_SPEC_START,
 } from "../src/scenarios/simulation-designer.js";
 import { classifyScenarioFamily } from "../src/scenarios/family-classifier.js";
+import { UnsupportedFamilyError, validateForFamily } from "../src/scenarios/family-pipeline.js";
 import { getScenarioTypeMarker } from "../src/scenarios/families.js";
 import { validateIntent, validateSpec } from "../src/scenarios/agent-task-validator.js";
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
+import type { SimulationSpec } from "../src/scenarios/simulation-spec.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 import { AgentTaskResultSchema } from "../src/types/index.js";
 
@@ -182,6 +184,44 @@ describe("Validator", () => {
       },
     );
     expect(errors.some((e) => e.includes("structured JSON output"))).toBe(true);
+  });
+});
+
+describe("FamilyPipeline", () => {
+  it("validates agent_task specs through the family pipeline", () => {
+    expect(validateForFamily("agent_task", SAMPLE_SPEC)).toEqual([]);
+  });
+
+  it("validates simulation specs through the family pipeline", () => {
+    const spec: SimulationSpec = {
+      description: "Recover a multi-step API workflow.",
+      environmentDescription: "Mock API orchestration environment.",
+      initialStateDescription: "No calls completed.",
+      successCriteria: ["all required actions complete", "invalid order is recovered"],
+      failureModes: ["dependency mismatch", "partial side effects"],
+      maxSteps: 6,
+      actions: [
+        {
+          name: "book_flight",
+          description: "Reserve a flight.",
+          parameters: { flight_id: "string" },
+          preconditions: [],
+          effects: ["flight_reserved"],
+        },
+        {
+          name: "book_hotel",
+          description: "Reserve a hotel.",
+          parameters: { hotel_id: "string" },
+          preconditions: ["book_flight"],
+          effects: ["hotel_reserved"],
+        },
+      ],
+    };
+    expect(validateForFamily("simulation", spec)).toEqual([]);
+  });
+
+  it("rejects unsupported families instead of collapsing silently", () => {
+    expect(() => validateForFamily("game", SAMPLE_SPEC)).toThrow(UnsupportedFamilyError);
   });
 });
 

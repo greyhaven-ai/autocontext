@@ -8,6 +8,8 @@ export { AgentTaskCreator } from "./agent-task-creator.js";
 export type { AgentTaskCreatorOpts, CreatedScenario } from "./agent-task-creator.js";
 export { classifyScenarioFamily, routeToFamily, LowConfidenceError } from "./family-classifier.js";
 export type { FamilyCandidate, FamilyClassification } from "./family-classifier.js";
+export { getPipeline, hasPipeline, UnsupportedFamilyError, validateForFamily } from "./family-pipeline.js";
+export type { FamilyPipeline } from "./family-pipeline.js";
 export {
   SIM_SPEC_START,
   SIM_SPEC_END,

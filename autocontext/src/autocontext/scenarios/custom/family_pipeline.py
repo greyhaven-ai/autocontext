@@ -166,6 +166,49 @@ def _check_source_for_class(source: str, base_class_name: str) -> list[str]:
     return errors
 
 
+def _check_required_methods(
+    source: str,
+    base_class_name: str,
+    required_methods: set[str],
+) -> list[str]:
+    """Check that a subclass of the base class defines all required methods."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return [f"syntax error at line {exc.lineno}: {exc.msg}"]
+
+    subclasses: list[ast.ClassDef] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for base in node.bases:
+            base_name = ""
+            if isinstance(base, ast.Name):
+                base_name = base.id
+            elif isinstance(base, ast.Attribute):
+                base_name = base.attr
+            if base_name == base_class_name:
+                subclasses.append(node)
+                break
+
+    if not subclasses:
+        return []
+
+    for subclass in subclasses:
+        implemented = {
+            node.name
+            for node in subclass.body
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        }
+        missing = sorted(required_methods - implemented)
+        if not missing:
+            return []
+
+    return [
+        f"generated {base_class_name} subclass is missing required methods: {', '.join(missing)}"
+    ]
+
+
 class AgentTaskPipeline(FamilyPipeline):
     """Pipeline for agent_task family scenarios."""
 
@@ -177,19 +220,34 @@ class AgentTaskPipeline(FamilyPipeline):
         return {"task_prompt", "judge_rubric"}
 
     def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
         errors = _check_required_fields(spec, self.required_spec_fields())
-        output_format = spec.get("output_format")
-        if output_format is not None and output_format not in _VALID_OUTPUT_FORMATS:
-            errors.append(
-                f"output_format '{output_format}' not in {_VALID_OUTPUT_FORMATS}"
-            )
-        return errors
+        if errors:
+            return errors
+
+        try:
+            spec_obj = AgentTaskSpec(**spec)
+        except TypeError as exc:
+            return [f"invalid agent_task spec: {exc}"]
+        return validate_spec(spec_obj)
 
     def validate_source(self, source: str) -> list[str]:
         return _check_source_for_class(source, "AgentTaskInterface")
 
     def validate_contract(self, source: str) -> list[str]:
-        return []
+        return _check_required_methods(
+            source,
+            "AgentTaskInterface",
+            {
+                "get_task_prompt",
+                "evaluate_output",
+                "get_rubric",
+                "initial_state",
+                "describe_task",
+            },
+        )
 
 
 class SimulationPipeline(FamilyPipeline):
@@ -200,25 +258,35 @@ class SimulationPipeline(FamilyPipeline):
         return "simulation"
 
     def required_spec_fields(self) -> set[str]:
-        return {"environment_name", "environment_description", "available_actions", "success_criteria", "rubric"}
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "success_criteria",
+            "actions",
+        }
 
     def validate_spec(self, spec: dict[str, Any]) -> list[str]:
         errors = _check_required_fields(spec, self.required_spec_fields())
 
-        actions = spec.get("available_actions")
+        actions = spec.get("actions")
         if isinstance(actions, list):
             if len(actions) == 0:
-                errors.append("available_actions must not be empty")
+                errors.append("actions must not be empty")
             else:
                 for i, action in enumerate(actions):
                     if not isinstance(action, dict):
-                        errors.append(f"available_actions[{i}] must be a dict")
+                        errors.append(f"actions[{i}] must be a dict")
                     elif "name" not in action:
-                        errors.append(f"available_actions[{i}] missing 'name'")
+                        errors.append(f"actions[{i}] missing 'name'")
 
         criteria = spec.get("success_criteria")
         if isinstance(criteria, list) and len(criteria) == 0:
             errors.append("success_criteria must not be empty")
+
+        max_steps = spec.get("max_steps")
+        if max_steps is not None and (not isinstance(max_steps, int) or max_steps <= 0):
+            errors.append("max_steps must be a positive integer")
 
         return errors
 
@@ -226,7 +294,20 @@ class SimulationPipeline(FamilyPipeline):
         return _check_source_for_class(source, "SimulationInterface")
 
     def validate_contract(self, source: str) -> list[str]:
-        return []
+        return _check_required_methods(
+            source,
+            "SimulationInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+            },
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import logging
 import re
 import sys
 from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
 
 from autocontext.scenarios.agent_task import AgentTaskInterface
@@ -15,12 +16,14 @@ from autocontext.scenarios.custom.agent_task_designer import design_agent_task
 from autocontext.scenarios.custom.agent_task_validator import (
     validate_execution,
     validate_intent,
-    validate_spec,
-    validate_syntax,
 )
 from autocontext.scenarios.custom.family_classifier import (
     classify_scenario_family,
     route_to_family,
+)
+from autocontext.scenarios.custom.family_pipeline import (
+    validate_for_family,
+    validate_source_for_family,
 )
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.simulation_creator import SimulationCreator
@@ -87,7 +90,7 @@ class AgentTaskCreator:
         spec = design_agent_task(description, self.llm_fn)
 
         # 2. Validate spec
-        spec_errors = validate_spec(spec)
+        spec_errors = validate_for_family("agent_task", asdict(spec))
         if spec_errors:
             raise ValueError(f"spec validation failed: {'; '.join(spec_errors)}")
 
@@ -100,10 +103,10 @@ class AgentTaskCreator:
         logger.info("generating code for agent task '%s'", name)
         source = generate_agent_task_class(spec, name=name)
 
-        # 4. Validate syntax
-        syntax_errors = validate_syntax(source)
-        if syntax_errors:
-            raise ValueError(f"syntax validation failed: {'; '.join(syntax_errors)}")
+        # 4. Validate generated source through the family pipeline
+        source_errors = validate_source_for_family("agent_task", source)
+        if source_errors:
+            raise ValueError(f"source validation failed: {'; '.join(source_errors)}")
 
         # 5. Validate execution
         exec_errors = validate_execution(source)

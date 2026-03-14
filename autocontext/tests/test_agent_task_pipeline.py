@@ -457,6 +457,44 @@ class TestAgentTaskCreator:
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 
+    def test_agent_task_creation_uses_family_pipeline_spec_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        response_text = _mock_llm_response(SAMPLE_SPEC)
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        monkeypatch.setattr(
+            "autocontext.scenarios.custom.agent_task_creator.validate_for_family",
+            lambda family_name, spec: ["pipeline rejected spec"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            with pytest.raises(ValueError, match="pipeline rejected spec"):
+                creator.create("Write a haiku about testing software")
+
+    def test_simulation_creation_uses_family_pipeline_source_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        response_text = _mock_simulation_response()
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        monkeypatch.setattr(
+            "autocontext.scenarios.custom.simulation_creator.validate_source_for_family",
+            lambda family_name, source: ["pipeline rejected simulation source"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            with pytest.raises(ValueError, match="pipeline rejected simulation source"):
+                creator.create("Build a stateful API orchestration workflow with rollback")
+
 
 class TestSampleInputWiring:
     def test_sample_input_embedded_in_prompt(self) -> None:

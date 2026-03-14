@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
+import { validateForFamily } from "./family-pipeline.js";
 import { getScenarioTypeMarker } from "./families.js";
 import type { SimulationSpec } from "./simulation-spec.js";
 import { designSimulation } from "./simulation-designer.js";
@@ -34,15 +35,6 @@ export function shouldUseSimulationFamily(description: string): boolean {
     "evidence",
     "side effect",
   ].some((keyword) => lowered.includes(keyword));
-}
-
-function validateSimulationSpec(spec: SimulationSpec): string[] {
-  const errors: string[] = [];
-  if (spec.actions.length < 2) errors.push("simulation must define at least two actions");
-  const names = spec.actions.map((action) => action.name);
-  if (new Set(names).size !== names.length) errors.push("action names must be unique");
-  if (spec.maxSteps <= 0) errors.push("maxSteps must be positive");
-  return errors;
 }
 
 function className(name: string): string {
@@ -164,7 +156,7 @@ export class SimulationCreator {
       return result.text;
     };
     const spec = await designSimulation(description, llmFn);
-    const errors = validateSimulationSpec(spec);
+    const errors = validateForFamily("simulation", spec);
     if (errors.length > 0) {
       throw new Error(`simulation spec validation failed: ${errors.join("; ")}`);
     }

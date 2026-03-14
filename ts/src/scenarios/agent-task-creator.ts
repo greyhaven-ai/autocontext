@@ -11,9 +11,10 @@ import type { AgentTaskInterface } from "../types/index.js";
 import type { LLMProvider } from "../types/index.js";
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { designAgentTask } from "./agent-task-designer.js";
-import { validateIntent, validateSpec } from "./agent-task-validator.js";
+import { validateIntent } from "./agent-task-validator.js";
 import { createAgentTask } from "./agent-task-factory.js";
 import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
+import { validateForFamily } from "./family-pipeline.js";
 import { getScenarioTypeMarker } from "./families.js";
 import {
   type SimulationScenarioHandle,
@@ -107,7 +108,7 @@ export class AgentTaskCreator {
     const spec = await designAgentTask(description, llmFn);
 
     // 2. Validate spec
-    const errors = validateSpec(spec);
+    const errors = validateForFamily("agent_task", spec);
     if (errors.length > 0) {
       throw new Error(`spec validation failed: ${errors.join("; ")}`);
     }

@@ -222,76 +222,90 @@ class TestAgentTaskSpecValidation:
 class TestSimulationSpecValidation:
     def test_valid_spec_passes(self) -> None:
         spec = {
-            "environment_name": "api_orchestration",
+            "description": "Recover a multi-step API workflow.",
             "environment_description": "Orchestrate API calls across microservices",
-            "available_actions": [
+            "initial_state_description": "No actions have completed yet.",
+            "actions": [
                 {"name": "call_api", "description": "Call an API endpoint", "parameters": {"url": "str"}},
             ],
             "success_criteria": ["all endpoints responding"],
-            "rubric": "Evaluate on completion, ordering, recovery",
+            "failure_modes": ["partial side effects"],
+            "max_steps": 8,
         }
         errors = validate_for_family("simulation", spec)
         assert errors == []
 
-    def test_missing_environment_name(self) -> None:
+    def test_missing_description(self) -> None:
         spec = {
             "environment_description": "desc",
-            "available_actions": [{"name": "a", "description": "b", "parameters": {}}],
+            "initial_state_description": "initial state",
+            "actions": [{"name": "a", "description": "b", "parameters": {}}],
             "success_criteria": ["done"],
-            "rubric": "rubric",
         }
         errors = validate_for_family("simulation", spec)
-        assert any("environment_name" in e for e in errors)
+        assert any("description" in e for e in errors)
 
-    def test_missing_available_actions(self) -> None:
+    def test_missing_actions(self) -> None:
         spec = {
-            "environment_name": "env",
+            "description": "Recover workflow",
             "environment_description": "desc",
+            "initial_state_description": "initial state",
             "success_criteria": ["done"],
-            "rubric": "rubric",
         }
         errors = validate_for_family("simulation", spec)
-        assert any("available_actions" in e for e in errors)
+        assert any("actions" in e for e in errors)
 
     def test_empty_actions_list(self) -> None:
         spec = {
-            "environment_name": "env",
+            "description": "Recover workflow",
             "environment_description": "desc",
-            "available_actions": [],
+            "initial_state_description": "initial state",
+            "actions": [],
             "success_criteria": ["done"],
-            "rubric": "rubric",
         }
         errors = validate_for_family("simulation", spec)
-        assert any("available_actions" in e and "empty" in e for e in errors)
+        assert any("actions" in e and "empty" in e for e in errors)
 
     def test_action_missing_name(self) -> None:
         spec = {
-            "environment_name": "env",
+            "description": "Recover workflow",
             "environment_description": "desc",
-            "available_actions": [{"description": "no name", "parameters": {}}],
+            "initial_state_description": "initial state",
+            "actions": [{"description": "no name", "parameters": {}}],
             "success_criteria": ["done"],
-            "rubric": "rubric",
         }
         errors = validate_for_family("simulation", spec)
         assert any("name" in e for e in errors)
 
     def test_missing_success_criteria(self) -> None:
         spec = {
-            "environment_name": "env",
+            "description": "Recover workflow",
             "environment_description": "desc",
-            "available_actions": [{"name": "a", "description": "b", "parameters": {}}],
-            "rubric": "rubric",
+            "initial_state_description": "initial state",
+            "actions": [{"name": "a", "description": "b", "parameters": {}}],
         }
         errors = validate_for_family("simulation", spec)
         assert any("success_criteria" in e for e in errors)
 
+    def test_invalid_max_steps(self) -> None:
+        spec = {
+            "description": "Recover workflow",
+            "environment_description": "desc",
+            "initial_state_description": "initial state",
+            "actions": [{"name": "a", "description": "b", "parameters": {}}],
+            "success_criteria": ["done"],
+            "max_steps": 0,
+        }
+        errors = validate_for_family("simulation", spec)
+        assert any("max_steps" in e for e in errors)
+
     def test_required_spec_fields(self) -> None:
         pipeline = get_pipeline("simulation")
         fields = pipeline.required_spec_fields()
-        assert "environment_name" in fields
-        assert "available_actions" in fields
+        assert "description" in fields
+        assert "initial_state_description" in fields
+        assert "actions" in fields
         assert "success_criteria" in fields
-        assert "rubric" in fields
 
 
 # ---------------------------------------------------------------------------
@@ -312,11 +326,11 @@ class TestCrossFamilyMismatch:
     def test_simulation_spec_through_agent_task_pipeline(self) -> None:
         """A simulation spec should fail agent_task validation."""
         sim_spec = {
-            "environment_name": "env",
+            "description": "Recover workflow",
             "environment_description": "desc",
-            "available_actions": [{"name": "a", "description": "b", "parameters": {}}],
+            "initial_state_description": "initial state",
+            "actions": [{"name": "a", "description": "b", "parameters": {}}],
             "success_criteria": ["done"],
-            "rubric": "rubric",
         }
         errors = validate_for_family("agent_task", sim_spec)
         assert len(errors) > 0, "Simulation spec should fail agent_task validation"
@@ -360,14 +374,62 @@ class NotATask:
         errors = validate_source_for_family("agent_task", source)
         assert any("syntax" in e.lower() or "parse" in e.lower() for e in errors)
 
+    def test_missing_required_methods(self) -> None:
+        source = '''
+from autocontext.scenarios.agent_task import AgentTaskInterface
+
+class IncompleteTask(AgentTaskInterface):
+    def get_task_prompt(self, state):
+        return "prompt"
+'''
+        errors = validate_source_for_family("agent_task", source)
+        assert any("missing required methods" in e for e in errors)
+
 
 class TestSimulationSourceValidation:
     def test_valid_source(self) -> None:
         source = '''
-from autocontext.scenarios.simulation import SimulationInterface
+from autocontext.scenarios.simulation import (
+    Action,
+    ActionResult,
+    ActionSpec,
+    ActionTrace,
+    EnvironmentSpec,
+    SimulationInterface,
+    SimulationResult,
+)
 
 class MySim(SimulationInterface):
     name = "my_sim"
+    def describe_scenario(self):
+        return "scenario"
+    def describe_environment(self):
+        return EnvironmentSpec(
+            name="my_sim",
+            description="desc",
+            available_actions=[ActionSpec(name="step", description="do step", parameters={})],
+            initial_state_description="start",
+            success_criteria=["done"],
+        )
+    def initial_state(self, seed=None):
+        return {}
+    def get_available_actions(self, state):
+        return self.describe_environment().available_actions
+    def execute_action(self, state, action):
+        return ActionResult(success=True, output="ok", state_changes={}), state
+    def is_terminal(self, state):
+        return True
+    def evaluate_trace(self, trace, final_state):
+        return SimulationResult(
+            score=1.0,
+            reasoning="ok",
+            dimension_scores={},
+            workflow_complete=True,
+            actions_taken=0,
+            actions_successful=0,
+        )
+    def get_rubric(self):
+        return "rubric"
 '''
         errors = validate_source_for_family("simulation", source)
         assert errors == []
@@ -379,6 +441,18 @@ class NotASim:
 '''
         errors = validate_source_for_family("simulation", source)
         assert any("SimulationInterface" in e for e in errors)
+
+    def test_missing_required_methods(self) -> None:
+        source = '''
+from autocontext.scenarios.simulation import SimulationInterface
+
+class IncompleteSim(SimulationInterface):
+    name = "my_sim"
+    def describe_scenario(self):
+        return "scenario"
+'''
+        errors = validate_source_for_family("simulation", source)
+        assert any("missing required methods" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------
