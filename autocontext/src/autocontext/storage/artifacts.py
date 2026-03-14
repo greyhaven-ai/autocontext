@@ -717,6 +717,57 @@ class ArtifactStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
+    # --- Normalized progress reports (AC-190) ---------------------------------
+
+    def _progress_report_dir(self, scenario_name: str) -> Path:
+        return self.knowledge_root / scenario_name / "progress_reports"
+
+    def write_progress_report(self, scenario_name: str, run_id: str, report: object) -> None:
+        """Persist a RunProgressReport as JSON."""
+        pr_dir = self._progress_report_dir(scenario_name)
+        pr_dir.mkdir(parents=True, exist_ok=True)
+        path = pr_dir / f"{run_id}.json"
+        self.write_json(path, report.to_dict())  # type: ignore[attr-defined]
+
+    def read_progress_report(self, scenario_name: str, run_id: str) -> object | None:
+        """Read a RunProgressReport, or None if missing."""
+        from autocontext.knowledge.normalized_metrics import RunProgressReport
+
+        path = self._progress_report_dir(scenario_name) / f"{run_id}.json"
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return RunProgressReport.from_dict(data)
+
+    def read_latest_progress_reports(
+        self, scenario_name: str, max_reports: int = 2,
+    ) -> list[object]:
+        """Read most recent progress reports for a scenario."""
+        from autocontext.knowledge.normalized_metrics import RunProgressReport
+
+        pr_dir = self._progress_report_dir(scenario_name)
+        if not pr_dir.exists():
+            return []
+        files = sorted(pr_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        reports: list[object] = []
+        for path in files[:max_reports]:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            reports.append(RunProgressReport.from_dict(data))
+        return reports
+
+    def read_latest_progress_reports_markdown(self, scenario_name: str, max_reports: int = 2) -> str:
+        """Read recent progress reports and concatenate them as markdown."""
+        from autocontext.knowledge.normalized_metrics import RunProgressReport
+
+        reports = self.read_latest_progress_reports(scenario_name, max_reports=max_reports)
+        if not reports:
+            return ""
+        parts: list[str] = []
+        for report in reports:
+            if isinstance(report, RunProgressReport):
+                parts.append(report.to_markdown())
+        return "\n\n".join(parts)
+
     # --- Weakness reports (AC-196) -------------------------------------------
 
     def _weakness_dir(self, scenario_name: str) -> Path:

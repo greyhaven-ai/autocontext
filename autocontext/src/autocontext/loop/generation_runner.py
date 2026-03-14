@@ -14,6 +14,7 @@ from autocontext.execution.executors import LocalExecutor, PrimeIntellectExecuto
 from autocontext.harness.meta_optimizer import MetaOptimizer
 from autocontext.integrations.primeintellect import PrimeIntellectClient
 from autocontext.knowledge.mutation_log import MutationEntry
+from autocontext.knowledge.normalized_metrics import generate_run_progress_report
 from autocontext.knowledge.report import generate_session_report
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.knowledge.weakness import WeaknessAnalyzer
@@ -214,6 +215,20 @@ class GenerationRunner:
         )
         self.artifacts.write_weakness_report(scenario_name, run_id, report)
 
+    def _generate_progress_report(self, run_id: str, scenario_name: str) -> None:
+        """Generate and persist a normalized progress report for a completed run."""
+        trajectory_rows = self.sqlite.get_generation_trajectory(run_id)
+        role_metrics = self.sqlite.get_agent_role_metrics(run_id)
+        consultation_cost = self.sqlite.get_total_consultation_cost(run_id)
+        report = generate_run_progress_report(
+            run_id=run_id,
+            scenario=scenario_name,
+            trajectory=trajectory_rows,
+            role_metrics=role_metrics,
+            consultation_cost=consultation_cost,
+        )
+        self.artifacts.write_progress_report(scenario_name, run_id, report)
+
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
@@ -406,6 +421,10 @@ class GenerationRunner:
             self._generate_weakness_report(active_run_id, scenario_name)
         except Exception:
             LOGGER.warning("failed to generate weakness report for run %s", active_run_id, exc_info=True)
+        try:
+            self._generate_progress_report(active_run_id, scenario_name)
+        except Exception:
+            LOGGER.warning("failed to generate progress report for run %s", active_run_id, exc_info=True)
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:

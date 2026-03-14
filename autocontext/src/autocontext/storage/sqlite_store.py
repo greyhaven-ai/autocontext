@@ -363,6 +363,21 @@ class SQLiteStore:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def get_agent_role_metrics(self, run_id: str) -> list[dict[str, Any]]:
+        """Return agent role metrics for a run, ordered by generation and row id."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT generation_index, role, model, input_tokens, output_tokens,
+                       latency_ms, subagent_id, status
+                FROM agent_role_metrics
+                WHERE run_id = ?
+                ORDER BY generation_index, rowid
+                """,
+                (run_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def get_generation_trajectory(self, run_id: str) -> list[dict[str, Any]]:
         """Return generation trajectory with score deltas."""
         with self.connect() as conn:

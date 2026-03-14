@@ -56,6 +56,8 @@ def _make_runner_with_mocks(settings: AppSettings) -> tuple[Any, dict[str, Any]]
 
     # Default: no existing generations (not skipped for idempotency)
     runner.sqlite.generation_exists.return_value = False
+    runner.sqlite.get_agent_role_metrics.return_value = []
+    runner.sqlite.get_total_consultation_cost.return_value = 0.0
 
     # Default: scenario lookup succeeds
     scenario_mock = MagicMock()
@@ -222,6 +224,46 @@ class TestWeaknessReportWiring:
         assert report.scenario == "grid_ctf"
         assert report.total_generations == 5
         assert report.weaknesses
+
+
+class TestProgressReportWiring:
+    """Normalized progress reports are generated from the live run completion path."""
+
+    def test_progress_report_generated_on_run_completion(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path, session_reports_enabled=False)
+        runner, mocks = _make_runner_with_mocks(settings)
+
+        trajectory_rows = [
+            {"generation_index": 1, "best_score": 0.3, "elo": 1000, "delta": 0.3, "gate_decision": "advance"},
+            {"generation_index": 2, "best_score": 0.5, "elo": 1050, "delta": 0.2, "gate_decision": "advance"},
+        ]
+        role_metrics = [
+            {
+                "generation_index": 1,
+                "role": "competitor",
+                "model": "claude-sonnet-4-5-20250929",
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "latency_ms": 100,
+                "subagent_id": "competitor",
+                "status": "success",
+            }
+        ]
+        mocks["sqlite"].get_generation_trajectory.return_value = trajectory_rows
+        mocks["sqlite"].get_agent_role_metrics.return_value = role_metrics
+        mocks["sqlite"].get_total_consultation_cost.return_value = 0.01
+        mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
+
+        _run_with_pipeline_mock(runner, mocks, "grid_ctf", 2, "test_progress")
+
+        mocks["artifacts"].write_progress_report.assert_called_once()
+        call_args = mocks["artifacts"].write_progress_report.call_args
+        assert call_args[0][0] == "grid_ctf"
+        assert call_args[0][1] == "test_progress"
+        report = call_args[0][2]
+        assert report.run_id == "test_progress"
+        assert report.cost.total_tokens == 1500
+        assert report.cost.total_cost_usd > 0
 
 
 class TestSessionReportEmptyTrajectory:

@@ -268,6 +268,7 @@ def stage_knowledge_setup(
     skills_context = "" if ablation else artifacts.read_skills(ctx.scenario_name)
     recent_analysis = "" if ablation else artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
     weakness_reports = "" if ablation else artifacts.read_latest_weakness_reports_markdown(ctx.scenario_name)
+    progress_reports = "" if ablation else artifacts.read_latest_progress_reports_markdown(ctx.scenario_name)
     score_trajectory = "" if ablation else trajectory_builder.build_trajectory(ctx.run_id)
     strategy_registry = "" if ablation else trajectory_builder.build_strategy_registry(ctx.run_id)
 
@@ -319,6 +320,12 @@ def stage_knowledge_setup(
             f"{experiment_log}\n\nRecent weakness reports:\n{weakness_reports}".strip()
             if experiment_log
             else f"Recent weakness reports:\n{weakness_reports}"
+        )
+    if progress_reports:
+        experiment_log = (
+            f"{experiment_log}\n\nRecent progress reports:\n{progress_reports}".strip()
+            if experiment_log
+            else f"Recent progress reports:\n{progress_reports}"
         )
 
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
