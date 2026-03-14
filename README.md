@@ -25,13 +25,16 @@ Each generation runs through a structured multi-agent loop:
 - `coach` turns that analysis into playbook updates and future hints
 - `architect` proposes tools, harness improvements, or structural changes
 - `curator` gates what knowledge is allowed to persist
+- `librarian` (per-book) reviews strategies against ingested literature, advises, and flags violations
+- `archivist` arbitrates librarian escalations — spot-pulls original passages and decides: dismiss, soft-flag, or hard-gate
 
-Strategies are then evaluated through scenario execution, staged validation, and gating. Weak changes are rolled back. Successful changes accumulate into reusable knowledge.
+Strategies are then evaluated through scenario execution, staged validation, and gating. Librarian violations can trigger hard gates that force retries before tournament matches. Weak changes are rolled back. Successful changes accumulate into reusable knowledge.
 
 ## Core Capabilities
 
 - Persistent playbooks, hints, tools, reports, and progress snapshots across runs
 - Staged validation, harness synthesis, and harness-aware execution
+- Literature-aware advisory and gating via librarian/archivist agents bound to ingested books
 - Frontier-to-local distillation with MLX on Apple Silicon
 - Runtime routing across Anthropic, OpenAI-compatible backends, Ollama, vLLM, MLX, and Pi-based runtimes
 - OpenClaw-facing APIs and agent integration surfaces
@@ -77,6 +80,9 @@ Then open `http://127.0.0.1:8000`.
 
 - Run the generation loop: `uv run autoctx run --scenario grid_ctf --gens 3`
 - Inspect runs: `uv run autoctx list`, `uv run autoctx status <run_id>`
+- Ingest a book: `uv run autoctx add-book path/to/book.md --title "Clean Architecture" --tag architecture`
+- List library: `uv run autoctx list-books`
+- Remove a book: `uv run autoctx remove-book clean-architecture`
 - Export training data: `uv run autoctx export-training-data --scenario grid_ctf --all-runs --output training/grid_ctf.jsonl`
 - Train a local model: `uv run autoctx train --scenario grid_ctf --data training/grid_ctf.jsonl --time-budget 300`
 - Start the API server: `uv run autoctx serve --host 127.0.0.1 --port 8000`
