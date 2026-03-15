@@ -3,7 +3,9 @@ import { ArtifactEditingSpecSchema, type ArtifactEditingSpec } from "./artifact-
 import { validateSpec as validateAgentTaskSpec } from "./agent-task-validator.js";
 import { type ScenarioFamilyName } from "./families.js";
 import { InvestigationSpecSchema, type InvestigationSpec } from "./investigation-spec.js";
+import { SchemaEvolutionSpecSchema, type SchemaEvolutionSpec } from "./schema-evolution-spec.js";
 import { SimulationSpecSchema, type SimulationSpec } from "./simulation-spec.js";
+import { ToolFragilitySpecSchema, type ToolFragilitySpec } from "./tool-fragility-spec.js";
 import { WorkflowSpecSchema, type WorkflowSpec } from "./workflow-spec.js";
 
 export interface FamilyPipeline<TSpec> {
@@ -83,12 +85,40 @@ const workflowPipeline: FamilyPipeline<WorkflowSpec> = {
   },
 };
 
+const schemaEvolutionPipeline: FamilyPipeline<SchemaEvolutionSpec> = {
+  familyName: "schema_evolution",
+  validateSpec(spec: SchemaEvolutionSpec): string[] {
+    const result = SchemaEvolutionSpecSchema.safeParse(spec);
+    if (!result.success) {
+      return result.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`,
+      );
+    }
+    return [];
+  },
+};
+
+const toolFragilityPipeline: FamilyPipeline<ToolFragilitySpec> = {
+  familyName: "tool_fragility",
+  validateSpec(spec: ToolFragilitySpec): string[] {
+    const result = ToolFragilitySpecSchema.safeParse(spec);
+    if (!result.success) {
+      return result.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`,
+      );
+    }
+    return [];
+  },
+};
+
 const PIPELINE_REGISTRY = {
   agent_task: agentTaskPipeline,
   simulation: simulationPipeline,
   artifact_editing: artifactEditingPipeline,
   investigation: investigationPipeline,
   workflow: workflowPipeline,
+  schema_evolution: schemaEvolutionPipeline,
+  tool_fragility: toolFragilityPipeline,
 } as const;
 
 export function hasPipeline(family: string): family is keyof typeof PIPELINE_REGISTRY {
@@ -104,7 +134,14 @@ export function getPipeline(family: string): (typeof PIPELINE_REGISTRY)[keyof ty
 
 export function validateForFamily(
   family: string,
-  spec: AgentTaskSpec | SimulationSpec | ArtifactEditingSpec | InvestigationSpec | WorkflowSpec,
+  spec:
+    | AgentTaskSpec
+    | SimulationSpec
+    | ArtifactEditingSpec
+    | InvestigationSpec
+    | WorkflowSpec
+    | SchemaEvolutionSpec
+    | ToolFragilitySpec,
 ): string[] {
   const pipeline = getPipeline(family);
   return pipeline.validateSpec(spec as never);

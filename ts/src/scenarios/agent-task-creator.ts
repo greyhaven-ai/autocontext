@@ -25,9 +25,17 @@ import {
   InvestigationCreator,
 } from "./investigation-creator.js";
 import {
+  type SchemaEvolutionScenarioHandle,
+  SchemaEvolutionCreator,
+} from "./schema-evolution-creator.js";
+import {
   type SimulationScenarioHandle,
   SimulationCreator,
 } from "./simulation-creator.js";
+import {
+  type ToolFragilityScenarioHandle,
+  ToolFragilityCreator,
+} from "./tool-fragility-creator.js";
 import {
   type WorkflowScenarioHandle,
   WorkflowCreator,
@@ -43,7 +51,9 @@ export type CreatedScenario =
   | (AgentTaskInterface & { readonly name: string; readonly spec: AgentTaskSpec; readonly family?: "agent_task" })
   | ArtifactEditingScenarioHandle
   | InvestigationScenarioHandle
+  | SchemaEvolutionScenarioHandle
   | SimulationScenarioHandle
+  | ToolFragilityScenarioHandle
   | WorkflowScenarioHandle;
 
 export class AgentTaskCreator {
@@ -122,6 +132,20 @@ export class AgentTaskCreator {
     }
     if (family === "workflow") {
       return new WorkflowCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "schema_evolution") {
+      return new SchemaEvolutionCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "tool_fragility") {
+      return new ToolFragilityCreator({
         provider: this.provider,
         model: this.model,
         knowledgeRoot: this.knowledgeRoot,

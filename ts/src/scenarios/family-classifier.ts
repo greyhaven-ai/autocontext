@@ -175,6 +175,40 @@ const WORKFLOW_SIGNALS: Record<string, number> = {
   "multi-step transaction": 2.0,
 };
 
+const SCHEMA_EVOLUTION_SIGNALS: Record<string, number> = {
+  "schema evolv": 2.0,
+  "schema evolution": 2.0,
+  "stale context": 2.0,
+  "schema migration": 2.0,
+  "breaking change": 2.0,
+  "schema version": 2.0,
+  "field removed": 1.5,
+  "field added": 1.5,
+  "field renamed": 1.5,
+  "context invalidat": 2.0,
+  "stale assumption": 2.0,
+  "data model change": 1.5,
+  "schema drift": 1.5,
+  "backwards compat": 1.5,
+};
+
+const TOOL_FRAGILITY_SIGNALS: Record<string, number> = {
+  "tool drift": 2.0,
+  "api contract": 2.0,
+  "tool fragility": 2.0,
+  "environment drift": 2.0,
+  "broken tool": 2.0,
+  "tool version": 1.5,
+  "api change": 1.5,
+  "response format change": 2.0,
+  "tool adapt": 1.5,
+  "tool break": 1.5,
+  "contract drift": 2.0,
+  "endpoint deprecat": 1.5,
+  "api deprecat": 1.5,
+  "tool failure": 1.5,
+};
+
 const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> = {
   game: GAME_SIGNALS,
   agent_task: AGENT_TASK_SIGNALS,
@@ -182,6 +216,8 @@ const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> =
   artifact_editing: ARTIFACT_EDITING_SIGNALS,
   investigation: INVESTIGATION_SIGNALS,
   workflow: WORKFLOW_SIGNALS,
+  schema_evolution: SCHEMA_EVOLUTION_SIGNALS,
+  tool_fragility: TOOL_FRAGILITY_SIGNALS,
 };
 
 const DEFAULT_FAMILY_NAME: ScenarioFamilyName = "agent_task";

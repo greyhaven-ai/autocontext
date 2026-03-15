@@ -525,6 +525,152 @@ class WorkflowPipeline(FamilyPipeline):
         )
 
 
+class SchemaEvolutionPipeline(FamilyPipeline):
+    """Pipeline for schema_evolution family scenarios."""
+
+    @property
+    def family_name(self) -> str:
+        return "schema_evolution"
+
+    def required_spec_fields(self) -> set[str]:
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "mutations",
+            "success_criteria",
+            "actions",
+        }
+
+    def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        errors = _check_required_fields(spec, self.required_spec_fields())
+
+        mutations = spec.get("mutations")
+        if isinstance(mutations, list):
+            if len(mutations) == 0:
+                errors.append("mutations must not be empty")
+            else:
+                for i, mutation in enumerate(mutations):
+                    if not isinstance(mutation, dict):
+                        errors.append(f"mutations[{i}] must be a dict")
+                    elif "version" not in mutation:
+                        errors.append(f"mutations[{i}] missing 'version'")
+
+        actions = spec.get("actions")
+        if isinstance(actions, list):
+            if len(actions) == 0:
+                errors.append("actions must not be empty")
+            else:
+                for i, action in enumerate(actions):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{i}] must be a dict")
+                    elif "name" not in action:
+                        errors.append(f"actions[{i}] missing 'name'")
+
+        criteria = spec.get("success_criteria")
+        if isinstance(criteria, list) and len(criteria) == 0:
+            errors.append("success_criteria must not be empty")
+
+        return errors
+
+    def validate_source(self, source: str) -> list[str]:
+        return _check_source_for_class(source, "SchemaEvolutionInterface")
+
+    def validate_contract(self, source: str) -> list[str]:
+        return _check_required_methods(
+            source,
+            "SchemaEvolutionInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+                "get_schema_version",
+                "get_mutation_log",
+                "apply_mutation",
+                "check_context_validity",
+                "evaluate_adaptation",
+            },
+        )
+
+
+class ToolFragilityPipeline(FamilyPipeline):
+    """Pipeline for tool_fragility family scenarios."""
+
+    @property
+    def family_name(self) -> str:
+        return "tool_fragility"
+
+    def required_spec_fields(self) -> set[str]:
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "tool_contracts",
+            "success_criteria",
+            "actions",
+        }
+
+    def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        errors = _check_required_fields(spec, self.required_spec_fields())
+
+        tool_contracts = spec.get("tool_contracts")
+        if isinstance(tool_contracts, list):
+            if len(tool_contracts) == 0:
+                errors.append("tool_contracts must not be empty")
+            else:
+                for i, tc in enumerate(tool_contracts):
+                    if not isinstance(tc, dict):
+                        errors.append(f"tool_contracts[{i}] must be a dict")
+                    elif "tool_name" not in tc:
+                        errors.append(f"tool_contracts[{i}] missing 'tool_name'")
+
+        actions = spec.get("actions")
+        if isinstance(actions, list):
+            if len(actions) == 0:
+                errors.append("actions must not be empty")
+            else:
+                for i, action in enumerate(actions):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{i}] must be a dict")
+                    elif "name" not in action:
+                        errors.append(f"actions[{i}] missing 'name'")
+
+        criteria = spec.get("success_criteria")
+        if isinstance(criteria, list) and len(criteria) == 0:
+            errors.append("success_criteria must not be empty")
+
+        return errors
+
+    def validate_source(self, source: str) -> list[str]:
+        return _check_source_for_class(source, "ToolFragilityInterface")
+
+    def validate_contract(self, source: str) -> list[str]:
+        return _check_required_methods(
+            source,
+            "ToolFragilityInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+                "get_tool_contracts",
+                "get_drift_log",
+                "inject_drift",
+                "attribute_failure",
+                "evaluate_fragility",
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # Built-in pipeline registration
 # ---------------------------------------------------------------------------
@@ -535,6 +681,8 @@ def _register_builtins() -> None:
     register_pipeline(ArtifactEditingPipeline())
     register_pipeline(InvestigationPipeline())
     register_pipeline(WorkflowPipeline())
+    register_pipeline(SchemaEvolutionPipeline())
+    register_pipeline(ToolFragilityPipeline())
 
 
 _register_builtins()

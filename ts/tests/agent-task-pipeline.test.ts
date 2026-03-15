@@ -20,9 +20,17 @@ import {
   INVESTIGATION_SPEC_START,
 } from "../src/scenarios/investigation-designer.js";
 import {
+  SCHEMA_EVOLUTION_SPEC_END,
+  SCHEMA_EVOLUTION_SPEC_START,
+} from "../src/scenarios/schema-evolution-designer.js";
+import {
   SIM_SPEC_END,
   SIM_SPEC_START,
 } from "../src/scenarios/simulation-designer.js";
+import {
+  TOOL_FRAGILITY_SPEC_END,
+  TOOL_FRAGILITY_SPEC_START,
+} from "../src/scenarios/tool-fragility-designer.js";
 import {
   WORKFLOW_SPEC_END,
   WORKFLOW_SPEC_START,
@@ -35,7 +43,9 @@ import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
 import type { InvestigationSpec } from "../src/scenarios/investigation-spec.js";
+import type { SchemaEvolutionSpec } from "../src/scenarios/schema-evolution-spec.js";
 import type { SimulationSpec } from "../src/scenarios/simulation-spec.js";
+import type { ToolFragilitySpec } from "../src/scenarios/tool-fragility-spec.js";
 import type { WorkflowSpec } from "../src/scenarios/workflow-spec.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 import { AgentTaskResultSchema } from "../src/types/index.js";
@@ -209,6 +219,84 @@ function mockWorkflowResponse(): string {
     ],
   };
   return `${WORKFLOW_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${WORKFLOW_SPEC_END}\n`;
+}
+
+function mockSchemaEvolutionResponse(): string {
+  const data = {
+    description: "Adapt to schema changes during a data migration.",
+    environment_description: "Versioned API environment with evolving fields.",
+    initial_state_description: "Version 1 schema is currently active.",
+    mutations: [
+      {
+        version: 2,
+        description: "Add a priority field.",
+        breaking: false,
+        fields_added: ["priority"],
+        fields_removed: [],
+        fields_modified: {},
+      },
+      {
+        version: 3,
+        description: "Rename status to state and remove legacy_id.",
+        breaking: true,
+        fields_added: ["state"],
+        fields_removed: ["status", "legacy_id"],
+        fields_modified: {},
+      },
+    ],
+    success_criteria: ["detect schema changes", "discard stale assumptions"],
+    failure_modes: ["using removed fields"],
+    max_steps: 8,
+    actions: [
+      {
+        name: "query_api",
+        description: "Query the current schema.",
+        parameters: { endpoint: "string" },
+        preconditions: [],
+        effects: ["schema_observed"],
+      },
+      {
+        name: "validate_schema",
+        description: "Validate assumptions against the schema.",
+        parameters: {},
+        preconditions: ["query_api"],
+        effects: ["schema_validated"],
+      },
+    ],
+  };
+  return `${SCHEMA_EVOLUTION_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${SCHEMA_EVOLUTION_SPEC_END}\n`;
+}
+
+function mockToolFragilityResponse(): string {
+  const data = {
+    description: "Adapt to tool contract drift in a pipeline.",
+    environment_description: "Versioned services with unstable response formats.",
+    initial_state_description: "All tools initially operate at stable version 1.",
+    tool_contracts: [
+      { tool_name: "search_api", version: 1, description: "Search endpoint returning a flat list." },
+      { tool_name: "transform_api", version: 1, description: "Data transform endpoint." },
+    ],
+    success_criteria: ["detect tool drift", "adapt without wasted attempts"],
+    failure_modes: ["using stale response format"],
+    max_steps: 8,
+    actions: [
+      {
+        name: "call_search",
+        description: "Call the search API.",
+        parameters: { query: "string" },
+        preconditions: [],
+        effects: ["search_results_obtained"],
+      },
+      {
+        name: "call_transform",
+        description: "Call the transform API.",
+        parameters: { data: "string" },
+        preconditions: ["call_search"],
+        effects: ["data_transformed"],
+      },
+    ],
+  };
+  return `${TOOL_FRAGILITY_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${TOOL_FRAGILITY_SPEC_END}\n`;
 }
 
 function makeMockProvider(response = "mock output"): LLMProvider {
@@ -412,6 +500,46 @@ describe("FamilyPipeline", () => {
       ],
     };
     expect(validateForFamily("workflow", spec)).toEqual([]);
+  });
+
+  it("validates schema-evolution specs through the family pipeline", () => {
+    const spec: SchemaEvolutionSpec = {
+      description: "Adapt to schema evolution.",
+      environmentDescription: "Versioned API environment.",
+      initialStateDescription: "Schema v1 is active.",
+      mutations: [
+        { version: 2, description: "Add priority.", breaking: false, fieldsAdded: ["priority"], fieldsRemoved: [], fieldsModified: {} },
+        { version: 3, description: "Rename status.", breaking: true, fieldsAdded: ["state"], fieldsRemoved: ["status"], fieldsModified: {} },
+      ],
+      successCriteria: ["detect changes"],
+      failureModes: ["using removed fields"],
+      maxSteps: 8,
+      actions: [
+        { name: "query_api", description: "Query schema", parameters: { endpoint: "string" }, preconditions: [], effects: ["schema_observed"] },
+        { name: "validate_schema", description: "Validate schema", parameters: {}, preconditions: ["query_api"], effects: ["schema_validated"] },
+      ],
+    };
+    expect(validateForFamily("schema_evolution", spec)).toEqual([]);
+  });
+
+  it("validates tool-fragility specs through the family pipeline", () => {
+    const spec: ToolFragilitySpec = {
+      description: "Adapt to tool drift.",
+      environmentDescription: "Versioned service environment.",
+      initialStateDescription: "Tools are on v1.",
+      toolContracts: [
+        { toolName: "search_api", version: 1, description: "Search API" },
+        { toolName: "transform_api", version: 1, description: "Transform API" },
+      ],
+      successCriteria: ["detect drift"],
+      failureModes: ["using stale responses"],
+      maxSteps: 8,
+      actions: [
+        { name: "call_search", description: "Call search", parameters: { query: "string" }, preconditions: [], effects: ["search_results"] },
+        { name: "call_transform", description: "Call transform", parameters: { data: "string" }, preconditions: ["call_search"], effects: ["transform_complete"] },
+      ],
+    };
+    expect(validateForFamily("tool_fragility", spec)).toEqual([]);
   });
 
   it("rejects unsupported families instead of collapsing silently", () => {
@@ -662,6 +790,36 @@ describe("AgentTaskCreator", () => {
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("workflow"));
   });
 
+  it("routes schema-evolution descriptions into a schema-evolution scaffold", async () => {
+    const provider = makeMockProvider(mockSchemaEvolutionResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-schema-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Create a schema evolution scenario with stale context after breaking field changes");
+    expect("family" in scenario && scenario.family).toBe("schema_evolution");
+
+    const name = creator.deriveName("Create a schema evolution scenario with stale context after breaking field changes");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("schema_evolution"));
+  });
+
+  it("routes tool-fragility descriptions into a tool-fragility scaffold", async () => {
+    const provider = makeMockProvider(mockToolFragilityResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-tool-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Create a tool fragility scenario with API contract drift and environment changes");
+    expect("family" in scenario && scenario.family).toBe("tool_fragility");
+
+    const name = creator.deriveName("Create a tool fragility scenario with API contract drift and environment changes");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("tool_fragility"));
+  });
+
   it("rejects classified-but-unsupported game families", async () => {
     const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-game-"));
@@ -689,6 +847,18 @@ describe("AgentTaskCreator", () => {
     expect(
       classifyScenarioFamily("Create a transactional workflow with compensation and side effects").familyName,
     ).toBe("workflow");
+  });
+
+  it("classifies schema-evolution descriptions into the schema_evolution family", () => {
+    expect(
+      classifyScenarioFamily("Create a schema evolution scenario with stale context after breaking field changes").familyName,
+    ).toBe("schema_evolution");
+  });
+
+  it("classifies tool-fragility descriptions into the tool_fragility family", () => {
+    expect(
+      classifyScenarioFamily("Create a tool fragility scenario with API contract drift and environment changes").familyName,
+    ).toBe("tool_fragility");
   });
 });
 
