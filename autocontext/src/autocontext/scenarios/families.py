@@ -103,7 +103,9 @@ def _register_builtins() -> None:
     from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
     from autocontext.scenarios.base import ScenarioInterface
     from autocontext.scenarios.investigation import InvestigationInterface
+    from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
     from autocontext.scenarios.simulation import SimulationInterface
+    from autocontext.scenarios.tool_fragility import ToolFragilityInterface
     from autocontext.scenarios.workflow import WorkflowInterface
 
     register_family(ScenarioFamily(
@@ -166,6 +168,26 @@ def _register_builtins() -> None:
         output_modes=["action_trace"],
         scenario_type_marker="workflow",
         capabilities=["compensation", "retry", "side_effect_tracking", "rollback"],
+    ))
+
+    register_family(ScenarioFamily(
+        name="schema_evolution",
+        description="Schema-evolution scenarios where state changes mid-run and agents must detect stale context",
+        interface_class=SchemaEvolutionInterface,
+        evaluation_mode="schema_adaptation",
+        output_modes=["action_trace"],
+        scenario_type_marker="schema_evolution",
+        capabilities=["stale_detection", "schema_migration", "context_invalidation"],
+    ))
+
+    register_family(ScenarioFamily(
+        name="tool_fragility",
+        description="Tool-fragility scenarios where APIs drift and agents must adapt to changed tool behaviour",
+        interface_class=ToolFragilityInterface,
+        evaluation_mode="drift_adaptation",
+        output_modes=["action_trace"],
+        scenario_type_marker="tool_fragility",
+        capabilities=["drift_detection", "failure_attribution", "tool_adaptation"],
     ))
 
 
