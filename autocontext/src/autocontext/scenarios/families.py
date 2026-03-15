@@ -102,8 +102,10 @@ def _register_builtins() -> None:
     from autocontext.scenarios.agent_task import AgentTaskInterface
     from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
     from autocontext.scenarios.base import ScenarioInterface
+    from autocontext.scenarios.coordination import CoordinationInterface
     from autocontext.scenarios.investigation import InvestigationInterface
     from autocontext.scenarios.negotiation import NegotiationInterface
+    from autocontext.scenarios.operator_loop import OperatorLoopInterface
     from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
     from autocontext.scenarios.simulation import SimulationInterface
     from autocontext.scenarios.tool_fragility import ToolFragilityInterface
@@ -199,6 +201,26 @@ def _register_builtins() -> None:
         output_modes=["action_trace"],
         scenario_type_marker="tool_fragility",
         capabilities=["drift_detection", "failure_attribution", "tool_adaptation"],
+    ))
+
+    register_family(ScenarioFamily(
+        name="operator_loop",
+        description="Operator-in-the-loop scenarios testing escalation and clarification judgment",
+        interface_class=OperatorLoopInterface,
+        evaluation_mode="judgment_evaluation",
+        output_modes=["action_trace"],
+        scenario_type_marker="operator_loop",
+        capabilities=["escalation", "clarification", "judgment_scoring"],
+    ))
+
+    register_family(ScenarioFamily(
+        name="coordination",
+        description="Multi-agent coordination scenarios with partial context, handoff, and merge",
+        interface_class=CoordinationInterface,
+        evaluation_mode="coordination_evaluation",
+        output_modes=["action_trace"],
+        scenario_type_marker="coordination",
+        capabilities=["partial_context", "handoff", "merge", "duplication_detection"],
     ))
 
 

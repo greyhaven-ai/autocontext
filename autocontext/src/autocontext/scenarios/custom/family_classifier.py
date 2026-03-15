@@ -291,6 +291,42 @@ _NEGOTIATION_SIGNALS: dict[str, float] = {
     "offer accept": 1.5,
 }
 
+_OPERATOR_LOOP_SIGNALS: dict[str, float] = {
+    "escalat": 2.0,  # escalate, escalation
+    "clarification": 2.0,
+    "operator": 1.5,
+    "human-in-the-loop": 2.0,
+    "human in the loop": 2.0,
+    "judgment": 1.5,
+    "over-escalat": 2.0,
+    "under-escalat": 2.0,
+    "consult": 1.5,
+    "approval required": 1.5,
+    "ask for help": 1.5,
+    "when to escalate": 2.0,
+    "triage judgment": 2.0,
+    "autonomous vs": 1.5,
+    "operator loop": 2.0,
+}
+
+_COORDINATION_SIGNALS: dict[str, float] = {
+    "coordinat": 2.0,  # coordinate, coordination
+    "multi-agent": 2.0,
+    "multi agent": 2.0,
+    "worker": 1.5,
+    "handoff": 2.0,
+    "hand-off": 2.0,
+    "partial context": 2.0,
+    "merge output": 2.0,
+    "merge result": 2.0,
+    "duplication": 1.5,
+    "parallel worker": 2.0,
+    "context partition": 2.0,
+    "split work": 1.5,
+    "divide and conquer": 1.5,
+    "task decompos": 1.5,
+}
+
 _FAMILY_SIGNAL_GROUPS: dict[str, dict[str, float]] = {
     "simulation": _SIMULATION_SIGNALS,
     "agent_task": _AGENT_TASK_SIGNALS,
@@ -301,6 +337,8 @@ _FAMILY_SIGNAL_GROUPS: dict[str, dict[str, float]] = {
     "schema_evolution": _SCHEMA_EVOLUTION_SIGNALS,
     "tool_fragility": _TOOL_FRAGILITY_SIGNALS,
     "negotiation": _NEGOTIATION_SIGNALS,
+    "operator_loop": _OPERATOR_LOOP_SIGNALS,
+    "coordination": _COORDINATION_SIGNALS,
 }
 
 _DEFAULT_FAMILY_NAME = "agent_task"

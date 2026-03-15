@@ -12,6 +12,7 @@ from pathlib import Path
 from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
 from autocontext.scenarios.base import ScenarioInterface
+from autocontext.scenarios.coordination import CoordinationInterface
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
 from autocontext.scenarios.custom.agent_task_designer import design_agent_task
 from autocontext.scenarios.custom.agent_task_validator import (
@@ -19,6 +20,7 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_intent,
 )
 from autocontext.scenarios.custom.artifact_editing_creator import ArtifactEditingCreator
+from autocontext.scenarios.custom.coordination_creator import CoordinationCreator
 from autocontext.scenarios.custom.family_classifier import (
     classify_scenario_family,
     route_to_family,
@@ -29,6 +31,7 @@ from autocontext.scenarios.custom.family_pipeline import (
 )
 from autocontext.scenarios.custom.investigation_creator import InvestigationCreator
 from autocontext.scenarios.custom.negotiation_creator import NegotiationCreator
+from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.schema_evolution_creator import SchemaEvolutionCreator
 from autocontext.scenarios.custom.simulation_creator import SimulationCreator
@@ -37,6 +40,7 @@ from autocontext.scenarios.custom.workflow_creator import WorkflowCreator
 from autocontext.scenarios.families import get_family_marker
 from autocontext.scenarios.investigation import InvestigationInterface
 from autocontext.scenarios.negotiation import NegotiationInterface
+from autocontext.scenarios.operator_loop import OperatorLoopInterface
 from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
 from autocontext.scenarios.tool_fragility import ToolFragilityInterface
 from autocontext.scenarios.workflow import WorkflowInterface
@@ -87,7 +91,8 @@ class AgentTaskCreator:
         AgentTaskInterface | ScenarioInterface | ArtifactEditingInterface
         | InvestigationInterface | WorkflowInterface
         | SchemaEvolutionInterface | ToolFragilityInterface
-        | NegotiationInterface
+        | NegotiationInterface | OperatorLoopInterface
+        | CoordinationInterface
     ):
         """Run the full pipeline: design → validate → codegen → validate → load → register.
 
@@ -118,6 +123,12 @@ class AgentTaskCreator:
         if family.name == "negotiation":
             logger.info("routing description to negotiation creator")
             return NegotiationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name == "operator_loop":
+            logger.info("routing description to operator-loop creator")
+            return OperatorLoopCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name == "coordination":
+            logger.info("routing description to coordination creator")
+            return CoordinationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
         if family.name != "agent_task":
             raise ValueError(
                 f"Scenario family '{family.name}' is not yet supported for custom scaffolding"

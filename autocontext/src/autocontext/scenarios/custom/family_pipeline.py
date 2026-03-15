@@ -746,6 +746,159 @@ class NegotiationPipeline(FamilyPipeline):
         )
 
 
+class OperatorLoopPipeline(FamilyPipeline):
+    """Pipeline for operator_loop family scenarios."""
+
+    @property
+    def family_name(self) -> str:
+        return "operator_loop"
+
+    def required_spec_fields(self) -> set[str]:
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "escalation_policy",
+            "success_criteria",
+            "actions",
+        }
+
+    def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        errors = _check_required_fields(spec, self.required_spec_fields())
+
+        ep = spec.get("escalation_policy")
+        if isinstance(ep, dict):
+            for key in ("escalation_threshold", "max_escalations"):
+                if key not in ep:
+                    errors.append(f"escalation_policy missing '{key}'")
+        elif ep is not None:
+            errors.append("escalation_policy must be a dict")
+
+        actions = spec.get("actions")
+        if isinstance(actions, list):
+            if len(actions) == 0:
+                errors.append("actions must not be empty")
+            else:
+                for i, action in enumerate(actions):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{i}] must be a dict")
+                    elif "name" not in action:
+                        errors.append(f"actions[{i}] missing 'name'")
+
+        criteria = spec.get("success_criteria")
+        if isinstance(criteria, list) and len(criteria) == 0:
+            errors.append("success_criteria must not be empty")
+
+        max_steps = spec.get("max_steps")
+        if max_steps is not None and (not isinstance(max_steps, int) or max_steps <= 0):
+            errors.append("max_steps must be a positive integer")
+
+        return errors
+
+    def validate_source(self, source: str) -> list[str]:
+        return _check_source_for_class(source, "OperatorLoopInterface")
+
+    def validate_contract(self, source: str) -> list[str]:
+        return _check_required_methods(
+            source,
+            "OperatorLoopInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+                "get_escalation_log",
+                "get_clarification_log",
+                "escalate",
+                "request_clarification",
+                "evaluate_judgment",
+            },
+        )
+
+
+class CoordinationPipeline(FamilyPipeline):
+    """Pipeline for coordination family scenarios."""
+
+    @property
+    def family_name(self) -> str:
+        return "coordination"
+
+    def required_spec_fields(self) -> set[str]:
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "workers",
+            "success_criteria",
+            "actions",
+        }
+
+    def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        errors = _check_required_fields(spec, self.required_spec_fields())
+
+        workers = spec.get("workers")
+        if isinstance(workers, list):
+            if len(workers) == 0:
+                errors.append("workers must not be empty")
+            else:
+                for i, worker in enumerate(workers):
+                    if not isinstance(worker, dict):
+                        errors.append(f"workers[{i}] must be a dict")
+                    elif "worker_id" not in worker:
+                        errors.append(f"workers[{i}] missing 'worker_id'")
+        elif workers is not None:
+            errors.append("workers must be a list")
+
+        actions = spec.get("actions")
+        if isinstance(actions, list):
+            if len(actions) == 0:
+                errors.append("actions must not be empty")
+            else:
+                for i, action in enumerate(actions):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{i}] must be a dict")
+                    elif "name" not in action:
+                        errors.append(f"actions[{i}] missing 'name'")
+
+        criteria = spec.get("success_criteria")
+        if isinstance(criteria, list) and len(criteria) == 0:
+            errors.append("success_criteria must not be empty")
+
+        max_steps = spec.get("max_steps")
+        if max_steps is not None and (not isinstance(max_steps, int) or max_steps <= 0):
+            errors.append("max_steps must be a positive integer")
+
+        return errors
+
+    def validate_source(self, source: str) -> list[str]:
+        return _check_source_for_class(source, "CoordinationInterface")
+
+    def validate_contract(self, source: str) -> list[str]:
+        return _check_required_methods(
+            source,
+            "CoordinationInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+                "get_worker_contexts",
+                "get_handoff_log",
+                "record_handoff",
+                "merge_outputs",
+                "evaluate_coordination",
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # Built-in pipeline registration
 # ---------------------------------------------------------------------------
@@ -759,6 +912,8 @@ def _register_builtins() -> None:
     register_pipeline(SchemaEvolutionPipeline())
     register_pipeline(ToolFragilityPipeline())
     register_pipeline(NegotiationPipeline())
+    register_pipeline(OperatorLoopPipeline())
+    register_pipeline(CoordinationPipeline())
 
 
 _register_builtins()
