@@ -178,15 +178,10 @@ class IssueGenerator:
             scenarios = meta.get("scenarios", [])
             families = meta.get("scenario_families", [])
             providers = meta.get("providers", [])
+            releases = meta.get("releases", [])
 
             # Build correlation rationale from dimensions
             rationale = self._build_rationale(cluster, correlation)
-
-            # Collect affected releases from correlation dimensions
-            release_dims = [
-                d for d in correlation.dimensions if d.dimension == "release"
-            ]
-            releases = [d.value for d in release_dims]
 
             # Priority from confidence/recurrence
             priority = self._compute_priority(cluster)
@@ -229,6 +224,7 @@ class IssueGenerator:
                     seed_data={
                         "scenarios": scenarios,
                         "providers": providers,
+                        "releases": releases,
                     },
                     evidence=cluster.supporting_events[:3],
                     created_at=now,

@@ -320,6 +320,18 @@ class TestSignalCorrelator:
         provider_names = {d.value for d in provider_dims}
         assert "deterministic" in provider_names or "anthropic" in provider_names
 
+
+class TestPatternClustererMetadata:
+    def test_cluster_metadata_includes_release_scope(self) -> None:
+        from autocontext.analytics.clustering import PatternClusterer
+
+        clusters = PatternClusterer().cluster_friction(_make_test_facets())
+        validation_cluster = next(
+            cluster for cluster in clusters if cluster.signal_types == ["validation_failure"]
+        )
+
+        assert validation_cluster.metadata["releases"] == ["v1.0.0", "v1.1.0"]
+
     def test_dimension_by_scenario(self) -> None:
         from autocontext.analytics.correlation import SignalCorrelator
 
@@ -941,6 +953,107 @@ class TestAggregateRunner:
 
         # Should not create duplicates
         assert second_count == first_count
+
+    def test_derives_release_context_from_facets(self, tmp_path: Path) -> None:
+        from autocontext.analytics.aggregate_runner import AggregateRunner
+        from autocontext.analytics.correlation import CorrelationStore
+        from autocontext.analytics.issue_generator import ThresholdConfig
+        from autocontext.analytics.issue_store import IssueStore
+        from autocontext.analytics.store import FacetStore
+
+        facet_store = FacetStore(tmp_path)
+        for facet in _make_test_facets():
+            facet_store.persist(facet)
+
+        runner = AggregateRunner(
+            facet_store=facet_store,
+            correlation_store=CorrelationStore(tmp_path),
+            issue_store=IssueStore(tmp_path),
+        )
+        result = runner.run(
+            threshold_config=ThresholdConfig(
+                min_recurrence=2,
+                min_confidence=0.3,
+                min_recurrence_rate=0.2,
+                require_correlation=False,
+            )
+        )
+
+        release_dims = [d for d in result.correlation.dimensions if d.dimension == "release"]
+        assert release_dims
+        assert {d.value for d in release_dims} == {"v1.0.0", "v1.1.0"}
+
+    def test_dedup_allows_same_signal_for_distinct_release_windows(self, tmp_path: Path) -> None:
+        from autocontext.analytics.issue_generator import IssueCandidate
+        from autocontext.analytics.issue_store import IssueStore
+
+        store = IssueStore(tmp_path)
+        store.persist_issue(IssueCandidate(
+            candidate_id="issue-old",
+            title="Recurring validation_failure across 3 runs",
+            description="older release regression",
+            priority="high",
+            source_cluster_ids=["c1"],
+            correlation_id="corr-1",
+            recurrence_count=3,
+            confidence=0.9,
+            correlation_rationale="release v1.0.0",
+            affected_scenarios=["grid_ctf"],
+            affected_families=["game"],
+            affected_providers=["deterministic"],
+            affected_releases=["v1.0.0"],
+            evidence=[],
+            created_at="2026-03-14T12:00:00Z",
+        ))
+
+        assert store.has_issue_for_signature(
+            signal_type="validation_failure",
+            scenarios=["grid_ctf"],
+            families=["game"],
+            providers=["deterministic"],
+            releases=["v1.0.0"],
+        ) is True
+        assert store.has_issue_for_signature(
+            signal_type="validation_failure",
+            scenarios=["grid_ctf"],
+            families=["game"],
+            providers=["deterministic"],
+            releases=["v1.1.0"],
+        ) is False
+
+    def test_generated_candidates_use_cluster_release_scope(self, tmp_path: Path) -> None:
+        from autocontext.analytics.aggregate_runner import AggregateRunner
+        from autocontext.analytics.correlation import CorrelationStore
+        from autocontext.analytics.issue_generator import ThresholdConfig
+        from autocontext.analytics.issue_store import IssueStore
+        from autocontext.analytics.store import FacetStore
+
+        facet_store = FacetStore(tmp_path)
+        for facet in _make_test_facets():
+            facet_store.persist(facet)
+
+        result = AggregateRunner(
+            facet_store=facet_store,
+            correlation_store=CorrelationStore(tmp_path),
+            issue_store=IssueStore(tmp_path),
+        ).run(
+            threshold_config=ThresholdConfig(
+                min_recurrence=2,
+                min_confidence=0.3,
+                min_recurrence_rate=0.2,
+                require_correlation=False,
+            )
+        )
+
+        validation_issue = next(
+            issue for issue in result.issues if "validation_failure" in issue.title
+        )
+        validation_probe = next(
+            probe for probe in result.probes if probe.target_friction_type == "validation_failure"
+        )
+
+        assert validation_issue.affected_releases == ["v1.0.0", "v1.1.0"]
+        assert validation_probe.seed_data["releases"] == ["v1.0.0", "v1.1.0"]
 
     def test_empty_store(self, tmp_path: Path) -> None:
         from autocontext.analytics.aggregate_runner import AggregateRunner

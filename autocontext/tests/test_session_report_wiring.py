@@ -270,8 +270,49 @@ class TestAggregateAnalyticsWiring:
     """Aggregate facets and clustering are generated from the live run completion path."""
 
     def test_aggregate_analytics_persisted_on_run_completion(self, tmp_path: Path) -> None:
+        from autocontext.analytics.facets import FrictionSignal, RunFacet
+        from autocontext.analytics.store import FacetStore
+
         settings = _make_settings(tmp_path, session_reports_enabled=False)
         runner, mocks = _make_runner_with_mocks(settings)
+
+        facet_store = FacetStore(tmp_path / "knowledge")
+        for idx in (1, 2):
+            facet_store.persist(
+                RunFacet(
+                    run_id=f"seed-run-{idx}",
+                    scenario="grid_ctf",
+                    scenario_family="game",
+                    agent_provider="deterministic",
+                    executor_mode="local",
+                    total_generations=2,
+                    advances=1,
+                    retries=1,
+                    rollbacks=0,
+                    best_score=0.4,
+                    best_elo=1000.0,
+                    total_duration_seconds=10.0,
+                    total_tokens=1000,
+                    total_cost_usd=0.01,
+                    tool_invocations=1,
+                    validation_failures=1,
+                    consultation_count=0,
+                    consultation_cost_usd=0.0,
+                    friction_signals=[
+                        FrictionSignal(
+                            signal_type="validation_failure",
+                            severity="medium",
+                            generation_index=1,
+                            description="parse error",
+                            evidence=["seed"],
+                        )
+                    ],
+                    delight_signals=[],
+                    events=[],
+                    metadata={"release": f"v1.0.{idx}"},
+                    created_at=f"2026-03-14T0{idx}:00:00Z",
+                )
+            )
 
         mocks["sqlite"].get_generation_metrics.return_value = [
             {
@@ -333,6 +374,9 @@ class TestAggregateAnalyticsWiring:
         assert (tmp_path / "knowledge" / "analytics" / "friction_clusters.json").exists()
         assert (tmp_path / "knowledge" / "analytics" / "delight_clusters.json").exists()
         assert (tmp_path / "knowledge" / "analytics" / "taxonomy.json").exists()
+        assert list((tmp_path / "knowledge" / "analytics" / "correlations").glob("*.json"))
+        assert list((tmp_path / "knowledge" / "analytics" / "issues").glob("*.json"))
+        assert list((tmp_path / "knowledge" / "analytics" / "probes").glob("*.json"))
 
 
 class TestSessionReportEmptyTrajectory:

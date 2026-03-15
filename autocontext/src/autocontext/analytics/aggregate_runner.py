@@ -6,7 +6,9 @@ persist correlation → generate issues/probes → dedup → persist.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from autocontext.analytics.clustering import PatternClusterer
 from autocontext.analytics.correlation import (
@@ -15,6 +17,7 @@ from autocontext.analytics.correlation import (
     ReleaseContext,
     SignalCorrelator,
 )
+from autocontext.analytics.facets import RunFacet
 from autocontext.analytics.issue_generator import (
     IssueCandidate,
     IssueGenerator,
@@ -52,11 +55,10 @@ class AggregateRunner:
         release_context: list[ReleaseContext] | None = None,
         threshold_config: ThresholdConfig | None = None,
     ) -> AggregateResult:
-        releases = release_context or []
-        config = threshold_config or ThresholdConfig()
-
         # 1. Load all facets
         facets = self._facet_store.list_facets()
+        releases = release_context or self._derive_release_context(facets)
+        config = threshold_config or ThresholdConfig()
 
         # 2. Cluster friction and delight
         clusterer = PatternClusterer()
@@ -78,15 +80,26 @@ class AggregateRunner:
         # 6. Dedup by signal type (cluster IDs are non-deterministic across runs)
         new_issues: list[IssueCandidate] = []
         for candidate in candidates:
-            # Extract primary signal type from title pattern "Recurring <type> across ..."
             signal_type = candidate.title.split(" across ")[0].replace("Recurring ", "")
-            if not self._issue_store.has_issue_for_signal_type(signal_type):
+            if not self._issue_store.has_issue_for_signature(
+                signal_type=signal_type,
+                scenarios=candidate.affected_scenarios,
+                families=candidate.affected_families,
+                providers=candidate.affected_providers,
+                releases=candidate.affected_releases,
+            ):
                 self._issue_store.persist_issue(candidate)
                 new_issues.append(candidate)
 
         new_probes: list[ProbeCandidate] = []
         for probe in probes:
-            if not self._issue_store.has_probe_for_signal_type(probe.target_friction_type):
+            if not self._issue_store.has_probe_for_signature(
+                signal_type=probe.target_friction_type,
+                family=probe.target_scenario_family,
+                scenarios=probe.seed_data.get("scenarios", []),
+                providers=probe.seed_data.get("providers", []),
+                releases=probe.seed_data.get("releases", []),
+            ):
                 self._issue_store.persist_probe(probe)
                 new_probes.append(probe)
 
@@ -95,3 +108,22 @@ class AggregateRunner:
             issues=new_issues,
             probes=new_probes,
         )
+
+    def _derive_release_context(self, facets: Sequence[RunFacet]) -> list[ReleaseContext]:
+        """Derive release context from persisted facet metadata when no external feed is provided."""
+        release_to_timestamp: dict[str, str] = {}
+        for facet in facets:
+            release = getattr(facet, "metadata", {}).get("release", "")
+            if not release:
+                continue
+            created_at = getattr(facet, "created_at", "") or datetime.now(UTC).isoformat()
+            existing = release_to_timestamp.get(release)
+            if existing is None or created_at < existing:
+                release_to_timestamp[release] = created_at
+        return [
+            ReleaseContext(version=version, released_at=released_at)
+            for version, released_at in sorted(
+                release_to_timestamp.items(),
+                key=lambda item: item[1],
+            )
+        ]

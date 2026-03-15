@@ -73,9 +73,69 @@ class IssueStore:
                 return True
         return False
 
+    def has_issue_for_signature(
+        self,
+        *,
+        signal_type: str,
+        scenarios: list[str],
+        families: list[str],
+        providers: list[str],
+        releases: list[str],
+    ) -> bool:
+        """Check for an existing issue with the same correlated evidence window."""
+        target = (
+            signal_type,
+            tuple(sorted(set(scenarios))),
+            tuple(sorted(set(families))),
+            tuple(sorted(set(providers))),
+            tuple(sorted(set(releases))),
+        )
+        for issue in self.list_issues():
+            existing_signal = issue.title.split(" across ")[0].replace("Recurring ", "")
+            existing = (
+                existing_signal,
+                tuple(sorted(set(issue.affected_scenarios))),
+                tuple(sorted(set(issue.affected_families))),
+                tuple(sorted(set(issue.affected_providers))),
+                tuple(sorted(set(issue.affected_releases))),
+            )
+            if existing == target:
+                return True
+        return False
+
     def has_probe_for_signal_type(self, signal_type: str) -> bool:
         """Check if any persisted probe already covers the given friction type."""
         for probe in self.list_probes():
             if probe.target_friction_type == signal_type:
+                return True
+        return False
+
+    def has_probe_for_signature(
+        self,
+        *,
+        signal_type: str,
+        family: str,
+        scenarios: list[str],
+        providers: list[str],
+        releases: list[str],
+    ) -> bool:
+        """Check for an existing probe with the same correlated evidence window."""
+        target = (
+            signal_type,
+            family,
+            tuple(sorted(set(scenarios))),
+            tuple(sorted(set(providers))),
+            tuple(sorted(set(releases))),
+        )
+        for probe in self.list_probes():
+            seed_data = probe.seed_data or {}
+            existing = (
+                probe.target_friction_type,
+                probe.target_scenario_family,
+                tuple(sorted(set(seed_data.get("scenarios", [])))),
+                tuple(sorted(set(seed_data.get("providers", [])))),
+                tuple(sorted(set(seed_data.get("releases", [])))),
+            )
+            if existing == target:
                 return True
         return False

@@ -5,12 +5,18 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import cast
 
+from autocontext import __version__ as package_fallback_version
 from autocontext.agents import AgentOrchestrator
+from autocontext.analytics.aggregate_runner import AggregateRunner
 from autocontext.analytics.clustering import PatternClusterer
+from autocontext.analytics.correlation import CorrelationStore
 from autocontext.analytics.extractor import FacetExtractor
+from autocontext.analytics.issue_store import IssueStore
 from autocontext.analytics.store import FacetStore
 from autocontext.analytics.taxonomy import FacetTaxonomy
 from autocontext.backpressure import BackpressureGate, TrendAwareGate
@@ -32,6 +38,14 @@ from autocontext.scenarios.families import detect_family
 from autocontext.storage import ArtifactStore, SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _current_release_version() -> str:
+    """Return the installed package version used for aggregate release correlation."""
+    try:
+        return package_version("autoctx")
+    except PackageNotFoundError:
+        return package_fallback_version
 
 
 @dataclass(slots=True)
@@ -253,6 +267,7 @@ class GenerationRunner:
             "metadata": {
                 "exploration_mode": self.settings.exploration_mode,
                 "rlm_enabled": self.settings.rlm_enabled,
+                "release": _current_release_version(),
             },
         }
         generation_rows = self.sqlite.get_generation_metrics(run_id)
@@ -293,6 +308,13 @@ class GenerationRunner:
         taxonomy = FacetTaxonomy.load(taxonomy_path)
         taxonomy.evolve([*friction_clusters, *delight_clusters])
         taxonomy.save(taxonomy_path)
+
+        aggregate_runner = AggregateRunner(
+            facet_store=facet_store,
+            correlation_store=CorrelationStore(analytics_root),
+            issue_store=IssueStore(analytics_root),
+        )
+        aggregate_runner.run()
 
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)

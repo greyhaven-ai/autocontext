@@ -172,6 +172,11 @@ class PatternClusterer:
                     "providers": sorted({
                         f.agent_provider for f in type_to_facets[signal_type]
                     }),
+                    "releases": sorted({
+                        str(f.metadata.get("release", ""))
+                        for f in type_to_facets[signal_type]
+                        if f.metadata.get("release", "")
+                    }),
                 },
             ))
 
