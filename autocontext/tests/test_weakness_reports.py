@@ -528,3 +528,35 @@ class TestArtifactStoreWeaknessIntegration:
         markdown = artifact_store.read_latest_weakness_reports_markdown("grid_ctf")
         assert "# Weakness Report: run_md" in markdown
         assert "dead_end_pattern" in markdown
+
+    def test_reads_trace_grounded_weakness_report_schema(self, artifact_store) -> None:
+        from autocontext.analytics import trace_reporter as trace_reporter_module
+
+        report = trace_reporter_module.WeaknessReport(
+            report_id="trace-report-1",
+            run_id="trace_run",
+            weaknesses=[
+                trace_reporter_module.TraceFinding(
+                    finding_id="finding-1",
+                    finding_type="weakness",
+                    title="validation_failure in match stage",
+                    description="Structured trace found a validation failure.",
+                    evidence_event_ids=["e3", "e7"],
+                    severity="high",
+                    category="failure_motif",
+                )
+            ],
+            failure_motifs=[],
+            recovery_analysis="One recovery path observed.",
+            recommendations=["Review validation_failure in match stage"],
+            created_at="2026-03-15T12:00:00Z",
+            metadata={"scenario": "grid_ctf"},
+        )
+
+        artifact_store.write_weakness_report("grid_ctf", "trace_run", report)
+        restored = artifact_store.read_weakness_report("grid_ctf", "trace_run")
+        assert restored is not None
+        assert restored.run_id == "trace_run"
+        markdown = artifact_store.read_latest_weakness_reports_markdown("grid_ctf")
+        assert "Recovery Analysis" in markdown
+        assert "validation_failure in match stage" in markdown
