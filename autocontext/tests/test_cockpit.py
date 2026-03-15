@@ -132,6 +132,30 @@ class TestWriteup:
         result = generate_writeup("run1", store, artifacts)
         assert "Best Strategy" in result or "Strategy" in result
 
+    def test_prefers_persisted_trace_grounded_writeup(self, tmp_path: Path) -> None:
+        from autocontext.analytics.trace_reporter import ReportStore, TraceWriteup
+
+        store = _make_store(tmp_path)
+        artifacts = _make_artifacts(tmp_path)
+        _seed_run(store)
+
+        report_store = ReportStore(tmp_path / "knowledge" / "analytics")
+        report_store.persist_writeup(TraceWriteup(
+            writeup_id="trace-writeup-1",
+            run_id="run1",
+            generation_index=None,
+            findings=[],
+            failure_motifs=[],
+            recovery_paths=[],
+            summary="Trace-grounded summary from canonical events.",
+            created_at="2026-03-15T12:00:00Z",
+            metadata={"scenario": "grid_ctf", "scenario_family": "simulation"},
+        ))
+
+        result = generate_writeup("run1", store, artifacts)
+        assert "Trace-grounded summary from canonical events." in result
+        assert "# Run Summary: run1" in result
+
 
 # ---------------------------------------------------------------------------
 # Changelog builder
