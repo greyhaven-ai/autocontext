@@ -197,7 +197,7 @@ class SQLiteStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT generation_index, stage_order, stage_name, status, duration_ms, error, error_code
+                SELECT generation_index, stage_order, stage_name, status, duration_ms, error, error_code, created_at
                 FROM staged_validation_results
                 WHERE run_id = ?
                 ORDER BY generation_index, stage_order
@@ -364,7 +364,7 @@ class SQLiteStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT generation_index, decision, reason, retry_count
+                SELECT generation_index, decision, reason, retry_count, created_at
                 FROM generation_recovery
                 WHERE run_id = ?
                 ORDER BY generation_index, rowid
@@ -397,7 +397,7 @@ class SQLiteStore:
             rows = conn.execute(
                 """
                 SELECT generation_index, role, model, input_tokens, output_tokens,
-                       latency_ms, subagent_id, status
+                       latency_ms, subagent_id, status, created_at
                 FROM agent_role_metrics
                 WHERE run_id = ?
                 ORDER BY generation_index, rowid

@@ -258,11 +258,12 @@ class StateInspector:
         trace: RunTrace,
         event_id: str,
     ) -> list[TraceEvent]:
-        """BFS backward through cause_event_ids, returns events in causal order."""
+        """BFS backward through causal edges, falling back to inline cause ids."""
         event_map = {e.event_id: e for e in trace.events}
         if event_id not in event_map:
             return []
 
+        parent_map = self._parent_map(trace)
         visited: set[str] = set()
         queue = [event_id]
         chain: list[TraceEvent] = []
@@ -276,7 +277,7 @@ class StateInspector:
             if evt is None:
                 continue
             chain.append(evt)
-            for cause_id in evt.cause_event_ids:
+            for cause_id in parent_map.get(eid, []):
                 if cause_id not in visited:
                     queue.append(cause_id)
 
@@ -290,20 +291,44 @@ class StateInspector:
             return 0
 
         event_map = {e.event_id: e for e in trace.events}
+        parent_map = self._parent_map(trace)
         memo: dict[str, int] = {}
 
         def depth(eid: str) -> int:
             if eid in memo:
                 return memo[eid]
             evt = event_map.get(eid)
-            if evt is None or not evt.cause_event_ids:
+            parent_ids = [parent_id for parent_id in parent_map.get(eid, []) if parent_id in event_map]
+            if evt is None or not parent_ids:
                 memo[eid] = 1
                 return 1
-            d = 1 + max(depth(c) for c in evt.cause_event_ids if c in event_map)
+            d = 1 + max(depth(parent_id) for parent_id in parent_ids)
             memo[eid] = d
             return d
 
         return max(depth(e.event_id) for e in trace.events)
+
+    def _parent_map(self, trace: RunTrace) -> dict[str, list[str]]:
+        """Build a canonical parent map from explicit edges plus inline fallbacks."""
+        event_ids = {event.event_id for event in trace.events}
+        parent_map: dict[str, list[str]] = {event_id: [] for event_id in event_ids}
+
+        for edge in trace.causal_edges:
+            if edge.source_event_id not in event_ids or edge.target_event_id not in event_ids:
+                continue
+            parents = parent_map.setdefault(edge.target_event_id, [])
+            if edge.source_event_id not in parents:
+                parents.append(edge.source_event_id)
+
+        for event in trace.events:
+            parents = parent_map.setdefault(event.event_id, [])
+            if event.parent_event_id and event.parent_event_id in event_ids and event.parent_event_id not in parents:
+                parents.append(event.parent_event_id)
+            for cause_id in event.cause_event_ids:
+                if cause_id in event_ids and cause_id not in parents:
+                    parents.append(cause_id)
+
+        return parent_map
 
     def _run_summary(
         self,

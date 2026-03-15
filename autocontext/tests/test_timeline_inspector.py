@@ -469,6 +469,54 @@ class TestStateInspector:
         chain = inspector.dependency_chain(trace, "nonexistent")
         assert chain == []
 
+    def test_dependency_chain_uses_causal_edges_without_inline_causes(self) -> None:
+        from autocontext.analytics.run_trace import RunTrace, TraceEvent
+        from autocontext.analytics.timeline_inspector import StateInspector
+
+        trace = _make_rich_trace()
+        edge_only_events = [
+            TraceEvent(
+                event_id=event.event_id,
+                run_id=event.run_id,
+                generation_index=event.generation_index,
+                sequence_number=event.sequence_number,
+                timestamp=event.timestamp,
+                category=event.category,
+                event_type=event.event_type,
+                actor=event.actor,
+                resources=event.resources,
+                summary=event.summary,
+                detail=event.detail,
+                parent_event_id=None,
+                cause_event_ids=[],
+                evidence_ids=event.evidence_ids,
+                severity=event.severity,
+                stage=event.stage,
+                outcome=event.outcome,
+                duration_ms=event.duration_ms,
+                metadata=event.metadata,
+            )
+            for event in trace.events
+        ]
+        edge_only_trace = RunTrace(
+            trace_id="trace-edge-only",
+            run_id=trace.run_id,
+            generation_index=trace.generation_index,
+            schema_version=trace.schema_version,
+            events=edge_only_events,
+            causal_edges=trace.causal_edges,
+            created_at=trace.created_at,
+            metadata=trace.metadata,
+        )
+
+        inspector = StateInspector()
+        chain = inspector.dependency_chain(edge_only_trace, "e7")
+        chain_ids = [event.event_id for event in chain]
+        assert "e3" in chain_ids
+        assert "e6" in chain_ids
+        assert chain_ids[-1] == "e7"
+        assert inspector.inspect_run(edge_only_trace).causal_depth >= 4
+
     def test_empty_trace(self) -> None:
         from autocontext.analytics.run_trace import RunTrace
         from autocontext.analytics.timeline_inspector import StateInspector
