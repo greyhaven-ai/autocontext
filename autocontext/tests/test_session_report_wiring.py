@@ -213,6 +213,55 @@ class TestWeaknessReportWiring:
             {"generation_index": 2, "score": 0.1, "passed_validation": False, "validation_errors": '["bad action"]'},
             {"generation_index": 4, "score": 0.05, "passed_validation": False, "validation_errors": '["bad action"]'},
         ]
+        mocks["sqlite"].get_generation_metrics.return_value = [
+            {
+                "generation_index": 1,
+                "mean_score": 0.3,
+                "best_score": 0.3,
+                "elo": 1000.0,
+                "wins": 1,
+                "losses": 0,
+                "gate_decision": "advance",
+                "status": "completed",
+                "duration_seconds": 12.0,
+                "created_at": "2026-03-15T11:00:00Z",
+                "updated_at": "2026-03-15T11:00:12Z",
+            },
+            {
+                "generation_index": 2,
+                "mean_score": 0.1,
+                "best_score": 0.1,
+                "elo": 980.0,
+                "wins": 0,
+                "losses": 1,
+                "gate_decision": "rollback",
+                "status": "completed",
+                "duration_seconds": 14.0,
+                "created_at": "2026-03-15T11:01:00Z",
+                "updated_at": "2026-03-15T11:01:14Z",
+            },
+        ]
+        mocks["sqlite"].get_staged_validation_results_for_run.return_value = [
+            {
+                "generation_index": 2,
+                "stage_order": 1,
+                "stage_name": "syntax",
+                "status": "failed",
+                "duration_ms": 15,
+                "error": "bad action",
+                "error_code": "parse",
+                "created_at": "2026-03-15T11:01:02Z",
+            }
+        ]
+        mocks["sqlite"].get_recovery_markers_for_run.return_value = [
+            {
+                "generation_index": 2,
+                "decision": "retry",
+                "reason": "validator failed",
+                "retry_count": 1,
+                "created_at": "2026-03-15T11:01:04Z",
+            }
+        ]
         mocks["sqlite"].get_generation_trajectory.return_value = trajectory_rows
         mocks["sqlite"].get_matches_for_run.return_value = match_rows
         mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
@@ -225,8 +274,8 @@ class TestWeaknessReportWiring:
         assert call_args[0][1] == "test_weakness"
         report = call_args[0][2]
         assert report.run_id == "test_weakness"
-        assert report.scenario == "grid_ctf"
-        assert report.total_generations == 5
+        assert report.metadata["scenario"] == "grid_ctf"
+        assert report.metadata["report_source"] == "trace_grounded"
         assert report.weaknesses
 
 

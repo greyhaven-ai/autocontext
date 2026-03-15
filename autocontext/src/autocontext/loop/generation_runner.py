@@ -36,6 +36,7 @@ from autocontext.analytics.run_trace import (
 from autocontext.analytics.store import FacetStore
 from autocontext.analytics.taxonomy import FacetTaxonomy
 from autocontext.analytics.timeline_inspector import StateInspector, TimelineBuilder
+from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
 from autocontext.backpressure import BackpressureGate, TrendAwareGate
 from autocontext.config import AppSettings
 from autocontext.execution import ExecutionSupervisor
@@ -240,18 +241,34 @@ class GenerationRunner:
         markdown = report.to_markdown()
         self.artifacts.write_session_report(scenario_name, run_id, markdown)
 
-    def _generate_weakness_report(self, run_id: str, scenario_name: str) -> None:
-        """Generate and persist a weakness report for a completed run."""
+    def _generate_trace_grounded_reports(self, run_id: str, scenario_name: str) -> None:
+        """Generate trace-backed writeups and weakness reports for a completed run.
+
+        Falls back to the legacy weakness analyzer if no trace artifact exists yet.
+        """
+        analytics_root = self.settings.knowledge_root / "analytics"
+        trace = TraceStore(analytics_root).load(f"trace-{run_id}")
+
+        if trace is not None:
+            reporter = TraceReporter()
+            report_store = ReportStore(analytics_root)
+            writeup = reporter.generate_writeup(trace)
+            weakness_report = reporter.generate_weakness_report(trace)
+            report_store.persist_writeup(writeup)
+            report_store.persist_weakness_report(weakness_report)
+            self.artifacts.write_weakness_report(scenario_name, run_id, weakness_report)
+            return
+
         trajectory_rows = self.sqlite.get_generation_trajectory(run_id)
         match_rows = self.sqlite.get_matches_for_run(run_id)
         analyzer = WeaknessAnalyzer()
-        report = analyzer.analyze(
+        legacy_report = analyzer.analyze(
             run_id=run_id,
             scenario=scenario_name,
             trajectory=trajectory_rows,
             match_data=match_rows,
         )
-        self.artifacts.write_weakness_report(scenario_name, run_id, report)
+        self.artifacts.write_weakness_report(scenario_name, run_id, legacy_report)
 
     def _generate_progress_report(self, run_id: str, scenario_name: str) -> None:
         """Generate and persist a normalized progress report for a completed run."""
@@ -1088,10 +1105,6 @@ class GenerationRunner:
             except Exception:
                 LOGGER.warning("failed to generate session report for run %s", active_run_id, exc_info=True)
         try:
-            self._generate_weakness_report(active_run_id, scenario_name)
-        except Exception:
-            LOGGER.warning("failed to generate weakness report for run %s", active_run_id, exc_info=True)
-        try:
             self._generate_progress_report(active_run_id, scenario_name)
         except Exception:
             LOGGER.warning("failed to generate progress report for run %s", active_run_id, exc_info=True)
@@ -1103,6 +1116,10 @@ class GenerationRunner:
             self._generate_run_trace_artifacts(active_run_id, scenario_name, scenario)
         except Exception:
             LOGGER.warning("failed to generate run trace artifacts for run %s", active_run_id, exc_info=True)
+        try:
+            self._generate_trace_grounded_reports(active_run_id, scenario_name)
+        except Exception:
+            LOGGER.warning("failed to generate trace-grounded reports for run %s", active_run_id, exc_info=True)
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
