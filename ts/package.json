@@ -1,6 +1,6 @@
 {
   "name": "autoctx",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "autocontext — always-on agent evaluation harness",
   "type": "module",
   "main": "dist/index.js",
