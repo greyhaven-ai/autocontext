@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Trim cascade: first entry trimmed first (least critical)
 _TRIM_ORDER = (
-    "session_reports", "experiment_log", "research_protocol",
+    "session_reports",
+    "notebook_architect", "notebook_coach", "notebook_analyst", "notebook_competitor",
+    "experiment_log", "research_protocol",
     "trajectory", "analysis", "tools", "lessons", "playbook",
 )
 

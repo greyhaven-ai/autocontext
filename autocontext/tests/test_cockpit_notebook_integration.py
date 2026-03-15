@@ -154,6 +154,28 @@ class TestCockpitGetNotebook:
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
 
+    def test_get_effective_context_preview(self, cockpit_env: dict[str, Any]) -> None:
+        """GET effective-context returns the role-specific preview and warnings."""
+        _seed_run(cockpit_env["store"], run_id="sess-preview")
+        cockpit_env["client"].put(
+            "/api/cockpit/notebooks/sess-preview",
+            json={
+                "scenario_name": "grid_ctf",
+                "current_objective": "Stabilize defense",
+                "current_hypotheses": ["Lower aggression should reduce variance"],
+                "best_score": 0.50,
+                "operator_observations": ["Analyst keeps recommending risky offense"],
+            },
+        )
+
+        resp = cockpit_env["client"].get("/api/cockpit/notebooks/sess-preview/effective-context")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_id"] == "sess-preview"
+        assert "competitor" in data["role_contexts"]
+        assert "Stabilize defense" in data["role_contexts"]["competitor"]
+        assert any(w["warning_type"] == "stale_score" for w in data["warnings"])
+
 
 # ---------------------------------------------------------------------------
 # List notebooks via GET
@@ -358,6 +380,25 @@ class TestCockpitReadOnlyEndpointsUnchanged:
         resp = cockpit_env["client"].get("/api/cockpit/runs/run1/resume")
         assert resp.status_code == 200
         assert resp.json()["run_id"] == "run1"
+
+    def test_resume_includes_effective_notebook_context_when_available(self, cockpit_env: dict[str, Any]) -> None:
+        """Resume payload exposes the notebook context that will be carried forward."""
+        _seed_run(cockpit_env["store"], run_id="run-notebook")
+        cockpit_env["client"].put(
+            "/api/cockpit/notebooks/run-notebook",
+            json={
+                "scenario_name": "grid_ctf",
+                "current_objective": "Resume from the strongest defensive line",
+                "follow_ups": ["Retry with lower aggression before exploring offense"],
+            },
+        )
+
+        resp = cockpit_env["client"].get("/api/cockpit/runs/run-notebook/resume")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["effective_notebook_context"] is not None
+        competitor_ctx = data["effective_notebook_context"]["role_contexts"]["competitor"]
+        assert "Resume from the strongest defensive line" in competitor_ctx
 
     def test_compare_still_works(self, cockpit_env: dict[str, Any]) -> None:
         """GET /runs/{id}/compare/{a}/{b} returns 200."""

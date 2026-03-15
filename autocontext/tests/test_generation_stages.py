@@ -297,6 +297,40 @@ class TestStageKnowledgeSetup:
         assert "Recent progress reports:" in result.prompts.competitor
         assert "Tokens per advance" in result.prompts.competitor
 
+    def test_includes_role_specific_notebook_context_in_live_prompt_bundle(self) -> None:
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        artifacts.read_notebook.return_value = {
+            "session_id": "run_test",
+            "scenario_name": "test_scenario",
+            "current_objective": "Push toward stable defense-first play",
+            "current_hypotheses": ["Lower aggression should reduce rollback risk"],
+            "operator_observations": ["The latest analyst output over-indexes on offense"],
+            "follow_ups": ["Try aggression <= 0.4 next generation"],
+            "unresolved_questions": ["Does defense trade off too much score ceiling?"],
+        }
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        ctx = _make_ctx()
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "Push toward stable defense-first play" in result.prompts.competitor
+        assert "Try aggression <= 0.4 next generation" in result.prompts.competitor
+        assert "The latest analyst output over-indexes on offense" not in result.prompts.competitor
+        assert "The latest analyst output over-indexes on offense" in result.prompts.analyst
+        assert "Try aggression <= 0.4 next generation" not in result.prompts.analyst
+
 
 # ---------- TestStageAgentGeneration ----------
 

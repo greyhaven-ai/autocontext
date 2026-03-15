@@ -72,6 +72,7 @@ def build_prompt_bundle(
     context_budget_tokens: int = 0,
     notebook_contexts: dict[str, str] | None = None,
 ) -> PromptBundle:
+    _nb = dict(notebook_contexts or {})
     if context_budget_tokens > 0:
         budget = ContextBudget(max_tokens=context_budget_tokens)
         budgeted = budget.apply({
@@ -85,6 +86,10 @@ def build_prompt_bundle(
             "dead_ends": dead_ends,
             "research_protocol": research_protocol,
             "session_reports": session_reports,
+            "notebook_competitor": _nb.get("competitor", ""),
+            "notebook_analyst": _nb.get("analyst", ""),
+            "notebook_coach": _nb.get("coach", ""),
+            "notebook_architect": _nb.get("architect", ""),
         })
         current_playbook = budgeted["playbook"]
         score_trajectory = budgeted["trajectory"]
@@ -96,6 +101,12 @@ def build_prompt_bundle(
         dead_ends = budgeted["dead_ends"]
         research_protocol = budgeted["research_protocol"]
         session_reports = budgeted["session_reports"]
+        _nb = {
+            "competitor": budgeted["notebook_competitor"],
+            "analyst": budgeted["notebook_analyst"],
+            "coach": budgeted["notebook_coach"],
+            "architect": budgeted["notebook_architect"],
+        }
 
     lessons_block = (
         f"Operational lessons (from prior generations):\n{operational_lessons}\n\n"
@@ -177,7 +188,6 @@ def build_prompt_bundle(
     analyst_constraint = _ANALYST_CONSTRAINT_SUFFIX if constraint_mode else ""
     coach_constraint = _COACH_CONSTRAINT_SUFFIX if constraint_mode else ""
     architect_constraint = _ARCHITECT_CONSTRAINT_SUFFIX if constraint_mode else ""
-    _nb = notebook_contexts or {}
     competitor_nb = (
         f"Session notebook context:\n{_nb['competitor']}\n\n" if _nb.get("competitor") else ""
     )

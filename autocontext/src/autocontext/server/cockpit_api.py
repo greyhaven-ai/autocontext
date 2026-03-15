@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from autocontext.consultation.runner import ConsultationRunner
 from autocontext.consultation.types import ConsultationRequest as ConsReq
 from autocontext.consultation.types import ConsultationTrigger
+from autocontext.notebook.context_provider import NotebookContextProvider
+from autocontext.notebook.types import SessionNotebook
 from autocontext.providers.base import LLMProvider
 from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
@@ -18,6 +20,7 @@ from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
 
 cockpit_router = APIRouter(prefix="/api/cockpit", tags=["cockpit"])
+_NOTEBOOK_CONTEXT_PROVIDER = NotebookContextProvider()
 
 
 def _get_store(request: Request) -> SQLiteStore:
@@ -37,6 +40,21 @@ def _get_artifacts(request: Request) -> ArtifactStore:
         skills_root=settings.skills_root,
         claude_skills_path=settings.claude_skills_path,
     )
+
+
+def _build_effective_notebook_preview(
+    store: SQLiteStore,
+    session_id: str,
+) -> dict[str, Any] | None:
+    notebook_row = store.get_notebook(session_id)
+    if notebook_row is None:
+        return None
+    notebook = SessionNotebook.from_dict(notebook_row)
+    current_best_score = store.get_run_best_score(session_id)
+    return _NOTEBOOK_CONTEXT_PROVIDER.build_effective_preview(
+        notebook,
+        current_best_score=current_best_score,
+    ).to_dict()
 
 
 class NotebookUpdateBody(BaseModel):
@@ -90,6 +108,16 @@ def cockpit_get_notebook(session_id: str, request: Request) -> dict[str, Any]:
     if nb is None:
         raise HTTPException(status_code=404, detail=f"Notebook not found: {session_id}")
     return nb
+
+
+@cockpit_router.get("/notebooks/{session_id}/effective-context")
+def cockpit_get_effective_notebook_context(session_id: str, request: Request) -> dict[str, Any]:
+    """Preview the notebook context that would be injected into runtime prompts."""
+    store = _get_store(request)
+    preview = _build_effective_notebook_preview(store, session_id)
+    if preview is None:
+        raise HTTPException(status_code=404, detail=f"Notebook not found: {session_id}")
+    return preview
 
 
 @cockpit_router.put("/notebooks/{session_id}")
@@ -343,6 +371,8 @@ def resume_info(run_id: str, request: Request) -> dict[str, Any]:
     else:
         hint = f"Run status is '{status}'."
 
+    notebook_preview = _build_effective_notebook_preview(store, run_id)
+
     return {
         "run_id": run_id,
         "status": status,
@@ -350,6 +380,7 @@ def resume_info(run_id: str, request: Request) -> dict[str, Any]:
         "last_gate_decision": last_gate,
         "can_resume": can_resume,
         "resume_hint": hint,
+        "effective_notebook_context": notebook_preview,
     }
 
 

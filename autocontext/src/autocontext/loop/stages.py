@@ -26,6 +26,8 @@ from autocontext.knowledge.rapid_gate import rapid_gate, should_transition_to_li
 from autocontext.knowledge.stagnation import StagnationDetector
 from autocontext.knowledge.tuning import TuningConfig, parse_tuning_proposal
 from autocontext.loop.stage_types import GenerationContext
+from autocontext.notebook.context_provider import NotebookContextProvider
+from autocontext.notebook.types import SessionNotebook
 from autocontext.prompts.templates import build_prompt_bundle
 from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
@@ -41,6 +43,8 @@ if TYPE_CHECKING:
     from autocontext.storage import ArtifactStore, SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
+
+_NOTEBOOK_CONTEXT_PROVIDER = NotebookContextProvider()
 
 
 class _ClientAsProvider(LLMProvider):
@@ -330,6 +334,16 @@ def stage_knowledge_setup(
 
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
     strategy_interface = scenario.describe_strategy_interface()
+    notebook_contexts: dict[str, str] | None = None
+    if not ablation:
+        raw_notebook = artifacts.read_notebook(ctx.run_id)
+        if isinstance(raw_notebook, dict):
+            notebook = SessionNotebook.from_dict(raw_notebook)
+            notebook_contexts = {
+                role: rendered
+                for role in ("competitor", "analyst", "coach", "architect")
+                if (rendered := _NOTEBOOK_CONTEXT_PROVIDER.for_role(notebook, role))
+            } or None
 
     prompts = build_prompt_bundle(
         scenario_rules=scenario.describe_rules(),
@@ -349,6 +363,7 @@ def stage_knowledge_setup(
         experiment_log=experiment_log,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
         context_budget_tokens=ctx.settings.context_budget_tokens,
+        notebook_contexts=notebook_contexts,
     )
 
     ctx.prompts = prompts

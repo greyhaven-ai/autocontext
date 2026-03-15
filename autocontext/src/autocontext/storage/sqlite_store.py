@@ -927,6 +927,21 @@ class SQLiteStore:
             row = conn.execute("SELECT changes()").fetchone()
             return bool(row[0] > 0) if row else False
 
+    def get_run_best_score(self, run_id: str) -> float | None:
+        """Return the best score recorded for a run, if any."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT MAX(best_score) AS best_score
+                FROM generations
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            if row is None or row["best_score"] is None:
+                return None
+            return float(row["best_score"])
+
     # ---- Monitor Conditions + Alerts (AC-209) ----
 
     def insert_monitor_condition(self, condition: object) -> str:

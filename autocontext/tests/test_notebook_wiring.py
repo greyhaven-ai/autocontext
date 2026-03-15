@@ -431,6 +431,18 @@ class TestBuildPromptBundleNotebook:
         assert "COACH-CTX-MARKER" in bundle.coach
         assert "ARCH-CTX-MARKER" in bundle.architect
 
+    def test_notebook_context_respects_context_budget(self) -> None:
+        from autocontext.prompts.templates import build_prompt_bundle
+
+        args = self._make_bundle_args()
+        args["context_budget_tokens"] = 20
+        args["notebook_contexts"] = {
+            "competitor": "NOTEBOOK " * 200,
+        }
+        bundle = build_prompt_bundle(**args)
+
+        assert "[... truncated for context budget ...]" in bundle.competitor
+
 
 # ===========================================================================
 # Integration: notebook edit → prompt output change
