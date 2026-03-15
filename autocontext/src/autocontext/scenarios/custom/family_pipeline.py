@@ -671,6 +671,81 @@ class ToolFragilityPipeline(FamilyPipeline):
         )
 
 
+class NegotiationPipeline(FamilyPipeline):
+    """Pipeline for negotiation family scenarios."""
+
+    @property
+    def family_name(self) -> str:
+        return "negotiation"
+
+    def required_spec_fields(self) -> set[str]:
+        return {
+            "description",
+            "environment_description",
+            "initial_state_description",
+            "hidden_preferences",
+            "max_rounds",
+            "success_criteria",
+            "actions",
+        }
+
+    def validate_spec(self, spec: dict[str, Any]) -> list[str]:
+        errors = _check_required_fields(spec, self.required_spec_fields())
+
+        hp = spec.get("hidden_preferences")
+        if isinstance(hp, dict):
+            for key in ("priorities", "reservation_value", "aspiration_value", "batna_description"):
+                if key not in hp:
+                    errors.append(f"hidden_preferences missing '{key}'")
+        elif hp is not None:
+            errors.append("hidden_preferences must be a dict")
+
+        actions = spec.get("actions")
+        if isinstance(actions, list):
+            if len(actions) == 0:
+                errors.append("actions must not be empty")
+            else:
+                for i, action in enumerate(actions):
+                    if not isinstance(action, dict):
+                        errors.append(f"actions[{i}] must be a dict")
+                    elif "name" not in action:
+                        errors.append(f"actions[{i}] missing 'name'")
+
+        criteria = spec.get("success_criteria")
+        if isinstance(criteria, list) and len(criteria) == 0:
+            errors.append("success_criteria must not be empty")
+
+        max_rounds = spec.get("max_rounds")
+        if max_rounds is not None and (not isinstance(max_rounds, int) or max_rounds <= 0):
+            errors.append("max_rounds must be a positive integer")
+
+        return errors
+
+    def validate_source(self, source: str) -> list[str]:
+        return _check_source_for_class(source, "NegotiationInterface")
+
+    def validate_contract(self, source: str) -> list[str]:
+        return _check_required_methods(
+            source,
+            "NegotiationInterface",
+            {
+                "describe_scenario",
+                "describe_environment",
+                "initial_state",
+                "get_available_actions",
+                "execute_action",
+                "is_terminal",
+                "evaluate_trace",
+                "get_rubric",
+                "get_hidden_preferences",
+                "get_rounds",
+                "get_opponent_model",
+                "update_opponent_model",
+                "evaluate_negotiation",
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # Built-in pipeline registration
 # ---------------------------------------------------------------------------
@@ -683,6 +758,7 @@ def _register_builtins() -> None:
     register_pipeline(WorkflowPipeline())
     register_pipeline(SchemaEvolutionPipeline())
     register_pipeline(ToolFragilityPipeline())
+    register_pipeline(NegotiationPipeline())
 
 
 _register_builtins()

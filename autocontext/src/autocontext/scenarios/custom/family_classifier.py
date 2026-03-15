@@ -273,6 +273,24 @@ _TOOL_FRAGILITY_SIGNALS: dict[str, float] = {
     "tool failure": 1.5,
 }
 
+_NEGOTIATION_SIGNALS: dict[str, float] = {
+    "negotiat": 2.0,  # negotiate, negotiation
+    "hidden preference": 2.0,
+    "batna": 2.0,
+    "opponent model": 2.0,
+    "adversarial": 1.5,
+    "counter offer": 2.0,
+    "counter-offer": 2.0,
+    "bargain": 1.5,
+    "deal": 1.0,
+    "concession": 1.5,
+    "reservation value": 2.0,
+    "repeated round": 2.0,
+    "strategy adapt": 1.5,
+    "hidden state": 1.5,
+    "offer accept": 1.5,
+}
+
 _FAMILY_SIGNAL_GROUPS: dict[str, dict[str, float]] = {
     "simulation": _SIMULATION_SIGNALS,
     "agent_task": _AGENT_TASK_SIGNALS,
@@ -282,6 +300,7 @@ _FAMILY_SIGNAL_GROUPS: dict[str, dict[str, float]] = {
     "workflow": _WORKFLOW_SIGNALS,
     "schema_evolution": _SCHEMA_EVOLUTION_SIGNALS,
     "tool_fragility": _TOOL_FRAGILITY_SIGNALS,
+    "negotiation": _NEGOTIATION_SIGNALS,
 }
 
 _DEFAULT_FAMILY_NAME = "agent_task"
