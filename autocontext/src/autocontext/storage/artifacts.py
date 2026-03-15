@@ -782,20 +782,16 @@ class ArtifactStore:
 
     def read_weakness_report(self, scenario_name: str, run_id: str) -> object | None:
         """Read a WeaknessReport, or None if missing."""
-        from autocontext.knowledge.weakness import WeaknessReport
-
         path = self._weakness_dir(scenario_name) / f"{run_id}.json"
         if not path.exists():
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
-        return WeaknessReport.from_dict(data)
+        return self._deserialize_weakness_report(data)
 
     def read_latest_weakness_reports(
         self, scenario_name: str, max_reports: int = 2,
     ) -> list[object]:
         """Read most recent weakness reports for a scenario."""
-        from autocontext.knowledge.weakness import WeaknessReport
-
         wr_dir = self._weakness_dir(scenario_name)
         if not wr_dir.exists():
             return []
@@ -803,21 +799,31 @@ class ArtifactStore:
         reports: list[object] = []
         for path in files[:max_reports]:
             data = json.loads(path.read_text(encoding="utf-8"))
-            reports.append(WeaknessReport.from_dict(data))
+            reports.append(self._deserialize_weakness_report(data))
         return reports
 
     def read_latest_weakness_reports_markdown(self, scenario_name: str, max_reports: int = 2) -> str:
         """Read recent weakness reports and concatenate them as markdown."""
-        from autocontext.knowledge.weakness import WeaknessReport
-
         reports = self.read_latest_weakness_reports(scenario_name, max_reports=max_reports)
         if not reports:
             return ""
         markdown_parts: list[str] = []
         for report in reports:
-            if isinstance(report, WeaknessReport):
-                markdown_parts.append(report.to_markdown())
+            to_markdown = getattr(report, "to_markdown", None)
+            if callable(to_markdown):
+                markdown_parts.append(to_markdown())
         return "\n\n".join(markdown_parts)
+
+    def _deserialize_weakness_report(self, data: dict[str, object]) -> object:
+        """Load either the legacy or trace-grounded weakness-report schema."""
+        if "total_generations" in data:
+            from autocontext.knowledge.weakness import WeaknessReport as LegacyWeaknessReport
+
+            return LegacyWeaknessReport.from_dict(data)
+
+        from autocontext.analytics.trace_reporter import WeaknessReport as TraceWeaknessReport
+
+        return TraceWeaknessReport.from_dict(data)
 
     def read_latest_session_reports(self, scenario_name: str, max_reports: int = 2) -> str:
         """Read the most recent session reports, concatenated."""

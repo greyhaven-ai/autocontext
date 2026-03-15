@@ -498,6 +498,22 @@ class TestTraceReporterExtractRecoveryPaths:
         reporter = TraceReporter()
         assert reporter.extract_recovery_paths(trace) == []
 
+    def test_uses_causal_edges_when_inline_causes_are_missing(self) -> None:
+        from autocontext.analytics.trace_reporter import TraceReporter
+
+        trace = _make_trace_with_failures()
+        for event in trace.events:
+            event.cause_event_ids = []
+
+        reporter = TraceReporter()
+        paths = reporter.extract_recovery_paths(trace)
+        findings = reporter.extract_findings(trace)
+
+        assert len(paths) == 1
+        assert paths[0].failure_event_id == "e3"
+        recovery_finding = next(finding for finding in findings if finding.finding_type == "strength")
+        assert "e3" in recovery_finding.evidence_event_ids
+
 
 # ===========================================================================
 # TraceReporter — generate_writeup

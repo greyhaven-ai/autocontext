@@ -173,6 +173,53 @@ class TraceWriteup:
             metadata=data.get("metadata", {}),
         )
 
+    def to_markdown(self) -> str:
+        scenario = str(self.metadata.get("scenario", ""))
+        family = str(self.metadata.get("scenario_family", ""))
+        lines = [f"# Run Summary: {self.run_id}", ""]
+        if scenario or family:
+            context = " | ".join(part for part in [scenario, family] if part)
+            lines.append(f"**Context:** {context}")
+            lines.append("")
+
+        lines.append("## Trace Summary")
+        lines.append(self.summary)
+        lines.append("")
+
+        lines.append("## Findings")
+        if self.findings:
+            for finding in self.findings:
+                evidence = ", ".join(finding.evidence_event_ids) or "none"
+                lines.append(
+                    f"- **{finding.title}** [{finding.finding_type}/{finding.severity}] "
+                    f"{finding.description} (evidence: {evidence})"
+                )
+        else:
+            lines.append("No notable findings.")
+        lines.append("")
+
+        lines.append("## Failure Motifs")
+        if self.failure_motifs:
+            for motif in self.failure_motifs:
+                lines.append(
+                    f"- **{motif.pattern_name}**: {motif.occurrence_count} occurrence(s)"
+                )
+        else:
+            lines.append("No recurring failure motifs.")
+        lines.append("")
+
+        lines.append("## Recovery Paths")
+        if self.recovery_paths:
+            for recovery in self.recovery_paths:
+                lines.append(
+                    f"- {recovery.failure_event_id} -> {recovery.recovery_event_id} "
+                    f"({len(recovery.path_event_ids)} events)"
+                )
+        else:
+            lines.append("No recovery paths observed.")
+
+        return "\n".join(lines)
+
 
 @dataclass(slots=True)
 class WeaknessReport:
@@ -212,6 +259,37 @@ class WeaknessReport:
             metadata=data.get("metadata", {}),
         )
 
+    def to_markdown(self) -> str:
+        scenario = str(self.metadata.get("scenario", ""))
+        lines = [
+            f"# Weakness Report: {self.run_id}",
+            f"**Scenario:** {scenario or 'unknown'}",
+            "",
+        ]
+        if not self.weaknesses:
+            lines.append("No weaknesses identified.")
+        else:
+            lines.append(f"**Summary:** {len(self.weaknesses)} weakness(es) detected")
+            lines.append("")
+            for weakness in self.weaknesses:
+                evidence = ", ".join(weakness.evidence_event_ids) or "none"
+                lines.append(f"## [{weakness.severity.upper()}] {weakness.title}")
+                lines.append(weakness.description)
+                lines.append(f"- Category: {weakness.category}")
+                lines.append(f"- Evidence events: {evidence}")
+                lines.append("")
+
+        lines.append("## Recovery Analysis")
+        lines.append(self.recovery_analysis or "No recovery analysis available.")
+        lines.append("")
+        lines.append("## Recommendations")
+        if self.recommendations:
+            for recommendation in self.recommendations:
+                lines.append(f"- {recommendation}")
+        else:
+            lines.append("- No immediate recommendations.")
+        return "\n".join(lines)
+
 
 def _uid() -> str:
     return uuid.uuid4().hex[:8]
@@ -225,7 +303,10 @@ class TraceReporter:
         findings: list[TraceFinding] = []
 
         for event in trace.events:
-            if event.category == "failure":
+            is_failure_like = event.category == "failure" or (
+                event.category == "validation" and str(event.outcome) == "failed"
+            )
+            if is_failure_like:
                 evidence = self._collect_evidence(trace, event)
                 findings.append(TraceFinding(
                     finding_id=f"finding-{_uid()}",
@@ -252,7 +333,11 @@ class TraceReporter:
 
     def extract_failure_motifs(self, trace: RunTrace) -> list[FailureMotif]:
         """Group failure events by event_type into motifs."""
-        failure_events = [e for e in trace.events if e.category == "failure"]
+        failure_events = [
+            event for event in trace.events
+            if event.category == "failure"
+            or (event.category == "validation" and str(event.outcome) == "failed")
+        ]
         if not failure_events:
             return []
 
@@ -283,7 +368,7 @@ class TraceReporter:
 
         for recovery in recovery_events:
             # Walk causes to find the originating failure
-            failure_id = self._find_cause_failure(event_map, recovery)
+            failure_id = self._find_cause_failure(trace, event_map, recovery)
             if failure_id is None:
                 continue
 
@@ -318,6 +403,7 @@ class TraceReporter:
             recovery_paths=recovery_paths,
             summary=summary,
             created_at=now,
+            metadata={**dict(trace.metadata), "report_source": "trace_grounded"},
         )
 
     def generate_weakness_report(self, trace: RunTrace) -> WeaknessReport:
@@ -339,19 +425,25 @@ class TraceReporter:
             recovery_analysis=recovery_analysis,
             recommendations=recommendations,
             created_at=now,
+            metadata={**dict(trace.metadata), "report_source": "trace_grounded"},
         )
 
     # --- private helpers ---
 
     def _collect_evidence(self, trace: RunTrace, event: TraceEvent) -> list[str]:
-        """Collect evidence event IDs: the event itself plus its causes."""
-        evidence = list(event.evidence_ids) if event.evidence_ids else []
-        for cause_id in event.cause_event_ids:
-            if cause_id not in evidence:
-                evidence.append(cause_id)
-        if event.event_id not in evidence:
-            evidence.append(event.event_id)
-        return evidence
+        """Collect evidence event IDs from explicit evidence, causal ancestry, and the event itself."""
+        event_map = {evt.event_id: evt for evt in trace.events}
+        parent_map = self._parent_map(trace)
+        evidence_ids = set(event.evidence_ids)
+        evidence_ids.update(self._ancestor_ids(parent_map, event.event_id))
+        evidence_ids.add(event.event_id)
+        return [
+            evt.event_id
+            for evt in sorted(
+                (event_map[eid] for eid in evidence_ids if eid in event_map),
+                key=lambda evt: evt.sequence_number,
+            )
+        ]
 
     def _map_severity(self, event_severity: str) -> str:
         mapping = {"critical": "critical", "error": "high", "warning": "medium", "info": "low"}
@@ -359,12 +451,14 @@ class TraceReporter:
 
     def _find_cause_failure(
         self,
+        trace: RunTrace,
         event_map: dict[str, TraceEvent],
         recovery: TraceEvent,
     ) -> str | None:
         """Walk causes of a recovery to find the originating failure."""
         visited: set[str] = set()
-        queue = list(recovery.cause_event_ids)
+        parent_map = self._parent_map(trace)
+        queue = list(parent_map.get(recovery.event_id, []))
         while queue:
             eid = queue.pop(0)
             if eid in visited:
@@ -375,7 +469,7 @@ class TraceReporter:
                 continue
             if evt.category == "failure":
                 return evt.event_id
-            queue.extend(evt.cause_event_ids)
+            queue.extend(parent_map.get(eid, []))
         return None
 
     def _collect_path(
@@ -467,6 +561,40 @@ class TraceReporter:
 
         return recs
 
+    def _parent_map(self, trace: RunTrace) -> dict[str, list[str]]:
+        """Build a canonical parent map from explicit edges with inline fallbacks."""
+        event_ids = {event.event_id for event in trace.events}
+        parent_map: dict[str, list[str]] = {event_id: [] for event_id in event_ids}
+
+        for edge in trace.causal_edges:
+            if edge.source_event_id not in event_ids or edge.target_event_id not in event_ids:
+                continue
+            parents = parent_map.setdefault(edge.target_event_id, [])
+            if edge.source_event_id not in parents:
+                parents.append(edge.source_event_id)
+
+        for event in trace.events:
+            parents = parent_map.setdefault(event.event_id, [])
+            if event.parent_event_id and event.parent_event_id in event_ids and event.parent_event_id not in parents:
+                parents.append(event.parent_event_id)
+            for cause_id in event.cause_event_ids:
+                if cause_id in event_ids and cause_id not in parents:
+                    parents.append(cause_id)
+
+        return parent_map
+
+    def _ancestor_ids(self, parent_map: dict[str, list[str]], event_id: str) -> set[str]:
+        """Return all causal ancestors for an event."""
+        visited: set[str] = set()
+        queue = list(parent_map.get(event_id, []))
+        while queue:
+            candidate = queue.pop(0)
+            if candidate in visited:
+                continue
+            visited.add(candidate)
+            queue.extend(parent_map.get(candidate, []))
+        return visited
+
 
 class ReportStore:
     """Persists writeups and weakness reports as JSON files."""
@@ -496,6 +624,12 @@ class ReportStore:
             results.append(TraceWriteup.from_dict(data))
         return results
 
+    def latest_writeup_for_run(self, run_id: str) -> TraceWriteup | None:
+        writeups = [writeup for writeup in self.list_writeups() if writeup.run_id == run_id]
+        if not writeups:
+            return None
+        return max(writeups, key=lambda writeup: writeup.created_at)
+
     def persist_weakness_report(self, report: WeaknessReport) -> Path:
         path = self._weakness_dir / f"{report.report_id}.json"
         path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
@@ -514,3 +648,9 @@ class ReportStore:
             data = json.loads(path.read_text(encoding="utf-8"))
             results.append(WeaknessReport.from_dict(data))
         return results
+
+    def latest_weakness_report_for_run(self, run_id: str) -> WeaknessReport | None:
+        reports = [report for report in self.list_weakness_reports() if report.run_id == run_id]
+        if not reports:
+            return None
+        return max(reports, key=lambda report: report.created_at)
