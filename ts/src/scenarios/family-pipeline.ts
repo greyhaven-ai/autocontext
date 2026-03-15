@@ -1,9 +1,11 @@
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { ArtifactEditingSpecSchema, type ArtifactEditingSpec } from "./artifact-editing-spec.js";
 import { validateSpec as validateAgentTaskSpec } from "./agent-task-validator.js";
+import { CoordinationSpecSchema, type CoordinationSpec } from "./coordination-spec.js";
 import { type ScenarioFamilyName } from "./families.js";
 import { InvestigationSpecSchema, type InvestigationSpec } from "./investigation-spec.js";
 import { NegotiationSpecSchema, type NegotiationSpec } from "./negotiation-spec.js";
+import { OperatorLoopSpecSchema, type OperatorLoopSpec } from "./operator-loop-spec.js";
 import { SchemaEvolutionSpecSchema, type SchemaEvolutionSpec } from "./schema-evolution-spec.js";
 import { SimulationSpecSchema, type SimulationSpec } from "./simulation-spec.js";
 import { ToolFragilitySpecSchema, type ToolFragilitySpec } from "./tool-fragility-spec.js";
@@ -125,6 +127,32 @@ const negotiationPipeline: FamilyPipeline<NegotiationSpec> = {
   },
 };
 
+const operatorLoopPipeline: FamilyPipeline<OperatorLoopSpec> = {
+  familyName: "operator_loop",
+  validateSpec(spec: OperatorLoopSpec): string[] {
+    const result = OperatorLoopSpecSchema.safeParse(spec);
+    if (!result.success) {
+      return result.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`,
+      );
+    }
+    return [];
+  },
+};
+
+const coordinationPipeline: FamilyPipeline<CoordinationSpec> = {
+  familyName: "coordination",
+  validateSpec(spec: CoordinationSpec): string[] {
+    const result = CoordinationSpecSchema.safeParse(spec);
+    if (!result.success) {
+      return result.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`,
+      );
+    }
+    return [];
+  },
+};
+
 const PIPELINE_REGISTRY = {
   agent_task: agentTaskPipeline,
   simulation: simulationPipeline,
@@ -134,6 +162,8 @@ const PIPELINE_REGISTRY = {
   schema_evolution: schemaEvolutionPipeline,
   tool_fragility: toolFragilityPipeline,
   negotiation: negotiationPipeline,
+  operator_loop: operatorLoopPipeline,
+  coordination: coordinationPipeline,
 } as const;
 
 export function hasPipeline(family: string): family is keyof typeof PIPELINE_REGISTRY {
@@ -157,7 +187,9 @@ export function validateForFamily(
     | WorkflowSpec
     | SchemaEvolutionSpec
     | ToolFragilitySpec
-    | NegotiationSpec,
+    | NegotiationSpec
+    | OperatorLoopSpec
+    | CoordinationSpec,
 ): string[] {
   const pipeline = getPipeline(family);
   return pipeline.validateSpec(spec as never);

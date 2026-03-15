@@ -16,6 +16,10 @@ import {
   ARTIFACT_SPEC_START,
 } from "../src/scenarios/artifact-editing-designer.js";
 import {
+  COORDINATION_SPEC_END,
+  COORDINATION_SPEC_START,
+} from "../src/scenarios/coordination-designer.js";
+import {
   INVESTIGATION_SPEC_END,
   INVESTIGATION_SPEC_START,
 } from "../src/scenarios/investigation-designer.js";
@@ -23,6 +27,10 @@ import {
   NEGOTIATION_SPEC_END,
   NEGOTIATION_SPEC_START,
 } from "../src/scenarios/negotiation-designer.js";
+import {
+  OPERATOR_LOOP_SPEC_END,
+  OPERATOR_LOOP_SPEC_START,
+} from "../src/scenarios/operator-loop-designer.js";
 import {
   SCHEMA_EVOLUTION_SPEC_END,
   SCHEMA_EVOLUTION_SPEC_START,
@@ -46,8 +54,10 @@ import { validateIntent, validateSpec } from "../src/scenarios/agent-task-valida
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
+import type { CoordinationSpec } from "../src/scenarios/coordination-spec.js";
 import type { InvestigationSpec } from "../src/scenarios/investigation-spec.js";
 import type { NegotiationSpec } from "../src/scenarios/negotiation-spec.js";
+import type { OperatorLoopSpec } from "../src/scenarios/operator-loop-spec.js";
 import type { SchemaEvolutionSpec } from "../src/scenarios/schema-evolution-spec.js";
 import type { SimulationSpec } from "../src/scenarios/simulation-spec.js";
 import type { ToolFragilitySpec } from "../src/scenarios/tool-fragility-spec.js";
@@ -345,6 +355,70 @@ function mockNegotiationResponse(): string {
   return `${NEGOTIATION_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${NEGOTIATION_SPEC_END}\n`;
 }
 
+function mockOperatorLoopResponse(): string {
+  const data = {
+    description: "Customer support triage with escalation policy.",
+    environment_description: "Help desk system with tiered support.",
+    initial_state_description: "Ticket received, agent begins triage.",
+    escalation_policy: {
+      escalation_threshold: "high",
+      max_escalations: 3,
+    },
+    success_criteria: ["resolve issue or correctly escalate", "minimize unnecessary escalations"],
+    failure_modes: ["over-escalation", "under-escalation"],
+    max_steps: 10,
+    actions: [
+      {
+        name: "respond",
+        description: "Reply to the customer directly.",
+        parameters: { message: "string" },
+        preconditions: [],
+        effects: ["response_sent"],
+      },
+      {
+        name: "escalate_ticket",
+        description: "Escalate to a human operator.",
+        parameters: { reason: "string" },
+        preconditions: [],
+        effects: ["escalated"],
+      },
+    ],
+  };
+  return `${OPERATOR_LOOP_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${OPERATOR_LOOP_SPEC_END}\n`;
+}
+
+function mockCoordinationResponse(): string {
+  const data = {
+    description: "Multi-agent research report writing.",
+    environment_description: "Research team with partial information.",
+    initial_state_description: "Task partitioned across workers.",
+    workers: [
+      { worker_id: "researcher", role: "data gatherer" },
+      { worker_id: "writer", role: "report writer" },
+    ],
+    success_criteria: ["coherent merged report", "minimal duplication across sections"],
+    failure_modes: ["duplicate content across workers", "lost information during handoff"],
+    max_steps: 10,
+    actions: [
+      {
+        name: "research",
+        description: "Gather data on assigned topic.",
+        parameters: { topic: "string" },
+        preconditions: [],
+        effects: ["data_gathered"],
+      },
+      {
+        name: "write_section",
+        description: "Write a report section.",
+        parameters: { section: "string" },
+        preconditions: ["research"],
+        effects: ["section_written"],
+      },
+    ],
+  };
+  return `${COORDINATION_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${COORDINATION_SPEC_END}\n`;
+}
+
 function makeMockProvider(response = "mock output"): LLMProvider {
   return {
     complete: async () => ({ text: response, model: "mock", usage: { inputTokens: 0, outputTokens: 0 } }) as CompletionResult,
@@ -609,6 +683,46 @@ describe("FamilyPipeline", () => {
       maxSteps: 10,
     };
     expect(validateForFamily("negotiation", spec)).toEqual([]);
+  });
+
+  it("validates operator-loop specs through the family pipeline", () => {
+    const spec: OperatorLoopSpec = {
+      description: "Support triage with escalation judgment.",
+      environmentDescription: "Help desk system.",
+      initialStateDescription: "A new ticket has arrived.",
+      escalationPolicy: {
+        escalationThreshold: "high",
+        maxEscalations: 3,
+      },
+      successCriteria: ["resolve or correctly escalate"],
+      failureModes: ["over-escalation", "under-escalation"],
+      actions: [
+        { name: "respond", description: "Reply to the customer", parameters: { message: "string" }, preconditions: [], effects: ["response_sent"] },
+        { name: "escalate_ticket", description: "Escalate to a human", parameters: { reason: "string" }, preconditions: [], effects: ["escalated"] },
+      ],
+      maxSteps: 10,
+    };
+    expect(validateForFamily("operator_loop", spec)).toEqual([]);
+  });
+
+  it("validates coordination specs through the family pipeline", () => {
+    const spec: CoordinationSpec = {
+      description: "Coordinate workers on a shared task.",
+      environmentDescription: "Research team with partial context.",
+      initialStateDescription: "Task is partitioned.",
+      workers: [
+        { workerId: "researcher", role: "data gatherer" },
+        { workerId: "writer", role: "report writer" },
+      ],
+      successCriteria: ["coherent merged output"],
+      failureModes: ["duplicate work"],
+      actions: [
+        { name: "research", description: "Gather data", parameters: { topic: "string" }, preconditions: [], effects: ["data_gathered"] },
+        { name: "write_section", description: "Write section", parameters: { section: "string" }, preconditions: ["research"], effects: ["section_written"] },
+      ],
+      maxSteps: 10,
+    };
+    expect(validateForFamily("coordination", spec)).toEqual([]);
   });
 
   it("rejects unsupported families instead of collapsing silently", () => {
@@ -904,6 +1018,36 @@ describe("AgentTaskCreator", () => {
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("negotiation"));
   });
 
+  it("routes operator-loop descriptions into an operator-loop scaffold", async () => {
+    const provider = makeMockProvider(mockOperatorLoopResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-operator-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Create an operator-in-the-loop scenario for support triage with escalation judgment");
+    expect("family" in scenario && scenario.family).toBe("operator_loop");
+
+    const name = creator.deriveName("Create an operator-in-the-loop scenario for support triage with escalation judgment");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("operator_loop"));
+  });
+
+  it("routes coordination descriptions into a coordination scaffold", async () => {
+    const provider = makeMockProvider(mockCoordinationResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-coordination-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Create a multi-agent coordination scenario with handoffs and partial context");
+    expect("family" in scenario && scenario.family).toBe("coordination");
+
+    const name = creator.deriveName("Create a multi-agent coordination scenario with handoffs and partial context");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("coordination"));
+  });
+
   it("rejects classified-but-unsupported game families", async () => {
     const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-game-"));
@@ -949,6 +1093,18 @@ describe("AgentTaskCreator", () => {
     expect(
       classifyScenarioFamily("Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences").familyName,
     ).toBe("negotiation");
+  });
+
+  it("classifies operator-loop descriptions into the operator_loop family", () => {
+    expect(
+      classifyScenarioFamily("Create an operator-in-the-loop scenario for support triage with escalation judgment").familyName,
+    ).toBe("operator_loop");
+  });
+
+  it("classifies coordination descriptions into the coordination family", () => {
+    expect(
+      classifyScenarioFamily("Create a multi-agent coordination scenario with handoffs and partial context").familyName,
+    ).toBe("coordination");
   });
 });
 

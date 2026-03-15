@@ -226,6 +226,34 @@ const NEGOTIATION_SIGNALS: Record<string, number> = {
   concession: 1.0,
 };
 
+const OPERATOR_LOOP_SIGNALS: Record<string, number> = {
+  escalat: 2.0,
+  operator: 1.5,
+  clarification: 1.5,
+  "human in the loop": 2.0,
+  "human-in-the-loop": 2.0,
+  "over-escalat": 2.0,
+  "under-escalat": 2.0,
+  triage: 1.0,
+  "when to escalate": 2.0,
+  "operator loop": 2.0,
+};
+
+const COORDINATION_SIGNALS: Record<string, number> = {
+  coordinat: 2.0,
+  handoff: 2.0,
+  "multi-agent": 2.0,
+  "multi agent": 2.0,
+  worker: 1.5,
+  merge: 1.5,
+  duplication: 1.5,
+  parallel: 1.0,
+  teammate: 1.0,
+  collaborator: 1.0,
+  "role split": 1.5,
+  "partial context": 2.0,
+};
+
 const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> = {
   game: GAME_SIGNALS,
   agent_task: AGENT_TASK_SIGNALS,
@@ -236,6 +264,8 @@ const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> =
   schema_evolution: SCHEMA_EVOLUTION_SIGNALS,
   tool_fragility: TOOL_FRAGILITY_SIGNALS,
   negotiation: NEGOTIATION_SIGNALS,
+  operator_loop: OPERATOR_LOOP_SIGNALS,
+  coordination: COORDINATION_SIGNALS,
 };
 
 const DEFAULT_FAMILY_NAME: ScenarioFamilyName = "agent_task";

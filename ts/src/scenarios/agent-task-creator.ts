@@ -17,6 +17,10 @@ import {
   type ArtifactEditingScenarioHandle,
   ArtifactEditingCreator,
 } from "./artifact-editing-creator.js";
+import {
+  type CoordinationScenarioHandle,
+  CoordinationCreator,
+} from "./coordination-creator.js";
 import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
 import { validateForFamily } from "./family-pipeline.js";
 import { getScenarioTypeMarker } from "./families.js";
@@ -28,6 +32,10 @@ import {
   type NegotiationScenarioHandle,
   NegotiationCreator,
 } from "./negotiation-creator.js";
+import {
+  type OperatorLoopScenarioHandle,
+  OperatorLoopCreator,
+} from "./operator-loop-creator.js";
 import {
   type SchemaEvolutionScenarioHandle,
   SchemaEvolutionCreator,
@@ -54,8 +62,10 @@ export interface AgentTaskCreatorOpts {
 export type CreatedScenario =
   | (AgentTaskInterface & { readonly name: string; readonly spec: AgentTaskSpec; readonly family?: "agent_task" })
   | ArtifactEditingScenarioHandle
+  | CoordinationScenarioHandle
   | InvestigationScenarioHandle
   | NegotiationScenarioHandle
+  | OperatorLoopScenarioHandle
   | SchemaEvolutionScenarioHandle
   | SimulationScenarioHandle
   | ToolFragilityScenarioHandle
@@ -158,6 +168,20 @@ export class AgentTaskCreator {
     }
     if (family === "negotiation") {
       return new NegotiationCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "operator_loop") {
+      return new OperatorLoopCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "coordination") {
+      return new CoordinationCreator({
         provider: this.provider,
         model: this.model,
         knowledgeRoot: this.knowledgeRoot,
