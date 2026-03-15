@@ -25,6 +25,10 @@ import {
   InvestigationCreator,
 } from "./investigation-creator.js";
 import {
+  type NegotiationScenarioHandle,
+  NegotiationCreator,
+} from "./negotiation-creator.js";
+import {
   type SchemaEvolutionScenarioHandle,
   SchemaEvolutionCreator,
 } from "./schema-evolution-creator.js";
@@ -51,6 +55,7 @@ export type CreatedScenario =
   | (AgentTaskInterface & { readonly name: string; readonly spec: AgentTaskSpec; readonly family?: "agent_task" })
   | ArtifactEditingScenarioHandle
   | InvestigationScenarioHandle
+  | NegotiationScenarioHandle
   | SchemaEvolutionScenarioHandle
   | SimulationScenarioHandle
   | ToolFragilityScenarioHandle
@@ -146,6 +151,13 @@ export class AgentTaskCreator {
     }
     if (family === "tool_fragility") {
       return new ToolFragilityCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "negotiation") {
+      return new NegotiationCreator({
         provider: this.provider,
         model: this.model,
         knowledgeRoot: this.knowledgeRoot,

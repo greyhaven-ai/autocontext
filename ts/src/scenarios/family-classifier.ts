@@ -209,6 +209,23 @@ const TOOL_FRAGILITY_SIGNALS: Record<string, number> = {
   "tool failure": 1.5,
 };
 
+const NEGOTIATION_SIGNALS: Record<string, number> = {
+  negotiat: 2.0,
+  adversarial: 1.5,
+  batna: 2.0,
+  "hidden preference": 2.0,
+  "reservation value": 1.5,
+  "aspiration value": 1.5,
+  counteroffer: 1.5,
+  "counter offer": 1.5,
+  "deal quality": 1.5,
+  "opponent modeling": 2.0,
+  anchoring: 1.0,
+  seller: 1.0,
+  buyer: 1.0,
+  concession: 1.0,
+};
+
 const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> = {
   game: GAME_SIGNALS,
   agent_task: AGENT_TASK_SIGNALS,
@@ -218,6 +235,7 @@ const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> =
   workflow: WORKFLOW_SIGNALS,
   schema_evolution: SCHEMA_EVOLUTION_SIGNALS,
   tool_fragility: TOOL_FRAGILITY_SIGNALS,
+  negotiation: NEGOTIATION_SIGNALS,
 };
 
 const DEFAULT_FAMILY_NAME: ScenarioFamilyName = "agent_task";

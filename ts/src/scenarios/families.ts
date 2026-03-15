@@ -6,7 +6,8 @@ export type ScenarioFamilyName =
   | "investigation"
   | "workflow"
   | "schema_evolution"
-  | "tool_fragility";
+  | "tool_fragility"
+  | "negotiation";
 
 export const SCENARIO_TYPE_MARKERS: Record<ScenarioFamilyName, string> = {
   game: "parametric",
@@ -17,6 +18,7 @@ export const SCENARIO_TYPE_MARKERS: Record<ScenarioFamilyName, string> = {
   workflow: "workflow",
   schema_evolution: "schema_evolution",
   tool_fragility: "tool_fragility",
+  negotiation: "negotiation",
 };
 
 export function getScenarioTypeMarker(family: ScenarioFamilyName): string {

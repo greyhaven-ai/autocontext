@@ -3,6 +3,7 @@ import { ArtifactEditingSpecSchema, type ArtifactEditingSpec } from "./artifact-
 import { validateSpec as validateAgentTaskSpec } from "./agent-task-validator.js";
 import { type ScenarioFamilyName } from "./families.js";
 import { InvestigationSpecSchema, type InvestigationSpec } from "./investigation-spec.js";
+import { NegotiationSpecSchema, type NegotiationSpec } from "./negotiation-spec.js";
 import { SchemaEvolutionSpecSchema, type SchemaEvolutionSpec } from "./schema-evolution-spec.js";
 import { SimulationSpecSchema, type SimulationSpec } from "./simulation-spec.js";
 import { ToolFragilitySpecSchema, type ToolFragilitySpec } from "./tool-fragility-spec.js";
@@ -111,6 +112,19 @@ const toolFragilityPipeline: FamilyPipeline<ToolFragilitySpec> = {
   },
 };
 
+const negotiationPipeline: FamilyPipeline<NegotiationSpec> = {
+  familyName: "negotiation",
+  validateSpec(spec: NegotiationSpec): string[] {
+    const result = NegotiationSpecSchema.safeParse(spec);
+    if (!result.success) {
+      return result.error.issues.map(
+        (issue) => `${issue.path.join(".")}: ${issue.message}`,
+      );
+    }
+    return [];
+  },
+};
+
 const PIPELINE_REGISTRY = {
   agent_task: agentTaskPipeline,
   simulation: simulationPipeline,
@@ -119,6 +133,7 @@ const PIPELINE_REGISTRY = {
   workflow: workflowPipeline,
   schema_evolution: schemaEvolutionPipeline,
   tool_fragility: toolFragilityPipeline,
+  negotiation: negotiationPipeline,
 } as const;
 
 export function hasPipeline(family: string): family is keyof typeof PIPELINE_REGISTRY {
@@ -141,7 +156,8 @@ export function validateForFamily(
     | InvestigationSpec
     | WorkflowSpec
     | SchemaEvolutionSpec
-    | ToolFragilitySpec,
+    | ToolFragilitySpec
+    | NegotiationSpec,
 ): string[] {
   const pipeline = getPipeline(family);
   return pipeline.validateSpec(spec as never);

@@ -20,6 +20,10 @@ import {
   INVESTIGATION_SPEC_START,
 } from "../src/scenarios/investigation-designer.js";
 import {
+  NEGOTIATION_SPEC_END,
+  NEGOTIATION_SPEC_START,
+} from "../src/scenarios/negotiation-designer.js";
+import {
   SCHEMA_EVOLUTION_SPEC_END,
   SCHEMA_EVOLUTION_SPEC_START,
 } from "../src/scenarios/schema-evolution-designer.js";
@@ -43,6 +47,7 @@ import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
 import type { InvestigationSpec } from "../src/scenarios/investigation-spec.js";
+import type { NegotiationSpec } from "../src/scenarios/negotiation-spec.js";
 import type { SchemaEvolutionSpec } from "../src/scenarios/schema-evolution-spec.js";
 import type { SimulationSpec } from "../src/scenarios/simulation-spec.js";
 import type { ToolFragilitySpec } from "../src/scenarios/tool-fragility-spec.js";
@@ -299,6 +304,47 @@ function mockToolFragilityResponse(): string {
   return `${TOOL_FRAGILITY_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${TOOL_FRAGILITY_SPEC_END}\n`;
 }
 
+function mockNegotiationResponse(): string {
+  const data = {
+    description: "Negotiate a contract with hidden opponent preferences and BATNA constraints.",
+    environment_description: "Buyer-seller negotiation over price, timing, and warranty.",
+    initial_state_description: "Both sides have opening positions and hidden priorities.",
+    hidden_preferences: {
+      priorities: { price: 0.6, delivery_time: 0.3, warranty: 0.1 },
+      reservation_value: 50.0,
+      aspiration_value: 85.0,
+      batna_description: "Switch to a slower alternative vendor.",
+    },
+    max_rounds: 5,
+    success_criteria: ["reach agreement above reservation value", "model opponent priorities"],
+    failure_modes: ["deadlock without agreement"],
+    actions: [
+      {
+        name: "make_offer",
+        description: "Propose contract terms.",
+        parameters: { terms: "dict" },
+        preconditions: [],
+        effects: ["offer_on_table"],
+      },
+      {
+        name: "counter_offer",
+        description: "Respond with modified terms.",
+        parameters: { terms: "dict" },
+        preconditions: ["make_offer"],
+        effects: ["counter_on_table"],
+      },
+      {
+        name: "accept",
+        description: "Accept the current offer.",
+        parameters: {},
+        preconditions: ["make_offer"],
+        effects: ["deal_closed"],
+      },
+    ],
+  };
+  return `${NEGOTIATION_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${NEGOTIATION_SPEC_END}\n`;
+}
+
 function makeMockProvider(response = "mock output"): LLMProvider {
   return {
     complete: async () => ({ text: response, model: "mock", usage: { inputTokens: 0, outputTokens: 0 } }) as CompletionResult,
@@ -540,6 +586,29 @@ describe("FamilyPipeline", () => {
       ],
     };
     expect(validateForFamily("tool_fragility", spec)).toEqual([]);
+  });
+
+  it("validates negotiation specs through the family pipeline", () => {
+    const spec: NegotiationSpec = {
+      description: "Negotiate a contract with hidden BATNA.",
+      environmentDescription: "Buyer-seller contract negotiation.",
+      initialStateDescription: "Both parties have opening positions.",
+      hiddenPreferences: {
+        priorities: { price: 0.6, delivery_time: 0.3, warranty: 0.1 },
+        reservationValue: 50.0,
+        aspirationValue: 85.0,
+        batnaDescription: "Switch to a slower alternative vendor.",
+      },
+      maxRounds: 5,
+      successCriteria: ["reach agreement", "model opponent priorities"],
+      failureModes: ["deadlock"],
+      actions: [
+        { name: "make_offer", description: "Make an offer", parameters: { terms: "dict" }, preconditions: [], effects: ["offer_on_table"] },
+        { name: "accept", description: "Accept an offer", parameters: {}, preconditions: ["make_offer"], effects: ["deal_closed"] },
+      ],
+      maxSteps: 10,
+    };
+    expect(validateForFamily("negotiation", spec)).toEqual([]);
   });
 
   it("rejects unsupported families instead of collapsing silently", () => {
@@ -820,6 +889,21 @@ describe("AgentTaskCreator", () => {
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("tool_fragility"));
   });
 
+  it("routes negotiation descriptions into a negotiation scaffold", async () => {
+    const provider = makeMockProvider(mockNegotiationResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-negotiation-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences");
+    expect("family" in scenario && scenario.family).toBe("negotiation");
+
+    const name = creator.deriveName("Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("negotiation"));
+  });
+
   it("rejects classified-but-unsupported game families", async () => {
     const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-game-"));
@@ -859,6 +943,12 @@ describe("AgentTaskCreator", () => {
     expect(
       classifyScenarioFamily("Create a tool fragility scenario with API contract drift and environment changes").familyName,
     ).toBe("tool_fragility");
+  });
+
+  it("classifies negotiation descriptions into the negotiation family", () => {
+    expect(
+      classifyScenarioFamily("Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences").familyName,
+    ).toBe("negotiation");
   });
 });
 
