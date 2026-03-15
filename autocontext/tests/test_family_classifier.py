@@ -134,6 +134,24 @@ class TestClassifyArtifactEditing:
         assert result.family_name == "artifact_editing"
 
 
+class TestClassifyInvestigation:
+    def test_root_cause_investigation(self) -> None:
+        result = classify_scenario_family(
+            "Create an investigation scenario where the agent must gather evidence, avoid red herrings, "
+            "and identify the root cause of a production outage"
+        )
+        assert result.family_name == "investigation"
+
+
+class TestClassifyWorkflow:
+    def test_transactional_workflow(self) -> None:
+        result = classify_scenario_family(
+            "Create a transactional workflow where the agent must execute payment, inventory, and "
+            "notification steps with compensation for reversible side effects"
+        )
+        assert result.family_name == "workflow"
+
+
 # ---------------------------------------------------------------------------
 # classify_scenario_family — agent_task signals
 # ---------------------------------------------------------------------------

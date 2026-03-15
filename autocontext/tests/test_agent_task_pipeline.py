@@ -25,8 +25,18 @@ from autocontext.scenarios.custom.artifact_editing_designer import (
     ARTIFACT_SPEC_END,
     ARTIFACT_SPEC_START,
 )
+from autocontext.scenarios.custom.investigation_designer import (
+    INVESTIGATION_SPEC_END,
+    INVESTIGATION_SPEC_START,
+)
 from autocontext.scenarios.custom.simulation_designer import SIM_SPEC_END, SIM_SPEC_START
+from autocontext.scenarios.custom.workflow_designer import (
+    WORKFLOW_SPEC_END,
+    WORKFLOW_SPEC_START,
+)
+from autocontext.scenarios.investigation import InvestigationInterface
 from autocontext.scenarios.simulation import SimulationInterface
+from autocontext.scenarios.workflow import WorkflowInterface
 
 # --- Fixtures ---
 
@@ -105,6 +115,109 @@ def _mock_artifact_editing_response() -> str:
         ],
     }
     return f"{ARTIFACT_SPEC_START}\n{json.dumps(data, indent=2)}\n{ARTIFACT_SPEC_END}\n"
+
+
+def _mock_investigation_response() -> str:
+    data = {
+        "description": "Investigate a production outage by gathering evidence and identifying the root cause.",
+        "environment_description": "Mock service environment with logs and dashboards.",
+        "initial_state_description": "An outage is active and only partial evidence is visible.",
+        "evidence_pool_description": (
+            "Logs implicate the auth service, metrics show latency spikes, "
+            "and a cron-job entry is a red herring."
+        ),
+        "diagnosis_target": "A bad auth deployment exhausted the database connection pool.",
+        "success_criteria": [
+            "collect enough evidence to explain the outage",
+            "identify the correct diagnosis without relying on red herrings",
+        ],
+        "failure_modes": ["following a cron-job red herring"],
+        "max_steps": 6,
+        "actions": [
+            {
+                "name": "inspect_logs",
+                "description": "Review service logs around the incident.",
+                "parameters": {"service": "string"},
+                "preconditions": [],
+                "effects": ["log_evidence_collected"],
+            },
+            {
+                "name": "query_metrics",
+                "description": "Check dashboard metrics related to the outage.",
+                "parameters": {"metric": "string"},
+                "preconditions": [],
+                "effects": ["metrics_evidence_collected"],
+            },
+            {
+                "name": "record_diagnosis",
+                "description": "Submit the final diagnosis.",
+                "parameters": {"diagnosis": "string"},
+                "preconditions": ["inspect_logs", "query_metrics"],
+                "effects": ["diagnosis_recorded"],
+            },
+        ],
+    }
+    return f"{INVESTIGATION_SPEC_START}\n{json.dumps(data, indent=2)}\n{INVESTIGATION_SPEC_END}\n"
+
+
+def _mock_workflow_response() -> str:
+    data = {
+        "description": "Execute an order-processing workflow with compensation when downstream steps fail.",
+        "environment_description": "Mock commerce workflow with payment, inventory, and notification side effects.",
+        "initial_state_description": "No workflow steps have run yet.",
+        "workflow_steps": [
+            {
+                "name": "charge_payment",
+                "description": "Charge the payment method.",
+                "idempotent": False,
+                "reversible": True,
+                "compensation": "refund_payment",
+            },
+            {
+                "name": "reserve_inventory",
+                "description": "Reserve inventory for the order.",
+                "idempotent": True,
+                "reversible": True,
+                "compensation": "release_inventory",
+            },
+            {
+                "name": "send_confirmation",
+                "description": "Send the confirmation notification.",
+                "idempotent": True,
+                "reversible": False,
+            },
+        ],
+        "success_criteria": [
+            "all required workflow steps complete in order",
+            "reversible side effects are compensated if failures occur",
+        ],
+        "failure_modes": ["payment failure", "notification sent before rollback"],
+        "max_steps": 7,
+        "actions": [
+            {
+                "name": "charge_payment",
+                "description": "Charge the payment method.",
+                "parameters": {"payment_id": "string"},
+                "preconditions": [],
+                "effects": ["payment_captured"],
+            },
+            {
+                "name": "reserve_inventory",
+                "description": "Reserve inventory for the order.",
+                "parameters": {"sku": "string"},
+                "preconditions": ["charge_payment"],
+                "effects": ["inventory_reserved"],
+            },
+            {
+                "name": "send_confirmation",
+                "description": "Send the confirmation notification.",
+                "parameters": {"channel": "string"},
+                "preconditions": ["reserve_inventory"],
+                "effects": ["confirmation_sent"],
+            },
+        ],
+    }
+    return f"{WORKFLOW_SPEC_START}\n{json.dumps(data, indent=2)}\n{WORKFLOW_SPEC_END}\n"
 
 
 # --- Tests ---
@@ -471,6 +584,64 @@ class TestAgentTaskCreator:
                 assert (scenario_dir / "scenario.py").exists()
                 assert (scenario_dir / "spec.json").exists()
                 assert (scenario_dir / "scenario_type.txt").read_text() == "artifact_editing"
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
+    def test_routes_investigation_requests_to_investigation_creator(self) -> None:
+        response_text = _mock_investigation_response()
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            instance = creator.create(
+                "Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause"
+            )
+            registered_name = creator.derive_name(
+                "Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause"
+            )
+            try:
+                assert isinstance(instance, InvestigationInterface)
+                assert instance.get_evidence_pool(instance.initial_state())
+                scenario_dir = Path(tmp) / "_custom_scenarios" / registered_name
+                assert (scenario_dir / "scenario.py").exists()
+                assert (scenario_dir / "spec.json").exists()
+                assert (scenario_dir / "scenario_type.txt").read_text() == "investigation"
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
+    def test_routes_workflow_requests_to_workflow_creator(self) -> None:
+        response_text = _mock_workflow_response()
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            instance = creator.create(
+                "Create a transactional workflow with compensation and side effects"
+            )
+            registered_name = creator.derive_name(
+                "Create a transactional workflow with compensation and side effects"
+            )
+            try:
+                assert isinstance(instance, WorkflowInterface)
+                assert len(instance.get_workflow_steps()) >= 2
+                scenario_dir = Path(tmp) / "_custom_scenarios" / registered_name
+                assert (scenario_dir / "scenario.py").exists()
+                assert (scenario_dir / "spec.json").exists()
+                assert (scenario_dir / "scenario_type.txt").read_text() == "workflow"
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 

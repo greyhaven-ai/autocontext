@@ -16,9 +16,17 @@ import {
   ARTIFACT_SPEC_START,
 } from "../src/scenarios/artifact-editing-designer.js";
 import {
+  INVESTIGATION_SPEC_END,
+  INVESTIGATION_SPEC_START,
+} from "../src/scenarios/investigation-designer.js";
+import {
   SIM_SPEC_END,
   SIM_SPEC_START,
 } from "../src/scenarios/simulation-designer.js";
+import {
+  WORKFLOW_SPEC_END,
+  WORKFLOW_SPEC_START,
+} from "../src/scenarios/workflow-designer.js";
 import { classifyScenarioFamily } from "../src/scenarios/family-classifier.js";
 import { UnsupportedFamilyError, validateForFamily } from "../src/scenarios/family-pipeline.js";
 import { getScenarioTypeMarker } from "../src/scenarios/families.js";
@@ -26,7 +34,9 @@ import { validateIntent, validateSpec } from "../src/scenarios/agent-task-valida
 import { createAgentTask } from "../src/scenarios/agent-task-factory.js";
 import { AgentTaskCreator } from "../src/scenarios/agent-task-creator.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
+import type { InvestigationSpec } from "../src/scenarios/investigation-spec.js";
 import type { SimulationSpec } from "../src/scenarios/simulation-spec.js";
+import type { WorkflowSpec } from "../src/scenarios/workflow-spec.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 import { AgentTaskResultSchema } from "../src/types/index.js";
 
@@ -100,9 +110,111 @@ function mockArtifactEditingResponse(): string {
   return `${ARTIFACT_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${ARTIFACT_SPEC_END}\n`;
 }
 
+function mockInvestigationResponse(): string {
+  const data = {
+    description: "Investigate a production outage by gathering evidence and identifying the root cause.",
+    environment_description: "Mock service environment with logs and dashboards.",
+    initial_state_description: "An outage is active and only partial evidence is visible.",
+    evidence_pool_description:
+      "Logs implicate the auth service, metrics show latency spikes, and a cron-job entry is a red herring.",
+    diagnosis_target: "A bad auth deployment exhausted the database connection pool.",
+    success_criteria: [
+      "collect enough evidence to explain the outage",
+      "identify the correct diagnosis without relying on red herrings",
+    ],
+    failure_modes: ["following a cron-job red herring"],
+    max_steps: 6,
+    actions: [
+      {
+        name: "inspect_logs",
+        description: "Review service logs around the incident.",
+        parameters: { service: "string" },
+        preconditions: [],
+        effects: ["log_evidence_collected"],
+      },
+      {
+        name: "query_metrics",
+        description: "Check dashboard metrics related to the outage.",
+        parameters: { metric: "string" },
+        preconditions: [],
+        effects: ["metrics_evidence_collected"],
+      },
+      {
+        name: "record_diagnosis",
+        description: "Submit the final diagnosis.",
+        parameters: { diagnosis: "string" },
+        preconditions: ["inspect_logs", "query_metrics"],
+        effects: ["diagnosis_recorded"],
+      },
+    ],
+  };
+  return `${INVESTIGATION_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${INVESTIGATION_SPEC_END}\n`;
+}
+
+function mockWorkflowResponse(): string {
+  const data = {
+    description: "Execute an order-processing workflow with compensation when downstream steps fail.",
+    environment_description: "Mock commerce workflow with payment, inventory, and notification side effects.",
+    initial_state_description: "No workflow steps have run yet.",
+    workflow_steps: [
+      {
+        name: "charge_payment",
+        description: "Charge the payment method.",
+        idempotent: false,
+        reversible: true,
+        compensation: "refund_payment",
+      },
+      {
+        name: "reserve_inventory",
+        description: "Reserve inventory for the order.",
+        idempotent: true,
+        reversible: true,
+        compensation: "release_inventory",
+      },
+      {
+        name: "send_confirmation",
+        description: "Send the confirmation notification.",
+        idempotent: true,
+        reversible: false,
+      },
+    ],
+    success_criteria: [
+      "all required workflow steps complete in order",
+      "reversible side effects are compensated if failures occur",
+    ],
+    failure_modes: ["payment failure", "notification sent before rollback"],
+    max_steps: 7,
+    actions: [
+      {
+        name: "charge_payment",
+        description: "Charge the payment method.",
+        parameters: { payment_id: "string" },
+        preconditions: [],
+        effects: ["payment_captured"],
+      },
+      {
+        name: "reserve_inventory",
+        description: "Reserve inventory for the order.",
+        parameters: { sku: "string" },
+        preconditions: ["charge_payment"],
+        effects: ["inventory_reserved"],
+      },
+      {
+        name: "send_confirmation",
+        description: "Send the confirmation notification.",
+        parameters: { channel: "string" },
+        preconditions: ["reserve_inventory"],
+        effects: ["confirmation_sent"],
+      },
+    ],
+  };
+  return `${WORKFLOW_SPEC_START}\n${JSON.stringify(data, null, 2)}\n${WORKFLOW_SPEC_END}\n`;
+}
+
 function makeMockProvider(response = "mock output"): LLMProvider {
   return {
     complete: async () => ({ text: response, model: "mock", usage: { inputTokens: 0, outputTokens: 0 } }) as CompletionResult,
+    defaultModel: () => "mock-model",
   };
 }
 
@@ -262,6 +374,44 @@ describe("FamilyPipeline", () => {
       ],
     };
     expect(validateForFamily("artifact_editing", spec)).toEqual([]);
+  });
+
+  it("validates investigation specs through the family pipeline", () => {
+    const spec: InvestigationSpec = {
+      description: "Investigate a production outage.",
+      environmentDescription: "Mock service environment with logs.",
+      initialStateDescription: "The outage is ongoing.",
+      evidencePoolDescription: "Logs implicate auth; a cron job is a red herring.",
+      diagnosisTarget: "A bad auth deployment exhausted the DB pool.",
+      successCriteria: ["collect evidence", "identify the correct diagnosis"],
+      failureModes: ["following the red herring"],
+      maxSteps: 6,
+      actions: [
+        { name: "inspect_logs", description: "Inspect logs", parameters: { service: "string" }, preconditions: [], effects: ["log_evidence"] },
+        { name: "record_diagnosis", description: "Record diagnosis", parameters: { diagnosis: "string" }, preconditions: ["inspect_logs"], effects: ["diagnosis_recorded"] },
+      ],
+    };
+    expect(validateForFamily("investigation", spec)).toEqual([]);
+  });
+
+  it("validates workflow specs through the family pipeline", () => {
+    const spec: WorkflowSpec = {
+      description: "Execute an order-processing workflow.",
+      environmentDescription: "Mock commerce workflow.",
+      initialStateDescription: "Nothing has run yet.",
+      workflowSteps: [
+        { name: "charge_payment", description: "Charge payment", idempotent: false, reversible: true, compensation: "refund_payment" },
+        { name: "reserve_inventory", description: "Reserve inventory", idempotent: true, reversible: true, compensation: "release_inventory" },
+      ],
+      successCriteria: ["steps complete in order", "compensation contains side effects"],
+      failureModes: ["payment failure"],
+      maxSteps: 6,
+      actions: [
+        { name: "charge_payment", description: "Charge payment", parameters: { payment_id: "string" }, preconditions: [], effects: ["payment_captured"] },
+        { name: "reserve_inventory", description: "Reserve inventory", parameters: { sku: "string" }, preconditions: ["charge_payment"], effects: ["inventory_reserved"] },
+      ],
+    };
+    expect(validateForFamily("workflow", spec)).toEqual([]);
   });
 
   it("rejects unsupported families instead of collapsing silently", () => {
@@ -482,6 +632,36 @@ describe("AgentTaskCreator", () => {
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("artifact_editing"));
   });
 
+  it("routes investigation descriptions into an investigation scaffold", async () => {
+    const provider = makeMockProvider(mockInvestigationResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-investigation-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause");
+    expect("family" in scenario && scenario.family).toBe("investigation");
+
+    const name = creator.deriveName("Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("investigation"));
+  });
+
+  it("routes workflow descriptions into a workflow scaffold", async () => {
+    const provider = makeMockProvider(mockWorkflowResponse());
+    const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-workflow-"));
+    const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
+
+    const scenario = await creator.create("Create a transactional workflow with compensation and side effects");
+    expect("family" in scenario && scenario.family).toBe("workflow");
+
+    const name = creator.deriveName("Create a transactional workflow with compensation and side effects");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("workflow"));
+  });
+
   it("rejects classified-but-unsupported game families", async () => {
     const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-game-"));
@@ -497,6 +677,18 @@ describe("AgentTaskCreator", () => {
     expect(
       classifyScenarioFamily("Edit a YAML config file to add a database section").familyName,
     ).toBe("artifact_editing");
+  });
+
+  it("classifies investigation descriptions into the investigation family", () => {
+    expect(
+      classifyScenarioFamily("Create an investigation where the agent gathers evidence and avoids red herrings").familyName,
+    ).toBe("investigation");
+  });
+
+  it("classifies workflow descriptions into the workflow family", () => {
+    expect(
+      classifyScenarioFamily("Create a transactional workflow with compensation and side effects").familyName,
+    ).toBe("workflow");
   });
 });
 

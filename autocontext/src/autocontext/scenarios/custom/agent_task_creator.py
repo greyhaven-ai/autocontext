@@ -27,9 +27,13 @@ from autocontext.scenarios.custom.family_pipeline import (
     validate_for_family,
     validate_source_for_family,
 )
+from autocontext.scenarios.custom.investigation_creator import InvestigationCreator
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.simulation_creator import SimulationCreator
+from autocontext.scenarios.custom.workflow_creator import WorkflowCreator
 from autocontext.scenarios.families import get_family_marker
+from autocontext.scenarios.investigation import InvestigationInterface
+from autocontext.scenarios.workflow import WorkflowInterface
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +77,7 @@ class AgentTaskCreator:
     def create(
         self,
         description: str,
-    ) -> AgentTaskInterface | ScenarioInterface | ArtifactEditingInterface:
+    ) -> AgentTaskInterface | ScenarioInterface | ArtifactEditingInterface | InvestigationInterface | WorkflowInterface:
         """Run the full pipeline: design → validate → codegen → validate → load → register.
 
         Returns:
@@ -88,6 +92,12 @@ class AgentTaskCreator:
         if family.name == "artifact_editing":
             logger.info("routing description to artifact-editing creator")
             return ArtifactEditingCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name == "investigation":
+            logger.info("routing description to investigation creator")
+            return InvestigationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name == "workflow":
+            logger.info("routing description to workflow creator")
+            return WorkflowCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
         if family.name != "agent_task":
             raise ValueError(
                 f"Scenario family '{family.name}' is not yet supported for custom scaffolding"

@@ -144,11 +144,44 @@ const ARTIFACT_EDITING_SIGNALS: Record<string, number> = {
   dockerfile: 1.5,
 };
 
+const INVESTIGATION_SIGNALS: Record<string, number> = {
+  investigat: 2.0,
+  evidence: 2.0,
+  "red herring": 2.0,
+  clue: 1.5,
+  forensic: 1.5,
+  "root cause": 1.5,
+  diagnos: 2.0,
+  hypothesis: 1.5,
+  "log analysis": 1.5,
+  "incident timeline": 1.5,
+  "query logs": 1.5,
+  triangulate: 1.5,
+};
+
+const WORKFLOW_SIGNALS: Record<string, number> = {
+  transaction: 2.0,
+  "workflow step": 2.0,
+  compensation: 2.0,
+  rollback: 1.5,
+  retry: 1.5,
+  "side effect": 2.0,
+  "order processing": 2.0,
+  payment: 1.5,
+  idempotent: 1.5,
+  reversible: 1.5,
+  fulfillment: 1.5,
+  "approval workflow": 2.0,
+  "multi-step transaction": 2.0,
+};
+
 const FAMILY_SIGNAL_GROUPS: Record<ScenarioFamilyName, Record<string, number>> = {
   game: GAME_SIGNALS,
   agent_task: AGENT_TASK_SIGNALS,
   simulation: SIMULATION_SIGNALS,
   artifact_editing: ARTIFACT_EDITING_SIGNALS,
+  investigation: INVESTIGATION_SIGNALS,
+  workflow: WORKFLOW_SIGNALS,
 };
 
 const DEFAULT_FAMILY_NAME: ScenarioFamilyName = "agent_task";
