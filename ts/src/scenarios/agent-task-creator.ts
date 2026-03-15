@@ -21,9 +21,17 @@ import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
 import { validateForFamily } from "./family-pipeline.js";
 import { getScenarioTypeMarker } from "./families.js";
 import {
+  type InvestigationScenarioHandle,
+  InvestigationCreator,
+} from "./investigation-creator.js";
+import {
   type SimulationScenarioHandle,
   SimulationCreator,
 } from "./simulation-creator.js";
+import {
+  type WorkflowScenarioHandle,
+  WorkflowCreator,
+} from "./workflow-creator.js";
 
 export interface AgentTaskCreatorOpts {
   provider: LLMProvider;
@@ -34,7 +42,9 @@ export interface AgentTaskCreatorOpts {
 export type CreatedScenario =
   | (AgentTaskInterface & { readonly name: string; readonly spec: AgentTaskSpec; readonly family?: "agent_task" })
   | ArtifactEditingScenarioHandle
-  | SimulationScenarioHandle;
+  | InvestigationScenarioHandle
+  | SimulationScenarioHandle
+  | WorkflowScenarioHandle;
 
 export class AgentTaskCreator {
   private provider: LLMProvider;
@@ -98,6 +108,20 @@ export class AgentTaskCreator {
     }
     if (family === "artifact_editing") {
       return new ArtifactEditingCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "investigation") {
+      return new InvestigationCreator({
+        provider: this.provider,
+        model: this.model,
+        knowledgeRoot: this.knowledgeRoot,
+      }).create(description, name);
+    }
+    if (family === "workflow") {
+      return new WorkflowCreator({
         provider: this.provider,
         model: this.model,
         knowledgeRoot: this.knowledgeRoot,

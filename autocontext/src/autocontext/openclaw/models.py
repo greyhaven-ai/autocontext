@@ -11,7 +11,14 @@ class ScenarioInfo(BaseModel):
 
     name: str
     display_name: str
-    scenario_type: Literal["game", "agent_task", "simulation", "artifact_editing"]
+    scenario_type: Literal[
+        "game",
+        "agent_task",
+        "simulation",
+        "artifact_editing",
+        "investigation",
+        "workflow",
+    ]
     description: str
     strategy_interface: str = ""
 

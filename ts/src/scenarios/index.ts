@@ -11,6 +11,17 @@ export {
 } from "./artifact-editing-designer.js";
 export { ArtifactEditingCreator } from "./artifact-editing-creator.js";
 export type { ArtifactEditingCreatorOpts, ArtifactEditingScenarioHandle } from "./artifact-editing-creator.js";
+export {
+  INVESTIGATION_SPEC_START,
+  INVESTIGATION_SPEC_END,
+  INVESTIGATION_DESIGNER_SYSTEM,
+  parseInvestigationSpec,
+  designInvestigation,
+} from "./investigation-designer.js";
+export { InvestigationCreator } from "./investigation-creator.js";
+export type { InvestigationCreatorOpts, InvestigationScenarioHandle } from "./investigation-creator.js";
+export type { InvestigationSpec } from "./investigation-spec.js";
+export { InvestigationSpecSchema, parseRawInvestigationSpec } from "./investigation-spec.js";
 export { parseAgentTaskSpec, designAgentTask, SPEC_START, SPEC_END, AGENT_TASK_DESIGNER_SYSTEM } from "./agent-task-designer.js";
 export { validateSpec } from "./agent-task-validator.js";
 export { createAgentTask } from "./agent-task-factory.js";
@@ -32,4 +43,15 @@ export { SimulationCreator, shouldUseSimulationFamily } from "./simulation-creat
 export type { SimulationCreatorOpts, SimulationScenarioHandle } from "./simulation-creator.js";
 export type { SimulationSpec, SimulationActionSpec } from "./simulation-spec.js";
 export { SimulationSpecSchema, SimulationActionSpecSchema, parseRawSimulationSpec } from "./simulation-spec.js";
+export {
+  WORKFLOW_SPEC_START,
+  WORKFLOW_SPEC_END,
+  WORKFLOW_DESIGNER_SYSTEM,
+  parseWorkflowSpec,
+  designWorkflow,
+} from "./workflow-designer.js";
+export { WorkflowCreator } from "./workflow-creator.js";
+export type { WorkflowCreatorOpts, WorkflowScenarioHandle } from "./workflow-creator.js";
+export type { WorkflowSpec, WorkflowStepSpec } from "./workflow-spec.js";
+export { WorkflowSpecSchema, WorkflowStepSpecSchema, parseRawWorkflowSpec } from "./workflow-spec.js";
 export { getScenarioTypeMarker, SCENARIO_TYPE_MARKERS } from "./families.js";

@@ -102,7 +102,9 @@ def _register_builtins() -> None:
     from autocontext.scenarios.agent_task import AgentTaskInterface
     from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
     from autocontext.scenarios.base import ScenarioInterface
+    from autocontext.scenarios.investigation import InvestigationInterface
     from autocontext.scenarios.simulation import SimulationInterface
+    from autocontext.scenarios.workflow import WorkflowInterface
 
     register_family(ScenarioFamily(
         name="game",
@@ -144,6 +146,26 @@ def _register_builtins() -> None:
         output_modes=["artifact_diff"],
         scenario_type_marker="artifact_editing",
         capabilities=["artifact_lineage", "diff_tracking", "validation_pipeline"],
+    ))
+
+    register_family(ScenarioFamily(
+        name="investigation",
+        description="Evidence-chain-evaluated investigation scenarios with red herring detection",
+        interface_class=InvestigationInterface,
+        evaluation_mode="evidence_evaluation",
+        output_modes=["action_trace"],
+        scenario_type_marker="investigation",
+        capabilities=["evidence_chain", "red_herring_detection", "diagnosis_accuracy"],
+    ))
+
+    register_family(ScenarioFamily(
+        name="workflow",
+        description="Transactional workflow scenarios with compensation, retry, and side-effect tracking",
+        interface_class=WorkflowInterface,
+        evaluation_mode="workflow_evaluation",
+        output_modes=["action_trace"],
+        scenario_type_marker="workflow",
+        capabilities=["compensation", "retry", "side_effect_tracking", "rollback"],
     ))
 
 
