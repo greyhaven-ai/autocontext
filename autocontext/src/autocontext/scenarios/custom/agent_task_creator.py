@@ -28,6 +28,7 @@ from autocontext.scenarios.custom.family_pipeline import (
     validate_source_for_family,
 )
 from autocontext.scenarios.custom.investigation_creator import InvestigationCreator
+from autocontext.scenarios.custom.negotiation_creator import NegotiationCreator
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.schema_evolution_creator import SchemaEvolutionCreator
 from autocontext.scenarios.custom.simulation_creator import SimulationCreator
@@ -35,6 +36,7 @@ from autocontext.scenarios.custom.tool_fragility_creator import ToolFragilityCre
 from autocontext.scenarios.custom.workflow_creator import WorkflowCreator
 from autocontext.scenarios.families import get_family_marker
 from autocontext.scenarios.investigation import InvestigationInterface
+from autocontext.scenarios.negotiation import NegotiationInterface
 from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
 from autocontext.scenarios.tool_fragility import ToolFragilityInterface
 from autocontext.scenarios.workflow import WorkflowInterface
@@ -85,6 +87,7 @@ class AgentTaskCreator:
         AgentTaskInterface | ScenarioInterface | ArtifactEditingInterface
         | InvestigationInterface | WorkflowInterface
         | SchemaEvolutionInterface | ToolFragilityInterface
+        | NegotiationInterface
     ):
         """Run the full pipeline: design → validate → codegen → validate → load → register.
 
@@ -112,6 +115,9 @@ class AgentTaskCreator:
         if family.name == "tool_fragility":
             logger.info("routing description to tool-fragility creator")
             return ToolFragilityCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name == "negotiation":
+            logger.info("routing description to negotiation creator")
+            return NegotiationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
         if family.name != "agent_task":
             raise ValueError(
                 f"Scenario family '{family.name}' is not yet supported for custom scaffolding"

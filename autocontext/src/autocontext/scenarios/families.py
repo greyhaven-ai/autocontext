@@ -103,6 +103,7 @@ def _register_builtins() -> None:
     from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
     from autocontext.scenarios.base import ScenarioInterface
     from autocontext.scenarios.investigation import InvestigationInterface
+    from autocontext.scenarios.negotiation import NegotiationInterface
     from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
     from autocontext.scenarios.simulation import SimulationInterface
     from autocontext.scenarios.tool_fragility import ToolFragilityInterface
@@ -168,6 +169,16 @@ def _register_builtins() -> None:
         output_modes=["action_trace"],
         scenario_type_marker="workflow",
         capabilities=["compensation", "retry", "side_effect_tracking", "rollback"],
+    ))
+
+    register_family(ScenarioFamily(
+        name="negotiation",
+        description="Negotiation scenarios with hidden preferences, BATNA constraints, and opponent modeling",
+        interface_class=NegotiationInterface,
+        evaluation_mode="negotiation_evaluation",
+        output_modes=["action_trace"],
+        scenario_type_marker="negotiation",
+        capabilities=["opponent_modeling", "hidden_state", "repeated_rounds", "adaptation"],
     ))
 
     register_family(ScenarioFamily(
