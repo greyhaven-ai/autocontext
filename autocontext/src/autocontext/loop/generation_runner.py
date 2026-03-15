@@ -13,10 +13,17 @@ from typing import cast
 from autocontext import __version__ as package_fallback_version
 from autocontext.agents import AgentOrchestrator
 from autocontext.analytics.aggregate_runner import AggregateRunner
+from autocontext.analytics.calibration import (
+    CalibrationRound,
+    CalibrationStore,
+    SpotCheckSampler,
+)
 from autocontext.analytics.clustering import PatternClusterer
 from autocontext.analytics.correlation import CorrelationStore
 from autocontext.analytics.extractor import FacetExtractor
+from autocontext.analytics.facets import RunFacet
 from autocontext.analytics.issue_store import IssueStore
+from autocontext.analytics.rubric_drift import DriftStore, RubricDriftMonitor, RubricSnapshot
 from autocontext.analytics.store import FacetStore
 from autocontext.analytics.taxonomy import FacetTaxonomy
 from autocontext.backpressure import BackpressureGate, TrendAwareGate
@@ -315,6 +322,132 @@ class GenerationRunner:
             issue_store=IssueStore(analytics_root),
         )
         aggregate_runner.run()
+        self._generate_rubric_drift_and_calibration(
+            analytics_root=analytics_root,
+            facets=all_facets,
+            scenario_family=family.name if family is not None else "",
+        )
+
+    def _generate_rubric_drift_and_calibration(
+        self,
+        *,
+        analytics_root: Path,
+        facets: list[RunFacet],
+        scenario_family: str,
+    ) -> None:
+        """Persist rubric-drift warnings and pending human calibration rounds."""
+        current_release = _current_release_version()
+        current_provider = self.settings.agent_provider
+        relevant_facets = [
+            facet for facet in facets
+            if getattr(facet, "scenario_family", "") == scenario_family
+            and getattr(facet, "agent_provider", "") == current_provider
+            and getattr(facet, "metadata", {}).get("release", "") == current_release
+        ]
+        if not relevant_facets:
+            return
+
+        drift_store = DriftStore(analytics_root)
+        baseline = self._latest_drift_baseline(
+            drift_store.list_snapshots(),
+            release=current_release,
+            scenario_family=scenario_family,
+            agent_provider=current_provider,
+        )
+        monitor = RubricDriftMonitor()
+        snapshot, warnings = monitor.analyze(
+            relevant_facets,
+            release=current_release,
+            scenario_family=scenario_family,
+            agent_provider=current_provider,
+            baseline=baseline,
+        )
+        drift_store.persist_snapshot(snapshot)
+        for warning in warnings:
+            drift_store.persist_warning(warning)
+
+        if not warnings:
+            return
+
+        calibration_store = CalibrationStore(analytics_root)
+        if self._has_pending_calibration_round(
+            calibration_store,
+            release=current_release,
+            scenario_family=scenario_family,
+            agent_provider=current_provider,
+        ):
+            return
+
+        samples = SpotCheckSampler(max_samples=5).sample(
+            relevant_facets,
+            drift_warnings=warnings,
+        )
+        if not samples:
+            return
+
+        warning_types = sorted({warning.warning_type for warning in warnings})
+        calibration_store.persist_round(
+            CalibrationRound(
+                round_id=f"round-{uuid.uuid4().hex[:8]}",
+                created_at=snapshot.created_at,
+                samples=samples,
+                outcomes=[],
+                status="pending",
+                summary=(
+                    f"{len(samples)} high-risk sample(s) selected from "
+                    f"{len(relevant_facets)} run(s); warnings: {', '.join(warning_types)}"
+                ),
+                metadata={
+                    "snapshot_id": snapshot.snapshot_id,
+                    "release": current_release,
+                    "scenario_family": scenario_family,
+                    "agent_provider": current_provider,
+                    "warning_ids": [warning.warning_id for warning in warnings],
+                },
+            )
+        )
+
+    def _latest_drift_baseline(
+        self,
+        snapshots: list[RubricSnapshot],
+        *,
+        release: str,
+        scenario_family: str,
+        agent_provider: str,
+    ) -> RubricSnapshot | None:
+        candidates = [
+            snapshot for snapshot in snapshots
+            if snapshot.scenario_family == scenario_family
+            and snapshot.agent_provider == agent_provider
+            and snapshot.release
+            and snapshot.release != release
+        ]
+        if not candidates:
+            return None
+        return max(
+            candidates,
+            key=lambda snapshot: snapshot.window_end or snapshot.created_at,
+        )
+
+    def _has_pending_calibration_round(
+        self,
+        calibration_store: CalibrationStore,
+        *,
+        release: str,
+        scenario_family: str,
+        agent_provider: str,
+    ) -> bool:
+        for calibration_round in calibration_store.list_rounds():
+            if calibration_round.status not in {"pending", "in_progress"}:
+                continue
+            metadata = calibration_round.metadata
+            if (
+                metadata.get("release", "") == release
+                and metadata.get("scenario_family", "") == scenario_family
+                and metadata.get("agent_provider", "") == agent_provider
+            ):
+                return True
+        return False
 
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)

@@ -277,7 +277,7 @@ class TestAggregateAnalyticsWiring:
         runner, mocks = _make_runner_with_mocks(settings)
 
         facet_store = FacetStore(tmp_path / "knowledge")
-        for idx in (1, 2):
+        for idx, score in ((1, 0.35), (2, 0.45)):
             facet_store.persist(
                 RunFacet(
                     run_id=f"seed-run-{idx}",
@@ -289,7 +289,7 @@ class TestAggregateAnalyticsWiring:
                     advances=1,
                     retries=1,
                     rollbacks=0,
-                    best_score=0.4,
+                    best_score=score,
                     best_elo=1000.0,
                     total_duration_seconds=10.0,
                     total_tokens=1000,
@@ -309,7 +309,7 @@ class TestAggregateAnalyticsWiring:
                     ],
                     delight_signals=[],
                     events=[],
-                    metadata={"release": f"v1.0.{idx}"},
+                    metadata={"release": "v1.1.0"},
                     created_at=f"2026-03-14T0{idx}:00:00Z",
                 )
             )
@@ -318,7 +318,7 @@ class TestAggregateAnalyticsWiring:
             {
                 "generation_index": 1,
                 "mean_score": 0.3,
-                "best_score": 0.4,
+                "best_score": 0.5,
                 "elo": 1020.0,
                 "gate_decision": "advance",
                 "status": "completed",
@@ -326,10 +326,10 @@ class TestAggregateAnalyticsWiring:
             },
             {
                 "generation_index": 2,
-                "mean_score": 0.5,
-                "best_score": 0.6,
-                "elo": 1080.0,
-                "gate_decision": "retry",
+                "mean_score": 0.95,
+                "best_score": 0.98,
+                "elo": 1180.0,
+                "gate_decision": "advance",
                 "status": "completed",
                 "duration_seconds": 14.0,
             },
@@ -368,7 +368,8 @@ class TestAggregateAnalyticsWiring:
         ]
         mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
 
-        _run_with_pipeline_mock(runner, mocks, "grid_ctf", 2, "test_aggregate")
+        with patch("autocontext.loop.generation_runner._current_release_version", return_value="v1.1.0"):
+            _run_with_pipeline_mock(runner, mocks, "grid_ctf", 2, "test_aggregate")
 
         assert (tmp_path / "knowledge" / "facets" / "test_aggregate.json").exists()
         assert (tmp_path / "knowledge" / "analytics" / "friction_clusters.json").exists()
@@ -377,6 +378,9 @@ class TestAggregateAnalyticsWiring:
         assert list((tmp_path / "knowledge" / "analytics" / "correlations").glob("*.json"))
         assert list((tmp_path / "knowledge" / "analytics" / "issues").glob("*.json"))
         assert list((tmp_path / "knowledge" / "analytics" / "probes").glob("*.json"))
+        assert list((tmp_path / "knowledge" / "analytics" / "drift_snapshots").glob("*.json"))
+        assert list((tmp_path / "knowledge" / "analytics" / "drift_warnings").glob("*.json"))
+        assert list((tmp_path / "knowledge" / "analytics" / "calibration_rounds").glob("*.json"))
 
 
 class TestSessionReportEmptyTrajectory:
