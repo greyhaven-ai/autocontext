@@ -87,7 +87,7 @@ class TestDefaultRoutingTable:
     def test_default_table_has_all_roles(self) -> None:
         from autocontext.agents.role_router import DEFAULT_ROUTING_TABLE
 
-        expected_roles = {"competitor", "analyst", "coach", "architect", "curator", "translator"}
+        expected_roles = {"competitor", "analyst", "coach", "architect", "curator", "translator", "librarian", "archivist"}
         assert expected_roles == set(DEFAULT_ROUTING_TABLE.keys())
 
     def test_competitor_prefers_frontier(self) -> None:

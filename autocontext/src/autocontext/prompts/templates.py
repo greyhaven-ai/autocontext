@@ -14,6 +14,42 @@ class PromptBundle:
     architect: str
 
 
+@dataclass(frozen=True)
+class LibraryPromptBundle:
+    librarian_prompts: dict[str, str]
+    archivist_prompt: str
+    library_context_block: str
+
+
+def build_library_context_block(books: list[dict]) -> str:
+    """Build a context block listing active books for agent prompts."""
+    if not books:
+        return ""
+    lines = [
+        "## Available Literature",
+        "",
+        "You have access to a library of research and literature. "
+        "Use the `consult_library` tool when you need guidance from published research, "
+        "best practices, or theoretical foundations.",
+        "",
+        "Available books:",
+    ]
+    for book in books:
+        tags = ", ".join(book.get("tags", []))
+        tag_str = f" [{tags}]" if tags else ""
+        lines.append(f"- **{book['name']}**: {book['title']}{tag_str}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def inject_library_context(prompt: str, books: list[dict]) -> str:
+    """Append library context block to an agent prompt if books are active."""
+    block = build_library_context_block(books)
+    if not block:
+        return prompt
+    return f"{prompt}\n\n{block}"
+
+
 # Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
 _COMPETITOR_CONSTRAINT_SUFFIX = (
     "\n\nConstraints:\n"

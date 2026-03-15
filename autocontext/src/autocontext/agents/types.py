@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from autocontext.harness.core.types import RoleExecution, RoleUsage
 
 if TYPE_CHECKING:
-    from autocontext.agents.contracts import AnalystOutput, ArchitectOutput, CoachOutput, CompetitorOutput
+    from autocontext.agents.contracts import AnalystOutput, ArchitectOutput, ArchivistOutput, CoachOutput, CompetitorOutput, LibrarianOutput
 
 
 @dataclass(slots=True)
@@ -25,6 +25,9 @@ class AgentOutputs:
     analyst_output: AnalystOutput | None = None
     coach_output: CoachOutput | None = None
     architect_output: ArchitectOutput | None = None
+    librarian_outputs: list[LibrarianOutput] = field(default_factory=list)
+    archivist_output: ArchivistOutput | None = None
+    library_advisories: list[str] = field(default_factory=list)
 
 
 __all__ = ["RoleUsage", "RoleExecution", "AgentOutputs"]

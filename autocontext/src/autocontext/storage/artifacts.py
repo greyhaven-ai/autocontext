@@ -934,6 +934,47 @@ class ArtifactStore:
         if path.exists():
             path.unlink()
 
+    # --- Library persistence ---------------------------------------------------
+
+    def _library_dir(self, scenario: str) -> Path:
+        path = Path(self.knowledge_root) / scenario / "library"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def write_librarian_notes(self, scenario: str, book_name: str, generation: int, content: str) -> None:
+        notes_dir = self._library_dir(scenario) / "librarian_notes" / book_name
+        notes_dir.mkdir(parents=True, exist_ok=True)
+        (notes_dir / f"gen_{generation}.md").write_text(content, encoding="utf-8")
+
+    def read_cumulative_notes(self, scenario: str, book_name: str) -> str:
+        path = self._library_dir(scenario) / "librarian_notes" / book_name / "cumulative_notes.md"
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return ""
+
+    def append_cumulative_notes(self, scenario: str, book_name: str, content: str) -> None:
+        notes_dir = self._library_dir(scenario) / "librarian_notes" / book_name
+        notes_dir.mkdir(parents=True, exist_ok=True)
+        path = notes_dir / "cumulative_notes.md"
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        path.write_text(existing + "\n" + content if existing else content, encoding="utf-8")
+
+    def write_archivist_decision(self, scenario: str, generation: int, content: str) -> None:
+        dec_dir = self._library_dir(scenario) / "archivist" / "decisions"
+        dec_dir.mkdir(parents=True, exist_ok=True)
+        (dec_dir / f"gen_{generation}_decision.md").write_text(content, encoding="utf-8")
+
+    def write_active_books(self, scenario: str, book_names: list[str]) -> None:
+        path = self._library_dir(scenario) / "active_books.json"
+        path.write_text(json.dumps({"books": book_names}, indent=2), encoding="utf-8")
+
+    def append_consultation_log(self, scenario: str, content: str) -> None:
+        log_dir = self._library_dir(scenario) / "archivist"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        path = log_dir / "consultation_log.md"
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        path.write_text(existing + content, encoding="utf-8")
+
     # --- Pi session artifacts (AC-224) ----------------------------------------
 
     def persist_pi_session(self, run_id: str, generation: int, trace: object, *, role: str = "") -> Path:

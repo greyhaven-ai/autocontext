@@ -43,6 +43,7 @@ class SkillPackage:
     context_preparation: str | None = None
     max_rounds: int | None = None
     quality_threshold: float | None = None
+    active_library_books: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -74,6 +75,8 @@ class SkillPackage:
             d["max_rounds"] = self.max_rounds
         if self.quality_threshold is not None:
             d["quality_threshold"] = self.quality_threshold
+        if self.active_library_books is not None:
+            d["active_library_books"] = self.active_library_books
         return d
 
     def to_skill_markdown(self) -> str:

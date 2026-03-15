@@ -14,19 +14,37 @@ if TYPE_CHECKING:
 RoleHandler = Callable[[str, str, dict[str, RoleExecution]], RoleExecution]
 
 
-def build_mts_dag() -> RoleDAG:
-    """Build the standard AutoContext 5-role DAG.
+def build_mts_dag(
+    active_books: list[str] | None = None,
+    librarian_enabled: bool = True,
+) -> RoleDAG:
+    """Build the standard AutoContext DAG, optionally with library roles.
 
-    competitor -> translator -> analyst -> coach
-                             -> architect (parallel with analyst; coach depends on analyst)
+    Base: competitor -> translator -> analyst -> coach
+                                   -> architect (parallel with analyst)
+    With books: translator -> librarian_* -> archivist -> coach
     """
-    return RoleDAG([
+    coach_deps: list[str] = ["analyst"]
+
+    roles = [
         RoleSpec(name="competitor"),
         RoleSpec(name="translator", depends_on=("competitor",)),
         RoleSpec(name="analyst", depends_on=("translator",)),
         RoleSpec(name="architect", depends_on=("translator",)),
-        RoleSpec(name="coach", depends_on=("analyst",)),
-    ])
+    ]
+
+    if active_books and librarian_enabled:
+        librarian_names: list[str] = []
+        for book in active_books:
+            name = f"librarian_{book}"
+            roles.append(RoleSpec(name=name, depends_on=("translator",)))
+            librarian_names.append(name)
+
+        roles.append(RoleSpec(name="archivist", depends_on=tuple(librarian_names)))
+        coach_deps.append("archivist")
+
+    roles.append(RoleSpec(name="coach", depends_on=tuple(coach_deps)))
+    return RoleDAG(roles)
 
 
 def build_role_handler(
