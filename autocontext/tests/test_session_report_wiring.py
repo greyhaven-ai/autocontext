@@ -56,7 +56,11 @@ def _make_runner_with_mocks(settings: AppSettings) -> tuple[Any, dict[str, Any]]
 
     # Default: no existing generations (not skipped for idempotency)
     runner.sqlite.generation_exists.return_value = False
+    runner.sqlite.get_generation_metrics.return_value = []
     runner.sqlite.get_agent_role_metrics.return_value = []
+    runner.sqlite.get_staged_validation_results_for_run.return_value = []
+    runner.sqlite.get_consultations_for_run.return_value = []
+    runner.sqlite.get_recovery_markers_for_run.return_value = []
     runner.sqlite.get_total_consultation_cost.return_value = 0.0
 
     # Default: scenario lookup succeeds
@@ -381,6 +385,128 @@ class TestAggregateAnalyticsWiring:
         assert list((tmp_path / "knowledge" / "analytics" / "drift_snapshots").glob("*.json"))
         assert list((tmp_path / "knowledge" / "analytics" / "drift_warnings").glob("*.json"))
         assert list((tmp_path / "knowledge" / "analytics" / "calibration_rounds").glob("*.json"))
+
+
+class TestRunTraceWiring:
+    """Canonical traces and inspection artifacts are generated from the live run path."""
+
+    def test_run_trace_and_inspection_persisted_on_run_completion(self, tmp_path: Path) -> None:
+        import json
+
+        settings = _make_settings(tmp_path, session_reports_enabled=False)
+        runner, mocks = _make_runner_with_mocks(settings)
+
+        mocks["sqlite"].get_generation_metrics.return_value = [
+            {
+                "generation_index": 1,
+                "mean_score": 0.4,
+                "best_score": 0.55,
+                "elo": 1040.0,
+                "wins": 3,
+                "losses": 1,
+                "gate_decision": "advance",
+                "status": "completed",
+                "duration_seconds": 12.0,
+                "created_at": "2026-03-15T10:00:00Z",
+                "updated_at": "2026-03-15T10:00:12Z",
+            },
+            {
+                "generation_index": 2,
+                "mean_score": 0.35,
+                "best_score": 0.55,
+                "elo": 1035.0,
+                "wins": 2,
+                "losses": 2,
+                "gate_decision": "retry",
+                "status": "completed",
+                "duration_seconds": 10.0,
+                "created_at": "2026-03-15T10:01:00Z",
+                "updated_at": "2026-03-15T10:01:10Z",
+            },
+        ]
+        mocks["sqlite"].get_agent_role_metrics.return_value = [
+            {
+                "generation_index": 1,
+                "role": "competitor",
+                "model": "claude-sonnet-4-5-20250929",
+                "input_tokens": 900,
+                "output_tokens": 450,
+                "latency_ms": 120,
+                "subagent_id": "competitor",
+                "status": "success",
+                "created_at": "2026-03-15T10:00:01Z",
+            },
+            {
+                "generation_index": 2,
+                "role": "analyst",
+                "model": "claude-sonnet-4-5-20250929",
+                "input_tokens": 400,
+                "output_tokens": 200,
+                "latency_ms": 90,
+                "subagent_id": "analyst",
+                "status": "success",
+                "created_at": "2026-03-15T10:01:01Z",
+            },
+        ]
+        mocks["sqlite"].get_staged_validation_results_for_run.return_value = [
+            {
+                "generation_index": 2,
+                "stage_order": 1,
+                "stage_name": "syntax",
+                "status": "failed",
+                "duration_ms": 15,
+                "error": "parse error",
+                "error_code": "parse",
+                "created_at": "2026-03-15T10:01:02Z",
+            }
+        ]
+        mocks["sqlite"].get_consultations_for_run.return_value = [
+            {
+                "id": 1,
+                "run_id": "test_trace",
+                "generation_index": 2,
+                "trigger": "judge_uncertainty",
+                "context_summary": "low confidence",
+                "critique": "strategy inconsistent",
+                "alternative_hypothesis": "reduce risk",
+                "tiebreak_recommendation": "retry",
+                "suggested_next_action": "simplify",
+                "raw_response": "consultation",
+                "model_used": "gpt-5.4",
+                "cost_usd": 0.02,
+                "created_at": "2026-03-15T10:01:03Z",
+            }
+        ]
+        mocks["sqlite"].get_recovery_markers_for_run.return_value = [
+            {
+                "generation_index": 2,
+                "decision": "retry",
+                "reason": "validator failed",
+                "retry_count": 1,
+                "created_at": "2026-03-15T10:01:04Z",
+            }
+        ]
+        mocks["artifacts"].tools_dir.return_value = MagicMock(exists=MagicMock(return_value=True))
+
+        _run_with_pipeline_mock(runner, mocks, "grid_ctf", 2, "test_trace")
+
+        trace_path = tmp_path / "knowledge" / "analytics" / "traces" / "trace-test_trace.json"
+        inspection_path = tmp_path / "knowledge" / "analytics" / "inspections" / "trace-test_trace.json"
+        assert trace_path.exists()
+        assert inspection_path.exists()
+
+        trace_payload = json.loads(trace_path.read_text(encoding="utf-8"))
+        event_types = {event["event_type"] for event in trace_payload["events"]}
+        categories = {event["category"] for event in trace_payload["events"]}
+        assert "generation_summary" in event_types
+        assert "consultation" in event_types
+        assert "recovery" in categories
+        assert trace_payload["causal_edges"]
+
+        inspection_payload = json.loads(inspection_path.read_text(encoding="utf-8"))
+        assert inspection_payload["run_inspection"]["total_events"] == len(trace_payload["events"])
+        assert inspection_payload["timeline_summary"]
+        assert inspection_payload["failure_paths"] or inspection_payload["recovery_paths"]
 
 
 class TestSessionReportEmptyTrajectory:

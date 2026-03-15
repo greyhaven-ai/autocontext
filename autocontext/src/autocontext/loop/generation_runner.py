@@ -4,7 +4,8 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -24,8 +25,17 @@ from autocontext.analytics.extractor import FacetExtractor
 from autocontext.analytics.facets import RunFacet
 from autocontext.analytics.issue_store import IssueStore
 from autocontext.analytics.rubric_drift import DriftStore, RubricDriftMonitor, RubricSnapshot
+from autocontext.analytics.run_trace import (
+    ActorRef,
+    CausalEdge,
+    ResourceRef,
+    RunTrace,
+    TraceEvent,
+    TraceStore,
+)
 from autocontext.analytics.store import FacetStore
 from autocontext.analytics.taxonomy import FacetTaxonomy
+from autocontext.analytics.timeline_inspector import StateInspector, TimelineBuilder
 from autocontext.backpressure import BackpressureGate, TrendAwareGate
 from autocontext.config import AppSettings
 from autocontext.execution import ExecutionSupervisor
@@ -449,6 +459,446 @@ class GenerationRunner:
                 return True
         return False
 
+    def _generate_run_trace_artifacts(
+        self,
+        run_id: str,
+        scenario_name: str,
+        scenario: ScenarioInterface,
+    ) -> None:
+        """Persist a canonical run trace plus inspector-facing summary artifacts."""
+        generation_rows = self.sqlite.get_generation_metrics(run_id)
+        role_metrics = self.sqlite.get_agent_role_metrics(run_id)
+        staged_validations = self.sqlite.get_staged_validation_results_for_run(run_id)
+        consultations = self.sqlite.get_consultations_for_run(run_id)
+        recovery_markers = self.sqlite.get_recovery_markers_for_run(run_id)
+
+        trace = self._build_run_trace(
+            run_id=run_id,
+            scenario_name=scenario_name,
+            scenario=scenario,
+            generation_rows=generation_rows,
+            role_metrics=role_metrics,
+            staged_validations=staged_validations,
+            consultations=consultations,
+            recovery_markers=recovery_markers,
+        )
+        analytics_root = self.settings.knowledge_root / "analytics"
+        analytics_root.mkdir(parents=True, exist_ok=True)
+        trace_path = TraceStore(analytics_root).persist(trace)
+        self._persist_run_inspection(trace, analytics_root, trace_path)
+
+    def _build_run_trace(
+        self,
+        *,
+        run_id: str,
+        scenario_name: str,
+        scenario: ScenarioInterface,
+        generation_rows: list[dict[str, object]],
+        role_metrics: list[dict[str, object]],
+        staged_validations: list[dict[str, object]],
+        consultations: list[dict[str, object]],
+        recovery_markers: list[dict[str, object]],
+    ) -> RunTrace:
+        """Build a canonical per-run trace from persisted runtime artifacts."""
+        family = detect_family(scenario)
+        generation_map = {
+            self._int_value(row.get("generation_index"))
+            : row
+            for row in generation_rows
+        }
+        roles_by_generation: dict[int, list[dict[str, object]]] = defaultdict(list)
+        validations_by_generation: dict[int, list[dict[str, object]]] = defaultdict(list)
+        consultations_by_generation: dict[int, list[dict[str, object]]] = defaultdict(list)
+        recovery_by_generation: dict[int, list[dict[str, object]]] = defaultdict(list)
+
+        for row in role_metrics:
+            roles_by_generation[self._int_value(row.get("generation_index"))].append(row)
+        for row in staged_validations:
+            validations_by_generation[self._int_value(row.get("generation_index"))].append(row)
+        for row in consultations:
+            consultations_by_generation[self._int_value(row.get("generation_index"))].append(row)
+        for row in recovery_markers:
+            recovery_by_generation[self._int_value(row.get("generation_index"))].append(row)
+
+        generation_indices = sorted({
+            *generation_map.keys(),
+            *roles_by_generation.keys(),
+            *validations_by_generation.keys(),
+            *consultations_by_generation.keys(),
+            *recovery_by_generation.keys(),
+        })
+
+        sequence_number = 1
+        events: list[TraceEvent] = []
+        causal_edges: list[CausalEdge] = []
+        previous_checkpoint_id: str | None = None
+
+        for generation_index in generation_indices:
+            generation_row = generation_map.get(generation_index, {})
+            current_source_id = previous_checkpoint_id
+            failed_validation_ids: list[str] = []
+
+            for metric_index, metric in enumerate(roles_by_generation.get(generation_index, []), start=1):
+                event_id = f"gen-{generation_index}-role-{metric_index}"
+                event = TraceEvent(
+                    event_id=event_id,
+                    run_id=run_id,
+                    generation_index=generation_index,
+                    sequence_number=sequence_number,
+                    timestamp=str(metric.get("created_at", "")),
+                    category="action",
+                    event_type=f"{metric.get('role', 'agent')}_execution",
+                    actor=ActorRef(
+                        actor_type="role",
+                        actor_id=str(metric.get("role", "agent")),
+                        actor_name=str(metric.get("subagent_id") or metric.get("role", "agent")),
+                    ),
+                    resources=[
+                        ResourceRef(
+                            resource_type="model",
+                            resource_id=str(metric.get("model", "")),
+                            resource_name=str(metric.get("model", "")),
+                            resource_path="",
+                        )
+                    ] if metric.get("model") else [],
+                    summary=(
+                        f"{metric.get('role', 'agent')} executed with "
+                        f"{metric.get('status', 'unknown')} status"
+                    ),
+                    detail={
+                        "model": metric.get("model"),
+                        "input_tokens": metric.get("input_tokens"),
+                        "output_tokens": metric.get("output_tokens"),
+                        "latency_ms": metric.get("latency_ms"),
+                        "subagent_id": metric.get("subagent_id"),
+                        "status": metric.get("status"),
+                    },
+                    parent_event_id=current_source_id,
+                    cause_event_ids=[current_source_id] if current_source_id else [],
+                    evidence_ids=[],
+                    severity="error" if metric.get("status") == "failed" else "info",
+                    stage=self._role_stage(str(metric.get("role", ""))),
+                    outcome=str(metric.get("status", "")),
+                    duration_ms=self._int_value(metric.get("latency_ms")),
+                    metadata={"scenario": scenario_name},
+                )
+                events.append(event)
+                if current_source_id:
+                    causal_edges.append(
+                        CausalEdge(
+                            source_event_id=current_source_id,
+                            target_event_id=event_id,
+                            relation="triggers",
+                        )
+                    )
+                current_source_id = event_id
+                sequence_number += 1
+
+            for validation_index, validation in enumerate(validations_by_generation.get(generation_index, []), start=1):
+                event_id = f"gen-{generation_index}-validation-{validation_index}"
+                status = str(validation.get("status", "unknown"))
+                event = TraceEvent(
+                    event_id=event_id,
+                    run_id=run_id,
+                    generation_index=generation_index,
+                    sequence_number=sequence_number,
+                    timestamp=str(validation.get("created_at", "")),
+                    category="validation",
+                    event_type=f"validation_{validation.get('stage_name', 'unknown')}",
+                    actor=ActorRef(
+                        actor_type="system",
+                        actor_id="validator",
+                        actor_name="Validator",
+                    ),
+                    resources=[],
+                    summary=(
+                        f"Validation stage {validation.get('stage_name', 'unknown')} "
+                        f"finished with {status}"
+                    ),
+                    detail={
+                        "stage_name": validation.get("stage_name"),
+                        "stage_order": validation.get("stage_order"),
+                        "status": status,
+                        "error": validation.get("error"),
+                        "error_code": validation.get("error_code"),
+                    },
+                    parent_event_id=current_source_id,
+                    cause_event_ids=[current_source_id] if current_source_id else [],
+                    evidence_ids=[],
+                    severity="error" if status == "failed" else "info",
+                    stage="gate",
+                    outcome=status,
+                    duration_ms=self._int_value(validation.get("duration_ms")),
+                    metadata={"scenario": scenario_name},
+                )
+                events.append(event)
+                if current_source_id:
+                    causal_edges.append(
+                        CausalEdge(
+                            source_event_id=current_source_id,
+                            target_event_id=event_id,
+                            relation="triggers",
+                        )
+                    )
+                if status == "failed":
+                    failed_validation_ids.append(event_id)
+                current_source_id = event_id
+                sequence_number += 1
+
+            for consultation_index, consultation in enumerate(consultations_by_generation.get(generation_index, []), start=1):
+                event_id = f"gen-{generation_index}-consultation-{consultation_index}"
+                event = TraceEvent(
+                    event_id=event_id,
+                    run_id=run_id,
+                    generation_index=generation_index,
+                    sequence_number=sequence_number,
+                    timestamp=str(consultation.get("created_at", "")),
+                    category="observation",
+                    event_type="consultation",
+                    actor=ActorRef(
+                        actor_type="external",
+                        actor_id="consultation_provider",
+                        actor_name=str(consultation.get("model_used", "consultation")),
+                    ),
+                    resources=[
+                        ResourceRef(
+                            resource_type="model",
+                            resource_id=str(consultation.get("model_used", "")),
+                            resource_name=str(consultation.get("model_used", "")),
+                            resource_path="",
+                        )
+                    ] if consultation.get("model_used") else [],
+                    summary=f"Consultation triggered by {consultation.get('trigger', 'unknown')}",
+                    detail={
+                        "trigger": consultation.get("trigger"),
+                        "critique": consultation.get("critique"),
+                        "alternative_hypothesis": consultation.get("alternative_hypothesis"),
+                        "tiebreak_recommendation": consultation.get("tiebreak_recommendation"),
+                        "suggested_next_action": consultation.get("suggested_next_action"),
+                        "cost_usd": consultation.get("cost_usd"),
+                    },
+                    parent_event_id=current_source_id,
+                    cause_event_ids=[current_source_id] if current_source_id else [],
+                    evidence_ids=[],
+                    severity="warning",
+                    stage="analyze",
+                    outcome="advisory",
+                    duration_ms=None,
+                    metadata={"scenario": scenario_name},
+                )
+                events.append(event)
+                if current_source_id:
+                    causal_edges.append(
+                        CausalEdge(
+                            source_event_id=current_source_id,
+                            target_event_id=event_id,
+                            relation="triggers",
+                        )
+                    )
+                current_source_id = event_id
+                sequence_number += 1
+
+            for recovery_index, marker in enumerate(recovery_by_generation.get(generation_index, []), start=1):
+                event_id = f"gen-{generation_index}-recovery-{recovery_index}"
+                cause_ids = list(failed_validation_ids)
+                if current_source_id and current_source_id not in cause_ids:
+                    cause_ids.append(current_source_id)
+                event = TraceEvent(
+                    event_id=event_id,
+                    run_id=run_id,
+                    generation_index=generation_index,
+                    sequence_number=sequence_number,
+                    timestamp=str(marker.get("created_at", "")),
+                    category="recovery",
+                    event_type=f"recovery_{marker.get('decision', 'unknown')}",
+                    actor=ActorRef(
+                        actor_type="system",
+                        actor_id="recovery_manager",
+                        actor_name="Recovery Manager",
+                    ),
+                    resources=[],
+                    summary=f"Recovery decision {marker.get('decision', 'unknown')}",
+                    detail={
+                        "decision": marker.get("decision"),
+                        "reason": marker.get("reason"),
+                        "retry_count": marker.get("retry_count"),
+                    },
+                    parent_event_id=current_source_id,
+                    cause_event_ids=cause_ids,
+                    evidence_ids=failed_validation_ids,
+                    severity="warning",
+                    stage="gate",
+                    outcome=str(marker.get("decision", "")),
+                    duration_ms=None,
+                    metadata={"scenario": scenario_name},
+                )
+                events.append(event)
+                if current_source_id and current_source_id not in failed_validation_ids:
+                    causal_edges.append(
+                        CausalEdge(
+                            source_event_id=current_source_id,
+                            target_event_id=event_id,
+                            relation="triggers",
+                        )
+                    )
+                for failed_validation_id in failed_validation_ids:
+                    causal_edges.append(
+                        CausalEdge(
+                            source_event_id=failed_validation_id,
+                            target_event_id=event_id,
+                            relation="recovers",
+                        )
+                    )
+                current_source_id = event_id
+                sequence_number += 1
+
+            checkpoint_id = f"gen-{generation_index}-checkpoint"
+            gate_decision = str(generation_row.get("gate_decision", "unknown"))
+            checkpoint_causes = [current_source_id] if current_source_id else []
+            checkpoint = TraceEvent(
+                event_id=checkpoint_id,
+                run_id=run_id,
+                generation_index=generation_index,
+                sequence_number=sequence_number,
+                timestamp=str(generation_row.get("updated_at") or generation_row.get("created_at", "")),
+                category="checkpoint",
+                event_type="generation_summary",
+                actor=ActorRef(
+                    actor_type="system",
+                    actor_id="generation_runner",
+                    actor_name="Generation Runner",
+                ),
+                resources=[
+                    ResourceRef(
+                        resource_type="scenario_entity",
+                        resource_id=f"generation:{generation_index}",
+                        resource_name=f"Generation {generation_index}",
+                        resource_path="",
+                    )
+                ],
+                summary=f"Generation {generation_index} completed with {gate_decision}",
+                detail={
+                    "mean_score": generation_row.get("mean_score"),
+                    "best_score": generation_row.get("best_score"),
+                    "elo": generation_row.get("elo"),
+                    "wins": generation_row.get("wins"),
+                    "losses": generation_row.get("losses"),
+                    "status": generation_row.get("status"),
+                    "gate_decision": generation_row.get("gate_decision"),
+                },
+                parent_event_id=current_source_id,
+                cause_event_ids=checkpoint_causes,
+                evidence_ids=failed_validation_ids,
+                severity="error" if gate_decision == "error" else "info",
+                stage="gate",
+                outcome=gate_decision,
+                duration_ms=self._duration_to_ms(generation_row.get("duration_seconds")),
+                metadata={"scenario": scenario_name},
+            )
+            events.append(checkpoint)
+            if current_source_id:
+                causal_edges.append(
+                    CausalEdge(
+                        source_event_id=current_source_id,
+                        target_event_id=checkpoint_id,
+                        relation="depends_on",
+                    )
+                )
+            previous_checkpoint_id = checkpoint_id
+            sequence_number += 1
+
+        created_at = ""
+        if events:
+            created_at = events[0].timestamp
+        elif generation_rows:
+            created_at = str(generation_rows[0].get("created_at", ""))
+
+        return RunTrace(
+            trace_id=f"trace-{run_id}",
+            run_id=run_id,
+            generation_index=None,
+            schema_version="1.0.0",
+            events=events,
+            causal_edges=causal_edges,
+            created_at=created_at,
+            metadata={
+                "scenario": scenario_name,
+                "scenario_family": family.name if family is not None else "",
+                "agent_provider": self.settings.agent_provider,
+                "executor_mode": self.settings.executor_mode,
+                "release": _current_release_version(),
+                "total_generations": len(generation_indices),
+            },
+        )
+
+    def _persist_run_inspection(
+        self,
+        trace: RunTrace,
+        analytics_root: Path,
+        trace_path: Path,
+    ) -> None:
+        """Persist operator-facing inspection artifacts derived from a run trace."""
+        inspection_dir = analytics_root / "inspections"
+        inspection_dir.mkdir(parents=True, exist_ok=True)
+        inspector = StateInspector()
+        builder = TimelineBuilder()
+        generation_indices = sorted({
+            event.generation_index for event in trace.events if event.generation_index is not None
+        })
+        payload = {
+            "trace_id": trace.trace_id,
+            "run_id": trace.run_id,
+            "trace_path": str(trace_path),
+            "created_at": trace.created_at,
+            "run_inspection": asdict(inspector.inspect_run(trace)),
+            "generation_inspections": [
+                asdict(inspector.inspect_generation(trace, generation_index))
+                for generation_index in generation_indices
+            ],
+            "timeline_summary": [entry.to_dict() for entry in builder.build_summary(trace)],
+            "failure_paths": [
+                [event.event_id for event in path]
+                for path in inspector.find_failure_paths(trace)
+            ],
+            "recovery_paths": [
+                [event.event_id for event in path]
+                for path in inspector.find_recovery_paths(trace)
+            ],
+        }
+        (inspection_dir / f"{trace.trace_id}.json").write_text(
+            json.dumps(payload, indent=2),
+            encoding="utf-8",
+        )
+
+    def _role_stage(self, role: str) -> str:
+        return {
+            "competitor": "compete",
+            "analyst": "analyze",
+            "coach": "coach",
+            "architect": "architect",
+            "curator": "curate",
+        }.get(role, "analyze")
+
+    def _duration_to_ms(self, duration_seconds: object) -> int | None:
+        if duration_seconds is None:
+            return None
+        try:
+            return int(self._float_value(duration_seconds) * 1000)
+        except (TypeError, ValueError):
+            return None
+
+    def _int_value(self, value: object, default: int = 0) -> int:
+        try:
+            return int(cast(int | float | str, value))
+        except (TypeError, ValueError):
+            return default
+
+    def _float_value(self, value: object, default: float = 0.0) -> float:
+        try:
+            return float(cast(int | float | str, value))
+        except (TypeError, ValueError):
+            return default
+
     def run(self, scenario_name: str, generations: int, run_id: str | None = None) -> RunSummary:
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
@@ -649,6 +1099,10 @@ class GenerationRunner:
             self._generate_aggregate_analytics(active_run_id, scenario_name, scenario)
         except Exception:
             LOGGER.warning("failed to generate aggregate analytics for run %s", active_run_id, exc_info=True)
+        try:
+            self._generate_run_trace_artifacts(active_run_id, scenario_name, scenario)
+        except Exception:
+            LOGGER.warning("failed to generate run trace artifacts for run %s", active_run_id, exc_info=True)
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:
