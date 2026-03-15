@@ -636,8 +636,25 @@ class TestAgentTaskCreator:
                 "Create a transactional workflow with compensation and side effects"
             )
             try:
+                from autocontext.scenarios.world_state import WorldState
+
                 assert isinstance(instance, WorkflowInterface)
                 assert len(instance.get_workflow_steps()) >= 2
+                initial_state = instance.initial_state()
+                world_state = WorldState.from_dict(initial_state["_world_state"])
+                assert any(entity.entity_id == "workflow" for entity in world_state.entities)
+                assert any(entity.entity_type == "workflow_step" for entity in world_state.entities)
+
+                first_step = instance.get_workflow_steps()[0]
+                _result, next_state = instance.execute_step(initial_state, first_step)
+                next_world_state = WorldState.from_dict(next_state["_world_state"])
+                step_entity = next(
+                    entity
+                    for entity in next_world_state.entities
+                    if entity.entity_id == f"step:{first_step.name}"
+                )
+                assert step_entity.status == "completed"
+                assert next_state["world_state_deltas"]
                 scenario_dir = Path(tmp) / "_custom_scenarios" / registered_name
                 assert (scenario_dir / "scenario.py").exists()
                 assert (scenario_dir / "spec.json").exists()

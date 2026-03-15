@@ -31,6 +31,10 @@ def generate_workflow_class(spec: WorkflowSpec, name: str) -> str:
         }
         for step in spec.workflow_steps
     ]
+    workflow_dependencies = {
+        action.name: action.preconditions
+        for action in spec.actions
+    }
     required_actions = [action.name for action in spec.actions]
     return f'''from __future__ import annotations
 
@@ -51,11 +55,20 @@ from autocontext.scenarios.workflow import (
     WorkflowResult,
     WorkflowStep,
 )
+from autocontext.scenarios.world_state import (
+    DependencyEdge,
+    StateTransition,
+    WorldEntity,
+    WorldResource,
+    WorldState,
+    WorldStateManager,
+)
 
 
 class {class_name}(WorkflowInterface):
     name = {name!r}
     _workflow_step_defs = {workflow_steps!r}
+    _workflow_dependency_defs = {workflow_dependencies!r}
 
     def describe_scenario(self) -> str:
         return {spec.description!r}
@@ -73,7 +86,7 @@ class {class_name}(WorkflowInterface):
         )
 
     def initial_state(self, seed: int | None = None) -> dict[str, Any]:
-        return {{
+        state = {{
             "seed": seed or 0,
             "step": 0,
             "completed_actions": [],
@@ -83,6 +96,8 @@ class {class_name}(WorkflowInterface):
             "side_effects": [],
             "compensations": [],
         }}
+        state["_world_state"] = self._build_world_state(state).to_dict()
+        return state
 
     def get_available_actions(self, state: dict[str, Any]) -> list[ActionSpec]:
         completed = set(state.get("completed_actions", []))
@@ -111,18 +126,162 @@ class {class_name}(WorkflowInterface):
             for raw in self._workflow_step_defs
         ]
 
-    def execute_action(self, state: dict[str, Any], action: Action) -> tuple[ActionResult, dict[str, Any]]:
-        valid, reason = self.validate_action(state, action)
-        next_state = dict(state)
-        next_state["timeline"] = list(state.get("timeline", []))
-        next_state["side_effects"] = [dict(effect) for effect in state.get("side_effects", [])]
-        next_state["compensations"] = [dict(comp) for comp in state.get("compensations", [])]
-        if not valid:
-            next_state["failed_actions"] = [*state.get("failed_actions", []), action.name]
-            return ActionResult(success=False, output="", state_changes={{}}, error=reason), next_state
+    def _build_world_state(self, state: dict[str, Any]) -> WorldState:
+        workflow_steps = self.get_workflow_steps()
+        completed = set(state.get("completed_steps", []))
+        failed = set(state.get("failed_actions", []))
+        entities = [
+            WorldEntity(
+                entity_id="workflow",
+                entity_type="workflow",
+                name=self.name,
+                properties={{
+                    "completed_steps": list(state.get("completed_steps", [])),
+                    "failed_actions": list(state.get("failed_actions", [])),
+                    "side_effect_count": len(state.get("side_effects", [])),
+                }},
+                status=(
+                    "completed"
+                    if workflow_steps and len(completed) == len(workflow_steps)
+                    else ("failed" if failed and state.get("terminal", False) else "active")
+                ),
+            ),
+        ]
+        for step in workflow_steps:
+            unmet = [
+                dep for dep in self._workflow_dependency_defs.get(step.name, [])
+                if dep not in completed
+            ]
+            if step.name in completed:
+                status = "completed"
+            elif step.name in failed:
+                status = "failed"
+            elif unmet:
+                status = "blocked"
+            else:
+                status = "active"
+            entities.append(
+                WorldEntity(
+                    entity_id=f"step:{{step.name}}",
+                    entity_type="workflow_step",
+                    name=step.name,
+                    properties={{
+                        "description": step.description,
+                        "idempotent": step.idempotent,
+                        "reversible": step.reversible,
+                        "compensation": step.compensation,
+                    }},
+                    status=status,
+                )
+            )
+        dependencies = [
+            DependencyEdge(
+                source_entity_id=f"step:{{requirement}}",
+                target_entity_id=f"step:{{step_name}}",
+                dependency_type="requires",
+            )
+            for step_name, requirements in self._workflow_dependency_defs.items()
+            for requirement in requirements
+        ]
+        open_reversible_side_effects = sum(
+            1
+            for effect in state.get("side_effects", [])
+            if effect.get("reversible") and not effect.get("reversed")
+        )
+        resources = [
+            WorldResource(
+                resource_id="workflow:reversible_side_effects",
+                resource_type="workflow_counter",
+                name="Open reversible side effects",
+                quantity=float(open_reversible_side_effects),
+                capacity=None,
+                owner_entity_id="workflow",
+            ),
+            WorldResource(
+                resource_id="workflow:compensations_applied",
+                resource_type="workflow_counter",
+                name="Applied compensations",
+                quantity=float(len(state.get("compensations", []))),
+                capacity=None,
+                owner_entity_id="workflow",
+            ),
+        ]
+        return WorldState(
+            state_id=f"{{self.name}}-step-{{int(state.get('step', 0))}}",
+            scenario_name=self.name,
+            step_index=int(state.get("step", 0)),
+            entities=entities,
+            resources=resources,
+            dependencies=dependencies,
+            hidden_variables=[],
+            metadata={{"scenario_family": "workflow"}},
+        )
 
-        next_state["completed_actions"] = [*state.get("completed_actions", []), action.name]
-        next_state["completed_steps"] = [*state.get("completed_steps", []), action.name]
+    def _ensure_world_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        next_state = dict(state)
+        if self.get_world_state(next_state) is not None:
+            return next_state
+        next_state["_world_state"] = self._build_world_state(next_state).to_dict()
+        return next_state
+
+    def _sync_world_state(
+        self,
+        before_state: dict[str, Any],
+        after_state: dict[str, Any],
+        action_name: str,
+        actor_entity_id: str,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        base_state = self._ensure_world_state(before_state)
+        before_world = self.get_world_state(base_state) or self._build_world_state(base_state)
+        after_world = self._build_world_state(after_state)
+        manager = WorldStateManager(before_world)
+        deltas = manager.diff(before_world, after_world)
+        if deltas:
+            transition = StateTransition(
+                transition_id=f"tx-{{action_name}}-{{int(before_state.get('step', 0))}}",
+                timestamp="",
+                action=action_name,
+                actor_entity_id=actor_entity_id,
+                changes=deltas,
+                metadata={{"scenario_family": "workflow"}},
+            )
+            manager.apply_transition(transition)
+            stored_world = manager.snapshot()
+        else:
+            stored_world = before_world
+        next_state = dict(after_state)
+        next_state["_world_state"] = stored_world.to_dict()
+        serialized_deltas = [delta.to_dict() for delta in deltas]
+        next_state["world_state_deltas"] = serialized_deltas
+        return next_state, serialized_deltas
+
+    def execute_action(self, state: dict[str, Any], action: Action) -> tuple[ActionResult, dict[str, Any]]:
+        base_state = self._ensure_world_state(state)
+        valid, reason = self.validate_action(base_state, action)
+        next_state = dict(base_state)
+        next_state["timeline"] = list(base_state.get("timeline", []))
+        next_state["side_effects"] = [dict(effect) for effect in base_state.get("side_effects", [])]
+        next_state["compensations"] = [dict(comp) for comp in base_state.get("compensations", [])]
+        if not valid:
+            next_state["failed_actions"] = [*base_state.get("failed_actions", []), action.name]
+            next_state, world_state_deltas = self._sync_world_state(
+                base_state,
+                next_state,
+                action_name=f"invalid:{{action.name}}",
+                actor_entity_id="workflow",
+            )
+            return (
+                ActionResult(
+                    success=False,
+                    output="",
+                    state_changes={{"world_state_deltas": world_state_deltas}},
+                    error=reason,
+                ),
+                next_state,
+            )
+
+        next_state["completed_actions"] = [*base_state.get("completed_actions", []), action.name]
+        next_state["completed_steps"] = [*base_state.get("completed_steps", []), action.name]
         next_state["timeline"].append({{"action": action.name, "parameters": action.parameters}})
         workflow_steps = {{step.name: step for step in self.get_workflow_steps()}}
         step = workflow_steps.get(action.name)
@@ -136,6 +295,12 @@ class {class_name}(WorkflowInterface):
                     "reversed": False,
                 }}
             )
+        next_state, world_state_deltas = self._sync_world_state(
+            base_state,
+            next_state,
+            action_name=action.name,
+            actor_entity_id=f"step:{{action.name}}",
+        )
         return (
             ActionResult(
                 success=True,
@@ -143,6 +308,7 @@ class {class_name}(WorkflowInterface):
                 state_changes={{
                     "completed_actions": list(next_state["completed_actions"]),
                     "completed_steps": list(next_state["completed_steps"]),
+                    "world_state_deltas": world_state_deltas,
                 }},
                 side_effects=[action.name],
             ),
@@ -158,21 +324,33 @@ class {class_name}(WorkflowInterface):
         return self.execute_action(state, Action(name=step.name, parameters={{}}))
 
     def execute_compensation(self, state: dict[str, Any], step: WorkflowStep) -> CompensationAction:
-        side_effects = [dict(effect) for effect in state.get("side_effects", [])]
+        base_state = self._ensure_world_state(state)
+        side_effects = [dict(effect) for effect in base_state.get("side_effects", [])]
         success = False
         for effect in side_effects:
             if effect["step_name"] == step.name and effect["reversible"] and not effect["reversed"]:
                 effect["reversed"] = True
                 success = True
-        state["side_effects"] = side_effects
-        state.setdefault("compensations", []).append(
-            {{
-                "step_name": step.name,
-                "compensation_name": step.compensation or f"undo_{{step.name}}",
-                "success": success,
-                "output": "Compensation executed" if success else "No reversible side effect found",
-            }}
+        compensation_payload = {{
+            "step_name": step.name,
+            "compensation_name": step.compensation or f"undo_{{step.name}}",
+            "success": success,
+            "output": "Compensation executed" if success else "No reversible side effect found",
+        }}
+        next_state = dict(base_state)
+        next_state["side_effects"] = side_effects
+        next_state["compensations"] = [
+            *base_state.get("compensations", []),
+            compensation_payload,
+        ]
+        next_state, _world_state_deltas = self._sync_world_state(
+            base_state,
+            next_state,
+            action_name=compensation_payload["compensation_name"],
+            actor_entity_id=f"step:{{step.name}}",
         )
+        state.clear()
+        state.update(next_state)
         return CompensationAction(
             step_name=step.name,
             compensation_name=step.compensation or f"undo_{{step.name}}",

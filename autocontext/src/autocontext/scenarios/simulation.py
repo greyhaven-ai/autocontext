@@ -251,6 +251,18 @@ class SimulationInterface(ScenarioInterface):
     def describe_evaluation_criteria(self) -> str:
         return self.get_rubric()
 
+    def get_world_state(self, state: Mapping[str, Any]) -> Any | None:
+        """Return an optional structured world-state snapshot for this scenario."""
+        raw = state.get("_world_state")
+        if not isinstance(raw, Mapping):
+            return None
+        try:
+            from autocontext.scenarios.world_state import WorldState
+
+            return WorldState.from_dict(dict(raw))
+        except (KeyError, TypeError, ValueError):
+            return None
+
     def get_observation(self, state: Mapping[str, Any], player_id: str) -> Observation:
         available_actions = self.get_available_actions(dict(state))
         action_names = ", ".join(action.name for action in available_actions) or "none"
@@ -368,7 +380,7 @@ class SimulationInterface(ScenarioInterface):
         return " | ".join(rendered)
 
     def render_frame(self, state: Mapping[str, Any]) -> dict[str, Any]:
-        return {
+        frame = {
             "scenario": self.name,
             "state": dict(state),
             "available_actions": [
@@ -380,6 +392,10 @@ class SimulationInterface(ScenarioInterface):
                 for action in self.get_available_actions(dict(state))
             ],
         }
+        world_state = self.get_world_state(state)
+        if world_state is not None:
+            frame["world_state"] = world_state.to_dict()
+        return frame
 
     def execute_match(self, strategy: Mapping[str, Any], seed: int) -> Result:
         state = self.initial_state(seed=seed)
