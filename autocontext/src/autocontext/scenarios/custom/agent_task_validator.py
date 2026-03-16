@@ -84,7 +84,6 @@ _JSON_INTENT_SIGNALS = frozenset({
 # to data the system must supply).
 _ALWAYS_EXTERNAL_PATTERNS = [
     "you will be provided with",
-    "using the provided",
 ]
 
 # Patterns that reference data which MAY be inline — only flag as external
@@ -92,26 +91,47 @@ _ALWAYS_EXTERNAL_PATTERNS = [
 _CONTEXTUAL_DATA_PATTERNS = [
     "given the following data",
     "analyze the following",
+    "using the provided",
     "based on the data below",
 ]
 
-# Minimum characters after a contextual pattern to consider data "inline".
-_INLINE_DATA_MIN_CHARS = 50
 # Markers that signal structured inline data.
 _INLINE_DATA_MARKERS = ("{", "[", "|", "- ", "* ", "##", "```")
+_INLINE_DATA_MIN_CHARS = 50
+_KEY_VALUE_LINE_RE = re.compile(r"^[A-Za-z0-9 _()/.-]{1,40}:\s+\S")
+_CSV_LINE_RE = re.compile(r"^[^,\n]+(?:,[^,\n]+)+$")
+_INLINE_BLOCK_RE = re.compile(r"^[^.\n]{0,80}:\s*\n", re.DOTALL)
 
 
 def _has_inline_data_after(prompt: str, pattern: str) -> bool:
-    """Check if substantial inline data follows a data-reference phrase."""
+    """Check if actual inline payload data follows a data-reference phrase."""
     idx = prompt.lower().find(pattern)
     if idx < 0:
         return False
     after = prompt[idx + len(pattern):].strip()
-    if len(after) >= _INLINE_DATA_MIN_CHARS:
+    if not after:
+        return False
+
+    lines = [line.strip() for line in after.splitlines() if line.strip()]
+
+    if any(line.startswith(_INLINE_DATA_MARKERS) for line in lines):
         return True
-    if after.count("\n") >= 2:
+
+    key_value_lines = [line for line in lines if _KEY_VALUE_LINE_RE.match(line)]
+    if len(key_value_lines) >= 2:
         return True
-    return any(marker in after for marker in _INLINE_DATA_MARKERS)
+
+    csv_lines = [line for line in lines if _CSV_LINE_RE.match(line)]
+    if len(csv_lines) >= 2:
+        return True
+
+    match = _INLINE_BLOCK_RE.match(after)
+    if match is not None:
+        payload = after[match.end():].strip()
+        if len(payload) >= _INLINE_DATA_MIN_CHARS:
+            return True
+
+    return False
 
 
 def _extract_keywords(text: str) -> set[str]:

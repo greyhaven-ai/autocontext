@@ -895,6 +895,39 @@ class TestValidatorExternalDataReference:
         errors = validate_spec(spec)
         assert any("sample_input" in e for e in errors)
 
+    def test_using_the_provided_with_inline_data_passes(self) -> None:
+        """AC-279: 'Using the provided' should pass when the payload is inline."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Using the provided incident timeline below:\n\n"
+                "- 09:03 UTC: elevated 500s on checkout\n"
+                "- 09:06 UTC: deploy completed in us-east-1\n"
+                "- 09:11 UTC: rollback started\n\n"
+                "Write an incident summary and likely root cause."
+            ),
+            judge_rubric="Evaluate incident analysis quality",
+        )
+        errors = validate_spec(spec)
+        assert not any("sample_input" in e for e in errors)
+
+    def test_long_plain_prose_still_requires_sample_input(self) -> None:
+        """AC-279: Long prose after a trigger phrase is not enough to count as inline data."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Analyze the following customer complaint and explain the refund exposure, "
+                "escalation path, contract risk, support obligations, and recommended next step."
+            ),
+            judge_rubric="Evaluate complaint analysis quality",
+        )
+        errors = validate_spec(spec)
+        assert any("sample_input" in e for e in errors)
+
 
 class TestInternalRetriesSurfacing:
     def test_agent_task_result_has_internal_retries(self) -> None:
