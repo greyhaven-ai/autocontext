@@ -101,6 +101,7 @@ def build_retry_prompt(
     current_strategy: dict[str, Any],
     attempt: int,
     is_code_strategy: bool,
+    include_code_strategy_suffix: bool = False,
     strategy_interface: str = "",
     failure_report_context: str = "",
 ) -> str:
@@ -117,7 +118,7 @@ def build_retry_prompt(
 
     if is_code_strategy:
         prompt += "Adjust your code to improve. Do not repeat the same approach.\n"
-        if strategy_interface:
+        if include_code_strategy_suffix:
             from autocontext.prompts.templates import code_strategy_competitor_suffix
 
             prompt += code_strategy_competitor_suffix(strategy_interface)
@@ -173,6 +174,9 @@ def build_validity_rollback(
     *,
     current_strategy: dict[str, Any],
     validity_retry_attempts: int,
+    score_history: list[float],
+    gate_decision_history: list[str],
+    tournament: EvaluationSummary,
 ) -> dict[str, Any]:
     """Build validity rollback state when validity budget is exhausted.
 
@@ -184,4 +188,7 @@ def build_validity_rollback(
         "score": 0.0,
         "attempt": validity_retry_attempts,
         "current_strategy": current_strategy,
+        "score_history": [*score_history, 0.0],
+        "gate_decision_history": [*gate_decision_history, "rollback"],
+        "tournament": tournament,
     }

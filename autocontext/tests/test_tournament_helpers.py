@@ -213,6 +213,22 @@ class TestBuildRetryPrompt:
         assert "Adjust your code" in prompt
         assert "Do not repeat the same approach" in prompt
 
+    def test_code_strategy_suffix_can_be_forced_without_interface_text(self) -> None:
+        from autocontext.loop.tournament_helpers import build_retry_prompt
+
+        prompt = build_retry_prompt(
+            base_prompt="You are the competitor.",
+            tournament_best_score=0.5,
+            previous_best=0.6,
+            min_delta=0.005,
+            current_strategy={"__code__": "result = {}"},
+            attempt=1,
+            is_code_strategy=True,
+            include_code_strategy_suffix=True,
+            strategy_interface="",
+        )
+        assert "CODE STRATEGY MODE" in prompt
+
     def test_includes_failure_report(self) -> None:
         from autocontext.loop.tournament_helpers import build_retry_prompt
 
@@ -335,22 +351,33 @@ class TestApplyTournamentOutcome:
 
 class TestBuildValidityRollback:
     def test_returns_rollback_state(self) -> None:
+        tournament = _make_tournament(best_score=0.0, mean_score=0.0, wins=0, losses=0)
         from autocontext.loop.tournament_helpers import build_validity_rollback
 
         result = build_validity_rollback(
             current_strategy={"aggression": 0.5},
             validity_retry_attempts=3,
+            score_history=[0.4, 0.5],
+            gate_decision_history=["advance", "retry"],
+            tournament=tournament,
         )
         assert result["gate_decision"] == "rollback"
         assert result["gate_delta"] == 0.0
         assert result["attempt"] == 3
         assert result["current_strategy"] == {"aggression": 0.5}
+        assert result["score_history"] == [0.4, 0.5, 0.0]
+        assert result["gate_decision_history"] == ["advance", "retry", "rollback"]
+        assert result["tournament"] is tournament
 
     def test_score_zero(self) -> None:
+        tournament = _make_tournament(best_score=0.0, mean_score=0.0, wins=0, losses=0)
         from autocontext.loop.tournament_helpers import build_validity_rollback
 
         result = build_validity_rollback(
             current_strategy={},
             validity_retry_attempts=0,
+            score_history=[],
+            gate_decision_history=[],
+            tournament=tournament,
         )
         assert result["score"] == 0.0

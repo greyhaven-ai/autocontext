@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.architect import parse_dag_changes
-from autocontext.backpressure.trend_gate import ScoreHistory, TrendAwareGate
+from autocontext.backpressure.trend_gate import TrendAwareGate
 from autocontext.harness.evaluation.failure_report import FailureReport
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
@@ -22,10 +22,16 @@ from autocontext.knowledge.fresh_start import execute_fresh_start
 from autocontext.knowledge.harness_quality import compute_harness_quality
 from autocontext.knowledge.progress import build_progress_snapshot
 from autocontext.knowledge.protocol import parse_research_protocol, validate_tuning_overrides
-from autocontext.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
+from autocontext.knowledge.rapid_gate import should_transition_to_linear
 from autocontext.knowledge.stagnation import StagnationDetector
 from autocontext.knowledge.tuning import TuningConfig, parse_tuning_proposal
 from autocontext.loop.stage_types import GenerationContext
+from autocontext.loop.tournament_helpers import (
+    apply_tournament_outcome,
+    build_retry_prompt,
+    build_validity_rollback,
+    resolve_gate_decision,
+)
 from autocontext.notebook.context_provider import NotebookContextProvider
 from autocontext.notebook.types import SessionNotebook
 from autocontext.prompts.templates import build_prompt_bundle
@@ -520,9 +526,16 @@ def stage_tournament(
                     continue
 
                 # Validity budget exhausted: rollback without tournament
-                gate_decision = "rollback"
-                gate_delta = 0.0
                 tournament = _build_empty_tournament(ctx)
+                rollback = build_validity_rollback(
+                    current_strategy=current_strategy,
+                    validity_retry_attempts=validity_retry_attempt,
+                    score_history=ctx.score_history,
+                    gate_decision_history=ctx.gate_decision_history,
+                    tournament=tournament,
+                )
+                gate_decision = rollback["gate_decision"]
+                gate_delta = rollback["gate_delta"]
                 events.emit("gate_decided", {
                     "run_id": ctx.run_id,
                     "generation": ctx.generation,
@@ -530,13 +543,13 @@ def stage_tournament(
                     "delta": gate_delta,
                     "tier": "validity",
                 })
-                ctx.score_history.append(0.0)
-                ctx.gate_decision_history.append(gate_decision)
+                ctx.score_history = rollback["score_history"]
+                ctx.gate_decision_history = rollback["gate_decision_history"]
                 ctx.gate_decision = gate_decision
                 ctx.gate_delta = gate_delta
-                ctx.current_strategy = current_strategy
-                ctx.attempt = validity_retry_attempt
-                ctx.tournament = tournament
+                ctx.current_strategy = rollback["current_strategy"]
+                ctx.attempt = rollback["attempt"]
+                ctx.tournament = rollback["tournament"]
                 return ctx
 
             events.emit("validity_check_passed", {
@@ -579,35 +592,23 @@ def stage_tournament(
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 
-        # #168 + #172 - Exploration mode gate selection
-        if use_rapid:
-            gate_result_rapid = rapid_gate(tournament.best_score, ctx.previous_best)
-            gate_decision = gate_result_rapid.decision
-            # Rapid mode: no retry, only advance or rollback
-        elif isinstance(gate, TrendAwareGate):
+        custom_metrics = None
+        if isinstance(gate, TrendAwareGate):
             best_eval = max(tournament.results, key=lambda r: r.score)
             best_exec = best_eval.metadata["execution_output"]
             custom_metrics = scenario.custom_backpressure(best_exec.result)
-            gate_result = gate.evaluate(
-                ctx.previous_best,
-                tournament.best_score,
-                retry_count=attempt,
-                max_retries=settings.max_retries,
-                history=ScoreHistory(
-                    scores=tuple(ctx.score_history),
-                    gate_decisions=tuple(ctx.gate_decision_history),
-                ),
-                custom_metrics=custom_metrics,
-            )
-            gate_decision = gate_result.decision
-        else:
-            gate_result = gate.evaluate(
-                ctx.previous_best,
-                tournament.best_score,
-                retry_count=attempt,
-                max_retries=settings.max_retries,
-            )
-            gate_decision = gate_result.decision
+        gate_result = resolve_gate_decision(
+            tournament_best_score=tournament.best_score,
+            previous_best=ctx.previous_best,
+            gate=gate,
+            score_history=ctx.score_history,
+            gate_decision_history=ctx.gate_decision_history,
+            retry_count=attempt,
+            max_retries=settings.max_retries,
+            use_rapid=use_rapid,
+            custom_metrics=custom_metrics,
+        )
+        gate_decision = gate_result.decision
 
         if gate_decision == "retry" and not use_rapid:
             attempt += 1
@@ -618,30 +619,24 @@ def stage_tournament(
             # Retry learning: re-invoke competitor with failure context
             if agents is not None and ctx.prompts is not None:
                 is_code_strategy = "__code__" in current_strategy
-                retry_prompt = (
-                    ctx.prompts.competitor
-                    + f"\n\n--- RETRY ATTEMPT {attempt} ---\n"
-                    f"Your previous strategy scored {tournament.best_score:.4f} "
-                    f"but needed delta >= {settings.backpressure_min_delta} over {ctx.previous_best:.4f}.\n"
-                )
-                if is_code_strategy:
-                    retry_prompt += "Adjust your code to improve. Do not repeat the same approach.\n"
-                    if settings.code_strategies_enabled:
-                        from autocontext.prompts.templates import code_strategy_competitor_suffix
-                        retry_prompt += code_strategy_competitor_suffix(ctx.strategy_interface)
-                else:
-                    retry_prompt += (
-                        f"Previous strategy: {json.dumps(current_strategy, sort_keys=True)}\n"
-                        f"Adjust your strategy to improve. Do not repeat the same approach.\n"
-                    )
-                # Enrich retry prompt with structured failure analysis
-                failure_report = FailureReport.from_tournament(
+                failure_report_context = FailureReport.from_tournament(
                     tournament,
                     previous_best=ctx.previous_best,
                     threshold=settings.backpressure_min_delta,
                     strategy=current_strategy,
+                ).to_prompt_context()
+                retry_prompt = build_retry_prompt(
+                    base_prompt=ctx.prompts.competitor,
+                    tournament_best_score=tournament.best_score,
+                    previous_best=ctx.previous_best,
+                    min_delta=settings.backpressure_min_delta,
+                    current_strategy=current_strategy,
+                    attempt=attempt,
+                    is_code_strategy=is_code_strategy,
+                    include_code_strategy_suffix=settings.code_strategies_enabled,
+                    strategy_interface=ctx.strategy_interface,
+                    failure_report_context=failure_report_context,
                 )
-                retry_prompt += "\n" + failure_report.to_prompt_context()
                 try:
                     raw_text, _ = agents.competitor.run(retry_prompt, tool_context=ctx.tool_context)
                     if is_code_strategy:
@@ -689,7 +684,15 @@ def stage_tournament(
         "wins": tournament.wins, "losses": tournament.losses,
     })
 
-    gate_delta = round(tournament.best_score - ctx.previous_best, 6)
+    outcome = apply_tournament_outcome(
+        gate_decision=gate_decision,
+        tournament=tournament,
+        previous_best=ctx.previous_best,
+        challenger_elo=ctx.challenger_elo,
+        score_history=ctx.score_history,
+        gate_decision_history=ctx.gate_decision_history,
+    )
+    gate_delta = outcome["gate_delta"]
     events.emit("gate_decided", {
         "run_id": ctx.run_id, "generation": ctx.generation,
         "decision": gate_decision, "delta": gate_delta,
@@ -702,14 +705,10 @@ def stage_tournament(
     gen_dir = artifacts.generation_dir(ctx.run_id, ctx.generation)
     artifacts.buffered_write_markdown(gen_dir / "narrative.md", replay_narrative)
 
-    # Accumulate history for trend-aware gate
-    ctx.score_history.append(tournament.best_score)
-    ctx.gate_decision_history.append(gate_decision)
-
-    if gate_decision == "advance":
-        ctx.previous_best = max(ctx.previous_best, tournament.best_score)
-        ctx.challenger_elo = tournament.elo_after
-
+    ctx.score_history = outcome["score_history"]
+    ctx.gate_decision_history = outcome["gate_decision_history"]
+    ctx.previous_best = outcome["previous_best"]
+    ctx.challenger_elo = outcome["challenger_elo"]
     ctx.tournament = tournament
     ctx.gate_decision = gate_decision
     ctx.gate_delta = gate_delta

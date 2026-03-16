@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -589,6 +589,54 @@ class TestStageTournament:
         assert result.replay_narrative  # non-empty
         assert isinstance(result.replay_narrative, str)
 
+    def test_uses_resolve_gate_decision_and_apply_tournament_outcome_helpers(self) -> None:
+        """The live stage should delegate gate resolution and outcome application."""
+        ctx = _make_tournament_ctx(previous_best=0.25)
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="rollback", reason="inline gate should not run")
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+
+        with (
+            patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate,
+            patch("autocontext.loop.stages.apply_tournament_outcome") as apply_outcome,
+        ):
+            resolve_gate.return_value = MagicMock(
+                decision="advance",
+                delta=0.42,
+                reason="helper reason",
+                is_rapid=False,
+            )
+            apply_outcome.return_value = {
+                "gate_delta": 0.42,
+                "previous_best": 0.91,
+                "challenger_elo": 1234.0,
+                "score_history": [0.91],
+                "gate_decision_history": ["advance"],
+            }
+
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=None,
+            )
+
+        resolve_gate.assert_called_once()
+        apply_outcome.assert_called_once()
+        gate.evaluate.assert_not_called()
+        assert result.gate_decision == "advance"
+        assert result.gate_delta == 0.42
+        assert result.previous_best == 0.91
+        assert result.challenger_elo == 1234.0
+        assert result.score_history == [0.91]
+        assert result.gate_decision_history == ["advance"]
+
 
 # ---------- TestStageCuratorGate ----------
 
@@ -1016,6 +1064,38 @@ class TestStageTournamentAttempt:
             '{"aggression": 0.9}',
         )
         assert result.current_strategy == {"aggression": 0.9}
+
+    def test_stage_tournament_uses_retry_prompt_helper(self) -> None:
+        """Retry learning should source its prompt from the extracted helper."""
+        ctx = _make_tournament_ctx(strategy={"aggression": 0.2})
+        ctx.prompts = MagicMock(competitor="Improve the strategy.")
+        ctx.strategy_interface = '{"aggression": float}'
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.side_effect = [
+            MagicMock(decision="retry", reason="not enough improvement"),
+            MagicMock(decision="advance", reason="improved"),
+        ]
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+        agents = MagicMock()
+        agents.competitor.run.return_value = ('{"aggression": 0.9}', None)
+        agents.translator.translate.return_value = ({"aggression": 0.9}, None)
+
+        with patch("autocontext.loop.stages.build_retry_prompt", return_value="HELPER RETRY PROMPT") as build_prompt:
+            stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=agents,
+            )
+
+        build_prompt.assert_called_once()
+        agents.competitor.run.assert_any_call("HELPER RETRY PROMPT", tool_context=ctx.tool_context)
 
 
 # ---------- TestStageAgentGenerationEvents ----------

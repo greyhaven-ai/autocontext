@@ -381,6 +381,56 @@ class TestTwoTierEnabled:
         assert result.tournament is not None
         assert result.tournament.results == []
 
+    def test_validity_budget_exhaustion_uses_validity_rollback_helper(self) -> None:
+        """The live validity rollback path should delegate to the extracted helper."""
+        settings = _make_settings(two_tier_gating_enabled=True, validity_max_retries=0)
+        ctx = _make_tournament_ctx(settings=settings)
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+
+        with (
+            patch("autocontext.loop.stages.ValidityGate") as MockVG,
+            patch("autocontext.loop.stages.build_validity_rollback") as build_rollback,
+        ):
+            mock_vg_instance = MagicMock()
+            mock_vg_instance.check.return_value = MagicMock(
+                passed=False,
+                errors=["invalid move format"],
+                retry_budget_remaining=0,
+            )
+            mock_vg_instance.consume_retry.return_value = False
+            MockVG.return_value = mock_vg_instance
+            build_rollback.return_value = {
+                "gate_decision": "rollback",
+                "gate_delta": 0.0,
+                "score": 0.0,
+                "attempt": 7,
+                "current_strategy": {"aggression": 0.3},
+                "score_history": [0.0],
+                "gate_decision_history": ["rollback"],
+                "tournament": MagicMock(results=[]),
+            }
+
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=None,
+            )
+
+        build_rollback.assert_called_once()
+        gate.evaluate.assert_not_called()
+        assert result.attempt == 7
+        assert result.current_strategy == {"aggression": 0.3}
+        assert result.score_history == [0.0]
+        assert result.gate_decision_history == ["rollback"]
+
     def test_validity_retry_revises_before_tournament(self) -> None:
         """A failed validity check should revise the strategy before evaluation."""
         settings = _make_settings(two_tier_gating_enabled=True, validity_max_retries=1)
