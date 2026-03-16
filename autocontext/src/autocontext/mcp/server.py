@@ -290,6 +290,7 @@ def autocontext_create_agent_task(
     rubric: str,
     reference_context: str | None = None,
     required_concepts: str | None = None,
+    generations: int = 1,
     max_rounds: int = 5,
     quality_threshold: float = 0.9,
     revision_prompt: str | None = None,
@@ -301,8 +302,16 @@ def autocontext_create_agent_task(
     except json.JSONDecodeError:
         return json.dumps({"error": "Invalid JSON in required_concepts parameter"})
     return json.dumps(tools.create_agent_task(
-        _get_ctx(), name, task_prompt, rubric, reference_context,
-        concepts, max_rounds, quality_threshold, revision_prompt,
+        _get_ctx(),
+        name=name,
+        task_prompt=task_prompt,
+        rubric=rubric,
+        reference_context=reference_context,
+        required_concepts=concepts,
+        generations=generations,
+        max_rounds=max_rounds,
+        quality_threshold=quality_threshold,
+        revision_prompt=revision_prompt,
     ))
 
 

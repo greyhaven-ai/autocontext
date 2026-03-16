@@ -327,6 +327,7 @@ def create_agent_task(
     rubric: str,
     reference_context: str | None = None,
     required_concepts: list[str] | None = None,
+    generations: int = 1,
     max_rounds: int = 5,
     quality_threshold: float = 0.9,
     revision_prompt: str | None = None,
@@ -344,6 +345,7 @@ def create_agent_task(
         "reference_context": reference_context,
         "reference_sources": None,
         "required_concepts": required_concepts,
+        "generations": generations,
         "max_rounds": max_rounds,
         "quality_threshold": quality_threshold,
         "revision_prompt": revision_prompt,
@@ -373,6 +375,7 @@ def list_agent_tasks(ctx: MtsToolContext) -> list[dict[str, object]]:
             tasks.append({
                 "name": data.get("name", spec_path.stem),
                 "task_prompt_preview": data.get("task_prompt", "")[:200],
+                "generations": data.get("generations", 1),
                 "quality_threshold": data.get("quality_threshold", 0.9),
                 "max_rounds": data.get("max_rounds", 5),
                 "has_reference_context": bool(data.get("reference_context")),
@@ -520,13 +523,20 @@ def queue_improvement_run(
         rubric=data.get("rubric"),
         reference_context=data.get("reference_context"),
         required_concepts=data.get("required_concepts"),
+        generations=data.get("generations", 1),
         max_rounds=data.get("max_rounds", 5),
         quality_threshold=data.get("quality_threshold", 0.9),
         initial_output=initial_output,
         priority=priority,
     )
 
-    return {"task_id": task_id, "task_name": task_name, "status": "queued", "priority": priority}
+    return {
+        "task_id": task_id,
+        "task_name": task_name,
+        "status": "queued",
+        "priority": priority,
+        "generations": data.get("generations", 1),
+    }
 
 
 def get_queue_status(ctx: MtsToolContext) -> dict[str, object]:
@@ -574,7 +584,12 @@ def get_task_result(ctx: MtsToolContext, task_id: str) -> dict[str, object]:
         result["completed_at"] = task["completed_at"]
         if task.get("result_json"):
             try:
-                result["rounds"] = json.loads(task["result_json"]).get("rounds", [])
+                payload = json.loads(task["result_json"])
+                result["rounds"] = payload.get("rounds", [])
+                if "trajectory" in payload:
+                    result["trajectory"] = payload["trajectory"]
+                if "generations" in payload:
+                    result["generations"] = payload["generations"]
             except (json.JSONDecodeError, AttributeError):
                 result["rounds"] = []
     elif task["status"] == "failed":

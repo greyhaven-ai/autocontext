@@ -70,6 +70,7 @@ class TestCreateAgentTask:
             rubric="Accuracy",
             reference_context="RLM = Recursive Language Model",
             required_concepts=["context folding"],
+            generations=3,
             max_rounds=3,
             quality_threshold=0.85,
             revision_prompt="Improve accuracy",
@@ -77,6 +78,7 @@ class TestCreateAgentTask:
         assert result["status"] == "created"
         # Verify persisted
         task = get_agent_task(ctx, "full-task")
+        assert task["generations"] == 3
         assert task["reference_context"] == "RLM = Recursive Language Model"
         assert task["max_rounds"] == 3
 
@@ -154,6 +156,7 @@ class TestQueueTools:
         assert result["status"] == "queued"
         assert result["priority"] == 5
         assert "task_id" in result
+        assert result["generations"] == 1
 
     def test_queue_status_empty(self, ctx):
         status = get_queue_status(ctx)
@@ -176,6 +179,46 @@ class TestQueueTools:
         queued = queue_improvement_run(ctx, "s1")
         result = get_task_result(ctx, queued["task_id"])
         assert result["status"] == "pending"
+
+    def test_get_task_result_surfaces_multi_generation_trajectory(self, ctx):
+        create_agent_task(ctx, "multi-task", "prompt", "rubric", generations=3)
+        ctx.sqlite.enqueue_task(
+            "t1",
+            "multi-task",
+            config={"task_prompt": "prompt", "rubric": "rubric", "generations": 3},
+        )
+        ctx.sqlite.dequeue_task()
+        ctx.sqlite.complete_task(
+            "t1",
+            best_score=0.91,
+            best_output="best output",
+            total_rounds=5,
+            met_threshold=True,
+            result_json=json.dumps({
+                "mode": "agent_task_multi_generation",
+                "trajectory": {
+                    "task_name": "multi-task",
+                    "total_generations": 3,
+                    "score_history": [0.4, 0.7, 0.91],
+                    "lessons_per_generation": [1, 1, 1],
+                    "cold_start_score": 0.4,
+                    "final_score": 0.91,
+                    "improvement_delta": 0.51,
+                    "metadata": {},
+                },
+                "generations": [
+                    {"generation": 1, "best_score": 0.4},
+                    {"generation": 2, "best_score": 0.7},
+                    {"generation": 3, "best_score": 0.91},
+                ],
+                "rounds": [{"round_number": 1, "score": 0.91, "reasoning": "ok"}],
+            }),
+        )
+
+        result = get_task_result(ctx, "t1")
+        assert result["status"] == "completed"
+        assert result["trajectory"]["total_generations"] == 3
+        assert len(result["generations"]) == 3
 
 
 class TestGetBestOutput:

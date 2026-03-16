@@ -19,6 +19,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from autocontext.notifications.base import Notifier
 
+from autocontext.execution.agent_task_evolution import (
+    AgentTaskEvolutionRunner,
+    AgentTaskGenerationEvaluation,
+    AgentTaskTrajectory,
+)
 from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
 from autocontext.execution.judge import LLMJudge
 from autocontext.providers.base import LLMProvider
@@ -32,6 +37,7 @@ logger = logging.getLogger(__name__)
 class TaskConfig:
     """Configuration for a queued task run."""
 
+    generations: int = 1
     max_rounds: int = 5
     quality_threshold: float = 0.9
     min_rounds: int = 1
@@ -49,6 +55,7 @@ class TaskConfig:
             return cls()
         parsed = json.loads(data)
         return cls(
+            generations=parsed.get("generations", 1),
             max_rounds=parsed.get("max_rounds", 5),
             quality_threshold=parsed.get("quality_threshold", 0.9),
             min_rounds=parsed.get("min_rounds", 1),
@@ -85,6 +92,49 @@ def _serialize_result(result: ImprovementResult) -> str:
     if result.judge_calls:
         data["judge_calls"] = result.judge_calls
     return json.dumps(data)
+
+
+def _serialize_evolution_result(
+    trajectory: AgentTaskTrajectory,
+    generation_results: list[ImprovementResult],
+) -> str:
+    """Serialize a multi-generation AgentTask evolution run to JSON."""
+    final_rounds: list[dict[str, object]] = []
+    if generation_results:
+        final_result = generation_results[-1]
+        final_rounds = [
+            {
+                "round_number": r.round_number,
+                "score": r.score,
+                "reasoning": r.reasoning,
+                "dimension_scores": r.dimension_scores,
+                "is_revision": r.is_revision,
+            }
+            for r in final_result.rounds
+        ]
+
+    generation_summaries = [
+        {
+            "generation": idx + 1,
+            "best_score": result.best_score,
+            "best_round": result.best_round,
+            "total_rounds": result.total_rounds,
+            "met_threshold": result.met_threshold,
+        }
+        for idx, result in enumerate(generation_results)
+    ]
+
+    return json.dumps(
+        {
+            "mode": "agent_task_multi_generation",
+            "trajectory": trajectory.to_dict(),
+            "generations": generation_summaries,
+            "rounds": final_rounds,
+            "best_score": trajectory.metadata.get("best_score", trajectory.final_score),
+            "met_threshold": any(result.met_threshold for result in generation_results),
+            "total_rounds": sum(result.total_rounds for result in generation_results),
+        }
+    )
 
 
 class SimpleAgentTask(AgentTaskInterface):
@@ -318,30 +368,38 @@ class TaskRunner:
             if not initial_output:
                 logger.info("generating initial output for task %s", task_id)
                 initial_output = agent_task.generate_output({})
+            if config.generations > 1:
+                result = self._run_task_multi_generation(
+                    task_id=task_id,
+                    agent_task=agent_task,
+                    spec_name=spec_name,
+                    initial_output=initial_output,
+                    config=config,
+                )
+            else:
+                loop = ImprovementLoop(
+                    task=agent_task,
+                    max_rounds=config.max_rounds,
+                    quality_threshold=config.quality_threshold,
+                    min_rounds=config.min_rounds,
+                )
 
-            loop = ImprovementLoop(
-                task=agent_task,
-                max_rounds=config.max_rounds,
-                quality_threshold=config.quality_threshold,
-                min_rounds=config.min_rounds,
-            )
+                result = loop.run(
+                    initial_output=initial_output,
+                    state={},
+                    reference_context=config.reference_context,
+                    required_concepts=config.required_concepts,
+                    calibration_examples=config.calibration_examples,
+                )
 
-            result = loop.run(
-                initial_output=initial_output,
-                state={},
-                reference_context=config.reference_context,
-                required_concepts=config.required_concepts,
-                calibration_examples=config.calibration_examples,
-            )
-
-            self.store.complete_task(
-                task_id=task_id,
-                best_score=result.best_score,
-                best_output=result.best_output,
-                total_rounds=result.total_rounds,
-                met_threshold=result.met_threshold,
-                result_json=_serialize_result(result),
-            )
+                self.store.complete_task(
+                    task_id=task_id,
+                    best_score=result.best_score,
+                    best_output=result.best_output,
+                    total_rounds=result.total_rounds,
+                    met_threshold=result.met_threshold,
+                    result_json=_serialize_result(result),
+                )
 
             logger.info(
                 "task %s completed: score=%.2f rounds=%d threshold_met=%s",
@@ -355,6 +413,103 @@ class TaskRunner:
             error_msg = traceback.format_exc()
             self.store.fail_task(task_id, error_msg)
             self._emit_failure_event(task_id, spec_name, error_msg)
+
+    def _run_task_multi_generation(
+        self,
+        task_id: str,
+        agent_task: SimpleAgentTask,
+        spec_name: str,
+        initial_output: str,
+        config: TaskConfig,
+    ) -> ImprovementResult:
+        """Run first-class multi-generation learning for an AgentTask."""
+        generation_results: dict[int, ImprovementResult] = {}
+
+        def generate_fn(prompt: str, generation: int) -> str:
+            result = self.provider.complete(
+                system_prompt=(
+                    "You are a skilled writer and analyst. Complete the task precisely and "
+                    "apply any accumulated lessons to improve on prior attempts."
+                ),
+                user_prompt=prompt,
+                model=self.model or self.provider.default_model(),
+            )
+            return result.text
+
+        def evaluate_fn(output: str, generation: int) -> AgentTaskGenerationEvaluation:
+            loop = ImprovementLoop(
+                task=agent_task,
+                max_rounds=config.max_rounds,
+                quality_threshold=config.quality_threshold,
+                min_rounds=config.min_rounds,
+            )
+            loop_result = loop.run(
+                initial_output=output,
+                state={},
+                reference_context=config.reference_context,
+                required_concepts=config.required_concepts,
+                calibration_examples=config.calibration_examples,
+            )
+            generation_results[generation] = loop_result
+            best_round_result = next(
+                (round_result for round_result in loop_result.rounds if round_result.round_number == loop_result.best_round),
+                loop_result.rounds[-1],
+            )
+            return AgentTaskGenerationEvaluation(
+                output=loop_result.best_output,
+                score=loop_result.best_score,
+                reasoning=best_round_result.reasoning,
+                dimension_scores=best_round_result.dimension_scores,
+                round_count=loop_result.total_rounds,
+                met_threshold=loop_result.met_threshold,
+                metadata={
+                    "best_round": loop_result.best_round,
+                    "judge_failures": loop_result.judge_failures,
+                },
+            )
+
+        evolution = AgentTaskEvolutionRunner(
+            task_prompt=agent_task.get_task_prompt({}),
+            generate_fn=generate_fn,
+            evaluate_fn=evaluate_fn,
+            initial_output=initial_output,
+            task_name=spec_name,
+        )
+        trajectory, state = evolution.run_with_state(config.generations)
+
+        ordered_results = [generation_results[idx] for idx in sorted(generation_results)]
+        total_rounds = sum(result.total_rounds for result in ordered_results)
+        met_threshold = any(result.met_threshold for result in ordered_results)
+        best_score = state.best_score
+        best_output = state.best_output
+
+        self.store.complete_task(
+            task_id=task_id,
+            best_score=best_score,
+            best_output=best_output,
+            total_rounds=total_rounds,
+            met_threshold=met_threshold,
+            result_json=_serialize_evolution_result(trajectory, ordered_results),
+        )
+
+        best_generation = max(
+            ordered_results,
+            key=lambda result: result.best_score,
+        )
+        return ImprovementResult(
+            rounds=best_generation.rounds,
+            best_output=best_output,
+            best_score=best_score,
+            best_round=best_generation.best_round,
+            total_rounds=total_rounds,
+            met_threshold=met_threshold,
+            judge_failures=sum(result.judge_failures for result in ordered_results),
+            termination_reason="threshold_met" if met_threshold else "max_rounds",
+            total_internal_retries=sum(result.total_internal_retries for result in ordered_results),
+            duration_ms=sum(result.duration_ms or 0 for result in ordered_results),
+            judge_calls=sum(result.judge_calls for result in ordered_results),
+            dimension_trajectory={},
+        )
 
     def _emit_completion_event(
         self, task_id: str, spec_name: str, result: ImprovementResult
@@ -420,6 +575,7 @@ def enqueue_task(
     rubric: str | None = None,
     reference_context: str | None = None,
     required_concepts: list[str] | None = None,
+    generations: int = 1,
     max_rounds: int = 5,
     quality_threshold: float = 0.9,
     min_rounds: int = 1,
@@ -429,6 +585,7 @@ def enqueue_task(
     """Convenience function to enqueue a task. Returns the task ID."""
     task_id = str(uuid.uuid4())
     config = {
+        "generations": generations,
         "max_rounds": max_rounds,
         "quality_threshold": quality_threshold,
         "min_rounds": min_rounds,
