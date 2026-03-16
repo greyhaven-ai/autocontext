@@ -815,6 +815,119 @@ class TestValidatorExternalDataReference:
         errors = validate_spec(spec)
         assert not any("sample_input" in e for e in errors)
 
+    def test_inline_data_after_analyze_the_following_passes(self) -> None:
+        """AC-279: 'Analyze the following' with inline data should NOT trigger false positive."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Analyze the following patient profile:\n\n"
+                "Name: John Smith\n"
+                "Age: 45\n"
+                "Medications: Warfarin, Metformin, Lisinopril\n"
+                "Conditions: Atrial fibrillation, Type 2 diabetes, Hypertension\n\n"
+                "Identify potential drug interactions and risk factors."
+            ),
+            judge_rubric="Evaluate completeness and accuracy of drug interaction analysis",
+        )
+        errors = validate_spec(spec)
+        assert not any("sample_input" in e for e in errors)
+
+    def test_inline_json_data_passes(self) -> None:
+        """AC-279: Prompt with inline JSON data should pass without sample_input."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                'Based on the data below:\n\n'
+                '```json\n'
+                '{"gdp_growth": 2.1, "inflation": 3.5, "unemployment": 4.2}\n'
+                '```\n\n'
+                'Provide an economic outlook assessment.'
+            ),
+            judge_rubric="Evaluate economic analysis quality",
+        )
+        errors = validate_spec(spec)
+        assert not any("sample_input" in e for e in errors)
+
+    def test_inline_bullet_data_passes(self) -> None:
+        """AC-279: Prompt with inline bullet-list data should pass."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Given the following data points:\n\n"
+                "- Revenue: $5.2M (+12% YoY)\n"
+                "- Operating costs: $3.8M (+5% YoY)\n"
+                "- Customer churn: 8.3%\n"
+                "- NPS: 42\n\n"
+                "Write a quarterly business review."
+            ),
+            judge_rubric="Evaluate business analysis",
+        )
+        errors = validate_spec(spec)
+        assert not any("sample_input" in e for e in errors)
+
+    def test_truly_external_data_still_fails(self) -> None:
+        """AC-279: Prompts referencing external data without providing it should still fail."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt="You will be provided with a customer spreadsheet. Analyze it.",
+            judge_rubric="Evaluate analysis",
+        )
+        errors = validate_spec(spec)
+        assert any("sample_input" in e for e in errors)
+
+    def test_using_the_provided_still_fails(self) -> None:
+        """AC-279: 'Using the provided' without inline data should still fail."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt="Using the provided dataset, perform clustering analysis.",
+            judge_rubric="Evaluate clustering quality",
+        )
+        errors = validate_spec(spec)
+        assert any("sample_input" in e for e in errors)
+
+    def test_using_the_provided_with_inline_data_passes(self) -> None:
+        """AC-279: 'Using the provided' should pass when the payload is inline."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Using the provided incident timeline below:\n\n"
+                "- 09:03 UTC: elevated 500s on checkout\n"
+                "- 09:06 UTC: deploy completed in us-east-1\n"
+                "- 09:11 UTC: rollback started\n\n"
+                "Write an incident summary and likely root cause."
+            ),
+            judge_rubric="Evaluate incident analysis quality",
+        )
+        errors = validate_spec(spec)
+        assert not any("sample_input" in e for e in errors)
+
+    def test_long_plain_prose_still_requires_sample_input(self) -> None:
+        """AC-279: Long prose after a trigger phrase is not enough to count as inline data."""
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_validator import validate_spec
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Analyze the following customer complaint and explain the refund exposure, "
+                "escalation path, contract risk, support obligations, and recommended next step."
+            ),
+            judge_rubric="Evaluate complaint analysis quality",
+        )
+        errors = validate_spec(spec)
+        assert any("sample_input" in e for e in errors)
+
 
 class TestInternalRetriesSurfacing:
     def test_agent_task_result_has_internal_retries(self) -> None:
