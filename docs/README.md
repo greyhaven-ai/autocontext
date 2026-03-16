@@ -29,6 +29,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 
 ## Maintainer Docs
 
+- [Analytics and adoption guide](analytics.md)
 - [Release checklist](release-checklist.md)
 
 ## Keep These In Sync

@@ -111,6 +111,7 @@ MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenCl
 ## Where To Look Next
 
 - Docs overview: [docs/README.md](docs/README.md)
+- Analytics and adoption: [docs/analytics.md](docs/analytics.md)
 - Python package guide: [autocontext/README.md](autocontext/README.md)
 - TypeScript package guide: [ts/README.md](ts/README.md)
 - Copy-paste examples: [examples/README.md](examples/README.md)
