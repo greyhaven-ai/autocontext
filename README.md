@@ -126,3 +126,10 @@ MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenCl
 ## Note
 
 This repo was previously named `MTS`. Some historical references may still use the older name or issue prefixes.
+
+## Project Signals
+
+[![npm downloads](https://img.shields.io/npm/dm/autoctx?logo=npm&label=npm%20downloads)](https://www.npmjs.com/package/autoctx)
+[![PyPI downloads](https://img.shields.io/pypi/dm/autoctx?logo=pypi&label=PyPI%20downloads)](https://pypi.org/project/autoctx/)
+
+[![Star History Chart](https://api.star-history.com/svg?repos=greyhaven-ai/autocontext&type=Date)](https://www.star-history.com/#greyhaven-ai/autocontext&Date)
