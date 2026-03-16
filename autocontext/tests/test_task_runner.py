@@ -61,12 +61,19 @@ def store(tmp_path):
 class TestTaskConfig:
     def test_from_none(self):
         cfg = TaskConfig.from_json(None)
+        assert cfg.generations == 1
         assert cfg.max_rounds == 5
         assert cfg.quality_threshold == 0.9
 
     def test_from_json(self):
-        data = json.dumps({"max_rounds": 3, "quality_threshold": 0.8, "reference_context": "ref"})
+        data = json.dumps({
+            "generations": 3,
+            "max_rounds": 3,
+            "quality_threshold": 0.8,
+            "reference_context": "ref",
+        })
         cfg = TaskConfig.from_json(data)
+        assert cfg.generations == 3
         assert cfg.max_rounds == 3
         assert cfg.quality_threshold == 0.8
         assert cfg.reference_context == "ref"
@@ -351,15 +358,47 @@ class TestEnqueueFunction:
             rubric="Accuracy and voice",
             reference_context="RLM = Recursive Language Model",
             required_concepts=["context folding", "Python REPL"],
+            generations=4,
             max_rounds=3,
             quality_threshold=0.85,
             priority=5,
         )
         task = store.get_task(task_id)
         config = json.loads(task["config_json"])
+        assert config["generations"] == 4
         assert config["max_rounds"] == 3
         assert config["quality_threshold"] == 0.85
         assert "context folding" in config["required_concepts"]
+
+    def test_run_once_multi_generation_persists_trajectory(self, store):
+        provider = _MockProvider([
+            "Initial output",
+            _judge_response(0.40, "needs examples"),
+            "Generation 2 improved output",
+            _judge_response(0.82, "better evidence"),
+            "Generation 3 final output",
+            _judge_response(0.93, "excellent"),
+        ])
+        config = {
+            "task_prompt": "Write a haiku",
+            "rubric": "Quality and form",
+            "generations": 3,
+            "quality_threshold": 0.9,
+            "max_rounds": 1,
+        }
+        store.enqueue_task("t1", "haiku", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        assert result["status"] == "completed"
+        assert result["best_score"] == 0.93
+        payload = json.loads(result["result_json"])
+        assert payload["mode"] == "agent_task_multi_generation"
+        assert payload["trajectory"]["total_generations"] == 3
+        assert len(payload["generations"]) == 3
+        assert payload["trajectory"]["metadata"]["best_output"] == "Generation 3 final output"
 
 
 # ---------------------------------------------------------------------------

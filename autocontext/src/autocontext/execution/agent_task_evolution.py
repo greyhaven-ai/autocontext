@@ -1,17 +1,4 @@
-"""Multi-generation support for AgentTask scenarios (AC-281).
-
-Provides cross-generation learning for AgentTask scenarios that use
-judge-based evaluation, enabling playbook accumulation, lesson carry-forward,
-and trajectory reporting comparable to ScenarioInterface + GenerationRunner.
-
-Key types:
-- AgentTaskGenerationState: mutable cross-generation state
-- accumulate_lessons(): extracts structured lessons from judge feedback
-- build_enriched_prompt(): enriches task prompt with playbook context
-- AgentTaskTrajectory: trajectory report with cold-vs-warm comparison
-- ScenarioFamilyGuide: when-to-use guidance for choosing scenario families
-- AgentTaskEvolutionRunner: multi-generation runner with lesson accumulation
-"""
+"""Multi-generation support for AgentTask scenarios (AC-281)."""
 
 from __future__ import annotations
 
@@ -58,14 +45,24 @@ class AgentTaskGenerationState:
         )
 
 
+@dataclass(slots=True)
+class AgentTaskGenerationEvaluation:
+    """Evaluation result for one cross-generation candidate."""
+
+    output: str
+    score: float
+    reasoning: str
+    dimension_scores: dict[str, float] = field(default_factory=dict)
+    round_count: int = 1
+    met_threshold: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 def accumulate_lessons(
     judge_result: AgentTaskResult,
     generation: int,
 ) -> str:
-    """Extract a structured lesson from judge feedback for the playbook.
-
-    Returns a single lesson string summarizing what was learned.
-    """
+    """Extract a structured lesson from judge feedback for the playbook."""
     parts: list[str] = [f"Generation {generation} (score: {judge_result.score:.2f}):"]
 
     if judge_result.reasoning:
@@ -77,7 +74,10 @@ def accumulate_lessons(
         if score < 0.7
     }
     if weak_dims:
-        dim_strs = [f"{dim} ({score:.2f})" for dim, score in sorted(weak_dims.items(), key=lambda x: x[1])]
+        dim_strs = [
+            f"{dim} ({score:.2f})"
+            for dim, score in sorted(weak_dims.items(), key=lambda x: x[1])
+        ]
         parts.append(f"  Weak dimensions: {', '.join(dim_strs)}")
 
     strong_dims = {
@@ -86,7 +86,10 @@ def accumulate_lessons(
         if score >= 0.8
     }
     if strong_dims:
-        dim_strs = [f"{dim} ({score:.2f})" for dim, score in sorted(strong_dims.items(), key=lambda x: -x[1])]
+        dim_strs = [
+            f"{dim} ({score:.2f})"
+            for dim, score in sorted(strong_dims.items(), key=lambda x: -x[1])
+        ]
         parts.append(f"  Strong dimensions: {', '.join(dim_strs)}")
 
     if not judge_result.reasoning and not weak_dims:
@@ -103,11 +106,7 @@ def build_enriched_prompt(
     best_output: str,
     best_score: float,
 ) -> str:
-    """Enrich a task prompt with cross-generation context.
-
-    Injects playbook lessons, best previous output, and generation info
-    into the task prompt to guide later generations.
-    """
+    """Enrich a task prompt with cross-generation context."""
     sections: list[str] = [task_prompt]
 
     if playbook:
@@ -117,13 +116,13 @@ def build_enriched_prompt(
             f"{playbook}"
         )
 
-    if best_output and generation > 0:
+    if best_output:
         sections.append(
             f"\n\n## Best Previous Output (score {best_score:.2f})\n"
             f"{best_output}"
         )
 
-    if playbook or (best_output and generation > 0):
+    if playbook or best_output:
         sections.append(
             "\n\nUse the accumulated lessons and previous best output as context. "
             "Produce an improved version that addresses the identified weaknesses."
@@ -155,7 +154,9 @@ class AgentTaskTrajectory:
             f"Improvement: +{self.improvement_delta:.2f}",
         ]
         if len(self.score_history) >= 2:
-            lines.append(f"Trajectory: {' → '.join(f'{s:.2f}' for s in self.score_history)}")
+            lines.append(
+                f"Trajectory: {' → '.join(f'{score:.2f}' for score in self.score_history)}"
+            )
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
@@ -191,33 +192,31 @@ class ScenarioFamilyGuide:
         self.families: dict[str, dict[str, str]] = {
             "agent_task": {
                 "when_to_use": (
-                    "Open-ended rubric-driven tasks evaluated by LLM judge. "
-                    "Best for writing, analysis, code review, and creative tasks "
-                    "where output quality is subjective and dimension-scored."
+                    "Open-ended rubric-driven tasks evaluated by an LLM judge. "
+                    "Best for writing, analysis, code review, and other subjective "
+                    "tasks where quality is dimension-scored."
                 ),
-                "multi_gen": "Yes — via AgentTaskEvolutionRunner with playbook accumulation.",
+                "multi_gen": "Yes — via AgentTaskEvolutionRunner with playbook carry-forward.",
             },
             "simulation": {
                 "when_to_use": (
                     "Richly stateful scenarios with world state, entities, resources, "
-                    "and multi-step transitions. Best for orchestration, resource "
-                    "management, and planning tasks."
+                    "and multi-step transitions. Best for orchestration, planning, "
+                    "and resource-management tasks."
                 ),
-                "multi_gen": "Yes — via GenerationRunner with ScenarioInterface adapter.",
+                "multi_gen": "Yes — via GenerationRunner with ScenarioInterface.",
             },
             "negotiation": {
                 "when_to_use": (
                     "Multi-party interaction scenarios with offers, counteroffers, "
-                    "and agreement dynamics. Best for bargaining, diplomacy, and "
-                    "contract negotiation tasks."
+                    "and agreement dynamics. Best for bargaining and diplomacy."
                 ),
                 "multi_gen": "Yes — via GenerationRunner.",
             },
             "schema_evolution": {
                 "when_to_use": (
                     "Tasks involving schema changes, migrations, and backward "
-                    "compatibility. Best for database evolution, API versioning, "
-                    "and configuration management."
+                    "compatibility. Best for data and API evolution."
                 ),
                 "multi_gen": "Yes — via GenerationRunner.",
             },
@@ -239,8 +238,8 @@ class ScenarioFamilyGuide:
         return "\n".join(lines)
 
 
-# Evaluate function type: (output, generation) -> (score, reasoning, dimension_scores)
-EvaluateFn = Callable[[str, int], tuple[float, str, dict[str, float]]]
+GenerateFn = Callable[[str, int], str]
+EvaluateFn = Callable[[str, int], AgentTaskGenerationEvaluation]
 
 
 class AgentTaskEvolutionRunner:
@@ -249,11 +248,13 @@ class AgentTaskEvolutionRunner:
     def __init__(
         self,
         task_prompt: str,
+        generate_fn: GenerateFn,
         evaluate_fn: EvaluateFn,
         initial_output: str = "",
         task_name: str = "agent_task",
     ) -> None:
         self._task_prompt = task_prompt
+        self._generate_fn = generate_fn
         self._evaluate_fn = evaluate_fn
         self._initial_output = initial_output
         self._task_name = task_name
@@ -262,54 +263,112 @@ class AgentTaskEvolutionRunner:
         self,
         state: AgentTaskGenerationState,
     ) -> AgentTaskGenerationState:
-        """Run one generation: evaluate, accumulate lessons, advance state."""
-        score, reasoning, dim_scores = self._evaluate_fn(
-            state.best_output, state.generation,
+        """Run one generation: generate, evaluate, accumulate lessons, advance state."""
+        prompt = build_enriched_prompt(
+            task_prompt=self._task_prompt,
+            playbook=state.playbook,
+            generation=state.generation + 1,
+            best_output=state.best_output,
+            best_score=state.best_score,
         )
+
+        if state.generation == 0 and self._initial_output:
+            candidate_output = self._initial_output
+        else:
+            candidate_output = self._generate_fn(prompt, state.generation).strip()
+            if not candidate_output:
+                candidate_output = state.best_output
+
+        evaluation = self._evaluate_fn(candidate_output, state.generation)
+        evaluated_output = evaluation.output.strip() or candidate_output
 
         judge_result = AgentTaskResult(
-            score=score,
-            reasoning=reasoning,
-            dimension_scores=dim_scores,
+            score=evaluation.score,
+            reasoning=evaluation.reasoning,
+            dimension_scores=evaluation.dimension_scores,
         )
 
-        lesson = accumulate_lessons(judge_result, state.generation)
-
+        lesson = accumulate_lessons(judge_result, state.generation + 1)
         new_playbook = state.playbook
         if lesson:
-            new_playbook = (state.playbook + "\n" + lesson).strip() if state.playbook else lesson
+            new_playbook = (
+                (state.playbook + "\n" + lesson).strip() if state.playbook else lesson
+            )
+
+        new_best_output = state.best_output
+        new_best_score = state.best_score
+        if not state.best_output or evaluation.score >= state.best_score:
+            new_best_output = evaluated_output
+            new_best_score = evaluation.score
+
+        metadata = dict(state.metadata)
+        generation_prompts = list(metadata.get("generation_prompts", []))
+        generation_outputs = list(metadata.get("generation_outputs", []))
+        generation_round_counts = list(metadata.get("generation_round_counts", []))
+        met_threshold_history = list(metadata.get("met_threshold_history", []))
+
+        generation_prompts.append(prompt)
+        generation_outputs.append(evaluated_output)
+        generation_round_counts.append(evaluation.round_count)
+        met_threshold_history.append(evaluation.met_threshold)
+
+        metadata["generation_prompts"] = generation_prompts
+        metadata["generation_outputs"] = generation_outputs
+        metadata["generation_round_counts"] = generation_round_counts
+        metadata["met_threshold_history"] = met_threshold_history
 
         return AgentTaskGenerationState(
             generation=state.generation + 1,
-            best_output=state.best_output,
-            best_score=score,
+            best_output=new_best_output,
+            best_score=new_best_score,
             playbook=new_playbook,
-            score_history=[*state.score_history, score],
+            score_history=[*state.score_history, evaluation.score],
             lesson_history=[*state.lesson_history, lesson],
+            metadata=metadata,
         )
 
-    def run(self, num_generations: int = 10) -> AgentTaskTrajectory:
-        """Run multiple generations and return trajectory report."""
+    def run_with_state(
+        self,
+        num_generations: int = 10,
+    ) -> tuple[AgentTaskTrajectory, AgentTaskGenerationState]:
+        """Run multiple generations and return both trajectory and final state."""
         state = AgentTaskGenerationState(
             generation=0,
-            best_output=self._initial_output,
+            best_output="",
             best_score=0.0,
             playbook="",
             score_history=[],
             lesson_history=[],
+            metadata={},
         )
 
         for _ in range(num_generations):
             state = self.run_generation(state)
 
-        return AgentTaskTrajectory(
+        trajectory = AgentTaskTrajectory(
             task_name=self._task_name,
             total_generations=num_generations,
             score_history=state.score_history,
-            lessons_per_generation=[1] * num_generations,
+            lessons_per_generation=[1 if lesson else 0 for lesson in state.lesson_history],
             cold_start_score=state.score_history[0] if state.score_history else 0.0,
             final_score=state.score_history[-1] if state.score_history else 0.0,
             improvement_delta=round(
-                (state.score_history[-1] - state.score_history[0]) if state.score_history else 0.0, 4
+                (state.score_history[-1] - state.score_history[0])
+                if state.score_history
+                else 0.0,
+                4,
             ),
+            metadata={
+                "best_output": state.best_output,
+                "best_score": state.best_score,
+                "playbook": state.playbook,
+                "lesson_history": state.lesson_history,
+                **state.metadata,
+            },
         )
+        return trajectory, state
+
+    def run(self, num_generations: int = 10) -> AgentTaskTrajectory:
+        """Run multiple generations and return a trajectory report."""
+        trajectory, _ = self.run_with_state(num_generations)
+        return trajectory

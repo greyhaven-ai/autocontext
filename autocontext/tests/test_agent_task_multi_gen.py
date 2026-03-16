@@ -287,73 +287,123 @@ class TestAgentTaskEvolutionRunner:
         """Run one generation and get trajectory."""
         from autocontext.execution.agent_task_evolution import (
             AgentTaskEvolutionRunner,
+            AgentTaskGenerationEvaluation,
             AgentTaskGenerationState,
         )
 
-        call_count = 0
+        generated_prompts: list[str] = []
 
-        def mock_evaluate(output: str, generation: int) -> tuple[float, str, dict[str, float]]:
-            nonlocal call_count
-            call_count += 1
-            return 0.75, "Good work", {"depth": 0.8}
+        def mock_generate(prompt: str, generation: int) -> str:
+            generated_prompts.append(prompt)
+            return "My first essay draft."
+
+        def mock_evaluate(output: str, generation: int) -> AgentTaskGenerationEvaluation:
+            return AgentTaskGenerationEvaluation(
+                output=output,
+                score=0.75,
+                reasoning="Good work",
+                dimension_scores={"depth": 0.8},
+            )
 
         runner = AgentTaskEvolutionRunner(
             task_prompt="Write an essay.",
+            generate_fn=mock_generate,
             evaluate_fn=mock_evaluate,
-            initial_output="My first essay draft.",
         )
         state = runner.run_generation(AgentTaskGenerationState(
-            generation=0, best_output="My first essay draft.",
+            generation=0, best_output="",
             best_score=0.0, playbook="", score_history=[], lesson_history=[],
         ))
         assert state.best_score == 0.75
         assert state.generation == 1
         assert len(state.score_history) == 1
+        assert generated_prompts == ["Write an essay."]
+        assert state.best_output == "My first essay draft."
 
     def test_multi_generation_accumulates_lessons(self) -> None:
         """Multiple generations should grow the playbook."""
         from autocontext.execution.agent_task_evolution import (
             AgentTaskEvolutionRunner,
+            AgentTaskGenerationEvaluation,
         )
 
-        scores = [0.5, 0.65, 0.78]
-        gen_idx = 0
+        prompts: list[str] = []
+        outputs = [
+            "Draft missing supporting detail",
+            "Draft with examples and citations",
+            "Draft with examples and citations and stronger conclusions",
+        ]
 
-        def mock_evaluate(output: str, generation: int) -> tuple[float, str, dict[str, float]]:
-            nonlocal gen_idx
-            score = scores[min(gen_idx, len(scores) - 1)]
-            gen_idx += 1
-            return score, f"Gen {generation} feedback", {}
+        def mock_generate(prompt: str, generation: int) -> str:
+            prompts.append(prompt)
+            return outputs[generation]
+
+        def mock_evaluate(output: str, generation: int) -> AgentTaskGenerationEvaluation:
+            if "examples and citations" in output:
+                return AgentTaskGenerationEvaluation(
+                    output=output,
+                    score=0.78,
+                    reasoning="Strong evidence and stronger structure",
+                    dimension_scores={"evidence": 0.82, "depth": 0.74},
+                )
+            if "examples" in output:
+                return AgentTaskGenerationEvaluation(
+                    output=output,
+                    score=0.65,
+                    reasoning="Better depth but still needs evidence",
+                    dimension_scores={"depth": 0.72, "evidence": 0.45},
+                )
+            return AgentTaskGenerationEvaluation(
+                output=output,
+                score=0.5,
+                reasoning="Needs examples and evidence",
+                dimension_scores={"depth": 0.4, "evidence": 0.35},
+            )
 
         runner = AgentTaskEvolutionRunner(
             task_prompt="Write an essay.",
+            generate_fn=mock_generate,
             evaluate_fn=mock_evaluate,
-            initial_output="Draft.",
         )
-        trajectory = runner.run(num_generations=3)
+        trajectory, state = runner.run_with_state(num_generations=3)
 
         assert trajectory.total_generations == 3
         assert len(trajectory.score_history) == 3
         assert trajectory.cold_start_score == 0.5
         assert trajectory.final_score == 0.78
+        assert "examples and evidence" in prompts[1].lower()
+        assert "best previous output" in prompts[1].lower()
+        assert "Generation 1" in state.playbook
+        assert state.best_output == outputs[2]
 
     def test_trajectory_shows_improvement(self) -> None:
-        from autocontext.execution.agent_task_evolution import AgentTaskEvolutionRunner
+        from autocontext.execution.agent_task_evolution import (
+            AgentTaskEvolutionRunner,
+            AgentTaskGenerationEvaluation,
+        )
 
-        gen_idx = 0
+        prompts: list[str] = []
 
-        def mock_evaluate(output: str, generation: int) -> tuple[float, str, dict[str, float]]:
-            nonlocal gen_idx
-            score = 0.4 + gen_idx * 0.1
-            gen_idx += 1
-            return min(score, 1.0), "Improving", {}
+        def mock_generate(prompt: str, generation: int) -> str:
+            prompts.append(prompt)
+            return f"Draft v{generation + 1}"
+
+        def mock_evaluate(output: str, generation: int) -> AgentTaskGenerationEvaluation:
+            score = 0.4 + generation * 0.1
+            return AgentTaskGenerationEvaluation(
+                output=f"{output} improved",
+                score=min(score, 1.0),
+                reasoning="Improving",
+                dimension_scores={},
+            )
 
         runner = AgentTaskEvolutionRunner(
             task_prompt="Task.",
+            generate_fn=mock_generate,
             evaluate_fn=mock_evaluate,
-            initial_output="Start.",
         )
         trajectory = runner.run(num_generations=5)
 
         assert trajectory.improvement_delta > 0
         assert trajectory.final_score > trajectory.cold_start_score
+        assert len(prompts) == 5
