@@ -178,7 +178,8 @@ class TestValidateImprovement:
         from autocontext.execution.trajectory_harness import validate_improvement
 
         result = validate_improvement([0.25], min_delta=0.05)
-        assert result["valid"] is True
+        assert result["valid"] is False
+        assert "at least 2 seeds" in result["reason"]
 
 
 # ===========================================================================
@@ -247,13 +248,19 @@ class TestMultiSeedTrajectoryRunner:
         from autocontext.execution.trajectory_harness import MultiSeedTrajectoryRunner
 
         call_seeds: list[int] = []
+        prompt_log: list[str] = []
+
+        def mock_generate(prompt: str, generation: int, seed: int) -> str:
+            prompt_log.append(prompt)
+            return f"seed={seed} generation={generation}"
 
         def mock_evaluate(output: str, generation: int, seed: int) -> tuple[float, str, dict[str, float]]:
             call_seeds.append(seed)
-            return 0.5 + generation * 0.1, f"Gen {generation} seed {seed}", {}
+            return 0.5 if "Accumulated Lessons" not in output else 0.8, f"Gen {generation} seed {seed}", {}
 
         runner = MultiSeedTrajectoryRunner(
             task_prompt="Write a report.",
+            generate_fn=mock_generate,
             evaluate_fn=mock_evaluate,
             task_name="test_task",
         )
@@ -262,19 +269,24 @@ class TestMultiSeedTrajectoryRunner:
         assert report.num_seeds == 3
         assert len(report.trajectories) == 3
         assert len(set(call_seeds)) >= 2  # Different seeds used
+        assert prompt_log
 
     def test_trajectory_report_has_correct_structure(self) -> None:
         from autocontext.execution.trajectory_harness import MultiSeedTrajectoryRunner
 
-        gen_idx = [0]
+        def mock_generate(prompt: str, generation: int, seed: int) -> str:
+            if "Accumulated Lessons" in prompt:
+                return f"improved answer for seed {seed}"
+            return f"baseline answer for seed {seed}"
 
         def mock_evaluate(output: str, generation: int, seed: int) -> tuple[float, str, dict[str, float]]:
-            score = 0.4 + generation * 0.1 + seed * 0.01
-            gen_idx[0] += 1
-            return min(score, 1.0), "feedback", {}
+            if output.startswith("improved answer"):
+                return 0.85, "feedback", {}
+            return 0.45, "feedback", {}
 
         runner = MultiSeedTrajectoryRunner(
             task_prompt="Task.",
+            generate_fn=mock_generate,
             evaluate_fn=mock_evaluate,
             task_name="multi_seed_test",
         )
@@ -284,19 +296,55 @@ class TestMultiSeedTrajectoryRunner:
         assert report.num_generations == 5
         for traj in report.trajectories:
             assert len(traj.score_history) == 5
+            assert traj.final_score > traj.cold_start_score
 
     def test_playbook_inspector_available(self) -> None:
         from autocontext.execution.trajectory_harness import MultiSeedTrajectoryRunner
 
+        def mock_generate(prompt: str, generation: int, seed: int) -> str:
+            return "baseline" if "Accumulated Lessons" not in prompt else "improved"
+
         def mock_evaluate(output: str, generation: int, seed: int) -> tuple[float, str, dict[str, float]]:
-            return 0.6, "feedback", {"depth": 0.4}
+            score = 0.6 if output == "baseline" else 0.75
+            return score, "feedback", {"depth": 0.4}
 
         runner = MultiSeedTrajectoryRunner(
             task_prompt="Task.",
+            generate_fn=mock_generate,
             evaluate_fn=mock_evaluate,
         )
-        report = runner.run(num_seeds=1, num_generations=3)
+        report = runner.run(num_seeds=2, num_generations=3)
 
         # Should have playbook data for inspection
-        assert report.num_seeds == 1
+        assert report.num_seeds == 2
         assert report.trajectories[0].total_generations == 3
+        assert "playbook_inspection" in report.metadata
+        assert report.metadata["playbook_inspection"]
+
+    def test_enriched_prompt_drives_improvement_without_generation_cheat(self) -> None:
+        from autocontext.execution.trajectory_harness import MultiSeedTrajectoryRunner
+
+        prompts: list[str] = []
+
+        def mock_generate(prompt: str, generation: int, seed: int) -> str:
+            prompts.append(prompt)
+            return "improved with playbook" if "Accumulated Lessons" in prompt else "first draft"
+
+        def mock_evaluate(output: str, generation: int, seed: int) -> tuple[float, str, dict[str, float]]:
+            if output == "improved with playbook":
+                return 0.9, "Used lessons well", {"depth": 0.9}
+            return 0.4, "Needs more depth", {"depth": 0.4}
+
+        runner = MultiSeedTrajectoryRunner(
+            task_prompt="Analyze the protocol risks.",
+            generate_fn=mock_generate,
+            evaluate_fn=mock_evaluate,
+            task_name="clinical_trial",
+        )
+        report = runner.run(num_seeds=2, num_generations=3)
+
+        assert any("Accumulated Lessons" in prompt for prompt in prompts[1:])
+        for trajectory in report.trajectories:
+            assert trajectory.cold_start_score == 0.4
+            assert trajectory.final_score == 0.9
+            assert trajectory.improvement_delta == 0.5

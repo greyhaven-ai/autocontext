@@ -121,6 +121,13 @@ def validate_improvement(
     if not improvements:
         return {"valid": False, "mean_improvement": 0.0, "reason": "no seeds"}
 
+    if len(improvements) < 2:
+        return {
+            "valid": False,
+            "mean_improvement": round(improvements[0], 4),
+            "reason": "need at least 2 seeds to make a consistency claim",
+        }
+
     mean_imp = statistics.mean(improvements)
     positive_count = sum(1 for d in improvements if d >= min_delta)
     positive_ratio = positive_count / len(improvements)
@@ -190,6 +197,8 @@ class TrajectoryReport:
             consistent=validation["valid"],
         )
 
+# Seeded generate function: (enriched_prompt, generation, seed) -> candidate output
+SeededGenerateFn = Callable[[str, int, int], str]
 
 # Seeded evaluate function: (output, generation, seed) -> (score, reasoning, dim_scores)
 SeededEvaluateFn = Callable[[str, int, int], tuple[float, str, dict[str, float]]]
@@ -201,14 +210,28 @@ class MultiSeedTrajectoryRunner:
     def __init__(
         self,
         task_prompt: str,
+        generate_fn: SeededGenerateFn,
         evaluate_fn: SeededEvaluateFn,
         task_name: str = "agent_task",
         initial_output: str = "",
     ) -> None:
         self._task_prompt = task_prompt
+        self._generate_fn = generate_fn
         self._evaluate_fn = evaluate_fn
         self._task_name = task_name
         self._initial_output = initial_output
+
+    @staticmethod
+    def _playbooks_by_generation(trajectory: AgentTaskTrajectory) -> dict[int, str]:
+        """Reconstruct cumulative playbook text at each generation."""
+        lesson_history = trajectory.metadata.get("lesson_history", [])
+        playbook = ""
+        playbooks_by_gen: dict[int, str] = {}
+        for idx, lesson in enumerate(lesson_history):
+            if lesson:
+                playbook = (playbook + "\n" + lesson).strip() if playbook else lesson
+            playbooks_by_gen[idx] = playbook
+        return playbooks_by_gen
 
     def run(
         self,
@@ -218,12 +241,13 @@ class MultiSeedTrajectoryRunner:
     ) -> TrajectoryReport:
         """Run the evolution across multiple seeds and collect trajectories."""
         trajectories: list[AgentTaskTrajectory] = []
+        playbook_inspection: dict[str, dict[str, Any]] = {}
 
         for seed_offset in range(num_seeds):
             seed = seed_base + seed_offset
 
             def _generate(prompt: str, generation: int, _seed: int = seed) -> str:
-                return f"Generated output for gen {generation} seed {_seed}"
+                return self._generate_fn(prompt, generation, _seed)
 
             def _evaluate(
                 output: str, generation: int, _seed: int = seed,
@@ -245,10 +269,19 @@ class MultiSeedTrajectoryRunner:
             )
             trajectory = runner.run(num_generations=num_generations)
             trajectories.append(trajectory)
+            inspector = PlaybookInspector(
+                self._playbooks_by_generation(trajectory),
+                trajectory.total_generations,
+            )
+            playbook_inspection[str(seed)] = {
+                "snapshots": inspector.key_snapshots(),
+                "growth": inspector.growth_summary(),
+            }
 
         return TrajectoryReport(
             task_name=self._task_name,
             trajectories=trajectories,
             num_seeds=num_seeds,
             num_generations=num_generations,
+            metadata={"playbook_inspection": playbook_inspection},
         )
