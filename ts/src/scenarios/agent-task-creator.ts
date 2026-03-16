@@ -72,6 +72,10 @@ export type CreatedScenario =
   | WorkflowScenarioHandle;
 
 export class AgentTaskCreator {
+  private static readonly ABSTRACT_SUFFIXES = [
+    "ness", "tion", "sion", "ment", "ity", "ous", "ive", "able",
+    "ible", "ful", "less", "ence", "ance", "ical", "ally",
+  ];
   private provider: LLMProvider;
   private model: string;
   private knowledgeRoot: string;
@@ -92,7 +96,33 @@ export class AgentTaskCreator {
     "clear", "well", "good", "great", "very", "really", "also", "just", "structured",
     "it", "we", "they", "is", "are", "was", "be", "do", "does",
     "to", "in", "on", "at", "by", "which", "what", "how",
+    "about", "from", "into", "after", "before", "below", "above", "under", "over",
+    "using", "via",
+    "design", "generate", "generates", "generated", "edit", "analyze", "analyse",
+    "find", "add", "remove", "update", "improve",
+    "file", "section", "scenario",
+    "simple", "complex", "advanced", "word", "multi", "partial", "hidden",
   ]);
+
+  private static wordScore(word: string, position: number, totalWords: number): number {
+    let score = 0;
+
+    if (AgentTaskCreator.ABSTRACT_SUFFIXES.some((suffix) => word.endsWith(suffix))) {
+      score -= 2;
+    }
+
+    if (word.length >= 4 && word.length <= 12) {
+      score += 2;
+    } else if (word.length > 2) {
+      score += 1;
+    }
+
+    if (totalWords > 0) {
+      score += 1 - (position / totalWords) * 0.5;
+    }
+
+    return score;
+  }
 
   /**
    * Derive a snake_case name from a description.
@@ -103,12 +133,18 @@ export class AgentTaskCreator {
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
-      .filter((w) => w && !AgentTaskCreator.STOP_WORDS.has(w));
-    // Prefer longer words (>3 chars) as they are more likely domain-specific nouns
-    const sorted = [...words].sort((a, b) => b.length - a.length);
+      .filter((w) => w && !AgentTaskCreator.STOP_WORDS.has(w) && w.length > 1);
+    const sorted = words
+      .map((word, index) => ({
+        word,
+        index,
+        score: AgentTaskCreator.wordScore(word, index, words.length),
+      }))
+      .sort((a, b) => (b.score - a.score) || (a.index - b.index));
     const seen = new Set<string>();
     const unique: string[] = [];
-    for (const w of sorted) {
+    for (const { word } of sorted) {
+      const w = word;
       if (!seen.has(w)) {
         seen.add(w);
         unique.push(w);

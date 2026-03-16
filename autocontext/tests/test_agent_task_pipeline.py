@@ -412,11 +412,14 @@ class TestDeriveName:
             knowledge_root=Path("/tmp/unused"),
         )
 
-    def test_prefers_longer_domain_words(self) -> None:
+    def test_uses_shared_improved_naming_logic(self) -> None:
+        from autocontext.scenarios.custom.naming import derive_name
+
         creator = self._creator()
-        # "Write a haiku about testing software" -> longer words first
-        name = creator.derive_name("Write a haiku about testing software")
-        assert name == "software_testing_haiku"
+        description = "Write a haiku about testing software"
+        name = creator.derive_name(description)
+        assert name == derive_name(description)
+        assert any(word in name.split("_") for word in ("haiku", "testing", "software"))
 
     def test_filters_stop_words(self) -> None:
         creator = self._creator()
@@ -434,7 +437,7 @@ class TestDeriveName:
 
     def test_simple_case(self) -> None:
         creator = self._creator()
-        assert creator.derive_name("haiku writer") == "writer_haiku"
+        assert creator.derive_name("haiku writer") == "haiku_writer"
 
     def test_empty_string(self) -> None:
         creator = self._creator()
@@ -447,7 +450,7 @@ class TestDeriveName:
     def test_deduplicates_words(self) -> None:
         creator = self._creator()
         name = creator.derive_name("test test test testing")
-        assert name == "testing_test"
+        assert name == "test_testing"
 
 
 class TestSampleInput:

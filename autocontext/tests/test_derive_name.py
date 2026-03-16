@@ -5,6 +5,8 @@ Covers: derive_name, derive_name_legacy, resolve_alias, build_alias_map.
 
 from __future__ import annotations
 
+import pytest
+
 # ===========================================================================
 # derive_name — improved algorithm
 # ===========================================================================
@@ -175,3 +177,15 @@ class TestBuildAliasMap:
         )
 
         assert build_alias_map([], derive_name_legacy, derive_name) == {}
+
+    def test_raises_on_legacy_name_collision(self) -> None:
+        from autocontext.scenarios.custom.naming import build_alias_map
+
+        def old_fn(description: str) -> str:
+            return "shared_legacy_name"
+
+        def new_fn(description: str) -> str:
+            return f"new_{description}"
+
+        with pytest.raises(ValueError, match="legacy name collision"):
+            build_alias_map(["alpha", "beta"], old_fn, new_fn)

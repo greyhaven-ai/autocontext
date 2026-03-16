@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import logging
-import re
 import sys
 from collections.abc import Callable
 from dataclasses import asdict
@@ -33,6 +32,8 @@ from autocontext.scenarios.custom.family_pipeline import (
     validate_source_for_family,
 )
 from autocontext.scenarios.custom.investigation_creator import InvestigationCreator
+from autocontext.scenarios.custom.naming import STOP_WORDS as SHARED_STOP_WORDS
+from autocontext.scenarios.custom.naming import derive_name as shared_derive_name
 from autocontext.scenarios.custom.negotiation_creator import NegotiationCreator
 from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
@@ -62,30 +63,10 @@ class AgentTaskCreator:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
 
-    # NOTE: Keep in sync with ts/src/scenarios/agent-task-creator.ts STOP_WORDS
-    STOP_WORDS = frozenset({
-        "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
-        "i", "want", "need", "make", "create", "build", "write", "develop", "implement",
-        "that", "can", "should", "could", "would", "will", "must",
-        "agent", "tool", "system",
-        "clear", "well", "good", "great", "very", "really", "also", "just", "structured",
-        "it", "we", "they", "is", "are", "was", "be", "do", "does",
-        "to", "in", "on", "at", "by", "which", "what", "how",
-    })
+    STOP_WORDS = SHARED_STOP_WORDS
 
     def derive_name(self, description: str) -> str:
-        words = re.sub(r"[^a-z0-9\s]", " ", description.lower()).split()
-        meaningful = [w for w in words if w not in self.STOP_WORDS]
-        # Prefer longer words (>3 chars) as they are more likely domain-specific nouns
-        sorted_words = sorted(meaningful, key=len, reverse=True)
-        seen: set[str] = set()
-        unique: list[str] = []
-        for w in sorted_words:
-            if w not in seen:
-                seen.add(w)
-                unique.append(w)
-        name_words = unique[:3] if len(unique) >= 3 else unique[:2] if unique else ["custom"]
-        return "_".join(name_words)
+        return shared_derive_name(description, self.STOP_WORDS)
 
     def create(
         self,

@@ -26,6 +26,12 @@ STOP_WORDS = frozenset({
     "clear", "well", "good", "great", "very", "really", "also", "just", "structured",
     "it", "we", "they", "is", "are", "was", "be", "do", "does",
     "to", "in", "on", "at", "by", "which", "what", "how",
+    "about", "from", "into", "after", "before", "below", "above", "under", "over",
+    "using", "via",
+    "design", "generate", "generates", "generated", "edit", "analyze", "analyse",
+    "find", "add", "remove", "update", "improve",
+    "file", "section", "scenario",
+    "simple", "complex", "advanced", "word", "multi", "partial", "hidden",
     "game",
 })
 
@@ -147,5 +153,11 @@ def build_alias_map(
         old = old_fn(desc)
         new = new_fn(desc)
         if old != new:
+            existing = aliases.get(old)
+            if existing is not None and existing != new:
+                raise ValueError(
+                    f"legacy name collision for alias '{old}': "
+                    f"maps to both '{existing}' and '{new}'",
+                )
             aliases[old] = new
     return aliases

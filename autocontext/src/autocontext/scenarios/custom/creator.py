@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,6 +9,8 @@ from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.codegen import generate_scenario_class
 from autocontext.scenarios.custom.designer import SCENARIO_DESIGNER_SYSTEM, parse_spec_from_response
 from autocontext.scenarios.custom.loader import load_custom_scenario
+from autocontext.scenarios.custom.naming import STOP_WORDS as SHARED_STOP_WORDS
+from autocontext.scenarios.custom.naming import derive_name as shared_derive_name
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.spec import ScenarioSpec
 from autocontext.scenarios.custom.validator import validate_by_execution, validate_generated_code, validate_spec
@@ -27,31 +28,10 @@ class ScenarioCreator:
         self.model = model
         self.knowledge_root = knowledge_root
 
-    # NOTE: Keep in sync with AgentTaskCreator.STOP_WORDS and ts/src/scenarios/agent-task-creator.ts
-    STOP_WORDS = frozenset({
-        "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
-        "i", "want", "need", "make", "create", "build", "write", "develop", "implement",
-        "that", "can", "should", "could", "would", "will", "must",
-        "agent", "tool", "system",
-        "clear", "well", "good", "great", "very", "really", "also", "just", "structured",
-        "it", "we", "they", "is", "are", "was", "be", "do", "does",
-        "to", "in", "on", "at", "by", "which", "what", "how",
-        "game",
-    })
+    STOP_WORDS = SHARED_STOP_WORDS
 
     def derive_name(self, description: str) -> str:
-        words = re.sub(r"[^a-z0-9\s]", " ", description.lower()).split()
-        meaningful = [w for w in words if w not in self.STOP_WORDS]
-        # Prefer longer words (>3 chars) as they are more likely domain-specific nouns
-        sorted_words = sorted(meaningful, key=len, reverse=True)
-        seen: set[str] = set()
-        unique: list[str] = []
-        for w in sorted_words:
-            if w not in seen:
-                seen.add(w)
-                unique.append(w)
-        name_words = unique[:3] if len(unique) >= 3 else unique[:2] if unique else ["custom"]
-        return "_".join(name_words)
+        return shared_derive_name(description, self.STOP_WORDS)
 
     def generate_spec(self, description: str) -> ScenarioSpec:
         prompt = SCENARIO_DESIGNER_SYSTEM + f"\n\nUser description:\n{description}"
