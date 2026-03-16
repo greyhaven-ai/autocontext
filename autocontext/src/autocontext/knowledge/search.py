@@ -8,6 +8,14 @@ from typing import Any
 
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.scenarios.capabilities import (
+    get_description,
+    get_evaluation_criteria,
+    get_rubric_safe,
+    get_strategy_interface_safe,
+    get_task_prompt_safe,
+    resolve_capabilities,
+)
 
 # Common English stopwords to ignore during search
 _STOPWORDS = frozenset({
@@ -121,8 +129,7 @@ def _keyword_score(terms: list[str], entry: dict[str, Any]) -> tuple[float, list
 
 def _scenario_description(scenario: object) -> str:
     """Get description from either ScenarioInterface or AgentTaskInterface."""
-    fn = getattr(scenario, "describe_rules", None) or getattr(scenario, "describe_task", None)
-    return fn() if fn else ""
+    return get_description(scenario)
 
 
 def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
@@ -144,24 +151,11 @@ def _build_search_index(ctx: MtsToolContext) -> list[dict[str, Any]]:
 
         hints = ctx.artifacts.read_hints(name)
 
-        strategy_interface = ""
-        evaluation_criteria = ""
-        try:
-            strategy_interface = scenario.describe_strategy_interface()
-            evaluation_criteria = scenario.describe_evaluation_criteria()
-        except Exception:
-            pass
-
-        # Extract agent task fields if available
-        task_prompt = ""
-        judge_rubric = ""
-        try:
-            if hasattr(scenario, "get_task_prompt"):
-                task_prompt = scenario.get_task_prompt(scenario.initial_state())
-            if hasattr(scenario, "get_rubric"):
-                judge_rubric = scenario.get_rubric()
-        except Exception:
-            pass
+        caps = resolve_capabilities(scenario)
+        strategy_interface = get_strategy_interface_safe(scenario) or ""
+        evaluation_criteria = get_evaluation_criteria(scenario) if not caps.is_agent_task else ""
+        task_prompt = get_task_prompt_safe(scenario) or ""
+        judge_rubric = get_rubric_safe(scenario) or ""
 
         entries.append({
             "name": name,

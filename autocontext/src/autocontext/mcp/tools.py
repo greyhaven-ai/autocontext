@@ -11,6 +11,14 @@ from autocontext.config import AppSettings
 from autocontext.execution.harness_loader import HarnessLoader
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.scenarios import SCENARIO_REGISTRY
+from autocontext.scenarios.capabilities import (
+    can_run_match,
+    can_validate_actions,
+    get_description,
+    get_evaluation_criteria,
+    get_rubric_safe,
+    get_strategy_interface_safe,
+)
 from autocontext.storage import ArtifactStore, SQLiteStore
 
 if TYPE_CHECKING:
@@ -44,12 +52,7 @@ def list_scenarios() -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     for name, cls in SCENARIO_REGISTRY.items():
         instance = cls()
-        if hasattr(instance, "describe_rules"):
-            preview = instance.describe_rules()[:200]
-        elif hasattr(instance, "describe_task"):
-            preview = instance.describe_task()[:200]
-        else:
-            preview = ""
+        preview = get_description(instance)[:200]
         results.append({
             "name": name,
             "rules_preview": preview,
@@ -60,23 +63,17 @@ def list_scenarios() -> list[dict[str, str]]:
 def describe_scenario(name: str) -> dict[str, str]:
     """Full scenario description: rules, strategy interface, evaluation criteria."""
     scenario = SCENARIO_REGISTRY[name]()
-    if hasattr(scenario, "describe_rules"):
-        return {
-            "rules": scenario.describe_rules(),
-            "strategy_interface": scenario.describe_strategy_interface(),
-            "evaluation_criteria": scenario.describe_evaluation_criteria(),
-        }
     return {
-        "rules": scenario.describe_task() if hasattr(scenario, "describe_task") else "",
-        "strategy_interface": "",
-        "evaluation_criteria": scenario.get_rubric() if hasattr(scenario, "get_rubric") else "",
+        "rules": get_description(scenario),
+        "strategy_interface": get_strategy_interface_safe(scenario) or "",
+        "evaluation_criteria": get_evaluation_criteria(scenario) or get_rubric_safe(scenario) or "",
     }
 
 
 def validate_strategy(name: str, strategy: dict[str, object]) -> dict[str, object]:
     """Validate a strategy dict against scenario constraints."""
     scenario = SCENARIO_REGISTRY[name]()
-    if not hasattr(scenario, "validate_actions"):
+    if not can_validate_actions(scenario):
         return {"valid": True, "reason": "Agent task scenarios use judge evaluation, not action validation"}
     state = scenario.initial_state(seed=42)
     valid, reason = scenario.validate_actions(state, "challenger", strategy)
@@ -86,7 +83,7 @@ def validate_strategy(name: str, strategy: dict[str, object]) -> dict[str, objec
 def run_match(name: str, strategy: dict[str, object], seed: int) -> dict[str, object]:
     """Execute a single match, return Result as dict."""
     scenario = SCENARIO_REGISTRY[name]()
-    if not hasattr(scenario, "execute_match"):
+    if not can_run_match(scenario):
         return {"error": "Agent task scenarios use judge evaluation; use evaluate_output() instead"}
     result = scenario.execute_match(strategy, seed)
     return cast(dict[str, object], result.model_dump())
@@ -95,7 +92,7 @@ def run_match(name: str, strategy: dict[str, object], seed: int) -> dict[str, ob
 def run_tournament(name: str, strategy: dict[str, object], matches: int, seed_base: int) -> dict[str, object]:
     """Run N matches, return aggregate stats."""
     scenario = SCENARIO_REGISTRY[name]()
-    if not hasattr(scenario, "execute_match"):
+    if not can_run_match(scenario):
         return {"error": "Agent task scenarios use judge evaluation; use evaluate_output() instead"}
     scores: list[float] = []
     for i in range(matches):

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -226,6 +228,40 @@ class TestSearch:
         assert len(results) >= 1
         assert results[0].scenario_name == "grid_ctf"
         assert results[0].relevance_score > 0
+
+    def test_build_search_index_uses_capability_helpers(self, tmp_path: Path) -> None:
+        from autocontext.knowledge.search import _build_search_index
+
+        ctx = _make_ctx(tmp_path)
+        ctx.sqlite.create_run("run1", "grid_ctf", 3, "local")
+        ctx.sqlite.mark_run_completed("run1")
+
+        with (
+            patch("autocontext.knowledge.search.get_description", return_value="adapter description") as get_description,
+            patch(
+                "autocontext.knowledge.search.resolve_capabilities",
+                return_value=SimpleNamespace(is_agent_task=True),
+            ) as resolve_caps,
+            patch("autocontext.knowledge.search.get_strategy_interface_safe", return_value=None) as get_iface,
+            patch("autocontext.knowledge.search.get_evaluation_criteria", return_value="ignored criteria") as get_eval,
+            patch("autocontext.knowledge.search.get_task_prompt_safe", return_value="adapter task prompt") as get_prompt,
+            patch("autocontext.knowledge.search.get_rubric_safe", return_value="adapter rubric") as get_rubric,
+        ):
+            entries = _build_search_index(ctx)
+
+        assert entries
+        entry = next(e for e in entries if e["name"] == "grid_ctf")
+        assert entry["description"] == "adapter description"
+        assert entry["strategy_interface"] == ""
+        assert entry["evaluation_criteria"] == ""
+        assert entry["task_prompt"] == "adapter task prompt"
+        assert entry["judge_rubric"] == "adapter rubric"
+        get_description.assert_called()
+        resolve_caps.assert_called()
+        get_iface.assert_called()
+        get_eval.assert_not_called()
+        get_prompt.assert_called()
+        get_rubric.assert_called()
 
 
 # -- SQLite query methods --

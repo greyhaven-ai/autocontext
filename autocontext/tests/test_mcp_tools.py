@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -30,12 +31,39 @@ def test_list_scenarios() -> None:
         assert len(s["rules_preview"]) <= 200
 
 
+def test_list_scenarios_uses_capability_description_helper() -> None:
+    with patch("autocontext.mcp.tools.get_description", return_value="adapter description") as get_description:
+        scenarios = list_scenarios()
+
+    assert scenarios
+    get_description.assert_called()
+    assert all(s["rules_preview"] == "adapter description" for s in scenarios)
+
+
 def test_describe_grid_ctf() -> None:
     desc = describe_scenario("grid_ctf")
     assert "rules" in desc
     assert "strategy_interface" in desc
     assert "evaluation_criteria" in desc
     assert len(desc["rules"]) > 0
+
+
+def test_describe_scenario_uses_capability_helpers() -> None:
+    with (
+        patch("autocontext.mcp.tools.get_description", return_value="adapter rules") as get_description,
+        patch("autocontext.mcp.tools.get_strategy_interface_safe", return_value="adapter iface") as get_iface,
+        patch("autocontext.mcp.tools.get_evaluation_criteria", return_value="adapter eval") as get_eval,
+    ):
+        desc = describe_scenario("grid_ctf")
+
+    assert desc == {
+        "rules": "adapter rules",
+        "strategy_interface": "adapter iface",
+        "evaluation_criteria": "adapter eval",
+    }
+    get_description.assert_called_once()
+    get_iface.assert_called_once()
+    get_eval.assert_called_once()
 
 
 def test_describe_unknown_scenario() -> None:
@@ -54,6 +82,14 @@ def test_validate_invalid_strategy() -> None:
     assert result["reason"] != ""
 
 
+def test_validate_strategy_uses_capability_check() -> None:
+    with patch("autocontext.mcp.tools.can_validate_actions", return_value=False) as can_validate:
+        result = validate_strategy("grid_ctf", {"aggression": 0.5})
+
+    can_validate.assert_called_once()
+    assert result["valid"] is True
+
+
 def test_run_match_returns_result() -> None:
     result = run_match("grid_ctf", {"aggression": 0.5, "defense": 0.5, "path_bias": 0.5}, seed=42)
     assert "score" in result
@@ -61,6 +97,14 @@ def test_run_match_returns_result() -> None:
     assert "summary" in result
     assert "replay" in result
     assert "metrics" in result
+
+
+def test_run_match_uses_capability_check() -> None:
+    with patch("autocontext.mcp.tools.can_run_match", return_value=False) as can_run:
+        result = run_match("grid_ctf", {"aggression": 0.5}, seed=42)
+
+    can_run.assert_called_once()
+    assert "error" in result
 
 
 def test_run_match_deterministic_seed() -> None:
