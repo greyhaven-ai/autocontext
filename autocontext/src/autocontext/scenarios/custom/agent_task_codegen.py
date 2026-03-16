@@ -144,8 +144,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
                 judge_result: AgentTaskResult,
                 state: dict,
             ) -> str:
-                if not self._revision_prompt and self._max_rounds <= 1:
-                    return output
-                return output
+                from autocontext.scenarios.custom.agent_task_revision import revise_generated_output
+
+                return revise_generated_output(self, output, judge_result, state)
     ''')
     return source

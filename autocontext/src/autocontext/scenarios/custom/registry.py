@@ -6,6 +6,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from autocontext.scenarios.custom.agent_task_revision import (
+    patch_legacy_generated_revise_output,
+)
 from autocontext.scenarios.custom.loader import load_custom_scenario
 from autocontext.scenarios.families import detect_family, get_family_by_marker
 
@@ -39,7 +42,7 @@ def _load_agent_task_class(custom_dir: Path, name: str) -> type[Any]:
             and issubclass(attr, AgentTaskInterface)
             and attr is not AgentTaskInterface
         ):
-            return attr
+            return patch_legacy_generated_revise_output(attr, source_path)
 
     raise ImportError(f"no AgentTaskInterface subclass found in {module_name}")
 

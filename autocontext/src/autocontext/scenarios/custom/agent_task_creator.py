@@ -15,6 +15,9 @@ from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.coordination import CoordinationInterface
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
 from autocontext.scenarios.custom.agent_task_designer import design_agent_task
+from autocontext.scenarios.custom.agent_task_revision import (
+    patch_legacy_generated_revise_output,
+)
 from autocontext.scenarios.custom.agent_task_validator import (
     validate_execution,
     validate_intent,
@@ -234,6 +237,6 @@ class AgentTaskCreator:
                 and issubclass(attr, AgentTaskInterface)
                 and attr is not AgentTaskInterface
             ):
-                return attr  # type: ignore[return-value]
+                return patch_legacy_generated_revise_output(attr, source_path)  # type: ignore[return-value]
 
         raise ImportError(f"no AgentTaskInterface subclass found in {module_name}")
