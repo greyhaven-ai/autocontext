@@ -270,6 +270,8 @@ def run_improvement_loop(
         return {"error": f"'{scenario_name}' is not an agent task scenario. Improvement loops require agent task scenarios."}
 
     from autocontext.execution.improvement_loop import ImprovementLoop
+    from autocontext.execution.rubric_calibration import run_judge_calibration
+    from autocontext.providers.registry import get_provider
 
     calibration = ctx.sqlite.get_calibration_examples(scenario_name, limit=5)
 
@@ -296,7 +298,22 @@ def run_improvement_loop(
         for r in result.rounds
     ]
 
-    return {
+    rubric_calibration: dict[str, object] | None = None
+    if len(calibration) >= 2:
+        provider = get_provider(ctx.settings)
+        report = run_judge_calibration(
+            domain=scenario_name,
+            task_prompt=task.get_task_prompt(task.initial_state()),
+            rubric=task.get_rubric(),
+            provider=provider,
+            model=ctx.settings.judge_model,
+            calibration_examples=calibration,
+            reference_context=reference_context,
+            required_concepts=required_concepts,
+        )
+        rubric_calibration = report.to_dict() if report is not None else None
+
+    payload: dict[str, object] = {
         "scenario_name": scenario_name,
         "total_rounds": result.total_rounds,
         "met_threshold": result.met_threshold,
@@ -306,6 +323,9 @@ def run_improvement_loop(
         "rounds": rounds_summary,
         "best_output_preview": result.best_output[:500],
     }
+    if rubric_calibration is not None:
+        payload["rubric_calibration"] = rubric_calibration
+    return payload
 
 
 # -- Agent Task Management --
@@ -436,6 +456,7 @@ def evaluate_output(
         ObjectiveVerificationConfig,
         run_objective_verification,
     )
+    from autocontext.execution.rubric_calibration import run_judge_calibration
     from autocontext.providers.registry import get_provider
 
     provider = get_provider(ctx.settings)
@@ -472,6 +493,19 @@ def evaluate_output(
                 rubric_score=result.score,
                 config=config,
             )
+    if len(calibration) >= 2:
+        report = run_judge_calibration(
+            domain=task_name,
+            task_prompt=data["task_prompt"],
+            rubric=data["rubric"],
+            provider=provider,
+            model=ctx.settings.judge_model,
+            calibration_examples=calibration,
+            reference_context=data.get("reference_context"),
+            required_concepts=data.get("required_concepts"),
+        )
+        if report is not None:
+            payload["rubric_calibration"] = report.to_dict()
     return payload
 
 
@@ -610,6 +644,8 @@ def get_task_result(ctx: MtsToolContext, task_id: str) -> dict[str, object]:
                     result["generations"] = payload["generations"]
                 if "objective_verification" in payload:
                     result["objective_verification"] = payload["objective_verification"]
+                if "rubric_calibration" in payload:
+                    result["rubric_calibration"] = payload["rubric_calibration"]
             except (json.JSONDecodeError, AttributeError):
                 result["rounds"] = []
     elif task["status"] == "failed":

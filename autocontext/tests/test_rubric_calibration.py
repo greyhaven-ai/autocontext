@@ -6,6 +6,32 @@ compute_alignment, AlignmentTolerance, CalibrationReport.
 
 from __future__ import annotations
 
+import pytest
+
+from autocontext.providers.base import CompletionResult, LLMProvider
+
+
+class _MockJudgeProvider(LLMProvider):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096):
+        return CompletionResult(text=self._response, model=model or "mock-judge")
+
+    def default_model(self):
+        return "mock-judge"
+
+
+def _judge_response(score: float, reasoning: str = "aligned") -> str:
+    import json
+
+    payload = {
+        "score": score,
+        "reasoning": reasoning,
+        "dimensions": {"quality": score},
+    }
+    return f"<!-- JUDGE_RESULT_START -->\n{json.dumps(payload)}\n<!-- JUDGE_RESULT_END -->"
+
 # ===========================================================================
 # CalibrationAnchor
 # ===========================================================================
@@ -184,6 +210,12 @@ class TestComputeAlignment:
         assert result.mean_absolute_error == 0.0
         assert result.num_pairs == 0
 
+    def test_rejects_mismatched_anchor_sets(self) -> None:
+        from autocontext.execution.rubric_calibration import compute_alignment
+
+        with pytest.raises(ValueError, match="same length"):
+            compute_alignment([0.4, 0.7, 0.9], [0.4, 0.7])
+
 
 # ===========================================================================
 # AlignmentTolerance
@@ -309,3 +341,38 @@ class TestCalibrationReport:
         restored = CalibrationReport.from_dict(d)
         assert restored.domain == "test"
         assert restored.calibrated is True
+
+
+class TestRunJudgeCalibration:
+    def test_builds_live_report_from_human_feedback_examples(self) -> None:
+        from autocontext.execution.rubric_calibration import run_judge_calibration
+
+        provider = _MockJudgeProvider(_judge_response(0.82))
+        report = run_judge_calibration(
+            domain="l19-drug-interactions",
+            task_prompt="Find clinically relevant drug interactions.",
+            rubric="Clinical accuracy and recall",
+            provider=provider,
+            model="mock-judge",
+            calibration_examples=[
+                {
+                    "id": 1,
+                    "agent_output": "Warfarin and aspirin cause bleeding risk.",
+                    "human_score": 0.8,
+                    "human_notes": "Correct high-severity interaction.",
+                    "created_at": "2026-03-16T00:00:00Z",
+                },
+                {
+                    "id": 2,
+                    "agent_output": "Simvastatin and clarithromycin raise myopathy risk.",
+                    "human_score": 0.84,
+                    "human_notes": "Also correct and clinically relevant.",
+                    "created_at": "2026-03-16T00:01:00Z",
+                },
+            ],
+        )
+
+        assert report is not None
+        assert report.num_anchors == 2
+        assert report.alignment.num_pairs == 2
+        assert "per_anchor_variance" in report.metadata

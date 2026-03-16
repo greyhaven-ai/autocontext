@@ -182,6 +182,38 @@ class TestEvaluateOutput:
         assert result["objective_verification"]["oracle_result"]["found_count"] == 1
         assert result["objective_verification"]["comparison"]["rubric_score"] == 0.9
 
+    def test_evaluates_with_rubric_calibration(self, ctx, monkeypatch):
+        create_agent_task(
+            ctx,
+            "calibrated-task",
+            "Find serious drug interactions.",
+            "Clinical accuracy",
+        )
+        ctx.sqlite.insert_human_feedback(
+            scenario_name="calibrated-task",
+            agent_output="Warfarin and aspirin increase bleeding risk.",
+            human_score=0.82,
+            human_notes="Strong anchor with correct interaction.",
+        )
+        ctx.sqlite.insert_human_feedback(
+            scenario_name="calibrated-task",
+            agent_output="Simvastatin and clarithromycin increase myopathy risk.",
+            human_score=0.87,
+            human_notes="Also correct and clinically relevant.",
+        )
+
+        from autocontext.providers import registry
+        monkeypatch.setattr(registry, "get_provider", lambda s: _MockProvider(_judge_response(0.88)))
+
+        result = evaluate_output(
+            ctx,
+            "calibrated-task",
+            "1. Warfarin + Aspirin: high severity bleeding interaction.",
+        )
+        assert result["score"] == 0.88
+        assert result["rubric_calibration"]["num_anchors"] == 2
+        assert result["rubric_calibration"]["alignment"]["num_pairs"] == 2
+
 
 # ---------------------------------------------------------------------------
 # Queue tools
@@ -303,6 +335,36 @@ class TestQueueTools:
         result = get_task_result(ctx, "t2")
         assert result["objective_verification"]["oracle_result"]["found_count"] == 1
         assert result["objective_verification"]["comparison"]["rubric_score"] == 0.84
+
+    def test_get_task_result_surfaces_rubric_calibration(self, ctx):
+        create_agent_task(ctx, "calibrated-run", "prompt", "rubric")
+        ctx.sqlite.enqueue_task(
+            "t3",
+            "calibrated-run",
+            config={"task_prompt": "prompt", "rubric": "rubric"},
+        )
+        ctx.sqlite.dequeue_task()
+        ctx.sqlite.complete_task(
+            "t3",
+            best_score=0.86,
+            best_output="Warfarin + Aspirin is high risk.",
+            total_rounds=1,
+            met_threshold=False,
+            result_json=json.dumps({
+                "rounds": [{"round_number": 1, "score": 0.86, "reasoning": "ok"}],
+                "rubric_calibration": {
+                    "domain": "calibrated-run",
+                    "num_anchors": 2,
+                    "alignment": {"num_pairs": 2, "mean_absolute_error": 0.03},
+                    "variance": {"std_dev": 0.0},
+                    "calibrated": True,
+                },
+            }),
+        )
+
+        result = get_task_result(ctx, "t3")
+        assert result["rubric_calibration"]["num_anchors"] == 2
+        assert result["rubric_calibration"]["calibrated"] is True
 
 
 class TestGetBestOutput:

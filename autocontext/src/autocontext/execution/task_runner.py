@@ -30,6 +30,7 @@ from autocontext.execution.objective_verification import (
     ObjectiveVerificationConfig,
     run_objective_verification,
 )
+from autocontext.execution.rubric_calibration import run_judge_calibration
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.storage.sqlite_store import SQLiteStore
@@ -78,6 +79,7 @@ class TaskConfig:
 def _serialize_result(
     result: ImprovementResult,
     objective_verification: dict[str, Any] | None = None,
+    rubric_calibration: dict[str, Any] | None = None,
 ) -> str:
     """Serialize an ImprovementResult to JSON."""
     rounds = []
@@ -102,6 +104,8 @@ def _serialize_result(
         data["judge_calls"] = result.judge_calls
     if objective_verification is not None:
         data["objective_verification"] = objective_verification
+    if rubric_calibration is not None:
+        data["rubric_calibration"] = rubric_calibration
     return json.dumps(data)
 
 
@@ -109,6 +113,7 @@ def _serialize_evolution_result(
     trajectory: AgentTaskTrajectory,
     generation_results: list[ImprovementResult],
     objective_verification: dict[str, Any] | None = None,
+    rubric_calibration: dict[str, Any] | None = None,
 ) -> str:
     """Serialize a multi-generation AgentTask evolution run to JSON."""
     final_rounds: list[dict[str, object]] = []
@@ -147,6 +152,8 @@ def _serialize_evolution_result(
     }
     if objective_verification is not None:
         data["objective_verification"] = objective_verification
+    if rubric_calibration is not None:
+        data["rubric_calibration"] = rubric_calibration
     return json.dumps(data)
 
 
@@ -166,6 +173,32 @@ def _build_objective_payload(
         rubric_score=rubric_score,
         config=verification_config,
     )
+
+
+def _build_rubric_calibration_payload(
+    *,
+    store: SQLiteStore,
+    spec_name: str,
+    task_prompt: str,
+    rubric: str,
+    provider: LLMProvider,
+    model: str,
+    reference_context: str | None = None,
+    required_concepts: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Run live rubric calibration against stored human feedback anchors."""
+    calibration_examples = store.get_calibration_examples(spec_name, limit=5)
+    report = run_judge_calibration(
+        domain=spec_name,
+        task_prompt=task_prompt,
+        rubric=rubric,
+        provider=provider,
+        model=model or provider.default_model(),
+        calibration_examples=calibration_examples,
+        reference_context=reference_context,
+        required_concepts=required_concepts,
+    )
+    return report.to_dict() if report is not None else None
 
 
 class SimpleAgentTask(AgentTaskInterface):
@@ -427,6 +460,16 @@ class TaskRunner:
                     result.best_score,
                     config,
                 )
+                rubric_calibration = _build_rubric_calibration_payload(
+                    store=self.store,
+                    spec_name=spec_name,
+                    task_prompt=agent_task.get_task_prompt({}),
+                    rubric=agent_task.get_rubric(),
+                    provider=self.provider,
+                    model=self.model,
+                    reference_context=config.reference_context,
+                    required_concepts=config.required_concepts,
+                )
 
                 self.store.complete_task(
                     task_id=task_id,
@@ -434,7 +477,11 @@ class TaskRunner:
                     best_output=result.best_output,
                     total_rounds=result.total_rounds,
                     met_threshold=result.met_threshold,
-                    result_json=_serialize_result(result, objective_payload),
+                    result_json=_serialize_result(
+                        result,
+                        objective_payload,
+                        rubric_calibration,
+                    ),
                 )
 
             logger.info(
@@ -519,6 +566,16 @@ class TaskRunner:
         best_score = state.best_score
         best_output = state.best_output
         objective_payload = _build_objective_payload(best_output, best_score, config)
+        rubric_calibration = _build_rubric_calibration_payload(
+            store=self.store,
+            spec_name=spec_name,
+            task_prompt=agent_task.get_task_prompt({}),
+            rubric=agent_task.get_rubric(),
+            provider=self.provider,
+            model=self.model,
+            reference_context=config.reference_context,
+            required_concepts=config.required_concepts,
+        )
 
         self.store.complete_task(
             task_id=task_id,
@@ -530,6 +587,7 @@ class TaskRunner:
                 trajectory,
                 ordered_results,
                 objective_payload,
+                rubric_calibration,
             ),
         )
 

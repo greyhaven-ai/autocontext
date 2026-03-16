@@ -444,6 +444,39 @@ class TestEnqueueFunction:
         assert payload["objective_verification"]["oracle_result"]["false_positive_count"] >= 1
         assert payload["objective_verification"]["comparison"]["rubric_score"] == 0.82
 
+    def test_run_once_persists_rubric_calibration(self, store):
+        store.insert_human_feedback(
+            scenario_name="l19-drug-interactions",
+            agent_output="Warfarin and aspirin increase bleeding risk.",
+            human_score=0.82,
+            human_notes="Correctly identifies the critical interaction.",
+        )
+        store.insert_human_feedback(
+            scenario_name="l19-drug-interactions",
+            agent_output="Simvastatin with clarithromycin increases myopathy risk.",
+            human_score=0.86,
+            human_notes="Correct interaction with clear severity explanation.",
+        )
+
+        provider = _MockProvider([
+            "1. Warfarin + Aspirin: high severity bleeding interaction.",
+            *[_judge_response(0.84, "aligned with anchors")] * 8,
+        ])
+        config = {
+            "task_prompt": "Find clinically relevant drug interactions.",
+            "rubric": "Clinical accuracy and recall",
+            "max_rounds": 1,
+        }
+        store.enqueue_task("t3", "l19-drug-interactions", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        payload = json.loads(result["result_json"])
+        assert payload["rubric_calibration"]["num_anchors"] == 2
+        assert payload["rubric_calibration"]["alignment"]["num_pairs"] == 2
+
 
 # ---------------------------------------------------------------------------
 # Serialization

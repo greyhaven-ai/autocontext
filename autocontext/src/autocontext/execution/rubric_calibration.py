@@ -19,8 +19,12 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
+
+from autocontext.execution.judge import LLMJudge
+from autocontext.providers.base import LLMProvider
 
 
 @dataclass(slots=True)
@@ -193,15 +197,20 @@ def compute_alignment(
     judge_scores: list[float],
 ) -> AlignmentResult:
     """Compute alignment between human and judge scores."""
-    if not human_scores or not judge_scores:
+    if not human_scores and not judge_scores:
         return AlignmentResult(
             mean_absolute_error=0.0, bias=0.0, correlation=0.0,
             num_pairs=0, per_anchor_errors=[],
         )
 
-    n = min(len(human_scores), len(judge_scores))
-    hs = human_scores[:n]
-    js = judge_scores[:n]
+    if len(human_scores) != len(judge_scores):
+        raise ValueError(
+            "human_scores and judge_scores must have the same length; "
+            f"got {len(human_scores)} and {len(judge_scores)}",
+        )
+
+    hs = human_scores
+    js = judge_scores
 
     errors = [abs(j - h) for h, j in zip(hs, js, strict=True)]
     biases = [j - h for h, j in zip(hs, js, strict=True)]
@@ -214,7 +223,7 @@ def compute_alignment(
         mean_absolute_error=mae,
         bias=bias,
         correlation=corr,
-        num_pairs=n,
+        num_pairs=len(hs),
         per_anchor_errors=[round(e, 6) for e in errors],
     )
 
@@ -227,6 +236,39 @@ class AlignmentTolerance:
     max_mean_absolute_error: float
     max_bias: float
     min_correlation: float
+
+    @classmethod
+    def default_for_domain(cls, domain: str) -> AlignmentTolerance:
+        """Default domain tolerances for phase-1 within-domain calibration."""
+        normalized = domain.lower()
+        if any(token in normalized for token in ["drug", "interaction", "l19"]):
+            return cls(
+                domain=domain,
+                max_mean_absolute_error=0.12,
+                max_bias=0.08,
+                min_correlation=0.85,
+            )
+        if any(token in normalized for token in ["clinical", "trial", "protocol", "l16"]):
+            return cls(
+                domain=domain,
+                max_mean_absolute_error=0.15,
+                max_bias=0.10,
+                min_correlation=0.80,
+            )
+        return cls(
+            domain=domain,
+            max_mean_absolute_error=0.15,
+            max_bias=0.10,
+            min_correlation=0.80,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "domain": self.domain,
+            "max_mean_absolute_error": self.max_mean_absolute_error,
+            "max_bias": self.max_bias,
+            "min_correlation": self.min_correlation,
+        }
 
     def check(self, alignment: AlignmentResult) -> dict[str, Any]:
         """Check alignment against tolerance thresholds."""
@@ -298,3 +340,136 @@ class CalibrationReport:
             calibrated=data.get("calibrated", False),
             metadata=data.get("metadata", {}),
         )
+
+
+def _score_band_for_score(score: float) -> str:
+    if score < 0.4:
+        return "poor"
+    if score < 0.7:
+        return "fair"
+    if score < 0.9:
+        return "good"
+    return "excellent"
+
+
+def calibration_set_from_examples(
+    domain: str,
+    examples: Iterable[dict[str, Any]],
+) -> CalibrationSet:
+    """Build a calibration set from persisted human-feedback examples."""
+    anchors: list[CalibrationAnchor] = []
+    for idx, example in enumerate(examples):
+        human_score = example.get("human_score")
+        if human_score is None:
+            continue
+        score = float(human_score)
+        anchors.append(
+            CalibrationAnchor(
+                anchor_id=str(example.get("id", idx)),
+                domain=domain,
+                output_text=str(example.get("agent_output", "")),
+                human_score=score,
+                score_band=str(example.get("score_band") or _score_band_for_score(score)),
+                human_notes=str(example.get("human_notes", "")),
+                metadata={
+                    "created_at": example.get("created_at"),
+                    "generation_id": example.get("generation_id"),
+                },
+            ),
+        )
+    return CalibrationSet(
+        domain=domain,
+        anchors=anchors,
+        metadata={
+            "source": "human_feedback",
+            "cross_domain_normalization": "explicit second phase",
+        },
+    )
+
+
+def _aggregate_variance(results: list[JudgeVarianceResult]) -> JudgeVarianceResult:
+    """Aggregate per-anchor repeatability into one domain-level summary."""
+    if not results:
+        return JudgeVarianceResult(mean=0.0, variance=0.0, std_dev=0.0, range=0.0, num_samples=0)
+
+    return JudgeVarianceResult(
+        mean=round(statistics.mean(r.mean for r in results), 6),
+        variance=round(statistics.mean(r.variance for r in results), 6),
+        std_dev=round(statistics.mean(r.std_dev for r in results), 6),
+        range=round(max(r.range for r in results), 6),
+        num_samples=sum(r.num_samples for r in results),
+    )
+
+
+def run_judge_calibration(
+    *,
+    domain: str,
+    task_prompt: str,
+    rubric: str,
+    provider: LLMProvider,
+    model: str,
+    calibration_examples: list[dict[str, Any]],
+    reference_context: str | None = None,
+    required_concepts: list[str] | None = None,
+    repeat_judgments: int = 3,
+    tolerance: AlignmentTolerance | None = None,
+) -> CalibrationReport | None:
+    """Run live rubric calibration against stored human anchors."""
+    calibration_set = calibration_set_from_examples(domain, calibration_examples)
+    if len(calibration_set.anchors) < 2:
+        return None
+
+    tolerance = tolerance or AlignmentTolerance.default_for_domain(domain)
+    judge = LLMJudge(
+        model=model or provider.default_model(),
+        rubric=rubric,
+        provider=provider,
+        samples=1,
+        temperature=0.0,
+    )
+
+    human_scores: list[float] = []
+    judge_means: list[float] = []
+    per_anchor_variance: dict[str, dict[str, Any]] = {}
+
+    for anchor in calibration_set.anchors:
+        leave_one_out = [
+            example
+            for example in calibration_examples
+            if str(example.get("id")) != anchor.anchor_id
+        ]
+        repeated_scores: list[float] = []
+        for _ in range(max(1, repeat_judgments)):
+            result = judge.evaluate(
+                task_prompt=task_prompt,
+                agent_output=anchor.output_text,
+                reference_context=reference_context,
+                required_concepts=required_concepts,
+                calibration_examples=leave_one_out if leave_one_out else None,
+            )
+            repeated_scores.append(result.score)
+
+        variance = measure_judge_variance(repeated_scores)
+        per_anchor_variance[anchor.anchor_id] = variance.to_dict()
+        human_scores.append(anchor.human_score)
+        judge_means.append(variance.mean)
+
+    alignment = compute_alignment(human_scores, judge_means)
+    aggregate_variance = _aggregate_variance(
+        [JudgeVarianceResult.from_dict(data) for data in per_anchor_variance.values()],
+    )
+    tolerance_check = tolerance.check(alignment)
+
+    return CalibrationReport(
+        domain=domain,
+        num_anchors=len(calibration_set.anchors),
+        alignment=alignment,
+        variance=aggregate_variance,
+        calibrated=tolerance_check["passes"],
+        metadata={
+            "tolerance": tolerance.to_dict(),
+            "tolerance_check": tolerance_check,
+            "per_anchor_variance": per_anchor_variance,
+            "cross_domain_normalization": "explicit second phase",
+        },
+    )
