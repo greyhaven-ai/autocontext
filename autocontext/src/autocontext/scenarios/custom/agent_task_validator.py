@@ -80,13 +80,38 @@ _JSON_INTENT_SIGNALS = frozenset({
     "key-value", "object with", "array of", "machine readable", "machine-readable",
 })
 
-_DATA_REFERENCE_PATTERNS = [
+# Patterns that ALWAYS indicate external data (future/passive voice referring
+# to data the system must supply).
+_ALWAYS_EXTERNAL_PATTERNS = [
     "you will be provided with",
+    "using the provided",
+]
+
+# Patterns that reference data which MAY be inline — only flag as external
+# when the prompt does NOT contain substantial inline data after the phrase.
+_CONTEXTUAL_DATA_PATTERNS = [
     "given the following data",
     "analyze the following",
-    "using the provided",
     "based on the data below",
 ]
+
+# Minimum characters after a contextual pattern to consider data "inline".
+_INLINE_DATA_MIN_CHARS = 50
+# Markers that signal structured inline data.
+_INLINE_DATA_MARKERS = ("{", "[", "|", "- ", "* ", "##", "```")
+
+
+def _has_inline_data_after(prompt: str, pattern: str) -> bool:
+    """Check if substantial inline data follows a data-reference phrase."""
+    idx = prompt.lower().find(pattern)
+    if idx < 0:
+        return False
+    after = prompt[idx + len(pattern):].strip()
+    if len(after) >= _INLINE_DATA_MIN_CHARS:
+        return True
+    if after.count("\n") >= 2:
+        return True
+    return any(marker in after for marker in _INLINE_DATA_MARKERS)
 
 
 def _extract_keywords(text: str) -> set[str]:
@@ -253,16 +278,27 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
                 if not isinstance(key, str) or not key.strip():
                     errors.append(f"required_context_keys[{i}] must be a non-empty string")
 
-    # Detect prompts that reference external data without providing sample_input
+    # Detect prompts that reference external data without providing sample_input.
+    # Patterns are split into "always external" (hard fail) and "contextual"
+    # (only fail when the prompt does NOT contain inline data after the phrase).
     if spec.sample_input is None:
         prompt_lower = spec.task_prompt.lower()
-        for pattern in _DATA_REFERENCE_PATTERNS:
+        for pattern in _ALWAYS_EXTERNAL_PATTERNS:
             if pattern in prompt_lower:
                 errors.append(
                     f"task_prompt references external data ('{pattern}') but sample_input is None; "
                     "set sample_input to provide the data that will be embedded in the prompt"
                 )
                 break
+        else:
+            for pattern in _CONTEXTUAL_DATA_PATTERNS:
+                if pattern in prompt_lower and not _has_inline_data_after(spec.task_prompt, pattern):
+                    errors.append(
+                        f"task_prompt references data ('{pattern}') but sample_input is None "
+                        "and no substantial inline data follows the reference; "
+                        "either embed the data inline or set sample_input"
+                    )
+                    break
 
     return errors
 
