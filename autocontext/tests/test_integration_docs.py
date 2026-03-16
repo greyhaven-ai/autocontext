@@ -15,6 +15,7 @@ import pytest
 DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
 README_PATH = Path(__file__).resolve().parents[1] / "README.md"
 INTEGRATION_GUIDE = DOCS_DIR / "agent-integration.md"
+TS_README_PATH = Path(__file__).resolve().parents[2] / "ts" / "README.md"
 
 
 # ---------------------------------------------------------------------------
@@ -113,9 +114,10 @@ class TestIntegrationGuideContent:
         """Guide should show the error JSON format."""
         assert '"error"' in self.content
 
-    def test_typescript_section_does_not_link_missing_readme(self) -> None:
-        """Guide should not point to a TypeScript README that does not exist."""
-        assert "../ts/README.md" not in self.content
+    def test_typescript_section_links_existing_readme(self) -> None:
+        """Guide should point to the TypeScript README when the repo includes it."""
+        assert TS_README_PATH.is_file(), "TypeScript package guide should exist for integration docs."
+        assert "../../ts/README.md" in self.content
 
 
 # ---------------------------------------------------------------------------
