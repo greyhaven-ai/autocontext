@@ -294,13 +294,16 @@ def autocontext_create_agent_task(
     max_rounds: int = 5,
     quality_threshold: float = 0.9,
     revision_prompt: str | None = None,
+    objective_verification: str | None = None,
 ) -> str:
     """Create and save an agent task spec for evaluation.
-    required_concepts is a JSON array of strings."""
+    required_concepts is a JSON array of strings.
+    objective_verification is JSON with ground_truth and optional claim_patterns."""
     try:
         concepts = json.loads(required_concepts) if required_concepts else None
+        objective_config = json.loads(objective_verification) if objective_verification else None
     except json.JSONDecodeError:
-        return json.dumps({"error": "Invalid JSON in required_concepts parameter"})
+        return json.dumps({"error": "Invalid JSON in required_concepts or objective_verification parameter"})
     return json.dumps(tools.create_agent_task(
         _get_ctx(),
         name=name,
@@ -312,6 +315,7 @@ def autocontext_create_agent_task(
         max_rounds=max_rounds,
         quality_threshold=quality_threshold,
         revision_prompt=revision_prompt,
+        objective_verification=objective_config,
     ))
 
 

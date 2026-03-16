@@ -74,6 +74,16 @@ class TestCreateAgentTask:
             max_rounds=3,
             quality_threshold=0.85,
             revision_prompt="Improve accuracy",
+            objective_verification={
+                "ground_truth": [
+                    {
+                        "item_id": "capital-france",
+                        "description": "Paris is the capital of France",
+                        "match_keywords": [["paris"], ["capital", "france"]],
+                        "weight": "low",
+                    }
+                ]
+            },
         )
         assert result["status"] == "created"
         # Verify persisted
@@ -81,6 +91,7 @@ class TestCreateAgentTask:
         assert task["generations"] == 3
         assert task["reference_context"] == "RLM = Recursive Language Model"
         assert task["max_rounds"] == 3
+        assert task["objective_verification"]["ground_truth"][0]["item_id"] == "capital-france"
 
 
 class TestListAgentTasks:
@@ -139,6 +150,37 @@ class TestEvaluateOutput:
         result = evaluate_output(ctx, "eval-task", "Here is my output")
         assert result["score"] == 0.88
         assert result["task_name"] == "eval-task"
+
+    def test_evaluates_with_objective_verification(self, ctx, monkeypatch):
+        create_agent_task(
+            ctx,
+            "l19-task",
+            "Find serious drug interactions.",
+            "Clinical accuracy",
+            objective_verification={
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    }
+                ]
+            },
+        )
+
+        from autocontext.providers import registry
+        monkeypatch.setattr(registry, "get_provider", lambda s: _MockProvider(_judge_response(0.9)))
+
+        result = evaluate_output(
+            ctx,
+            "l19-task",
+            "1. Warfarin + Aspirin: high severity bleeding interaction.\n"
+            "2. Vitamin C + Magnesium: benign supplement pairing.",
+        )
+        assert result["score"] == 0.9
+        assert result["objective_verification"]["oracle_result"]["found_count"] == 1
+        assert result["objective_verification"]["comparison"]["rubric_score"] == 0.9
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +261,48 @@ class TestQueueTools:
         assert result["status"] == "completed"
         assert result["trajectory"]["total_generations"] == 3
         assert len(result["generations"]) == 3
+
+    def test_get_task_result_surfaces_objective_verification(self, ctx):
+        create_agent_task(
+            ctx,
+            "l19-run",
+            "Find drug interactions",
+            "Clinical accuracy",
+            objective_verification={
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    }
+                ]
+            },
+        )
+        ctx.sqlite.enqueue_task(
+            "t2",
+            "l19-run",
+            config={"task_prompt": "prompt", "rubric": "rubric"},
+        )
+        ctx.sqlite.dequeue_task()
+        ctx.sqlite.complete_task(
+            "t2",
+            best_score=0.84,
+            best_output="1. Warfarin + Aspirin: high severity bleeding interaction.",
+            total_rounds=1,
+            met_threshold=False,
+            result_json=json.dumps({
+                "rounds": [{"round_number": 1, "score": 0.84, "reasoning": "ok"}],
+                "objective_verification": {
+                    "oracle_result": {"found_count": 1, "precision": 1.0, "recall": 1.0},
+                    "comparison": {"rubric_score": 0.84, "objective_recall": 1.0},
+                },
+            }),
+        )
+
+        result = get_task_result(ctx, "t2")
+        assert result["objective_verification"]["oracle_result"]["found_count"] == 1
+        assert result["objective_verification"]["comparison"]["rubric_score"] == 0.84
 
 
 class TestGetBestOutput:

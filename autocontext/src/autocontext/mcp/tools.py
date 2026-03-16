@@ -331,6 +331,7 @@ def create_agent_task(
     max_rounds: int = 5,
     quality_threshold: float = 0.9,
     revision_prompt: str | None = None,
+    objective_verification: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Create and register an agent task spec for evaluation."""
     import json
@@ -349,6 +350,7 @@ def create_agent_task(
         "max_rounds": max_rounds,
         "quality_threshold": quality_threshold,
         "revision_prompt": revision_prompt,
+        "objective_verification": objective_verification,
     }
 
     # Persist to knowledge dir
@@ -379,6 +381,7 @@ def list_agent_tasks(ctx: MtsToolContext) -> list[dict[str, object]]:
                 "quality_threshold": data.get("quality_threshold", 0.9),
                 "max_rounds": data.get("max_rounds", 5),
                 "has_reference_context": bool(data.get("reference_context")),
+                "has_objective_verification": bool(data.get("objective_verification")),
             })
         except Exception:
             continue
@@ -429,6 +432,10 @@ def evaluate_output(
     data = json.loads(spec_path.read_text(encoding="utf-8"))
 
     from autocontext.execution.judge import LLMJudge
+    from autocontext.execution.objective_verification import (
+        ObjectiveVerificationConfig,
+        run_objective_verification,
+    )
     from autocontext.providers.registry import get_provider
 
     provider = get_provider(ctx.settings)
@@ -450,12 +457,22 @@ def evaluate_output(
         calibration_examples=calibration if calibration else None,
     )
 
-    return {
+    payload: dict[str, object] = {
         "task_name": task_name,
         "score": result.score,
         "reasoning": result.reasoning,
         "dimension_scores": result.dimension_scores,
     }
+    objective_verification = data.get("objective_verification")
+    if isinstance(objective_verification, dict):
+        config = ObjectiveVerificationConfig.from_dict(objective_verification)
+        if config.ground_truth:
+            payload["objective_verification"] = run_objective_verification(
+                output=output,
+                rubric_score=result.score,
+                config=config,
+            )
+    return payload
 
 
 def generate_output(
@@ -527,6 +544,7 @@ def queue_improvement_run(
         max_rounds=data.get("max_rounds", 5),
         quality_threshold=data.get("quality_threshold", 0.9),
         initial_output=initial_output,
+        objective_verification=data.get("objective_verification"),
         priority=priority,
     )
 
@@ -590,6 +608,8 @@ def get_task_result(ctx: MtsToolContext, task_id: str) -> dict[str, object]:
                     result["trajectory"] = payload["trajectory"]
                 if "generations" in payload:
                     result["generations"] = payload["generations"]
+                if "objective_verification" in payload:
+                    result["objective_verification"] = payload["objective_verification"]
             except (json.JSONDecodeError, AttributeError):
                 result["rounds"] = []
     elif task["status"] == "failed":

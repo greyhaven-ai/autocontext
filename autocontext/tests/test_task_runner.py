@@ -361,6 +361,17 @@ class TestEnqueueFunction:
             generations=4,
             max_rounds=3,
             quality_threshold=0.85,
+            objective_verification={
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    }
+                ],
+                "claim_patterns": [r"^\d+\."],
+            },
             priority=5,
         )
         task = store.get_task(task_id)
@@ -369,6 +380,7 @@ class TestEnqueueFunction:
         assert config["max_rounds"] == 3
         assert config["quality_threshold"] == 0.85
         assert "context folding" in config["required_concepts"]
+        assert config["objective_verification"]["ground_truth"][0]["item_id"] == "warfarin-aspirin"
 
     def test_run_once_multi_generation_persists_trajectory(self, store):
         provider = _MockProvider([
@@ -399,6 +411,38 @@ class TestEnqueueFunction:
         assert payload["trajectory"]["total_generations"] == 3
         assert len(payload["generations"]) == 3
         assert payload["trajectory"]["metadata"]["best_output"] == "Generation 3 final output"
+
+    def test_run_once_persists_objective_verification(self, store):
+        provider = _MockProvider([
+            "1. Warfarin + Aspirin: high severity bleeding interaction.\n"
+            "2. Vitamin C + Magnesium: benign supplement pairing.",
+            _judge_response(0.82, "good recall, some unsupported claims"),
+        ])
+        config = {
+            "task_prompt": "Find clinically relevant drug interactions.",
+            "rubric": "Quality and clinical accuracy",
+            "max_rounds": 1,
+            "objective_verification": {
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin bleeding risk",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    }
+                ]
+            },
+        }
+        store.enqueue_task("t2", "l19-drug-interactions", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        payload = json.loads(result["result_json"])
+        assert payload["objective_verification"]["oracle_result"]["found_count"] == 1
+        assert payload["objective_verification"]["oracle_result"]["false_positive_count"] >= 1
+        assert payload["objective_verification"]["comparison"]["rubric_score"] == 0.82
 
 
 # ---------------------------------------------------------------------------

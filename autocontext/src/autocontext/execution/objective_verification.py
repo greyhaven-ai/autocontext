@@ -159,6 +159,48 @@ class OracleComparison:
             lines.append(f"Weight agreement: {self.weight_agreement:.2f}")
         return "\n".join(lines)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rubric_score": self.rubric_score,
+            "objective_recall": self.objective_recall,
+            "objective_precision": self.objective_precision,
+            "weight_agreement": self.weight_agreement,
+            "false_positive_rate": self.false_positive_rate,
+            "rubric_objective_gap": self.rubric_objective_gap,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(slots=True)
+class ObjectiveVerificationConfig:
+    """Serializable config for running an objective oracle in live task paths."""
+
+    ground_truth: list[GroundTruthItem]
+    claim_patterns: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ground_truth": [item.to_dict() for item in self.ground_truth],
+            "claim_patterns": self.claim_patterns,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ObjectiveVerificationConfig:
+        return cls(
+            ground_truth=[
+                GroundTruthItem.from_dict(item)
+                for item in data.get("ground_truth", [])
+            ],
+            claim_patterns=data.get("claim_patterns", []),
+            metadata=data.get("metadata", {}),
+        )
+
+    def build_oracle(self) -> KeywordMatchOracle:
+        compiled = [re.compile(pattern, re.MULTILINE) for pattern in self.claim_patterns]
+        return KeywordMatchOracle(self.ground_truth, claim_patterns=compiled)
+
 
 class ObjectiveOracle(ABC):
     """Abstract interface for domain-specific objective evaluation."""
@@ -225,7 +267,8 @@ class KeywordMatchOracle(ObjectiveOracle):
                 matched_in=lines[match_line].strip() if found and match_line is not None else "",
             ))
 
-        claimed_count = self._count_claims(output) if self._claim_patterns else found_count
+        claim_count_source = "patterns" if self._claim_patterns else "heuristic"
+        claimed_count = max(found_count, self._count_claims(output))
         false_positives = max(0, claimed_count - found_count)
 
         total = len(self._items)
@@ -242,6 +285,7 @@ class KeywordMatchOracle(ObjectiveOracle):
             precision=round(precision, 4),
             weight_agreement=round(weight_agreement, 4) if weight_agreement is not None else None,
             item_details=details,
+            metadata={"claim_count_source": claim_count_source},
         )
 
     def _find_item_in_output(
@@ -275,11 +319,32 @@ class KeywordMatchOracle(ObjectiveOracle):
         return any(alias in window_text for alias in aliases)
 
     def _count_claims(self, output: str) -> int:
-        """Count how many claims the output makes using the claim patterns."""
+        """Count how many claims the output makes."""
+        if not self._claim_patterns:
+            return self._estimate_claims(output)
         count = 0
         for pattern in self._claim_patterns:
             count += len(pattern.findall(output))
         return max(count, 0)
+
+    @staticmethod
+    def _estimate_claims(output: str) -> int:
+        """Heuristic fallback so precision is not silently collapsed to recall."""
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        bullet_lines = [
+            line for line in lines
+            if re.match(r"^(\d+[\).\s]|[-*•]\s)", line)
+        ]
+        if bullet_lines:
+            return len(bullet_lines)
+        if len(lines) > 1:
+            return len(lines)
+        sentences = [
+            segment.strip()
+            for segment in re.split(r"(?<=[.!?])\s+", output)
+            if segment.strip()
+        ]
+        return len(sentences)
 
 
 def compare_oracle_vs_rubric(
@@ -302,3 +367,19 @@ def compare_oracle_vs_rubric(
         false_positive_rate=round(false_positive_rate, 4),
         rubric_objective_gap=round(gap, 4),
     )
+
+
+def run_objective_verification(
+    *,
+    output: str,
+    rubric_score: float,
+    config: ObjectiveVerificationConfig,
+) -> dict[str, Any]:
+    """Run objective verification and package both raw metrics and comparison."""
+    oracle_result = config.build_oracle().evaluate(output)
+    comparison = compare_oracle_vs_rubric(rubric_score, oracle_result)
+    return {
+        "oracle_result": oracle_result.to_dict(),
+        "comparison": comparison.to_dict(),
+        "config_metadata": config.metadata,
+    }

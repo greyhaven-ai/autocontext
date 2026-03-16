@@ -112,6 +112,18 @@ class TestOracleDrugInteractions:
         result = oracle.evaluate(output)
         assert result.weight_agreement is not None
 
+    def test_default_claim_heuristic_does_not_collapse_precision(self) -> None:
+        oracle = self._drug_oracle()
+        output = (
+            "1. Warfarin + Aspirin: high severity bleeding interaction.\n"
+            "2. Vitamin C + Magnesium: benign supplement pairing.\n"
+            "3. Fish oil + Ginger: increased bleeding risk.\n"
+        )
+        result = oracle.evaluate(output)
+        assert result.claimed_count == 3
+        assert result.false_positive_count == 2
+        assert result.precision < 1.0
+
 
 # ===========================================================================
 # KeywordMatchOracle — math proof domain
@@ -299,6 +311,39 @@ class TestOracleComparison:
         summary = comp.summary()
         assert "0.90" in summary
         assert "recall" in summary.lower()
+
+
+class TestObjectiveVerificationConfig:
+    def test_roundtrip_and_execution(self) -> None:
+        from autocontext.execution.objective_verification import (
+            GroundTruthItem,
+            ObjectiveVerificationConfig,
+            run_objective_verification,
+        )
+
+        config = ObjectiveVerificationConfig(
+            ground_truth=[
+                GroundTruthItem(
+                    item_id="warfarin-aspirin",
+                    description="Warfarin + Aspirin",
+                    match_keywords=[["warfarin"], ["aspirin"]],
+                    weight="high",
+                )
+            ],
+            claim_patterns=[r"^\d+\."],
+            metadata={"domain": "l19"},
+        )
+
+        restored = ObjectiveVerificationConfig.from_dict(config.to_dict())
+        payload = run_objective_verification(
+            output="1. Warfarin + Aspirin: high severity bleeding interaction.",
+            rubric_score=0.8,
+            config=restored,
+        )
+
+        assert payload["oracle_result"]["found_count"] == 1
+        assert payload["comparison"]["objective_recall"] == 1.0
+        assert payload["config_metadata"]["domain"] == "l19"
 
 
 class TestCompareOracleVsRubric:

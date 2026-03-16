@@ -26,6 +26,10 @@ from autocontext.execution.agent_task_evolution import (
 )
 from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
 from autocontext.execution.judge import LLMJudge
+from autocontext.execution.objective_verification import (
+    ObjectiveVerificationConfig,
+    run_objective_verification,
+)
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.storage.sqlite_store import SQLiteStore
@@ -48,6 +52,7 @@ class TaskConfig:
     rubric: str | None = None
     task_prompt: str | None = None
     revision_prompt: str | None = None
+    objective_verification: dict[str, Any] | None = None
 
     @classmethod
     def from_json(cls, data: str | None) -> TaskConfig:
@@ -66,10 +71,14 @@ class TaskConfig:
             rubric=parsed.get("rubric"),
             task_prompt=parsed.get("task_prompt"),
             revision_prompt=parsed.get("revision_prompt"),
+            objective_verification=parsed.get("objective_verification"),
         )
 
 
-def _serialize_result(result: ImprovementResult) -> str:
+def _serialize_result(
+    result: ImprovementResult,
+    objective_verification: dict[str, Any] | None = None,
+) -> str:
     """Serialize an ImprovementResult to JSON."""
     rounds = []
     for r in result.rounds:
@@ -91,12 +100,15 @@ def _serialize_result(result: ImprovementResult) -> str:
         data["duration_ms"] = result.duration_ms
     if result.judge_calls:
         data["judge_calls"] = result.judge_calls
+    if objective_verification is not None:
+        data["objective_verification"] = objective_verification
     return json.dumps(data)
 
 
 def _serialize_evolution_result(
     trajectory: AgentTaskTrajectory,
     generation_results: list[ImprovementResult],
+    objective_verification: dict[str, Any] | None = None,
 ) -> str:
     """Serialize a multi-generation AgentTask evolution run to JSON."""
     final_rounds: list[dict[str, object]] = []
@@ -124,16 +136,35 @@ def _serialize_evolution_result(
         for idx, result in enumerate(generation_results)
     ]
 
-    return json.dumps(
-        {
-            "mode": "agent_task_multi_generation",
-            "trajectory": trajectory.to_dict(),
-            "generations": generation_summaries,
-            "rounds": final_rounds,
-            "best_score": trajectory.metadata.get("best_score", trajectory.final_score),
-            "met_threshold": any(result.met_threshold for result in generation_results),
-            "total_rounds": sum(result.total_rounds for result in generation_results),
-        }
+    data: dict[str, Any] = {
+        "mode": "agent_task_multi_generation",
+        "trajectory": trajectory.to_dict(),
+        "generations": generation_summaries,
+        "rounds": final_rounds,
+        "best_score": trajectory.metadata.get("best_score", trajectory.final_score),
+        "met_threshold": any(result.met_threshold for result in generation_results),
+        "total_rounds": sum(result.total_rounds for result in generation_results),
+    }
+    if objective_verification is not None:
+        data["objective_verification"] = objective_verification
+    return json.dumps(data)
+
+
+def _build_objective_payload(
+    output: str,
+    rubric_score: float,
+    config: TaskConfig,
+) -> dict[str, Any] | None:
+    """Run optional objective verification for a task result."""
+    if not config.objective_verification:
+        return None
+    verification_config = ObjectiveVerificationConfig.from_dict(config.objective_verification)
+    if not verification_config.ground_truth:
+        return None
+    return run_objective_verification(
+        output=output,
+        rubric_score=rubric_score,
+        config=verification_config,
     )
 
 
@@ -391,6 +422,11 @@ class TaskRunner:
                     required_concepts=config.required_concepts,
                     calibration_examples=config.calibration_examples,
                 )
+                objective_payload = _build_objective_payload(
+                    result.best_output,
+                    result.best_score,
+                    config,
+                )
 
                 self.store.complete_task(
                     task_id=task_id,
@@ -398,7 +434,7 @@ class TaskRunner:
                     best_output=result.best_output,
                     total_rounds=result.total_rounds,
                     met_threshold=result.met_threshold,
-                    result_json=_serialize_result(result),
+                    result_json=_serialize_result(result, objective_payload),
                 )
 
             logger.info(
@@ -482,6 +518,7 @@ class TaskRunner:
         met_threshold = any(result.met_threshold for result in ordered_results)
         best_score = state.best_score
         best_output = state.best_output
+        objective_payload = _build_objective_payload(best_output, best_score, config)
 
         self.store.complete_task(
             task_id=task_id,
@@ -489,7 +526,11 @@ class TaskRunner:
             best_output=best_output,
             total_rounds=total_rounds,
             met_threshold=met_threshold,
-            result_json=_serialize_evolution_result(trajectory, ordered_results),
+            result_json=_serialize_evolution_result(
+                trajectory,
+                ordered_results,
+                objective_payload,
+            ),
         )
 
         best_generation = max(
@@ -580,6 +621,7 @@ def enqueue_task(
     quality_threshold: float = 0.9,
     min_rounds: int = 1,
     initial_output: str | None = None,
+    objective_verification: dict[str, Any] | None = None,
     priority: int = 0,
 ) -> str:
     """Convenience function to enqueue a task. Returns the task ID."""
@@ -594,6 +636,7 @@ def enqueue_task(
         "reference_context": reference_context,
         "required_concepts": required_concepts,
         "initial_output": initial_output,
+        "objective_verification": objective_verification,
     }
     # Remove None values
     config = {k: v for k, v in config.items() if v is not None}
