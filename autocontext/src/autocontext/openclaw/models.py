@@ -18,6 +18,11 @@ class ScenarioInfo(BaseModel):
         "artifact_editing",
         "investigation",
         "workflow",
+        "negotiation",
+        "schema_evolution",
+        "tool_fragility",
+        "operator_loop",
+        "coordination",
     ]
     description: str
     strategy_interface: str = ""

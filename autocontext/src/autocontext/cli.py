@@ -137,13 +137,15 @@ def _write_json_stderr(message: str) -> None:
 
 
 def _is_agent_task(scenario_name: str) -> bool:
-    """Check if a scenario name maps to the agent_task family."""
+    """Check if a scenario should use the direct agent-task execution path."""
     if scenario_name not in SCENARIO_REGISTRY:
         return False
     from autocontext.scenarios.families import detect_family
 
     family = detect_family(SCENARIO_REGISTRY[scenario_name]())
-    return family is not None and family.name == "agent_task"
+    if family is None:
+        return False
+    return issubclass(family.interface_class, AgentTaskInterface)
 
 
 def _resolve_agent_task_runtime(settings: AppSettings, scenario_name: str) -> tuple[LLMProvider, str]:
