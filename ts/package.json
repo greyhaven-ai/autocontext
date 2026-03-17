@@ -6,8 +6,17 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
+    "README.md",
     "dist",
     "migrations"
+  ],
+  "keywords": [
+    "agents",
+    "autocontext",
+    "evaluation",
+    "harness",
+    "llm",
+    "mcp"
   ],
   "bin": {
     "autoctx": "dist/cli/index.js"
