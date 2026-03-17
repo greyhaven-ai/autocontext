@@ -283,8 +283,8 @@ class SimulationInterface(ScenarioInterface):
     def validate_actions(self, state: Mapping[str, Any], player_id: str, actions: Mapping[str, Any]) -> tuple[bool, str]:
         del player_id
         plan = actions.get("actions")
-        if not isinstance(plan, list) or not plan:
-            return False, "strategy must contain a non-empty 'actions' list"
+        if not isinstance(plan, list):
+            return False, "strategy must contain an 'actions' list"
         available_names = {spec.name for spec in self.get_available_actions(dict(state))}
         for idx, raw_action in enumerate(plan):
             if not isinstance(raw_action, Mapping):

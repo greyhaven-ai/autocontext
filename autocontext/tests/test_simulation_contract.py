@@ -535,6 +535,41 @@ class TestEndToEndSimulation:
 
 
 # ---------------------------------------------------------------------------
+# AC-308: Empty actions list should not hard-fail
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyActionsValidation:
+    def test_empty_actions_list_passes_validation(self) -> None:
+        """AC-308: An empty actions list should pass validation, not hard-fail."""
+        sim = _MockSimulation()
+        state = sim.initial_state(seed=1)
+        valid, reason = sim.validate_actions(state, "challenger", {"actions": []})
+        assert valid is True, f"Empty actions list should be accepted, got: {reason}"
+
+    def test_missing_actions_key_still_fails(self) -> None:
+        """A strategy without the 'actions' key at all is structurally invalid."""
+        sim = _MockSimulation()
+        state = sim.initial_state(seed=1)
+        valid, _ = sim.validate_actions(state, "challenger", {"plan": "something"})
+        assert valid is False
+
+    def test_non_list_actions_still_fails(self) -> None:
+        """Actions must be a list, not a string or other type."""
+        sim = _MockSimulation()
+        state = sim.initial_state(seed=1)
+        valid, _ = sim.validate_actions(state, "challenger", {"actions": "deploy svc_a"})
+        assert valid is False
+
+    def test_empty_actions_produces_valid_result(self) -> None:
+        """An empty actions list should execute without crashing and produce a result."""
+        sim = _MockSimulation()
+        result = sim.execute_match({"actions": []}, seed=1)
+        assert 0.0 <= result.score <= 1.0
+        assert result.summary  # has a summary string
+
+
+# ---------------------------------------------------------------------------
 # Default methods
 # ---------------------------------------------------------------------------
 
