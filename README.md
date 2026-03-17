@@ -89,6 +89,8 @@ The Python package exposes the full `autoctx` control-plane CLI (`run`, `serve`,
 - Start the MCP server: `uv run autoctx mcp-serve`
 - Wait on a monitor condition: `uv run autoctx wait <condition_id> --json`
 
+`operator-in-the-loop` remains a typed scenario family for capability discovery and experimentation, but autocontext does not scaffold executable operator-loop runtimes. Use datasets, tools, or live-agent experiments instead of harness-owned escalation scripts.
+
 MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenClaw agent to trigger training, use the file-based host watcher flow documented in [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md).
 
 ## Recent Highlights

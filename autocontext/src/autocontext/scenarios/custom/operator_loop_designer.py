@@ -10,43 +10,8 @@ from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecMod
 OPERATOR_LOOP_SPEC_START = "<!-- OPERATOR_LOOP_SPEC_START -->"
 OPERATOR_LOOP_SPEC_END = "<!-- OPERATOR_LOOP_SPEC_END -->"
 
-_EXAMPLE_SPEC = {
-    "description": "Customer support triage with escalation policy.",
-    "environment_description": "Help desk system with tiered support.",
-    "initial_state_description": "Ticket received, agent begins triage.",
-    "escalation_policy": {
-        "escalation_threshold": "high",
-        "max_escalations": 3,
-    },
-    "success_criteria": [
-        "resolve issue or correctly escalate",
-        "minimize unnecessary escalations",
-    ],
-    "failure_modes": [
-        "over-escalation (escalating trivial issues)",
-        "under-escalation (failing to escalate critical issues)",
-    ],
-    "max_steps": 10,
-    "actions": [
-        {
-            "name": "respond",
-            "description": "Reply to the customer directly.",
-            "parameters": {"message": "string"},
-            "preconditions": [],
-            "effects": ["response_sent"],
-        },
-        {
-            "name": "escalate_ticket",
-            "description": "Escalate to a human operator.",
-            "parameters": {"reason": "string"},
-            "preconditions": [],
-            "effects": ["escalated"],
-        },
-    ],
-}
-
 OPERATOR_LOOP_DESIGNER_SYSTEM = (
-    "You are a scenario designer for autocontext. "
+    "You are describing operator-in-the-loop capabilities for autocontext. "
     "Given a natural-language request for an operator-in-the-loop scenario, "
     "produce an OperatorLoopSpec JSON wrapped in delimiters.\n\n"
     f"{OPERATOR_LOOP_SPEC_START}\n{{ ... }}\n{OPERATOR_LOOP_SPEC_END}\n\n"
@@ -64,9 +29,9 @@ OPERATOR_LOOP_DESIGNER_SYSTEM = (
     "}\n\n"
     "Rules:\n"
     "- escalation_policy must include escalation_threshold and max_escalations\n"
-    "- include at least one action that acts and one that escalates\n"
-    "- failure_modes should include both over-escalation and under-escalation\n\n"
-    f"Example:\n{OPERATOR_LOOP_SPEC_START}\n{json.dumps(_EXAMPLE_SPEC, indent=2)}\n{OPERATOR_LOOP_SPEC_END}\n"
+    "- keep the scenario neutral and capability-oriented\n"
+    "- do not anchor the scenario to a canned domain, action set, or scoring pattern\n"
+    "- avoid prescriptive examples that imply a preferred escalation workflow\n"
 )
 
 

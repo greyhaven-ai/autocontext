@@ -33,8 +33,7 @@ import {
   NegotiationCreator,
 } from "./negotiation-creator.js";
 import {
-  type OperatorLoopScenarioHandle,
-  OperatorLoopCreator,
+  OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
 } from "./operator-loop-creator.js";
 import {
   type SchemaEvolutionScenarioHandle,
@@ -65,7 +64,6 @@ export type CreatedScenario =
   | CoordinationScenarioHandle
   | InvestigationScenarioHandle
   | NegotiationScenarioHandle
-  | OperatorLoopScenarioHandle
   | SchemaEvolutionScenarioHandle
   | SimulationScenarioHandle
   | ToolFragilityScenarioHandle
@@ -210,11 +208,7 @@ export class AgentTaskCreator {
       }).create(description, name);
     }
     if (family === "operator_loop") {
-      return new OperatorLoopCreator({
-        provider: this.provider,
-        model: this.model,
-        knowledgeRoot: this.knowledgeRoot,
-      }).create(description, name);
+      throw new Error(OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED);
     }
     if (family === "coordination") {
       return new CoordinationCreator({
