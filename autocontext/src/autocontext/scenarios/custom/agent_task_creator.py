@@ -123,6 +123,11 @@ class AgentTaskCreator:
         logger.info("designing agent task from description")
         spec = design_agent_task(description, self.llm_fn)
 
+        # 1.5 Auto-heal: generate synthetic sample_input if needed (AC-309)
+        from autocontext.scenarios.custom.spec_auto_heal import heal_spec_sample_input
+
+        spec = heal_spec_sample_input(spec, description=description)
+
         # 2. Validate spec
         spec_errors = validate_for_family("agent_task", asdict(spec))
         if spec_errors:
