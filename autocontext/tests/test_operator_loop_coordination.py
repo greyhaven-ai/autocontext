@@ -779,9 +779,11 @@ class TestCoordinationDesigner:
 
 
 class TestOperatorLoopCodegen:
-    def test_generate_class(self) -> None:
-        from autocontext.scenarios.custom.family_pipeline import validate_source_for_family
-        from autocontext.scenarios.custom.operator_loop_codegen import generate_operator_loop_class
+    def test_runtime_codegen_is_disabled(self) -> None:
+        from autocontext.scenarios.custom.operator_loop_codegen import (
+            OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
+            generate_operator_loop_class,
+        )
         from autocontext.scenarios.custom.operator_loop_spec import OperatorLoopSpec
         from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
 
@@ -799,9 +801,9 @@ class TestOperatorLoopCodegen:
                 ),
             ],
         )
-        source = generate_operator_loop_class(spec, name="test_op")
-        errors = validate_source_for_family("operator_loop", source)
-        assert errors == [], f"validation errors: {errors}"
+        with pytest.raises(NotImplementedError, match="intentionally not scaffolded"):
+            generate_operator_loop_class(spec, name="test_op")
+        assert "live-agent experiments" in OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED
 
 
 class TestCoordinationCodegen:
@@ -836,50 +838,19 @@ class TestCoordinationCodegen:
 
 
 class TestOperatorLoopCreator:
-    def test_create_and_persist(self, tmp_path: Path) -> None:
-        import json
-
-        from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
-        from autocontext.scenarios.custom.operator_loop_designer import (
-            OPERATOR_LOOP_SPEC_END,
-            OPERATOR_LOOP_SPEC_START,
+    def test_create_is_disabled(self, tmp_path: Path) -> None:
+        from autocontext.scenarios.custom.operator_loop_codegen import (
+            OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
         )
-        from autocontext.scenarios.operator_loop import OperatorLoopInterface
-
-        fake_spec = {
-            "description": "test",
-            "environment_description": "env",
-            "initial_state_description": "init",
-            "escalation_policy": {
-                "escalation_threshold": "medium",
-                "max_escalations": 2,
-            },
-            "success_criteria": ["done"],
-            "failure_modes": [],
-            "max_steps": 6,
-            "actions": [
-                {
-                    "name": "act", "description": "a",
-                    "parameters": {}, "preconditions": [], "effects": [],
-                }
-            ],
-        }
+        from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
 
         def fake_llm(system: str, user: str) -> str:
-            return (
-                f"{OPERATOR_LOOP_SPEC_START}\n"
-                f"{json.dumps(fake_spec)}\n"
-                f"{OPERATOR_LOOP_SPEC_END}"
-            )
+            return "{}"
 
         creator = OperatorLoopCreator(fake_llm, tmp_path)
-        scenario = creator.create("test", name="test_op_creator")
-        assert isinstance(scenario, OperatorLoopInterface)
-
-        scenario_dir = tmp_path / "_custom_scenarios" / "test_op_creator"
-        assert (scenario_dir / "scenario.py").exists()
-        assert (scenario_dir / "spec.json").exists()
-        assert (scenario_dir / "scenario_type.txt").read_text().strip() == "operator_loop"
+        with pytest.raises(NotImplementedError, match="intentionally not scaffolded"):
+            creator.create("test", name="test_op_creator")
+        assert "datasets" in OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED
 
 
 class TestCoordinationCreator:
@@ -931,48 +902,22 @@ class TestCoordinationCreator:
 
 
 class TestAgentTaskCreatorRouting:
-    def test_routes_to_operator_loop(self, tmp_path: Path) -> None:
-        import json
-
+    def test_rejects_operator_loop_runtime_scaffolding(self, tmp_path: Path) -> None:
         from autocontext.scenarios.custom.agent_task_creator import AgentTaskCreator
-        from autocontext.scenarios.custom.operator_loop_designer import (
-            OPERATOR_LOOP_SPEC_END,
-            OPERATOR_LOOP_SPEC_START,
+        from autocontext.scenarios.custom.operator_loop_codegen import (
+            OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
         )
-        from autocontext.scenarios.operator_loop import OperatorLoopInterface
-
-        fake_spec = {
-            "description": "routing test",
-            "environment_description": "env",
-            "initial_state_description": "init",
-            "escalation_policy": {
-                "escalation_threshold": "high",
-                "max_escalations": 2,
-            },
-            "success_criteria": ["done"],
-            "failure_modes": [],
-            "max_steps": 6,
-            "actions": [
-                {
-                    "name": "act", "description": "a",
-                    "parameters": {}, "preconditions": [], "effects": [],
-                }
-            ],
-        }
 
         def fake_llm(system: str, user: str) -> str:
-            return (
-                f"{OPERATOR_LOOP_SPEC_START}\n"
-                f"{json.dumps(fake_spec)}\n"
-                f"{OPERATOR_LOOP_SPEC_END}"
-            )
+            return "{}"
 
         creator = AgentTaskCreator(fake_llm, tmp_path)
-        scenario = creator.create(
-            "An operator-in-the-loop scenario where the agent must "
-            "decide when to escalate and when to request clarification"
-        )
-        assert isinstance(scenario, OperatorLoopInterface)
+        with pytest.raises(NotImplementedError, match="intentionally not scaffolded"):
+            creator.create(
+                "An operator-in-the-loop scenario where the agent must "
+                "decide when to escalate and when to request clarification"
+            )
+        assert "family metadata" in OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED
 
     def test_routes_to_coordination(self, tmp_path: Path) -> None:
         import json

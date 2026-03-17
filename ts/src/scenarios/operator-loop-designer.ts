@@ -4,42 +4,7 @@ import { parseRawOperatorLoopSpec } from "./operator-loop-spec.js";
 export const OPERATOR_LOOP_SPEC_START = "<!-- OPERATOR_LOOP_SPEC_START -->";
 export const OPERATOR_LOOP_SPEC_END = "<!-- OPERATOR_LOOP_SPEC_END -->";
 
-const EXAMPLE_SPEC = {
-  description: "Customer support triage with escalation policy.",
-  environment_description: "Help desk system with tiered support.",
-  initial_state_description: "Ticket received, agent begins triage.",
-  escalation_policy: {
-    escalation_threshold: "high",
-    max_escalations: 3,
-  },
-  success_criteria: [
-    "resolve issue or correctly escalate",
-    "minimize unnecessary escalations",
-  ],
-  failure_modes: [
-    "over-escalation (escalating trivial issues)",
-    "under-escalation (failing to escalate critical issues)",
-  ],
-  max_steps: 10,
-  actions: [
-    {
-      name: "respond",
-      description: "Reply to the customer directly.",
-      parameters: { message: "string" },
-      preconditions: [],
-      effects: ["response_sent"],
-    },
-    {
-      name: "escalate_ticket",
-      description: "Escalate to a human operator.",
-      parameters: { reason: "string" },
-      preconditions: [],
-      effects: ["escalated"],
-    },
-  ],
-};
-
-export const OPERATOR_LOOP_DESIGNER_SYSTEM = `You are a scenario designer for autocontext.
+export const OPERATOR_LOOP_DESIGNER_SYSTEM = `You are describing operator-in-the-loop capabilities for autocontext.
 Given a natural-language request for an operator-in-the-loop scenario, produce an OperatorLoopSpec JSON.
 
 Wrap the output in delimiters:
@@ -69,13 +34,9 @@ Schema:
 
 Rules:
 - escalation_policy must include escalation_threshold and max_escalations
-- include at least one action that acts and one that escalates
-- failure_modes should include both over-escalation and under-escalation
-
-Example:
-${OPERATOR_LOOP_SPEC_START}
-${JSON.stringify(EXAMPLE_SPEC, null, 2)}
-${OPERATOR_LOOP_SPEC_END}
+- keep the scenario neutral and capability-oriented
+- do not anchor the scenario to a canned domain, action set, or scoring pattern
+- avoid prescriptive examples that imply a preferred escalation workflow
 `;
 
 export function parseOperatorLoopSpec(text: string): OperatorLoopSpec {

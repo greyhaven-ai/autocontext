@@ -27,6 +27,8 @@ uv sync --group dev
 
 Use the repo-level `.env.example` as the reference for available `AUTOCONTEXT_*` settings.
 
+`operator-in-the-loop` remains a typed scenario family for capability discovery and experimentation, but autocontext does not scaffold executable operator-loop runtimes. Use datasets, tools, or live-agent experiments instead of harness-owned escalation scripts.
+
 Run a deterministic local scenario:
 
 ```bash
