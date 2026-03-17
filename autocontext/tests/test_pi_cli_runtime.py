@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -228,6 +230,23 @@ def test_create_role_client_pi() -> None:
     s = AppSettings(pi_command="/usr/bin/pi", pi_timeout=60.0)
     client = create_role_client("pi", s)
     assert isinstance(client, RuntimeBridgeClient)
+
+
+def test_create_role_client_pi_uses_scenario_handoff(tmp_path: Path) -> None:
+    s = AppSettings(
+        knowledge_root=tmp_path / "knowledge",
+        pi_command="/usr/bin/pi",
+        pi_timeout=60.0,
+    )
+    with patch(
+        "autocontext.providers.scenario_routing.resolve_pi_model",
+        return_value=SimpleNamespace(checkpoint_path="/models/grid_ctf/pi-v2"),
+    ) as mock_resolve:
+        client = create_role_client("pi", s, scenario_name="grid_ctf")
+
+    assert isinstance(client, RuntimeBridgeClient)
+    assert client._runtime._config.model == "/models/grid_ctf/pi-v2"  # type: ignore[attr-defined]
+    mock_resolve.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -260,6 +260,30 @@ class TestOrchestratorPerRoleWiring:
         assert orch.coach.runtime.client is orch.architect.runtime.client
 
     @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_pi_override_rebuilds_client_with_scenario_context(self, mock_create: MagicMock) -> None:
+        """Pi overrides are rebound at execution time so scenario-specific handoff can run."""
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        init_client = MagicMock(spec=LanguageModelClient)
+        scenario_client = MagicMock(spec=LanguageModelClient)
+        mock_create.side_effect = [init_client, scenario_client]
+
+        settings = AppSettings(agent_provider="deterministic", competitor_provider="pi")
+        orch = AgentOrchestrator.from_settings(settings)
+
+        client, _ = orch.resolve_role_execution(
+            "competitor",
+            generation=1,
+            scenario_name="grid_ctf",
+        )
+
+        assert client is scenario_client
+        assert mock_create.call_args_list[0].args == ("pi", settings)
+        assert mock_create.call_args_list[1].args == ("pi", settings)
+        assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf"}
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
     def test_override_does_not_affect_unset_roles(self, mock_create: MagicMock) -> None:
         """Roles without overrides still use the default provider."""
         from autocontext.agents.orchestrator import AgentOrchestrator

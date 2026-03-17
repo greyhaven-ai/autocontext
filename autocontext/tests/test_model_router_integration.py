@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.agents.model_router import ModelRouter, TierConfig
@@ -134,3 +135,35 @@ def test_orchestrator_routes_registered_local_model_for_scenario(tmp_path: Path)
     assert config is not None
     assert config.provider_type == "mlx"
     assert config.model == str(local_model)
+
+
+def test_orchestrator_local_model_discovery_uses_scenario_routing(tmp_path: Path) -> None:
+    knowledge_root = tmp_path / "knowledge"
+    local_model = tmp_path / "distilled" / "grid_ctf_bundle"
+    local_model.mkdir(parents=True, exist_ok=True)
+
+    settings = AppSettings(
+        role_routing="auto",
+        knowledge_root=knowledge_root,
+        runs_root=tmp_path / "runs",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
+    orch = AgentOrchestrator(client=DeterministicDevClient(), settings=settings)
+
+    with patch(
+        "autocontext.providers.scenario_routing.resolve_provider_for_context",
+        return_value=type(
+            "_Decision",
+            (),
+            {
+                "fallback_used": False,
+                "provider_type": "mlx",
+                "model": str(local_model),
+            },
+        )(),
+    ) as mock_resolve:
+        models = orch._available_local_models("grid_ctf", runtime_type="provider")
+
+    assert models == [str(local_model)]
+    mock_resolve.assert_called_once()

@@ -195,7 +195,7 @@ class AgentOrchestrator:
         self.settings = settings
         self._artifacts = artifacts
         self._harness_coverage_cache: dict[str, HarnessCoverage | None] = {}
-        self._routed_clients: dict[tuple[str, str | None], LanguageModelClient] = {}
+        self._routed_clients: dict[tuple[str, str | None, str | None], LanguageModelClient] = {}
         runtime = SubagentRuntime(client=client)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor)
         self.translator = StrategyTranslator(runtime, settings.model_translator)
@@ -260,22 +260,54 @@ class AgentOrchestrator:
             if not scenario_name:
                 return []
             try:
-                from autocontext.training import model_registry as distilled_model_registry
+                from autocontext.providers.scenario_routing import (
+                    ScenarioRoutingContext,
+                    resolve_provider_for_context,
+                )
+                from autocontext.training.model_registry import ModelRegistry
 
-                registry = distilled_model_registry.ModelRegistry(self.settings.knowledge_root)
-                record = distilled_model_registry.resolve_model(
-                    registry,
-                    scenario=scenario_name,
-                    backend="mlx",
-                    runtime_type=runtime_type,
+                decision = resolve_provider_for_context(
+                    ScenarioRoutingContext(
+                        scenario=scenario_name,
+                        backend="mlx",
+                        runtime_type=runtime_type,
+                    ),
+                    ModelRegistry(self.settings.knowledge_root),
+                    fallback_provider="",
+                    fallback_model="",
                 )
             except Exception:
                 return []
-            if record is None:
+            if decision.fallback_used or decision.provider_type != "mlx":
                 return []
-            candidate_path = record.checkpoint_path.strip()
+            candidate_path = decision.model.strip()
             return [candidate_path] if candidate_path and Path(candidate_path).exists() else []
         return [model_path] if Path(model_path).exists() else []
+
+    def _scenario_bound_override_client(
+        self,
+        role: str,
+        *,
+        scenario_name: str,
+    ) -> LanguageModelClient | None:
+        explicit_provider = self._configured_role_provider(role)
+        if explicit_provider not in {"pi", "pi-rpc"} or not scenario_name:
+            return None
+
+        from autocontext.agents.provider_bridge import create_role_client
+
+        key = (explicit_provider, None, scenario_name)
+        cached = self._routed_clients.get(key)
+        if cached is not None:
+            return cached
+        client = create_role_client(
+            explicit_provider,
+            self.settings,
+            scenario_name=scenario_name,
+        )
+        if client is not None:
+            self._routed_clients[key] = client
+        return client
 
     def _resolve_role_provider_config(
         self,
@@ -300,7 +332,13 @@ class AgentOrchestrator:
         )
         return self._role_router.route(role, context=context)
 
-    def _client_for_provider_config(self, role: str, config: ProviderConfig) -> LanguageModelClient:
+    def _client_for_provider_config(
+        self,
+        role: str,
+        config: ProviderConfig,
+        *,
+        scenario_name: str = "",
+    ) -> LanguageModelClient:
         default_provider = self.settings.agent_provider.lower()
         openai_like_default = default_provider in ("openai", "openai-compatible", "ollama", "vllm")
         if (
@@ -317,6 +355,10 @@ class AgentOrchestrator:
         explicit_provider = self._configured_role_provider(role)
         if explicit_provider and explicit_provider == config.provider_type.lower():
             explicit_client = self._role_clients.get(role)
+            if explicit_provider in {"pi", "pi-rpc"}:
+                scenario_client = self._scenario_bound_override_client(role, scenario_name=scenario_name)
+                if scenario_client is not None:
+                    return scenario_client
             if explicit_client is not None and (
                 config.provider_class != ProviderClass.LOCAL
                 or config.model == self.settings.mlx_model_path
@@ -333,7 +375,7 @@ class AgentOrchestrator:
 
         from autocontext.agents.provider_bridge import create_role_client
 
-        key = (config.provider_type.lower(), config.model)
+        key = (config.provider_type.lower(), config.model, scenario_name or None)
         cached = self._routed_clients.get(key)
         if cached is not None:
             return cached
@@ -341,6 +383,7 @@ class AgentOrchestrator:
             config.provider_type,
             self.settings,
             model_override=config.model,
+            scenario_name=scenario_name,
         )
         if client is None:
             return self._client_for_role(role)
@@ -356,7 +399,7 @@ class AgentOrchestrator:
         is_plateau: bool = False,
         scenario_name: str = "",
     ) -> tuple[LanguageModelClient, str | None]:
-        client = self._client_for_role(role)
+        client = self._scenario_bound_override_client(role, scenario_name=scenario_name) or self._client_for_role(role)
         model = self.resolve_model(
             role,
             generation=generation,
@@ -373,7 +416,7 @@ class AgentOrchestrator:
         )
         if provider_config is None:
             return client, model
-        client = self._client_for_provider_config(role, provider_config)
+        client = self._client_for_provider_config(role, provider_config, scenario_name=scenario_name)
         if provider_config.provider_class == ProviderClass.LOCAL:
             return client, provider_config.model
         return client, model or provider_config.model

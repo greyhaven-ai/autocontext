@@ -166,6 +166,7 @@ def create_role_client(
     settings: AppSettings,
     *,
     model_override: str | None = None,
+    scenario_name: str = "",
 ) -> LanguageModelClient | None:
     """Create a LanguageModelClient for a per-role provider override.
 
@@ -173,6 +174,7 @@ def create_role_client(
         provider_type: Provider name (e.g. "mlx", "anthropic", "deterministic").
             Empty string returns None (use default).
         settings: App settings for provider configuration.
+        scenario_name: Scenario name used for scenario-local runtime handoff.
 
     Returns:
         A LanguageModelClient, or None if provider_type is empty.
@@ -216,13 +218,29 @@ def create_role_client(
         )
 
     if provider_type == "pi":
+        from autocontext.providers.scenario_routing import resolve_pi_model
         from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
+        from autocontext.training.model_registry import ModelRegistry
+
+        resolved_model = settings.pi_model
+        if scenario_name or settings.pi_model:
+            try:
+                handoff = resolve_pi_model(
+                    ModelRegistry(settings.knowledge_root),
+                    scenario=scenario_name,
+                    backend="mlx",
+                    manual_override=settings.pi_model or None,
+                )
+            except Exception:
+                handoff = None
+            if handoff is not None:
+                resolved_model = handoff.checkpoint_path
 
         config = PiCLIConfig(
             pi_command=settings.pi_command,
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
-            model=settings.pi_model,
+            model=resolved_model,
         )
         return RuntimeBridgeClient(PiCLIRuntime(config))
 
