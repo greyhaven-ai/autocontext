@@ -444,6 +444,86 @@ class TestEnqueueFunction:
         assert payload["objective_verification"]["oracle_result"]["false_positive_count"] >= 1
         assert payload["objective_verification"]["comparison"]["rubric_score"] == 0.82
 
+    def test_run_once_persists_dataset_provenance_for_objective_verification(self, store):
+        provider = _MockProvider([
+            "1. Warfarin + Aspirin: high severity bleeding interaction.",
+            _judge_response(0.84, "good"),
+        ])
+        config = {
+            "task_prompt": "Find clinically relevant drug interactions.",
+            "rubric": "Quality and clinical accuracy",
+            "max_rounds": 1,
+            "objective_verification": {
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin bleeding risk",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    }
+                ],
+                "metadata": {
+                    "dataset_id": "l19-core",
+                    "dataset_version": "1.0.0",
+                    "dataset_name": "L19 Core",
+                    "dataset_provenance": {"source": "fda"},
+                },
+            },
+        }
+        store.enqueue_task("t2b", "l19-drug-interactions", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        payload = json.loads(result["result_json"])
+        record = payload["objective_verification"]["verification_run_record"]
+        assert record["dataset_id"] == "l19-core"
+        assert record["dataset_version"] == "1.0.0"
+        assert record["run_id"] == "t2b"
+        assert record["metadata"]["dataset_provenance"]["source"] == "fda"
+
+    def test_run_once_feeds_oracle_misses_into_revision_prompt(self, store):
+        provider = _MockProvider([
+            "1. Warfarin + Aspirin: high severity bleeding interaction.",
+            _judge_response(0.55, "missed important interactions"),
+            "1. Warfarin + Aspirin: high severity bleeding interaction.\n"
+            "2. Metformin + Lisinopril: hypotension risk.",
+            _judge_response(0.93, "complete and accurate"),
+        ])
+        config = {
+            "task_prompt": "Find clinically relevant drug interactions.",
+            "rubric": "Quality and clinical accuracy",
+            "max_rounds": 2,
+            "quality_threshold": 0.9,
+            "objective_verification": {
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin bleeding risk",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    },
+                    {
+                        "item_id": "metformin-lisinopril",
+                        "description": "Metformin + Lisinopril hypotension",
+                        "match_keywords": [["metformin"], ["lisinopril"]],
+                        "weight": "moderate",
+                    },
+                ],
+            },
+        }
+        store.enqueue_task("t2c", "l19-drug-interactions", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        revision_prompt = provider.calls[2]["user"]
+        assert "Objective Verification Feedback" in revision_prompt
+        assert "Missed items that should have been identified" in revision_prompt
+        assert "metformin-lisinopril" in revision_prompt
+
     def test_run_once_persists_rubric_calibration(self, store):
         store.insert_human_feedback(
             scenario_name="l19-drug-interactions",

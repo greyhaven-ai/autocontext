@@ -149,6 +149,36 @@ class ImprovementLoop:
         prev_valid_score: float | None = None
         plateau_count = 0
 
+        def _apply_revision_feedback(
+            current_text: str,
+            judge_result: AgentTaskResult,
+        ) -> AgentTaskResult:
+            callback = state.get("revision_feedback_callback")
+            if not callable(callback):
+                state.pop("oracle_revision_feedback_context", None)
+                return judge_result
+            try:
+                context = callback(current_text, judge_result)
+            except Exception as exc:
+                logger.warning("revision feedback callback failed: %s", exc)
+                state.pop("oracle_revision_feedback_context", None)
+                return judge_result
+            if not isinstance(context, str) or not context.strip():
+                state.pop("oracle_revision_feedback_context", None)
+                return judge_result
+
+            state["oracle_revision_feedback_context"] = context
+            return AgentTaskResult(
+                score=judge_result.score,
+                reasoning=(
+                    f"{judge_result.reasoning}\n\n"
+                    "Objective Verification Feedback:\n"
+                    f"{context}"
+                ),
+                dimension_scores=judge_result.dimension_scores,
+                internal_retries=judge_result.internal_retries,
+            )
+
         for round_num in range(1, self.max_rounds + 1):
             logger.info("improvement loop round %d/%d", round_num, self.max_rounds)
 
@@ -197,13 +227,17 @@ class ImprovementLoop:
                 if round_num < self.max_rounds:
                     if last_good_result is not None:
                         logger.info("using feedback from round %d for revision", last_good_result.round_number)
-                        revised = self.task.revise_output(
+                        revision_input = _apply_revision_feedback(
                             current_output,
                             AgentTaskResult(
                                 score=last_good_result.score,
                                 reasoning=last_good_result.reasoning,
                                 dimension_scores=last_good_result.dimension_scores,
                             ),
+                        )
+                        revised = self.task.revise_output(
+                            current_output,
+                            revision_input,
                             state,
                         )
                         revised = clean_revision_output(revised)
@@ -364,6 +398,7 @@ class ImprovementLoop:
                         dimension_scores=result.dimension_scores,
                         internal_retries=result.internal_retries,
                     )
+                revision_result = _apply_revision_feedback(current_output, revision_result)
                 revised = self.task.revise_output(current_output, revision_result, state)
                 revised = clean_revision_output(revised)
                 if revised == current_output:

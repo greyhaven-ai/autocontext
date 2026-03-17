@@ -9,6 +9,13 @@ from typing import TYPE_CHECKING, cast
 
 from autocontext.config import AppSettings
 from autocontext.execution.harness_loader import HarnessLoader
+from autocontext.execution.objective_verification import run_objective_verification
+from autocontext.execution.rubric_calibration import run_judge_calibration
+from autocontext.execution.verification_dataset import (
+    DatasetRegistry,
+    enrich_objective_payload,
+    resolve_objective_verification_config,
+)
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.capabilities import (
@@ -42,6 +49,20 @@ class MtsToolContext:
             max_playbook_versions=settings.playbook_max_versions,
         )
         self.trajectory = ScoreTrajectoryBuilder(self.sqlite)
+
+
+def _resolve_objective_verification(
+    ctx: MtsToolContext,
+    objective_verification: dict[str, object] | None,
+) -> dict[str, object] | None:
+    """Resolve inline or dataset-backed objective verification into live config."""
+    if objective_verification is None:
+        return None
+    config, _dataset = resolve_objective_verification_config(
+        objective_verification,
+        DatasetRegistry(ctx.settings.knowledge_root),
+    )
+    return config.to_dict() if config is not None else None
 
 
 # -- Scenario exploration --
@@ -452,11 +473,6 @@ def evaluate_output(
     data = json.loads(spec_path.read_text(encoding="utf-8"))
 
     from autocontext.execution.judge import LLMJudge
-    from autocontext.execution.objective_verification import (
-        ObjectiveVerificationConfig,
-        run_objective_verification,
-    )
-    from autocontext.execution.rubric_calibration import run_judge_calibration
     from autocontext.providers.registry import get_provider
 
     provider = get_provider(ctx.settings)
@@ -486,13 +502,21 @@ def evaluate_output(
     }
     objective_verification = data.get("objective_verification")
     if isinstance(objective_verification, dict):
-        config = ObjectiveVerificationConfig.from_dict(objective_verification)
-        if config.ground_truth:
-            payload["objective_verification"] = run_objective_verification(
-                output=output,
-                rubric_score=result.score,
-                config=config,
-            )
+        try:
+            resolved = _resolve_objective_verification(ctx, objective_verification)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        if resolved:
+            config, _dataset = resolve_objective_verification_config(resolved)
+            if config is not None and config.ground_truth:
+                verification_payload = run_objective_verification(
+                    output=output,
+                    rubric_score=result.score,
+                    config=config,
+                )
+                payload["objective_verification"] = enrich_objective_payload(
+                    verification_payload,
+                )
     if len(calibration) >= 2:
         report = run_judge_calibration(
             domain=task_name,
@@ -567,6 +591,17 @@ def queue_improvement_run(
 
     from autocontext.execution.task_runner import enqueue_task
 
+    objective_verification = data.get("objective_verification")
+    resolved_objective_verification: dict[str, object] | None = None
+    if isinstance(objective_verification, dict):
+        try:
+            resolved_objective_verification = _resolve_objective_verification(
+                ctx,
+                objective_verification,
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+
     task_id = enqueue_task(
         store=ctx.sqlite,
         spec_name=task_name,
@@ -578,7 +613,7 @@ def queue_improvement_run(
         max_rounds=data.get("max_rounds", 5),
         quality_threshold=data.get("quality_threshold", 0.9),
         initial_output=initial_output,
-        objective_verification=data.get("objective_verification"),
+        objective_verification=resolved_objective_verification,
         priority=priority,
     )
 

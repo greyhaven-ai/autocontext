@@ -8,6 +8,11 @@ from pathlib import Path
 import pytest
 
 from autocontext.config.settings import AppSettings
+from autocontext.execution.verification_dataset import (
+    DatasetProvenance,
+    DatasetRegistry,
+    VerificationDataset,
+)
 from autocontext.mcp.tools import (
     MtsToolContext,
     create_agent_task,
@@ -35,6 +40,32 @@ class _MockProvider(LLMProvider):
 def _judge_response(score: float = 0.85) -> str:
     data = {"score": score, "reasoning": "test", "dimensions": {"quality": score}}
     return f"<!-- JUDGE_RESULT_START -->\n{json.dumps(data)}\n<!-- JUDGE_RESULT_END -->"
+
+
+def _register_l19_dataset(ctx: MtsToolContext, version: str = "1.0.0") -> None:
+    from autocontext.execution.objective_verification import GroundTruthItem
+
+    registry = DatasetRegistry(ctx.settings.knowledge_root)
+    registry.register(VerificationDataset(
+        dataset_id="l19-core",
+        name="L19 Core",
+        provenance=DatasetProvenance(
+            source="FDA Drug Interaction Database",
+            curator="operator-alice",
+            version=version,
+            domain="drug_interaction",
+            updated_at="2026-03-16T12:00:00Z",
+        ),
+        items=[
+            GroundTruthItem(
+                item_id="warfarin-aspirin",
+                description="Warfarin + Aspirin",
+                match_keywords=[["warfarin"], ["aspirin"]],
+                weight="high",
+            ),
+        ],
+        claim_patterns=[r"^\d+\."],
+    ))
 
 
 @pytest.fixture
@@ -182,6 +213,32 @@ class TestEvaluateOutput:
         assert result["objective_verification"]["oracle_result"]["found_count"] == 1
         assert result["objective_verification"]["comparison"]["rubric_score"] == 0.9
 
+    def test_evaluates_with_registered_objective_dataset(self, ctx, monkeypatch):
+        _register_l19_dataset(ctx)
+        create_agent_task(
+            ctx,
+            "l19-dataset-task",
+            "Find serious drug interactions.",
+            "Clinical accuracy",
+            objective_verification={
+                "dataset_id": "l19-core",
+                "dataset_version": "1.0.0",
+            },
+        )
+
+        from autocontext.providers import registry
+        monkeypatch.setattr(registry, "get_provider", lambda s: _MockProvider(_judge_response(0.91)))
+
+        result = evaluate_output(
+            ctx,
+            "l19-dataset-task",
+            "1. Warfarin + Aspirin: high severity bleeding interaction.",
+        )
+        assert result["score"] == 0.91
+        assert result["objective_verification"]["oracle_result"]["found_count"] == 1
+        assert result["objective_verification"]["config_metadata"]["dataset_id"] == "l19-core"
+        assert result["objective_verification"]["config_metadata"]["dataset_version"] == "1.0.0"
+
     def test_evaluates_with_rubric_calibration(self, ctx, monkeypatch):
         create_agent_task(
             ctx,
@@ -231,6 +288,27 @@ class TestQueueTools:
         assert result["priority"] == 5
         assert "task_id" in result
         assert result["generations"] == 1
+
+    def test_queue_task_resolves_registered_objective_dataset(self, ctx):
+        _register_l19_dataset(ctx)
+        create_agent_task(
+            ctx,
+            "queue-dataset-task",
+            "Find serious drug interactions.",
+            "Clinical accuracy",
+            objective_verification={
+                "dataset_id": "l19-core",
+                "dataset_version": "1.0.0",
+            },
+        )
+
+        queued = queue_improvement_run(ctx, "queue-dataset-task", priority=3)
+        task = ctx.sqlite.get_task(queued["task_id"])
+        assert task is not None
+        config = json.loads(task["config_json"])
+        assert config["objective_verification"]["ground_truth"][0]["item_id"] == "warfarin-aspirin"
+        assert config["objective_verification"]["metadata"]["dataset_id"] == "l19-core"
+        assert config["objective_verification"]["metadata"]["dataset_version"] == "1.0.0"
 
     def test_queue_status_empty(self, ctx):
         status = get_queue_status(ctx)

@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -195,6 +197,39 @@ class TestDatasetRegistry:
         loaded = registry.load("ds-1")
         assert loaded is not None
         assert loaded.provenance.version == "2.0.0"
+        original = registry.load("ds-1", version="1.0.0")
+        assert original is not None
+        assert original.name == "Test v1"
+        assert registry.list_versions("ds-1") == ["1.0.0", "2.0.0"]
+
+    def test_rejects_overwrite_of_existing_version(self, tmp_path: Path) -> None:
+        from autocontext.execution.verification_dataset import (
+            DatasetProvenance,
+            DatasetRegistry,
+            VerificationDataset,
+        )
+
+        registry = DatasetRegistry(tmp_path)
+        registry.register(VerificationDataset(
+            dataset_id="ds-1",
+            name="Test v1",
+            provenance=DatasetProvenance(
+                source="test", curator="alice", version="1.0.0",
+                domain="test", updated_at="2026-03-16T12:00:00Z",
+            ),
+            items=_make_items(),
+        ))
+
+        with pytest.raises(ValueError, match="Refusing to overwrite"):
+            registry.register(VerificationDataset(
+                dataset_id="ds-1",
+                name="Changed snapshot",
+                provenance=DatasetProvenance(
+                    source="test", curator="alice", version="1.0.0",
+                    domain="test", updated_at="2026-03-16T12:00:00Z",
+                ),
+                items=[],
+            ))
 
 
 # ===========================================================================
@@ -257,6 +292,50 @@ class TestOracleRevisionFeedback:
             weight_mismatches=[], revision_prompt_context="",
         )
         assert fb.is_empty()
+
+    def test_roundtrip(self) -> None:
+        from autocontext.execution.verification_dataset import OracleRevisionFeedback
+
+        fb = OracleRevisionFeedback(
+            missed_items=["item-1"],
+            false_positives=["item-x"],
+            weight_mismatches=[],
+            revision_prompt_context="Add the missed item.",
+            metadata={"source": "oracle"},
+        )
+        restored = OracleRevisionFeedback.from_dict(fb.to_dict())
+        assert restored.missed_items == ["item-1"]
+        assert restored.metadata["source"] == "oracle"
+
+
+class TestLiveResolutionHelpers:
+    def test_resolve_dataset_reference_builds_live_config(self, tmp_path: Path) -> None:
+        from autocontext.execution.verification_dataset import (
+            DatasetRegistry,
+            VerificationDataset,
+            resolve_objective_verification_config,
+        )
+
+        registry = DatasetRegistry(tmp_path)
+        registry.register(VerificationDataset(
+            dataset_id="l19-core",
+            name="L19 Core",
+            provenance=_make_provenance(),
+            items=_make_items(),
+            claim_patterns=[r"^\d+\."],
+        ))
+
+        config, dataset = resolve_objective_verification_config(
+            {"dataset_id": "l19-core", "dataset_version": "1.0.0"},
+            registry,
+        )
+
+        assert config is not None
+        assert dataset is not None
+        assert len(config.ground_truth) == 2
+        assert config.metadata["dataset_id"] == "l19-core"
+        assert config.metadata["dataset_version"] == "1.0.0"
+        assert config.claim_patterns == [r"^\d+\."]
 
     def test_not_empty_when_has_misses(self) -> None:
         from autocontext.execution.verification_dataset import OracleRevisionFeedback

@@ -31,6 +31,7 @@ from autocontext.execution.objective_verification import (
     run_objective_verification,
 )
 from autocontext.execution.rubric_calibration import run_judge_calibration
+from autocontext.execution.verification_dataset import enrich_objective_payload
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.storage.sqlite_store import SQLiteStore
@@ -161,18 +162,50 @@ def _build_objective_payload(
     output: str,
     rubric_score: float,
     config: TaskConfig,
+    *,
+    run_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Run optional objective verification for a task result."""
     if not config.objective_verification:
         return None
     verification_config = ObjectiveVerificationConfig.from_dict(config.objective_verification)
     if not verification_config.ground_truth:
+        dataset_id = config.objective_verification.get("dataset_id")
+        if dataset_id:
+            msg = (
+                "Queued task objective_verification references dataset "
+                f"'{dataset_id}' but was not resolved before execution"
+            )
+            raise ValueError(msg)
         return None
-    return run_objective_verification(
+    payload = run_objective_verification(
         output=output,
         rubric_score=rubric_score,
         config=verification_config,
     )
+    return enrich_objective_payload(
+        payload,
+        run_id=run_id,
+        created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    )
+
+
+def _build_objective_revision_feedback(
+    output: str,
+    rubric_score: float,
+    config: TaskConfig,
+) -> str | None:
+    """Build optional oracle-derived revision context for the next loop round."""
+    payload = _build_objective_payload(output, rubric_score, config)
+    if not payload:
+        return None
+    revision_feedback = payload.get("revision_feedback")
+    if not isinstance(revision_feedback, dict):
+        return None
+    context = revision_feedback.get("revision_prompt_context")
+    if not isinstance(context, str) or not context.strip():
+        return None
+    return context
 
 
 def _build_rubric_calibration_payload(
@@ -278,11 +311,18 @@ class SimpleAgentTask(AgentTaskInterface):
             "Revise the following output based on the judge's feedback. "
             "Maintain what works, fix what doesn't."
         )
+        objective_feedback = state.get("oracle_revision_feedback_context")
+        objective_block = ""
+        if isinstance(objective_feedback, str) and objective_feedback.strip():
+            objective_block = (
+                f"## Objective Verification Feedback\n{objective_feedback}\n\n"
+            )
         prompt = (
             f"{revision_instruction}\n\n"
             f"## Original Output\n{output}\n\n"
             f"## Judge Score: {judge_result.score:.2f}\n"
             f"## Judge Feedback\n{judge_result.reasoning}\n\n"
+            f"{objective_block}"
             f"## Task\n{self._task_prompt}\n\n"
             "Produce an improved version:"
         )
@@ -447,10 +487,19 @@ class TaskRunner:
                     quality_threshold=config.quality_threshold,
                     min_rounds=config.min_rounds,
                 )
+                loop_state: dict[str, Any] = {}
+                if config.objective_verification:
+                    loop_state["revision_feedback_callback"] = (
+                        lambda current_output, judge_result: _build_objective_revision_feedback(
+                            current_output,
+                            judge_result.score,
+                            config,
+                        )
+                    )
 
                 result = loop.run(
                     initial_output=initial_output,
-                    state={},
+                    state=loop_state,
                     reference_context=config.reference_context,
                     required_concepts=config.required_concepts,
                     calibration_examples=config.calibration_examples,
@@ -459,6 +508,7 @@ class TaskRunner:
                     result.best_output,
                     result.best_score,
                     config,
+                    run_id=task_id,
                 )
                 rubric_calibration = _build_rubric_calibration_payload(
                     store=self.store,
@@ -526,9 +576,18 @@ class TaskRunner:
                 quality_threshold=config.quality_threshold,
                 min_rounds=config.min_rounds,
             )
+            loop_state: dict[str, Any] = {}
+            if config.objective_verification:
+                loop_state["revision_feedback_callback"] = (
+                    lambda current_output, judge_result: _build_objective_revision_feedback(
+                        current_output,
+                        judge_result.score,
+                        config,
+                    )
+                )
             loop_result = loop.run(
                 initial_output=output,
-                state={},
+                state=loop_state,
                 reference_context=config.reference_context,
                 required_concepts=config.required_concepts,
                 calibration_examples=config.calibration_examples,
@@ -565,7 +624,12 @@ class TaskRunner:
         met_threshold = any(result.met_threshold for result in ordered_results)
         best_score = state.best_score
         best_output = state.best_output
-        objective_payload = _build_objective_payload(best_output, best_score, config)
+        objective_payload = _build_objective_payload(
+            best_output,
+            best_score,
+            config,
+            run_id=task_id,
+        )
         rubric_calibration = _build_rubric_calibration_payload(
             store=self.store,
             spec_name=spec_name,

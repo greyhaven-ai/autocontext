@@ -24,6 +24,7 @@ from typing import Any
 from autocontext.execution.objective_verification import (
     GroundTruthItem,
     KeywordMatchOracle,
+    ObjectiveVerificationConfig,
     OracleResult,
 )
 
@@ -109,22 +110,70 @@ class DatasetRegistry:
         self._dir = root / "verification_datasets"
         self._dir.mkdir(parents=True, exist_ok=True)
 
+    def _dataset_dir(self, dataset_id: str) -> Path:
+        return self._dir / dataset_id
+
+    def _version_path(self, dataset_id: str, version: str) -> Path:
+        safe_version = version.replace("/", "__")
+        return self._dataset_dir(dataset_id) / f"{safe_version}.json"
+
     def register(self, dataset: VerificationDataset) -> Path:
-        path = self._dir / f"{dataset.dataset_id}.json"
-        path.write_text(json.dumps(dataset.to_dict(), indent=2), encoding="utf-8")
+        path = self._version_path(dataset.dataset_id, dataset.provenance.version)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(dataset.to_dict(), indent=2)
+        if path.exists():
+            existing = path.read_text(encoding="utf-8")
+            if existing != payload:
+                msg = (
+                    "Refusing to overwrite existing verification dataset snapshot "
+                    f"{dataset.dataset_id}@{dataset.provenance.version}"
+                )
+                raise ValueError(msg)
+            return path
+        path.write_text(payload, encoding="utf-8")
         return path
 
-    def load(self, dataset_id: str) -> VerificationDataset | None:
-        path = self._dir / f"{dataset_id}.json"
-        if not path.exists():
+    def load(self, dataset_id: str, version: str | None = None) -> VerificationDataset | None:
+        if version:
+            path = self._version_path(dataset_id, version)
+            if not path.exists():
+                return None
+            return VerificationDataset.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+        dataset_dir = self._dataset_dir(dataset_id)
+        if not dataset_dir.exists():
             return None
-        return VerificationDataset.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        snapshots = [
+            VerificationDataset.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            for path in sorted(dataset_dir.glob("*.json"))
+        ]
+        if not snapshots:
+            return None
+        snapshots.sort(
+            key=lambda dataset: (
+                dataset.provenance.updated_at,
+                dataset.provenance.version,
+            ),
+        )
+        return snapshots[-1]
+
+    def list_versions(self, dataset_id: str) -> list[str]:
+        dataset_dir = self._dataset_dir(dataset_id)
+        if not dataset_dir.exists():
+            return []
+        versions: list[str] = []
+        for path in sorted(dataset_dir.glob("*.json")):
+            dataset = VerificationDataset.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            versions.append(dataset.provenance.version)
+        return versions
 
     def list_datasets(self) -> list[VerificationDataset]:
-        return [
-            VerificationDataset.from_dict(json.loads(p.read_text(encoding="utf-8")))
-            for p in sorted(self._dir.glob("*.json"))
-        ]
+        datasets: list[VerificationDataset] = []
+        for dataset_dir in sorted(path for path in self._dir.iterdir() if path.is_dir()):
+            dataset = self.load(dataset_dir.name)
+            if dataset is not None:
+                datasets.append(dataset)
+        return datasets
 
 
 @dataclass(slots=True)
@@ -175,6 +224,25 @@ class OracleRevisionFeedback:
     weight_mismatches: list[str]
     revision_prompt_context: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "missed_items": self.missed_items,
+            "false_positives": self.false_positives,
+            "weight_mismatches": self.weight_mismatches,
+            "revision_prompt_context": self.revision_prompt_context,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> OracleRevisionFeedback:
+        return cls(
+            missed_items=list(data.get("missed_items", [])),
+            false_positives=list(data.get("false_positives", [])),
+            weight_mismatches=list(data.get("weight_mismatches", [])),
+            revision_prompt_context=data.get("revision_prompt_context", ""),
+            metadata=dict(data.get("metadata", {})),
+        )
 
     def is_empty(self) -> bool:
         return (
@@ -228,3 +296,83 @@ def oracle_to_revision_feedback(result: OracleResult) -> OracleRevisionFeedback:
         weight_mismatches=weight_mismatches,
         revision_prompt_context="\n".join(parts),
     )
+
+
+def resolve_objective_verification_config(
+    config_data: dict[str, Any] | None,
+    registry: DatasetRegistry | None = None,
+) -> tuple[ObjectiveVerificationConfig | None, VerificationDataset | None]:
+    """Resolve inline or dataset-backed objective verification config for live paths."""
+    if not config_data:
+        return None, None
+
+    if config_data.get("ground_truth"):
+        return ObjectiveVerificationConfig.from_dict(config_data), None
+
+    dataset_id = str(config_data.get("dataset_id") or "").strip()
+    if not dataset_id:
+        return ObjectiveVerificationConfig.from_dict(config_data), None
+    if registry is None:
+        msg = (
+            "Objective verification config references a dataset, but no dataset "
+            "registry was provided"
+        )
+        raise ValueError(msg)
+
+    requested_version = str(config_data.get("dataset_version") or "").strip() or None
+    dataset = registry.load(dataset_id, version=requested_version)
+    if dataset is None:
+        version_suffix = f" version '{requested_version}'" if requested_version else ""
+        raise ValueError(f"Verification dataset '{dataset_id}'{version_suffix} not found")
+
+    metadata = dict(config_data.get("metadata") or {})
+    metadata.update({
+        "dataset_id": dataset.dataset_id,
+        "dataset_name": dataset.name,
+        "dataset_version": dataset.provenance.version,
+        "dataset_provenance": dataset.provenance.to_dict(),
+    })
+
+    claim_patterns = list(config_data.get("claim_patterns") or dataset.claim_patterns)
+    config = ObjectiveVerificationConfig(
+        ground_truth=list(dataset.items),
+        claim_patterns=claim_patterns,
+        metadata=metadata,
+    )
+    return config, dataset
+
+
+def enrich_objective_payload(
+    payload: dict[str, Any],
+    *,
+    run_id: str | None = None,
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    """Attach revision feedback and dataset provenance records to an oracle payload."""
+    enriched = dict(payload)
+    oracle_result = OracleResult.from_dict(payload.get("oracle_result", {}))
+    feedback = oracle_to_revision_feedback(oracle_result)
+    if not feedback.is_empty():
+        enriched["revision_feedback"] = feedback.to_dict()
+
+    metadata = dict(payload.get("config_metadata") or {})
+    dataset_id = str(metadata.get("dataset_id") or "").strip()
+    dataset_version = str(metadata.get("dataset_version") or "").strip()
+    if run_id and dataset_id and dataset_version:
+        comparison = dict(payload.get("comparison") or {})
+        record = VerificationRunRecord(
+            run_id=run_id,
+            dataset_id=dataset_id,
+            dataset_version=dataset_version,
+            rubric_score=float(comparison.get("rubric_score", 0.0)),
+            objective_recall=float(comparison.get("objective_recall", 0.0)),
+            objective_precision=float(comparison.get("objective_precision", 0.0)),
+            created_at=created_at or "",
+            metadata={
+                "dataset_name": metadata.get("dataset_name", ""),
+                "dataset_provenance": metadata.get("dataset_provenance", {}),
+            },
+        )
+        enriched["verification_run_record"] = record.to_dict()
+
+    return enriched
