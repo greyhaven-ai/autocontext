@@ -192,7 +192,7 @@ describe("TaskRunner.runBatch", () => {
   });
 });
 
-describe("minRounds wiring (MTS-53)", () => {
+describe("minRounds wiring (AC-53)", () => {
   it("enqueueTask passes minRounds to config", () => {
     const store = createStore();
     const id = enqueueTask(store, "test", { minRounds: 3 });

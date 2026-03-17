@@ -1,5 +1,5 @@
 /**
- * Tests for HarnessStore and SkillPackage harness support (MTS-95).
+ * Tests for HarnessStore and SkillPackage harness support (AC-95).
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
