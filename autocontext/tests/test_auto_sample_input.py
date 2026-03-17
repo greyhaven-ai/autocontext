@@ -56,6 +56,34 @@ class TestNeedsSampleInput:
         )
         assert needs_sample_input(spec) is False
 
+    def test_using_the_provided_with_inline_data_no_need(self) -> None:
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.spec_auto_heal import needs_sample_input
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Using the provided timeline below:\n\n"
+                "Time: 12:00\n"
+                "Event: Disk reached 100% utilization\n\n"
+                "Summarize the operational impact."
+            ),
+            judge_rubric="Evaluate analysis",
+        )
+        assert needs_sample_input(spec) is False
+
+    def test_long_plain_prose_still_needs_heal(self) -> None:
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.spec_auto_heal import needs_sample_input
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Analyze the following customer complaint and explain the refund "
+                "exposure, escalation path, and contractual risk."
+            ),
+            judge_rubric="Evaluate analysis",
+        )
+        assert needs_sample_input(spec) is True
+
 
 # ===========================================================================
 # generate_synthetic_sample_input
@@ -136,6 +164,22 @@ class TestHealSpecSampleInput:
             judge_rubric="Evaluate persuasiveness",
         )
         healed = heal_spec_sample_input(spec, description="essay task")
+        assert healed.sample_input is None
+
+    def test_does_not_modify_inline_data_task(self) -> None:
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.spec_auto_heal import heal_spec_sample_input
+
+        spec = AgentTaskSpec(
+            task_prompt=(
+                "Using the provided timeline below:\n\n"
+                "Time: 12:00\n"
+                "Event: Disk reached 100% utilization\n\n"
+                "Summarize the operational impact."
+            ),
+            judge_rubric="Evaluate analysis",
+        )
+        healed = heal_spec_sample_input(spec, description="incident analysis")
         assert healed.sample_input is None
 
     def test_healed_spec_passes_validation(self) -> None:

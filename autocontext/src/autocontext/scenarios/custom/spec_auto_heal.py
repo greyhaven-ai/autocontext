@@ -19,37 +19,11 @@ from dataclasses import replace
 from typing import Any
 
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
-
-# Reuse the same patterns from the validator
-_ALWAYS_EXTERNAL_PATTERNS = [
-    "you will be provided with",
-    "using the provided",
-]
-
-_CONTEXTUAL_PATTERNS = [
-    "given the following data",
-    "analyze the following",
-    "based on the data below",
-]
-
-_ALL_DATA_PATTERNS = _ALWAYS_EXTERNAL_PATTERNS + _CONTEXTUAL_PATTERNS
-
-# Inline data detection (same heuristic as validator)
-_INLINE_DATA_MARKERS = ("{", "[", "|", "- ", "* ", "##", "```")
-_INLINE_DATA_MIN_CHARS = 50
-
-
-def _has_inline_data_after(prompt: str, pattern: str) -> bool:
-    """Check if substantial inline data follows a data-reference phrase."""
-    idx = prompt.lower().find(pattern)
-    if idx < 0:
-        return False
-    after = prompt[idx + len(pattern):].strip()
-    if len(after) >= _INLINE_DATA_MIN_CHARS:
-        return True
-    if after.count("\n") >= 2:
-        return True
-    return any(after.startswith(marker) or f"\n{marker}" in after for marker in _INLINE_DATA_MARKERS)
+from autocontext.scenarios.custom.agent_task_validator import (
+    _ALWAYS_EXTERNAL_PATTERNS,
+    _CONTEXTUAL_DATA_PATTERNS,
+    _has_inline_data_after,
+)
 
 
 def needs_sample_input(spec: AgentTaskSpec) -> bool:
@@ -71,7 +45,7 @@ def needs_sample_input(spec: AgentTaskSpec) -> bool:
             return True
 
     # Contextual patterns — only if no inline data follows
-    for pattern in _CONTEXTUAL_PATTERNS:
+    for pattern in _CONTEXTUAL_DATA_PATTERNS:
         if pattern in prompt_lower and not _has_inline_data_after(spec.task_prompt, pattern):
             return True
 
