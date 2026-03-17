@@ -1,56 +1,100 @@
-"""Tests for AC-297 + AC-299: scenario family dispatch and type literals.
-
-AC-297: CLI dispatch must route all non-game families (not just agent_task)
-AC-299: ScenarioInfo.scenario_type must include all registered families
-"""
+"""Tests for AC-297 + AC-299: CLI scenario dispatch and ScenarioInfo literals."""
 
 from __future__ import annotations
 
-# ===========================================================================
-# AC-297: _is_judge_evaluated should detect all non-game families
-# ===========================================================================
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from typer.testing import CliRunner
+
+from autocontext.cli import app
+from autocontext.config.settings import AppSettings
+from autocontext.loop.generation_runner import RunSummary
+from autocontext.scenarios.agent_task import AgentTaskInterface
+from autocontext.scenarios.negotiation import NegotiationInterface
+
+runner = CliRunner()
 
 
-class TestIsJudgeEvaluated:
-    def test_agent_task_is_judge_evaluated(self) -> None:
-        from autocontext.cli import _is_judge_evaluated_family
-
-        assert _is_judge_evaluated_family("agent_task") is True
-
-    def test_negotiation_detected(self) -> None:
-        from autocontext.cli import _is_judge_evaluated_family
-
-        assert _is_judge_evaluated_family("negotiation") is True
-
-    def test_investigation_detected(self) -> None:
-        from autocontext.cli import _is_judge_evaluated_family
-
-        assert _is_judge_evaluated_family("investigation") is True
-
-    def test_workflow_detected(self) -> None:
-        from autocontext.cli import _is_judge_evaluated_family
-
-        assert _is_judge_evaluated_family("workflow") is True
-
-    def test_simulation_detected(self) -> None:
-        from autocontext.cli import _is_judge_evaluated_family
-
-        assert _is_judge_evaluated_family("simulation") is True
-
-    def test_game_is_not_judge_evaluated(self) -> None:
-        from autocontext.cli import _is_judge_evaluated_family
-
-        assert _is_judge_evaluated_family("game") is False
-
-    def test_unknown_family_is_not_judge_evaluated(self) -> None:
-        from autocontext.cli import _is_judge_evaluated_family
-
-        assert _is_judge_evaluated_family("nonexistent") is False
+def _settings(tmp_path: Path) -> AppSettings:
+    return AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+        agent_provider="deterministic",
+        judge_provider="anthropic",
+        anthropic_api_key="test-key",
+    )
 
 
-# ===========================================================================
-# AC-299: ScenarioInfo must accept all registered family types
-# ===========================================================================
+class TestCliDispatch:
+    def test_agent_task_family_uses_direct_agent_task_path(self) -> None:
+        from autocontext.cli import _is_agent_task
+
+        with (
+            patch.dict("autocontext.cli.SCENARIO_REGISTRY", {"mock_task": object}, clear=True),
+            patch(
+                "autocontext.scenarios.families.detect_family",
+                return_value=SimpleNamespace(
+                    name="agent_task",
+                    interface_class=AgentTaskInterface,
+                ),
+            ),
+        ):
+            assert _is_agent_task("mock_task") is True
+
+    def test_negotiation_family_does_not_use_agent_task_path(self) -> None:
+        from autocontext.cli import _is_agent_task
+
+        with (
+            patch.dict("autocontext.cli.SCENARIO_REGISTRY", {"mock_negotiation": object}, clear=True),
+            patch(
+                "autocontext.scenarios.families.detect_family",
+                return_value=SimpleNamespace(
+                    name="negotiation",
+                    interface_class=NegotiationInterface,
+                ),
+            ),
+        ):
+            assert _is_agent_task("mock_negotiation") is False
+
+    def test_run_routes_negotiation_family_through_generation_runner(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path)
+        mock_summary = RunSummary(
+            run_id="neg-run-001",
+            scenario="consulting_negotiation",
+            generations_executed=1,
+            best_score=0.72,
+            current_elo=1000.0,
+        )
+        mock_runner = MagicMock()
+        mock_runner.run.return_value = mock_summary
+
+        with (
+            patch.dict("autocontext.cli.SCENARIO_REGISTRY", {"consulting_negotiation": object}, clear=True),
+            patch(
+                "autocontext.scenarios.families.detect_family",
+                return_value=SimpleNamespace(
+                    name="negotiation",
+                    interface_class=NegotiationInterface,
+                ),
+            ),
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._runner", return_value=mock_runner),
+            patch("autocontext.cli._run_agent_task") as mock_run_agent_task,
+        ):
+            result = runner.invoke(app, ["run", "--scenario", "consulting_negotiation", "--gens", "1"])
+
+        assert result.exit_code == 0, result.output
+        mock_runner.run.assert_called_once_with(
+            scenario_name="consulting_negotiation",
+            generations=1,
+            run_id=None,
+        )
+        mock_run_agent_task.assert_not_called()
 
 
 class TestScenarioInfoTypes:

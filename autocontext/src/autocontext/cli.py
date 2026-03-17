@@ -136,29 +136,8 @@ def _write_json_stderr(message: str) -> None:
     sys.stderr.write(json.dumps({"error": message}) + "\n")
 
 
-# Families that use tournament/Elo evaluation (game-like execution path).
-_TOURNAMENT_FAMILIES = frozenset({"game"})
-
-
-def _is_judge_evaluated_family(family_name: str) -> bool:
-    """Check if a family uses judge-based evaluation (not tournament).
-
-    All registered families except 'game' use some form of judge-based
-    or trace-based evaluation that routes through the agent-task path.
-    """
-    from autocontext.scenarios.families import FAMILY_REGISTRY
-
-    if family_name not in FAMILY_REGISTRY:
-        return False
-    return family_name not in _TOURNAMENT_FAMILIES
-
-
 def _is_agent_task(scenario_name: str) -> bool:
-    """Check if a scenario should use the judge-evaluated execution path.
-
-    Routes agent_task, negotiation, investigation, workflow, simulation,
-    and all other non-game families through judge-based execution.
-    """
+    """Check if a scenario should use the direct agent-task execution path."""
     if scenario_name not in SCENARIO_REGISTRY:
         return False
     from autocontext.scenarios.families import detect_family
@@ -166,7 +145,7 @@ def _is_agent_task(scenario_name: str) -> bool:
     family = detect_family(SCENARIO_REGISTRY[scenario_name]())
     if family is None:
         return False
-    return _is_judge_evaluated_family(family.name)
+    return issubclass(family.interface_class, AgentTaskInterface)
 
 
 def _resolve_agent_task_runtime(settings: AppSettings, scenario_name: str) -> tuple[LLMProvider, str]:
