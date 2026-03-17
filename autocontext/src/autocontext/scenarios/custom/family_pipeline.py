@@ -589,6 +589,7 @@ class SchemaEvolutionPipeline(FamilyPipeline):
                 "is_terminal",
                 "evaluate_trace",
                 "get_rubric",
+                "get_mutations",
                 "get_schema_version",
                 "get_mutation_log",
                 "apply_mutation",

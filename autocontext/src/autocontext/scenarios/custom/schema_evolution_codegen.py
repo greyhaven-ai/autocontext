@@ -141,6 +141,9 @@ class {class_name}(SchemaEvolutionInterface):
             or state.get("step", 0) >= {spec.max_steps}
         )
 
+    def get_mutations(self) -> list[SchemaMutation]:
+        return [SchemaMutation.from_dict(m) for m in self._mutations_spec]
+
     def get_schema_version(self, state: dict[str, Any]) -> int:
         return state.get("schema_version", 1)
 

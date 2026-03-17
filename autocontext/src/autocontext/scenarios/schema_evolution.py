@@ -120,6 +120,10 @@ class SchemaEvolutionInterface(SimulationInterface):
     """
 
     @abstractmethod
+    def get_mutations(self) -> list[SchemaMutation]:
+        """Return all known schema mutations for this scenario."""
+
+    @abstractmethod
     def get_schema_version(self, state: dict[str, Any]) -> int:
         """Return the current schema version from state."""
 
