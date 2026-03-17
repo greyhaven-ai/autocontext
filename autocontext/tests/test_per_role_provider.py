@@ -65,6 +65,26 @@ class TestPerRoleConfigFields:
         assert hasattr(settings, "architect_provider")
         assert settings.architect_provider == ""
 
+    def test_claude_cli_settings_fields_exist(self) -> None:
+        from autocontext.config.settings import AppSettings
+
+        settings = AppSettings()
+        assert settings.claude_model == "sonnet"
+        assert settings.claude_timeout == 120.0
+        assert settings.claude_tools is None
+        assert settings.claude_permission_mode == "bypassPermissions"
+        assert settings.claude_session_persistence is False
+
+    def test_codex_cli_settings_fields_exist(self) -> None:
+        from autocontext.config.settings import AppSettings
+
+        settings = AppSettings()
+        assert settings.codex_model == "o4-mini"
+        assert settings.codex_timeout == 120.0
+        assert settings.codex_workspace == ""
+        assert settings.codex_approval_mode == "full-auto"
+        assert settings.codex_quiet is False
+
 
 # ── ProviderBridgeClient tests ──────────────────────────────────────────
 
@@ -192,6 +212,58 @@ class TestCreateClientForProvider:
         settings = AppSettings()
         result = create_role_client("", settings)
         assert result is None
+
+    def test_claude_cli_provider_creates_runtime_bridge(self) -> None:
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient, create_role_client
+        from autocontext.config.settings import AppSettings
+
+        settings = AppSettings(
+            claude_model="opus",
+            claude_timeout=45.0,
+            claude_tools="Bash,Read",
+            claude_permission_mode="acceptEdits",
+            claude_session_persistence=True,
+        )
+
+        client = create_role_client("claude-cli", settings)
+
+        assert isinstance(client, RuntimeBridgeClient)
+        assert client._runtime._config.model == "opus"  # type: ignore[attr-defined]
+        assert client._runtime._config.timeout == 45.0  # type: ignore[attr-defined]
+        assert client._runtime._config.tools == "Bash,Read"  # type: ignore[attr-defined]
+        assert client._runtime._config.permission_mode == "acceptEdits"  # type: ignore[attr-defined]
+        assert client._runtime._config.session_persistence is True  # type: ignore[attr-defined]
+
+    def test_codex_provider_creates_runtime_bridge(self) -> None:
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient, create_role_client
+        from autocontext.config.settings import AppSettings
+
+        settings = AppSettings(
+            codex_model="o3",
+            codex_timeout=75.0,
+            codex_workspace="/tmp/codex",
+            codex_approval_mode="full-auto",
+            codex_quiet=True,
+        )
+
+        client = create_role_client("codex", settings)
+
+        assert isinstance(client, RuntimeBridgeClient)
+        assert client._runtime._config.model == "o3"  # type: ignore[attr-defined]
+        assert client._runtime._config.timeout == 75.0  # type: ignore[attr-defined]
+        assert client._runtime._config.workspace == "/tmp/codex"  # type: ignore[attr-defined]
+        assert client._runtime._config.approval_mode == "full-auto"  # type: ignore[attr-defined]
+        assert client._runtime._config.quiet is True  # type: ignore[attr-defined]
+
+    def test_all_listed_cli_runtimes_are_selectable(self) -> None:
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient, create_role_client
+        from autocontext.config.settings import AppSettings
+        from autocontext.runtimes import list_cli_runtimes
+
+        settings = AppSettings()
+        for runtime in list_cli_runtimes():
+            client = create_role_client(runtime["name"], settings)
+            assert isinstance(client, RuntimeBridgeClient), runtime["name"]
 
     def test_unknown_provider_raises(self) -> None:
         from autocontext.agents.provider_bridge import create_role_client

@@ -144,6 +144,40 @@ def _create_provider_bridge(
     return ProviderBridgeClient(provider, use_provider_default_model=use_provider_default_model)
 
 
+def _create_claude_cli_bridge(
+    settings: AppSettings,
+    *,
+    model_override: str | None = None,
+) -> LanguageModelClient:
+    from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
+
+    config = ClaudeCLIConfig(
+        model=model_override or settings.claude_model or "sonnet",
+        tools=settings.claude_tools,
+        permission_mode=settings.claude_permission_mode,
+        session_persistence=settings.claude_session_persistence,
+        timeout=settings.claude_timeout,
+    )
+    return RuntimeBridgeClient(ClaudeCLIRuntime(config))
+
+
+def _create_codex_cli_bridge(
+    settings: AppSettings,
+    *,
+    model_override: str | None = None,
+) -> LanguageModelClient:
+    from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime
+
+    config = CodexCLIConfig(
+        model=model_override or settings.codex_model or "o4-mini",
+        approval_mode=settings.codex_approval_mode,
+        timeout=settings.codex_timeout,
+        workspace=settings.codex_workspace,
+        quiet=settings.codex_quiet,
+    )
+    return RuntimeBridgeClient(CodexCLIRuntime(config))
+
+
 def _load_openclaw_factory(factory_path: str) -> Callable[..., object]:
     """Load a module:callable factory reference for OpenClaw agents."""
     module_name, sep, attr_name = factory_path.partition(":")
@@ -216,6 +250,12 @@ def create_role_client(
             timeout_seconds=float(getattr(settings, "openclaw_timeout_seconds", 30.0)),
             retry_base_delay=float(getattr(settings, "openclaw_retry_base_delay", 0.25)),
         )
+
+    if provider_type == "claude-cli":
+        return _create_claude_cli_bridge(settings, model_override=model_override)
+
+    if provider_type == "codex":
+        return _create_codex_cli_bridge(settings, model_override=model_override)
 
     if provider_type == "pi":
         from autocontext.providers.scenario_routing import resolve_pi_model
