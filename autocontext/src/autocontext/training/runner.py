@@ -61,6 +61,7 @@ class ExperimentResult:
     outcome: ExperimentOutcome
     error_message: str = ""
     checkpoint_path: Path | None = None
+    summary_metrics: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -75,6 +76,7 @@ class TrainingResult:
     best_experiment_index: int
     checkpoint_path: Path | None
     results: list[ExperimentResult] = field(default_factory=list)
+    published_model_id: str | None = None
 
     @property
     def kept_ratio(self) -> float:
@@ -407,6 +409,7 @@ class TrainingRunner:
             training_seconds=summary["training_seconds"],
             outcome=outcome,
             checkpoint_path=checkpoint_path,
+            summary_metrics=dict(summary),
         )
 
     def _update_best(self, result: ExperimentResult) -> None:
@@ -470,6 +473,7 @@ class TrainingRunner:
         discarded = [r for r in results if r.outcome == ExperimentOutcome.DISCARDED]
 
         best_result = max(kept, key=lambda r: r.avg_score, default=None)
+        published_model_id = self._publish_best_model(best_result)
         return TrainingResult(
             scenario=self.config.scenario,
             total_experiments=len(results),
@@ -479,4 +483,80 @@ class TrainingRunner:
             best_experiment_index=best_result.experiment_index if best_result is not None else -1,
             checkpoint_path=best_result.checkpoint_path if best_result is not None else None,
             results=results,
+            published_model_id=published_model_id,
         )
+
+    def _training_run_id(self) -> str:
+        try:
+            return self._git_head_sha()
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            return self.work_dir.name
+
+    def _scenario_family_name(self) -> str:
+        try:
+            from autocontext.scenarios import SCENARIO_REGISTRY
+            from autocontext.scenarios.families import detect_family
+
+            scenario_cls = SCENARIO_REGISTRY.get(self.config.scenario)
+            if scenario_cls is None:
+                return ""
+            family = detect_family(scenario_cls())
+            return family.name if family is not None else ""
+        except Exception:
+            return ""
+
+    def _data_stats(self) -> dict[str, float | str]:
+        stats: dict[str, float | str] = {"data_path": str(self.config.data_path)}
+        try:
+            line_count = sum(1 for _ in self.config.data_path.open(encoding="utf-8"))
+            stats["records"] = float(line_count)
+        except OSError:
+            pass
+        return stats
+
+    def _publish_best_model(self, best_result: ExperimentResult | None) -> str | None:
+        if best_result is None or best_result.checkpoint_path is None:
+            return None
+
+        num_params_m = best_result.summary_metrics.get("num_params_M", 0.0)
+        if num_params_m <= 0:
+            return None
+
+        from autocontext.training.model_registry import (
+            ModelRegistry,
+            TrainingCompletionOutput,
+            publish_training_output,
+        )
+
+        settings = load_settings()
+        registry = ModelRegistry(settings.knowledge_root)
+        completion = TrainingCompletionOutput(
+            run_id=self._training_run_id(),
+            checkpoint_path=str(best_result.checkpoint_path),
+            backend="mlx",
+            scenario=self.config.scenario,
+            scenario_family=self._scenario_family_name(),
+            parameter_count=max(int(num_params_m * 1_000_000), 1),
+            architecture="autoresearch_gpt",
+            training_metrics={
+                "avg_score": best_result.avg_score,
+                "valid_rate": best_result.valid_rate,
+                "peak_memory_mb": best_result.peak_memory_mb,
+                "training_seconds": best_result.training_seconds,
+                "num_steps": best_result.summary_metrics.get("num_steps", 0.0),
+                "depth": best_result.summary_metrics.get("depth", 0.0),
+            },
+            data_stats=self._data_stats(),
+            runtime_types=["provider"],
+            metadata={
+                "experiment_index": best_result.experiment_index,
+                "work_dir": str(self.work_dir),
+            },
+        )
+        record = publish_training_output(
+            completion,
+            registry,
+            artifacts_root=settings.knowledge_root,
+            auto_activate=True,
+        )
+        return record.artifact_id

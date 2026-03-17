@@ -795,6 +795,7 @@ def train(
             "discarded_count": result.discarded_count,
             "best_score": result.best_score,
             "checkpoint_path": str(result.checkpoint_path) if result.checkpoint_path else None,
+            "published_model_id": result.published_model_id,
         })
     else:
         # Summary
@@ -806,6 +807,8 @@ def train(
         table.add_row("Kept / Discarded", f"{result.kept_count} / {result.discarded_count}")
         table.add_row("Best score", f"{result.best_score:.4f}")
         table.add_row("Checkpoint", str(result.checkpoint_path) if result.checkpoint_path else "(none)")
+        if result.published_model_id:
+            table.add_row("Published model", result.published_model_id)
         console.print(table)
 
 

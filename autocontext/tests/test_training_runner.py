@@ -1,6 +1,7 @@
 """Tests for training loop runner (AC-179) and CLI command (AC-180)."""
 from __future__ import annotations
 
+import json
 import subprocess
 import textwrap
 from pathlib import Path
@@ -418,6 +419,45 @@ class TestTrainingLoop:
         assert result.best_experiment_index == 2
         assert result.checkpoint_path == improved.checkpoint_path
         mock_discard.assert_called_once()
+
+    def test_build_training_result_publishes_best_checkpoint(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl", max_experiments=1)
+        (tmp_path / "data.jsonl").write_text("{}\n{}\n", encoding="utf-8")
+        checkpoint_path = tmp_path / "workspace" / "checkpoints" / "exp_0"
+        checkpoint_path.mkdir(parents=True, exist_ok=True)
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            runs_root=tmp_path / "runs",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+        )
+        best = ExperimentResult(
+            experiment_index=0,
+            avg_score=0.75,
+            valid_rate=1.0,
+            peak_memory_mb=1024.0,
+            training_seconds=12.0,
+            outcome=ExperimentOutcome.KEPT,
+            checkpoint_path=checkpoint_path,
+            summary_metrics={"num_params_M": 1.25, "num_steps": 8.0, "depth": 4.0},
+        )
+
+        with patch("autocontext.training.runner.load_settings", return_value=settings):
+            result = runner.build_training_result([best])
+
+        assert result.published_model_id is not None
+
+        registry_path = settings.knowledge_root / "model_registry" / f"{result.published_model_id}.json"
+        artifact_path = settings.knowledge_root / "_openclaw_artifacts" / f"{result.published_model_id}.json"
+        assert registry_path.exists()
+        assert artifact_path.exists()
+
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        assert artifact["artifact_type"] == "distilled_model"
+        assert artifact["scenario"] == "grid_ctf"
+        assert artifact["checkpoint_path"] == str(checkpoint_path)
 
     def test_propose_train_py_uses_competitor_model_when_agent_model_empty(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(

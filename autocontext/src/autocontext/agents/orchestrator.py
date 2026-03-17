@@ -254,10 +254,27 @@ class AgentOrchestrator:
         }
         return providers.get(role, "").strip().lower()
 
-    def _available_local_models(self) -> list[str]:
+    def _available_local_models(self, scenario_name: str = "", runtime_type: str = "provider") -> list[str]:
         model_path = self.settings.mlx_model_path.strip()
         if not model_path:
-            return []
+            if not scenario_name:
+                return []
+            try:
+                from autocontext.training import model_registry as distilled_model_registry
+
+                registry = distilled_model_registry.ModelRegistry(self.settings.knowledge_root)
+                record = distilled_model_registry.resolve_model(
+                    registry,
+                    scenario=scenario_name,
+                    backend="mlx",
+                    runtime_type=runtime_type,
+                )
+            except Exception:
+                return []
+            if record is None:
+                return []
+            candidate_path = record.checkpoint_path.strip()
+            return [candidate_path] if candidate_path and Path(candidate_path).exists() else []
         return [model_path] if Path(model_path).exists() else []
 
     def _resolve_role_provider_config(
@@ -275,7 +292,10 @@ class AgentOrchestrator:
             generation=generation,
             retry_count=retry_count,
             is_plateau=is_plateau,
-            available_local_models=self._available_local_models(),
+            available_local_models=self._available_local_models(
+                scenario_name=scenario_name,
+                runtime_type="provider",
+            ),
             scenario_name=scenario_name,
         )
         return self._role_router.route(role, context=context)

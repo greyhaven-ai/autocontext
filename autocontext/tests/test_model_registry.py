@@ -6,6 +6,7 @@ AC-288: DistilledModelArtifact, publish_training_output, TrainingCompletionOutpu
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +105,7 @@ class TestModelRegistry:
         assert loaded.activation_state == "active"
 
     def test_activate_deactivates_previous(self, tmp_path: Path) -> None:
-        """Only one model should be active per scenario+backend."""
+        """Only one model should be active per scenario+backend+runtime slot."""
         from autocontext.training.model_registry import ModelRegistry
 
         registry = ModelRegistry(tmp_path)
@@ -117,6 +118,47 @@ class TestModelRegistry:
         a2 = registry.load("a2")
         assert a1 is not None and a1.activation_state != "active"
         assert a2 is not None and a2.activation_state == "active"
+
+    def test_activate_keeps_distinct_runtime_slot_active(self, tmp_path: Path) -> None:
+        from autocontext.training.model_registry import ModelRegistry
+
+        registry = ModelRegistry(tmp_path)
+        registry.register(
+            _record(
+                artifact_id="provider-1",
+                scenario="grid_ctf",
+                backend="mlx",
+                runtime_types=["provider"],
+                activation_state="active",
+            )
+        )
+        registry.register(
+            _record(
+                artifact_id="judge-1",
+                scenario="grid_ctf",
+                backend="mlx",
+                runtime_types=["judge"],
+                activation_state="active",
+            )
+        )
+        registry.register(
+            _record(
+                artifact_id="provider-2",
+                scenario="grid_ctf",
+                backend="mlx",
+                runtime_types=["provider"],
+                activation_state="candidate",
+            )
+        )
+
+        registry.activate("provider-2")
+
+        provider_1 = registry.load("provider-1")
+        judge_1 = registry.load("judge-1")
+        provider_2 = registry.load("provider-2")
+        assert provider_1 is not None and provider_1.activation_state == "disabled"
+        assert judge_1 is not None and judge_1.activation_state == "active"
+        assert provider_2 is not None and provider_2.activation_state == "active"
 
     def test_deactivate(self, tmp_path: Path) -> None:
         from autocontext.training.model_registry import ModelRegistry
@@ -289,3 +331,35 @@ class TestPublishTrainingOutput:
 
         record = publish_training_output(completion, registry, auto_activate=True)
         assert record.activation_state == "active"
+
+    def test_persists_openclaw_artifact_when_root_provided(self, tmp_path: Path) -> None:
+        from autocontext.training.model_registry import (
+            ModelRegistry,
+            TrainingCompletionOutput,
+            publish_training_output,
+        )
+
+        registry = ModelRegistry(tmp_path)
+        completion = TrainingCompletionOutput(
+            run_id="train-99",
+            checkpoint_path="/models/grid_ctf/ckpt",
+            backend="mlx",
+            scenario="grid_ctf",
+            scenario_family="game",
+            parameter_count=125_000_000,
+            architecture="autoresearch_gpt",
+            training_metrics={"loss": 0.2},
+            data_stats={"samples": 2048},
+        )
+
+        record = publish_training_output(
+            completion,
+            registry,
+            artifacts_root=tmp_path,
+            auto_activate=True,
+        )
+
+        artifact_path = tmp_path / "_openclaw_artifacts" / f"{record.artifact_id}.json"
+        assert artifact_path.exists()
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+        assert payload["artifact_type"] == "distilled_model"

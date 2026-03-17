@@ -8,6 +8,7 @@ from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.config.settings import AppSettings
 from autocontext.storage.artifacts import ArtifactStore
+from autocontext.training.model_registry import DistilledModelRecord, ModelRegistry
 
 
 def test_settings_has_tier_fields() -> None:
@@ -92,3 +93,44 @@ def is_legal_action(state, action):
 
     model = orch.resolve_model("competitor", generation=10, scenario_name="grid_ctf")
     assert model == settings.tier_haiku_model
+
+
+def test_orchestrator_routes_registered_local_model_for_scenario(tmp_path: Path) -> None:
+    knowledge_root = tmp_path / "knowledge"
+    local_model = tmp_path / "distilled" / "grid_ctf_bundle"
+    local_model.mkdir(parents=True, exist_ok=True)
+
+    registry = ModelRegistry(knowledge_root)
+    registry.register(
+        DistilledModelRecord(
+            artifact_id="distilled-grid",
+            scenario="grid_ctf",
+            scenario_family="game",
+            backend="mlx",
+            checkpoint_path=str(local_model),
+            runtime_types=["provider"],
+            activation_state="active",
+            training_metrics={"avg_score": 0.8},
+            provenance={"run_id": "train-1"},
+        )
+    )
+
+    artifacts = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=knowledge_root,
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
+    settings = AppSettings(
+        role_routing="auto",
+        knowledge_root=knowledge_root,
+        runs_root=tmp_path / "runs",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
+    orch = AgentOrchestrator(client=DeterministicDevClient(), settings=settings, artifacts=artifacts)
+
+    config = orch._resolve_role_provider_config("competitor", generation=1, scenario_name="grid_ctf")
+    assert config is not None
+    assert config.provider_type == "mlx"
+    assert config.model == str(local_model)
