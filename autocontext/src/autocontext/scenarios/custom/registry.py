@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.scenarios.custom.agent_task_revision import (
+    patch_legacy_generated_evaluate_output,
     patch_legacy_generated_revise_output,
 )
 from autocontext.scenarios.custom.loader import load_custom_scenario
@@ -42,6 +43,7 @@ def _load_agent_task_class(custom_dir: Path, name: str) -> type[Any]:
             and issubclass(attr, AgentTaskInterface)
             and attr is not AgentTaskInterface
         ):
+            attr = patch_legacy_generated_evaluate_output(attr, source_path)
             return patch_legacy_generated_revise_output(attr, source_path)
 
     raise ImportError(f"no AgentTaskInterface subclass found in {module_name}")

@@ -287,3 +287,122 @@ class CustomTaskAgentTask(AgentTaskInterface):
 
         assert revised == "original manual"
         mock_reviser.assert_not_called()
+
+
+# ===========================================================================
+# AC-310: Legacy evaluate_output with llm_fn placeholder should be patched
+# ===========================================================================
+
+
+class TestPatchLegacyEvaluateOutput:
+    def test_legacy_evaluate_source_is_detected(self) -> None:
+        """AC-310: Source containing 'llm_fn must be injected at runtime'
+        should be detected as needing the evaluate_output patch."""
+        from autocontext.scenarios.custom.agent_task_revision import (
+            _LEGACY_EVALUATE_MARKER,
+        )
+
+        legacy_source = (
+            'def evaluate_output(self, output, state, **kwargs):\n'
+            '    def llm_fn(system, user):\n'
+            '        raise NotImplementedError("llm_fn must be injected at runtime")\n'
+            '    judge = LLMJudge(model=self._judge_model, rubric=self._rubric, llm_fn=llm_fn)\n'
+        )
+        assert _LEGACY_EVALUATE_MARKER in legacy_source
+
+    def test_patch_replaces_evaluate_output(self, tmp_path: Path) -> None:
+        """AC-310: patch_legacy_generated_evaluate_output should replace
+        the evaluate_output method on legacy classes."""
+        from unittest.mock import MagicMock, patch
+
+        from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
+        from autocontext.scenarios.custom.agent_task_revision import (
+            patch_legacy_generated_evaluate_output,
+        )
+
+        class _LegacyTask(AgentTaskInterface):
+            name = "legacy_eval"
+            _task_prompt = "Do the task."
+            _rubric = "test rubric"
+            _judge_model = ""
+
+            def get_task_prompt(self, state: dict) -> str:
+                return self._task_prompt
+
+            def evaluate_output(self, output: str, state: dict, **kwargs: object) -> AgentTaskResult:
+                raise NotImplementedError("llm_fn must be injected at runtime")
+
+            def get_rubric(self) -> str:
+                return self._rubric
+
+            def initial_state(self, seed: int | None = None) -> dict:
+                return {}
+
+            def describe_task(self) -> str:
+                return "legacy"
+
+        # Write a source file containing the marker
+        source_path = tmp_path / "agent_task.py"
+        source_path.write_text(
+            'raise NotImplementedError("llm_fn must be injected at runtime")',
+            encoding="utf-8",
+        )
+
+        patched_cls = patch_legacy_generated_evaluate_output(_LegacyTask, source_path)
+
+        mock_result = MagicMock()
+        mock_result.score = 0.82
+        mock_result.reasoning = "patched evaluation"
+        mock_result.dimension_scores = {}
+        mock_result.internal_retries = 0
+
+        mock_settings = MagicMock()
+        mock_settings.judge_model = "configured-model"
+        mock_provider = MagicMock()
+        mock_provider.default_model.return_value = "default-model"
+
+        task = patched_cls()
+        with (
+            patch("autocontext.config.load_settings", return_value=mock_settings),
+            patch("autocontext.providers.registry.get_provider", return_value=mock_provider),
+            patch("autocontext.execution.judge.LLMJudge.evaluate", return_value=mock_result),
+        ):
+            result = task.evaluate_output("test output", {})
+
+        # Should NOT raise "llm_fn must be injected at runtime"
+        assert result.score == 0.82
+
+    def test_non_legacy_source_is_not_patched(self, tmp_path: Path) -> None:
+        """Non-legacy scenarios should keep their original evaluate_output."""
+        from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
+        from autocontext.scenarios.custom.agent_task_revision import (
+            patch_legacy_generated_evaluate_output,
+        )
+
+        class _ModernTask(AgentTaskInterface):
+            name = "modern"
+            _task_prompt = "Task."
+            _rubric = "Rubric."
+
+            def get_task_prompt(self, state: dict) -> str:
+                return self._task_prompt
+
+            def evaluate_output(self, output: str, state: dict, **kwargs: object) -> AgentTaskResult:
+                return AgentTaskResult(score=0.99, reasoning="modern")
+
+            def get_rubric(self) -> str:
+                return self._rubric
+
+            def initial_state(self, seed: int | None = None) -> dict:
+                return {}
+
+            def describe_task(self) -> str:
+                return "modern"
+
+        source_path = tmp_path / "agent_task.py"
+        source_path.write_text("# modern code, no llm_fn placeholder", encoding="utf-8")
+
+        patched = patch_legacy_generated_evaluate_output(_ModernTask, source_path)
+        task = patched()
+        result = task.evaluate_output("test", {})
+        assert result.score == 0.99  # original method preserved

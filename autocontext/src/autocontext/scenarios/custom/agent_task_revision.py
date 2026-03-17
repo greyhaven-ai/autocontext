@@ -13,6 +13,8 @@ _LEGACY_NOOP_REVISION_MARKER = (
     "# Default revision: return original (llm_fn must be injected at runtime)"
 )
 
+_LEGACY_EVALUATE_MARKER = 'raise NotImplementedError("llm_fn must be injected at runtime")'
+
 
 def build_revision_prompt(
     *,
@@ -114,4 +116,61 @@ def patch_legacy_generated_revise_output(
         return revise_generated_output(self, output, judge_result, state)
 
     cls.revise_output = _patched_revise_output  # type: ignore[method-assign]
+    return cls
+
+
+def patch_legacy_generated_evaluate_output(
+    cls: type[Any],
+    source_path: Path,
+) -> type[Any]:
+    """Upgrade legacy generated agent_task classes with llm_fn placeholder in evaluate_output.
+
+    AC-310: Generated scenarios that still use the broken pattern:
+        def llm_fn(system, user):
+            raise NotImplementedError("llm_fn must be injected at runtime")
+    get their evaluate_output replaced with one that uses load_settings() + get_provider().
+    """
+    source = source_path.read_text(encoding="utf-8")
+    if _LEGACY_EVALUATE_MARKER not in source:
+        return cls
+
+    def _patched_evaluate_output(
+        self: Any,
+        output: str,
+        state: dict[str, Any],
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict[str, Any]] | None = None,
+        pinned_dimensions: list[str] | None = None,
+    ) -> AgentTaskResult:
+        from autocontext.execution.judge import LLMJudge
+
+        settings = load_settings()
+        provider = get_provider(settings)
+        model = getattr(self, "_judge_model", "") or settings.judge_model or provider.default_model()
+        rubric = getattr(self, "_rubric", "") or ""
+        judge = LLMJudge(
+            model=model,
+            rubric=rubric,
+            provider=provider,
+        )
+        task_prompt = self.get_task_prompt(state)
+        ref_ctx = reference_context or getattr(self, "_reference_context", None)
+        req_con = required_concepts or getattr(self, "_required_concepts", None)
+        result = judge.evaluate(
+            task_prompt,
+            output,
+            reference_context=ref_ctx,
+            required_concepts=req_con,
+            calibration_examples=calibration_examples,
+            pinned_dimensions=pinned_dimensions,
+        )
+        return AgentTaskResult(
+            score=result.score,
+            reasoning=result.reasoning,
+            dimension_scores=result.dimension_scores,
+            internal_retries=result.internal_retries,
+        )
+
+    cls.evaluate_output = _patched_evaluate_output  # type: ignore[method-assign]
     return cls
