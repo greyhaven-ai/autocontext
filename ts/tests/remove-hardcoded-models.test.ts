@@ -118,7 +118,7 @@ describe("AgentTaskCreator defaults", () => {
 // ---------------------------------------------------------------------------
 
 describe("SimpleAgentTask defaults", () => {
-  it("should default model to empty string", async () => {
+  it("should fall back to provider.defaultModel() when model omitted", async () => {
     const { SimpleAgentTask } = await import(
       "../src/execution/task-runner.js"
     );
@@ -128,13 +128,13 @@ describe("SimpleAgentTask defaults", () => {
       complete: vi.fn(),
     };
     const task = new SimpleAgentTask("prompt", "rubric", provider);
-    // Access private field
-    expect((task as any).model).toBe("");
+    // AC-298: model should fall back to provider default, not empty string
+    expect((task as any).model).toBe("test-model");
   });
 });
 
 describe("TaskRunner defaults", () => {
-  it("should default model to empty string", async () => {
+  it("should fall back to provider.defaultModel() when model omitted", async () => {
     const { TaskRunner } = await import("../src/execution/task-runner.js");
     const provider = {
       name: "test",
@@ -143,7 +143,8 @@ describe("TaskRunner defaults", () => {
     };
     const store = {} as any;
     const runner = new TaskRunner({ store, provider });
-    expect((runner as any).model).toBe("");
+    // AC-298: model should fall back to provider default, not empty string
+    expect((runner as any).model).toBe("test-model");
   });
 });
 

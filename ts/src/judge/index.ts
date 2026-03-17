@@ -60,7 +60,7 @@ export class LLMJudge {
 
   constructor(opts: LLMJudgeOpts) {
     this.provider = opts.provider;
-    this.model = opts.model;
+    this.model = opts.model || opts.provider.defaultModel();
     this.rubric = opts.rubric;
     this.samples = Math.max(1, opts.samples ?? 1);
     this.temperature = opts.temperature ?? 0;

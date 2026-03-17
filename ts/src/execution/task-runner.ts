@@ -81,13 +81,25 @@ function serializeResult(result: ImprovementResult): string {
  * A simple agent task built from queue config.
  */
 export class SimpleAgentTask implements AgentTaskInterface {
+  private taskPrompt: string;
+  private rubric: string;
+  private provider: LLMProvider;
+  private model: string;
+  private revisionPrompt?: string;
+
   constructor(
-    private taskPrompt: string,
-    private rubric: string,
-    private provider: LLMProvider,
-    private model: string = "",
-    private revisionPrompt?: string,
-  ) {}
+    taskPrompt: string,
+    rubric: string,
+    provider: LLMProvider,
+    model?: string,
+    revisionPrompt?: string,
+  ) {
+    this.taskPrompt = taskPrompt;
+    this.rubric = rubric;
+    this.provider = provider;
+    this.model = model || provider.defaultModel();
+    this.revisionPrompt = revisionPrompt;
+  }
 
   getTaskPrompt(): string {
     return this.taskPrompt;
@@ -198,7 +210,7 @@ export class TaskRunner {
   constructor(opts: TaskRunnerOpts) {
     this.store = opts.store;
     this.provider = opts.provider;
-    this.model = opts.model ?? "";
+    this.model = opts.model || opts.provider.defaultModel();
     this.pollInterval = opts.pollInterval ?? 60;
     this.maxConsecutiveEmpty = opts.maxConsecutiveEmpty ?? 0;
     this.concurrency = Math.max(1, opts.concurrency ?? 1);

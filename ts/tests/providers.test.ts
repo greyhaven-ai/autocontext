@@ -29,6 +29,36 @@ describe("AnthropicProvider", () => {
     expect(provider.defaultModel()).toBe("claude-haiku-4-5-20251001");
   });
 
+  it("AC-298: should fall back to default model when empty string passed", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key", model: "" });
+    expect(provider.defaultModel()).toBe("claude-sonnet-4-20250514");
+    expect(provider.defaultModel().length).toBeGreaterThan(0);
+  });
+
+  it("AC-298: should send non-empty model to API even when callOpts.model is empty", async () => {
+    const { createAnthropicProvider } = await import("../src/providers/index.js");
+    const provider = createAnthropicProvider({ apiKey: "test-key" });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: "text", text: "ok" }],
+        model: "claude-sonnet-4-20250514",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await provider.complete({ systemPrompt: "s", userPrompt: "u", model: "" });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.model.length).toBeGreaterThan(0);
+    expect(body.model).toBe("claude-sonnet-4-20250514");
+
+    vi.unstubAllGlobals();
+  });
+
   it("should call Anthropic API with correct headers", async () => {
     const { createAnthropicProvider } = await import("../src/providers/index.js");
     const provider = createAnthropicProvider({ apiKey: "sk-ant-test" });
@@ -120,6 +150,12 @@ describe("OpenAICompatibleProvider", () => {
       baseUrl: "http://localhost:11434/v1",
     });
     expect(provider.defaultModel()).toBe("llama3.1");
+  });
+
+  it("AC-298: should fall back to default model when empty string passed", async () => {
+    const { createOpenAICompatibleProvider } = await import("../src/providers/index.js");
+    const provider = createOpenAICompatibleProvider({ apiKey: "test-key", model: "" });
+    expect(provider.defaultModel()).toBe("gpt-4o");
   });
 
   it("should call OpenAI chat completions endpoint", async () => {

@@ -18,7 +18,7 @@ export interface AnthropicProviderOpts {
 }
 
 export function createAnthropicProvider(opts: AnthropicProviderOpts): LLMProvider {
-  const defaultModel = opts.model ?? "claude-sonnet-4-20250514";
+  const defaultModel = opts.model || "claude-sonnet-4-20250514";
 
   return {
     name: "anthropic",
@@ -76,7 +76,7 @@ export interface OpenAICompatibleProviderOpts {
 }
 
 export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpts): LLMProvider {
-  const defaultModel = opts.model ?? "gpt-4o";
+  const defaultModel = opts.model || "gpt-4o";
   const baseUrl = (opts.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const apiKey = opts.apiKey ?? "";
 
