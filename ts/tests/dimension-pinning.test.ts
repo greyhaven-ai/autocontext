@@ -1,5 +1,5 @@
 /**
- * Tests for dimension pinning across improvement loop rounds (MTS-48).
+ * Tests for dimension pinning across improvement loop rounds (AC-48).
  */
 import { describe, it, expect } from "vitest";
 import { LLMJudge } from "../src/judge/index.js";

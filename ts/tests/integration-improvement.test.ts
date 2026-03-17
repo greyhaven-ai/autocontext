@@ -1,5 +1,5 @@
 /**
- * Integration test: 3-round improvement cycle (MTS-30).
+ * Integration test: 3-round improvement cycle (AC-30).
  *
  * Validates improvement loop: agent revises based on feedback, score improves.
  * Uses mock task with improving scores across rounds.
@@ -82,7 +82,7 @@ function makeImprovingTask() {
   return task;
 }
 
-describe("Integration: 3-round improvement cycle (MTS-30)", () => {
+describe("Integration: 3-round improvement cycle (AC-30)", () => {
   it("three rounds complete without error", async () => {
     const task = makeImprovingTask();
     const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.95 });

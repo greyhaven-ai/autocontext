@@ -294,7 +294,7 @@ export class ImprovementLoop {
       }
 
       if (roundNum < this.maxRounds && this.task.reviseOutput) {
-        // Enrich feedback with dimension scores + regression warnings (MTS-41)
+        // Enrich feedback with dimension scores + regression warnings (AC-41)
         let revisionResult: AgentTaskResult = result;
         if (Object.keys(result.dimensionScores).length > 0 && roundNum > 1) {
           const prevValid = rounds.slice(0, -1).filter((r) => !r.judgeFailed);

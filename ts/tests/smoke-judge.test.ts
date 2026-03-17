@@ -1,5 +1,5 @@
 /**
- * Smoke test: single-round judge eval (MTS-29).
+ * Smoke test: single-round judge eval (AC-29).
  *
  * Validates basic wiring: judge scores, parses, and returns correctly
  * on a canned prompt+output with a mock provider.
@@ -37,7 +37,7 @@ function makeResponse(
   return `<!-- JUDGE_RESULT_START -->\n${JSON.stringify(data)}\n<!-- JUDGE_RESULT_END -->`;
 }
 
-describe("Smoke: single-round judge eval (MTS-29)", () => {
+describe("Smoke: single-round judge eval (AC-29)", () => {
   it("returns valid JudgeResult with score 0-1", async () => {
     const judge = new LLMJudge({ provider: mockProvider(makeResponse()), model: "m", rubric: RUBRIC });
     const r = await judge.evaluate({ taskPrompt: PROMPT, agentOutput: OUTPUT });
@@ -59,7 +59,7 @@ describe("Smoke: single-round judge eval (MTS-29)", () => {
     const judge = new LLMJudge({ provider: mockProvider(makeResponse()), model: "m", rubric: RUBRIC });
     const r = await judge.evaluate({ taskPrompt: PROMPT, agentOutput: OUTPUT });
     expect(r.reasoning.length).toBeGreaterThan(0);
-    expect(r.reasoning).toContain("MTS");
+    expect(r.reasoning).toContain("AutoContext");
   });
 
   it("parse succeeds on first attempt (markers)", async () => {
