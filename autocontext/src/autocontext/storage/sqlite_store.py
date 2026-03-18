@@ -444,7 +444,7 @@ class SQLiteStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT ao.generation_index, ao.content, g.best_score, g.gate_decision
+                SELECT ao.generation_index, ao.content, g.best_score, g.gate_decision, g.elo
                 FROM agent_outputs ao
                 JOIN generations g ON ao.run_id = g.run_id AND ao.generation_index = g.generation_index
                 JOIN (

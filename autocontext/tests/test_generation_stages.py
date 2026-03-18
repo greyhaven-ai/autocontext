@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -693,6 +694,56 @@ class TestStageTournament:
         assert payload["best_dimensions"]
         assert "control" in payload["best_dimensions"]
         assert payload["dimension_regressions"]
+
+    def test_self_play_pool_is_used_in_live_tournament_path(self) -> None:
+        settings = AppSettings(
+            agent_provider="deterministic",
+            matches_per_generation=2,
+            self_play_enabled=True,
+            self_play_pool_size=3,
+            self_play_weight=1.0,
+        )
+        ctx = _make_tournament_ctx(
+            settings=settings,
+            strategy={"aggression": 0.2},
+        )
+        ctx.generation = 2
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="advance", reason="improved")
+        events = MagicMock()
+        sqlite = MagicMock()
+        sqlite.get_strategy_score_history.return_value = [
+            {
+                "generation_index": 1,
+                "content": json.dumps({"aggression": 0.9}),
+                "best_score": 0.9,
+                "gate_decision": "advance",
+                "elo": 1110.0,
+            },
+        ]
+        sqlite.get_generation_trajectory.return_value = []
+        artifacts = MagicMock()
+
+        result = stage_tournament(
+            ctx,
+            supervisor=supervisor,
+            gate=gate,
+            events=events,
+            sqlite=sqlite,
+            artifacts=artifacts,
+            agents=None,
+        )
+
+        assert result.tournament is not None
+        assert result.tournament.self_play_summary["self_play_matches"] == 2
+        assert result.tournament.mean_score < 0.5
+        tournament_events = [
+            call for call in events.emit.call_args_list if call[0][0] == "tournament_completed"
+        ]
+        assert tournament_events
+        payload = tournament_events[-1][0][1]
+        assert payload["self_play"]["self_play_matches"] == 2
 
 
 # ---------- TestStageCuratorGate ----------

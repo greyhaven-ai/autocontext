@@ -74,6 +74,16 @@ class _DimensionalEvaluator:
         return self._results[seed]
 
 
+class _StrategyEvaluator:
+    def evaluate(
+        self,
+        candidate: Mapping[str, Any],
+        seed: int,
+        limits: EvaluationLimits,
+    ) -> EvaluationResult:
+        return EvaluationResult(score=float(candidate["score"]))
+
+
 class TestEvaluationRunner:
     def test_runner_single_trial(self) -> None:
         runner = EvaluationRunner(evaluator=_FixedEvaluator(0.7))
@@ -183,3 +193,24 @@ class TestEvaluationRunner:
         assert summary.dimension_means == {"control": pytest.approx(0.85), "tempo": pytest.approx(0.55)}
         assert summary.best_dimensions == {"control": 0.9, "tempo": 0.5}
         assert len(summary.dimension_trajectory) == 2
+
+    def test_runner_applies_self_play_schedule(self) -> None:
+        runner = EvaluationRunner(evaluator=_StrategyEvaluator())
+        summary = runner.run(
+            candidate={"score": 0.7},
+            seed_base=0,
+            trials=2,
+            limits=EvaluationLimits(),
+            challenger_elo=1000.0,
+            opponent_pool=[
+                {"source": "baseline"},
+                {"source": "self_play", "strategy": {"score": 0.9}, "generation": 1, "elo": 1100.0},
+            ],
+        )
+
+        assert summary.self_play_summary["baseline_matches"] == 1
+        assert summary.self_play_summary["self_play_matches"] == 1
+        assert summary.results[1].metadata["match_source"] == "self_play"
+        assert summary.results[1].metadata["self_play"]["opponent_generation"] == 1
+        assert summary.results[1].score == pytest.approx(0.4)
+        assert summary.mean_score == pytest.approx((0.7 + 0.4) / 2)

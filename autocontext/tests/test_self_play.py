@@ -5,6 +5,8 @@ Covers: SelfPlayOpponent, SelfPlayConfig, SelfPlayPool, build_opponent_pool.
 
 from __future__ import annotations
 
+import json
+
 # ===========================================================================
 # SelfPlayOpponent
 # ===========================================================================
@@ -169,6 +171,24 @@ class TestBuildOpponentPool:
         # Should have baselines + self-play opponents
         assert len(result) > len(baselines)
 
+    def test_weight_shapes_live_schedule_when_trials_provided(self) -> None:
+        from autocontext.harness.evaluation.self_play import (
+            SelfPlayConfig,
+            SelfPlayOpponent,
+            SelfPlayPool,
+            build_opponent_pool,
+        )
+
+        baselines = [{"strategy": "baseline"}]
+        pool = SelfPlayPool(SelfPlayConfig(enabled=True, pool_size=3, weight=0.25))
+        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
+
+        result = build_opponent_pool(baselines, pool, trials=4)
+
+        self_play_entries = [entry for entry in result if entry.get("source") == "self_play"]
+        assert len(result) == 4
+        assert len(self_play_entries) == 1
+
     def test_self_play_tagged(self) -> None:
         from autocontext.harness.evaluation.self_play import (
             SelfPlayConfig,
@@ -198,3 +218,68 @@ class TestBuildOpponentPool:
 
         result = build_opponent_pool([], pool)
         assert len(result) >= 1
+
+
+class TestLoadSelfPlayPool:
+    def test_loads_prior_advanced_strategies_only(self) -> None:
+        from autocontext.harness.evaluation.self_play import (
+            SelfPlayConfig,
+            load_self_play_pool,
+        )
+
+        history = [
+            {
+                "generation_index": 1,
+                "content": json.dumps({"aggression": 0.9}),
+                "best_score": 0.8,
+                "gate_decision": "advance",
+                "elo": 1110.0,
+            },
+            {
+                "generation_index": 2,
+                "content": json.dumps({"aggression": 0.1}),
+                "best_score": 0.2,
+                "gate_decision": "rollback",
+                "elo": 980.0,
+            },
+        ]
+
+        pool = load_self_play_pool(
+            history,
+            SelfPlayConfig(enabled=True, pool_size=3, weight=0.5),
+            current_generation=3,
+        )
+
+        opponents = pool.get_opponents()
+        assert len(opponents) == 1
+        assert opponents[0].generation == 1
+        assert opponents[0].elo == 1110.0
+
+    def test_ignores_future_and_invalid_rows(self) -> None:
+        from autocontext.harness.evaluation.self_play import (
+            SelfPlayConfig,
+            load_self_play_pool,
+        )
+
+        history = [
+            {
+                "generation_index": 4,
+                "content": json.dumps({"aggression": 0.9}),
+                "best_score": 0.8,
+                "gate_decision": "advance",
+            },
+            {
+                "generation_index": 2,
+                "content": "{bad json",
+                "best_score": 0.5,
+                "gate_decision": "advance",
+            },
+        ]
+
+        pool = load_self_play_pool(
+            history,
+            SelfPlayConfig(enabled=True, pool_size=3, weight=0.5),
+            current_generation=3,
+        )
+
+        assert pool.get_opponents() == []

@@ -15,6 +15,11 @@ from autocontext.harness.evaluation.dimensional import detect_dimension_regressi
 from autocontext.harness.evaluation.failure_report import FailureReport
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from autocontext.harness.evaluation.self_play import (
+    SelfPlayConfig,
+    build_opponent_pool,
+    load_self_play_pool,
+)
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
 from autocontext.harness.pipeline.validity_gate import ValidityGate
@@ -219,6 +224,26 @@ def _build_dimension_summary_payload(tournament: EvaluationSummary) -> dict[str,
         "dimension_specs": dimension_specs,
         "dimension_regressions": dimension_regressions,
     }
+
+
+def _build_self_play_summary_payload(tournament: EvaluationSummary) -> dict[str, object] | None:
+    """Extract a JSON-safe self-play summary from a tournament."""
+    raw_value = getattr(tournament, "self_play_summary", {})
+    if not isinstance(raw_value, dict):
+        return None
+    clean: dict[str, object] = {}
+    for key, value in raw_value.items():
+        if not isinstance(key, str):
+            continue
+        if isinstance(value, (bool, str)):
+            clean[key] = value
+            continue
+        if isinstance(value, int):
+            clean[key] = value
+            continue
+        if isinstance(value, float):
+            clean[key] = round(value, 6)
+    return clean or None
 
 
 def stage_policy_refinement(
@@ -663,10 +688,33 @@ def stage_tournament(
                 "generation": ctx.generation,
             })
 
+        self_play_config = SelfPlayConfig(
+            enabled=settings.self_play_enabled,
+            pool_size=settings.self_play_pool_size,
+            weight=settings.self_play_weight,
+        )
+        self_play_pool = load_self_play_pool(
+            sqlite.get_strategy_score_history(ctx.run_id) if settings.self_play_enabled else [],
+            self_play_config,
+            current_generation=ctx.generation,
+        )
+        opponent_pool = build_opponent_pool(
+            [{"source": "baseline"}],
+            self_play_pool,
+            trials=settings.matches_per_generation,
+        )
+        planned_self_play_matches = sum(
+            1
+            for entry in opponent_pool
+            if isinstance(entry, dict) and entry.get("source") == "self_play"
+        )
+
         events.emit("tournament_started", {
             "run_id": ctx.run_id,
             "generation": ctx.generation,
             "matches": settings.matches_per_generation,
+            "self_play_pool_size": self_play_pool.size,
+            "self_play_matches_planned": planned_self_play_matches,
         })
 
         def _on_match(match_index: int, score: float, _gen: int = ctx.generation) -> None:
@@ -689,6 +737,7 @@ def stage_tournament(
                 trials=settings.matches_per_generation,
                 limits=harness_limits,
                 challenger_elo=ctx.challenger_elo,
+                opponent_pool=opponent_pool,
                 on_result=_on_result,
             )
         except Exception:
@@ -799,6 +848,7 @@ def stage_tournament(
         ctx.settings = ctx.settings.model_copy(update={"exploration_mode": "linear"})
 
     dimension_summary = _build_dimension_summary_payload(tournament)
+    self_play_summary = _build_self_play_summary_payload(tournament)
 
     events.emit("tournament_completed", {
         "run_id": ctx.run_id, "generation": ctx.generation,
@@ -809,6 +859,7 @@ def stage_tournament(
         "dimension_regressions": (
             dimension_summary["dimension_regressions"] if dimension_summary is not None else []
         ),
+        "self_play": self_play_summary or {},
     })
 
     outcome = apply_tournament_outcome(
@@ -827,6 +878,7 @@ def stage_tournament(
         "dimension_regressions": (
             dimension_summary["dimension_regressions"] if dimension_summary is not None else []
         ),
+        "self_play": self_play_summary or {},
     }
     gate_metadata = getattr(gate_result, "metadata", None)
     if isinstance(gate_metadata, dict) and gate_metadata:
@@ -1131,6 +1183,9 @@ def stage_persistence(
         metrics["dimension_means"] = dimension_summary["dimension_means"]
         metrics["best_dimensions"] = dimension_summary["best_dimensions"]
         metrics["dimension_regressions"] = dimension_summary["dimension_regressions"]
+    self_play_summary = _build_self_play_summary_payload(tournament)
+    if self_play_summary is not None:
+        metrics["self_play"] = self_play_summary
 
     # 2. Insert matches into sqlite
     for idx, eval_result in enumerate(tournament.results):
@@ -1231,6 +1286,7 @@ def stage_persistence(
         "dimension_regressions": (
             dimension_summary["dimension_regressions"] if dimension_summary is not None else []
         ),
+        "self_play": self_play_summary or {},
         "created_tools": ctx.created_tools,
     })
 
