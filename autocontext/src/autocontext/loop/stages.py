@@ -599,6 +599,8 @@ def stage_tournament(
             custom_metrics = scenario.custom_backpressure(best_exec.result)
         gate_result = resolve_gate_decision(
             tournament_best_score=tournament.best_score,
+            tournament_mean_score=tournament.mean_score,
+            tournament_results=tournament.results,
             previous_best=ctx.previous_best,
             gate=gate,
             score_history=ctx.score_history,
@@ -694,10 +696,14 @@ def stage_tournament(
         gate_decision_history=ctx.gate_decision_history,
     )
     gate_delta = outcome["gate_delta"]
-    events.emit("gate_decided", {
+    gate_event = {
         "run_id": ctx.run_id, "generation": ctx.generation,
         "decision": gate_decision, "delta": gate_delta,
-    })
+    }
+    gate_metadata = getattr(gate_result, "metadata", None)
+    if isinstance(gate_metadata, dict) and gate_metadata:
+        gate_event.update(gate_metadata)
+    events.emit("gate_decided", gate_event)
 
     # Generate replay narrative from best match for next generation
     best_eval = max(tournament.results, key=lambda r: r.score)

@@ -13,14 +13,20 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 
-def _make_eval_result(score: float = 0.7, **meta: Any) -> Any:
+def _make_eval_result(
+    score: float = 0.7,
+    *,
+    passed: bool = True,
+    errors: list[str] | None = None,
+    **meta: Any,
+) -> Any:
     from autocontext.harness.evaluation.types import EvaluationResult
 
     exec_output = type("ExecOutput", (), {"result": type("R", (), {"replay": {}})()})()
     return EvaluationResult(
         score=score,
-        passed=True,
-        errors=[],
+        passed=passed,
+        errors=errors or [],
         metadata={"execution_output": exec_output, **meta},
     )
 
@@ -57,6 +63,8 @@ class TestResolveGateDecision:
 
         result = resolve_gate_decision(
             tournament_best_score=0.8,
+            tournament_mean_score=0.78,
+            tournament_results=[_make_eval_result(0.8), _make_eval_result(0.76)],
             previous_best=0.7,
             gate=None,
             score_history=[0.5, 0.6, 0.7],
@@ -74,6 +82,8 @@ class TestResolveGateDecision:
 
         result = resolve_gate_decision(
             tournament_best_score=0.65,
+            tournament_mean_score=0.63,
+            tournament_results=[_make_eval_result(0.65), _make_eval_result(0.61)],
             previous_best=0.7,
             gate=None,
             score_history=[0.5, 0.6, 0.7],
@@ -92,6 +102,8 @@ class TestResolveGateDecision:
         gate = BackpressureGate(min_delta=0.005)
         result = resolve_gate_decision(
             tournament_best_score=0.75,
+            tournament_mean_score=0.72,
+            tournament_results=[_make_eval_result(0.75), _make_eval_result(0.69)],
             previous_best=0.70,
             gate=gate,
             score_history=[0.5, 0.6, 0.7],
@@ -103,6 +115,7 @@ class TestResolveGateDecision:
         )
         assert result.decision == "advance"
         assert result.delta > 0
+        assert "advancement_rationale" in result.metadata
 
     def test_standard_gate_retry(self) -> None:
         from autocontext.harness.pipeline.gate import BackpressureGate
@@ -111,6 +124,8 @@ class TestResolveGateDecision:
         gate = BackpressureGate(min_delta=0.1)
         result = resolve_gate_decision(
             tournament_best_score=0.71,
+            tournament_mean_score=0.705,
+            tournament_results=[_make_eval_result(0.71), _make_eval_result(0.70)],
             previous_best=0.70,
             gate=gate,
             score_history=[0.7],
@@ -129,6 +144,8 @@ class TestResolveGateDecision:
         gate = BackpressureGate(min_delta=0.1)
         result = resolve_gate_decision(
             tournament_best_score=0.71,
+            tournament_mean_score=0.705,
+            tournament_results=[_make_eval_result(0.71), _make_eval_result(0.70)],
             previous_best=0.70,
             gate=gate,
             score_history=[0.7],
@@ -148,6 +165,8 @@ class TestResolveGateDecision:
         gate = TrendAwareGate(min_delta=0.005)
         result = resolve_gate_decision(
             tournament_best_score=0.75,
+            tournament_mean_score=0.72,
+            tournament_results=[_make_eval_result(0.75), _make_eval_result(0.69)],
             previous_best=0.70,
             gate=gate,
             score_history=[0.5, 0.6, 0.7],
@@ -159,6 +178,52 @@ class TestResolveGateDecision:
         )
         assert result.decision == "advance"
         assert result.is_rapid is False
+
+    def test_standard_gate_rolls_back_on_high_error_rate(self) -> None:
+        from autocontext.harness.pipeline.gate import BackpressureGate
+        from autocontext.loop.tournament_helpers import resolve_gate_decision
+
+        gate = BackpressureGate(min_delta=0.005)
+        result = resolve_gate_decision(
+            tournament_best_score=0.80,
+            tournament_mean_score=0.74,
+            tournament_results=[
+                _make_eval_result(0.80),
+                _make_eval_result(0.74, passed=False, errors=["boom"]),
+                _make_eval_result(0.68, passed=False, errors=["boom"]),
+            ],
+            previous_best=0.70,
+            gate=gate,
+            score_history=[0.6, 0.7],
+            gate_decision_history=["advance"],
+            retry_count=0,
+            max_retries=3,
+            use_rapid=False,
+            custom_metrics=None,
+        )
+        assert result.decision == "rollback"
+
+    def test_resolved_truth_without_prior_truth_baseline_does_not_mix_with_proxy_baseline(self) -> None:
+        from autocontext.harness.pipeline.gate import BackpressureGate
+        from autocontext.loop.tournament_helpers import resolve_gate_decision
+
+        gate = BackpressureGate(min_delta=0.005)
+        result = resolve_gate_decision(
+            tournament_best_score=0.90,
+            tournament_mean_score=0.88,
+            tournament_results=[_make_eval_result(0.90), _make_eval_result(0.86)],
+            previous_best=0.85,
+            gate=gate,
+            score_history=[0.8, 0.85],
+            gate_decision_history=["advance"],
+            retry_count=0,
+            max_retries=3,
+            use_rapid=False,
+            custom_metrics={"resolved_truth_score": 0.55},
+        )
+        assert result.decision == "advance"
+        rationale = result.metadata["advancement_rationale"]
+        assert "resolved truth present without prior truth baseline" in rationale["risk_flags"]
 
 
 # ===========================================================================

@@ -38,6 +38,7 @@ class AdvancementMetrics:
     sample_agreement: float = 1.0
     search_proxy_score: float | None = None
     resolved_truth_score: float | None = None
+    previous_resolved_truth_score: float | None = None
     generalization_gap: float | None = None
     cost_usd: float = 0.0
     tokens_used: int = 0
@@ -60,6 +61,7 @@ class AdvancementMetrics:
             "sample_agreement": self.sample_agreement,
             "search_proxy_score": self.search_proxy_score,
             "resolved_truth_score": self.resolved_truth_score,
+            "previous_resolved_truth_score": self.previous_resolved_truth_score,
             "generalization_gap": self.generalization_gap,
             "cost_usd": self.cost_usd,
             "tokens_used": self.tokens_used,
@@ -81,6 +83,7 @@ class AdvancementMetrics:
             sample_agreement=data.get("sample_agreement", 1.0),
             search_proxy_score=data.get("search_proxy_score"),
             resolved_truth_score=data.get("resolved_truth_score"),
+            previous_resolved_truth_score=data.get("previous_resolved_truth_score"),
             generalization_gap=data.get("generalization_gap"),
             cost_usd=data.get("cost_usd", 0.0),
             tokens_used=data.get("tokens_used", 0),
@@ -169,6 +172,11 @@ def evaluate_advancement(
         risk_flags.append(f"low confidence {metrics.confidence:.2f}")
         proxy_signals.append("confidence")
 
+    components["sample_agreement"] = metrics.sample_agreement
+    if metrics.sample_agreement < _LOW_CONFIDENCE_THRESHOLD:
+        risk_flags.append(f"low sample agreement {metrics.sample_agreement:.2f}")
+        proxy_signals.append("sample_agreement")
+
     # 4. Score variance
     components["score_variance"] = metrics.score_variance
     if metrics.score_variance > _HIGH_VARIANCE_THRESHOLD:
@@ -179,20 +187,25 @@ def evaluate_advancement(
     if metrics.resolved_truth_score is not None:
         components["resolved_truth_score"] = metrics.resolved_truth_score
         binding_checks.append("resolved_truth_score")
-        truth_delta = metrics.resolved_truth_score - metrics.previous_best
-        if truth_delta < min_delta:
-            return AdvancementRationale(
-                decision="retry" if retry_count < max_retries else "rollback",
-                reason=(
-                    f"Resolved truth score {metrics.resolved_truth_score:.4f} "
-                    f"does not improve enough over {metrics.previous_best:.4f} "
-                    f"(delta {truth_delta:.4f} < {min_delta})"
-                ),
-                component_scores=components,
-                binding_checks=binding_checks,
-                proxy_signals=proxy_signals,
-                risk_flags=risk_flags,
-            )
+        if metrics.previous_resolved_truth_score is not None:
+            components["previous_resolved_truth_score"] = metrics.previous_resolved_truth_score
+            truth_delta = round(metrics.resolved_truth_score - metrics.previous_resolved_truth_score, 6)
+            components["truth_delta"] = truth_delta
+            if truth_delta < min_delta:
+                return AdvancementRationale(
+                    decision="retry" if retry_count < max_retries else "rollback",
+                    reason=(
+                        f"Resolved truth score {metrics.resolved_truth_score:.4f} "
+                        f"does not improve enough over prior truth {metrics.previous_resolved_truth_score:.4f} "
+                        f"(delta {truth_delta:.4f} < {min_delta})"
+                    ),
+                    component_scores=components,
+                    binding_checks=binding_checks,
+                    proxy_signals=proxy_signals,
+                    risk_flags=risk_flags,
+                )
+        else:
+            risk_flags.append("resolved truth present without prior truth baseline")
     else:
         if metrics.search_proxy_score is not None:
             components["search_proxy_score"] = metrics.search_proxy_score

@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from statistics import pvariance
 from typing import Any
 
-from autocontext.harness.evaluation.types import EvaluationSummary
+from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
+from autocontext.harness.pipeline.advancement import AdvancementMetrics, evaluate_advancement
 from autocontext.harness.pipeline.gate import BackpressureGate
 from autocontext.harness.pipeline.trend_gate import ScoreHistory, TrendAwareGate
+from autocontext.knowledge.harness_quality import compute_harness_quality
 from autocontext.knowledge.rapid_gate import rapid_gate
 
 
@@ -27,11 +30,53 @@ class GateDecisionResult:
     delta: float
     reason: str
     is_rapid: bool
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _build_advancement_metrics(
+    *,
+    tournament_best_score: float,
+    tournament_mean_score: float,
+    previous_best: float,
+    tournament_results: list[EvaluationResult],
+    custom_metrics: dict[str, float] | None,
+) -> AdvancementMetrics:
+    scores = [result.score for result in tournament_results]
+    score_variance = pvariance(scores) if len(scores) > 1 else 0.0
+    quality = compute_harness_quality(tournament_results)
+    metrics = custom_metrics or {}
+
+    return AdvancementMetrics(
+        best_score=tournament_best_score,
+        mean_score=tournament_mean_score,
+        previous_best=previous_best,
+        score_variance=score_variance,
+        sample_count=len(tournament_results),
+        error_rate=float(metrics.get("error_rate", quality.error_rate)),
+        crash_count=int(metrics.get("crash_count", quality.crash_count)),
+        confidence=float(metrics.get("confidence", 1.0)),
+        sample_agreement=float(metrics.get("sample_agreement", 1.0)),
+        search_proxy_score=_optional_float(metrics.get("search_proxy_score", tournament_best_score)),
+        resolved_truth_score=_optional_float(metrics.get("resolved_truth_score")),
+        previous_resolved_truth_score=_optional_float(metrics.get("previous_resolved_truth_score")),
+        generalization_gap=_optional_float(metrics.get("generalization_gap")),
+        cost_usd=float(metrics.get("cost_usd", 0.0)),
+        tokens_used=int(metrics.get("tokens_used", 0)),
+        metadata=dict(metrics),
+    )
 
 
 def resolve_gate_decision(
     *,
     tournament_best_score: float,
+    tournament_mean_score: float,
+    tournament_results: list[EvaluationResult],
     previous_best: float,
     gate: BackpressureGate | TrendAwareGate | None,
     score_history: list[float],
@@ -67,7 +112,7 @@ def resolve_gate_decision(
         )
 
     if isinstance(gate, TrendAwareGate):
-        gate_result = gate.evaluate(
+        threshold_probe = gate.evaluate(
             previous_best,
             tournament_best_score,
             retry_count=retry_count,
@@ -79,18 +124,49 @@ def resolve_gate_decision(
             custom_metrics=custom_metrics or {},
         )
     else:
-        gate_result = gate.evaluate(
+        threshold_probe = gate.evaluate(
             previous_best,
             tournament_best_score,
             retry_count=retry_count,
             max_retries=max_retries,
         )
 
+    threshold = getattr(threshold_probe, "threshold", None)
+    if not isinstance(threshold, (int, float)):
+        compatibility_decision = getattr(threshold_probe, "decision", None)
+        if compatibility_decision in {"advance", "retry", "rollback"}:
+            return GateDecisionResult(
+                decision=compatibility_decision,
+                delta=delta,
+                reason=str(getattr(threshold_probe, "reason", "gate decision")),
+                is_rapid=False,
+            )
+        raw_min_delta = getattr(gate, "min_delta", 0.005)
+        threshold = float(raw_min_delta) if isinstance(raw_min_delta, (int, float)) else 0.005
+
+    advancement_metrics = _build_advancement_metrics(
+        tournament_best_score=tournament_best_score,
+        tournament_mean_score=tournament_mean_score,
+        previous_best=previous_best,
+        tournament_results=tournament_results,
+        custom_metrics=custom_metrics,
+    )
+    rationale = evaluate_advancement(
+        advancement_metrics,
+        min_delta=threshold,
+        max_retries=max_retries,
+        retry_count=retry_count,
+    )
+
     return GateDecisionResult(
-        decision=gate_result.decision,
-        delta=gate_result.delta,
-        reason=gate_result.reason,
+        decision=rationale.decision,
+        delta=advancement_metrics.delta,
+        reason=rationale.reason,
         is_rapid=False,
+        metadata={
+            "threshold": threshold,
+            "advancement_rationale": rationale.to_dict(),
+        },
     )
 
 

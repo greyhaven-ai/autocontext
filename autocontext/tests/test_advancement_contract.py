@@ -50,12 +50,14 @@ class TestAdvancementMetrics:
             best_score=0.9, mean_score=0.85, previous_best=0.8,
             score_variance=0.005, sample_count=5,
             confidence=0.95, resolved_truth_score=0.88,
+            previous_resolved_truth_score=0.84,
         )
         d = m.to_dict()
         restored = AdvancementMetrics.from_dict(d)
         assert restored.best_score == 0.9
         assert restored.confidence == 0.95
         assert restored.resolved_truth_score == 0.88
+        assert restored.previous_resolved_truth_score == 0.84
 
 
 # ===========================================================================
@@ -186,9 +188,27 @@ class TestEvaluateAdvancement:
             score_variance=0.005, sample_count=5,
             search_proxy_score=0.90,
             resolved_truth_score=0.55,  # truth says much worse
+            previous_resolved_truth_score=0.70,
         )
         rationale = evaluate_advancement(metrics, min_delta=0.005)
         assert "resolved_truth_score" in rationale.binding_checks
+        assert rationale.decision in ("retry", "rollback")
+
+    def test_truth_score_without_prior_truth_baseline_uses_explicit_fallback(self) -> None:
+        from autocontext.harness.pipeline.advancement import (
+            AdvancementMetrics,
+            evaluate_advancement,
+        )
+
+        metrics = AdvancementMetrics(
+            best_score=0.90, mean_score=0.85, previous_best=0.70,
+            score_variance=0.005, sample_count=5,
+            search_proxy_score=0.90,
+            resolved_truth_score=0.55,
+        )
+        rationale = evaluate_advancement(metrics, min_delta=0.005)
+        assert "resolved_truth_score" in rationale.binding_checks
+        assert "resolved truth present without prior truth baseline" in rationale.risk_flags
 
     def test_rationale_has_component_scores(self) -> None:
         from autocontext.harness.pipeline.advancement import (
