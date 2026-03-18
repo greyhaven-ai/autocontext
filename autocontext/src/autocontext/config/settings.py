@@ -45,6 +45,21 @@ class AppSettings(BaseModel):
         le=1.0,
         description="Minimum per-dimension drop to flag as a regression in game scenario analysis",
     )
+    self_play_enabled: bool = Field(
+        default=False,
+        description="Evaluate a fraction of tournament matches against prior advanced strategies from the same run",
+    )
+    self_play_pool_size: int = Field(
+        default=3,
+        ge=1,
+        description="Max number of prior advanced strategies kept in the self-play opponent pool",
+    )
+    self_play_weight: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of tournament matches scheduled against self-play opponents when available",
+    )
     backpressure_mode: str = Field(default="simple")
     backpressure_plateau_window: int = Field(default=3, ge=1)
     backpressure_plateau_relaxation: float = Field(default=0.5, ge=0.0, le=1.0)

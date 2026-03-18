@@ -36,3 +36,4 @@ class EvaluationSummary:
     dimension_trajectory: list[dict[str, float]] = field(default_factory=list)
     dimension_specs: list[dict[str, Any]] = field(default_factory=list)
     dimension_regressions: list[dict[str, Any]] = field(default_factory=list)
+    self_play_summary: dict[str, Any] = field(default_factory=dict)

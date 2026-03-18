@@ -462,6 +462,29 @@ class SQLiteStore:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def get_self_play_strategy_history(self, run_id: str) -> list[dict[str, Any]]:
+        """Return prior competitor strategies with Elo for self-play scheduling."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT ao.generation_index, ao.content, g.best_score, g.gate_decision, g.elo
+                FROM agent_outputs ao
+                JOIN generations g ON ao.run_id = g.run_id AND ao.generation_index = g.generation_index
+                JOIN (
+                    SELECT run_id, generation_index, MAX(rowid) AS max_rowid
+                    FROM agent_outputs
+                    WHERE role = 'competitor'
+                    GROUP BY run_id, generation_index
+                ) latest ON ao.run_id = latest.run_id
+                    AND ao.generation_index = latest.generation_index
+                    AND ao.rowid = latest.max_rowid
+                WHERE ao.run_id = ? AND ao.role = 'competitor' AND g.status = 'completed'
+                ORDER BY ao.generation_index
+                """,
+                (run_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def save_knowledge_snapshot(
         self,
         scenario: str,

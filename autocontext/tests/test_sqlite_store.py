@@ -95,3 +95,22 @@ def test_latest_competitor_output_is_canonical_for_generation_queries(tmp_path: 
         },
     ]
     assert store.get_best_competitor_output("grid_ctf") == '{"aggression": 0.9}'
+
+
+def test_self_play_strategy_history_includes_elo(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.create_run("run-1", "grid_ctf", 2, "local")
+    store.upsert_generation("run-1", 1, 0.4, 0.5, 1012.5, 1, 0, "advance", "completed")
+    store.append_agent_output("run-1", 1, "competitor", '{"aggression": 0.9}')
+
+    history = store.get_self_play_strategy_history("run-1")
+
+    assert history == [
+        {
+            "generation_index": 1,
+            "content": '{"aggression": 0.9}',
+            "best_score": 0.5,
+            "gate_decision": "advance",
+            "elo": 1012.5,
+        },
+    ]
