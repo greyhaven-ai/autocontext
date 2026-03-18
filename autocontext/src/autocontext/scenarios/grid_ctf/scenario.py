@@ -10,6 +10,25 @@ from autocontext.scenarios.base import Observation, Result, ScenarioInterface
 class GridCtfScenario(ScenarioInterface):
     name = "grid_ctf"
 
+    def scoring_dimensions(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": "capture_progress",
+                "weight": 0.6,
+                "description": "How effectively the strategy advances toward capturing the flag.",
+            },
+            {
+                "name": "defender_survival",
+                "weight": 0.25,
+                "description": "How well the strategy preserves defenders and base integrity.",
+            },
+            {
+                "name": "energy_efficiency",
+                "weight": 0.15,
+                "description": "How efficiently the strategy converts aggression into progress without waste.",
+            },
+        ]
+
     def describe_rules(self) -> str:
         return (
             "20x20 capture-the-flag map with fog of war and three unit archetypes "

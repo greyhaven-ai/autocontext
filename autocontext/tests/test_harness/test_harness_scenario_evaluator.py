@@ -12,11 +12,16 @@ from autocontext.harness.evaluation.types import EvaluationLimits, EvaluationRes
 
 
 class FakeResult:
-    def __init__(self, score: float, errors: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        score: float,
+        errors: list[str] | None = None,
+        metrics: dict[str, float] | None = None,
+    ) -> None:
         self.score = score
         self.summary = "test"
         self.replay: list[dict[str, Any]] = []
-        self.metrics: dict[str, float] = {"score": score}
+        self.metrics: dict[str, float] = metrics or {"score": score}
         self.validation_errors = errors or []
         self.passed_validation = len(self.validation_errors) == 0
 
@@ -44,15 +49,26 @@ class FakeScenario:
     def execute_match(self, strategy: Mapping[str, Any], seed: int) -> FakeResult:
         return FakeResult(score=float(strategy.get("score", 0.5)))
 
+    def scoring_dimensions(self) -> list[dict[str, Any]] | None:
+        return None
+
 
 class FakeSupervisor:
-    def __init__(self, score: float = 0.75) -> None:
+    def __init__(
+        self,
+        score: float = 0.75,
+        metrics: dict[str, float] | None = None,
+    ) -> None:
         self._score = score
+        self._metrics = metrics
         self.calls: list[tuple[Any, Any]] = []
 
     def run(self, scenario: Any, payload: Any) -> FakeExecutionOutput:
         self.calls.append((scenario, payload))
-        return FakeExecutionOutput(result=FakeResult(score=self._score), replay=FakeReplay())
+        return FakeExecutionOutput(
+            result=FakeResult(score=self._score, metrics=self._metrics),
+            replay=FakeReplay(),
+        )
 
 
 class TestScenarioEvaluator:
@@ -110,6 +126,25 @@ class TestScenarioEvaluator:
         assert hasattr(output, "result")
         assert hasattr(output, "replay")
         assert output.result.score == result.score
+
+    def test_evaluate_extracts_dimension_scores(self) -> None:
+        class DimensionalScenario(FakeScenario):
+            def scoring_dimensions(self) -> list[dict[str, Any]] | None:
+                return [
+                    {"name": "control", "weight": 0.6},
+                    {"name": "tempo", "weight": 0.4},
+                ]
+
+        evaluator = ScenarioEvaluator(
+            DimensionalScenario(),
+            FakeSupervisor(
+                score=0.75,
+                metrics={"control": 0.8, "tempo": 0.7, "other": 1.0},
+            ),
+        )
+        result = evaluator.evaluate({}, seed=1, limits=EvaluationLimits())
+        assert result.dimension_scores == {"control": 0.8, "tempo": 0.7}
+        assert result.metadata["dimension_specs"][0]["name"] == "control"
 
     def test_works_with_evaluation_runner(self) -> None:
         from autocontext.harness.evaluation.runner import EvaluationRunner

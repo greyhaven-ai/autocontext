@@ -174,6 +174,74 @@ class TestFormatDimensionTrajectory:
 class TestScenarioScoringDimensions:
     def test_default_returns_none(self) -> None:
         """Base ScenarioInterface.scoring_dimensions() returns None."""
-        from autocontext.scenarios.base import ScenarioInterface
+        from collections.abc import Mapping
+        from typing import Any
 
-        assert hasattr(ScenarioInterface, "scoring_dimensions")
+        from autocontext.scenarios.base import Observation, Result, ScenarioInterface
+
+        class _ScenarioWithoutDimensions(ScenarioInterface):
+            name = "no_dims"
+
+            def describe_rules(self) -> str:
+                return ""
+
+            def describe_strategy_interface(self) -> str:
+                return ""
+
+            def describe_evaluation_criteria(self) -> str:
+                return ""
+
+            def initial_state(self, seed: int | None = None) -> dict[str, Any]:
+                return {"terminal": True}
+
+            def get_observation(self, state: Mapping[str, Any], player_id: str) -> Observation:
+                return Observation(narrative="")
+
+            def validate_actions(
+                self,
+                state: Mapping[str, Any],
+                player_id: str,
+                actions: Mapping[str, Any],
+            ) -> tuple[bool, str]:
+                return True, ""
+
+            def step(self, state: Mapping[str, Any], actions: Mapping[str, Any]) -> dict[str, Any]:
+                return {"terminal": True}
+
+            def is_terminal(self, state: Mapping[str, Any]) -> bool:
+                return True
+
+            def get_result(self, state: Mapping[str, Any]) -> Result:
+                return Result(score=0.0, summary="", replay=[])
+
+            def replay_to_narrative(self, replay: list[dict[str, Any]]) -> str:
+                return ""
+
+            def render_frame(self, state: Mapping[str, Any]) -> dict[str, Any]:
+                return {}
+
+        assert _ScenarioWithoutDimensions().scoring_dimensions() is None
+
+    def test_grid_ctf_defines_weighted_dimensions(self) -> None:
+        from autocontext.scenarios.grid_ctf.scenario import GridCtfScenario
+
+        dims = GridCtfScenario().scoring_dimensions()
+        assert dims is not None
+        assert [dim["name"] for dim in dims] == [
+            "capture_progress",
+            "defender_survival",
+            "energy_efficiency",
+        ]
+        assert sum(float(dim["weight"]) for dim in dims) == 1.0
+
+    def test_othello_defines_weighted_dimensions(self) -> None:
+        from autocontext.scenarios.othello import OthelloScenario
+
+        dims = OthelloScenario().scoring_dimensions()
+        assert dims is not None
+        assert [dim["name"] for dim in dims] == [
+            "mobility",
+            "corner_pressure",
+            "stability",
+        ]
+        assert sum(float(dim["weight"]) for dim in dims) == 1.0

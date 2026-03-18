@@ -76,6 +76,28 @@ class DimensionalScore:
         )
 
 
+def normalize_dimension_specs(
+    raw_specs: list[dict[str, Any]] | None,
+) -> list[ScoringDimension]:
+    """Convert scenario-provided dimension specs into typed dimensions."""
+    if not raw_specs:
+        return []
+    return [ScoringDimension.from_dict(spec) for spec in raw_specs if isinstance(spec, dict)]
+
+
+def extract_dimension_scores(
+    metrics: dict[str, Any],
+    dimension_specs: list[ScoringDimension],
+) -> dict[str, float]:
+    """Extract typed dimension scores from scenario metrics."""
+    scores: dict[str, float] = {}
+    for spec in dimension_specs:
+        value = metrics.get(spec.name)
+        if isinstance(value, (int, float)):
+            scores[spec.name] = round(float(value), 6)
+    return scores
+
+
 def detect_dimension_regression(
     previous: dict[str, float],
     current: dict[str, float],

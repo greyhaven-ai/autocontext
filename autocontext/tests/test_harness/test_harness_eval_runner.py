@@ -50,6 +50,30 @@ class _ErrorEvaluator:
         raise RuntimeError("evaluation failed")
 
 
+class _DimensionalEvaluator:
+    def __init__(self) -> None:
+        self._results = [
+            EvaluationResult(
+                score=0.70,
+                dimension_scores={"control": 0.8, "tempo": 0.6},
+                metadata={"dimension_specs": [{"name": "control"}, {"name": "tempo"}]},
+            ),
+            EvaluationResult(
+                score=0.75,
+                dimension_scores={"control": 0.9, "tempo": 0.5},
+                metadata={"dimension_specs": [{"name": "control"}, {"name": "tempo"}]},
+            ),
+        ]
+
+    def evaluate(
+        self,
+        candidate: Mapping[str, Any],
+        seed: int,
+        limits: EvaluationLimits,
+    ) -> EvaluationResult:
+        return self._results[seed]
+
+
 class TestEvaluationRunner:
     def test_runner_single_trial(self) -> None:
         runner = EvaluationRunner(evaluator=_FixedEvaluator(0.7))
@@ -146,3 +170,16 @@ class TestEvaluationRunner:
             runner.run(
                 candidate={}, seed_base=0, trials=1, limits=EvaluationLimits(), challenger_elo=1000.0
             )
+
+    def test_runner_summarizes_dimension_scores(self) -> None:
+        runner = EvaluationRunner(evaluator=_DimensionalEvaluator())
+        summary = runner.run(
+            candidate={},
+            seed_base=0,
+            trials=2,
+            limits=EvaluationLimits(),
+            challenger_elo=1000.0,
+        )
+        assert summary.dimension_means == {"control": pytest.approx(0.85), "tempo": pytest.approx(0.55)}
+        assert summary.best_dimensions == {"control": 0.9, "tempo": 0.5}
+        assert len(summary.dimension_trajectory) == 2

@@ -39,6 +39,12 @@ class AppSettings(BaseModel):
     architect_every_n_gens: int = Field(default=3, ge=1)
     matches_per_generation: int = Field(default=3, ge=1)
     backpressure_min_delta: float = Field(default=0.005)
+    scoring_dimension_regression_threshold: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Minimum per-dimension drop to flag as a regression in game scenario analysis",
+    )
     backpressure_mode: str = Field(default="simple")
     backpressure_plateau_window: int = Field(default=3, ge=1)
     backpressure_plateau_relaxation: float = Field(default=0.5, ge=0.0, le=1.0)

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.architect import parse_dag_changes
 from autocontext.backpressure.trend_gate import TrendAwareGate
+from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.failure_report import FailureReport
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
@@ -113,6 +114,34 @@ def _build_empty_tournament(ctx: GenerationContext) -> EvaluationSummary:
         elo_after=ctx.challenger_elo,
         results=[],
     )
+
+
+def _load_previous_best_dimensions(
+    sqlite: SQLiteStore,
+    run_id: str,
+) -> dict[str, float]:
+    """Read the latest persisted generation dimensions for regression comparison."""
+    try:
+        rows = sqlite.get_generation_trajectory(run_id)
+    except Exception:
+        LOGGER.debug("failed to load previous dimension summary", exc_info=True)
+        return {}
+    if not isinstance(rows, list) or not rows:
+        return {}
+    latest = rows[-1]
+    if not isinstance(latest, dict):
+        return {}
+    summary = latest.get("dimension_summary")
+    if not isinstance(summary, dict):
+        return {}
+    raw_best = summary.get("best_dimensions")
+    if not isinstance(raw_best, dict):
+        return {}
+    return {
+        name: float(value)
+        for name, value in raw_best.items()
+        if isinstance(name, str) and isinstance(value, (int, float))
+    }
 
 
 def stage_policy_refinement(
@@ -592,6 +621,17 @@ def stage_tournament(
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 
+        previous_best_dimensions = _load_previous_best_dimensions(sqlite, ctx.run_id)
+        if previous_best_dimensions and tournament.best_dimensions:
+            tournament = dataclasses.replace(
+                tournament,
+                dimension_regressions=detect_dimension_regression(
+                    previous_best_dimensions,
+                    tournament.best_dimensions,
+                    threshold=settings.scoring_dimension_regression_threshold,
+                ),
+            )
+
         custom_metrics = None
         if isinstance(gate, TrendAwareGate):
             best_eval = max(tournament.results, key=lambda r: r.score)
@@ -685,6 +725,9 @@ def stage_tournament(
         "run_id": ctx.run_id, "generation": ctx.generation,
         "mean_score": tournament.mean_score, "best_score": tournament.best_score,
         "wins": tournament.wins, "losses": tournament.losses,
+        "dimension_means": tournament.dimension_means,
+        "best_dimensions": tournament.best_dimensions,
+        "dimension_regressions": tournament.dimension_regressions,
     })
 
     outcome = apply_tournament_outcome(
@@ -699,6 +742,8 @@ def stage_tournament(
     gate_event = {
         "run_id": ctx.run_id, "generation": ctx.generation,
         "decision": gate_decision, "delta": gate_delta,
+        "best_dimensions": tournament.best_dimensions,
+        "dimension_regressions": tournament.dimension_regressions,
     }
     gate_metadata = getattr(gate_result, "metadata", None)
     if isinstance(gate_metadata, dict) and gate_metadata:
@@ -998,6 +1043,17 @@ def stage_persistence(
         "gate_delta": gate_delta,
         "gate_threshold": settings.backpressure_min_delta,
     }
+    dimension_summary: dict[str, object] | None = None
+    if tournament.dimension_means or tournament.best_dimensions or tournament.dimension_regressions:
+        dimension_summary = {
+            "dimension_means": tournament.dimension_means,
+            "best_dimensions": tournament.best_dimensions,
+            "dimension_specs": tournament.dimension_specs,
+            "dimension_regressions": tournament.dimension_regressions,
+        }
+        metrics["dimension_means"] = tournament.dimension_means
+        metrics["best_dimensions"] = tournament.best_dimensions
+        metrics["dimension_regressions"] = tournament.dimension_regressions
 
     # 2. Insert matches into sqlite
     for idx, eval_result in enumerate(tournament.results):
@@ -1020,6 +1076,11 @@ def stage_persistence(
         losses=tournament.losses,
         gate_decision=gate_decision,
         status="completed",
+        dimension_summary_json=(
+            json.dumps(dimension_summary, sort_keys=True)
+            if dimension_summary is not None
+            else None
+        ),
     )
 
     # 4. Persist generation artifacts
@@ -1089,6 +1150,8 @@ def stage_persistence(
         "elo": ctx.challenger_elo,
         "gate_decision": gate_decision,
         "gate_delta": gate_delta,
+        "best_dimensions": tournament.best_dimensions,
+        "dimension_regressions": tournament.dimension_regressions,
         "created_tools": ctx.created_tools,
     })
 

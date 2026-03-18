@@ -4,6 +4,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from autocontext.harness.evaluation.dimensional import (
+    extract_dimension_scores,
+    normalize_dimension_specs,
+)
 from autocontext.harness.evaluation.types import EvaluationLimits, EvaluationResult
 
 
@@ -34,13 +38,25 @@ class ScenarioEvaluator:
         )
         payload = ExecutionInput(strategy=candidate, seed=seed, limits=mts_limits)
         output = self._supervisor.run(self._scenario, payload)
+        metrics = dict(output.result.metrics) if hasattr(output.result, "metrics") else {}
+        raw_dimension_specs = (
+            self._scenario.scoring_dimensions()
+            if hasattr(self._scenario, "scoring_dimensions")
+            else None
+        )
+        dimension_specs = normalize_dimension_specs(
+            raw_dimension_specs if isinstance(raw_dimension_specs, list) else None,
+        )
+        dimension_scores = extract_dimension_scores(metrics, dimension_specs)
         return EvaluationResult(
             score=output.result.score,
             passed=output.result.passed_validation,
             errors=list(output.result.validation_errors),
             metadata={
-                "metrics": dict(output.result.metrics) if hasattr(output.result, "metrics") else {},
+                "metrics": metrics,
+                "dimension_specs": [spec.to_dict() for spec in dimension_specs],
                 "execution_output": output,
             },
             replay_data=output.replay.model_dump() if hasattr(output.replay, "model_dump") else {},
+            dimension_scores=dimension_scores,
         )

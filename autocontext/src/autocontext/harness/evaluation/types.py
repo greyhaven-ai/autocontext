@@ -20,6 +20,7 @@ class EvaluationResult:
     errors: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     replay_data: dict[str, Any] = field(default_factory=dict)
+    dimension_scores: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
@@ -30,3 +31,8 @@ class EvaluationSummary:
     losses: int
     elo_after: float
     results: list[EvaluationResult]
+    dimension_means: dict[str, float] = field(default_factory=dict)
+    best_dimensions: dict[str, float] = field(default_factory=dict)
+    dimension_trajectory: list[dict[str, float]] = field(default_factory=list)
+    dimension_specs: list[dict[str, Any]] = field(default_factory=list)
+    dimension_regressions: list[dict[str, Any]] = field(default_factory=list)
