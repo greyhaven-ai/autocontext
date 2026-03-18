@@ -376,3 +376,17 @@ class TestCompareOracleVsRubric:
         )
         comparison = compare_oracle_vs_rubric(rubric_score=0.95, oracle_result=oracle_result)
         assert comparison.rubric_objective_gap < 0.1
+
+    def test_stronger_objective_score_does_not_inflate_gap(self) -> None:
+        from autocontext.execution.objective_verification import (
+            OracleResult,
+            compare_oracle_vs_rubric,
+        )
+
+        oracle_result = OracleResult(
+            total_known=2, found_count=2, claimed_count=2,
+            false_positive_count=0, recall=1.0, precision=1.0,
+            weight_agreement=1.0, item_details=[],
+        )
+        comparison = compare_oracle_vs_rubric(rubric_score=0.6, oracle_result=oracle_result)
+        assert comparison.rubric_objective_gap == 0.0

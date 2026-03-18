@@ -150,6 +150,22 @@ class TestCheckObjectiveGuardrail:
         assert result.passed is False
         assert any("gap" in v.lower() for v in result.violations)
 
+    def test_better_objective_score_does_not_count_as_gap(self) -> None:
+        from autocontext.harness.pipeline.objective_guardrail import (
+            ObjectiveGuardrailPolicy,
+            check_objective_guardrail,
+        )
+
+        policy = ObjectiveGuardrailPolicy(max_rubric_objective_gap=0.1)
+        result = check_objective_guardrail(
+            recall=0.9, precision=0.9,
+            false_positive_rate=0.0,
+            rubric_score=0.60, objective_recall=0.90,
+            policy=policy,
+        )
+        assert result.passed is True
+        assert result.metrics["rubric_objective_gap"] == 0.0
+
     def test_disabled_policy_auto_passes(self) -> None:
         from autocontext.harness.pipeline.objective_guardrail import (
             ObjectiveGuardrailPolicy,

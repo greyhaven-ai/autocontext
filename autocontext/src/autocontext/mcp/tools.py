@@ -16,6 +16,10 @@ from autocontext.execution.verification_dataset import (
     enrich_objective_payload,
     resolve_objective_verification_config,
 )
+from autocontext.harness.pipeline.objective_guardrail import (
+    evaluate_objective_guardrail,
+    resolve_objective_guardrail_policy,
+)
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.capabilities import (
@@ -62,7 +66,13 @@ def _resolve_objective_verification(
         objective_verification,
         DatasetRegistry(ctx.settings.knowledge_root),
     )
-    return config.to_dict() if config is not None else None
+    if config is None:
+        return None
+    resolved = config.to_dict()
+    guardrail = objective_verification.get("guardrail")
+    if isinstance(guardrail, dict):
+        resolved["guardrail"] = guardrail
+    return resolved
 
 
 # -- Scenario exploration --
@@ -517,6 +527,14 @@ def evaluate_output(
                 payload["objective_verification"] = enrich_objective_payload(
                     verification_payload,
                 )
+                policy = resolve_objective_guardrail_policy(resolved)
+                objective_payload = payload["objective_verification"]
+                guardrail = evaluate_objective_guardrail(
+                    objective_payload if isinstance(objective_payload, dict) else None,
+                    policy,
+                )
+                if guardrail is not None:
+                    payload["objective_guardrail"] = guardrail.to_dict()
     if len(calibration) >= 2:
         report = run_judge_calibration(
             domain=task_name,
@@ -679,6 +697,8 @@ def get_task_result(ctx: MtsToolContext, task_id: str) -> dict[str, object]:
                     result["generations"] = payload["generations"]
                 if "objective_verification" in payload:
                     result["objective_verification"] = payload["objective_verification"]
+                if "objective_guardrail" in payload:
+                    result["objective_guardrail"] = payload["objective_guardrail"]
                 if "rubric_calibration" in payload:
                     result["rubric_calibration"] = payload["rubric_calibration"]
             except (json.JSONDecodeError, AttributeError):

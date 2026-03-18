@@ -239,6 +239,38 @@ class TestEvaluateOutput:
         assert result["objective_verification"]["config_metadata"]["dataset_id"] == "l19-core"
         assert result["objective_verification"]["config_metadata"]["dataset_version"] == "1.0.0"
 
+    def test_evaluates_with_objective_guardrail(self, ctx, monkeypatch):
+        create_agent_task(
+            ctx,
+            "l19-guardrail-task",
+            "Find serious drug interactions.",
+            "Clinical accuracy",
+            objective_verification={
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    }
+                ],
+                "guardrail": {
+                    "max_rubric_objective_gap": 0.1,
+                },
+            },
+        )
+
+        from autocontext.providers import registry
+        monkeypatch.setattr(registry, "get_provider", lambda s: _MockProvider(_judge_response(0.6)))
+
+        result = evaluate_output(
+            ctx,
+            "l19-guardrail-task",
+            "1. Warfarin + Aspirin: high severity bleeding interaction.",
+        )
+        assert result["objective_guardrail"]["passed"] is True
+        assert result["objective_guardrail"]["metrics"]["rubric_objective_gap"] == 0.0
+
     def test_evaluates_with_rubric_calibration(self, ctx, monkeypatch):
         create_agent_task(
             ctx,
@@ -413,6 +445,35 @@ class TestQueueTools:
         result = get_task_result(ctx, "t2")
         assert result["objective_verification"]["oracle_result"]["found_count"] == 1
         assert result["objective_verification"]["comparison"]["rubric_score"] == 0.84
+
+    def test_get_task_result_surfaces_objective_guardrail(self, ctx):
+        create_agent_task(ctx, "l19-guardrail-run", "prompt", "rubric")
+        ctx.sqlite.enqueue_task(
+            "t2b",
+            "l19-guardrail-run",
+            config={"task_prompt": "prompt", "rubric": "rubric"},
+        )
+        ctx.sqlite.dequeue_task()
+        ctx.sqlite.complete_task(
+            "t2b",
+            best_score=0.95,
+            best_output="output",
+            total_rounds=1,
+            met_threshold=False,
+            result_json=json.dumps({
+                "rounds": [{"round_number": 1, "score": 0.95, "reasoning": "ok"}],
+                "objective_guardrail": {
+                    "passed": False,
+                    "reason": "1 threshold violation(s)",
+                    "violations": ["recall 0.0000 < min 0.5000"],
+                    "metrics": {"recall": 0.0},
+                },
+            }),
+        )
+
+        result = get_task_result(ctx, "t2b")
+        assert result["objective_guardrail"]["passed"] is False
+        assert "recall" in result["objective_guardrail"]["violations"][0].lower()
 
     def test_get_task_result_surfaces_rubric_calibration(self, ctx):
         create_agent_task(ctx, "calibrated-run", "prompt", "rubric")

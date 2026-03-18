@@ -119,7 +119,9 @@ def check_objective_guardrail(
             f"false positive rate {false_positive_rate:.4f} > max {policy.max_false_positive_rate:.4f}"
         )
 
-    gap = abs(rubric_score - objective_recall)
+    # Only penalize judge optimism. Stronger objective verification should
+    # not count as disagreement that blocks advancement.
+    gap = max(0.0, rubric_score - objective_recall)
     metrics["rubric_objective_gap"] = gap
     if gap > policy.max_rubric_objective_gap:
         violations.append(
@@ -140,6 +142,50 @@ def check_objective_guardrail(
         violations=[],
         metrics=metrics,
     )
+
+
+def resolve_objective_guardrail_policy(
+    objective_verification: dict[str, Any] | None,
+) -> ObjectiveGuardrailPolicy | None:
+    """Resolve optional guardrail policy from an objective-verification config."""
+    if not isinstance(objective_verification, dict):
+        return None
+    raw_policy = objective_verification.get("guardrail")
+    if isinstance(raw_policy, dict):
+        return ObjectiveGuardrailPolicy.from_dict(raw_policy)
+    return ObjectiveGuardrailPolicy()
+
+
+def evaluate_objective_guardrail(
+    objective_payload: dict[str, Any] | None,
+    policy: ObjectiveGuardrailPolicy | None,
+) -> GuardrailResult | None:
+    """Evaluate a guardrail from an enriched objective-verification payload."""
+    if not isinstance(objective_payload, dict) or policy is None:
+        return None
+    oracle_result = objective_payload.get("oracle_result")
+    comparison = objective_payload.get("comparison")
+    if not isinstance(oracle_result, dict) or not isinstance(comparison, dict):
+        return None
+
+    def _metric(value: Any, fallback: float = 0.0) -> float:
+        if value is None:
+            return fallback
+        return float(value)
+
+    result = check_objective_guardrail(
+        recall=_metric(oracle_result.get("recall", comparison.get("objective_recall")), 0.0),
+        precision=_metric(oracle_result.get("precision", comparison.get("objective_precision")), 0.0),
+        false_positive_rate=_metric(comparison.get("false_positive_rate"), 0.0),
+        rubric_score=_metric(comparison.get("rubric_score"), 0.0),
+        objective_recall=_metric(comparison.get("objective_recall", oracle_result.get("recall")), 0.0),
+        policy=policy,
+    )
+    result.metadata = {
+        "policy": policy.to_dict(),
+        "config_metadata": objective_payload.get("config_metadata", {}),
+    }
+    return result
 
 
 # ---------------------------------------------------------------------------

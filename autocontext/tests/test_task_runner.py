@@ -444,6 +444,40 @@ class TestEnqueueFunction:
         assert payload["objective_verification"]["oracle_result"]["false_positive_count"] >= 1
         assert payload["objective_verification"]["comparison"]["rubric_score"] == 0.82
 
+    def test_run_once_enforces_objective_guardrail_before_threshold(self, store):
+        provider = _MockProvider([
+            "1. Vitamin C + Magnesium: benign supplement pairing.",
+            _judge_response(0.95, "judge liked it despite missing the key interaction"),
+        ])
+        config = {
+            "task_prompt": "Find clinically relevant drug interactions.",
+            "rubric": "Quality and clinical accuracy",
+            "max_rounds": 1,
+            "quality_threshold": 0.9,
+            "objective_verification": {
+                "ground_truth": [
+                    {
+                        "item_id": "warfarin-aspirin",
+                        "description": "Warfarin + Aspirin bleeding risk",
+                        "match_keywords": [["warfarin"], ["aspirin"]],
+                        "weight": "high",
+                    }
+                ]
+            },
+        }
+        store.enqueue_task("t2-guardrail", "l19-drug-interactions", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        assert result["met_threshold"] == 0
+        payload = json.loads(result["result_json"])
+        assert payload["best_score"] == 0.95
+        assert payload["met_threshold"] is False
+        assert payload["objective_guardrail"]["passed"] is False
+        assert any("recall" in v.lower() for v in payload["objective_guardrail"]["violations"])
+
     def test_run_once_persists_dataset_provenance_for_objective_verification(self, store):
         provider = _MockProvider([
             "1. Warfarin + Aspirin: high severity bleeding interaction.",

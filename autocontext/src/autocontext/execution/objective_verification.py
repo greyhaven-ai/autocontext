@@ -357,7 +357,8 @@ def compare_oracle_vs_rubric(
         if oracle_result.claimed_count > 0
         else 0.0
     )
-    gap = abs(rubric_score - oracle_result.recall)
+    # Objective verification exceeding the rubric score is not a risky gap.
+    gap = max(0.0, rubric_score - oracle_result.recall)
 
     return OracleComparison(
         rubric_score=rubric_score,

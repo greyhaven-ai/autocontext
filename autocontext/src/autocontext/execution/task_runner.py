@@ -32,6 +32,10 @@ from autocontext.execution.objective_verification import (
 )
 from autocontext.execution.rubric_calibration import run_judge_calibration
 from autocontext.execution.verification_dataset import enrich_objective_payload
+from autocontext.harness.pipeline.objective_guardrail import (
+    evaluate_objective_guardrail,
+    resolve_objective_guardrail_policy,
+)
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.storage.sqlite_store import SQLiteStore
@@ -80,6 +84,7 @@ class TaskConfig:
 def _serialize_result(
     result: ImprovementResult,
     objective_verification: dict[str, Any] | None = None,
+    objective_guardrail: dict[str, Any] | None = None,
     rubric_calibration: dict[str, Any] | None = None,
 ) -> str:
     """Serialize an ImprovementResult to JSON."""
@@ -105,6 +110,8 @@ def _serialize_result(
         data["judge_calls"] = result.judge_calls
     if objective_verification is not None:
         data["objective_verification"] = objective_verification
+    if objective_guardrail is not None:
+        data["objective_guardrail"] = objective_guardrail
     if rubric_calibration is not None:
         data["rubric_calibration"] = rubric_calibration
     return json.dumps(data)
@@ -114,6 +121,7 @@ def _serialize_evolution_result(
     trajectory: AgentTaskTrajectory,
     generation_results: list[ImprovementResult],
     objective_verification: dict[str, Any] | None = None,
+    objective_guardrail: dict[str, Any] | None = None,
     rubric_calibration: dict[str, Any] | None = None,
 ) -> str:
     """Serialize a multi-generation AgentTask evolution run to JSON."""
@@ -153,6 +161,8 @@ def _serialize_evolution_result(
     }
     if objective_verification is not None:
         data["objective_verification"] = objective_verification
+    if objective_guardrail is not None:
+        data["objective_guardrail"] = objective_guardrail
     if rubric_calibration is not None:
         data["rubric_calibration"] = rubric_calibration
     return json.dumps(data)
@@ -206,6 +216,18 @@ def _build_objective_revision_feedback(
     if not isinstance(context, str) or not context.strip():
         return None
     return context
+
+
+def _build_objective_guardrail_payload(
+    objective_payload: dict[str, Any] | None,
+    config: TaskConfig,
+) -> dict[str, Any] | None:
+    """Build optional binding guardrail results from an objective payload."""
+    if objective_payload is None or not config.objective_verification:
+        return None
+    policy = resolve_objective_guardrail_policy(config.objective_verification)
+    result = evaluate_objective_guardrail(objective_payload, policy)
+    return result.to_dict() if result is not None else None
 
 
 def _build_rubric_calibration_payload(
@@ -510,6 +532,14 @@ class TaskRunner:
                     config,
                     run_id=task_id,
                 )
+                objective_guardrail = _build_objective_guardrail_payload(
+                    objective_payload,
+                    config,
+                )
+                effective_met_threshold = result.met_threshold and (
+                    objective_guardrail is None or bool(objective_guardrail.get("passed"))
+                )
+                result.met_threshold = effective_met_threshold
                 rubric_calibration = _build_rubric_calibration_payload(
                     store=self.store,
                     spec_name=spec_name,
@@ -526,10 +556,11 @@ class TaskRunner:
                     best_score=result.best_score,
                     best_output=result.best_output,
                     total_rounds=result.total_rounds,
-                    met_threshold=result.met_threshold,
+                    met_threshold=effective_met_threshold,
                     result_json=_serialize_result(
                         result,
                         objective_payload,
+                        objective_guardrail,
                         rubric_calibration,
                     ),
                 )
@@ -630,6 +661,13 @@ class TaskRunner:
             config,
             run_id=task_id,
         )
+        objective_guardrail = _build_objective_guardrail_payload(
+            objective_payload,
+            config,
+        )
+        effective_met_threshold = met_threshold and (
+            objective_guardrail is None or bool(objective_guardrail.get("passed"))
+        )
         rubric_calibration = _build_rubric_calibration_payload(
             store=self.store,
             spec_name=spec_name,
@@ -646,11 +684,12 @@ class TaskRunner:
             best_score=best_score,
             best_output=best_output,
             total_rounds=total_rounds,
-            met_threshold=met_threshold,
+            met_threshold=effective_met_threshold,
             result_json=_serialize_evolution_result(
                 trajectory,
                 ordered_results,
                 objective_payload,
+                objective_guardrail,
                 rubric_calibration,
             ),
         )
@@ -665,9 +704,9 @@ class TaskRunner:
             best_score=best_score,
             best_round=best_generation.best_round,
             total_rounds=total_rounds,
-            met_threshold=met_threshold,
+            met_threshold=effective_met_threshold,
             judge_failures=sum(result.judge_failures for result in ordered_results),
-            termination_reason="threshold_met" if met_threshold else "max_rounds",
+            termination_reason="threshold_met" if effective_met_threshold else "max_rounds",
             total_internal_retries=sum(result.total_internal_retries for result in ordered_results),
             duration_ms=sum(result.duration_ms or 0 for result in ordered_results),
             judge_calls=sum(result.judge_calls for result in ordered_results),
