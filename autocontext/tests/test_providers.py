@@ -110,7 +110,7 @@ class TestRegistry:
         # Just test that it creates without error (won't call API)
         p = create_provider("anthropic", api_key="test-key", model="claude-test")
         assert p.default_model() == "claude-test"
-        assert p.name == "AnthropicProvider"
+        assert "AnthropicProvider" in p.name  # may be wrapped in RetryProvider
 
     @_skip_no_openai
     def test_create_ollama_provider(self):
@@ -129,7 +129,7 @@ class TestRegistry:
 
     def test_case_insensitive(self):
         p = create_provider("ANTHROPIC", api_key="test")
-        assert p.name == "AnthropicProvider"
+        assert "AnthropicProvider" in p.name  # may be wrapped in RetryProvider
 
     @_skip_no_openai
     def test_create_openai_compat(self):
@@ -234,7 +234,7 @@ class TestSettingsIntegration:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         settings = AppSettings(judge_model="claude-test")
         provider = get_provider(settings)
-        assert provider.name == "AnthropicProvider"
+        assert "AnthropicProvider" in provider.name  # may be wrapped in RetryProvider
         assert provider.default_model() == "claude-test"
 
     @_skip_no_openai

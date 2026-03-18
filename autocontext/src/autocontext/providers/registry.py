@@ -36,14 +36,16 @@ def create_provider(
 
     if provider_type == "anthropic":
         from autocontext.providers.anthropic import AnthropicProvider
+        from autocontext.providers.retry import RetryProvider
 
-        return AnthropicProvider(
+        return RetryProvider(AnthropicProvider(
             api_key=api_key or os.getenv("ANTHROPIC_API_KEY"),
             default_model_name=model or "claude-sonnet-4-20250514",
-        )
+        ))
 
     if provider_type in ("openai", "openai-compatible"):
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
+        from autocontext.providers.retry import RetryProvider
 
         kwargs: dict = {
             "api_key": api_key or os.getenv("OPENAI_API_KEY"),
@@ -51,25 +53,27 @@ def create_provider(
         }
         if base_url:
             kwargs["base_url"] = base_url
-        return OpenAICompatibleProvider(**kwargs)
+        return RetryProvider(OpenAICompatibleProvider(**kwargs))
 
     if provider_type == "ollama":
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
+        from autocontext.providers.retry import RetryProvider
 
-        return OpenAICompatibleProvider(
+        return RetryProvider(OpenAICompatibleProvider(
             api_key="ollama",
             base_url=base_url or "http://localhost:11434/v1",
             default_model_name=model or "llama3.1",
-        )
+        ))
 
     if provider_type == "vllm":
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
+        from autocontext.providers.retry import RetryProvider
 
-        return OpenAICompatibleProvider(
+        return RetryProvider(OpenAICompatibleProvider(
             api_key=api_key or "no-key",
             base_url=base_url or "http://localhost:8000/v1",
             default_model_name=model or "default",
-        )
+        ))
 
     if provider_type == "mlx":
         from autocontext.providers.mlx_provider import MLXProvider
