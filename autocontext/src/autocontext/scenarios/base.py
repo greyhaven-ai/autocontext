@@ -118,6 +118,18 @@ class ScenarioInterface(ABC):
         """
         return None
 
+    def scoring_dimensions(self) -> list[dict[str, Any]] | None:
+        """Return optional scoring dimensions with weights.
+
+        Override to provide per-dimension evaluation for richer analysis.
+        Returns None by default (single aggregate score only).
+
+        Example return:
+            [{"name": "positional_control", "weight": 0.3, "description": "..."},
+             {"name": "resource_efficiency", "weight": 0.2, "description": "..."}]
+        """
+        return None
+
     def seed_tools(self) -> dict[str, str]:
         return {}
 
