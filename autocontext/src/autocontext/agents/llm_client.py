@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
+from typing import Any
 
+import anthropic
 from anthropic import Anthropic
 
 from autocontext.config.settings import AppSettings
@@ -11,11 +14,57 @@ from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
 from autocontext.providers.base import ProviderError
 from autocontext.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
+from autocontext.providers.retry import _is_transient
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AnthropicClient(LanguageModelClient):
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+        max_delay: float = 60.0,
+        backoff_factor: float = 2.0,
+    ) -> None:
         self._client = Anthropic(api_key=api_key)
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.backoff_factor = backoff_factor
+
+    def _messages_create_with_retry(self, **kwargs: Any) -> Any:
+        delay = self.base_delay
+        last_error: anthropic.APIError | None = None
+
+        for attempt in range(1 + self.max_retries):
+            try:
+                return self._client.messages.create(**kwargs)
+            except anthropic.APIError as exc:
+                last_error = exc
+                is_transient = _is_transient(exc)
+                if attempt == self.max_retries or not is_transient:
+                    if not is_transient:
+                        LOGGER.warning(
+                            "non-transient Anthropic error (attempt %d), not retrying: %s",
+                            attempt + 1,
+                            exc,
+                        )
+                    break
+
+                LOGGER.warning(
+                    "transient Anthropic error (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1,
+                    1 + self.max_retries,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+                delay = min(delay * self.backoff_factor, self.max_delay)
+
+        raise last_error  # type: ignore[misc]
 
     def generate(
         self,
@@ -28,7 +77,7 @@ class AnthropicClient(LanguageModelClient):
     ) -> ModelResponse:
         del role
         started = time.perf_counter()
-        response = self._client.messages.create(
+        response = self._messages_create_with_retry(
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -61,7 +110,7 @@ class AnthropicClient(LanguageModelClient):
     ) -> ModelResponse:
         del role
         started = time.perf_counter()
-        response = self._client.messages.create(
+        response = self._messages_create_with_retry(
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
