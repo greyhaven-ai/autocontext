@@ -23,10 +23,24 @@ def test_build_from_tournament() -> None:
 
 def test_report_to_prompt_context() -> None:
     results = [
-        EvaluationResult(score=0.3, passed=True, errors=[], metadata={}),
+        EvaluationResult(
+            score=0.3,
+            passed=True,
+            errors=[],
+            metadata={},
+            dimension_scores={"control": 0.25, "tempo": 0.4},
+        ),
     ]
     summary = EvaluationSummary(
-        mean_score=0.3, best_score=0.3, wins=0, losses=1, elo_after=990.0, results=results,
+        mean_score=0.3,
+        best_score=0.3,
+        wins=0,
+        losses=1,
+        elo_after=990.0,
+        results=results,
+        dimension_regressions=[
+            {"dimension": "control", "previous": 0.7, "current": 0.25, "delta": -0.45},
+        ],
     )
     report = FailureReport.from_tournament(
         summary, previous_best=0.5, threshold=0.005, strategy={"aggression": 0.8},
@@ -34,6 +48,8 @@ def test_report_to_prompt_context() -> None:
     prompt = report.to_prompt_context()
     assert "FAILURE ANALYSIS" in prompt
     assert "0.3" in prompt
+    assert "control=0.2500" in prompt
+    assert "Dimension regressions vs previous best" in prompt
 
 
 def test_empty_errors_still_produces_report() -> None:

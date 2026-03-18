@@ -74,15 +74,16 @@ class SQLiteStore:
         gate_decision: str,
         status: str,
         duration_seconds: float | None = None,
+        dimension_summary_json: str | None = None,
     ) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO generations(
                     run_id, generation_index, mean_score, best_score, elo, wins, losses,
-                    gate_decision, status, duration_seconds
+                    gate_decision, status, duration_seconds, dimension_summary_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, generation_index) DO UPDATE SET
                     mean_score = excluded.mean_score,
                     best_score = excluded.best_score,
@@ -92,6 +93,7 @@ class SQLiteStore:
                     gate_decision = excluded.gate_decision,
                     status = excluded.status,
                     duration_seconds = excluded.duration_seconds,
+                    dimension_summary_json = excluded.dimension_summary_json,
                     updated_at = datetime('now')
                 """,
                 (
@@ -105,6 +107,7 @@ class SQLiteStore:
                     gate_decision,
                     status,
                     duration_seconds,
+                    dimension_summary_json,
                 ),
             )
 
@@ -412,7 +415,7 @@ class SQLiteStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT generation_index, mean_score, best_score, elo, gate_decision
+                SELECT generation_index, mean_score, best_score, elo, gate_decision, dimension_summary_json
                 FROM generations
                 WHERE run_id = ? AND status = 'completed'
                 ORDER BY generation_index
@@ -423,6 +426,14 @@ class SQLiteStore:
             prev_best = 0.0
             for row in rows:
                 d = dict(row)
+                raw_dimension_summary = d.pop("dimension_summary_json", None)
+                if isinstance(raw_dimension_summary, str) and raw_dimension_summary:
+                    try:
+                        d["dimension_summary"] = json.loads(raw_dimension_summary)
+                    except json.JSONDecodeError:
+                        d["dimension_summary"] = {}
+                else:
+                    d["dimension_summary"] = {}
                 d["delta"] = round(d["best_score"] - prev_best, 6)
                 prev_best = d["best_score"]
                 result.append(d)

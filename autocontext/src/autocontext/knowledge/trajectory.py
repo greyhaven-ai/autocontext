@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from autocontext.harness.evaluation.dimensional import format_dimension_trajectory
 from autocontext.storage.sqlite_store import SQLiteStore
 
 
@@ -24,6 +25,27 @@ class ScoreTrajectoryBuilder:
                 f"| {row['gate_decision']} "
                 f"| {row['delta']:+.4f} |"
             )
+        dimension_history = [
+            row["dimension_summary"].get("best_dimensions", {})
+            for row in rows
+            if isinstance(row.get("dimension_summary"), dict)
+        ]
+        dimension_history = [
+            entry
+            for entry in dimension_history
+            if isinstance(entry, dict) and entry
+        ]
+        if dimension_history:
+            formatted = format_dimension_trajectory(dimension_history)
+            if formatted:
+                lines.extend([
+                    "",
+                    "## Dimension Trajectory (Best Match)",
+                    "",
+                    "```text",
+                    formatted,
+                    "```",
+                ])
         return "\n".join(lines)
 
     def build_experiment_log(self, run_id: str) -> str:

@@ -637,6 +637,63 @@ class TestStageTournament:
         assert result.score_history == [0.91]
         assert result.gate_decision_history == ["advance"]
 
+    def test_emits_dimension_metadata_for_dimensional_game_scenarios(self) -> None:
+        class _DimensionalScenario(_FakeScenario):
+            def scoring_dimensions(self) -> list[dict[str, Any]] | None:
+                return [
+                    {"name": "control", "weight": 0.6},
+                    {"name": "tempo", "weight": 0.4},
+                ]
+
+            def get_result(self, state: Mapping[str, Any]) -> Result:
+                score = float(state.get("score", 0.5))
+                return Result(
+                    score=score,
+                    summary="test",
+                    replay=[],
+                    metrics={
+                        "control": round(min(1.0, score + 0.1), 4),
+                        "tempo": round(max(0.0, score - 0.1), 4),
+                    },
+                )
+
+        ctx = _make_tournament_ctx(scenario=_DimensionalScenario())
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="advance", reason="improved")
+        events = MagicMock()
+        sqlite = MagicMock()
+        sqlite.get_generation_trajectory.return_value = [
+            {
+                "generation_index": 0,
+                "dimension_summary": {
+                    "best_dimensions": {"control": 0.95, "tempo": 0.2},
+                },
+            },
+        ]
+        artifacts = MagicMock()
+
+        result = stage_tournament(
+            ctx,
+            supervisor=supervisor,
+            gate=gate,
+            events=events,
+            sqlite=sqlite,
+            artifacts=artifacts,
+            agents=None,
+        )
+
+        assert result.tournament is not None
+        assert result.tournament.best_dimensions
+        tournament_events = [
+            call for call in events.emit.call_args_list if call[0][0] == "tournament_completed"
+        ]
+        assert tournament_events
+        payload = tournament_events[-1][0][1]
+        assert payload["best_dimensions"]
+        assert "control" in payload["best_dimensions"]
+        assert payload["dimension_regressions"]
+
 
 # ---------- TestStageCuratorGate ----------
 

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.architect import parse_dag_changes
 from autocontext.backpressure.trend_gate import TrendAwareGate
+from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.failure_report import FailureReport
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
@@ -113,6 +114,111 @@ def _build_empty_tournament(ctx: GenerationContext) -> EvaluationSummary:
         elo_after=ctx.challenger_elo,
         results=[],
     )
+
+
+def _load_previous_best_dimensions(
+    sqlite: SQLiteStore,
+    run_id: str,
+) -> dict[str, float]:
+    """Read the latest persisted generation dimensions for regression comparison."""
+    try:
+        rows = sqlite.get_generation_trajectory(run_id)
+    except Exception:
+        LOGGER.debug("failed to load previous dimension summary", exc_info=True)
+        return {}
+    if not isinstance(rows, list) or not rows:
+        return {}
+    latest = rows[-1]
+    if not isinstance(latest, dict):
+        return {}
+    summary = latest.get("dimension_summary")
+    if not isinstance(summary, dict):
+        return {}
+    raw_best = summary.get("best_dimensions")
+    if not isinstance(raw_best, dict):
+        return {}
+    return {
+        name: float(value)
+        for name, value in raw_best.items()
+        if isinstance(name, str) and isinstance(value, (int, float))
+    }
+
+
+def _coerce_dimension_score_map(raw_value: Any) -> dict[str, float]:
+    """Return a JSON-safe dimension score mapping."""
+    if not isinstance(raw_value, dict):
+        return {}
+    return {
+        name: round(float(value), 6)
+        for name, value in raw_value.items()
+        if isinstance(name, str) and isinstance(value, (int, float))
+    }
+
+
+def _coerce_dimension_specs(raw_value: Any) -> list[dict[str, object]]:
+    """Return JSON-safe dimension specs."""
+    if not isinstance(raw_value, list):
+        return []
+    specs: list[dict[str, object]] = []
+    for item in raw_value:
+        if not isinstance(item, dict):
+            continue
+        clean: dict[str, object] = {
+            key: value
+            for key, value in item.items()
+            if isinstance(key, str)
+            and (value is None or isinstance(value, (str, int, float, bool)))
+        }
+        if clean:
+            specs.append(clean)
+    return specs
+
+
+def _coerce_dimension_regressions(raw_value: Any) -> list[dict[str, object]]:
+    """Return JSON-safe dimension regression payloads."""
+    if not isinstance(raw_value, list):
+        return []
+    regressions: list[dict[str, object]] = []
+    for item in raw_value:
+        if not isinstance(item, dict):
+            continue
+        dimension = item.get("dimension")
+        previous = item.get("previous")
+        current = item.get("current")
+        delta = item.get("delta")
+        if not isinstance(dimension, str):
+            continue
+        if not isinstance(previous, (int, float)):
+            continue
+        if not isinstance(current, (int, float)):
+            continue
+        if not isinstance(delta, (int, float)):
+            continue
+        regressions.append({
+            "dimension": dimension,
+            "previous": round(float(previous), 6),
+            "current": round(float(current), 6),
+            "delta": round(float(delta), 6),
+        })
+    return regressions
+
+
+def _build_dimension_summary_payload(tournament: EvaluationSummary) -> dict[str, object] | None:
+    """Extract a JSON-safe dimensional summary from a tournament."""
+    dimension_means = _coerce_dimension_score_map(getattr(tournament, "dimension_means", {}))
+    best_dimensions = _coerce_dimension_score_map(getattr(tournament, "best_dimensions", {}))
+    dimension_specs = _coerce_dimension_specs(getattr(tournament, "dimension_specs", []))
+    dimension_regressions = _coerce_dimension_regressions(
+        getattr(tournament, "dimension_regressions", []),
+    )
+    if not any((dimension_means, best_dimensions, dimension_specs, dimension_regressions)):
+        return None
+    return {
+        "dimension_means": dimension_means,
+        "best_dimensions": best_dimensions,
+        "dimension_specs": dimension_specs,
+        "dimension_regressions": dimension_regressions,
+    }
 
 
 def stage_policy_refinement(
@@ -592,6 +698,17 @@ def stage_tournament(
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 
+        previous_best_dimensions = _load_previous_best_dimensions(sqlite, ctx.run_id)
+        if previous_best_dimensions and tournament.best_dimensions:
+            tournament = dataclasses.replace(
+                tournament,
+                dimension_regressions=detect_dimension_regression(
+                    previous_best_dimensions,
+                    tournament.best_dimensions,
+                    threshold=settings.scoring_dimension_regression_threshold,
+                ),
+            )
+
         custom_metrics = None
         if isinstance(gate, TrendAwareGate):
             best_eval = max(tournament.results, key=lambda r: r.score)
@@ -681,10 +798,17 @@ def stage_tournament(
     if use_rapid and should_transition_to_linear(ctx.generation, settings.rapid_gens):
         ctx.settings = ctx.settings.model_copy(update={"exploration_mode": "linear"})
 
+    dimension_summary = _build_dimension_summary_payload(tournament)
+
     events.emit("tournament_completed", {
         "run_id": ctx.run_id, "generation": ctx.generation,
         "mean_score": tournament.mean_score, "best_score": tournament.best_score,
         "wins": tournament.wins, "losses": tournament.losses,
+        "dimension_means": dimension_summary["dimension_means"] if dimension_summary is not None else {},
+        "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
+        "dimension_regressions": (
+            dimension_summary["dimension_regressions"] if dimension_summary is not None else []
+        ),
     })
 
     outcome = apply_tournament_outcome(
@@ -699,6 +823,10 @@ def stage_tournament(
     gate_event = {
         "run_id": ctx.run_id, "generation": ctx.generation,
         "decision": gate_decision, "delta": gate_delta,
+        "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
+        "dimension_regressions": (
+            dimension_summary["dimension_regressions"] if dimension_summary is not None else []
+        ),
     }
     gate_metadata = getattr(gate_result, "metadata", None)
     if isinstance(gate_metadata, dict) and gate_metadata:
@@ -998,6 +1126,11 @@ def stage_persistence(
         "gate_delta": gate_delta,
         "gate_threshold": settings.backpressure_min_delta,
     }
+    dimension_summary = _build_dimension_summary_payload(tournament)
+    if dimension_summary is not None:
+        metrics["dimension_means"] = dimension_summary["dimension_means"]
+        metrics["best_dimensions"] = dimension_summary["best_dimensions"]
+        metrics["dimension_regressions"] = dimension_summary["dimension_regressions"]
 
     # 2. Insert matches into sqlite
     for idx, eval_result in enumerate(tournament.results):
@@ -1020,6 +1153,11 @@ def stage_persistence(
         losses=tournament.losses,
         gate_decision=gate_decision,
         status="completed",
+        dimension_summary_json=(
+            json.dumps(dimension_summary, sort_keys=True)
+            if dimension_summary is not None
+            else None
+        ),
     )
 
     # 4. Persist generation artifacts
@@ -1089,6 +1227,10 @@ def stage_persistence(
         "elo": ctx.challenger_elo,
         "gate_decision": gate_decision,
         "gate_delta": gate_delta,
+        "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
+        "dimension_regressions": (
+            dimension_summary["dimension_regressions"] if dimension_summary is not None else []
+        ),
         "created_tools": ctx.created_tools,
     })
 

@@ -1,6 +1,7 @@
 """Tests for Score Trajectory + Strategy Registry (Batch 1)."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
@@ -25,11 +26,17 @@ def _insert_generation(
     best: float,
     elo: float,
     gate: str,
+    dimension_summary: dict[str, object] | None = None,
 ) -> None:
     store.upsert_generation(
         run_id, gen,
         mean_score=mean, best_score=best, elo=elo,
         wins=1, losses=0, gate_decision=gate, status="completed",
+        dimension_summary_json=(
+            json.dumps(dimension_summary, sort_keys=True)
+            if dimension_summary is not None
+            else None
+        ),
     )
 
 
@@ -86,6 +93,42 @@ def test_trajectory_includes_gate(tmp_path: Path) -> None:
     result = builder.build_trajectory("gate_run")
     assert "advance" in result
     assert "rollback" in result
+
+
+def test_trajectory_includes_dimension_history_when_available(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.create_run("dim_run", "grid_ctf", 2, "local")
+    _insert_generation(
+        store,
+        "dim_run",
+        1,
+        mean=0.40,
+        best=0.50,
+        elo=1010.0,
+        gate="advance",
+        dimension_summary={
+            "best_dimensions": {"control": 0.6, "tempo": 0.4},
+            "dimension_means": {"control": 0.55, "tempo": 0.45},
+        },
+    )
+    _insert_generation(
+        store,
+        "dim_run",
+        2,
+        mean=0.55,
+        best=0.60,
+        elo=1020.0,
+        gate="advance",
+        dimension_summary={
+            "best_dimensions": {"control": 0.8, "tempo": 0.5},
+            "dimension_means": {"control": 0.7, "tempo": 0.48},
+        },
+    )
+    builder = ScoreTrajectoryBuilder(store)
+    result = builder.build_trajectory("dim_run")
+    assert "## Dimension Trajectory (Best Match)" in result
+    assert "control" in result
+    assert "tempo" in result
 
 
 # --- ScoreTrajectoryBuilder.build_strategy_registry tests ---

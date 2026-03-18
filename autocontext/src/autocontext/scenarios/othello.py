@@ -10,6 +10,25 @@ from autocontext.scenarios.base import Observation, Result, ScenarioInterface
 class OthelloScenario(ScenarioInterface):
     name = "othello"
 
+    def scoring_dimensions(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": "mobility",
+                "weight": 0.35,
+                "description": "How well the opening preserves future move flexibility.",
+            },
+            {
+                "name": "corner_pressure",
+                "weight": 0.4,
+                "description": "How strongly the opening policy pressures stable corner access.",
+            },
+            {
+                "name": "stability",
+                "weight": 0.25,
+                "description": "How well the opening balances mobility against disc stability.",
+            },
+        ]
+
     def describe_rules(self) -> str:
         return "Standard Othello opening phase on an 8x8 board. Valid actions optimize mobility and corner pressure."
 
