@@ -16,7 +16,7 @@ class TestHoldoutPolicy:
 
         policy = HoldoutPolicy()
         assert policy.holdout_seeds > 0
-        assert 0 < policy.min_holdout_score <= 1.0
+        assert 0.0 <= policy.min_holdout_score <= 1.0
         assert policy.enabled is True
 
     def test_custom(self) -> None:
@@ -139,6 +139,18 @@ class TestHoldoutCheck:
         )
         assert result.passed is True
         assert result.generalization_gap < 0.05
+
+    def test_better_holdout_score_does_not_count_as_regression(self) -> None:
+        from autocontext.harness.pipeline.holdout import HoldoutPolicy, holdout_check
+
+        policy = HoldoutPolicy(min_holdout_score=0.5, max_generalization_gap=0.1)
+        result = holdout_check(
+            holdout_scores=[0.88, 0.90, 0.92],
+            in_sample_score=0.60,
+            policy=policy,
+        )
+        assert result.passed is True
+        assert result.generalization_gap == 0.0
 
     def test_empty_scores_fails(self) -> None:
         from autocontext.harness.pipeline.holdout import HoldoutPolicy, holdout_check

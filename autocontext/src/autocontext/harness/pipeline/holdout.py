@@ -106,7 +106,7 @@ def holdout_check(
         )
 
     mean_score = statistics.mean(holdout_scores)
-    gap = round(abs(in_sample_score - mean_score), 6)
+    gap = round(max(0.0, in_sample_score - mean_score), 6)
 
     if mean_score < policy.min_holdout_score:
         return HoldoutResult(

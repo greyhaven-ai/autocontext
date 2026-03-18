@@ -60,6 +60,36 @@ class AppSettings(BaseModel):
         le=1.0,
         description="Fraction of tournament matches scheduled against self-play opponents when available",
     )
+    holdout_enabled: bool = Field(
+        default=True,
+        description="Run holdout verification before advancing a generation",
+    )
+    holdout_seeds: int = Field(
+        default=5,
+        ge=1,
+        description="Number of held-out seeds to evaluate before advance",
+    )
+    holdout_min_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Minimum acceptable mean holdout score",
+    )
+    holdout_max_regression_gap: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Maximum allowed regression from in-sample to holdout mean",
+    )
+    holdout_seed_offset: int = Field(
+        default=10000,
+        ge=1,
+        description="Base seed offset for holdout evaluation",
+    )
+    holdout_family_policies: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Optional holdout policy overrides keyed by scenario family marker or name",
+    )
     backpressure_mode: str = Field(default="simple")
     backpressure_plateau_window: int = Field(default=3, ge=1)
     backpressure_plateau_relaxation: float = Field(default=0.5, ge=0.0, le=1.0)
