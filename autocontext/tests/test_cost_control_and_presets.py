@@ -118,6 +118,30 @@ class TestShouldThrottle:
 
         assert should_throttle(tracker, budget) is True
 
+    def test_over_per_generation_budget(self) -> None:
+        from autocontext.loop.cost_control import CostBudget, CostTracker, should_throttle
+
+        budget = CostBudget(per_generation_usd=0.5)
+        tracker = CostTracker()
+        tracker.record(1, 0.2, 1000)
+        tracker.record(2, 0.75, 1000)
+
+        assert should_throttle(tracker, budget, generation=2) is True
+
+    def test_policy_total_threshold(self) -> None:
+        from autocontext.loop.cost_control import CostBudget, CostPolicy, CostTracker, should_throttle
+
+        tracker = CostTracker()
+        tracker.record(1, 0.6, 1000)
+        tracker.record(2, 0.45, 1000)
+
+        assert should_throttle(
+            tracker,
+            CostBudget(),
+            generation=2,
+            policy=CostPolicy(throttle_above_total=1.0),
+        ) is True
+
     def test_unlimited_budget_never_throttles(self) -> None:
         from autocontext.loop.cost_control import CostBudget, CostTracker, should_throttle
 
@@ -219,3 +243,26 @@ class TestApplyPreset:
         from autocontext.loop.presets import get_preset
 
         assert get_preset("nonexistent") is None
+
+
+class TestPresetLoaderIntegration:
+    def test_long_run_preset_loads_through_live_settings_path(self, monkeypatch) -> None:
+        from autocontext.config.settings import load_settings
+
+        monkeypatch.setenv("AUTOCONTEXT_PRESET", "long_run")
+        settings = load_settings()
+
+        assert settings.stagnation_reset_enabled is True
+        assert settings.dead_end_tracking_enabled is True
+        assert settings.two_tier_gating_enabled is True
+        assert settings.max_retries == 3
+
+    def test_short_run_preset_loads_through_live_settings_path(self, monkeypatch) -> None:
+        from autocontext.config.settings import load_settings
+
+        monkeypatch.setenv("AUTOCONTEXT_PRESET", "short_run")
+        settings = load_settings()
+
+        assert settings.stagnation_reset_enabled is False
+        assert settings.dead_end_tracking_enabled is False
+        assert settings.curator_enabled is False

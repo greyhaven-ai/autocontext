@@ -91,8 +91,55 @@ def evaluate_cost_effectiveness(
     }
 
 
-def should_throttle(tracker: CostTracker, budget: CostBudget) -> bool:
+def throttle_state(
+    tracker: CostTracker,
+    budget: CostBudget,
+    *,
+    generation: int | None = None,
+    policy: CostPolicy | None = None,
+) -> dict[str, Any]:
+    """Return budget-pressure details for the live loop."""
+    latest_generation = generation
+    if latest_generation is None and tracker.per_generation:
+        latest_generation = max(int(entry["generation"]) for entry in tracker.per_generation)
+
+    total_cost = tracker.total_cost_usd
+    generation_cost = (
+        tracker.generation_cost(latest_generation)
+        if latest_generation is not None
+        else 0.0
+    )
+
+    reasons: list[str] = []
+    if budget.total_usd > 0 and total_cost >= budget.total_usd:
+        reasons.append("budget_total")
+    if budget.per_generation_usd > 0 and latest_generation is not None and generation_cost >= budget.per_generation_usd:
+        reasons.append("budget_generation")
+    if policy is not None and policy.throttle_above_total > 0 and total_cost >= policy.throttle_above_total:
+        reasons.append("policy_total")
+
+    return {
+        "throttle": bool(reasons),
+        "reasons": reasons,
+        "generation": latest_generation,
+        "total_cost_usd": round(total_cost, 6),
+        "generation_cost_usd": round(generation_cost, 6),
+    }
+
+
+def should_throttle(
+    tracker: CostTracker,
+    budget: CostBudget,
+    *,
+    generation: int | None = None,
+    policy: CostPolicy | None = None,
+) -> bool:
     """Check if budget pressure requires throttling."""
-    if budget.total_usd <= 0:
-        return False  # unlimited
-    return tracker.total_cost_usd >= budget.total_usd
+    return bool(
+        throttle_state(
+            tracker,
+            budget,
+            generation=generation,
+            policy=policy,
+        )["throttle"]
+    )

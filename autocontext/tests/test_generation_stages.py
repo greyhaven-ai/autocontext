@@ -1107,6 +1107,48 @@ class TestStageTournament:
         assert gate_events
         assert gate_events[-1].args[1]["holdout"]["passed"] is False
 
+    def test_cost_throttle_converts_retry_to_rollback_in_live_stage(self) -> None:
+        """Active cost pressure should suppress retries in the live tournament path."""
+        settings = AppSettings(
+            agent_provider="deterministic",
+            max_retries=2,
+            cost_max_per_delta_point=10.0,
+        )
+        ctx = _make_tournament_ctx(previous_best=0.0, settings=settings)
+        ctx.cost_control_metadata = {
+            "throttled": True,
+            "generation_cost_usd": 1.2,
+        }
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+
+        with patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate:
+            resolve_gate.return_value = MagicMock(
+                decision="retry",
+                delta=0.0,
+                reason="below threshold",
+                is_rapid=False,
+                metadata={},
+            )
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=None,
+            )
+
+        assert result.gate_decision == "rollback"
+        gate_events = [call for call in events.emit.call_args_list if call.args[0] == "gate_decided"]
+        assert gate_events
+        assert gate_events[-1].args[1]["cost_control"]["throttled"] is True
+        assert "Cost control suppressed retry" in gate_events[-1].args[1]["reason"]
+
     def test_novelty_bonus_can_change_live_gate_decision(self) -> None:
         from autocontext.backpressure import BackpressureGate
 

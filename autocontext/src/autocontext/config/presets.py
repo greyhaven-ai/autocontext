@@ -1,6 +1,6 @@
 """Settings preset definitions (MTS-173).
 
-Four named presets: quick, standard, deep, rapid.
+Named presets: quick, standard, deep, rapid, long_run, short_run.
 Each preset is a dict of field_name -> default_value overrides.
 These are applied before individual env var overrides, so explicit
 env vars always win.
@@ -10,6 +10,25 @@ Config priority: CLI args > env vars > tuning.json > preset defaults > hardcoded
 Usage: AUTOCONTEXT_PRESET=quick
 """
 from __future__ import annotations
+
+LONG_RUN_PRESET_SETTINGS: dict[str, object] = {
+    "stagnation_reset_enabled": True,
+    "dead_end_tracking_enabled": True,
+    "curator_enabled": True,
+    "two_tier_gating_enabled": True,
+    "max_retries": 3,
+    "stagnation_rollback_threshold": 5,
+    "stagnation_plateau_window": 3,
+    "cross_run_inheritance": True,
+}
+
+SHORT_RUN_PRESET_SETTINGS: dict[str, object] = {
+    "stagnation_reset_enabled": False,
+    "dead_end_tracking_enabled": False,
+    "curator_enabled": False,
+    "two_tier_gating_enabled": False,
+    "max_retries": 2,
+}
 
 PRESETS: dict[str, dict[str, object]] = {
     "quick": {
@@ -43,6 +62,8 @@ PRESETS: dict[str, dict[str, object]] = {
         "coherence_check_enabled": False,
         "constraint_prompts_enabled": False,
     },
+    "long_run": dict(LONG_RUN_PRESET_SETTINGS),
+    "short_run": dict(SHORT_RUN_PRESET_SETTINGS),
 }
 
 VALID_PRESET_NAMES = frozenset(PRESETS.keys())

@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from autocontext.config.presets import LONG_RUN_PRESET_SETTINGS, SHORT_RUN_PRESET_SETTINGS
+
 
 @dataclass(slots=True)
 class RunPreset:
@@ -46,28 +48,13 @@ class RunPreset:
 LONG_RUN_PRESET = RunPreset(
     name="long_run",
     description="Safe defaults for 10+ generation runs with all anti-stall safeguards",
-    settings={
-        "stagnation_reset_enabled": True,
-        "dead_end_tracking_enabled": True,
-        "curator_enabled": True,
-        "two_tier_gating_enabled": True,
-        "max_retries": 3,
-        "stagnation_rollback_threshold": 5,
-        "stagnation_plateau_window": 3,
-        "cross_run_inheritance": True,
-    },
+    settings=dict(LONG_RUN_PRESET_SETTINGS),
 )
 
 SHORT_RUN_PRESET = RunPreset(
     name="short_run",
     description="Lightweight defaults for 1-5 generation runs",
-    settings={
-        "stagnation_reset_enabled": False,
-        "dead_end_tracking_enabled": False,
-        "curator_enabled": False,
-        "two_tier_gating_enabled": False,
-        "max_retries": 2,
-    },
+    settings=dict(SHORT_RUN_PRESET_SETTINGS),
 )
 
 _PRESET_REGISTRY: dict[str, RunPreset] = {
