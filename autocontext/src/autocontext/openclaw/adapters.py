@@ -19,6 +19,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+OPENCLAW_COMPATIBILITY_VERSION = "1.0"
+
 
 @dataclass(slots=True)
 class OpenClawRequest:
@@ -61,13 +63,19 @@ class OpenClawResponse:
             return cls(output=raw.strip())
         if not isinstance(data, dict):
             return cls(output=str(data))
+        tool_calls = data.get("tool_calls", [])
+        if not isinstance(tool_calls, list):
+            tool_calls = []
+        metadata = data.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
         return cls(
             output=data.get("output", ""),
-            tool_calls=data.get("tool_calls", []),
+            tool_calls=tool_calls,
             cost_usd=data.get("cost_usd"),
             model=data.get("model"),
             session_id=data.get("session_id"),
-            metadata=data.get("metadata", {}),
+            metadata=metadata,
         )
 
 
@@ -114,6 +122,62 @@ class AdapterCapability:
         )
 
 
+@dataclass(slots=True)
+class AdapterBackedOpenClawAgent:
+    """Expose an OpenClawAdapter through the legacy execute(...) contract."""
+
+    adapter: OpenClawAdapter
+    capability: AdapterCapability
+
+    def execute(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        request = OpenClawRequest(
+            task_prompt=prompt,
+            metadata={
+                "model": model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "tools": tools or [],
+                "runtime_kind": self.capability.runtime_kind,
+                "compatibility_version": self.capability.compatibility_version,
+            },
+        )
+        response = self.adapter.execute(request)
+        error = response.metadata.get("error")
+        if error:
+            raise RuntimeError(str(error))
+        usage = response.metadata.get("usage", {})
+        if not isinstance(usage, dict):
+            usage = {}
+        steps = response.metadata.get("steps", [])
+        if not isinstance(steps, list):
+            steps = []
+        tool_calls = response.tool_calls if isinstance(response.tool_calls, list) else []
+        return {
+            "output": response.output,
+            "model": response.model or model,
+            "steps": steps,
+            "tool_calls": tool_calls,
+            "usage": {
+                "input_tokens": int(usage.get("input_tokens", 0)),
+                "output_tokens": int(usage.get("output_tokens", 0)),
+            },
+            "total_duration_ms": int(response.metadata.get("total_duration_ms", 0)),
+            "metadata": {
+                **response.metadata,
+                "runtime_kind": self.capability.runtime_kind,
+                "compatibility_version": self.capability.compatibility_version,
+            },
+        }
+
+
 class CLIOpenClawAdapter(OpenClawAdapter):
     """Adapter that wraps an external CLI agent via stdin/stdout JSON."""
 
@@ -155,14 +219,22 @@ class CLIOpenClawAdapter(OpenClawAdapter):
         return OpenClawResponse.from_json(result.stdout)
 
 
-def _http_post(endpoint: str, payload: str, timeout: float) -> Any:
+def _http_post(
+    endpoint: str,
+    payload: str,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+) -> Any:
     """HTTP POST helper — thin wrapper for testability."""
     import urllib.request
 
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
     req = urllib.request.Request(
         endpoint,
         data=payload.encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=request_headers,
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -196,6 +268,7 @@ class HTTPOpenClawAdapter(OpenClawAdapter):
                 self.endpoint,
                 request.to_json(),
                 timeout=request.timeout or self.timeout,
+                headers=self.headers,
             )
         except Exception as exc:
             return OpenClawResponse(output="", metadata={"error": str(exc)})
@@ -208,3 +281,20 @@ class HTTPOpenClawAdapter(OpenClawAdapter):
             model=data.get("model"),
             metadata=data.get("metadata", {}),
         )
+
+
+def capability_from_settings(
+    runtime_kind: str,
+    *,
+    compatibility_version: str = OPENCLAW_COMPATIBILITY_VERSION,
+    metadata: dict[str, Any] | None = None,
+) -> AdapterCapability:
+    """Build compatibility metadata for the configured OpenClaw runtime."""
+
+    return AdapterCapability(
+        runtime_kind=runtime_kind,
+        compatibility_version=compatibility_version,
+        supports_tools=True,
+        supports_streaming=False,
+        metadata=metadata or {},
+    )

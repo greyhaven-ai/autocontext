@@ -124,6 +124,24 @@ class TestHTTPOpenClawAdapter:
 
         assert resp.output == "http response"
 
+    def test_execute_passes_headers(self) -> None:
+        from autocontext.openclaw.adapters import HTTPOpenClawAdapter, OpenClawRequest
+
+        adapter = HTTPOpenClawAdapter(
+            endpoint="http://localhost:8080/execute",
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"output": "http response", "tool_calls": []}
+
+        with patch("autocontext.openclaw.adapters._http_post", return_value=mock_resp) as mock_post:
+            adapter.execute(OpenClawRequest(task_prompt="test"))
+
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        assert kwargs["headers"] == {"Authorization": "Bearer test-token"}
+
 
 # ===========================================================================
 # AdapterCapability
