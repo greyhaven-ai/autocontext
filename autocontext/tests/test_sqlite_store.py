@@ -114,3 +114,38 @@ def test_self_play_strategy_history_includes_elo(tmp_path: Path) -> None:
             "elo": 1012.5,
         },
     ]
+
+
+def test_generation_and_snapshot_store_scoring_backend_metadata(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.create_run("run-1", "grid_ctf", 1, "local")
+    store.upsert_generation(
+        "run-1",
+        1,
+        0.4,
+        0.5,
+        1512.5,
+        1,
+        0,
+        "advance",
+        "completed",
+        scoring_backend="glicko",
+        rating_uncertainty=312.4,
+    )
+    trajectory = store.get_generation_trajectory("run-1")
+    assert trajectory[0]["scoring_backend"] == "glicko"
+    assert trajectory[0]["rating_uncertainty"] == 312.4
+
+    store.save_knowledge_snapshot(
+        "grid_ctf",
+        "run-1",
+        0.5,
+        1512.5,
+        "hash1",
+        scoring_backend="glicko",
+        rating_uncertainty=312.4,
+    )
+    snapshot = store.get_best_knowledge_snapshot("grid_ctf")
+    assert snapshot is not None
+    assert snapshot["scoring_backend"] == "glicko"
+    assert snapshot["rating_uncertainty"] == 312.4

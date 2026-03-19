@@ -18,6 +18,8 @@ class ProgressSnapshot:
     blocked_approaches: list[str]
     strategy_summary: dict[str, Any]
     score_trend: list[float]
+    scoring_backend: str = "elo"
+    rating_uncertainty: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -40,6 +42,8 @@ def build_progress_snapshot(
     current_strategy: dict[str, Any],
     lessons: list[str],
     blocked_approaches: list[str] | None = None,
+    scoring_backend: str = "elo",
+    rating_uncertainty: float | None = None,
 ) -> ProgressSnapshot:
     last_advance_generation = 0
     for i, decision in enumerate(gate_history):
@@ -60,6 +64,8 @@ def build_progress_snapshot(
         best_score=best_score,
         best_elo=best_elo,
         mean_score=mean_score,
+        scoring_backend=scoring_backend,
+        rating_uncertainty=rating_uncertainty,
         last_advance_generation=last_advance_generation,
         stagnation_count=stagnation_count,
         gate_history=list(gate_history),

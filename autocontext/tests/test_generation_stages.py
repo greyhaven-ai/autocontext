@@ -880,6 +880,14 @@ class TestStageTournament:
         assert ctx.tournament.mean_score > 0
         assert ctx.tournament.best_score > 0
 
+    def test_uses_configured_scoring_backend(self) -> None:
+        settings = _make_settings().model_copy(update={"scoring_backend": "glicko"})
+        ctx = _make_tournament_ctx(settings=settings)
+        result = self._run(ctx=ctx, gate_decision="advance")
+        assert result.tournament is not None
+        assert result.tournament.scoring_backend == "glicko"
+        assert result.challenger_uncertainty is not None
+
     def test_advance_updates_previous_best(self) -> None:
         """On advance, previous_best is updated to tournament best score."""
         ctx = _make_tournament_ctx(previous_best=0.0)

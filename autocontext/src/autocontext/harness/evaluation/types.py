@@ -31,6 +31,8 @@ class EvaluationSummary:
     losses: int
     elo_after: float
     results: list[EvaluationResult]
+    scoring_backend: str = "elo"
+    uncertainty_after: float | None = None
     dimension_means: dict[str, float] = field(default_factory=dict)
     best_dimensions: dict[str, float] = field(default_factory=dict)
     dimension_trajectory: list[dict[str, float]] = field(default_factory=list)

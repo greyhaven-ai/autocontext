@@ -42,13 +42,14 @@ def stage_probe(
 
     # Run probe matches
     evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
-    runner = EvaluationRunner(evaluator)
+    runner = EvaluationRunner(evaluator, scoring_backend=ctx.settings.scoring_backend)
     probe_result = runner.run(
         candidate=ctx.current_strategy,
         seed_base=ctx.settings.seed_base + (ctx.generation * 100) + 90,
         trials=ctx.settings.probe_matches,
         limits=HarnessLimits(),
         challenger_elo=ctx.challenger_elo,
+        challenger_uncertainty=ctx.challenger_uncertainty,
     )
 
     # Build refinement prompt with probe observations

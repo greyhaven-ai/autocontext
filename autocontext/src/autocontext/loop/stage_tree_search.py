@@ -87,6 +87,8 @@ def stage_tree_search(
             seed_base=settings.seed_base + (ctx.generation * 100) + (seed_idx * 10),
             trials=trials_per_seed,
             challenger_elo=ctx.challenger_elo,
+            challenger_uncertainty=ctx.challenger_uncertainty,
+            scoring_backend=settings.scoring_backend,
         )
         tree.update(node.id, [r.score for r in tournament.results], tournament.elo_after)
 
@@ -150,6 +152,8 @@ def stage_tree_search(
             seed_base=settings.seed_base + (ctx.generation * 100) + 50 + round_idx,
             trials=trials_per_seed,
             challenger_elo=ctx.challenger_elo,
+            challenger_uncertainty=ctx.challenger_uncertainty,
+            scoring_backend=settings.scoring_backend,
         )
         tree.update(refined_node.id, [r.score for r in tournament.results], tournament.elo_after)
 
@@ -166,7 +170,7 @@ def stage_tree_search(
     best_strategy = best_node.strategy
 
     evaluator = ScenarioEvaluator(scenario, supervisor)
-    runner = EvaluationRunner(evaluator)
+    runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
 
     def _on_match(match_index: int, result: Any) -> None:
         events.emit("match_completed", {
@@ -182,6 +186,7 @@ def stage_tree_search(
         trials=settings.matches_per_generation,
         limits=HarnessLimits(),
         challenger_elo=ctx.challenger_elo,
+        challenger_uncertainty=ctx.challenger_uncertainty,
         on_result=_on_match,
     )
 
@@ -197,12 +202,16 @@ def stage_tree_search(
         "best_score": final_tournament.best_score,
         "wins": final_tournament.wins,
         "losses": final_tournament.losses,
+        "scoring_backend": final_tournament.scoring_backend,
+        "rating_uncertainty": final_tournament.uncertainty_after,
     })
     events.emit("gate_decided", {
         "run_id": ctx.run_id,
         "generation": ctx.generation,
         "decision": gate_decision,
         "delta": gate_delta,
+        "scoring_backend": final_tournament.scoring_backend,
+        "rating_uncertainty": final_tournament.uncertainty_after,
     })
 
     # ── Phase 5: Run analyst / coach / architect ─────────────────────
@@ -332,6 +341,7 @@ def stage_tree_search(
     if gate_decision == "advance":
         ctx.previous_best = max(ctx.previous_best, final_tournament.best_score)
         ctx.challenger_elo = final_tournament.elo_after
+        ctx.challenger_uncertainty = final_tournament.uncertainty_after
 
     return ctx
 
@@ -382,14 +392,17 @@ def _run_mini_tournament(
     seed_base: int,
     trials: int,
     challenger_elo: float,
+    challenger_uncertainty: float | None,
+    scoring_backend: str,
 ) -> Any:
     """Run a small tournament for a single hypothesis."""
     evaluator = ScenarioEvaluator(scenario, supervisor)
-    runner = EvaluationRunner(evaluator)
+    runner = EvaluationRunner(evaluator, scoring_backend=scoring_backend)
     return runner.run(
         candidate=strategy,
         seed_base=seed_base,
         trials=trials,
         limits=HarnessLimits(),
         challenger_elo=challenger_elo,
+        challenger_uncertainty=challenger_uncertainty,
     )

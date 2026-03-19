@@ -634,6 +634,8 @@ class TestMutationLogWiring:
             "gate_decision": "advance",
             "best_score": 0.42,
             "elo": 1042.0,
+            "scoring_backend": "elo",
+            "rating_uncertainty": None,
         }
 
         mocks["artifacts"].mutation_log.create_checkpoint.assert_called_once_with(
