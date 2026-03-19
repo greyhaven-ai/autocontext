@@ -15,6 +15,7 @@ from autocontext.execution.phased_execution import (
     split_budget,
 )
 from autocontext.knowledge.coherence import check_coherence
+from autocontext.loop.cost_control import CostBudget, CostPolicy, CostTracker, throttle_state
 from autocontext.loop.stage_preflight import stage_preflight
 from autocontext.loop.stage_prevalidation import stage_prevalidation
 from autocontext.loop.stage_probe import stage_probe
@@ -199,6 +200,62 @@ def _execution_phase_outputs(ctx: GenerationContext) -> dict[str, object]:
     }
 
 
+def _build_cost_control_metadata(
+    ctx: GenerationContext,
+    meta_optimizer: MetaOptimizer | None,
+) -> dict[str, object]:
+    if meta_optimizer is None:
+        return {}
+    summary = meta_optimizer.cost_summary()
+    if summary is None:
+        return {}
+    records_count = getattr(summary, "records_count", None)
+    if not isinstance(records_count, int):
+        return {}
+
+    tracker = CostTracker()
+    for entry in meta_optimizer.generation_costs():
+        if (
+            not isinstance(entry, tuple)
+            or len(entry) != 2
+            or not isinstance(entry[0], int)
+            or not isinstance(entry[1], (int, float))
+        ):
+            continue
+        generation, cost_usd = entry
+        tracker.record(generation, float(cost_usd), 0)
+
+    budget = CostBudget(
+        total_usd=float(ctx.settings.cost_budget_limit or 0.0),
+        per_generation_usd=float(ctx.settings.cost_per_generation_limit),
+    )
+    policy = CostPolicy(
+        max_cost_per_delta_point=float(ctx.settings.cost_max_per_delta_point),
+        throttle_above_total=float(ctx.settings.cost_throttle_above_total),
+    )
+    state = throttle_state(
+        tracker,
+        budget,
+        generation=ctx.generation,
+        policy=policy,
+    )
+    return {
+        "throttled": state["throttle"],
+        "reasons": state["reasons"],
+        "total_cost_usd": state["total_cost_usd"],
+        "generation_cost_usd": state["generation_cost_usd"],
+        "budget": {
+            "total_usd": budget.total_usd,
+            "per_generation_usd": budget.per_generation_usd,
+        },
+        "policy": {
+            "max_cost_per_delta_point": policy.max_cost_per_delta_point,
+            "throttle_above_total": policy.throttle_above_total,
+        },
+        "records_count": records_count,
+    }
+
+
 class GenerationPipeline:
     """Orchestrates a single generation through decomposed stages."""
 
@@ -310,6 +367,7 @@ class GenerationPipeline:
             scaffolding_budget = phase_plan.phases[0] if phase_plan is not None else None
             execution_budget_template = phase_plan.phases[1] if phase_plan is not None else None
             scaffolding_started_at = ctx.generation_start_time
+            cost_throttled = False
 
             # Standard flow: agent generation → pre-validation → probe → tournament
             try:
@@ -330,6 +388,23 @@ class GenerationPipeline:
                             self._meta_optimizer.record_llm_call(role_exec.role, role_exec.usage, ctx.generation)
                     except Exception:
                         LOGGER.debug("meta_optimizer.record_llm_call failed", exc_info=True)
+                ctx.cost_control_metadata = _build_cost_control_metadata(ctx, self._meta_optimizer)
+                cost_throttled = bool(ctx.cost_control_metadata.get("throttled"))
+                if cost_throttled:
+                    skipped_stages: list[str] = []
+                    if ctx.settings.probe_matches > 0:
+                        skipped_stages.append("probe")
+                    if ctx.settings.policy_refinement_enabled:
+                        skipped_stages.append("policy_refinement")
+                    if ctx.settings.consultation_enabled:
+                        skipped_stages.append("consultation")
+                    if skipped_stages:
+                        ctx.cost_control_metadata["skipped_stages"] = skipped_stages
+                    self._events.emit("cost_throttle_applied", {
+                        "run_id": ctx.run_id,
+                        "generation": ctx.generation,
+                        "cost_control": ctx.cost_control_metadata,
+                    })
 
                 # Hook: Controller chat checkpoint
                 if self._controller is not None and self._chat_with_agent_fn is not None:
@@ -368,7 +443,11 @@ class GenerationPipeline:
                     )
 
                 # Stage 2.5: Probe (optional — refine strategy from observation)
-                if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):
+                if (
+                    not cost_throttled
+                    and not _over_budget(ctx)
+                    and not _phase_exhausted(scaffolding_started_at, scaffolding_budget)
+                ):
                     ctx = stage_probe(
                         ctx,
                         agents=self._orchestrator,
@@ -377,7 +456,11 @@ class GenerationPipeline:
                     )
 
                 # Stage 2.6: Policy refinement (optional — refine code strategies via zero-LLM evaluation)
-                if not _over_budget(ctx) and not _phase_exhausted(scaffolding_started_at, scaffolding_budget):
+                if (
+                    not cost_throttled
+                    and not _over_budget(ctx)
+                    and not _phase_exhausted(scaffolding_started_at, scaffolding_budget)
+                ):
                     refinement_client, refinement_model = self._orchestrator.resolve_role_execution(
                         "competitor",
                         generation=ctx.generation,
@@ -555,12 +638,13 @@ class GenerationPipeline:
                 LOGGER.debug("meta_optimizer.record_gate_decision failed", exc_info=True)
 
         # Stage 3c: Optional provider consultation after stalls/uncertainty
-        ctx = stage_consultation(
-            ctx,
-            sqlite=self._sqlite,
-            artifacts=self._artifacts,
-            events=self._events,
-        )
+        if not bool(ctx.cost_control_metadata.get("throttled")):
+            ctx = stage_consultation(
+                ctx,
+                sqlite=self._sqlite,
+                artifacts=self._artifacts,
+                events=self._events,
+            )
 
         # Stage 3.5: Skeptic adversarial review (AC-324)
         ctx = stage_skeptic_review(

@@ -133,6 +133,12 @@ class MetaOptimizer:
             return self._cost.summary()
         return None
 
+    def generation_costs(self) -> list[tuple[int, float]]:
+        """Return per-generation cost totals, or an empty list if disabled."""
+        if self._cost:
+            return self._cost.cost_per_generation()
+        return []
+
     def profiles(self) -> dict[str, RoleProfile]:
         """Return role performance profiles, or empty dict if profiling is disabled."""
         if self._profiler:

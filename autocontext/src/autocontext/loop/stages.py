@@ -47,6 +47,7 @@ from autocontext.knowledge.protocol import parse_research_protocol, validate_tun
 from autocontext.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
 from autocontext.knowledge.stagnation import StagnationDetector
 from autocontext.knowledge.tuning import TuningConfig, parse_tuning_proposal
+from autocontext.loop.cost_control import CostPolicy, evaluate_cost_effectiveness
 from autocontext.loop.exploration import (
     BasinCandidate,
     BranchRecord,
@@ -1684,6 +1685,36 @@ def stage_tournament(
         )
         gate_decision = gate_result.decision
         gate_reason = gate_result.reason
+        generation_cost_usd = float(ctx.cost_control_metadata.get("generation_cost_usd", 0.0) or 0.0)
+        if generation_cost_usd > 0:
+            score_delta = max(0.0, tournament.best_score - ctx.previous_best)
+            cost_effectiveness = evaluate_cost_effectiveness(
+                generation_cost_usd,
+                score_delta,
+                max_cost_per_delta=CostPolicy(
+                    max_cost_per_delta_point=settings.cost_max_per_delta_point,
+                    throttle_above_total=settings.cost_throttle_above_total,
+                ).max_cost_per_delta_point,
+            )
+            ctx.cost_control_metadata = {
+                **ctx.cost_control_metadata,
+                "cost_effectiveness": cost_effectiveness,
+            }
+            if gate_decision == "retry":
+                retry_blocked_by_cost = bool(ctx.cost_control_metadata.get("throttled"))
+                retry_blocked_by_efficiency = score_delta > 0 and not cost_effectiveness["efficient"]
+                if retry_blocked_by_cost or retry_blocked_by_efficiency:
+                    reasons: list[str] = []
+                    if retry_blocked_by_cost:
+                        reasons.append("budget throttle is active")
+                    if retry_blocked_by_efficiency:
+                        reasons.append(
+                            "cost per delta "
+                            f"${cost_effectiveness['cost_per_delta_point']:.4f} exceeds "
+                            f"${settings.cost_max_per_delta_point:.4f}"
+                        )
+                    gate_decision = "rollback"
+                    gate_reason = "Cost control suppressed retry: " + "; ".join(reasons)
 
         if gate_decision == "advance":
             holdout_result = _run_holdout_verification(
@@ -1809,6 +1840,7 @@ def stage_tournament(
         "reason": gate_reason,
         "holdout": holdout_result.to_dict() if holdout_result is not None else None,
         "exploration": ctx.exploration_metadata or {},
+        "cost_control": ctx.cost_control_metadata or {},
     }
     gate_metadata = getattr(gate_result, "metadata", None)
     if isinstance(gate_metadata, dict) and gate_metadata:
@@ -2223,6 +2255,8 @@ def stage_persistence(
         metrics["holdout"] = ctx.holdout_result.to_dict()
     if ctx.exploration_metadata:
         metrics["exploration"] = ctx.exploration_metadata
+    if ctx.cost_control_metadata:
+        metrics["cost_control"] = ctx.cost_control_metadata
 
     # 2. Insert matches into sqlite
     for idx, eval_result in enumerate(tournament.results):
@@ -2353,6 +2387,7 @@ def stage_persistence(
         "self_play": self_play_summary or {},
         "holdout": ctx.holdout_result.to_dict() if ctx.holdout_result is not None else None,
         "exploration": ctx.exploration_metadata or {},
+        "cost_control": ctx.cost_control_metadata or {},
         "created_tools": ctx.created_tools,
     })
 

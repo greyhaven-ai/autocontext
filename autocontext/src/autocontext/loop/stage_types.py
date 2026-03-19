@@ -53,6 +53,7 @@ class GenerationContext:
     base_playbook: str = ""
     base_lessons: str = ""
     exploration_metadata: dict[str, Any] = field(default_factory=dict)
+    cost_control_metadata: dict[str, Any] = field(default_factory=dict)
 
     # Pipeline wiring: tuning proposal from architect (AR-6)
     tuning_proposal: TuningConfig | None = None

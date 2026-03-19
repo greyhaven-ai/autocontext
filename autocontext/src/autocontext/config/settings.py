@@ -223,6 +223,21 @@ class AppSettings(BaseModel):
     audit_log_path: Path = Field(default=Path("runs/audit.ndjson"))
     cost_tracking_enabled: bool = Field(default=True)
     cost_budget_limit: float | None = Field(default=None)
+    cost_per_generation_limit: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Soft USD cap per generation before optional stages and retries are throttled (0=unlimited)",
+    )
+    cost_throttle_above_total: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Soft total USD threshold for throttling before the hard budget limit (0=disabled)",
+    )
+    cost_max_per_delta_point: float = Field(
+        default=10.0,
+        gt=0.0,
+        description="Max USD spent per raw score delta point before retries are suppressed",
+    )
     meta_profiling_enabled: bool = Field(default=False)
     meta_min_observations: int = Field(default=5, ge=1)
     # Tiered model routing
