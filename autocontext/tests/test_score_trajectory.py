@@ -131,6 +131,29 @@ def test_trajectory_includes_dimension_history_when_available(tmp_path: Path) ->
     assert "tempo" in result
 
 
+def test_trajectory_switches_to_backend_metadata_for_glicko(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    store.create_run("glicko_run", "grid_ctf", 1, "local")
+    store.upsert_generation(
+        "glicko_run",
+        1,
+        mean_score=0.40,
+        best_score=0.50,
+        elo=1510.0,
+        wins=1,
+        losses=0,
+        gate_decision="advance",
+        status="completed",
+        scoring_backend="glicko",
+        rating_uncertainty=312.4,
+    )
+    builder = ScoreTrajectoryBuilder(store)
+    result = builder.build_trajectory("glicko_run")
+    assert "Backend: `glicko`" in result
+    assert "| Gen | Mean | Best | Rating | Uncertainty | Gate | Delta |" in result
+    assert "312.40" in result
+
+
 # --- ScoreTrajectoryBuilder.build_strategy_registry tests ---
 
 def test_registry_empty(tmp_path: Path) -> None:

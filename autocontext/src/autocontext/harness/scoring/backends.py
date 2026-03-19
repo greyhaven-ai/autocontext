@@ -25,6 +25,10 @@ _ELO_K = 32.0
 _GLICKO_Q = math.log(10) / 400
 
 
+def _normalize_score(score: float) -> float:
+    return max(0.0, min(1.0, float(score)))
+
+
 @dataclass(slots=True)
 class TrialResult:
     """A single trial preserving the continuous score."""
@@ -75,6 +79,11 @@ class ScoringBackend(ABC):
     def name(self) -> str:
         """Backend identifier."""
 
+    @property
+    def default_uncertainty(self) -> float | None:
+        """Initial uncertainty for backends that track it."""
+        return None
+
     @abstractmethod
     def update(
         self,
@@ -106,7 +115,7 @@ class EloBackend(ScoringBackend):
 
         for trial in trials:
             expected = 1.0 / (1.0 + 10 ** ((trial.opponent_rating - rating) / 400))
-            actual = 1.0 if trial.is_win() else 0.0
+            actual = _normalize_score(trial.score)
             rating += self._k * (actual - expected)
             trial_scores.append(trial.score)
 
@@ -129,6 +138,10 @@ class GlickoBackend(ScoringBackend):
     @property
     def name(self) -> str:
         return "glicko"
+
+    @property
+    def default_uncertainty(self) -> float | None:
+        return self._default_rd
 
     def update(
         self,
@@ -155,7 +168,7 @@ class GlickoBackend(ScoringBackend):
             g_rd = 1.0 / math.sqrt(1.0 + 3.0 * q * q * (200.0 ** 2) / (math.pi ** 2))
             e = 1.0 / (1.0 + 10 ** (-g_rd * (current_rating - trial.opponent_rating) / 400))
             d_sq_inv += q * q * g_rd * g_rd * e * (1 - e)
-            actual = 1.0 if trial.is_win() else 0.0
+            actual = _normalize_score(trial.score)
             score_sum += g_rd * (actual - e)
 
         d_sq = 1.0 / max(d_sq_inv, 1e-10)

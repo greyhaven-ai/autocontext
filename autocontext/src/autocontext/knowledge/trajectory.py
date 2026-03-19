@@ -13,18 +13,42 @@ class ScoreTrajectoryBuilder:
         rows = self.sqlite.get_generation_trajectory(run_id)
         if not rows:
             return ""
-        header = "| Gen | Mean | Best | Elo | Gate | Delta |"
-        sep = "|-----|------|------|-----|------|-------|"
-        lines = ["## Score Trajectory", "", header, sep]
+        non_elo = any(str(row.get("scoring_backend", "elo")) != "elo" for row in rows)
+        show_uncertainty = any(row.get("rating_uncertainty") is not None for row in rows)
+        rating_label = "Rating" if non_elo else "Elo"
+        if show_uncertainty:
+            header = f"| Gen | Mean | Best | {rating_label} | Uncertainty | Gate | Delta |"
+            sep = "|-----|------|------|--------|-------------|------|-------|"
+        else:
+            header = f"| Gen | Mean | Best | {rating_label} | Gate | Delta |"
+            sep = "|-----|------|------|--------|------|-------|"
+        lines = ["## Score Trajectory", ""]
+        if non_elo:
+            lines.append(f"Backend: `{rows[-1].get('scoring_backend', 'elo')}`")
+            lines.append("")
+        lines.extend([header, sep])
         for row in rows:
-            lines.append(
-                f"| {row['generation_index']} "
-                f"| {row['mean_score']:.4f} "
-                f"| {row['best_score']:.4f} "
-                f"| {row['elo']:.1f} "
-                f"| {row['gate_decision']} "
-                f"| {row['delta']:+.4f} |"
-            )
+            if show_uncertainty:
+                uncertainty = row.get("rating_uncertainty")
+                uncertainty_text = f"{float(uncertainty):.2f}" if isinstance(uncertainty, (int, float)) else "-"
+                lines.append(
+                    f"| {row['generation_index']} "
+                    f"| {row['mean_score']:.4f} "
+                    f"| {row['best_score']:.4f} "
+                    f"| {row['elo']:.1f} "
+                    f"| {uncertainty_text} "
+                    f"| {row['gate_decision']} "
+                    f"| {row['delta']:+.4f} |"
+                )
+            else:
+                lines.append(
+                    f"| {row['generation_index']} "
+                    f"| {row['mean_score']:.4f} "
+                    f"| {row['best_score']:.4f} "
+                    f"| {row['elo']:.1f} "
+                    f"| {row['gate_decision']} "
+                    f"| {row['delta']:+.4f} |"
+                )
         dimension_history = [
             row["dimension_summary"].get("best_dimensions", {})
             for row in rows

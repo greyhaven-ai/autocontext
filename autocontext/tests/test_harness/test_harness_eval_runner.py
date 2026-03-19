@@ -214,3 +214,16 @@ class TestEvaluationRunner:
         assert summary.results[1].metadata["self_play"]["opponent_generation"] == 1
         assert summary.results[1].score == pytest.approx(0.4)
         assert summary.mean_score == pytest.approx((0.7 + 0.4) / 2)
+
+    def test_runner_uses_selected_scoring_backend(self) -> None:
+        runner = EvaluationRunner(evaluator=_FixedEvaluator(0.8), scoring_backend="glicko")
+        summary = runner.run(
+            candidate={},
+            seed_base=0,
+            trials=3,
+            limits=EvaluationLimits(),
+            challenger_elo=1500.0,
+            challenger_uncertainty=350.0,
+        )
+        assert summary.scoring_backend == "glicko"
+        assert summary.uncertainty_after is not None

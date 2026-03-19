@@ -100,6 +100,20 @@ class TestEloBackend:
         # Continuous scores are in metadata
         assert len(update.metadata.get("trial_scores", [])) == 1
 
+    def test_continuous_scores_change_rating_delta(self) -> None:
+        from autocontext.harness.scoring.backends import EloBackend, TrialResult
+
+        backend = EloBackend()
+        modest = backend.update(
+            current_rating=1000.0,
+            trials=[TrialResult(score=0.56, seed=1, opponent_rating=1000.0)],
+        )
+        strong = backend.update(
+            current_rating=1000.0,
+            trials=[TrialResult(score=0.96, seed=1, opponent_rating=1000.0)],
+        )
+        assert strong.rating_after > modest.rating_after
+
     def test_no_uncertainty(self) -> None:
         from autocontext.harness.scoring.backends import EloBackend, TrialResult
 
@@ -147,6 +161,22 @@ class TestGlickoBackend:
         assert update_many.uncertainty_after is not None
         assert update_few.uncertainty_after is not None
         assert update_many.uncertainty_after < update_few.uncertainty_after
+
+    def test_continuous_scores_change_rating_delta(self) -> None:
+        from autocontext.harness.scoring.backends import GlickoBackend, TrialResult
+
+        backend = GlickoBackend()
+        modest = backend.update(
+            current_rating=1500.0,
+            trials=[TrialResult(score=0.56, seed=1, opponent_rating=1500.0)],
+            uncertainty=350.0,
+        )
+        strong = backend.update(
+            current_rating=1500.0,
+            trials=[TrialResult(score=0.96, seed=1, opponent_rating=1500.0)],
+            uncertainty=350.0,
+        )
+        assert strong.rating_after > modest.rating_after
 
 
 # ===========================================================================

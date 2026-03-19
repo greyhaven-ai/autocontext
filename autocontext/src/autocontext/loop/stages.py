@@ -306,6 +306,8 @@ def _build_empty_tournament(ctx: GenerationContext) -> EvaluationSummary:
         losses=0,
         elo_after=ctx.challenger_elo,
         results=[],
+        scoring_backend=ctx.settings.scoring_backend,
+        uncertainty_after=ctx.challenger_uncertainty,
     )
 
 
@@ -586,7 +588,7 @@ def _select_exploration_strategy(
 
     _self_play_pool, opponent_pool, planned_self_play_matches = _build_live_opponent_pool(ctx, sqlite=sqlite)
     evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
-    runner = EvaluationRunner(evaluator)
+    runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
     selection_results: list[dict[str, Any]] = []
 
     for candidate in candidate_entries:
@@ -596,6 +598,7 @@ def _select_exploration_strategy(
             trials=settings.matches_per_generation,
             limits=HarnessLimits(),
             challenger_elo=ctx.challenger_elo,
+            challenger_uncertainty=ctx.challenger_uncertainty,
             opponent_pool=opponent_pool,
         )
         selection_results.append({
@@ -1586,6 +1589,7 @@ def stage_tournament(
             "run_id": ctx.run_id,
             "generation": ctx.generation,
             "matches": settings.matches_per_generation,
+            "scoring_backend": settings.scoring_backend,
             "self_play_pool_size": self_play_pool.size,
             "self_play_matches_planned": planned_self_play_matches,
         })
@@ -1603,13 +1607,14 @@ def stage_tournament(
             def _on_result(idx: int, result: EvaluationResult) -> None:
                 _on_match(idx, result.score)
 
-            runner = EvaluationRunner(evaluator)
+            runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
             tournament = runner.run(
                 candidate=current_strategy,
                 seed_base=settings.seed_base + (ctx.generation * 100) + (attempt * 10),
                 trials=settings.matches_per_generation,
                 limits=harness_limits,
                 challenger_elo=ctx.challenger_elo,
+                challenger_uncertainty=ctx.challenger_uncertainty,
                 opponent_pool=opponent_pool,
                 on_result=_on_result,
             )
@@ -1812,6 +1817,8 @@ def stage_tournament(
         "run_id": ctx.run_id, "generation": ctx.generation,
         "mean_score": tournament.mean_score, "best_score": tournament.best_score,
         "wins": tournament.wins, "losses": tournament.losses,
+        "scoring_backend": tournament.scoring_backend,
+        "rating_uncertainty": tournament.uncertainty_after,
         "dimension_means": dimension_summary["dimension_means"] if dimension_summary is not None else {},
         "best_dimensions": dimension_summary["best_dimensions"] if dimension_summary is not None else {},
         "dimension_regressions": (
@@ -1839,6 +1846,8 @@ def stage_tournament(
         "self_play": self_play_summary or {},
         "reason": gate_reason,
         "holdout": holdout_result.to_dict() if holdout_result is not None else None,
+        "scoring_backend": tournament.scoring_backend,
+        "rating_uncertainty": tournament.uncertainty_after,
         "exploration": ctx.exploration_metadata or {},
         "cost_control": ctx.cost_control_metadata or {},
     }
@@ -1858,6 +1867,8 @@ def stage_tournament(
     ctx.gate_decision_history[:] = outcome["gate_decision_history"]
     ctx.previous_best = outcome["previous_best"]
     ctx.challenger_elo = outcome["challenger_elo"]
+    if gate_decision == "advance":
+        ctx.challenger_uncertainty = tournament.uncertainty_after
     ctx.tournament = tournament
     ctx.gate_decision = gate_decision
     ctx.gate_delta = gate_delta
@@ -2201,6 +2212,8 @@ def _persist_progress_snapshot(
         score_history=ctx.score_history,
         current_strategy=ctx.current_strategy,
         lessons=[lesson.lstrip("- ") for lesson in progress_lessons],
+        scoring_backend=tournament.scoring_backend,
+        rating_uncertainty=ctx.challenger_uncertainty,
     )
     artifacts.write_progress(scenario_name, snapshot.to_dict())
 
@@ -2236,6 +2249,8 @@ def stage_persistence(
         "mean_score": tournament.mean_score,
         "best_score": ctx.previous_best,
         "elo": ctx.challenger_elo,
+        "scoring_backend": tournament.scoring_backend,
+        "rating_uncertainty": ctx.challenger_uncertainty,
         "wins": tournament.wins,
         "losses": tournament.losses,
         "runs": settings.matches_per_generation,
@@ -2284,6 +2299,8 @@ def stage_persistence(
             if dimension_summary is not None
             else None
         ),
+        scoring_backend=tournament.scoring_backend,
+        rating_uncertainty=ctx.challenger_uncertainty,
     )
 
     # 4. Persist generation artifacts

@@ -176,6 +176,41 @@ class TestGenerateSessionReport:
         assert report.gate_counts["retry"] == 1
         assert report.gate_counts["rollback"] == 2
 
+    def test_generate_glicko_report_includes_backend_metadata(self) -> None:
+        from autocontext.knowledge.report import generate_session_report
+
+        rows: list[dict[str, object]] = [
+            {
+                "generation_index": 1,
+                "best_score": 0.3,
+                "elo": 1500.0,
+                "delta": 0.0,
+                "gate_decision": "advance",
+                "scoring_backend": "glicko",
+                "rating_uncertainty": 330.0,
+            },
+            {
+                "generation_index": 2,
+                "best_score": 0.6,
+                "elo": 1530.0,
+                "delta": 0.3,
+                "gate_decision": "advance",
+                "scoring_backend": "glicko",
+                "rating_uncertainty": 300.0,
+            },
+        ]
+        report = generate_session_report(
+            run_id="run_glicko",
+            scenario="grid_ctf",
+            trajectory_rows=rows,
+        )
+        markdown = report.to_markdown()
+
+        assert report.scoring_backend == "glicko"
+        assert report.end_rating_uncertainty == 300.0
+        assert "Rating (glicko)" in markdown
+        assert "Rating uncertainty: 300.00" in markdown
+
 
 # ── ArtifactStore report methods ───────────────────────────────────────
 

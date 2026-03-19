@@ -22,6 +22,8 @@ class SessionReport:
     end_elo: float
     total_generations: int
     duration_seconds: float
+    scoring_backend: str = "elo"
+    end_rating_uncertainty: float | None = None
     gate_counts: dict[str, int] = field(default_factory=dict)
     top_improvements: list[dict[str, object]] = field(default_factory=list)
     dead_ends_found: int = 0
@@ -40,17 +42,20 @@ class SessionReport:
         secs = int(self.duration_seconds % 60)
         duration_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
 
+        rating_label = "Elo" if self.scoring_backend == "elo" else f"Rating ({self.scoring_backend})"
         lines = [
             f"# Session Report: {self.run_id}",
             f"**Scenario:** {self.scenario} | **Duration:** {duration_str}",
             "",
             "## Results",
             f"- Score: {self.start_score:.4f} → {self.end_score:.4f} (Δ {delta:+.4f})",
-            f"- Elo: {self.start_elo:.1f} → {self.end_elo:.1f}",
+            f"- {rating_label}: {self.start_elo:.1f} → {self.end_elo:.1f}",
             f"- Generations: {self.total_generations} ({advances} advances, {retries} retries, {rollbacks} rollbacks)",
             f"- Exploration mode: {self.exploration_mode}",
             "",
         ]
+        if self.end_rating_uncertainty is not None:
+            lines.insert(6, f"- Rating uncertainty: {self.end_rating_uncertainty:.2f}")
 
         # Top improvements
         lines.append("## Top Improvements")
@@ -103,6 +108,7 @@ def generate_session_report(
             end_elo=1000.0,
             total_generations=0,
             duration_seconds=duration_seconds,
+            scoring_backend="elo",
             exploration_mode=exploration_mode,
             dead_ends_found=dead_ends_found,
             stale_lessons_count=stale_lessons_count,
@@ -140,6 +146,12 @@ def generate_session_report(
         end_elo=_to_float(last.get("elo", 1000), 1000.0),
         total_generations=len(trajectory_rows),
         duration_seconds=duration_seconds,
+        scoring_backend=str(last.get("scoring_backend", first.get("scoring_backend", "elo"))),
+        end_rating_uncertainty=(
+            _to_float(last.get("rating_uncertainty"), 0.0)
+            if last.get("rating_uncertainty") is not None
+            else None
+        ),
         gate_counts=gate_counts,
         top_improvements=top_improvements,
         dead_ends_found=dead_ends_found,

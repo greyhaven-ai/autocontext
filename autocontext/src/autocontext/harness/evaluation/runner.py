@@ -9,7 +9,7 @@ from typing import Any
 
 from autocontext.harness.evaluation.protocol import Evaluator
 from autocontext.harness.evaluation.types import EvaluationLimits, EvaluationResult, EvaluationSummary
-from autocontext.harness.scoring.elo import update_elo
+from autocontext.harness.scoring.backends import TrialResult, get_backend
 
 
 def _comparative_score(candidate_score: float, opponent_score: float) -> float:
@@ -22,10 +22,12 @@ class EvaluationRunner:
         evaluator: Evaluator,
         opponent_elo: float = 1000.0,
         win_threshold: float = 0.55,
+        scoring_backend: str = "elo",
     ) -> None:
         self._evaluator = evaluator
         self._opponent_elo = opponent_elo
         self._win_threshold = win_threshold
+        self._backend = get_backend(scoring_backend)
 
     def run(
         self,
@@ -35,12 +37,15 @@ class EvaluationRunner:
         trials: int,
         limits: EvaluationLimits,
         challenger_elo: float,
+        challenger_uncertainty: float | None = None,
         opponent_pool: Sequence[Mapping[str, Any]] | None = None,
         on_result: Callable[[int, EvaluationResult], None] | None = None,
     ) -> EvaluationSummary:
         results: list[EvaluationResult] = []
         elo = challenger_elo
+        rating_uncertainty = challenger_uncertainty
         self_play_elo = challenger_elo
+        self_play_uncertainty = challenger_uncertainty
         wins = 0
         losses = 0
         scores: list[float] = []
@@ -101,7 +106,20 @@ class EvaluationRunner:
                         if isinstance(opponent_entry.get("elo"), (int, float))
                         else self._opponent_elo
                     )
-                    self_play_elo = update_elo(self_play_elo, opponent_elo, actual)
+                    self_play_update = self._backend.update(
+                        self_play_elo,
+                        [
+                            TrialResult(
+                                score=effective_score,
+                                seed=seed,
+                                opponent_rating=opponent_elo,
+                                metadata=metadata,
+                            ),
+                        ],
+                        uncertainty=self_play_uncertainty,
+                    )
+                    self_play_elo = self_play_update.rating_after
+                    self_play_uncertainty = self_play_update.uncertainty_after
                     self_play_matches += 1
                     self_play_scores.append(effective_score)
                 else:
@@ -112,7 +130,20 @@ class EvaluationRunner:
                 metadata["match_source"] = "baseline"
                 result = replace(result, metadata=metadata)
                 baseline_matches += 1
-                elo = update_elo(elo, self._opponent_elo, actual)
+                update = self._backend.update(
+                    elo,
+                    [
+                        TrialResult(
+                            score=result.score,
+                            seed=seed,
+                            opponent_rating=self._opponent_elo,
+                            metadata=metadata,
+                        ),
+                    ],
+                    uncertainty=rating_uncertainty,
+                )
+                elo = update.rating_after
+                rating_uncertainty = update.uncertainty_after
 
             results.append(result)
             scores.append(result.score)
@@ -149,6 +180,11 @@ class EvaluationRunner:
                     "self_play_elo_after": round(self_play_elo, 6),
                     "self_play_wins": self_play_wins,
                     "self_play_losses": self_play_losses,
+                    "self_play_uncertainty_after": (
+                        round(self_play_uncertainty, 6)
+                        if self_play_uncertainty is not None
+                        else None
+                    ),
                 })
 
         return EvaluationSummary(
@@ -158,6 +194,8 @@ class EvaluationRunner:
             losses=losses,
             elo_after=elo,
             results=results,
+            scoring_backend=self._backend.name,
+            uncertainty_after=rating_uncertainty,
             dimension_means=dimension_means,
             best_dimensions=dict(best_result.dimension_scores) if best_result is not None else {},
             dimension_trajectory=dimension_trajectory,

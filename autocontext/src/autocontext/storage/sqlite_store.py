@@ -75,15 +75,18 @@ class SQLiteStore:
         status: str,
         duration_seconds: float | None = None,
         dimension_summary_json: str | None = None,
+        scoring_backend: str = "elo",
+        rating_uncertainty: float | None = None,
     ) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO generations(
                     run_id, generation_index, mean_score, best_score, elo, wins, losses,
-                    gate_decision, status, duration_seconds, dimension_summary_json
+                    gate_decision, status, duration_seconds, dimension_summary_json,
+                    scoring_backend, rating_uncertainty
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, generation_index) DO UPDATE SET
                     mean_score = excluded.mean_score,
                     best_score = excluded.best_score,
@@ -94,6 +97,8 @@ class SQLiteStore:
                     status = excluded.status,
                     duration_seconds = excluded.duration_seconds,
                     dimension_summary_json = excluded.dimension_summary_json,
+                    scoring_backend = excluded.scoring_backend,
+                    rating_uncertainty = excluded.rating_uncertainty,
                     updated_at = datetime('now')
                 """,
                 (
@@ -108,6 +113,8 @@ class SQLiteStore:
                     status,
                     duration_seconds,
                     dimension_summary_json,
+                    scoring_backend,
+                    rating_uncertainty,
                 ),
             )
 
@@ -415,7 +422,15 @@ class SQLiteStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT generation_index, mean_score, best_score, elo, gate_decision, dimension_summary_json
+                SELECT
+                    generation_index,
+                    mean_score,
+                    best_score,
+                    elo,
+                    gate_decision,
+                    dimension_summary_json,
+                    scoring_backend,
+                    rating_uncertainty
                 FROM generations
                 WHERE run_id = ? AND status = 'completed'
                 ORDER BY generation_index
@@ -494,22 +509,43 @@ class SQLiteStore:
         playbook_hash: str,
         agent_provider: str = "",
         rlm_enabled: bool = False,
+        scoring_backend: str = "elo",
+        rating_uncertainty: float | None = None,
     ) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO knowledge_snapshots(
-                    scenario, run_id, best_score, best_elo, playbook_hash, agent_provider, rlm_enabled
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    scenario, run_id, best_score, best_elo, playbook_hash, agent_provider,
+                    rlm_enabled, scoring_backend, rating_uncertainty
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (scenario, run_id, best_score, best_elo, playbook_hash, agent_provider, int(rlm_enabled)),
+                (
+                    scenario,
+                    run_id,
+                    best_score,
+                    best_elo,
+                    playbook_hash,
+                    agent_provider,
+                    int(rlm_enabled),
+                    scoring_backend,
+                    rating_uncertainty,
+                ),
             )
 
     def get_best_knowledge_snapshot(self, scenario: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
                 """
-                SELECT scenario, run_id, best_score, best_elo, playbook_hash, created_at
+                SELECT
+                    scenario,
+                    run_id,
+                    best_score,
+                    best_elo,
+                    playbook_hash,
+                    scoring_backend,
+                    rating_uncertainty,
+                    created_at
                 FROM knowledge_snapshots
                 WHERE scenario = ?
                 ORDER BY best_score DESC
@@ -524,7 +560,17 @@ class SQLiteStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT scenario, run_id, best_score, best_elo, playbook_hash, agent_provider, rlm_enabled, created_at
+                SELECT
+                    scenario,
+                    run_id,
+                    best_score,
+                    best_elo,
+                    playbook_hash,
+                    agent_provider,
+                    rlm_enabled,
+                    scoring_backend,
+                    rating_uncertainty,
+                    created_at
                 FROM knowledge_snapshots
                 WHERE scenario = ?
                 ORDER BY id ASC

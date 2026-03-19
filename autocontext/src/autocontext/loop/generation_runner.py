@@ -43,6 +43,7 @@ from autocontext.config import AppSettings
 from autocontext.execution import ExecutionSupervisor
 from autocontext.execution.executors import LocalExecutor, PrimeIntellectExecutor
 from autocontext.harness.meta_optimizer import MetaOptimizer
+from autocontext.harness.scoring.backends import get_backend
 from autocontext.integrations.primeintellect import PrimeIntellectClient
 from autocontext.knowledge.mutation_log import MutationEntry
 from autocontext.knowledge.normalized_metrics import generate_run_progress_report
@@ -941,6 +942,7 @@ class GenerationRunner:
         )
         previous_best = 0.0
         challenger_elo = 1000.0
+        challenger_uncertainty = get_backend(self.settings.scoring_backend).default_uncertainty
         completed = 0
         score_history: list[float] = []
         gate_decision_history: list[str] = []
@@ -1011,6 +1013,8 @@ class GenerationRunner:
                     losses=0,
                     gate_decision="running",
                     status="running",
+                    scoring_backend=self.settings.scoring_backend,
+                    rating_uncertainty=challenger_uncertainty,
                 )
                 try:
                     from autocontext.loop.generation_pipeline import GenerationPipeline
@@ -1049,6 +1053,7 @@ class GenerationRunner:
                         settings=self.settings,
                         previous_best=previous_best,
                         challenger_elo=challenger_elo,
+                        challenger_uncertainty=challenger_uncertainty,
                         score_history=score_history,
                         gate_decision_history=gate_decision_history,
                         coach_competitor_hints=coach_competitor_hints,
@@ -1064,6 +1069,8 @@ class GenerationRunner:
                                 "gate_decision": ctx.gate_decision,
                                 "best_score": ctx.previous_best,
                                 "elo": ctx.challenger_elo,
+                                "scoring_backend": ctx.settings.scoring_backend,
+                                "rating_uncertainty": ctx.challenger_uncertainty,
                             },
                             run_id=active_run_id,
                             description=f"Generation {generation} completed with {ctx.gate_decision or 'unknown'}",
@@ -1071,6 +1078,7 @@ class GenerationRunner:
                     )
                     previous_best = ctx.previous_best
                     challenger_elo = ctx.challenger_elo
+                    challenger_uncertainty = ctx.challenger_uncertainty
                     replay_narrative = ctx.replay_narrative
                     coach_competitor_hints = ctx.coach_competitor_hints
                     completed += 1
@@ -1095,6 +1103,8 @@ class GenerationRunner:
                         losses=0,
                         gate_decision="error",
                         status="failed",
+                        scoring_backend=self.settings.scoring_backend,
+                        rating_uncertainty=challenger_uncertainty,
                     )
                     self.events.emit(
                         "generation_failed",
@@ -1147,6 +1157,8 @@ class GenerationRunner:
                 playbook_hash=playbook_hash,
                 agent_provider=self.settings.agent_provider,
                 rlm_enabled=self.settings.rlm_enabled,
+                scoring_backend=self.settings.scoring_backend,
+                rating_uncertainty=challenger_uncertainty,
             )
 
         self.events.emit("run_completed", {"run_id": active_run_id, "completed_generations": completed})

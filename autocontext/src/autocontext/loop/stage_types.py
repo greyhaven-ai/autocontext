@@ -75,6 +75,7 @@ class GenerationContext:
     holdout_result: HoldoutResult | None = None
     skeptic_review: SkepticReview | None = None
     applied_competitor_hints: str = ""
+    challenger_uncertainty: float | None = None
 
 
 @dataclass(slots=True)
