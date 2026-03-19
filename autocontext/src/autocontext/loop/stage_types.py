@@ -47,6 +47,8 @@ class GenerationContext:
     attempt: int = 0
     strategy_interface: str = ""
     tool_context: str = ""
+    base_tool_names: list[str] = field(default_factory=list)
+    base_analysis: str = ""
     fresh_start_triggered: bool = False
     probe_refinement_applied: bool = False
     dag_changes: list[dict[str, Any]] = field(default_factory=list)

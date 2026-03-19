@@ -17,6 +17,12 @@ from autocontext.agents.hint_feedback import (
     format_hint_feedback_for_coach,
     parse_hint_feedback,
 )
+from autocontext.analytics.credit_assignment import (
+    CreditAssignmentRecord,
+    attribute_credit,
+    compute_change_vector,
+    format_attribution_for_agent,
+)
 from autocontext.backpressure.trend_gate import TrendAwareGate
 from autocontext.harness.core.types import RoleExecution, RoleUsage
 from autocontext.harness.evaluation.dimensional import detect_dimension_regression
@@ -1037,6 +1043,102 @@ def _load_hint_feedback_section(
     return format_hint_feedback_for_coach(raw_feedback)
 
 
+def _load_credit_attribution_section(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+    role: str,
+) -> str:
+    """Read the latest attribution record and format it for a specific agent role."""
+    if ctx.generation <= 1:
+        return ""
+    raw_record = artifacts.read_latest_credit_assignment(
+        ctx.scenario_name,
+        run_id=ctx.run_id,
+        current_gen=ctx.generation,
+    )
+    if not isinstance(raw_record, CreditAssignmentRecord):
+        return ""
+    return format_attribution_for_agent(raw_record.attribution, role)
+
+
+def _normalize_tool_names(raw: object) -> list[str]:
+    """Normalize tool names from persisted lists or created-tool markers."""
+    if not isinstance(raw, list):
+        return []
+    normalized: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        value = item.strip()
+        if not value:
+            continue
+        if value.endswith(" (updated)"):
+            value = value[: -len(" (updated)")]
+        if value.endswith(".py"):
+            value = value[:-3]
+        if value and value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def _current_tool_names(ctx: GenerationContext, *, artifacts: ArtifactStore) -> list[str]:
+    """Return the persisted post-generation tool set with a safe fallback for tests."""
+    if hasattr(artifacts, "list_tool_names"):
+        raw_names = artifacts.list_tool_names(ctx.scenario_name)
+        normalized = _normalize_tool_names(raw_names)
+        if normalized:
+            return normalized
+    merged = [*ctx.base_tool_names, *_normalize_tool_names(ctx.created_tools)]
+    deduped: list[str] = []
+    for name in merged:
+        if name not in deduped:
+            deduped.append(name)
+    return deduped
+
+
+def _build_credit_assignment_record(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+) -> CreditAssignmentRecord | None:
+    """Compute a durable attribution record from the persisted generation state."""
+    outputs = ctx.outputs
+    if outputs is None:
+        return None
+
+    score_delta = ctx.gate_delta
+    previous_state = {
+        "playbook": ctx.base_playbook,
+        "tools": ctx.base_tool_names,
+        "hints": ctx.applied_competitor_hints,
+        "analysis": ctx.base_analysis,
+    }
+    current_state = {
+        "playbook": outputs.coach_playbook if ctx.gate_decision == "advance" else ctx.base_playbook,
+        "tools": _current_tool_names(ctx, artifacts=artifacts),
+        "hints": ctx.coach_competitor_hints,
+        "analysis": outputs.analysis_markdown,
+    }
+    vector = compute_change_vector(
+        generation=ctx.generation,
+        score_delta=score_delta,
+        previous_state=previous_state,
+        current_state=current_state,
+    )
+    attribution = attribute_credit(vector)
+    return CreditAssignmentRecord(
+        run_id=ctx.run_id,
+        generation=ctx.generation,
+        vector=vector,
+        attribution=attribution,
+        metadata={
+            "gate_decision": ctx.gate_decision,
+            "scenario_name": ctx.scenario_name,
+        },
+    )
+
+
 def _hint_feedback_previous_best(ctx: GenerationContext) -> float:
     """Recover the pre-tournament best score for hint-reflection context."""
     if ctx.gate_decision == "advance":
@@ -1250,6 +1352,21 @@ def stage_knowledge_setup(
     skills_context = "" if ablation else artifacts.read_skills(ctx.scenario_name)
     recent_analysis = "" if ablation else artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
     analyst_feedback = "" if ablation else _load_analyst_feedback_section(ctx, artifacts=artifacts)
+    analyst_attribution = "" if ablation else _load_credit_attribution_section(
+        ctx,
+        artifacts=artifacts,
+        role="analyst",
+    )
+    coach_attribution = "" if ablation else _load_credit_attribution_section(
+        ctx,
+        artifacts=artifacts,
+        role="coach",
+    )
+    architect_attribution = "" if ablation else _load_credit_attribution_section(
+        ctx,
+        artifacts=artifacts,
+        role="architect",
+    )
     coach_hint_feedback = "" if ablation else _load_hint_feedback_section(ctx, artifacts=artifacts)
     tool_usage_report = "" if ablation else _load_architect_tool_usage_report(ctx, artifacts=artifacts)
     weakness_reports = "" if ablation else artifacts.read_latest_weakness_reports_markdown(ctx.scenario_name)
@@ -1363,6 +1480,9 @@ def stage_knowledge_setup(
         coach_hint_feedback=coach_hint_feedback,
         recent_analysis=recent_analysis,
         analyst_feedback=analyst_feedback,
+        analyst_attribution=analyst_attribution,
+        coach_attribution=coach_attribution,
+        architect_attribution=architect_attribution,
         score_trajectory=score_trajectory,
         strategy_registry=strategy_registry,
         progress_json=progress_json_str,
@@ -1378,6 +1498,8 @@ def stage_knowledge_setup(
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = tool_context
     ctx.base_playbook = playbook
+    ctx.base_tool_names = [] if ablation else _normalize_tool_names(artifacts.list_tool_names(ctx.scenario_name))
+    ctx.base_analysis = recent_analysis
     ctx.base_lessons = skills_context
     return ctx
 
@@ -2272,6 +2394,9 @@ def stage_persistence(
         metrics["exploration"] = ctx.exploration_metadata
     if ctx.cost_control_metadata:
         metrics["cost_control"] = ctx.cost_control_metadata
+    credit_assignment = _build_credit_assignment_record(ctx, artifacts=artifacts)
+    if credit_assignment is not None:
+        metrics["credit_assignment"] = credit_assignment.to_dict()
 
     # 2. Insert matches into sqlite
     for idx, eval_result in enumerate(tournament.results):
@@ -2319,6 +2444,13 @@ def stage_persistence(
         scenario_name=scenario_name,
         coach_playbook=outputs.coach_playbook if gate_decision == "advance" else "",
     )
+    if credit_assignment is not None:
+        artifacts.write_credit_assignment(
+            scenario_name,
+            run_id,
+            generation,
+            credit_assignment,
+        )
 
     # Persist Pi runtime traces for replay/debugging when present.
     for role_execution in outputs.role_executions:
@@ -2405,6 +2537,7 @@ def stage_persistence(
         "holdout": ctx.holdout_result.to_dict() if ctx.holdout_result is not None else None,
         "exploration": ctx.exploration_metadata or {},
         "cost_control": ctx.cost_control_metadata or {},
+        "credit_assignment": credit_assignment.to_dict() if credit_assignment is not None else None,
         "created_tools": ctx.created_tools,
     })
 

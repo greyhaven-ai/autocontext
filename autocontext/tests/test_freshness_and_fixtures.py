@@ -6,6 +6,7 @@ AC-328: RegressionFixture, generate_fixtures_from_friction, FixtureStore
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -384,3 +385,127 @@ class TestGenerationRunnerFixtureWiring:
         fixtures = FixtureStore(settings.knowledge_root / "analytics").list_for_scenario("grid_ctf")
         assert len(fixtures) == 1
         assert fixtures[0].fixture_id == "fix-grid-ctf-rollback"
+
+    def test_generate_aggregate_analytics_persists_credit_assignment_patterns(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        from autocontext.analytics.clustering import FacetCluster
+        from autocontext.analytics.credit_assignment import (
+            AttributionResult,
+            ComponentChange,
+            CreditAssignmentRecord,
+            GenerationChangeVector,
+        )
+        from autocontext.analytics.facets import RunFacet
+        from autocontext.config.settings import AppSettings
+        from autocontext.loop.generation_runner import GenerationRunner
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            db_path=tmp_path / "runs" / "autocontext.sqlite3",
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+        )
+        runner = GenerationRunner(settings)
+        scenario = runner._scenario("grid_ctf")
+
+        runner.sqlite.get_generation_metrics = MagicMock(return_value=[])
+        runner.sqlite.get_agent_role_metrics = MagicMock(return_value=[])
+        runner.sqlite.get_staged_validation_results_for_run = MagicMock(return_value=[])
+        runner.sqlite.get_consultations_for_run = MagicMock(return_value=[])
+        runner.sqlite.get_recovery_markers_for_run = MagicMock(return_value=[])
+
+        runner.artifacts.write_credit_assignment(
+            "grid_ctf",
+            "run-1",
+            1,
+            CreditAssignmentRecord(
+                run_id="run-1",
+                generation=1,
+                vector=GenerationChangeVector(
+                    generation=1,
+                    score_delta=0.1,
+                    changes=[ComponentChange("playbook", 0.6, "changed")],
+                ),
+                attribution=AttributionResult(
+                    generation=1,
+                    total_delta=0.1,
+                    credits={"playbook": 0.1},
+                ),
+            ),
+        )
+
+        fake_facet = RunFacet(
+            run_id="run-1",
+            scenario="grid_ctf",
+            scenario_family="game",
+            agent_provider="deterministic",
+            executor_mode="local",
+            total_generations=1,
+            advances=1,
+            retries=0,
+            rollbacks=0,
+            best_score=0.6,
+            best_elo=1000.0,
+            total_duration_seconds=1.0,
+            total_tokens=0,
+            total_cost_usd=0.0,
+            tool_invocations=0,
+            validation_failures=0,
+            consultation_count=0,
+            consultation_cost_usd=0.0,
+            friction_signals=[],
+            delight_signals=[],
+            events=[],
+            metadata={},
+            created_at="",
+        )
+        cluster = FacetCluster(
+            cluster_id="clust-credit",
+            label="Recurring gain",
+            category="delight",
+            signal_types=["fast_advance"],
+            run_ids=["run-1"],
+            frequency=1,
+            recurrence_rate=1.0,
+            confidence=0.9,
+            evidence_summary="1 of 1 runs advanced quickly",
+            supporting_events=[],
+            metadata={
+                "scenarios": ["grid_ctf"],
+                "scenario_families": ["game"],
+                "providers": ["deterministic"],
+                "releases": [],
+            },
+        )
+
+        extractor = MagicMock()
+        extractor.extract.return_value = fake_facet
+        monkeypatch.setattr("autocontext.loop.generation_runner.FacetExtractor", lambda: extractor)
+
+        clusterer = MagicMock()
+        clusterer.cluster_friction.return_value = []
+        clusterer.cluster_delight.return_value = [cluster]
+        monkeypatch.setattr("autocontext.loop.generation_runner.PatternClusterer", lambda: clusterer)
+
+        fake_taxonomy = MagicMock()
+        monkeypatch.setattr("autocontext.loop.generation_runner.FacetTaxonomy.load", lambda _path: fake_taxonomy)
+        fake_aggregate_runner = MagicMock()
+        fake_aggregate_runner.run.return_value = None
+        monkeypatch.setattr("autocontext.loop.generation_runner.AggregateRunner", lambda **_kwargs: fake_aggregate_runner)
+        monkeypatch.setattr(
+            runner,
+            "_generate_rubric_drift_and_calibration",
+            lambda **_kwargs: None,
+        )
+
+        runner._generate_aggregate_analytics("run-1", "grid_ctf", scenario)
+
+        pattern_path = settings.knowledge_root / "analytics" / "credit_assignment_patterns" / "grid_ctf.json"
+        payload = json.loads(pattern_path.read_text(encoding="utf-8"))
+        assert payload["total_records"] == 1
+        assert payload["components"][0]["component"] == "playbook"

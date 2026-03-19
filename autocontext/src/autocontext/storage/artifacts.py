@@ -15,6 +15,7 @@ from autocontext.agents.feedback_loops import (
     identify_stale_tools,
 )
 from autocontext.agents.hint_feedback import HintFeedback
+from autocontext.analytics.credit_assignment import CreditAssignmentRecord
 from autocontext.harness.storage.versioned_store import VersionedFileStore
 from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
@@ -390,6 +391,66 @@ class ArtifactStore:
             if isinstance(raw, dict):
                 return HintFeedback.from_dict(raw)
         return None
+
+    def _credit_assignment_dir(self, scenario_name: str) -> Path:
+        return self.knowledge_root / scenario_name / "credit_assignment"
+
+    def write_credit_assignment(
+        self,
+        scenario_name: str,
+        run_id: str,
+        generation_index: int,
+        record: CreditAssignmentRecord,
+    ) -> None:
+        """Persist structured per-generation attribution for prompt reuse and analytics."""
+        record_dir = self._credit_assignment_dir(scenario_name) / run_id
+        self.write_json(record_dir / f"gen_{generation_index}.json", record.to_dict())
+
+    def read_latest_credit_assignment(
+        self,
+        scenario_name: str,
+        *,
+        run_id: str,
+        current_gen: int,
+    ) -> CreditAssignmentRecord | None:
+        """Read the latest attribution record for the current run before current_gen."""
+        record_dir = self._credit_assignment_dir(scenario_name) / run_id
+        if not record_dir.exists():
+            return None
+        candidates = sorted(record_dir.glob("gen_*.json"), reverse=True)
+        for path in candidates:
+            try:
+                num = int(path.stem.split("_")[1])
+            except (IndexError, ValueError):
+                continue
+            if num >= current_gen:
+                continue
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                LOGGER.warning("failed to parse credit assignment %s", path, exc_info=True)
+                continue
+            if isinstance(raw, dict):
+                return CreditAssignmentRecord.from_dict(raw)
+        return None
+
+    def list_credit_assignments(self, scenario_name: str) -> list[CreditAssignmentRecord]:
+        """List persisted attribution records for a scenario across runs."""
+        root = self._credit_assignment_dir(scenario_name)
+        if not root.exists():
+            return []
+        records: list[CreditAssignmentRecord] = []
+        for run_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            for path in sorted(run_dir.glob("gen_*.json")):
+                try:
+                    raw = json.loads(path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    LOGGER.warning("failed to parse credit assignment %s", path, exc_info=True)
+                    continue
+                if isinstance(raw, dict):
+                    records.append(CreditAssignmentRecord.from_dict(raw))
+        records.sort(key=lambda record: (record.run_id, record.generation))
+        return records
 
     def harness_dir(self, scenario_name: str) -> Path:
         """Return the harness directory: knowledge/<scenario>/harness/"""

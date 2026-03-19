@@ -428,6 +428,60 @@ class TestStageKnowledgeSetup:
         assert result.prompts is not None
         assert "Competitor Hint Feedback" in result.prompts.coach
         assert "corners worked" in result.prompts.coach
+
+    def test_includes_credit_attribution_in_role_specific_prompts(self) -> None:
+        from autocontext.analytics.credit_assignment import (
+            AttributionResult,
+            ComponentChange,
+            CreditAssignmentRecord,
+            GenerationChangeVector,
+        )
+
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        artifacts.read_latest_analyst_rating.return_value = None
+        artifacts.read_tool_usage_report.return_value = ""
+        artifacts.read_latest_hint_feedback.return_value = None
+        artifacts.read_latest_credit_assignment.return_value = CreditAssignmentRecord(
+            run_id="run_test",
+            generation=1,
+            vector=GenerationChangeVector(
+                generation=1,
+                score_delta=0.08,
+                changes=[
+                    ComponentChange("analysis", 0.4, "analysis changed"),
+                    ComponentChange("playbook", 0.3, "playbook changed"),
+                    ComponentChange("tools", 0.3, "tools changed"),
+                ],
+            ),
+            attribution=AttributionResult(
+                generation=1,
+                total_delta=0.08,
+                credits={"analysis": 0.03, "playbook": 0.03, "tools": 0.02},
+            ),
+        )
+        artifacts.list_tool_names.return_value = ["path_optimizer"]
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        ctx = _make_ctx()
+        ctx.generation = 2
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "Previous Analysis Attribution" in result.prompts.analyst
+        assert "Previous Coaching Attribution" in result.prompts.coach
+        assert "Previous Tooling Attribution" in result.prompts.architect
+        assert "Previous Tooling Attribution" not in result.prompts.analyst
         assert "Competitor Hint Feedback" not in result.prompts.competitor
         assert "Competitor Hint Feedback" not in result.prompts.analyst
 
@@ -1736,6 +1790,41 @@ class TestStagePersistence:
         gen_completed_calls = [c for c in events.emit.call_args_list if c[0][0] == "generation_completed"]
         assert gen_completed_calls
         assert gen_completed_calls[-1][0][1]["holdout"]["passed"] is False
+
+    def test_persists_credit_assignment_and_emits_it(self) -> None:
+        ctx = _make_persistence_ctx(gate_decision="advance")
+        ctx.base_playbook = "old playbook"
+        ctx.base_tool_names = ["path_optimizer"]
+        ctx.base_analysis = "old analysis"
+        ctx.applied_competitor_hints = "- old hint"
+        ctx.created_tools = ["new_tool.py"]
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        artifacts.list_tool_names.return_value = ["path_optimizer", "new_tool"]
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        persist_kwargs = artifacts.persist_generation.call_args.kwargs
+        credit_assignment = persist_kwargs["metrics"]["credit_assignment"]
+        assert credit_assignment["vector"]["score_delta"] == ctx.gate_delta
+        assert any(
+            change["component"] == "playbook"
+            for change in credit_assignment["vector"]["changes"]
+        )
+        artifacts.write_credit_assignment.assert_called_once()
+        gen_completed_calls = [c for c in events.emit.call_args_list if c[0][0] == "generation_completed"]
+        assert gen_completed_calls
+        assert gen_completed_calls[-1][0][1]["credit_assignment"]["generation"] == ctx.generation
 
     def test_carries_forward_coach_hints(self) -> None:
         """ctx.coach_competitor_hints is updated from outputs."""
