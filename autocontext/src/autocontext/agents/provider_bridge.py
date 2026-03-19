@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 import os
+import shlex
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
@@ -304,24 +306,92 @@ def create_role_client(
 def _build_openclaw_agent(settings: AppSettings) -> object:
     """Build an OpenClaw agent instance from settings.
 
-    The factory is configured via ``AUTOCONTEXT_OPENCLAW_AGENT_FACTORY=module:callable``.
-    The callable may accept ``settings`` or no arguments.
+    The runtime is configured via ``AUTOCONTEXT_OPENCLAW_RUNTIME_KIND`` and one of:
+    - ``AUTOCONTEXT_OPENCLAW_AGENT_FACTORY=module:callable``
+    - ``AUTOCONTEXT_OPENCLAW_AGENT_COMMAND='binary --flag value'``
+    - ``AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT=https://...``
     """
-    factory_path = settings.openclaw_agent_factory.strip()
-    if not factory_path:
-        raise ValueError(
-            "OpenClaw per-role override requires AUTOCONTEXT_OPENCLAW_AGENT_FACTORY=module:callable",
+    from autocontext.openclaw.adapters import (
+        AdapterBackedOpenClawAgent,
+        CLIOpenClawAdapter,
+        HTTPOpenClawAdapter,
+        capability_from_settings,
+    )
+
+    runtime_kind = getattr(settings, "openclaw_runtime_kind", "factory").strip().lower() or "factory"
+    compatibility_version = getattr(settings, "openclaw_compatibility_version", "1.0")
+
+    if runtime_kind == "factory":
+        factory_path = settings.openclaw_agent_factory.strip()
+        if not factory_path:
+            raise ValueError(
+                "OpenClaw factory runtime requires AUTOCONTEXT_OPENCLAW_AGENT_FACTORY=module:callable",
+            )
+
+        factory = _load_openclaw_factory(factory_path)
+        signature = inspect.signature(factory)
+        if len(signature.parameters) == 0:
+            agent = factory()
+        else:
+            agent = factory(settings)
+
+        if not hasattr(agent, "execute"):
+            raise ValueError(
+                f"OpenClaw factory {factory_path!r} did not return an agent with an execute(...) method",
+            )
+        return agent
+
+    if runtime_kind == "cli":
+        command_parts = shlex.split(getattr(settings, "openclaw_agent_command", ""))
+        if not command_parts:
+            raise ValueError(
+                "OpenClaw CLI runtime requires AUTOCONTEXT_OPENCLAW_AGENT_COMMAND",
+            )
+        cli_adapter = CLIOpenClawAdapter(
+            command=command_parts[0],
+            extra_args=command_parts[1:],
+            timeout=float(getattr(settings, "openclaw_timeout_seconds", 30.0)),
+        )
+        return AdapterBackedOpenClawAgent(
+            adapter=cli_adapter,
+            capability=capability_from_settings(
+                "cli",
+                compatibility_version=compatibility_version,
+                metadata={"command": command_parts[0]},
+            ),
         )
 
-    factory = _load_openclaw_factory(factory_path)
-    signature = inspect.signature(factory)
-    if len(signature.parameters) == 0:
-        agent = factory()
-    else:
-        agent = factory(settings)
+    if runtime_kind == "http":
+        endpoint = getattr(settings, "openclaw_agent_http_endpoint", "").strip()
+        if not endpoint:
+            raise ValueError(
+                "OpenClaw HTTP runtime requires AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT",
+            )
+        raw_headers = getattr(settings, "openclaw_agent_http_headers", "").strip()
+        headers: dict[str, str] = {}
+        if raw_headers:
+            try:
+                parsed = json.loads(raw_headers)
+            except json.JSONDecodeError as exc:
+                raise ValueError("AUTOCONTEXT_OPENCLAW_AGENT_HTTP_HEADERS must be valid JSON") from exc
+            if not isinstance(parsed, dict):
+                raise ValueError("AUTOCONTEXT_OPENCLAW_AGENT_HTTP_HEADERS must be a JSON object")
+            headers = {str(k): str(v) for k, v in parsed.items()}
 
-    if not hasattr(agent, "execute"):
-        raise ValueError(
-            f"OpenClaw factory {factory_path!r} did not return an agent with an execute(...) method",
+        http_adapter = HTTPOpenClawAdapter(
+            endpoint=endpoint,
+            timeout=float(getattr(settings, "openclaw_timeout_seconds", 30.0)),
+            headers=headers,
         )
-    return agent
+        return AdapterBackedOpenClawAgent(
+            adapter=http_adapter,
+            capability=capability_from_settings(
+                "http",
+                compatibility_version=compatibility_version,
+                metadata={"endpoint": endpoint},
+            ),
+        )
+
+    raise ValueError(
+        f"unsupported OpenClaw runtime kind: {runtime_kind!r} (expected 'factory', 'cli', or 'http')",
+    )

@@ -36,6 +36,8 @@ def tmp_settings(tmp_path: Path) -> AppSettings:
         agent_provider="anthropic",
         harness_mode=HarnessMode.NONE,
         rlm_enabled=False,
+        openclaw_runtime_kind="factory",
+        openclaw_compatibility_version="1.0",
     )
 
 
@@ -250,6 +252,15 @@ class TestRuntimeHealth:
         assert isinstance(d, dict)
         assert "executor_mode" in d
         assert "available_models" in d
+
+    def test_includes_openclaw_runtime_metadata(self, tmp_settings: AppSettings) -> None:
+        from autocontext.openclaw.discovery import get_runtime_health
+
+        tmp_settings.openclaw_runtime_kind = "http"
+        tmp_settings.openclaw_compatibility_version = "1.1"
+        health = get_runtime_health(tmp_settings)
+        assert health.openclaw_runtime_kind == "http"
+        assert health.openclaw_compatibility_version == "1.1"
 
 
 # ---------------------------------------------------------------------------

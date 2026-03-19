@@ -59,6 +59,8 @@ class RuntimeHealth(BaseModel):
     harness_mode: str
     rlm_enabled: bool
     available_models: dict[str, str] = Field(default_factory=dict)
+    openclaw_runtime_kind: str | None = None
+    openclaw_compatibility_version: str | None = None
 
 
 class CapabilityAdvertisement(BaseModel):
@@ -188,6 +190,8 @@ def discover_scenario_capabilities(ctx: MtsToolContext, scenario_name: str) -> S
 
 def get_runtime_health(settings: AppSettings) -> RuntimeHealth:
     """Read current configuration state and return a runtime health snapshot."""
+    openclaw_runtime_kind = getattr(settings, "openclaw_runtime_kind", "").strip() or None
+    openclaw_compatibility_version = getattr(settings, "openclaw_compatibility_version", "").strip() or None
     available_models = {
         "competitor": settings.model_competitor,
         "analyst": settings.model_analyst,
@@ -202,6 +206,8 @@ def get_runtime_health(settings: AppSettings) -> RuntimeHealth:
         harness_mode=str(settings.harness_mode.value) if hasattr(settings.harness_mode, "value") else str(settings.harness_mode),
         rlm_enabled=settings.rlm_enabled,
         available_models=available_models,
+        openclaw_runtime_kind=openclaw_runtime_kind,
+        openclaw_compatibility_version=openclaw_compatibility_version,
     )
 
 

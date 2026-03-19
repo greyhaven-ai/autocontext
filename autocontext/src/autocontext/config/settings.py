@@ -445,9 +445,29 @@ class AppSettings(BaseModel):
     mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
     mlx_max_tokens: int = Field(default=512, ge=1, description="Max generation tokens for MLX model")
     # OpenClaw agent adapter (AC-193)
+    openclaw_runtime_kind: str = Field(
+        default="factory",
+        description="OpenClaw runtime kind: 'factory', 'cli', or 'http'",
+    )
     openclaw_agent_factory: str = Field(
         default="",
         description="Import path to OpenClaw agent factory or class as module:callable",
+    )
+    openclaw_agent_command: str = Field(
+        default="",
+        description="Shell command for an external OpenClaw-compatible CLI runtime",
+    )
+    openclaw_agent_http_endpoint: str = Field(
+        default="",
+        description="HTTP endpoint for an external OpenClaw-compatible sidecar",
+    )
+    openclaw_agent_http_headers: str = Field(
+        default="",
+        description="JSON object of extra HTTP headers for the OpenClaw sidecar adapter",
+    )
+    openclaw_compatibility_version: str = Field(
+        default="1.0",
+        description="Compatibility version reported for the configured OpenClaw runtime",
     )
     openclaw_timeout_seconds: float = Field(default=30.0, ge=1.0, description="Timeout for OpenClaw agent execution")
     openclaw_max_retries: int = Field(default=2, ge=0, description="Max retries on OpenClaw agent failure")

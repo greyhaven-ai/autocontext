@@ -414,10 +414,12 @@ class TestProviderBridgeRegistration:
         from autocontext.agents.provider_bridge import create_role_client
 
         settings = MagicMock()
+        settings.openclaw_runtime_kind = "factory"
         settings.openclaw_agent_factory = "test_openclaw_agent_adapter:build_test_openclaw_agent"
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
+        settings.openclaw_compatibility_version = "1.0"
 
         client = create_role_client("openclaw", settings)
 
@@ -432,10 +434,12 @@ class TestProviderBridgeRegistration:
         from autocontext.agents.provider_bridge import create_role_client
 
         settings = MagicMock()
+        settings.openclaw_runtime_kind = "factory"
         settings.openclaw_agent_factory = "test_openclaw_agent_adapter:build_test_openclaw_agent"
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
+        settings.openclaw_compatibility_version = "1.0"
 
         client = create_role_client("OpenClaw", settings)
 
@@ -445,13 +449,75 @@ class TestProviderBridgeRegistration:
         from autocontext.agents.provider_bridge import create_role_client
 
         settings = MagicMock()
+        settings.openclaw_runtime_kind = "factory"
         settings.openclaw_agent_factory = ""
         settings.openclaw_timeout_seconds = 30.0
         settings.openclaw_max_retries = 2
         settings.openclaw_retry_base_delay = 0.25
+        settings.openclaw_compatibility_version = "1.0"
 
         with pytest.raises(ValueError, match="AUTOCONTEXT_OPENCLAW_AGENT_FACTORY"):
             create_role_client("openclaw", settings)
+
+    @patch("autocontext.openclaw.adapters.CLIOpenClawAdapter.execute")
+    def test_openclaw_cli_runtime_creates_client(self, mock_execute: MagicMock) -> None:
+        from autocontext.agents.provider_bridge import create_role_client
+        from autocontext.openclaw.adapters import OpenClawResponse
+
+        mock_execute.return_value = OpenClawResponse(
+            output="cli:ping",
+            tool_calls=[],
+            cost_usd=None,
+            model="hermes-fly",
+            session_id=None,
+            metadata={},
+        )
+        settings = MagicMock()
+        settings.openclaw_runtime_kind = "cli"
+        settings.openclaw_agent_factory = ""
+        settings.openclaw_agent_command = "hermes-fly --json"
+        settings.openclaw_agent_http_endpoint = ""
+        settings.openclaw_agent_http_headers = ""
+        settings.openclaw_timeout_seconds = 30.0
+        settings.openclaw_max_retries = 2
+        settings.openclaw_retry_base_delay = 0.25
+        settings.openclaw_compatibility_version = "1.0"
+
+        client = create_role_client("openclaw", settings)
+
+        assert client is not None
+        response = client.generate(model="agent-model", prompt="ping", max_tokens=32, temperature=0.0)
+        assert response.text == "cli:ping"
+
+    @patch("autocontext.openclaw.adapters.HTTPOpenClawAdapter.execute")
+    def test_openclaw_http_runtime_creates_client(self, mock_execute: MagicMock) -> None:
+        from autocontext.agents.provider_bridge import create_role_client
+        from autocontext.openclaw.adapters import OpenClawResponse
+
+        mock_execute.return_value = OpenClawResponse(
+            output="http:ping",
+            tool_calls=[],
+            cost_usd=None,
+            model="hermes-sidecar",
+            session_id=None,
+            metadata={},
+        )
+        settings = MagicMock()
+        settings.openclaw_runtime_kind = "http"
+        settings.openclaw_agent_factory = ""
+        settings.openclaw_agent_command = ""
+        settings.openclaw_agent_http_endpoint = "http://localhost:8080/execute"
+        settings.openclaw_agent_http_headers = '{"Authorization":"Bearer token"}'
+        settings.openclaw_timeout_seconds = 30.0
+        settings.openclaw_max_retries = 2
+        settings.openclaw_retry_base_delay = 0.25
+        settings.openclaw_compatibility_version = "1.1"
+
+        client = create_role_client("openclaw", settings)
+
+        assert client is not None
+        response = client.generate(model="agent-model", prompt="ping", max_tokens=32, temperature=0.0)
+        assert response.text == "http:ping"
 
 
 # ---------------------------------------------------------------------------
@@ -464,11 +530,21 @@ class TestOpenClawSettings:
         from autocontext.config.settings import AppSettings
 
         s = AppSettings()
+        assert hasattr(s, "openclaw_runtime_kind")
         assert hasattr(s, "openclaw_agent_factory")
+        assert hasattr(s, "openclaw_agent_command")
+        assert hasattr(s, "openclaw_agent_http_endpoint")
+        assert hasattr(s, "openclaw_agent_http_headers")
+        assert hasattr(s, "openclaw_compatibility_version")
         assert hasattr(s, "openclaw_timeout_seconds")
         assert hasattr(s, "openclaw_max_retries")
         assert hasattr(s, "openclaw_retry_base_delay")
+        assert s.openclaw_runtime_kind == "factory"
         assert s.openclaw_agent_factory == ""
+        assert s.openclaw_agent_command == ""
+        assert s.openclaw_agent_http_endpoint == ""
+        assert s.openclaw_agent_http_headers == ""
+        assert s.openclaw_compatibility_version == "1.0"
         assert s.openclaw_timeout_seconds == 30.0
         assert s.openclaw_max_retries == 2
         assert s.openclaw_retry_base_delay == 0.25
@@ -479,7 +555,12 @@ class TestOpenClawSettings:
         from autocontext.config.settings import load_settings
 
         env = {
+            "AUTOCONTEXT_OPENCLAW_RUNTIME_KIND": "http",
             "AUTOCONTEXT_OPENCLAW_AGENT_FACTORY": "test_openclaw_agent_adapter:build_test_openclaw_agent",
+            "AUTOCONTEXT_OPENCLAW_AGENT_COMMAND": "hermes-fly --json",
+            "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT": "http://localhost:8080/execute",
+            "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_HEADERS": '{"Authorization":"Bearer token"}',
+            "AUTOCONTEXT_OPENCLAW_COMPATIBILITY_VERSION": "1.1",
             "AUTOCONTEXT_OPENCLAW_TIMEOUT_SECONDS": "60.0",
             "AUTOCONTEXT_OPENCLAW_MAX_RETRIES": "5",
             "AUTOCONTEXT_OPENCLAW_RETRY_BASE_DELAY": "0.5",
@@ -487,7 +568,12 @@ class TestOpenClawSettings:
         with patch.dict(os.environ, env, clear=False):
             s = load_settings()
 
+        assert s.openclaw_runtime_kind == "http"
         assert s.openclaw_agent_factory == "test_openclaw_agent_adapter:build_test_openclaw_agent"
+        assert s.openclaw_agent_command == "hermes-fly --json"
+        assert s.openclaw_agent_http_endpoint == "http://localhost:8080/execute"
+        assert s.openclaw_agent_http_headers == '{"Authorization":"Bearer token"}'
+        assert s.openclaw_compatibility_version == "1.1"
         assert s.openclaw_timeout_seconds == 60.0
         assert s.openclaw_max_retries == 5
         assert s.openclaw_retry_base_delay == 0.5
