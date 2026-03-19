@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -18,6 +19,18 @@ ParseMethod = Literal["raw_json", "code_block", "markers", "plaintext", "none"]
 
 
 @dataclass(slots=True)
+class DisagreementMetrics:
+    """Evaluator disagreement statistics from multi-sample judge evaluation."""
+
+    score_std_dev: float = 0.0
+    score_range: tuple[float, float] = (0.0, 0.0)
+    sample_scores: list[float] = field(default_factory=list)
+    dimension_std_devs: dict[str, float] = field(default_factory=dict)
+    is_high_disagreement: bool = False
+    sample_count: int = 1
+
+
+@dataclass(slots=True)
 class JudgeResult:
     """Result from LLM judge evaluation."""
 
@@ -28,6 +41,7 @@ class JudgeResult:
     parse_method: ParseMethod = "none"
     internal_retries: int = 0
     dimensions_were_generated: bool = False
+    disagreement: DisagreementMetrics | None = None
 
 
 _RESULT_START = "<!-- JUDGE_RESULT_START -->"
@@ -77,6 +91,7 @@ class LLMJudge:
         samples: int = 1,
         temperature: float = 0.0,
         check_coherence: bool = False,
+        disagreement_threshold: float = 0.15,
     ) -> None:
         if provider is not None:
             self.provider = provider
@@ -92,6 +107,9 @@ class LLMJudge:
 
         # Backward-compatible property
         self.llm_fn = llm_fn
+
+        # Disagreement threshold for flagging high evaluator disagreement
+        self._disagreement_threshold = disagreement_threshold
 
         # Optional rubric coherence pre-check
         self._rubric_warnings: list[str] = []
@@ -172,13 +190,37 @@ class LLMJudge:
 
         # Average dimension scores
         avg_dims: dict[str, float] = {}
+        all_keys: set[str] = set()
         if all_dims:
-            all_keys: set[str] = set()
             for d in all_dims:
                 all_keys.update(d.keys())
             for key in all_keys:
                 vals = [d[key] for d in all_dims if key in d]
                 avg_dims[key] = sum(vals) / len(vals) if vals else 0.0
+
+        # Compute disagreement metrics when multiple samples
+        disagreement: DisagreementMetrics | None = None
+        if len(scores) > 1:
+            mean = avg_score
+            variance = sum((s - mean) ** 2 for s in scores) / len(scores)
+            std_dev = math.sqrt(variance)
+
+            dim_std_devs: dict[str, float] = {}
+            for key in all_keys:
+                dim_vals = [d[key] for d in all_dims if key in d]
+                if len(dim_vals) > 1:
+                    dim_mean = sum(dim_vals) / len(dim_vals)
+                    dim_var = sum((v - dim_mean) ** 2 for v in dim_vals) / len(dim_vals)
+                    dim_std_devs[key] = math.sqrt(dim_var)
+
+            disagreement = DisagreementMetrics(
+                score_std_dev=std_dev,
+                score_range=(min(scores), max(scores)),
+                sample_scores=list(scores),
+                dimension_std_devs=dim_std_devs,
+                is_high_disagreement=std_dev > self._disagreement_threshold,
+                sample_count=len(scores),
+            )
 
         # Ensure factual dimensions exist when reference context provided.
         # Skip when pinned_dimensions is set — respect the explicit constraint.
@@ -205,6 +247,7 @@ class LLMJudge:
             parse_method=last_parse_method,
             internal_retries=total_internal_retries,
             dimensions_were_generated=dimensions_were_generated,
+            disagreement=disagreement,
         )
 
     def _build_judge_prompt(

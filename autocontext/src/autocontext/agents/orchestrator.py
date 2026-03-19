@@ -18,6 +18,7 @@ from autocontext.agents.llm_client import LanguageModelClient, build_client_from
 from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
+from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.agents.translator import StrategyTranslator
 from autocontext.agents.types import AgentOutputs, RoleExecution
@@ -205,6 +206,9 @@ class AgentOrchestrator:
         self.curator: KnowledgeCurator | None = None
         if settings.curator_enabled:
             self.curator = KnowledgeCurator(runtime, settings.model_curator)
+        self.skeptic: SkepticAgent | None = None
+        if settings.skeptic_enabled:
+            self.skeptic = SkepticAgent(runtime, settings.model_skeptic)
         self._role_clients: dict[str, LanguageModelClient] = {}
         self._role_router = RoleRouter(settings)
 
