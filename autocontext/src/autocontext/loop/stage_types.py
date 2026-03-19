@@ -50,6 +50,9 @@ class GenerationContext:
     fresh_start_triggered: bool = False
     probe_refinement_applied: bool = False
     dag_changes: list[dict[str, Any]] = field(default_factory=list)
+    base_playbook: str = ""
+    base_lessons: str = ""
+    exploration_metadata: dict[str, Any] = field(default_factory=dict)
 
     # Pipeline wiring: tuning proposal from architect (AR-6)
     tuning_proposal: TuningConfig | None = None

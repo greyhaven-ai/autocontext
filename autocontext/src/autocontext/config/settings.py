@@ -329,6 +329,56 @@ class AppSettings(BaseModel):
     rapid_gens: int = Field(
         default=0, ge=0, description="Auto-transition from rapid to linear after N gens (0=manual)",
     )
+    novelty_enabled: bool = Field(
+        default=True,
+        description="Apply a small novelty bonus to gate-time score comparisons",
+    )
+    novelty_weight: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Maximum novelty bonus added to raw score at gate time",
+    )
+    novelty_history_window: int = Field(
+        default=5,
+        ge=1,
+        description="Number of recent completed strategies used when computing novelty",
+    )
+    divergent_competitor_enabled: bool = Field(
+        default=True,
+        description="Spawn a divergent competitor after repeated rollback streaks",
+    )
+    divergent_rollback_threshold: int = Field(
+        default=5,
+        ge=1,
+        description="Consecutive rollbacks required before spawning a divergent competitor",
+    )
+    divergent_temperature: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature for the divergent competitor branch",
+    )
+    multi_basin_enabled: bool = Field(
+        default=False,
+        description="Fork competitor generation into conservative/experimental/divergent branches when stuck",
+    )
+    multi_basin_trigger_rollbacks: int = Field(
+        default=3,
+        ge=1,
+        description="Consecutive retry/rollback decisions required to trigger multi-basin exploration",
+    )
+    multi_basin_candidates: int = Field(
+        default=3,
+        ge=1,
+        le=3,
+        description="Number of multi-basin exploration branches to generate",
+    )
+    multi_basin_periodic_every_n: int = Field(
+        default=0,
+        ge=0,
+        description="Run periodic multi-basin exploration every N generations (0 disables periodic mode)",
+    )
     # Tree search (P4, activates when exploration_mode="tree")
     tree_max_hypotheses: int = Field(
         default=8, ge=1, description="Max concurrent strategy variants in tree search",

@@ -47,6 +47,18 @@ from autocontext.knowledge.protocol import parse_research_protocol, validate_tun
 from autocontext.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
 from autocontext.knowledge.stagnation import StagnationDetector
 from autocontext.knowledge.tuning import TuningConfig, parse_tuning_proposal
+from autocontext.loop.exploration import (
+    BasinCandidate,
+    BranchRecord,
+    DivergentCompetitorConfig,
+    MultiBasinConfig,
+    NoveltyConfig,
+    apply_novelty_bonus,
+    compute_novelty_score,
+    generate_basin_candidates,
+    should_spawn_divergent,
+    should_trigger_multi_basin,
+)
 from autocontext.loop.stage_types import GenerationContext
 from autocontext.loop.tournament_helpers import (
     apply_tournament_outcome,
@@ -66,6 +78,7 @@ if TYPE_CHECKING:
     from autocontext.agents.llm_client import LanguageModelClient
     from autocontext.agents.orchestrator import AgentOrchestrator
     from autocontext.agents.skeptic import SkepticAgent
+    from autocontext.agents.types import AgentOutputs
     from autocontext.backpressure import BackpressureGate
     from autocontext.execution.supervisor import ExecutionSupervisor
     from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
@@ -293,6 +306,343 @@ def _build_empty_tournament(ctx: GenerationContext) -> EvaluationSummary:
         elo_after=ctx.challenger_elo,
         results=[],
     )
+
+
+def _build_live_opponent_pool(
+    ctx: GenerationContext,
+    *,
+    sqlite: SQLiteStore,
+) -> tuple[Any, list[dict[str, Any]], int]:
+    """Build the same opponent schedule used by the live tournament path."""
+    settings = ctx.settings
+    self_play_config = SelfPlayConfig(
+        enabled=settings.self_play_enabled,
+        pool_size=settings.self_play_pool_size,
+        weight=settings.self_play_weight,
+    )
+    self_play_pool = load_self_play_pool(
+        sqlite.get_self_play_strategy_history(ctx.run_id) if settings.self_play_enabled else [],
+        self_play_config,
+        current_generation=ctx.generation,
+    )
+    opponent_pool = build_opponent_pool(
+        [{"source": "baseline"}],
+        self_play_pool,
+        trials=settings.matches_per_generation,
+    )
+    planned_self_play_matches = sum(
+        1
+        for entry in opponent_pool
+        if isinstance(entry, dict) and entry.get("source") == "self_play"
+    )
+    return self_play_pool, opponent_pool, planned_self_play_matches
+
+
+def _load_recent_numeric_strategies(
+    sqlite: SQLiteStore,
+    *,
+    run_id: str,
+    window: int,
+) -> list[dict[str, Any]]:
+    """Load recent persisted competitor strategies for novelty comparison."""
+    try:
+        history = sqlite.get_strategy_score_history(run_id)
+    except Exception:
+        LOGGER.debug("failed to load strategy history for novelty", exc_info=True)
+        return []
+
+    recent: list[dict[str, Any]] = []
+    for row in history[-window:]:
+        if not isinstance(row, dict):
+            continue
+        raw_content = row.get("content")
+        if not isinstance(raw_content, str) or not raw_content.strip():
+            continue
+        try:
+            parsed = json.loads(raw_content)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            recent.append(parsed)
+    return recent
+
+
+def _replace_prompt_section(
+    prompt: str,
+    *,
+    label: str,
+    old_value: str,
+    new_value: str,
+    anchor_label: str | None = None,
+) -> str:
+    old_block = f"{label}:\n{old_value}\n\n" if old_value else ""
+    new_block = f"{label}:\n{new_value}\n\n" if new_value else ""
+    if old_block and old_block in prompt:
+        return prompt.replace(old_block, new_block, 1)
+    if old_block:
+        return prompt
+    if not new_block:
+        return prompt
+    if anchor_label:
+        anchor = f"{anchor_label}:\n"
+        index = prompt.find(anchor)
+        if index >= 0:
+            block_end = prompt.find("\n\n", index)
+            if block_end >= 0:
+                insert_at = block_end + 2
+                return prompt[:insert_at] + new_block + prompt[insert_at:]
+    return prompt
+
+
+def _build_branch_competitor_prompt(
+    ctx: GenerationContext,
+    *,
+    playbook: str,
+    lessons: str,
+    note: str = "",
+) -> str:
+    if ctx.prompts is None:
+        raise RuntimeError("stage_knowledge_setup must run first")
+
+    prompt = _replace_prompt_section(
+        ctx.prompts.competitor,
+        label="Current playbook",
+        old_value=ctx.base_playbook,
+        new_value=playbook,
+    )
+    prompt = _replace_prompt_section(
+        prompt,
+        label="Operational lessons (from prior generations)",
+        old_value=ctx.base_lessons,
+        new_value=lessons,
+        anchor_label="Current playbook",
+    )
+    if note:
+        prompt += f"\n\nExploration branch note:\n{note}"
+    return prompt
+
+
+def _generate_branch_strategy(
+    ctx: GenerationContext,
+    *,
+    orchestrator: AgentOrchestrator,
+    prompt: str,
+    temperature: float,
+) -> tuple[dict[str, Any], RoleExecution, RoleExecution]:
+    """Run competitor + translator for a single exploration branch."""
+    if ctx.prompts is None:
+        raise RuntimeError("stage_knowledge_setup must run first")
+
+    competitor_prompt = prompt
+    if ctx.settings.code_strategies_enabled:
+        from autocontext.prompts.templates import code_strategy_competitor_suffix
+
+        competitor_prompt += code_strategy_competitor_suffix(ctx.strategy_interface)
+
+    with orchestrator._use_role_runtime(  # noqa: SLF001 - stage needs routed role runtime
+        "competitor",
+        orchestrator.competitor,
+        generation=ctx.generation,
+        scenario_name=ctx.scenario_name,
+    ):
+        raw_text, competitor_exec = orchestrator.competitor.run(
+            competitor_prompt,
+            tool_context=ctx.tool_context,
+            temperature=temperature,
+        )
+    with orchestrator._use_role_runtime(  # noqa: SLF001 - stage needs routed role runtime
+        "translator",
+        orchestrator.translator,
+        generation=ctx.generation,
+        scenario_name=ctx.scenario_name,
+    ):
+        if ctx.settings.code_strategies_enabled:
+            strategy, translator_exec = orchestrator.translator.translate_code(raw_text)
+        else:
+            strategy, translator_exec = orchestrator.translator.translate(raw_text, ctx.strategy_interface)
+    return strategy, competitor_exec, translator_exec
+
+
+def _select_exploration_strategy(
+    ctx: GenerationContext,
+    *,
+    outputs: AgentOutputs,
+    orchestrator: AgentOrchestrator,
+    supervisor: ExecutionSupervisor | None,
+    sqlite: SQLiteStore,
+    events: EventStreamEmitter | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Optionally explore multiple competitor basins and return the selected strategy."""
+    settings = ctx.settings
+    if supervisor is None:
+        return outputs.strategy, {}
+
+    multi_basin_config = MultiBasinConfig(
+        enabled=settings.multi_basin_enabled,
+        trigger_rollbacks=settings.multi_basin_trigger_rollbacks,
+        candidates=settings.multi_basin_candidates,
+        periodic_every_n=settings.multi_basin_periodic_every_n,
+    )
+    divergent_config = DivergentCompetitorConfig(
+        enabled=settings.divergent_competitor_enabled,
+        rollback_threshold=settings.divergent_rollback_threshold,
+        temperature=settings.divergent_temperature,
+    )
+    multi_basin_triggered = should_trigger_multi_basin(
+        ctx.gate_decision_history,
+        ctx.generation,
+        multi_basin_config,
+    )
+    divergent_triggered = should_spawn_divergent(ctx.gate_decision_history, divergent_config)
+
+    if not multi_basin_triggered and not divergent_triggered:
+        return outputs.strategy, {}
+
+    branch_specs: list[BasinCandidate] = []
+    if multi_basin_triggered:
+        branch_specs = generate_basin_candidates(
+            ctx.base_playbook,
+            ctx.base_lessons,
+            multi_basin_config,
+        )
+    else:
+        branch_specs = [
+            BasinCandidate(
+                branch_type="conservative",
+                playbook=ctx.base_playbook,
+                lessons=ctx.base_lessons,
+                temperature=0.2,
+            ),
+            BasinCandidate(
+                branch_type="divergent",
+                playbook="",
+                lessons=ctx.base_lessons,
+                temperature=divergent_config.temperature,
+                metadata={"note": "Fresh start with lessons only"},
+            ),
+        ]
+
+    candidate_entries: list[dict[str, Any]] = [{
+        "branch_type": "conservative",
+        "strategy": outputs.strategy,
+        "temperature": 0.2,
+        "metadata": {"source": "base_generation"},
+    }]
+    seen_strategies = {json.dumps(outputs.strategy, sort_keys=True)}
+
+    if events is not None:
+        events.emit("exploration_started", {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "multi_basin_triggered": multi_basin_triggered,
+            "divergent_triggered": divergent_triggered,
+            "gate_history": ctx.gate_decision_history,
+        })
+
+    for branch in branch_specs:
+        if branch.branch_type == "conservative":
+            continue
+        branch_temperature = (
+            divergent_config.temperature
+            if branch.branch_type == "divergent"
+            else branch.temperature
+        )
+        branch_prompt = _build_branch_competitor_prompt(
+            ctx,
+            playbook=branch.playbook,
+            lessons=branch.lessons,
+            note=str(branch.metadata.get("note", "")),
+        )
+        try:
+            strategy, _, _ = _generate_branch_strategy(
+                ctx,
+                orchestrator=orchestrator,
+                prompt=branch_prompt,
+                temperature=branch_temperature,
+            )
+        except Exception:
+            LOGGER.debug("failed to generate %s exploration branch", branch.branch_type, exc_info=True)
+            continue
+
+        serialized = json.dumps(strategy, sort_keys=True)
+        if serialized in seen_strategies:
+            continue
+        if "__code__" not in strategy:
+            state = ctx.scenario.initial_state(seed=settings.seed_base + ctx.generation)
+            valid, _reason = ctx.scenario.validate_actions(state, "challenger", strategy)
+            if not valid:
+                continue
+        seen_strategies.add(serialized)
+        candidate_entries.append({
+            "branch_type": branch.branch_type,
+            "strategy": strategy,
+            "temperature": branch_temperature,
+            "metadata": dict(branch.metadata),
+        })
+
+    if len(candidate_entries) == 1:
+        return outputs.strategy, {}
+
+    _self_play_pool, opponent_pool, planned_self_play_matches = _build_live_opponent_pool(ctx, sqlite=sqlite)
+    evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
+    runner = EvaluationRunner(evaluator)
+    selection_results: list[dict[str, Any]] = []
+
+    for candidate in candidate_entries:
+        tournament = runner.run(
+            candidate=candidate["strategy"],
+            seed_base=settings.seed_base + (ctx.generation * 100),
+            trials=settings.matches_per_generation,
+            limits=HarnessLimits(),
+            challenger_elo=ctx.challenger_elo,
+            opponent_pool=opponent_pool,
+        )
+        selection_results.append({
+            "branch_type": candidate["branch_type"],
+            "best_score": tournament.best_score,
+            "mean_score": tournament.mean_score,
+            "strategy": candidate["strategy"],
+            "temperature": candidate["temperature"],
+            "metadata": dict(candidate.get("metadata", {})),
+        })
+
+    selected = max(
+        selection_results,
+        key=lambda item: (float(item["best_score"]), float(item["mean_score"])),
+    )
+    branch_record = BranchRecord(
+        generation=ctx.generation,
+        branch_type=str(selected["branch_type"]),
+        score=float(selected["best_score"]),
+        advanced=False,
+        metadata={
+            "selection_mean_score": float(selected["mean_score"]),
+            "selection_match_count": settings.matches_per_generation,
+            "self_play_matches_planned": planned_self_play_matches,
+            "multi_basin_triggered": multi_basin_triggered,
+            "divergent_triggered": divergent_triggered,
+        },
+    )
+    metadata = {
+        "selected_branch": branch_record.to_dict(),
+        "candidates": [
+            {
+                "branch_type": str(item["branch_type"]),
+                "best_score": float(item["best_score"]),
+                "mean_score": float(item["mean_score"]),
+                "temperature": float(item["temperature"]),
+                "metadata": dict(item["metadata"]),
+            }
+            for item in selection_results
+        ],
+    }
+    if events is not None:
+        events.emit("exploration_selected", {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            **metadata,
+        })
+    return dict(selected["strategy"]), metadata
 
 
 def _load_previous_best_dimensions(
@@ -1023,6 +1373,8 @@ def stage_knowledge_setup(
     ctx.prompts = prompts
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = tool_context
+    ctx.base_playbook = playbook
+    ctx.base_lessons = skills_context
     return ctx
 
 
@@ -1032,6 +1384,7 @@ def stage_agent_generation(
     orchestrator: AgentOrchestrator,
     artifacts: ArtifactStore,
     sqlite: SQLiteStore,
+    supervisor: ExecutionSupervisor | None = None,
     on_role_event: Callable[[str, str], None] | None = None,
     events: EventStreamEmitter | None = None,
 ) -> GenerationContext:
@@ -1059,9 +1412,23 @@ def stage_agent_generation(
         current_strategy=ctx.current_strategy or None,
     )
 
-    if "__code__" not in outputs.strategy:
+    selected_strategy = outputs.strategy
+    exploration_metadata: dict[str, Any] = {}
+    if not ctx.settings.ablation_no_feedback:
+        selected_strategy, exploration_metadata = _select_exploration_strategy(
+            ctx,
+            outputs=outputs,
+            orchestrator=orchestrator,
+            supervisor=supervisor,
+            sqlite=sqlite,
+            events=events,
+        )
+        if selected_strategy != outputs.strategy:
+            outputs = dataclasses.replace(outputs, strategy=selected_strategy)
+
+    if "__code__" not in selected_strategy:
         state = ctx.scenario.initial_state(seed=ctx.settings.seed_base + ctx.generation)
-        valid, reason = ctx.scenario.validate_actions(state, "challenger", outputs.strategy)
+        valid, reason = ctx.scenario.validate_actions(state, "challenger", selected_strategy)
         if not valid:
             raise ValueError(f"competitor strategy validation failed: {reason}")
 
@@ -1069,7 +1436,7 @@ def stage_agent_generation(
         ctx.run_id,
         ctx.generation,
         outputs=[
-            ("competitor", json.dumps(outputs.strategy, sort_keys=True)),
+            ("competitor", json.dumps(selected_strategy, sort_keys=True)),
             ("analyst", outputs.analysis_markdown),
             ("coach", outputs.coach_markdown),
             ("architect", outputs.architect_markdown),
@@ -1110,8 +1477,9 @@ def stage_agent_generation(
         ctx.tuning_proposal = parse_tuning_proposal(outputs.architect_markdown)
 
     ctx.outputs = outputs
-    ctx.current_strategy = outputs.strategy
+    ctx.current_strategy = selected_strategy
     ctx.created_tools = created_tools
+    ctx.exploration_metadata = exploration_metadata
     _update_tool_usage_feedback(ctx, artifacts=artifacts)
     return ctx
 
@@ -1208,25 +1576,9 @@ def stage_tournament(
                 "generation": ctx.generation,
             })
 
-        self_play_config = SelfPlayConfig(
-            enabled=settings.self_play_enabled,
-            pool_size=settings.self_play_pool_size,
-            weight=settings.self_play_weight,
-        )
-        self_play_pool = load_self_play_pool(
-            sqlite.get_self_play_strategy_history(ctx.run_id) if settings.self_play_enabled else [],
-            self_play_config,
-            current_generation=ctx.generation,
-        )
-        opponent_pool = build_opponent_pool(
-            [{"source": "baseline"}],
-            self_play_pool,
-            trials=settings.matches_per_generation,
-        )
-        planned_self_play_matches = sum(
-            1
-            for entry in opponent_pool
-            if isinstance(entry, dict) and entry.get("source") == "self_play"
+        self_play_pool, opponent_pool, planned_self_play_matches = _build_live_opponent_pool(
+            ctx,
+            sqlite=sqlite,
         )
 
         events.emit("tournament_started", {
@@ -1283,9 +1635,41 @@ def stage_tournament(
             best_eval = max(tournament.results, key=lambda r: r.score)
             best_exec = best_eval.metadata["execution_output"]
             custom_metrics = scenario.custom_backpressure(best_exec.result)
+        recent_strategies = _load_recent_numeric_strategies(
+            sqlite,
+            run_id=ctx.run_id,
+            window=settings.novelty_history_window,
+        )
+        gate_best_score = tournament.best_score
+        if settings.novelty_enabled and recent_strategies:
+            novelty_score = compute_novelty_score(current_strategy, recent_strategies)
+            gate_best_score = apply_novelty_bonus(
+                tournament.best_score,
+                novelty_score,
+                NoveltyConfig(
+                    weight=settings.novelty_weight,
+                    enabled=settings.novelty_enabled,
+                ),
+            )
+            custom_metrics = dict(custom_metrics or {})
+            custom_metrics.update({
+                "search_proxy_score": gate_best_score,
+                "novelty_score": novelty_score,
+                "raw_best_score": tournament.best_score,
+                "novelty_adjusted_best_score": gate_best_score,
+            })
+            ctx.exploration_metadata = {
+                **ctx.exploration_metadata,
+                "novelty": {
+                    "score": novelty_score,
+                    "raw_best_score": tournament.best_score,
+                    "adjusted_best_score": gate_best_score,
+                    "history_window": len(recent_strategies),
+                },
+            }
         holdout_result = None
         gate_result = resolve_gate_decision(
-            tournament_best_score=tournament.best_score,
+            tournament_best_score=gate_best_score,
             tournament_mean_score=tournament.mean_score,
             tournament_results=tournament.results,
             previous_best=ctx.previous_best,
@@ -1424,6 +1808,7 @@ def stage_tournament(
         "self_play": self_play_summary or {},
         "reason": gate_reason,
         "holdout": holdout_result.to_dict() if holdout_result is not None else None,
+        "exploration": ctx.exploration_metadata or {},
     }
     gate_metadata = getattr(gate_result, "metadata", None)
     if isinstance(gate_metadata, dict) and gate_metadata:
@@ -1448,6 +1833,11 @@ def stage_tournament(
     ctx.current_strategy = current_strategy
     ctx.attempt = attempt
     ctx.holdout_result = holdout_result
+    selected_branch = ctx.exploration_metadata.get("selected_branch")
+    if isinstance(selected_branch, dict):
+        selected_branch["advanced"] = gate_decision == "advance"
+        selected_branch["full_tournament_best_score"] = tournament.best_score
+        selected_branch["full_tournament_mean_score"] = tournament.mean_score
     return ctx
 
 
@@ -1831,6 +2221,8 @@ def stage_persistence(
         metrics["self_play"] = self_play_summary
     if ctx.holdout_result is not None:
         metrics["holdout"] = ctx.holdout_result.to_dict()
+    if ctx.exploration_metadata:
+        metrics["exploration"] = ctx.exploration_metadata
 
     # 2. Insert matches into sqlite
     for idx, eval_result in enumerate(tournament.results):
@@ -1960,6 +2352,7 @@ def stage_persistence(
         ),
         "self_play": self_play_summary or {},
         "holdout": ctx.holdout_result.to_dict() if ctx.holdout_result is not None else None,
+        "exploration": ctx.exploration_metadata or {},
         "created_tools": ctx.created_tools,
     })
 
