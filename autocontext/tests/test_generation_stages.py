@@ -1353,10 +1353,16 @@ class TestStagePersistence:
         assert "ROLLBACK" in skill_call[1]["lessons"]
 
     def test_advance_writes_hints(self) -> None:
-        """On advance with coach_competitor_hints, artifacts.write_hints is called."""
+        """On advance, the live path persists structured hint state."""
         ctx = _make_persistence_ctx(gate_decision="advance", coach_competitor_hints="new hints")
         artifacts = MagicMock()
         artifacts.read_skill_lessons_raw.return_value = []
+        artifacts.read_hint_manager.return_value = MagicMock(
+            active_hints=lambda: [],
+            archived_hints=lambda: [],
+            merge_hint_text=MagicMock(),
+            format_for_competitor=MagicMock(return_value="- new hints"),
+        )
         sqlite = MagicMock()
         events = MagicMock()
         trajectory = MagicMock()
@@ -1370,7 +1376,8 @@ class TestStagePersistence:
             curator=None,
         )
 
-        artifacts.write_hints.assert_called_once_with("test_scenario", "new hints")
+        artifacts.write_hint_manager.assert_called_once()
+        assert ctx.coach_competitor_hints == "- new hints"
 
     def test_inserts_matches(self) -> None:
         """sqlite.insert_match is called once per tournament output."""
@@ -1466,9 +1473,11 @@ class TestStagePersistence:
             curator=None,
         )
 
-        assert result.coach_competitor_hints == "updated hints from coach"
+        assert result.coach_competitor_hints == "- updated hints from coach"
 
     def test_collects_and_persists_competitor_hint_feedback(self) -> None:
+        from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
+
         ctx = _make_persistence_ctx(
             gate_decision="advance",
             coach_competitor_hints="new hints for next gen",
@@ -1476,6 +1485,7 @@ class TestStagePersistence:
         ctx.applied_competitor_hints = "old hints used in tournament"
         artifacts = MagicMock()
         artifacts.read_skill_lessons_raw.return_value = []
+        artifacts.read_hint_manager.return_value = HintManager(HintVolumePolicy(max_hints=3))
         sqlite = MagicMock()
         events = MagicMock()
         trajectory = MagicMock()
@@ -1508,9 +1518,58 @@ class TestStagePersistence:
         artifacts.write_hint_feedback.assert_called_once()
         feedback = artifacts.write_hint_feedback.call_args.args[2]
         assert feedback.helpful == ["use the corners"]
+        artifacts.write_hint_manager.assert_called_once()
+        persisted_manager = artifacts.write_hint_manager.call_args.args[1]
+        assert "new hints for next gen" in persisted_manager.format_for_competitor()
         sqlite.append_generation_agent_activity.assert_called()
         hint_events = [c for c in events.emit.call_args_list if c.args[0] == "hint_feedback_collected"]
         assert hint_events
+
+    def test_hint_volume_control_caps_and_rotates_live_hints(self) -> None:
+        from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            hint_volume_enabled=True,
+            hint_volume_max_hints=2,
+        )
+        ctx = _make_persistence_ctx(
+            gate_decision="advance",
+            coach_competitor_hints="fresh high-value hint",
+        )
+        ctx.settings = settings
+        ctx.applied_competitor_hints = "old strong hint\nold weak hint"
+        manager = HintManager(HintVolumePolicy(max_hints=2))
+        manager.add("old strong hint", generation=1, impact_score=0.9)
+        manager.add("old weak hint", generation=1, impact_score=0.1)
+
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        artifacts.read_hint_manager.return_value = manager
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        with patch(
+            "autocontext.loop.stages._collect_hint_feedback",
+            return_value=None,
+        ):
+            result = stage_persistence(
+                ctx,
+                artifacts=artifacts,
+                sqlite=sqlite,
+                trajectory_builder=trajectory,
+                events=events,
+                curator=None,
+            )
+
+        artifacts.write_hint_manager.assert_called_once()
+        persisted_manager = artifacts.write_hint_manager.call_args.args[1]
+        active_texts = [hint.text for hint in persisted_manager.active_hints()]
+        archived_texts = [hint.text for hint in persisted_manager.archived_hints()]
+        assert active_texts == ["old strong hint", "fresh high-value hint"]
+        assert "old weak hint" in archived_texts
+        assert "old weak hint" not in result.coach_competitor_hints
 
 
 # ---------- TestStageTournamentAttempt ----------

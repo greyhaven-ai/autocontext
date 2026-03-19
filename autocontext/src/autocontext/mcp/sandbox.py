@@ -113,6 +113,12 @@ class SandboxManager:
             (sb_scenario / "hints.md").write_text(
                 hints.read_text(encoding="utf-8"), encoding="utf-8"
             )
+        hint_state = main_knowledge / "hint_state.json"
+        if hint_state.exists():
+            (sb_scenario / "hint_state.json").write_text(
+                hint_state.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
 
         # Copy tools
         tools_dir = main_knowledge / "tools"

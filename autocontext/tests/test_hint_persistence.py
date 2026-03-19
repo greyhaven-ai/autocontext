@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from autocontext.config import AppSettings
+from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.loop import GenerationRunner
 from autocontext.storage import ArtifactStore
 
@@ -80,3 +81,40 @@ def test_empty_hints_graceful(tmp_path: Path) -> None:
         tmp_path / "runs", tmp_path / "knowledge", tmp_path / "skills", tmp_path / ".claude/skills"
     )
     assert store.read_hints("nonexistent") == ""
+
+
+def test_structured_hint_state_preferred_over_flat_hint_text(tmp_path: Path) -> None:
+    store = ArtifactStore(
+        tmp_path / "runs", tmp_path / "knowledge", tmp_path / "skills", tmp_path / ".claude/skills"
+    )
+    scenario_dir = tmp_path / "knowledge" / "grid_ctf"
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+
+    manager = HintManager(HintVolumePolicy(max_hints=2))
+    manager.add("structured top hint", generation=2, impact_score=0.9)
+    manager.add("structured second hint", generation=2, impact_score=0.6)
+    store.write_hint_manager("grid_ctf", manager)
+
+    # Legacy file should no longer be the source of truth once structured state exists.
+    (scenario_dir / "hints.md").write_text("- stale legacy hint\n", encoding="utf-8")
+
+    assert store.read_hints("grid_ctf") == (
+        "- structured top hint\n- structured second hint\n"
+    )
+
+
+def test_hint_manager_roundtrip_survives_restart(tmp_path: Path) -> None:
+    store = ArtifactStore(
+        tmp_path / "runs", tmp_path / "knowledge", tmp_path / "skills", tmp_path / ".claude/skills"
+    )
+
+    manager = HintManager(HintVolumePolicy(max_hints=2, archive_rotated=True))
+    manager.add("hint 1", generation=1, impact_score=0.2)
+    manager.add("hint 2", generation=2, impact_score=0.7)
+    manager.add("hint 3", generation=3, impact_score=0.9)
+    store.write_hint_manager("grid_ctf", manager)
+
+    restored = store.read_hint_manager("grid_ctf", policy=HintVolumePolicy(max_hints=2))
+
+    assert [hint.text for hint in restored.active_hints()] == ["hint 3", "hint 2"]
+    assert [hint.text for hint in restored.archived_hints()] == ["hint 1"]

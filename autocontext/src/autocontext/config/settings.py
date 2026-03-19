@@ -60,6 +60,19 @@ class AppSettings(BaseModel):
         le=1.0,
         description="Fraction of tournament matches scheduled against self-play opponents when available",
     )
+    hint_volume_enabled: bool = Field(
+        default=True,
+        description="Cap and rank active competitor hints instead of letting them grow without bound",
+    )
+    hint_volume_max_hints: int = Field(
+        default=7,
+        ge=1,
+        description="Maximum number of active competitor hints retained at once",
+    )
+    hint_volume_archive_rotated: bool = Field(
+        default=True,
+        description="Keep rotated-out competitor hints in archived state for later recall or analysis",
+    )
     holdout_enabled: bool = Field(
         default=True,
         description="Run holdout verification before advancing a generation",

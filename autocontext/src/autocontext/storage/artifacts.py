@@ -16,6 +16,7 @@ from autocontext.agents.feedback_loops import (
 )
 from autocontext.agents.hint_feedback import HintFeedback
 from autocontext.harness.storage.versioned_store import VersionedFileStore
+from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
 from autocontext.storage.buffered_writer import BufferedWriter
@@ -216,10 +217,52 @@ class ArtifactStore:
         """Persist coach hints so they survive run restarts."""
         self.write_markdown(self.knowledge_root / scenario_name / "hints.md", content)
 
+    def _hint_state_path(self, scenario_name: str) -> Path:
+        return self.knowledge_root / scenario_name / "hint_state.json"
+
     def read_hints(self, scenario_name: str) -> str:
         """Read persisted hints, or empty string if none."""
+        hint_state = self._hint_state_path(scenario_name)
+        if hint_state.exists():
+            manager = self.read_hint_manager(scenario_name)
+            rendered = manager.format_for_competitor()
+            return f"{rendered}\n" if rendered else ""
         path = self.knowledge_root / scenario_name / "hints.md"
         return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def write_hint_manager(self, scenario_name: str, manager: HintManager) -> None:
+        """Persist structured hint state and refresh the plain-text active snapshot."""
+        self.write_json(self._hint_state_path(scenario_name), manager.to_dict())
+        self.write_markdown(
+            self.knowledge_root / scenario_name / "hints.md",
+            manager.format_for_competitor(),
+        )
+
+    def read_hint_manager(
+        self,
+        scenario_name: str,
+        *,
+        policy: HintVolumePolicy | None = None,
+    ) -> HintManager:
+        """Load structured hint state, falling back to legacy flat hints when needed."""
+        effective_policy = policy or HintVolumePolicy()
+        hint_state = self._hint_state_path(scenario_name)
+        if hint_state.exists():
+            try:
+                raw = json.loads(hint_state.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                LOGGER.warning("failed to parse hint state %s", hint_state, exc_info=True)
+            else:
+                if isinstance(raw, dict):
+                    return HintManager.from_dict(raw, policy_override=effective_policy)
+
+        path = self.knowledge_root / scenario_name / "hints.md"
+        if path.exists():
+            return HintManager.from_hint_text(
+                path.read_text(encoding="utf-8"),
+                policy=effective_policy,
+            )
+        return HintManager(effective_policy)
 
     def read_dead_ends(self, scenario_name: str) -> str:
         """Read dead-end registry, or empty string if none."""
@@ -706,6 +749,12 @@ class ArtifactStore:
             (snapshot_dir / "hints.md").write_text(
                 hints_path.read_text(encoding="utf-8"), encoding="utf-8"
             )
+        hint_state_path = self._hint_state_path(scenario_name)
+        if hint_state_path.exists():
+            (snapshot_dir / "hint_state.json").write_text(
+                hint_state_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
 
         skill_dir = self._skill_dir(scenario_name)
         skill_path = skill_dir / "SKILL.md"
@@ -744,6 +793,13 @@ class ArtifactStore:
             self.write_markdown(
                 self.knowledge_root / scenario_name / "hints.md",
                 hints_snapshot.read_text(encoding="utf-8"),
+            )
+            restored = True
+        hint_state_snapshot = snapshot_dir / "hint_state.json"
+        if hint_state_snapshot.exists():
+            self.write_json(
+                self._hint_state_path(scenario_name),
+                json.loads(hint_state_snapshot.read_text(encoding="utf-8")),
             )
             restored = True
 

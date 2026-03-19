@@ -60,6 +60,27 @@ def test_knowledge_seeded(tmp_path: Path) -> None:
     assert "Hint 1" in sb_hints.read_text(encoding="utf-8")
 
 
+def test_hint_state_seeded(tmp_path: Path) -> None:
+    """Structured hint state copied into sandbox knowledge."""
+    settings = _make_settings(tmp_path)
+    main_knowledge = tmp_path / "knowledge" / "grid_ctf"
+    main_knowledge.mkdir(parents=True)
+    (main_knowledge / "hint_state.json").write_text(
+        (
+            '{"policy":{"max_hints":2,"archive_rotated":true},"active":'
+            '[{"text":"Hint 1","rank":1,"generation_added":1,'
+            '"impact_score":0.9,"metadata":{}}],"archived":[]}'
+        ),
+        encoding="utf-8",
+    )
+
+    mgr = SandboxManager(settings)
+    sandbox = mgr.create("grid_ctf")
+    sb_hint_state = sandbox.root / "knowledge" / "grid_ctf" / "hint_state.json"
+    assert sb_hint_state.exists()
+    assert "Hint 1" in sb_hint_state.read_text(encoding="utf-8")
+
+
 def test_tools_seeded(tmp_path: Path) -> None:
     """Tool .py files copied from main."""
     settings = _make_settings(tmp_path)

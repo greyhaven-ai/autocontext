@@ -123,6 +123,49 @@ class TestHintManager:
         center_pos = text.lower().index("center")
         assert edge_pos < center_pos
 
+    def test_roundtrip_preserves_active_and_archived_state(self) -> None:
+        from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
+
+        mgr = HintManager(HintVolumePolicy(max_hints=2, archive_rotated=True))
+        mgr.add("hint 1", generation=1, impact_score=0.2)
+        mgr.add("hint 2", generation=2, impact_score=0.8)
+        mgr.add("hint 3", generation=3, impact_score=0.9)
+
+        restored = HintManager.from_dict(mgr.to_dict())
+
+        assert [hint.text for hint in restored.active_hints()] == ["hint 3", "hint 2"]
+        assert [hint.text for hint in restored.archived_hints()] == ["hint 1"]
+
+    def test_from_hint_text_parses_markdownish_bullets(self) -> None:
+        from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
+
+        mgr = HintManager.from_hint_text(
+            "- First hint\n2. Second hint\n* Third hint\n",
+            policy=HintVolumePolicy(max_hints=5),
+            generation=4,
+        )
+
+        assert [hint.text for hint in mgr.active_hints()] == [
+            "First hint",
+            "Second hint",
+            "Third hint",
+        ]
+
+    def test_add_dedupes_and_resurrects_archived_hint(self) -> None:
+        from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
+
+        mgr = HintManager(HintVolumePolicy(max_hints=2, archive_rotated=True))
+        mgr.add("hint 1", generation=1, impact_score=0.1)
+        mgr.add("hint 2", generation=1, impact_score=0.7)
+        mgr.add("hint 3", generation=2, impact_score=0.9)
+
+        assert [hint.text for hint in mgr.archived_hints()] == ["hint 1"]
+
+        mgr.add("hint 1", generation=3, impact_score=0.95)
+
+        assert [hint.text for hint in mgr.active_hints()] == ["hint 1", "hint 3"]
+        assert [hint.text for hint in mgr.archived_hints()] == ["hint 2"]
+
 
 # ===========================================================================
 # apply_volume_cap

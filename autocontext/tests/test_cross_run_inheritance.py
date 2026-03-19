@@ -110,6 +110,26 @@ def test_snapshot_includes_hints(tmp_path: Path) -> None:
     assert snapshot_dir.exists()
 
 
+def test_snapshot_includes_structured_hint_state(tmp_path: Path) -> None:
+    scenario_dir = tmp_path / "knowledge" / "grid_ctf"
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+    (scenario_dir / "hint_state.json").write_text(
+        (
+            '{"policy":{"max_hints":2,"archive_rotated":true},"active":'
+            '[{"text":"Hint from state","rank":1,"generation_added":1,'
+            '"impact_score":0.9,"metadata":{}}],"archived":[]}'
+        ),
+        encoding="utf-8",
+    )
+
+    _run(tmp_path, "state_snap")
+
+    snapshot_dir = tmp_path / "knowledge" / "grid_ctf" / "snapshots" / "state_snap"
+    assert snapshot_dir.exists()
+    assert (snapshot_dir / "hint_state.json").exists()
+    assert "Hint from state" in (snapshot_dir / "hint_state.json").read_text(encoding="utf-8")
+
+
 def test_snapshot_includes_skills(tmp_path: Path) -> None:
     _run(tmp_path, "skills_snap")
     snapshot_dir = tmp_path / "knowledge" / "grid_ctf" / "snapshots" / "skills_snap"

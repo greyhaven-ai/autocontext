@@ -35,6 +35,7 @@ from autocontext.harness.pipeline.validity_gate import ValidityGate
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from autocontext.knowledge.fresh_start import execute_fresh_start
 from autocontext.knowledge.harness_quality import compute_harness_quality
+from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.progress import build_progress_snapshot
 from autocontext.knowledge.protocol import parse_research_protocol, validate_tuning_overrides
 from autocontext.knowledge.rapid_gate import rapid_gate, should_transition_to_linear
@@ -609,6 +610,32 @@ def _collect_hint_feedback(
         "missing_count": len(feedback.missing),
     })
     return feedback
+
+
+def _hint_volume_policy(ctx: GenerationContext) -> HintVolumePolicy:
+    return HintVolumePolicy(
+        max_hints=ctx.settings.hint_volume_max_hints,
+        archive_rotated=ctx.settings.hint_volume_archive_rotated,
+    )
+
+
+def _hint_feedback_matches(text: str, candidate: str) -> bool:
+    left = text.strip().lower()
+    right = candidate.strip().lower()
+    return bool(left and right and (left == right or left in right or right in left))
+
+
+def _apply_hint_feedback_to_manager(manager: HintManager, feedback: HintFeedback | None) -> None:
+    if feedback is None:
+        return
+    for helpful in feedback.helpful:
+        for hint in manager.active_hints() + manager.archived_hints():
+            if _hint_feedback_matches(hint.text, helpful):
+                manager.update_impact(hint.text, max(hint.impact_score, 0.9))
+    for misleading in feedback.misleading:
+        for hint in manager.active_hints() + manager.archived_hints():
+            if _hint_feedback_matches(hint.text, misleading):
+                manager.update_impact(hint.text, min(hint.impact_score, 0.1))
 
 
 def _update_tool_usage_feedback(
@@ -1689,7 +1716,7 @@ def stage_persistence(
         )
 
     # 7. Persist competitor feedback on the hints it actually used this generation.
-    _collect_hint_feedback(
+    hint_feedback = _collect_hint_feedback(
         ctx,
         agents=agents,
         artifacts=artifacts,
@@ -1697,11 +1724,29 @@ def stage_persistence(
         events=events,
     )
 
-    # 8. Carry forward coach hints
+    # 8. Carry forward coach hints.
     coach_competitor_hints = outputs.coach_competitor_hints
-    ctx.coach_competitor_hints = coach_competitor_hints
-    if gate_decision == "advance" and coach_competitor_hints:
-        artifacts.write_hints(scenario_name, coach_competitor_hints)
+    if settings.hint_volume_enabled and not settings.ablation_no_feedback:
+        raw_manager = artifacts.read_hint_manager(
+            scenario_name,
+            policy=_hint_volume_policy(ctx),
+        )
+        manager = raw_manager if isinstance(raw_manager, HintManager) else HintManager(_hint_volume_policy(ctx))
+        if not manager.active_hints() and ctx.applied_competitor_hints.strip():
+            manager = HintManager.from_hint_text(
+                ctx.applied_competitor_hints,
+                policy=_hint_volume_policy(ctx),
+                generation=max(0, generation - 1),
+            )
+        _apply_hint_feedback_to_manager(manager, hint_feedback)
+        manager.merge_hint_text(coach_competitor_hints, generation=generation)
+        ctx.coach_competitor_hints = manager.format_for_competitor()
+        if ctx.coach_competitor_hints or manager.archived_hints():
+            artifacts.write_hint_manager(scenario_name, manager)
+    else:
+        ctx.coach_competitor_hints = coach_competitor_hints
+        if gate_decision == "advance" and coach_competitor_hints:
+            artifacts.write_hints(scenario_name, coach_competitor_hints)
 
     # 8b. Write progress snapshot
     if settings.progress_json_enabled and not settings.ablation_no_feedback:
