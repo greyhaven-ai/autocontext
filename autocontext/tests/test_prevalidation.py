@@ -11,6 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -408,6 +409,67 @@ class TestStagePrevalidation:
         # Check exhaustion event was emitted
         event_names = [call[0][0] for call in events.emit.call_args_list]
         assert "dry_run_failed" in event_names
+
+    def test_regression_fixtures_trigger_revision_before_dry_run(self) -> None:
+        """Persisted regression fixtures participate in the live prevalidation loop."""
+        from autocontext.analytics.regression_fixtures import RegressionFixture
+        from autocontext.harness.evaluation.types import EvaluationResult
+        from autocontext.loop.stage_prevalidation import stage_prevalidation
+
+        ctx = self._make_ctx(max_retries=1)
+        events = MagicMock()
+        agents = MagicMock()
+        artifacts = MagicMock()
+        artifacts.knowledge_root = Path("/tmp/knowledge")
+        supervisor = MagicMock()
+
+        fixture = RegressionFixture(
+            fixture_id="fix-fake-rollback",
+            scenario="fake",
+            description="Regression fixture for rollback",
+            seed=101,
+            strategy={},
+            expected_min_score=0.5,
+            source_evidence=["friction:rollback:gen2"],
+            confidence=0.9,
+        )
+        fake_store = MagicMock()
+        fake_store.list_for_scenario.return_value = [fixture]
+        fake_evaluator = MagicMock()
+        fake_evaluator.evaluate.side_effect = [
+            EvaluationResult(score=0.2, passed=True),
+            EvaluationResult(score=0.8, passed=True),
+        ]
+
+        from autocontext.agents.types import RoleExecution
+        from autocontext.harness.core.types import RoleUsage
+
+        mock_exec = RoleExecution(
+            role="competitor", content='{"aggression": 0.3}',
+            usage=RoleUsage(input_tokens=10, output_tokens=20, latency_ms=100, model="test"),
+            subagent_id="test", status="completed",
+        )
+        agents.competitor.revise.return_value = ('{"aggression": 0.3}', mock_exec)
+        agents.translator.translate.return_value = ({"aggression": 0.3}, mock_exec)
+
+        with (
+            patch("autocontext.loop.stage_prevalidation.FixtureStore", return_value=fake_store),
+            patch("autocontext.loop.stage_prevalidation.ScenarioEvaluator", return_value=fake_evaluator),
+        ):
+            stage_prevalidation(
+                ctx,
+                events=events,
+                agents=agents,
+                artifacts=artifacts,
+                supervisor=supervisor,
+            )
+
+        event_names = [call[0][0] for call in events.emit.call_args_list]
+        assert "regression_fixtures_started" in event_names
+        assert "regression_fixtures_failed" in event_names
+        assert "regression_fixtures_revision" in event_names
+        assert "regression_fixtures_passed" in event_names
+        assert "dry_run_started" in event_names
 
 
 # ---------------------------------------------------------------------------

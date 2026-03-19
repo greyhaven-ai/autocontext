@@ -430,6 +430,89 @@ class TestStageKnowledgeSetup:
         assert "Competitor Hint Feedback" not in result.prompts.competitor
         assert "Competitor Hint Feedback" not in result.prompts.analyst
 
+    def test_freshness_decay_omits_stale_hints_from_prompt_context(self) -> None:
+        from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
+
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        artifacts.read_latest_analyst_rating.return_value = None
+        artifacts.read_tool_usage_report.return_value = ""
+        artifacts.read_latest_hint_feedback.return_value = None
+        artifacts.read_notebook.return_value = None
+
+        manager = HintManager(HintVolumePolicy(max_hints=5))
+        manager.add("Stale corner hint", generation=1, impact_score=0.9)
+        artifacts.read_hint_manager.return_value = manager
+
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            evidence_freshness_enabled=True,
+            evidence_freshness_max_age_gens=5,
+            hint_volume_enabled=True,
+        )
+        ctx = _make_ctx(settings=settings)
+        ctx.generation = 20
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "Coach hints for competitor:\n- Stale corner hint" not in result.prompts.competitor
+        assert "Hint freshness warnings" in result.prompts.competitor
+
+    def test_freshness_decay_filters_stale_notebook_context(self) -> None:
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        artifacts.read_latest_analyst_rating.return_value = None
+        artifacts.read_tool_usage_report.return_value = ""
+        artifacts.read_latest_hint_feedback.return_value = None
+        artifacts.read_hint_manager.return_value = MagicMock(active_hints=lambda: [])
+        artifacts.read_notebook.return_value = {
+            "session_id": "run_test",
+            "scenario_name": "test_scenario",
+            "current_objective": "Old notebook objective",
+            "follow_ups": ["Try the risky line again"],
+            "best_generation": 1,
+            "best_score": 0.9,
+        }
+
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            evidence_freshness_enabled=True,
+            evidence_freshness_max_age_gens=5,
+        )
+        ctx = _make_ctx(settings=settings)
+        ctx.generation = 20
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "Old notebook objective" not in result.prompts.competitor
+        assert "Notebook freshness warnings" in result.prompts.competitor
+
 
 # ---------- TestStageAgentGeneration ----------
 

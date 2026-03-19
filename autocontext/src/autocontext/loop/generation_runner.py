@@ -24,6 +24,7 @@ from autocontext.analytics.correlation import CorrelationStore
 from autocontext.analytics.extractor import FacetExtractor
 from autocontext.analytics.facets import RunFacet
 from autocontext.analytics.issue_store import IssueStore
+from autocontext.analytics.regression_fixtures import FixtureStore, generate_fixtures_from_friction
 from autocontext.analytics.rubric_drift import DriftStore, RubricDriftMonitor, RubricSnapshot
 from autocontext.analytics.run_trace import (
     ActorRef,
@@ -337,6 +338,20 @@ class GenerationRunner:
             json.dumps([cluster.to_dict() for cluster in delight_clusters], indent=2),
             encoding="utf-8",
         )
+
+        if self.settings.regression_fixtures_enabled:
+            relevant_friction = clusterer.query_clusters(
+                friction_clusters,
+                scenario=scenario_name,
+                agent_provider=self.settings.agent_provider,
+                scenario_family=family.name if family is not None else None,
+            )
+            fixtures = generate_fixtures_from_friction(
+                [cluster.to_dict() for cluster in relevant_friction],
+                scenario=scenario_name,
+                min_occurrences=self.settings.regression_fixture_min_occurrences,
+            )
+            FixtureStore(analytics_root).replace_for_scenario(scenario_name, fixtures)
 
         taxonomy_path = analytics_root / "taxonomy.json"
         taxonomy = FacetTaxonomy.load(taxonomy_path)

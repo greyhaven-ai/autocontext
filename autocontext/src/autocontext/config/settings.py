@@ -73,6 +73,44 @@ class AppSettings(BaseModel):
         default=True,
         description="Keep rotated-out competitor hints in archived state for later recall or analysis",
     )
+    evidence_freshness_enabled: bool = Field(
+        default=True,
+        description="Demote stale hints, lessons, and notebook context during prompt assembly",
+    )
+    evidence_freshness_max_age_gens: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum generation age before evidence is considered stale",
+    )
+    evidence_freshness_min_confidence: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence for evidence to remain active in prompt context",
+    )
+    evidence_freshness_min_support: int = Field(
+        default=1,
+        ge=0,
+        description="Minimum support count for evidence to remain active in prompt context",
+    )
+    regression_fixtures_enabled: bool = Field(
+        default=True,
+        description="Generate and consume regression fixtures from recurring friction evidence",
+    )
+    regression_fixture_min_occurrences: int = Field(
+        default=2,
+        ge=1,
+        description="Minimum recurring friction count required before persisting a regression fixture",
+    )
+    prevalidation_regression_fixtures_enabled: bool = Field(
+        default=True,
+        description="Run persisted regression fixtures during the live prevalidation stage",
+    )
+    prevalidation_regression_fixture_limit: int = Field(
+        default=5,
+        ge=1,
+        description="Maximum number of persisted regression fixtures checked in prevalidation",
+    )
     holdout_enabled: bool = Field(
         default=True,
         description="Run holdout verification before advancing a generation",

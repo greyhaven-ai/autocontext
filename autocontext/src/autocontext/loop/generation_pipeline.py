@@ -363,6 +363,7 @@ class GenerationPipeline:
                         agents=self._orchestrator,
                         harness_loader=harness_loader,
                         artifacts=self._artifacts,
+                        supervisor=self._supervisor,
                     )
 
                 # Stage 2.5: Probe (optional — refine strategy from observation)
