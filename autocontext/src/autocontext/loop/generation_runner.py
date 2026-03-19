@@ -21,6 +21,7 @@ from autocontext.analytics.calibration import (
 )
 from autocontext.analytics.clustering import PatternClusterer
 from autocontext.analytics.correlation import CorrelationStore
+from autocontext.analytics.credit_assignment import summarize_credit_patterns
 from autocontext.analytics.extractor import FacetExtractor
 from autocontext.analytics.facets import RunFacet
 from autocontext.analytics.issue_store import IssueStore
@@ -337,6 +338,15 @@ class GenerationRunner:
         )
         (analytics_root / "delight_clusters.json").write_text(
             json.dumps([cluster.to_dict() for cluster in delight_clusters], indent=2),
+            encoding="utf-8",
+        )
+        credit_patterns_dir = analytics_root / "credit_assignment_patterns"
+        credit_patterns_dir.mkdir(parents=True, exist_ok=True)
+        credit_pattern_payload = summarize_credit_patterns(
+            self.artifacts.list_credit_assignments(scenario_name),
+        )
+        (credit_patterns_dir / f"{scenario_name}.json").write_text(
+            json.dumps(credit_pattern_payload, indent=2, sort_keys=True),
             encoding="utf-8",
         )
 

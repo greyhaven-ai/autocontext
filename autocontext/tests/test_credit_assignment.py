@@ -1,7 +1,8 @@
 """Tests for AC-199: component sensitivity profiling and credit assignment.
 
-Covers: ComponentChange, GenerationChangeVector, compute_change_vector,
-AttributionResult, attribute_credit, format_attribution_for_agent.
+Covers: ComponentChange, GenerationChangeVector, AttributionResult,
+CreditAssignmentRecord, compute_change_vector, attribute_credit,
+format_attribution_for_agent, summarize_credit_patterns.
 """
 
 from __future__ import annotations
@@ -129,6 +130,17 @@ class TestComputeChangeVector:
         vec = compute_change_vector(generation=2, score_delta=0.0, previous_state=state, current_state=state)
         assert vec.total_change_magnitude == 0.0
 
+    def test_detects_analysis_change(self) -> None:
+        from autocontext.analytics.credit_assignment import compute_change_vector
+
+        prev = {"analysis": "Lean into offense."}
+        curr = {"analysis": "Defense is the real bottleneck."}
+
+        vec = compute_change_vector(generation=3, score_delta=0.04, previous_state=prev, current_state=curr)
+        analysis_change = next((c for c in vec.changes if c.component == "analysis"), None)
+        assert analysis_change is not None
+        assert analysis_change.magnitude > 0
+
 
 # ===========================================================================
 # attribute_credit
@@ -180,6 +192,50 @@ class TestAttributeCredit:
         result = attribute_credit(vec)
         assert len(result.credits) == 0
 
+    def test_roundtrip(self) -> None:
+        from autocontext.analytics.credit_assignment import AttributionResult
+
+        result = AttributionResult(
+            generation=2,
+            total_delta=0.08,
+            credits={"playbook": 0.05, "tools": 0.03},
+            metadata={"gate_decision": "advance"},
+        )
+        restored = AttributionResult.from_dict(result.to_dict())
+        assert restored.generation == 2
+        assert restored.credits["playbook"] == 0.05
+        assert restored.metadata["gate_decision"] == "advance"
+
+
+class TestCreditAssignmentRecord:
+    def test_roundtrip(self) -> None:
+        from autocontext.analytics.credit_assignment import (
+            AttributionResult,
+            ComponentChange,
+            CreditAssignmentRecord,
+            GenerationChangeVector,
+        )
+
+        record = CreditAssignmentRecord(
+            run_id="run-123",
+            generation=4,
+            vector=GenerationChangeVector(
+                generation=4,
+                score_delta=0.1,
+                changes=[ComponentChange("playbook", 0.6, "changed")],
+            ),
+            attribution=AttributionResult(
+                generation=4,
+                total_delta=0.1,
+                credits={"playbook": 0.1},
+            ),
+            metadata={"scenario_name": "grid_ctf"},
+        )
+        restored = CreditAssignmentRecord.from_dict(record.to_dict())
+        assert restored.run_id == "run-123"
+        assert restored.vector.changes[0].component == "playbook"
+        assert restored.metadata["scenario_name"] == "grid_ctf"
+
 
 # ===========================================================================
 # format_attribution_for_agent
@@ -199,6 +255,7 @@ class TestFormatAttributionForAgent:
             credits={"playbook": 0.06, "tools": 0.02, "hints": 0.02},
         )
         text = format_attribution_for_agent(result, role="analyst")
+        assert "Previous Analysis Attribution" in text
         assert "playbook" in text.lower()
         assert "60%" in text or "0.06" in text
 
@@ -211,3 +268,67 @@ class TestFormatAttributionForAgent:
         result = AttributionResult(generation=1, total_delta=0.0, credits={})
         text = format_attribution_for_agent(result, role="analyst")
         assert text == ""
+
+    def test_role_specific_output_differs(self) -> None:
+        from autocontext.analytics.credit_assignment import (
+            AttributionResult,
+            format_attribution_for_agent,
+        )
+
+        result = AttributionResult(
+            generation=5,
+            total_delta=0.10,
+            credits={"analysis": 0.03, "playbook": 0.04, "tools": 0.03},
+        )
+        analyst_text = format_attribution_for_agent(result, role="analyst")
+        architect_text = format_attribution_for_agent(result, role="architect")
+        assert analyst_text != architect_text
+        assert "Previous Analysis Attribution" in analyst_text
+        assert "Previous Tooling Attribution" in architect_text
+
+
+class TestSummarizeCreditPatterns:
+    def test_rolls_up_component_patterns(self) -> None:
+        from autocontext.analytics.credit_assignment import (
+            AttributionResult,
+            ComponentChange,
+            CreditAssignmentRecord,
+            GenerationChangeVector,
+            summarize_credit_patterns,
+        )
+
+        records = [
+            CreditAssignmentRecord(
+                run_id="run-1",
+                generation=1,
+                vector=GenerationChangeVector(
+                    generation=1,
+                    score_delta=0.10,
+                    changes=[ComponentChange("playbook", 0.6, "changed")],
+                ),
+                attribution=AttributionResult(
+                    generation=1,
+                    total_delta=0.10,
+                    credits={"playbook": 0.10},
+                ),
+            ),
+            CreditAssignmentRecord(
+                run_id="run-2",
+                generation=2,
+                vector=GenerationChangeVector(
+                    generation=2,
+                    score_delta=0.05,
+                    changes=[ComponentChange("tools", 0.5, "tool added")],
+                ),
+                attribution=AttributionResult(
+                    generation=2,
+                    total_delta=0.05,
+                    credits={"tools": 0.05},
+                ),
+            ),
+        ]
+
+        summary = summarize_credit_patterns(records)
+        assert summary["total_records"] == 2
+        assert summary["run_count"] == 2
+        assert summary["components"][0]["component"] == "playbook"

@@ -8,8 +8,10 @@ Key types:
 - GenerationChangeVector: all changes + score delta for a generation
 - compute_change_vector(): compare two generation states
 - AttributionResult: credit per component
+- CreditAssignmentRecord: durable generation-level attribution artifact
 - attribute_credit(): lightweight proportional attribution
 - format_attribution_for_agent(): prompt context per role
+- summarize_credit_patterns(): cross-run pattern summary
 """
 
 from __future__ import annotations
@@ -76,6 +78,69 @@ class GenerationChangeVector:
         )
 
 
+@dataclass(slots=True)
+class AttributionResult:
+    """Credit attribution per component."""
+
+    generation: int
+    total_delta: float
+    credits: dict[str, float]  # component → attributed delta
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "generation": self.generation,
+            "total_delta": self.total_delta,
+            "credits": self.credits,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AttributionResult:
+        raw_credits = data.get("credits", {})
+        credits = {
+            str(component): float(value)
+            for component, value in raw_credits.items()
+            if isinstance(component, str)
+        } if isinstance(raw_credits, dict) else {}
+        return cls(
+            generation=int(data.get("generation", 0)),
+            total_delta=float(data.get("total_delta", 0.0)),
+            credits=credits,
+            metadata=data.get("metadata", {}),
+        )
+
+
+@dataclass(slots=True)
+class CreditAssignmentRecord:
+    """Durable attribution artifact for one generation."""
+
+    run_id: str
+    generation: int
+    vector: GenerationChangeVector
+    attribution: AttributionResult
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "generation": self.generation,
+            "vector": self.vector.to_dict(),
+            "attribution": self.attribution.to_dict(),
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CreditAssignmentRecord:
+        return cls(
+            run_id=str(data.get("run_id", "")),
+            generation=int(data.get("generation", 0)),
+            vector=GenerationChangeVector.from_dict(data.get("vector", {})),
+            attribution=AttributionResult.from_dict(data.get("attribution", {})),
+            metadata=data.get("metadata", {}),
+        )
+
+
 def _text_change_magnitude(old: str, new: str) -> float:
     """Compute normalized change magnitude between two text strings."""
     if old == new:
@@ -136,21 +201,18 @@ def compute_change_vector(
     if hints_mag > 0:
         changes.append(ComponentChange("hints", hints_mag, f"Hints changed ({hints_mag:.0%})"))
 
+    # Analysis
+    old_analysis = str(previous_state.get("analysis", ""))
+    new_analysis = str(current_state.get("analysis", ""))
+    analysis_mag = _text_change_magnitude(old_analysis, new_analysis)
+    if analysis_mag > 0:
+        changes.append(ComponentChange("analysis", analysis_mag, f"Analysis changed ({analysis_mag:.0%})"))
+
     return GenerationChangeVector(
         generation=generation,
         score_delta=score_delta,
         changes=changes,
     )
-
-
-@dataclass(slots=True)
-class AttributionResult:
-    """Credit attribution per component."""
-
-    generation: int
-    total_delta: float
-    credits: dict[str, float]  # component → attributed delta
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def attribute_credit(vector: GenerationChangeVector) -> AttributionResult:
@@ -182,6 +244,28 @@ def attribute_credit(vector: GenerationChangeVector) -> AttributionResult:
     )
 
 
+_ROLE_COMPONENT_PRIORITY: dict[str, tuple[str, ...]] = {
+    "analyst": ("analysis", "playbook", "hints"),
+    "coach": ("playbook", "hints", "analysis"),
+    "architect": ("tools",),
+    "competitor": ("playbook", "hints"),
+}
+
+_ROLE_TITLES: dict[str, str] = {
+    "analyst": "Previous Analysis Attribution",
+    "coach": "Previous Coaching Attribution",
+    "architect": "Previous Tooling Attribution",
+    "competitor": "Previous Strategy Attribution",
+}
+
+_ROLE_GUIDANCE: dict[str, str] = {
+    "analyst": "Use this to focus your next diagnosis on the changes that actually moved score.",
+    "coach": "Use this to reinforce the coaching changes that translated into measurable gains.",
+    "architect": "Use this to prioritize tool work only where tooling actually moved outcomes.",
+    "competitor": "Use this to lean into the strategy surfaces that correlated with progress.",
+}
+
+
 def format_attribution_for_agent(
     result: AttributionResult,
     role: str,
@@ -190,11 +274,78 @@ def format_attribution_for_agent(
     if not result.credits or result.total_delta <= 0:
         return ""
 
-    lines = [f"## Credit Attribution (Gen {result.generation})"]
-    lines.append(f"Total score improvement: +{result.total_delta:.4f}\n")
+    normalized_role = role.strip().lower()
+    title = _ROLE_TITLES.get(normalized_role, "Credit Attribution")
+    guidance = _ROLE_GUIDANCE.get(normalized_role, "")
+    preferred = _ROLE_COMPONENT_PRIORITY.get(normalized_role, ())
 
-    for component, credit in sorted(result.credits.items(), key=lambda x: -x[1]):
+    ordered_components: list[str] = []
+    for component in preferred:
+        if component in result.credits:
+            ordered_components.append(component)
+    for component, _credit in sorted(result.credits.items(), key=lambda item: (-item[1], item[0])):
+        if component not in ordered_components:
+            ordered_components.append(component)
+
+    lines = [f"## {title} (Gen {result.generation})"]
+    lines.append(f"Total score improvement: +{result.total_delta:.4f}")
+    if guidance:
+        lines.append(guidance)
+    lines.append("")
+
+    for component in ordered_components:
+        credit = result.credits.get(component, 0.0)
         pct = credit / result.total_delta * 100 if result.total_delta > 0 else 0
         lines.append(f"- {component}: +{credit:.4f} ({pct:.0f}% of improvement)")
 
     return "\n".join(lines)
+
+
+def summarize_credit_patterns(records: list[CreditAssignmentRecord]) -> dict[str, Any]:
+    """Summarize component-attribution patterns across runs for analytics."""
+    component_rollup: dict[str, dict[str, Any]] = {}
+    run_ids = sorted({record.run_id for record in records if record.run_id})
+
+    for record in records:
+        total_delta = max(record.attribution.total_delta, 0.0)
+        for change in record.vector.changes:
+            bucket = component_rollup.setdefault(change.component, {
+                "component": change.component,
+                "generation_count": 0,
+                "positive_generation_count": 0,
+                "total_credit": 0.0,
+                "total_change_magnitude": 0.0,
+                "average_credit": 0.0,
+                "average_share": 0.0,
+            })
+            bucket["generation_count"] += 1
+            bucket["total_change_magnitude"] = round(
+                float(bucket["total_change_magnitude"]) + change.magnitude,
+                6,
+            )
+            credit = float(record.attribution.credits.get(change.component, 0.0))
+            if credit > 0:
+                bucket["positive_generation_count"] += 1
+            bucket["total_credit"] = round(float(bucket["total_credit"]) + credit, 6)
+            if total_delta > 0:
+                bucket["average_share"] = round(
+                    float(bucket["average_share"]) + (credit / total_delta),
+                    6,
+                )
+
+    components: list[dict[str, Any]] = []
+    for _component, bucket in component_rollup.items():
+        generation_count = int(bucket["generation_count"])
+        if generation_count > 0:
+            bucket["average_credit"] = round(float(bucket["total_credit"]) / generation_count, 6)
+            bucket["average_share"] = round(float(bucket["average_share"]) / generation_count, 6)
+        components.append(dict(bucket))
+
+    components.sort(key=lambda item: (-float(item["total_credit"]), item["component"]))
+
+    return {
+        "total_records": len(records),
+        "run_count": len(run_ids),
+        "run_ids": run_ids,
+        "components": components,
+    }
