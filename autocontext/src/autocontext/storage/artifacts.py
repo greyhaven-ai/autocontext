@@ -14,6 +14,7 @@ from autocontext.agents.feedback_loops import (
     format_utilization_report,
     identify_stale_tools,
 )
+from autocontext.agents.hint_feedback import HintFeedback
 from autocontext.harness.storage.versioned_store import VersionedFileStore
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
@@ -309,6 +310,42 @@ class ArtifactStore:
                 continue
             if isinstance(raw, dict):
                 return AnalystRating.from_dict(raw)
+        return None
+
+    def write_hint_feedback(
+        self,
+        scenario_name: str,
+        generation_index: int,
+        feedback: HintFeedback,
+    ) -> None:
+        """Persist competitor feedback on coach hints for the generation."""
+        feedback_dir = self.knowledge_root / scenario_name / "hint_feedback"
+        self.write_json(feedback_dir / f"gen_{generation_index}.json", feedback.to_dict())
+
+    def read_latest_hint_feedback(
+        self,
+        scenario_name: str,
+        current_gen: int,
+    ) -> HintFeedback | None:
+        """Read the most recent hint feedback from a generation before current_gen."""
+        feedback_dir = self.knowledge_root / scenario_name / "hint_feedback"
+        if not feedback_dir.exists():
+            return None
+        candidates = sorted(feedback_dir.glob("gen_*.json"), reverse=True)
+        for path in candidates:
+            try:
+                num = int(path.stem.split("_")[1])
+            except (IndexError, ValueError):
+                continue
+            if num >= current_gen:
+                continue
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                LOGGER.warning("failed to parse hint feedback %s", path, exc_info=True)
+                continue
+            if isinstance(raw, dict):
+                return HintFeedback.from_dict(raw)
         return None
 
     def harness_dir(self, scenario_name: str) -> Path:

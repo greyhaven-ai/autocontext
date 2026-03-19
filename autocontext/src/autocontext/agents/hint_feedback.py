@@ -44,9 +44,9 @@ class HintFeedback:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HintFeedback:
         return cls(
-            helpful=data.get("helpful", []),
-            misleading=data.get("misleading", []),
-            missing=data.get("missing", []),
+            helpful=_normalize_feedback_list(data.get("helpful")),
+            misleading=_normalize_feedback_list(data.get("misleading")),
+            missing=_normalize_feedback_list(data.get("missing")),
             generation=data.get("generation", 0),
             metadata=data.get("metadata", {}),
         )
@@ -84,6 +84,21 @@ def build_hint_reflection_prompt(
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)
 
 
+def _normalize_feedback_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        item = value.strip()
+        return [item] if item else []
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            cleaned = item.strip()
+            if cleaned:
+                normalized.append(cleaned)
+    return normalized
+
+
 def parse_hint_feedback(raw_text: str, generation: int) -> HintFeedback:
     """Parse competitor's hint feedback response."""
     text = raw_text.strip()
@@ -97,9 +112,9 @@ def parse_hint_feedback(raw_text: str, generation: int) -> HintFeedback:
         data = json.loads(text)
         if isinstance(data, dict):
             return HintFeedback(
-                helpful=data.get("helpful", []),
-                misleading=data.get("misleading", []),
-                missing=data.get("missing", []),
+                helpful=_normalize_feedback_list(data.get("helpful")),
+                misleading=_normalize_feedback_list(data.get("misleading")),
+                missing=_normalize_feedback_list(data.get("missing")),
                 generation=generation,
             )
     except (json.JSONDecodeError, TypeError):

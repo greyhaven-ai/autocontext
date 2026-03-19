@@ -60,6 +60,7 @@ def build_prompt_bundle(
     operational_lessons: str = "",
     replay_narrative: str = "",
     coach_competitor_hints: str = "",
+    coach_hint_feedback: str = "",
     recent_analysis: str = "",
     analyst_feedback: str = "",
     score_trajectory: str = "",
@@ -85,6 +86,7 @@ def build_prompt_bundle(
             "analysis": recent_analysis,
             "analyst_feedback": analyst_feedback,
             "hints": coach_competitor_hints,
+            "coach_hint_feedback": coach_hint_feedback,
             "experiment_log": experiment_log,
             "dead_ends": dead_ends,
             "research_protocol": research_protocol,
@@ -102,6 +104,7 @@ def build_prompt_bundle(
         recent_analysis = budgeted["analysis"]
         analyst_feedback = budgeted["analyst_feedback"]
         coach_competitor_hints = budgeted["hints"]
+        coach_hint_feedback = budgeted["coach_hint_feedback"]
         experiment_log = budgeted["experiment_log"]
         dead_ends = budgeted["dead_ends"]
         research_protocol = budgeted["research_protocol"]
@@ -127,6 +130,11 @@ def build_prompt_bundle(
     analyst_feedback_block = (
         f"{analyst_feedback.strip()}\n\n"
         if analyst_feedback
+        else ""
+    )
+    coach_hint_feedback_block = (
+        f"{coach_hint_feedback.strip()}\n\n"
+        if coach_hint_feedback
         else ""
     )
     replay_block = (
@@ -231,6 +239,7 @@ def build_prompt_bundle(
             "Findings, Root Causes, Actionable Recommendations."
         ),
         coach=base_context
+        + coach_hint_feedback_block
         + coach_nb
         + coach_constraint
         + (

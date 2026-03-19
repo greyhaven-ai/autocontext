@@ -70,6 +70,7 @@ class GenerationContext:
     consultation_result: Any | None = None
     holdout_result: HoldoutResult | None = None
     skeptic_review: SkepticReview | None = None
+    applied_competitor_hints: str = ""
 
 
 @dataclass(slots=True)

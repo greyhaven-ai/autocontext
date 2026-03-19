@@ -588,6 +588,7 @@ class GenerationPipeline:
             trajectory_builder=self._trajectory_builder,
             events=self._events,
             curator=self._curator,
+            agents=self._orchestrator,
         )
 
         # Stage 6: Knowledge coherence verification (optional, skipped under time pressure)

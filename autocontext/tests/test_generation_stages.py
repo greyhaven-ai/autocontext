@@ -16,7 +16,7 @@ from autocontext.agents.skeptic import SkepticReview
 from autocontext.agents.types import AgentOutputs
 from autocontext.config.settings import AppSettings
 from autocontext.execution.supervisor import ExecutionSupervisor
-from autocontext.harness.core.types import RoleExecution, RoleUsage
+from autocontext.harness.core.types import ModelResponse, RoleExecution, RoleUsage
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
 from autocontext.harness.pipeline.holdout import HoldoutResult
 from autocontext.loop.stage_types import GenerationContext, StageResult
@@ -394,6 +394,41 @@ class TestStageKnowledgeSetup:
         assert "Tool utilization" in result.prompts.architect
         assert "path_optimizer" in result.prompts.architect
         assert "Tool utilization" not in result.prompts.analyst
+
+    def test_includes_prior_hint_feedback_in_coach_prompt_only(self) -> None:
+        from autocontext.agents.hint_feedback import HintFeedback
+
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        artifacts.read_latest_analyst_rating.return_value = None
+        artifacts.read_tool_usage_report.return_value = ""
+        artifacts.read_latest_hint_feedback.return_value = HintFeedback(
+            helpful=["corners worked"],
+            misleading=["rush center line"],
+            missing=["late-game edge defense"],
+            generation=1,
+        )
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        ctx = _make_ctx()
+        ctx.generation = 2
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "Competitor Hint Feedback" in result.prompts.coach
+        assert "corners worked" in result.prompts.coach
+        assert "Competitor Hint Feedback" not in result.prompts.competitor
+        assert "Competitor Hint Feedback" not in result.prompts.analyst
 
 
 # ---------- TestStageAgentGeneration ----------
@@ -1432,6 +1467,50 @@ class TestStagePersistence:
         )
 
         assert result.coach_competitor_hints == "updated hints from coach"
+
+    def test_collects_and_persists_competitor_hint_feedback(self) -> None:
+        ctx = _make_persistence_ctx(
+            gate_decision="advance",
+            coach_competitor_hints="new hints for next gen",
+        )
+        ctx.applied_competitor_hints = "old hints used in tournament"
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+        client = MagicMock()
+        client.generate.return_value = ModelResponse(
+            text=json.dumps({
+                "helpful": "use the corners",
+                "misleading": ["over-commit early"],
+                "missing": ["late-game cleanup"],
+            }),
+            usage=RoleUsage(input_tokens=12, output_tokens=9, latency_ms=7, model="test-model"),
+        )
+        agents = MagicMock()
+        agents.resolve_role_execution.return_value = (client, "test-model")
+        agents.competitor.model = "fallback-model"
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+            agents=agents,
+        )
+
+        generate_kwargs = client.generate.call_args.kwargs
+        assert "old hints used in tournament" in generate_kwargs["prompt"]
+        assert "new hints for next gen" not in generate_kwargs["prompt"]
+        artifacts.write_hint_feedback.assert_called_once()
+        feedback = artifacts.write_hint_feedback.call_args.args[2]
+        assert feedback.helpful == ["use the corners"]
+        sqlite.append_generation_agent_activity.assert_called()
+        hint_events = [c for c in events.emit.call_args_list if c.args[0] == "hint_feedback_collected"]
+        assert hint_events
 
 
 # ---------- TestStageTournamentAttempt ----------

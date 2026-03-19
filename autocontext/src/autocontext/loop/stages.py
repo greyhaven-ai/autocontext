@@ -11,7 +11,14 @@ from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.architect import parse_dag_changes
 from autocontext.agents.feedback_loops import AnalystRating, ToolUsageTracker, format_analyst_feedback
+from autocontext.agents.hint_feedback import (
+    HintFeedback,
+    build_hint_reflection_prompt,
+    format_hint_feedback_for_coach,
+    parse_hint_feedback,
+)
 from autocontext.backpressure.trend_gate import TrendAwareGate
+from autocontext.harness.core.types import RoleExecution, RoleUsage
 from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.failure_report import FailureReport
 from autocontext.harness.evaluation.runner import EvaluationRunner
@@ -499,6 +506,111 @@ def _load_architect_tool_usage_report(
     return report if isinstance(report, str) else ""
 
 
+def _load_hint_feedback_section(
+    ctx: GenerationContext,
+    *,
+    artifacts: ArtifactStore,
+) -> str:
+    """Read the latest competitor feedback so the next coach prompt can use it."""
+    if ctx.generation <= 1:
+        return ""
+    raw_feedback = artifacts.read_latest_hint_feedback(ctx.scenario_name, ctx.generation)
+    if not isinstance(raw_feedback, HintFeedback):
+        return ""
+    return format_hint_feedback_for_coach(raw_feedback)
+
+
+def _hint_feedback_previous_best(ctx: GenerationContext) -> float:
+    """Recover the pre-tournament best score for hint-reflection context."""
+    if ctx.gate_decision == "advance":
+        return max(0.0, ctx.previous_best - ctx.gate_delta)
+    return ctx.previous_best
+
+
+def _collect_hint_feedback(
+    ctx: GenerationContext,
+    *,
+    agents: AgentOrchestrator | None,
+    artifacts: ArtifactStore,
+    sqlite: SQLiteStore,
+    events: EventStreamEmitter,
+) -> HintFeedback | None:
+    """Collect post-tournament competitor feedback on the hints it actually used."""
+    if ctx.settings.ablation_no_feedback or agents is None:
+        return None
+    tournament = ctx.tournament
+    if tournament is None:
+        return None
+    hints_used = ctx.applied_competitor_hints.strip()
+    if not hints_used:
+        return None
+
+    prompt = build_hint_reflection_prompt(
+        hints=hints_used,
+        tournament_best_score=tournament.best_score,
+        tournament_mean_score=tournament.mean_score,
+        previous_best=_hint_feedback_previous_best(ctx),
+    )
+    try:
+        client, resolved_model = agents.resolve_role_execution(
+            "competitor",
+            generation=ctx.generation,
+            scenario_name=ctx.scenario_name,
+        )
+        model = resolved_model or agents.competitor.model
+        response = client.generate(
+            model=model,
+            prompt=prompt,
+            max_tokens=400,
+            temperature=0.2,
+            role="competitor",
+        )
+    except Exception:
+        LOGGER.debug("competitor hint feedback collection failed", exc_info=True)
+        return None
+
+    exec_result = RoleExecution(
+        role="competitor_hint_feedback",
+        content=response.text,
+        usage=RoleUsage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            latency_ms=response.usage.latency_ms,
+            model=response.usage.model,
+        ),
+        subagent_id="competitor_hint_feedback",
+        status="completed",
+    )
+    sqlite.append_generation_agent_activity(
+        ctx.run_id,
+        ctx.generation,
+        outputs=[("competitor_hint_feedback", exec_result.content)],
+        role_metrics=[(
+            exec_result.role,
+            exec_result.usage.model,
+            exec_result.usage.input_tokens,
+            exec_result.usage.output_tokens,
+            exec_result.usage.latency_ms,
+            exec_result.subagent_id,
+            exec_result.status,
+        )],
+    )
+
+    feedback = parse_hint_feedback(response.text, generation=ctx.generation)
+    if feedback.is_empty():
+        return None
+
+    artifacts.write_hint_feedback(ctx.scenario_name, ctx.generation, feedback)
+    events.emit("hint_feedback_collected", {
+        "run_id": ctx.run_id,
+        "generation": ctx.generation,
+        "helpful_count": len(feedback.helpful),
+        "misleading_count": len(feedback.misleading),
+        "missing_count": len(feedback.missing),
+    })
+    return feedback
+
+
 def _update_tool_usage_feedback(
     ctx: GenerationContext,
     *,
@@ -595,6 +707,7 @@ def stage_knowledge_setup(
     skills_context = "" if ablation else artifacts.read_skills(ctx.scenario_name)
     recent_analysis = "" if ablation else artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
     analyst_feedback = "" if ablation else _load_analyst_feedback_section(ctx, artifacts=artifacts)
+    coach_hint_feedback = "" if ablation else _load_hint_feedback_section(ctx, artifacts=artifacts)
     tool_usage_report = "" if ablation else _load_architect_tool_usage_report(ctx, artifacts=artifacts)
     weakness_reports = "" if ablation else artifacts.read_latest_weakness_reports_markdown(ctx.scenario_name)
     progress_reports = "" if ablation else artifacts.read_latest_progress_reports_markdown(ctx.scenario_name)
@@ -681,6 +794,7 @@ def stage_knowledge_setup(
         operational_lessons=skills_context,
         replay_narrative="" if ablation else ctx.replay_narrative,
         coach_competitor_hints="" if ablation else ctx.coach_competitor_hints,
+        coach_hint_feedback=coach_hint_feedback,
         recent_analysis=recent_analysis,
         analyst_feedback=analyst_feedback,
         score_trajectory=score_trajectory,
@@ -693,6 +807,7 @@ def stage_knowledge_setup(
         notebook_contexts=notebook_contexts,
     )
 
+    ctx.applied_competitor_hints = "" if ablation else ctx.coach_competitor_hints
     ctx.prompts = prompts
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = tool_context
@@ -1464,6 +1579,7 @@ def stage_persistence(
     trajectory_builder: ScoreTrajectoryBuilder,
     events: EventStreamEmitter,
     curator: KnowledgeCurator | None,
+    agents: AgentOrchestrator | None = None,
 ) -> GenerationContext:
     """Stage 5: Persist generation results, metrics, and knowledge artifacts."""
     if ctx.tournament is None:
@@ -1572,17 +1688,26 @@ def stage_persistence(
             trajectory_builder=trajectory_builder, sqlite=sqlite,
         )
 
-    # 7. Carry forward coach hints
+    # 7. Persist competitor feedback on the hints it actually used this generation.
+    _collect_hint_feedback(
+        ctx,
+        agents=agents,
+        artifacts=artifacts,
+        sqlite=sqlite,
+        events=events,
+    )
+
+    # 8. Carry forward coach hints
     coach_competitor_hints = outputs.coach_competitor_hints
     ctx.coach_competitor_hints = coach_competitor_hints
     if gate_decision == "advance" and coach_competitor_hints:
         artifacts.write_hints(scenario_name, coach_competitor_hints)
 
-    # 7b. Write progress snapshot
+    # 8b. Write progress snapshot
     if settings.progress_json_enabled and not settings.ablation_no_feedback:
         _persist_progress_snapshot(ctx, artifacts=artifacts)
 
-    # 8. Persist tuning proposal on advance
+    # 9. Persist tuning proposal on advance
     if (
         ctx.tuning_proposal is not None
         and settings.config_adaptive_enabled
@@ -1590,7 +1715,7 @@ def stage_persistence(
     ):
         artifacts.write_tuning(scenario_name, ctx.tuning_proposal.to_json())
 
-    # 9. Emit generation_completed event
+    # 10. Emit generation_completed event
     events.emit("generation_completed", {
         "run_id": run_id,
         "generation": generation,

@@ -124,6 +124,36 @@ class TestParseHintFeedback:
         assert fb.misleading == []
         assert fb.missing == []
 
+    def test_normalizes_string_fields_to_single_item_lists(self) -> None:
+        import json
+
+        from autocontext.agents.hint_feedback import parse_hint_feedback
+
+        raw = json.dumps({
+            "helpful": "focus on corners",
+            "misleading": "avoid the center",
+            "missing": "transition guidance",
+        })
+        fb = parse_hint_feedback(raw, generation=2)
+        assert fb.helpful == ["focus on corners"]
+        assert fb.misleading == ["avoid the center"]
+        assert fb.missing == ["transition guidance"]
+
+    def test_filters_non_string_entries_from_lists(self) -> None:
+        import json
+
+        from autocontext.agents.hint_feedback import parse_hint_feedback
+
+        raw = json.dumps({
+            "helpful": [" corners ", 12, "", None],
+            "misleading": [False, "too passive"],
+            "missing": [" late game plan ", {"x": 1}],
+        })
+        fb = parse_hint_feedback(raw, generation=3)
+        assert fb.helpful == ["corners"]
+        assert fb.misleading == ["too passive"]
+        assert fb.missing == ["late game plan"]
+
 
 # ===========================================================================
 # format_hint_feedback_for_coach
