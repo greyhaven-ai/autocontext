@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from autocontext.config.settings import AppSettings
+from autocontext.execution.task_runner import TaskRunner
 from autocontext.execution.verification_dataset import (
     DatasetProvenance,
     DatasetRegistry,
@@ -33,6 +34,20 @@ class _MockProvider(LLMProvider):
         self._response = response
     def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096):
         return CompletionResult(text=self._response, model=model or "mock")
+    def default_model(self):
+        return "mock"
+
+
+class _MultiResponseProvider(LLMProvider):
+    def __init__(self, responses: list[str]):
+        self._responses = responses
+        self._idx = 0
+
+    def complete(self, system_prompt, user_prompt, model=None, temperature=0.0, max_tokens=4096):
+        text = self._responses[self._idx % len(self._responses)]
+        self._idx += 1
+        return CompletionResult(text=text, model=model or "mock")
+
     def default_model(self):
         return "mock"
 
@@ -303,6 +318,28 @@ class TestEvaluateOutput:
         assert result["rubric_calibration"]["num_anchors"] == 2
         assert result["rubric_calibration"]["alignment"]["num_pairs"] == 2
 
+    def test_evaluate_output_surfaces_evaluator_guardrail(self, ctx, monkeypatch):
+        create_agent_task(ctx, "guarded-task", "Write something", "Quality")
+        ctx.settings = ctx.settings.model_copy(update={
+            "judge_samples": 2,
+            "judge_disagreement_threshold": 0.05,
+        })
+
+        from autocontext.providers import registry
+        monkeypatch.setattr(
+            registry,
+            "get_provider",
+            lambda s: _MultiResponseProvider([
+                _judge_response(1.0),
+                _judge_response(0.8),
+            ]),
+        )
+
+        result = evaluate_output(ctx, "guarded-task", "Here is my output")
+        assert result["score"] == 0.9
+        assert result["evaluator_guardrail"]["passed"] is False
+        assert result["evaluator_guardrail"]["disagreement"]["is_high_disagreement"] is True
+
 
 # ---------------------------------------------------------------------------
 # Queue tools
@@ -320,6 +357,23 @@ class TestQueueTools:
         assert result["priority"] == 5
         assert "task_id" in result
         assert result["generations"] == 1
+
+    def test_queue_task_propagates_judge_guardrail_settings(self, ctx):
+        ctx.settings = ctx.settings.model_copy(update={
+            "judge_samples": 2,
+            "judge_temperature": 0.25,
+            "judge_disagreement_threshold": 0.07,
+            "judge_bias_probes_enabled": True,
+        })
+        create_agent_task(ctx, "queue-task-guardrail", "Do something", "Quality")
+        result = queue_improvement_run(ctx, "queue-task-guardrail", priority=5)
+        task = ctx.sqlite.get_task(result["task_id"])
+        assert task is not None
+        config = json.loads(task["config_json"])
+        assert config["judge_samples"] == 2
+        assert config["judge_temperature"] == 0.25
+        assert config["judge_disagreement_threshold"] == 0.07
+        assert config["judge_bias_probes_enabled"] is True
 
     def test_queue_task_resolves_registered_objective_dataset(self, ctx):
         _register_l19_dataset(ctx)
@@ -474,6 +528,29 @@ class TestQueueTools:
         result = get_task_result(ctx, "t2b")
         assert result["objective_guardrail"]["passed"] is False
         assert "recall" in result["objective_guardrail"]["violations"][0].lower()
+
+    def test_get_task_result_surfaces_evaluator_guardrail(self, ctx):
+        create_agent_task(ctx, "guarded-run", "prompt", "rubric")
+        ctx.settings = ctx.settings.model_copy(update={
+            "judge_samples": 2,
+            "judge_disagreement_threshold": 0.05,
+        })
+        queued = queue_improvement_run(ctx, "guarded-run")
+
+        provider = _MultiResponseProvider([
+            "Output",
+            _judge_response(1.0),
+            _judge_response(0.8),
+            _judge_response(1.0),
+            _judge_response(0.8),
+        ])
+        runner = TaskRunner(store=ctx.sqlite, provider=provider)
+        runner.run_once()
+
+        result = get_task_result(ctx, queued["task_id"])
+        assert result["status"] == "completed"
+        assert result["evaluator_guardrail"]["passed"] is False
+        assert result["evaluator_guardrail"]["disagreement"]["is_high_disagreement"] is True
 
     def test_get_task_result_surfaces_rubric_calibration(self, ctx):
         create_agent_task(ctx, "calibrated-run", "prompt", "rubric")

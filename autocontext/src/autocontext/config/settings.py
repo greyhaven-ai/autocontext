@@ -139,6 +139,10 @@ class AppSettings(BaseModel):
     curator_enabled: bool = Field(default=True)
     curator_consolidate_every_n_gens: int = Field(default=3, ge=1)
     skill_max_lessons: int = Field(default=30, ge=1)
+    # Skeptic agent (AC-324)
+    skeptic_enabled: bool = Field(default=False, description="Enable skeptic/red-team review before persistence")
+    model_skeptic: str = Field(default="claude-opus-4-6")
+    skeptic_can_block: bool = Field(default=False, description="Allow skeptic 'block' to prevent advancement")
     agent_sdk_connect_mcp: bool = Field(default=False)
     sandbox_max_generations: int = Field(default=10, ge=1)
     use_pipeline_engine: bool = Field(default=False)
@@ -189,6 +193,13 @@ class AppSettings(BaseModel):
     judge_provider: str = Field(default="anthropic")
     judge_base_url: str | None = Field(default=None)
     judge_api_key: str | None = Field(default=None)
+    # Evaluator disagreement (AC-330)
+    judge_disagreement_threshold: float = Field(
+        default=0.15, ge=0.0, le=1.0, description="Std dev threshold for flagging judge disagreement",
+    )
+    judge_bias_probes_enabled: bool = Field(
+        default=False, description="Run bias probes on judge evaluations",
+    )
     # Notification settings
     notify_webhook_url: str | None = Field(default=None)
     notify_on: str = Field(default="threshold_met,failure")

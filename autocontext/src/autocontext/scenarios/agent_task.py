@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -12,6 +13,7 @@ class AgentTaskResult:
     reasoning: str
     dimension_scores: dict[str, float] = field(default_factory=dict)
     internal_retries: int = 0
+    evaluator_guardrail: dict[str, Any] | None = None
 
 
 class AgentTaskInterface(ABC):

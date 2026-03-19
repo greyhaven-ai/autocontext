@@ -361,6 +361,10 @@ class TestEnqueueFunction:
             generations=4,
             max_rounds=3,
             quality_threshold=0.85,
+            judge_samples=2,
+            judge_temperature=0.2,
+            judge_disagreement_threshold=0.07,
+            judge_bias_probes_enabled=True,
             objective_verification={
                 "ground_truth": [
                     {
@@ -379,6 +383,10 @@ class TestEnqueueFunction:
         assert config["generations"] == 4
         assert config["max_rounds"] == 3
         assert config["quality_threshold"] == 0.85
+        assert config["judge_samples"] == 2
+        assert config["judge_temperature"] == 0.2
+        assert config["judge_disagreement_threshold"] == 0.07
+        assert config["judge_bias_probes_enabled"] is True
         assert "context folding" in config["required_concepts"]
         assert config["objective_verification"]["ground_truth"][0]["item_id"] == "warfarin-aspirin"
 
@@ -477,6 +485,35 @@ class TestEnqueueFunction:
         assert payload["met_threshold"] is False
         assert payload["objective_guardrail"]["passed"] is False
         assert any("recall" in v.lower() for v in payload["objective_guardrail"]["violations"])
+
+    def test_run_once_enforces_evaluator_guardrail_before_threshold(self, store):
+        provider = _MockProvider([
+            "Confident answer.",
+            _judge_response(1.0, "first sample loves it"),
+            _judge_response(0.8, "second sample is much less convinced"),
+            _judge_response(1.0, "guardrail sample one"),
+            _judge_response(0.8, "guardrail sample two"),
+        ])
+        config = {
+            "task_prompt": "Write a brief memo.",
+            "rubric": "Quality and correctness",
+            "max_rounds": 1,
+            "quality_threshold": 0.9,
+            "judge_samples": 2,
+            "judge_disagreement_threshold": 0.05,
+        }
+        store.enqueue_task("t-evaluator-guardrail", "memo-task", config=config)
+
+        runner = TaskRunner(store=store, provider=provider)
+        result = runner.run_once()
+
+        assert result is not None
+        assert result["met_threshold"] == 0
+        payload = json.loads(result["result_json"])
+        assert payload["best_score"] == 0.9
+        assert payload["met_threshold"] is False
+        assert payload["evaluator_guardrail"]["passed"] is False
+        assert payload["evaluator_guardrail"]["disagreement"]["is_high_disagreement"] is True
 
     def test_run_once_persists_dataset_provenance_for_objective_verification(self, store):
         provider = _MockProvider([

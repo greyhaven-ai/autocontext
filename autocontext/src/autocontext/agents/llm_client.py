@@ -270,6 +270,8 @@ class DeterministicDevClient(LanguageModelClient):
                 "- Keep path_bias between 0.50-0.60 for stability.\n"
                 "<!-- COMPETITOR_HINTS_END -->"
             )
+        elif "skeptic" in prompt_lower and "red-team" in prompt_lower:
+            text = self._skeptic_review_response()
         elif "curator" in prompt_lower and "playbook quality" in prompt_lower:
             text = self._curator_playbook_response()
         elif "curator" in prompt_lower and "consolidat" in prompt_lower:
@@ -325,6 +327,19 @@ class DeterministicDevClient(LanguageModelClient):
             "while adding more specific actionable guidance.\n\n"
             "<!-- CURATOR_DECISION: accept -->\n"
             "<!-- CURATOR_SCORE: 7 -->\n"
+        )
+
+    def _skeptic_review_response(self) -> str:
+        return (
+            "The proposed candidate shows moderate risk. Some patterns may be overfitting "
+            "to specific opponent types observed in recent tournaments.\n\n"
+            "<!-- SKEPTIC_RISK: medium -->\n"
+            "<!-- SKEPTIC_CONCERNS_START -->\n"
+            "- Score improvement may be fragile against diverse opponents\n"
+            "- Pattern similarity to generation N-2 suggests recycled approach\n"
+            "<!-- SKEPTIC_CONCERNS_END -->\n"
+            "<!-- SKEPTIC_RECOMMENDATION: caution -->\n"
+            "<!-- SKEPTIC_CONFIDENCE: 6 -->\n"
         )
 
     def _curator_consolidate_response(self) -> str:
@@ -505,6 +520,8 @@ class DeterministicDevClient(LanguageModelClient):
         if "threat assessment" in prompt_lower:
             return json.dumps({"aggression": 0.6, "defense": 0.56, "path_bias": 0.62})
         return json.dumps({"aggression": 0.58, "defense": 0.57, "path_bias": 0.54})
+
+
 def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
     if settings.agent_provider == "anthropic":

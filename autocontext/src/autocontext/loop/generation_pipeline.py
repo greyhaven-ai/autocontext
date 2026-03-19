@@ -28,6 +28,7 @@ from autocontext.loop.stages import (
     stage_knowledge_setup,
     stage_persistence,
     stage_policy_refinement,
+    stage_skeptic_review,
     stage_stagnation_check,
     stage_tournament,
 )
@@ -556,6 +557,16 @@ class GenerationPipeline:
             ctx,
             sqlite=self._sqlite,
             artifacts=self._artifacts,
+            events=self._events,
+        )
+
+        # Stage 3.5: Skeptic adversarial review (AC-324)
+        ctx = stage_skeptic_review(
+            ctx,
+            skeptic=self._orchestrator.skeptic,
+            artifacts=self._artifacts,
+            trajectory_builder=self._trajectory_builder,
+            sqlite=self._sqlite,
             events=self._events,
         )
 

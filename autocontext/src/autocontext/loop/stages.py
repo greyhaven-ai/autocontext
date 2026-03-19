@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from autocontext.agents.curator import KnowledgeCurator
     from autocontext.agents.llm_client import LanguageModelClient
     from autocontext.agents.orchestrator import AgentOrchestrator
+    from autocontext.agents.skeptic import SkepticAgent
     from autocontext.backpressure import BackpressureGate
     from autocontext.execution.supervisor import ExecutionSupervisor
     from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
@@ -246,6 +247,23 @@ def _build_self_play_summary_payload(tournament: EvaluationSummary) -> dict[str,
         if isinstance(value, float):
             clean[key] = round(value, 6)
     return clean or None
+
+
+def _build_skeptic_review_section(ctx: GenerationContext) -> str:
+    """Render skeptic findings into curator-readable context."""
+    review = ctx.skeptic_review
+    if review is None:
+        return ""
+    concerns = review.concerns or ["No concrete concerns captured."]
+    concerns_block = "\n".join(f"- {concern}" for concern in concerns)
+    return (
+        "SKEPTIC REVIEW:\n"
+        f"Risk level: {review.risk_level}\n"
+        f"Recommendation: {review.recommendation}\n"
+        f"Confidence: {review.confidence}/10\n"
+        "Concerns:\n"
+        f"{concerns_block}\n"
+    )
 
 
 def _resolve_holdout_policy(ctx: GenerationContext) -> HoldoutPolicy:
@@ -1039,6 +1057,79 @@ def stage_stagnation_check(
     return ctx
 
 
+
+def stage_skeptic_review(
+    ctx: GenerationContext,
+    *,
+    skeptic: SkepticAgent | None,
+    artifacts: ArtifactStore,
+    trajectory_builder: ScoreTrajectoryBuilder,
+    sqlite: SQLiteStore,
+    events: EventStreamEmitter,
+) -> GenerationContext:
+    """Stage 3.5: Skeptic adversarial review before curator/persistence."""
+    ctx.skeptic_review = None
+    if ctx.gate_decision != "advance":
+        return ctx
+    if skeptic is None:
+        return ctx
+    if not ctx.outputs or not ctx.outputs.coach_playbook:
+        return ctx
+
+    events.emit("skeptic_started", {
+        "run_id": ctx.run_id, "generation": ctx.generation,
+    })
+
+    trajectory = trajectory_builder.build_trajectory(ctx.run_id)
+    analysis = artifacts.read_latest_advance_analysis(ctx.scenario_name, ctx.generation)
+
+    # Summarize strategy for skeptic (avoid full match logs)
+    strategy_summary = ""
+    if ctx.outputs.competitor_output:
+        try:
+            strategy_summary = json.dumps(ctx.outputs.competitor_output.strategy, indent=2)[:2000]
+        except (TypeError, ValueError):
+            strategy_summary = str(ctx.outputs.competitor_output.strategy)[:2000]
+
+    review, exec_result = skeptic.review(
+        proposed_playbook=ctx.outputs.coach_playbook,
+        strategy_summary=strategy_summary,
+        score_trajectory=trajectory,
+        recent_analysis=analysis,
+        constraint_mode=ctx.settings.constraint_prompts_enabled,
+    )
+    ctx.skeptic_review = review
+
+    sqlite.append_generation_agent_activity(
+        ctx.run_id,
+        ctx.generation,
+        outputs=[("skeptic", exec_result.content)],
+        role_metrics=[(
+            exec_result.role,
+            exec_result.usage.model,
+            exec_result.usage.input_tokens,
+            exec_result.usage.output_tokens,
+            exec_result.usage.latency_ms,
+            exec_result.subagent_id,
+            exec_result.status,
+        )],
+    )
+
+    # If skeptic blocks and blocking is enabled, clear the playbook (like curator reject)
+    if review.recommendation == "block" and ctx.settings.skeptic_can_block:
+        ctx.outputs = dataclasses.replace(ctx.outputs, coach_playbook="")
+
+    events.emit("skeptic_completed", {
+        "run_id": ctx.run_id, "generation": ctx.generation,
+        "risk_level": review.risk_level,
+        "recommendation": review.recommendation,
+        "concerns_count": len(review.concerns),
+        "confidence": review.confidence,
+    })
+
+    return ctx
+
+
 def stage_curator_gate(
     ctx: GenerationContext,
     *,
@@ -1074,6 +1165,7 @@ def stage_curator_gate(
     if ctx.settings.harness_validators_enabled and ctx.tournament is not None:
         quality = compute_harness_quality(ctx.tournament.results)
         harness_quality_section = quality.to_prompt_section()
+    skeptic_review_section = _build_skeptic_review_section(ctx)
 
     curator_decision, curator_exec = curator.assess_playbook_quality(
         current_playbook=current_pb,
@@ -1082,6 +1174,7 @@ def stage_curator_gate(
         recent_analysis=curator_analysis,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
         harness_quality_section=harness_quality_section,
+        skeptic_review_section=skeptic_review_section,
     )
 
     sqlite.append_generation_agent_activity(
@@ -1112,6 +1205,9 @@ def stage_curator_gate(
     events.emit("curator_completed", {
         "run_id": ctx.run_id, "generation": ctx.generation,
         "decision": curator_decision.decision,
+        "skeptic_recommendation": (
+            ctx.skeptic_review.recommendation if ctx.skeptic_review is not None else None
+        ),
     })
 
     return ctx

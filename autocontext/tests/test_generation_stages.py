@@ -11,6 +11,7 @@ import pytest
 
 from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.agents.orchestrator import AgentOrchestrator
+from autocontext.agents.skeptic import SkepticReview
 from autocontext.agents.types import AgentOutputs
 from autocontext.config.settings import AppSettings
 from autocontext.execution.supervisor import ExecutionSupervisor
@@ -908,6 +909,46 @@ class TestStageCuratorGate:
             events=MagicMock(),
         )
         curator.assess_playbook_quality.assert_not_called()
+
+    def test_curator_receives_skeptic_review_section(self) -> None:
+        curator = MagicMock()
+        curator.assess_playbook_quality.return_value = (
+            MagicMock(decision="accept", playbook="", score=7, reasoning="ok"),
+            RoleExecution(
+                role="curator",
+                content="ok",
+                usage=RoleUsage(input_tokens=10, output_tokens=5, latency_ms=1, model="test"),
+                subagent_id="curator-test",
+                status="completed",
+            ),
+        )
+        ctx = _make_curator_ctx(gate_decision="advance", coach_playbook="new playbook")
+        ctx.skeptic_review = SkepticReview(
+            risk_level="high",
+            concerns=["Overfit to a narrow opponent slice"],
+            recommendation="caution",
+            confidence=8,
+            reasoning="Be careful.",
+        )
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = "current playbook"
+        trajectory_builder = MagicMock()
+        trajectory_builder.build_trajectory.return_value = "Gen1: 0.5"
+
+        stage_curator_gate(
+            ctx,
+            curator=curator,
+            artifacts=artifacts,
+            trajectory_builder=trajectory_builder,
+            sqlite=MagicMock(),
+            events=MagicMock(),
+        )
+
+        kwargs = curator.assess_playbook_quality.call_args.kwargs
+        assert "skeptic_review_section" in kwargs
+        assert "Risk level: high" in kwargs["skeptic_review_section"]
+        assert "Recommendation: caution" in kwargs["skeptic_review_section"]
+        assert "Overfit to a narrow opponent slice" in kwargs["skeptic_review_section"]
 
 
 # ---------- Helpers for persistence stage tests ----------

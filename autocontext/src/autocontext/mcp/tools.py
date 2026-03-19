@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from autocontext.config import AppSettings
+from autocontext.execution.evaluator_guardrail import evaluate_evaluator_guardrail
 from autocontext.execution.harness_loader import HarnessLoader
 from autocontext.execution.objective_verification import run_objective_verification
 from autocontext.execution.rubric_calibration import run_judge_calibration
@@ -305,6 +306,7 @@ def run_improvement_loop(
     from autocontext.providers.registry import get_provider
 
     calibration = ctx.sqlite.get_calibration_examples(scenario_name, limit=5)
+    state = task.initial_state()
 
     loop = ImprovementLoop(
         task=task,
@@ -313,7 +315,7 @@ def run_improvement_loop(
     )
     result = loop.run(
         initial_output=initial_output,
-        state=task.initial_state(),
+        state=state,
         reference_context=reference_context,
         required_concepts=required_concepts,
         calibration_examples=calibration if calibration else None,
@@ -354,6 +356,18 @@ def run_improvement_loop(
         "rounds": rounds_summary,
         "best_output_preview": result.best_output[:500],
     }
+    if ctx.settings.judge_samples > 1 or ctx.settings.judge_bias_probes_enabled:
+        best_eval = task.evaluate_output(
+            result.best_output,
+            state,
+            reference_context=reference_context,
+            required_concepts=required_concepts,
+            calibration_examples=calibration if calibration else None,
+        )
+        if best_eval.evaluator_guardrail is not None:
+            payload["evaluator_guardrail"] = best_eval.evaluator_guardrail
+            if not bool(best_eval.evaluator_guardrail.get("passed", True)):
+                payload["met_threshold"] = False
     if rubric_calibration is not None:
         payload["rubric_calibration"] = rubric_calibration
     return payload
@@ -492,6 +506,7 @@ def evaluate_output(
         provider=provider,
         samples=ctx.settings.judge_samples,
         temperature=ctx.settings.judge_temperature,
+        disagreement_threshold=ctx.settings.judge_disagreement_threshold,
     )
 
     calibration = ctx.sqlite.get_calibration_examples(task_name, limit=5)
@@ -510,6 +525,16 @@ def evaluate_output(
         "reasoning": result.reasoning,
         "dimension_scores": result.dimension_scores,
     }
+    evaluator_guardrail = evaluate_evaluator_guardrail(
+        result,
+        provider=provider,
+        model=ctx.settings.judge_model,
+        rubric=data["rubric"],
+        candidate_output=output,
+        bias_probes_enabled=ctx.settings.judge_bias_probes_enabled,
+    )
+    if evaluator_guardrail is not None:
+        payload["evaluator_guardrail"] = evaluator_guardrail.to_dict()
     objective_verification = data.get("objective_verification")
     if isinstance(objective_verification, dict):
         try:
@@ -632,6 +657,10 @@ def queue_improvement_run(
         quality_threshold=data.get("quality_threshold", 0.9),
         initial_output=initial_output,
         objective_verification=resolved_objective_verification,
+        judge_samples=ctx.settings.judge_samples,
+        judge_temperature=ctx.settings.judge_temperature,
+        judge_disagreement_threshold=ctx.settings.judge_disagreement_threshold,
+        judge_bias_probes_enabled=ctx.settings.judge_bias_probes_enabled,
         priority=priority,
     )
 
@@ -699,6 +728,8 @@ def get_task_result(ctx: MtsToolContext, task_id: str) -> dict[str, object]:
                     result["objective_verification"] = payload["objective_verification"]
                 if "objective_guardrail" in payload:
                     result["objective_guardrail"] = payload["objective_guardrail"]
+                if "evaluator_guardrail" in payload:
+                    result["evaluator_guardrail"] = payload["evaluator_guardrail"]
                 if "rubric_calibration" in payload:
                     result["rubric_calibration"] = payload["rubric_calibration"]
             except (json.JSONDecodeError, AttributeError):

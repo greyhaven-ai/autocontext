@@ -24,6 +24,7 @@ from autocontext.execution.agent_task_evolution import (
     AgentTaskGenerationEvaluation,
     AgentTaskTrajectory,
 )
+from autocontext.execution.evaluator_guardrail import evaluate_evaluator_guardrail
 from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
 from autocontext.execution.judge import LLMJudge
 from autocontext.execution.objective_verification import (
@@ -59,6 +60,10 @@ class TaskConfig:
     task_prompt: str | None = None
     revision_prompt: str | None = None
     objective_verification: dict[str, Any] | None = None
+    judge_samples: int = 1
+    judge_temperature: float = 0.0
+    judge_disagreement_threshold: float = 0.15
+    judge_bias_probes_enabled: bool = False
 
     @classmethod
     def from_json(cls, data: str | None) -> TaskConfig:
@@ -78,6 +83,10 @@ class TaskConfig:
             task_prompt=parsed.get("task_prompt"),
             revision_prompt=parsed.get("revision_prompt"),
             objective_verification=parsed.get("objective_verification"),
+            judge_samples=parsed.get("judge_samples", 1),
+            judge_temperature=parsed.get("judge_temperature", 0.0),
+            judge_disagreement_threshold=parsed.get("judge_disagreement_threshold", 0.15),
+            judge_bias_probes_enabled=parsed.get("judge_bias_probes_enabled", False),
         )
 
 
@@ -85,6 +94,7 @@ def _serialize_result(
     result: ImprovementResult,
     objective_verification: dict[str, Any] | None = None,
     objective_guardrail: dict[str, Any] | None = None,
+    evaluator_guardrail: dict[str, Any] | None = None,
     rubric_calibration: dict[str, Any] | None = None,
 ) -> str:
     """Serialize an ImprovementResult to JSON."""
@@ -112,6 +122,8 @@ def _serialize_result(
         data["objective_verification"] = objective_verification
     if objective_guardrail is not None:
         data["objective_guardrail"] = objective_guardrail
+    if evaluator_guardrail is not None:
+        data["evaluator_guardrail"] = evaluator_guardrail
     if rubric_calibration is not None:
         data["rubric_calibration"] = rubric_calibration
     return json.dumps(data)
@@ -122,6 +134,8 @@ def _serialize_evolution_result(
     generation_results: list[ImprovementResult],
     objective_verification: dict[str, Any] | None = None,
     objective_guardrail: dict[str, Any] | None = None,
+    evaluator_guardrail: dict[str, Any] | None = None,
+    met_threshold: bool | None = None,
     rubric_calibration: dict[str, Any] | None = None,
 ) -> str:
     """Serialize a multi-generation AgentTask evolution run to JSON."""
@@ -156,13 +170,19 @@ def _serialize_evolution_result(
         "generations": generation_summaries,
         "rounds": final_rounds,
         "best_score": trajectory.metadata.get("best_score", trajectory.final_score),
-        "met_threshold": any(result.met_threshold for result in generation_results),
+        "met_threshold": (
+            met_threshold
+            if met_threshold is not None
+            else any(result.met_threshold for result in generation_results)
+        ),
         "total_rounds": sum(result.total_rounds for result in generation_results),
     }
     if objective_verification is not None:
         data["objective_verification"] = objective_verification
     if objective_guardrail is not None:
         data["objective_guardrail"] = objective_guardrail
+    if evaluator_guardrail is not None:
+        data["evaluator_guardrail"] = evaluator_guardrail
     if rubric_calibration is not None:
         data["rubric_calibration"] = rubric_calibration
     return json.dumps(data)
@@ -230,6 +250,24 @@ def _build_objective_guardrail_payload(
     return result.to_dict() if result is not None else None
 
 
+def _build_evaluator_guardrail_payload(
+    task: AgentTaskInterface,
+    output: str,
+    config: TaskConfig,
+) -> dict[str, Any] | None:
+    """Run live evaluator guardrails on the best output when enabled."""
+    if config.judge_samples <= 1 and not config.judge_bias_probes_enabled:
+        return None
+    evaluation = task.evaluate_output(
+        output,
+        task.initial_state(),
+        reference_context=config.reference_context,
+        required_concepts=config.required_concepts,
+        calibration_examples=config.calibration_examples,
+    )
+    return evaluation.evaluator_guardrail
+
+
 def _build_rubric_calibration_payload(
     *,
     store: SQLiteStore,
@@ -270,12 +308,20 @@ class SimpleAgentTask(AgentTaskInterface):
         provider: LLMProvider,
         model: str = "",
         revision_prompt: str | None = None,
+        judge_samples: int = 1,
+        judge_temperature: float = 0.0,
+        judge_disagreement_threshold: float = 0.15,
+        judge_bias_probes_enabled: bool = False,
     ) -> None:
         self._task_prompt = task_prompt
         self._rubric = rubric
         self._provider = provider
         self._model = model
         self._revision_prompt = revision_prompt
+        self._judge_samples = judge_samples
+        self._judge_temperature = judge_temperature
+        self._judge_disagreement_threshold = judge_disagreement_threshold
+        self._judge_bias_probes_enabled = judge_bias_probes_enabled
 
     def get_task_prompt(self, state: dict) -> str:
         return self._task_prompt
@@ -298,10 +344,14 @@ class SimpleAgentTask(AgentTaskInterface):
         calibration_examples: list[dict] | None = None,
         pinned_dimensions: list[str] | None = None,
     ) -> AgentTaskResult:
+        effective_model = self._model or self._provider.default_model()
         judge = LLMJudge(
-            model=self._model,
+            model=effective_model,
             rubric=self._rubric,
             provider=self._provider,
+            samples=self._judge_samples,
+            temperature=self._judge_temperature,
+            disagreement_threshold=self._judge_disagreement_threshold,
         )
         judge_result = judge.evaluate(
             task_prompt=self._task_prompt,
@@ -311,11 +361,24 @@ class SimpleAgentTask(AgentTaskInterface):
             calibration_examples=calibration_examples,
             pinned_dimensions=pinned_dimensions,
         )
+        evaluator_guardrail = evaluate_evaluator_guardrail(
+            judge_result,
+            provider=self._provider,
+            model=effective_model,
+            rubric=self._rubric,
+            candidate_output=output,
+            bias_probes_enabled=self._judge_bias_probes_enabled,
+        )
         return AgentTaskResult(
             score=judge_result.score,
             reasoning=judge_result.reasoning,
             dimension_scores=judge_result.dimension_scores,
             internal_retries=judge_result.internal_retries,
+            evaluator_guardrail=(
+                evaluator_guardrail.to_dict()
+                if evaluator_guardrail is not None
+                else None
+            ),
         )
 
     def generate_output(self, state: dict) -> str:
@@ -487,6 +550,10 @@ class TaskRunner:
                 provider=self.provider,
                 model=self.model,
                 revision_prompt=config.revision_prompt,
+                judge_samples=config.judge_samples,
+                judge_temperature=config.judge_temperature,
+                judge_disagreement_threshold=config.judge_disagreement_threshold,
+                judge_bias_probes_enabled=config.judge_bias_probes_enabled,
             )
 
             # Generate initial output if not provided
@@ -536,8 +603,15 @@ class TaskRunner:
                     objective_payload,
                     config,
                 )
+                evaluator_guardrail = _build_evaluator_guardrail_payload(
+                    agent_task,
+                    result.best_output,
+                    config,
+                )
                 effective_met_threshold = result.met_threshold and (
                     objective_guardrail is None or bool(objective_guardrail.get("passed"))
+                ) and (
+                    evaluator_guardrail is None or bool(evaluator_guardrail.get("passed"))
                 )
                 result.met_threshold = effective_met_threshold
                 rubric_calibration = _build_rubric_calibration_payload(
@@ -561,6 +635,7 @@ class TaskRunner:
                         result,
                         objective_payload,
                         objective_guardrail,
+                        evaluator_guardrail,
                         rubric_calibration,
                     ),
                 )
@@ -665,8 +740,15 @@ class TaskRunner:
             objective_payload,
             config,
         )
+        evaluator_guardrail = _build_evaluator_guardrail_payload(
+            agent_task,
+            best_output,
+            config,
+        )
         effective_met_threshold = met_threshold and (
             objective_guardrail is None or bool(objective_guardrail.get("passed"))
+        ) and (
+            evaluator_guardrail is None or bool(evaluator_guardrail.get("passed"))
         )
         rubric_calibration = _build_rubric_calibration_payload(
             store=self.store,
@@ -690,6 +772,8 @@ class TaskRunner:
                 ordered_results,
                 objective_payload,
                 objective_guardrail,
+                evaluator_guardrail,
+                effective_met_threshold,
                 rubric_calibration,
             ),
         )
@@ -783,6 +867,10 @@ def enqueue_task(
     min_rounds: int = 1,
     initial_output: str | None = None,
     objective_verification: dict[str, Any] | None = None,
+    judge_samples: int = 1,
+    judge_temperature: float = 0.0,
+    judge_disagreement_threshold: float = 0.15,
+    judge_bias_probes_enabled: bool = False,
     priority: int = 0,
 ) -> str:
     """Convenience function to enqueue a task. Returns the task ID."""
@@ -798,6 +886,10 @@ def enqueue_task(
         "required_concepts": required_concepts,
         "initial_output": initial_output,
         "objective_verification": objective_verification,
+        "judge_samples": judge_samples,
+        "judge_temperature": judge_temperature,
+        "judge_disagreement_threshold": judge_disagreement_threshold,
+        "judge_bias_probes_enabled": judge_bias_probes_enabled,
     }
     # Remove None values
     config = {k: v for k, v in config.items() if v is not None}

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from autocontext.agents.skeptic import SkepticReview
     from autocontext.agents.types import AgentOutputs
     from autocontext.config.settings import AppSettings
     from autocontext.execution.policy_refinement import PolicyRefinementResult
@@ -68,6 +69,7 @@ class GenerationContext:
     # Consultation result (AC-212)
     consultation_result: Any | None = None
     holdout_result: HoldoutResult | None = None
+    skeptic_review: SkepticReview | None = None
 
 
 @dataclass(slots=True)
