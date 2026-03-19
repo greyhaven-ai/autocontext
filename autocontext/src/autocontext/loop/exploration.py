@@ -114,6 +114,27 @@ def should_spawn_divergent(
     return consecutive >= config.rollback_threshold
 
 
+def should_trigger_multi_basin(
+    gate_history: list[str],
+    generation: int,
+    config: MultiBasinConfig,
+) -> bool:
+    """Trigger multi-basin exploration on repeated stall or periodic cadence."""
+    if not config.enabled:
+        return False
+
+    if config.periodic_every_n > 0 and generation > 0 and generation % config.periodic_every_n == 0:
+        return True
+
+    consecutive = 0
+    for decision in reversed(gate_history):
+        if decision in {"retry", "rollback"}:
+            consecutive += 1
+        else:
+            break
+    return consecutive >= config.trigger_rollbacks
+
+
 # ---------------------------------------------------------------------------
 # AC-341: Multi-basin playbook exploration
 # ---------------------------------------------------------------------------
@@ -140,6 +161,25 @@ class BasinCandidate:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+def _strip_specific_tactics(playbook: str) -> str:
+    """Keep high-level structure while dropping tactic-heavy bullets/checklists."""
+    stripped_lines: list[str] = []
+    for line in playbook.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if text.startswith(("- ", "* ", "+ ")):
+            continue
+        if len(text) > 2 and text[0].isdigit() and text[1] == ".":
+            continue
+        stripped_lines.append(line.rstrip())
+
+    candidate = "\n".join(stripped_lines).strip()
+    if candidate:
+        return candidate
+    return "Retain only the high-level strategic principles from the existing playbook."
+
+
 def generate_basin_candidates(
     playbook: str,
     lessons: str,
@@ -163,10 +203,10 @@ def generate_basin_candidates(
     if config.candidates >= 2:
         candidates.append(BasinCandidate(
             branch_type="experimental",
-            playbook="",
+            playbook=_strip_specific_tactics(playbook),
             lessons=lessons,
             temperature=0.5,
-            metadata={"note": "Playbook stripped, lessons retained"},
+            metadata={"note": "Specific playbook tactics stripped, lessons retained"},
         ))
 
     # Divergent: no playbook, lessons only, high temperature

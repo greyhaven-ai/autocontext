@@ -160,6 +160,27 @@ class TestMultiBasinConfig:
         assert config.periodic_every_n == 10
 
 
+class TestShouldTriggerMultiBasin:
+    def test_triggers_after_consecutive_non_advances(self) -> None:
+        from autocontext.loop.exploration import MultiBasinConfig, should_trigger_multi_basin
+
+        config = MultiBasinConfig(enabled=True, trigger_rollbacks=3)
+        gate_history = ["advance", "retry", "rollback", "rollback"]
+        assert should_trigger_multi_basin(gate_history, generation=4, config=config) is True
+
+    def test_triggers_periodically(self) -> None:
+        from autocontext.loop.exploration import MultiBasinConfig, should_trigger_multi_basin
+
+        config = MultiBasinConfig(enabled=True, trigger_rollbacks=99, periodic_every_n=5)
+        assert should_trigger_multi_basin(["advance"], generation=5, config=config) is True
+
+    def test_disabled_returns_false(self) -> None:
+        from autocontext.loop.exploration import MultiBasinConfig, should_trigger_multi_basin
+
+        config = MultiBasinConfig(enabled=False, trigger_rollbacks=1, periodic_every_n=1)
+        assert should_trigger_multi_basin(["rollback"] * 10, generation=10, config=config) is False
+
+
 # ===========================================================================
 # AC-341: BasinCandidate + generate_basin_candidates
 # ===========================================================================
@@ -210,6 +231,23 @@ class TestBasinCandidates:
         divergent = next(c for c in candidates if c.branch_type == "divergent")
         assert divergent.playbook == ""
         assert "Lessons" in divergent.lessons
+
+    def test_experimental_retains_high_level_playbook_context(self) -> None:
+        from autocontext.loop.exploration import (
+            MultiBasinConfig,
+            generate_basin_candidates,
+        )
+
+        config = MultiBasinConfig(enabled=True)
+        candidates = generate_basin_candidates(
+            playbook="Overview\n- precise tactic 1\n- precise tactic 2",
+            lessons="Lessons",
+            config=config,
+        )
+        experimental = next(c for c in candidates if c.branch_type == "experimental")
+        divergent = next(c for c in candidates if c.branch_type == "divergent")
+        assert experimental.playbook != ""
+        assert experimental.playbook != divergent.playbook
 
     def test_disabled_returns_empty(self) -> None:
         from autocontext.loop.exploration import (

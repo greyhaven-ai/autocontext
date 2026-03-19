@@ -13,7 +13,13 @@ class CompetitorRunner:
         self.runtime = runtime
         self.model = model
 
-    def run(self, prompt: str, tool_context: str = "") -> tuple[str, RoleExecution]:
+    def run(
+        self,
+        prompt: str,
+        tool_context: str = "",
+        *,
+        temperature: float | None = None,
+    ) -> tuple[str, RoleExecution]:
         final_prompt = prompt
         if tool_context:
             final_prompt += f"\n\nAvailable tools and hints:\n{tool_context}\n"
@@ -23,16 +29,29 @@ class CompetitorRunner:
                 model=self.model,
                 prompt=final_prompt,
                 max_tokens=800,
-                temperature=0.2,
+                temperature=0.2 if temperature is None else temperature,
             )
         )
         return execution.content, execution
 
-    def revise(self, original_prompt: str, revision_prompt: str, tool_context: str = "") -> tuple[str, RoleExecution]:
+    def revise(
+        self,
+        original_prompt: str,
+        revision_prompt: str,
+        tool_context: str = "",
+        *,
+        temperature: float | None = None,
+    ) -> tuple[str, RoleExecution]:
         """Re-run competitor with revision feedback appended."""
         combined = f"{original_prompt}\n\n--- REVISION REQUIRED ---\n{revision_prompt}"
-        return self.run(combined, tool_context=tool_context)
+        return self.run(combined, tool_context=tool_context, temperature=temperature)
 
-    def refine_strategy(self, refinement_prompt: str, tool_context: str = "") -> tuple[str, RoleExecution]:
+    def refine_strategy(
+        self,
+        refinement_prompt: str,
+        tool_context: str = "",
+        *,
+        temperature: float | None = None,
+    ) -> tuple[str, RoleExecution]:
         """Refine an existing strategy given match feedback (tree search)."""
-        return self.run(refinement_prompt, tool_context=tool_context)
+        return self.run(refinement_prompt, tool_context=tool_context, temperature=temperature)

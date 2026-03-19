@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from contextlib import nullcontext
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -664,6 +665,88 @@ class TestStageAgentGeneration:
         assert isinstance(written_tracker, ToolUsageTracker)
         assert written_tracker.get_stats()["cluster_evaluator"].total_refs == 1
 
+    def test_multi_basin_branching_selects_best_candidate_in_live_path(self) -> None:
+        from autocontext.prompts.templates import build_prompt_bundle
+
+        settings = _make_settings()
+        settings = settings.model_copy(update={
+            "multi_basin_enabled": True,
+            "multi_basin_trigger_rollbacks": 1,
+            "multi_basin_candidates": 2,
+        })
+        scenario = _FakeScenario()
+        ctx = _make_ctx(settings=settings, scenario=scenario)
+        ctx.gate_decision_history = ["rollback"]
+        ctx.prompts = build_prompt_bundle(
+            scenario_rules="Test",
+            strategy_interface='{"aggression": float}',
+            evaluation_criteria="Score",
+            previous_summary="best: 0.0",
+            observation=scenario.get_observation({}, "challenger"),
+            current_playbook="Current playbook\n- repeat the same tactic",
+            available_tools="",
+            operational_lessons="Retain adaptable lessons",
+        )
+        ctx.strategy_interface = '{"aggression": float}'
+        ctx.base_playbook = "Current playbook\n- repeat the same tactic"
+        ctx.base_lessons = "Retain adaptable lessons"
+
+        base_role_exec = RoleExecution(
+            role="competitor",
+            content="base",
+            usage=RoleUsage(input_tokens=1, output_tokens=1, latency_ms=1, model="test"),
+            subagent_id="competitor",
+            status="completed",
+        )
+        base_outputs = AgentOutputs(
+            strategy={"aggression": 0.2},
+            analysis_markdown="analysis",
+            coach_markdown="coach",
+            coach_playbook="playbook",
+            coach_lessons="lessons",
+            coach_competitor_hints="",
+            architect_markdown="architect",
+            architect_tools=[],
+            role_executions=[base_role_exec],
+        )
+
+        orchestrator = MagicMock()
+        orchestrator.run_generation.return_value = base_outputs
+        orchestrator._use_role_runtime.return_value = nullcontext()
+        orchestrator.competitor.run.return_value = (
+            '{"aggression": 0.8}',
+            base_role_exec,
+        )
+        translator_exec = RoleExecution(
+            role="translator",
+            content='{"aggression": 0.8}',
+            usage=RoleUsage(input_tokens=1, output_tokens=1, latency_ms=1, model="test"),
+            subagent_id="translator",
+            status="completed",
+        )
+        orchestrator.translator.translate.return_value = ({"aggression": 0.8}, translator_exec)
+
+        artifacts = MagicMock()
+        artifacts.persist_tools.return_value = []
+        sqlite = MagicMock()
+        sqlite.get_self_play_strategy_history.return_value = []
+
+        result = stage_agent_generation(
+            ctx,
+            orchestrator=orchestrator,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            supervisor=_make_inline_supervisor(),
+        )
+
+        assert result.current_strategy == {"aggression": 0.8}
+        assert result.outputs is not None
+        assert result.outputs.strategy == {"aggression": 0.8}
+        assert result.exploration_metadata["selected_branch"]["branch_type"] == "experimental"
+        appended_outputs = sqlite.append_generation_agent_activity.call_args.kwargs["outputs"]
+        competitor_payload = next(content for role, content in appended_outputs if role == "competitor")
+        assert json.loads(competitor_payload) == {"aggression": 0.8}
+
 
 # ---------- Helpers for tournament / curator stage tests ----------
 
@@ -1023,6 +1106,72 @@ class TestStageTournament:
         gate_events = [call for call in events.emit.call_args_list if call.args[0] == "gate_decided"]
         assert gate_events
         assert gate_events[-1].args[1]["holdout"]["passed"] is False
+
+    def test_novelty_bonus_can_change_live_gate_decision(self) -> None:
+        from autocontext.backpressure import BackpressureGate
+
+        settings = _make_settings().model_copy(update={
+            "holdout_enabled": False,
+            "novelty_enabled": True,
+            "novelty_weight": 0.1,
+        })
+        ctx = _make_tournament_ctx(previous_best=0.6, settings=settings)
+        ctx.current_strategy = {"aggression": 1.0}
+        ctx.outputs = AgentOutputs(
+            strategy=ctx.current_strategy,
+            analysis_markdown="analysis",
+            coach_markdown="coach",
+            coach_playbook="playbook",
+            coach_lessons="lessons",
+            coach_competitor_hints="",
+            architect_markdown="architect",
+            architect_tools=[],
+            role_executions=[],
+        )
+
+        tournament = MagicMock(spec=EvaluationSummary)
+        tournament.mean_score = 0.58
+        tournament.best_score = 0.6
+        tournament.wins = 1
+        tournament.losses = 2
+        tournament.elo_after = 1005.0
+        tournament.best_dimensions = {}
+        tournament.dimension_means = {}
+        tournament.dimension_regressions = []
+        tournament.self_play_summary = {}
+        best_eval = MagicMock()
+        best_eval.score = 0.6
+        best_eval.errors = []
+        best_eval.passed = True
+        best_exec = MagicMock()
+        best_exec.result.replay = []
+        best_exec.result.passed_validation = True
+        best_exec.result.validation_errors = []
+        best_eval.metadata = {"execution_output": best_exec}
+        tournament.results = [best_eval]
+
+        events = MagicMock()
+        sqlite = MagicMock()
+        sqlite.get_strategy_score_history.return_value = [
+            {"content": json.dumps({"aggression": 0.0})},
+            {"content": json.dumps({"aggression": 0.1})},
+        ]
+        artifacts = MagicMock()
+
+        with patch("autocontext.loop.stages.EvaluationRunner.run", return_value=tournament):
+            result = stage_tournament(
+                ctx,
+                supervisor=_make_inline_supervisor(),
+                gate=BackpressureGate(min_delta=0.05),
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+            )
+
+        assert result.gate_decision == "advance"
+        assert result.exploration_metadata["novelty"]["adjusted_best_score"] > tournament.best_score
+        gate_event = next(call for call in events.emit.call_args_list if call.args[0] == "gate_decided")
+        assert gate_event.args[1]["exploration"]["novelty"]["adjusted_best_score"] > tournament.best_score
 
     def test_family_override_can_disable_holdout(self) -> None:
         """Family-level holdout overrides should apply to the live gate path."""

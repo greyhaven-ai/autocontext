@@ -318,6 +318,7 @@ class GenerationPipeline:
                     orchestrator=self._orchestrator,
                     artifacts=self._artifacts,
                     sqlite=self._sqlite,
+                    supervisor=self._supervisor,
                     on_role_event=_on_role_event,
                     events=self._events,
                 )
