@@ -16,6 +16,7 @@ from autocontext.config.settings import AppSettings
 from autocontext.execution.supervisor import ExecutionSupervisor
 from autocontext.harness.core.types import RoleExecution, RoleUsage
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
+from autocontext.harness.pipeline.holdout import HoldoutResult
 from autocontext.loop.stage_types import GenerationContext, StageResult
 from autocontext.loop.stages import (
     stage_agent_generation,
@@ -745,6 +746,82 @@ class TestStageTournament:
         payload = tournament_events[-1][0][1]
         assert payload["self_play"]["self_play_matches"] == 2
 
+    def test_holdout_failure_blocks_advance_in_live_stage(self) -> None:
+        """A generation can win locally and still be blocked by holdout regression."""
+        settings = AppSettings(
+            agent_provider="deterministic",
+            max_retries=0,
+            holdout_enabled=True,
+            holdout_min_score=0.6,
+            holdout_max_regression_gap=0.05,
+        )
+        ctx = _make_tournament_ctx(previous_best=0.0, settings=settings)
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="rollback", reason="inline gate should not run")
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+
+        with patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate:
+            resolve_gate.return_value = MagicMock(
+                decision="advance",
+                delta=0.42,
+                reason="helper reason",
+                is_rapid=False,
+            )
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=None,
+            )
+
+        assert result.gate_decision == "rollback"
+        assert result.holdout_result is not None
+        assert result.holdout_result.passed is False
+        gate_events = [call for call in events.emit.call_args_list if call.args[0] == "gate_decided"]
+        assert gate_events
+        assert gate_events[-1].args[1]["holdout"]["passed"] is False
+
+    def test_family_override_can_disable_holdout(self) -> None:
+        """Family-level holdout overrides should apply to the live gate path."""
+        settings = AppSettings(
+            agent_provider="deterministic",
+            holdout_enabled=True,
+            holdout_family_policies={"parametric": {"enabled": False}},
+        )
+        ctx = _make_tournament_ctx(previous_best=0.0, settings=settings)
+        supervisor = _make_inline_supervisor()
+        gate = MagicMock()
+        gate.evaluate.return_value = MagicMock(decision="rollback", reason="inline gate should not run")
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+
+        with patch("autocontext.loop.stages.resolve_gate_decision") as resolve_gate:
+            resolve_gate.return_value = MagicMock(
+                decision="advance",
+                delta=0.42,
+                reason="helper reason",
+                is_rapid=False,
+            )
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+                agents=None,
+            )
+
+        assert result.gate_decision == "advance"
+        assert result.holdout_result is None
+
 
 # ---------- TestStageCuratorGate ----------
 
@@ -1089,6 +1166,38 @@ class TestStagePersistence:
         emit_calls = events.emit.call_args_list
         gen_completed_calls = [c for c in emit_calls if c[0][0] == "generation_completed"]
         assert len(gen_completed_calls) == 1
+
+    def test_persistence_surfaces_holdout_metrics(self) -> None:
+        """Holdout metrics should flow into persisted metrics and completion events."""
+        ctx = _make_persistence_ctx()
+        ctx.holdout_result = HoldoutResult(
+            holdout_mean_score=0.54,
+            holdout_scores=[0.5, 0.56, 0.56],
+            in_sample_score=0.7,
+            generalization_gap=0.16,
+            passed=False,
+            reason="Holdout blocked advance",
+        )
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        persist_kwargs = artifacts.persist_generation.call_args.kwargs
+        assert persist_kwargs["metrics"]["holdout"]["passed"] is False
+        gen_completed_calls = [c for c in events.emit.call_args_list if c[0][0] == "generation_completed"]
+        assert gen_completed_calls
+        assert gen_completed_calls[-1][0][1]["holdout"]["passed"] is False
 
     def test_carries_forward_coach_hints(self) -> None:
         """ctx.coach_competitor_hints is updated from outputs."""

@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
     from autocontext.execution.policy_refinement import PolicyRefinementResult
     from autocontext.harness.evaluation.types import EvaluationSummary
+    from autocontext.harness.pipeline.holdout import HoldoutResult
     from autocontext.knowledge.tuning import TuningConfig
     from autocontext.prompts.templates import PromptBundle
     from autocontext.scenarios.base import ScenarioInterface
@@ -66,6 +67,7 @@ class GenerationContext:
 
     # Consultation result (AC-212)
     consultation_result: Any | None = None
+    holdout_result: HoldoutResult | None = None
 
 
 @dataclass(slots=True)

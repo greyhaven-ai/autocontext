@@ -22,6 +22,7 @@ from autocontext.harness.evaluation.self_play import (
 )
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
+from autocontext.harness.pipeline.holdout import HoldoutPolicy, HoldoutResult, HoldoutVerifier
 from autocontext.harness.pipeline.validity_gate import ValidityGate
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from autocontext.knowledge.fresh_start import execute_fresh_start
@@ -42,6 +43,7 @@ from autocontext.notebook.context_provider import NotebookContextProvider
 from autocontext.notebook.types import SessionNotebook
 from autocontext.prompts.templates import build_prompt_bundle
 from autocontext.providers.base import CompletionResult, LLMProvider
+from autocontext.scenarios.families import detect_family
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 if TYPE_CHECKING:
@@ -244,6 +246,66 @@ def _build_self_play_summary_payload(tournament: EvaluationSummary) -> dict[str,
         if isinstance(value, float):
             clean[key] = round(value, 6)
     return clean or None
+
+
+def _resolve_holdout_policy(ctx: GenerationContext) -> HoldoutPolicy:
+    """Build the effective holdout policy, including scenario-family overrides."""
+    family = detect_family(ctx.scenario)
+    family_marker = family.scenario_type_marker if family is not None else ""
+    policy = HoldoutPolicy(
+        holdout_seeds=ctx.settings.holdout_seeds,
+        min_holdout_score=ctx.settings.holdout_min_score,
+        max_generalization_gap=ctx.settings.holdout_max_regression_gap,
+        seed_offset=ctx.settings.holdout_seed_offset,
+        enabled=ctx.settings.holdout_enabled,
+        metadata={"family": family_marker} if family_marker else {},
+    )
+    if family is None:
+        return policy
+
+    override = (
+        ctx.settings.holdout_family_policies.get(family.scenario_type_marker)
+        or ctx.settings.holdout_family_policies.get(family.name)
+    )
+    if not isinstance(override, dict):
+        return policy
+
+    merged = policy.to_dict()
+    merged.update(override)
+    metadata = dict(policy.metadata)
+    override_metadata = override.get("metadata")
+    if isinstance(override_metadata, dict):
+        metadata.update(override_metadata)
+    if family_marker:
+        metadata.setdefault("family", family_marker)
+    merged["metadata"] = metadata
+    return HoldoutPolicy.from_dict(merged)
+
+
+def _run_holdout_verification(
+    ctx: GenerationContext,
+    *,
+    supervisor: ExecutionSupervisor,
+    strategy: dict[str, Any],
+    in_sample_score: float,
+    limits: HarnessLimits,
+) -> HoldoutResult | None:
+    """Verify an advancing candidate on holdout seeds when enabled."""
+    policy = _resolve_holdout_policy(ctx)
+    if not policy.enabled:
+        return None
+
+    evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
+
+    def _evaluate(candidate: dict[str, Any], seed: int) -> float:
+        return evaluator.evaluate(candidate, seed, limits).score
+
+    verifier = HoldoutVerifier(policy=policy, evaluate_fn=_evaluate)
+    result = verifier.verify(strategy=strategy, in_sample_score=in_sample_score)
+    metadata = dict(result.metadata)
+    metadata["policy"] = policy.to_dict()
+    result.metadata = metadata
+    return result
 
 
 def stage_policy_refinement(
@@ -617,10 +679,12 @@ def stage_tournament(
     current_strategy = dict(ctx.current_strategy)
     attempt = 0
     gate_decision = "rollback"
+    gate_reason = ""
     tournament = None
     use_rapid = settings.exploration_mode == "rapid"
     validity_retry_attempt = 0
     validity_gate = None
+    holdout_result: HoldoutResult | None = None
 
     # --- Tier 1: Validity gate (AC-160) ---
     if settings.two_tier_gating_enabled:
@@ -763,6 +827,7 @@ def stage_tournament(
             best_eval = max(tournament.results, key=lambda r: r.score)
             best_exec = best_eval.metadata["execution_output"]
             custom_metrics = scenario.custom_backpressure(best_exec.result)
+        holdout_result = None
         gate_result = resolve_gate_decision(
             tournament_best_score=tournament.best_score,
             tournament_mean_score=tournament.mean_score,
@@ -778,10 +843,32 @@ def stage_tournament(
             rapid_gate_fn=rapid_gate,
         )
         gate_decision = gate_result.decision
+        gate_reason = gate_result.reason
+
+        if gate_decision == "advance":
+            holdout_result = _run_holdout_verification(
+                ctx,
+                supervisor=supervisor,
+                strategy=current_strategy,
+                in_sample_score=tournament.best_score,
+                limits=harness_limits,
+            )
+            if holdout_result is not None:
+                events.emit("holdout_evaluated", {
+                    "run_id": ctx.run_id,
+                    "generation": ctx.generation,
+                    "holdout": holdout_result.to_dict(),
+                })
+                if not holdout_result.passed:
+                    gate_reason = f"Holdout blocked advance: {holdout_result.reason}"
+                    if not use_rapid and attempt < settings.max_retries:
+                        gate_decision = "retry"
+                    else:
+                        gate_decision = "rollback"
 
         if gate_decision == "retry" and not use_rapid:
             attempt += 1
-            sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_result.reason, attempt)
+            sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_reason, attempt)
             if attempt > settings.max_retries:
                 gate_decision = "rollback"
                 break
@@ -837,7 +924,7 @@ def stage_tournament(
             continue
 
         if not use_rapid:
-            sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_result.reason, attempt)
+            sqlite.append_recovery_marker(ctx.run_id, ctx.generation, gate_decision, gate_reason, attempt)
         break
 
     if tournament is None:
@@ -879,6 +966,8 @@ def stage_tournament(
             dimension_summary["dimension_regressions"] if dimension_summary is not None else []
         ),
         "self_play": self_play_summary or {},
+        "reason": gate_reason,
+        "holdout": holdout_result.to_dict() if holdout_result is not None else None,
     }
     gate_metadata = getattr(gate_result, "metadata", None)
     if isinstance(gate_metadata, dict) and gate_metadata:
@@ -902,6 +991,7 @@ def stage_tournament(
     ctx.replay_narrative = replay_narrative
     ctx.current_strategy = current_strategy
     ctx.attempt = attempt
+    ctx.holdout_result = holdout_result
     return ctx
 
 
@@ -1186,6 +1276,8 @@ def stage_persistence(
     self_play_summary = _build_self_play_summary_payload(tournament)
     if self_play_summary is not None:
         metrics["self_play"] = self_play_summary
+    if ctx.holdout_result is not None:
+        metrics["holdout"] = ctx.holdout_result.to_dict()
 
     # 2. Insert matches into sqlite
     for idx, eval_result in enumerate(tournament.results):
@@ -1287,6 +1379,7 @@ def stage_persistence(
             dimension_summary["dimension_regressions"] if dimension_summary is not None else []
         ),
         "self_play": self_play_summary or {},
+        "holdout": ctx.holdout_result.to_dict() if ctx.holdout_result is not None else None,
         "created_tools": ctx.created_tools,
     })
 
