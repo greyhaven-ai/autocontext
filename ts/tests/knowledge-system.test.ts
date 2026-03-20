@@ -81,6 +81,18 @@ describe("VersionedFileStore", () => {
     expect(store.read("test.md")).toBe("version 6");
   });
 
+  it("keeps archive numbering monotonic after prune", async () => {
+    const { VersionedFileStore } = await import("../src/knowledge/versioned-store.js");
+    const store = new VersionedFileStore(dir, { maxVersions: 3 });
+    for (let i = 1; i <= 6; i++) {
+      store.write("test.md", `version ${i}`);
+    }
+    store.write("test.md", "version 7");
+
+    expect(store.versionCount("test.md")).toBe(3);
+    expect(store.readVersion("test.md", 6)).toBe("version 6");
+  });
+
   it("readVersion reads specific archived version", async () => {
     const { VersionedFileStore } = await import("../src/knowledge/versioned-store.js");
     const store = new VersionedFileStore(dir);
@@ -328,6 +340,52 @@ describe("ScoreTrajectoryBuilder", () => {
     const md = builder.build();
     expect(md).toContain("+0.75");
     expect(md).toContain("-0.10");
+  });
+
+  it("renders dimension trajectory from dimension_summary.best_dimensions", async () => {
+    const { ScoreTrajectoryBuilder } = await import("../src/knowledge/trajectory.js");
+    const data = [
+      {
+        generation_index: 1,
+        mean_score: 0.5,
+        best_score: 0.6,
+        elo: 1000,
+        gate_decision: "retry",
+        delta: 0.6,
+        dimension_summary: {
+          best_dimensions: {
+            capture_progress: 0.55,
+            defender_survival: 0.72,
+          },
+        },
+        scoring_backend: "elo",
+        rating_uncertainty: null,
+      },
+      {
+        generation_index: 2,
+        mean_score: 0.7,
+        best_score: 0.8,
+        elo: 1020,
+        gate_decision: "advance",
+        delta: 0.2,
+        dimension_summary: {
+          best_dimensions: {
+            capture_progress: 0.81,
+            defender_survival: 0.68,
+          },
+        },
+        scoring_backend: "elo",
+        rating_uncertainty: null,
+      },
+    ];
+    const builder = new ScoreTrajectoryBuilder(data);
+    const md = builder.build();
+
+    expect(md).toContain("## Dimension Trajectory (Best Match)");
+    expect(md).toContain("capture_progress");
+    expect(md).toContain("defender_survival");
+    expect(md).toContain("0.5500");
+    expect(md).toContain("0.8100");
   });
 });
 

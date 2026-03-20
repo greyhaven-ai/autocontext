@@ -10,8 +10,53 @@ export interface TrajectoryRow {
   elo: number;
   gate_decision: string;
   delta: number;
+  dimension_summary?: Record<string, unknown>;
   scoring_backend: string;
   rating_uncertainty: number | null;
+}
+
+function formatDimensionTrajectory(history: Array<Record<string, number>>): string {
+  if (history.length === 0) return "";
+
+  const allDims = [...new Set(history.flatMap((entry) => Object.keys(entry)))].sort();
+  if (allDims.length === 0) return "";
+
+  const header = `Gen | ${allDims.map((d) => d.padStart(12, " ")).join(" | ")}`;
+  const separator = "-".repeat(header.length);
+  const lines = [header, separator];
+
+  for (const [index, entry] of history.entries()) {
+    const scores = allDims
+      .map((dim) => (entry[dim] ?? 0).toFixed(4).padStart(12, " "))
+      .join(" | ");
+    lines.push(`${String(index + 1).padStart(3, " ")} | ${scores}`);
+  }
+
+  return lines.join("\n");
+}
+
+function extractBestDimensionHistory(rows: TrajectoryRow[]): Array<Record<string, number>> {
+  const history: Array<Record<string, number>> = [];
+
+  for (const row of rows) {
+    const summary = row.dimension_summary;
+    if (!summary || typeof summary !== "object" || Array.isArray(summary)) continue;
+
+    const bestDimensions = (summary as Record<string, unknown>).best_dimensions;
+    if (!bestDimensions || typeof bestDimensions !== "object" || Array.isArray(bestDimensions)) continue;
+
+    const parsed: Record<string, number> = {};
+    for (const [name, value] of Object.entries(bestDimensions)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        parsed[name] = value;
+      }
+    }
+    if (Object.keys(parsed).length > 0) {
+      history.push(parsed);
+    }
+  }
+
+  return history;
 }
 
 export class ScoreTrajectoryBuilder {
@@ -67,6 +112,17 @@ export class ScoreTrajectoryBuilder {
             `| ${delta} |`,
         );
       }
+    }
+
+    const dimensionHistory = extractBestDimensionHistory(this.rows);
+    const formattedDimensions = formatDimensionTrajectory(dimensionHistory);
+    if (formattedDimensions) {
+      lines.push("");
+      lines.push("## Dimension Trajectory (Best Match)");
+      lines.push("");
+      lines.push("```text");
+      lines.push(formattedDimensions);
+      lines.push("```");
     }
 
     return lines.join("\n");

@@ -11,7 +11,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 export interface VersionedFileStoreOpts {
   maxVersions?: number;
@@ -50,6 +50,23 @@ export class VersionedFileStore {
     return join(versionsDir, `${this.versionPrefix}${String(num).padStart(4, "0")}${this.versionSuffix}`);
   }
 
+  private nextVersionNumber(versionsDir: string): number {
+    const versions = this.listVersionFiles(versionsDir);
+    let maxVersion = 0;
+    for (const path of versions) {
+      const filename = basename(path);
+      const core = filename.slice(
+        this.versionPrefix.length,
+        filename.length - this.versionSuffix.length,
+      );
+      const parsed = Number.parseInt(core, 10);
+      if (Number.isFinite(parsed)) {
+        maxVersion = Math.max(maxVersion, parsed);
+      }
+    }
+    return maxVersion + 1;
+  }
+
   private listVersionFiles(versionsDir: string): string[] {
     if (!existsSync(versionsDir)) return [];
     const { prefix, suffix } = this.versionGlob();
@@ -66,8 +83,7 @@ export class VersionedFileStore {
     if (existsSync(path)) {
       mkdirSync(versDir, { recursive: true });
       const existing = readFileSync(path, "utf-8");
-      const existingVersions = this.listVersionFiles(versDir);
-      const nextNum = existingVersions.length + 1;
+      const nextNum = this.nextVersionNumber(versDir);
       writeFileSync(this.versionPath(versDir, nextNum), existing, "utf-8");
       this.prune(versDir);
     }
