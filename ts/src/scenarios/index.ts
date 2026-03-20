@@ -55,3 +55,22 @@ export type { WorkflowCreatorOpts, WorkflowScenarioHandle } from "./workflow-cre
 export type { WorkflowSpec, WorkflowStepSpec } from "./workflow-spec.js";
 export { WorkflowSpecSchema, WorkflowStepSpecSchema, parseRawWorkflowSpec } from "./workflow-spec.js";
 export { getScenarioTypeMarker, SCENARIO_TYPE_MARKERS } from "./families.js";
+
+// Game scenario interface + Grid CTF (AC-343)
+export type {
+  ScenarioInterface,
+  Observation,
+  Result,
+  ReplayEnvelope,
+  ExecutionLimits,
+  ScoringDimension,
+  LegalAction,
+} from "./game-interface.js";
+export {
+  ObservationSchema,
+  ResultSchema,
+  ReplayEnvelopeSchema,
+  ExecutionLimitsSchema,
+} from "./game-interface.js";
+export { GridCtfScenario } from "./grid-ctf.js";
+export { SCENARIO_REGISTRY, isGameScenario, isAgentTask } from "./registry.js";

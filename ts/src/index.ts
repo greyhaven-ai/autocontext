@@ -72,7 +72,12 @@ export { JudgeExecutor } from "./execution/judge-executor.js";
 export { ActionFilterHarness, ActionDictSchema } from "./execution/action-filter.js";
 export type { ActionDict, ScenarioLike, HarnessLoaderLike } from "./execution/action-filter.js";
 export { StrategyValidator, ValidationResultSchema } from "./execution/strategy-validator.js";
-export type { ValidationResult, MatchResult, StrategyValidatorOpts, ExecuteMatchFn } from "./execution/strategy-validator.js";
+export type { ValidationResult, MatchResult as StrategyMatchResult, StrategyValidatorOpts, ExecuteMatchFn } from "./execution/strategy-validator.js";
+export { expectedScore, updateElo } from "./execution/elo.js";
+export { ExecutionSupervisor } from "./execution/supervisor.js";
+export type { ExecutionInput, ExecutionOutput } from "./execution/supervisor.js";
+export { TournamentRunner } from "./execution/tournament.js";
+export type { TournamentOpts, TournamentResult, MatchResult as TournamentMatchResult } from "./execution/tournament.js";
 
 // Runtimes
 export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
@@ -90,6 +95,13 @@ export type {
   SimulationScenarioHandle,
   SimulationSpec,
   SimulationActionSpec,
+  ScenarioInterface,
+  Observation,
+  Result as ScenarioResult,
+  ReplayEnvelope,
+  ExecutionLimits,
+  ScoringDimension,
+  LegalAction,
 } from "./scenarios/index.js";
 export {
   AgentTaskSpecSchema,
@@ -110,6 +122,14 @@ export {
   SPEC_END,
   SIM_SPEC_START,
   SIM_SPEC_END,
+  ObservationSchema,
+  ResultSchema,
+  ReplayEnvelopeSchema,
+  ExecutionLimitsSchema,
+  GridCtfScenario,
+  SCENARIO_REGISTRY,
+  isGameScenario,
+  isAgentTask,
 } from "./scenarios/index.js";
 
 // Knowledge / Skill Export
