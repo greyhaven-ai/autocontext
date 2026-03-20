@@ -780,6 +780,46 @@ def _build_self_play_summary_payload(tournament: EvaluationSummary) -> dict[str,
     return clean or None
 
 
+def _json_dumps_if_serializable(value: Any) -> str | None:
+    try:
+        return json.dumps(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_replay_envelope_payload(execution_output: Any) -> dict[str, object]:
+    replay = getattr(execution_output, "replay", None)
+    model_dump = getattr(replay, "model_dump", None)
+    if not callable(model_dump):
+        return {}
+    try:
+        payload = model_dump()
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    if _json_dumps_if_serializable(payload) is None:
+        return {}
+    return payload
+
+
+def _build_match_replay_json(execution_output: Any) -> str:
+    result = getattr(execution_output, "result", None)
+    replay = getattr(result, "replay", None)
+    if replay:
+        serialized = _json_dumps_if_serializable(replay)
+        if serialized is not None:
+            return serialized
+
+    replay_payload = _build_replay_envelope_payload(execution_output)
+    timeline = replay_payload.get("timeline")
+    if timeline:
+        serialized = _json_dumps_if_serializable(timeline)
+        if serialized is not None:
+            return serialized
+    return ""
+
+
 def _build_skeptic_review_section(ctx: GenerationContext) -> str:
     """Render skeptic findings into curator-readable context."""
     review = ctx.skeptic_review
@@ -2398,15 +2438,20 @@ def stage_persistence(
     if credit_assignment is not None:
         metrics["credit_assignment"] = credit_assignment.to_dict()
 
-    # 2. Insert matches into sqlite
+    # 2. Insert matches into sqlite (AC-171: include replay/state data)
+    strategy_json = json.dumps(ctx.current_strategy, sort_keys=True) if ctx.current_strategy else ""
     for idx, eval_result in enumerate(tournament.results):
         match_output = eval_result.metadata["execution_output"]
+        replay_json = _build_match_replay_json(match_output)
         sqlite.insert_match(
             run_id, generation,
             settings.seed_base + (generation * 100) + idx,
             match_output.result.score,
             match_output.result.passed_validation,
             json.dumps(match_output.result.validation_errors),
+            winner=getattr(match_output.result, "winner", "") or "",
+            strategy_json=strategy_json,
+            replay_json=replay_json,
         )
 
     # 3. Upsert generation
@@ -2431,7 +2476,9 @@ def stage_persistence(
     # 4. Persist generation artifacts
     replay_payload: dict[str, object] = {}
     if tournament.results:
-        replay_payload = tournament.results[0].metadata["execution_output"].replay.model_dump()
+        replay_payload = _build_replay_envelope_payload(
+            tournament.results[0].metadata["execution_output"],
+        )
 
     artifacts.persist_generation(
         run_id=run_id,

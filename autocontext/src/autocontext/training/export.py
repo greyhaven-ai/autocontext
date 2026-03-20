@@ -1,6 +1,7 @@
-"""Strategy-level training data export iterator (AC-170)."""
+"""Strategy-level training data export iterator (AC-170, AC-171)."""
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -148,14 +149,21 @@ def _iter_matches(
     run_id: str,
     generation_index: int,
 ) -> Iterator[MatchRecord]:
-    """Yield MatchRecord instances for a specific generation."""
+    """Yield enriched MatchRecord instances for a specific generation (AC-171).
+
+    Extracts per-turn state history from replay_json when entries contain
+    a "state" key.
+    """
     with sqlite.connect() as conn:
         rows = conn.execute(
-            "SELECT seed, score, passed_validation, validation_errors "
+            "SELECT seed, score, passed_validation, validation_errors, "
+            "winner, strategy_json, replay_json "
             "FROM matches WHERE run_id = ? AND generation_index = ? ORDER BY seed",
             (run_id, generation_index),
         ).fetchall()
     for row in rows:
+        replay_raw = row["replay_json"] or ""
+        states = _extract_states(replay_raw)
         yield MatchRecord(
             run_id=run_id,
             generation_index=generation_index,
@@ -163,4 +171,28 @@ def _iter_matches(
             score=row["score"],
             passed_validation=bool(row["passed_validation"]),
             validation_errors=row["validation_errors"],
+            winner=row["winner"] or None,
+            strategy=row["strategy_json"] or "",
+            replay_json=replay_raw,
+            states=states,
         )
+
+
+def _extract_states(replay_json: str) -> list[dict[str, Any]]:
+    """Extract per-turn state snapshots from replay JSON.
+
+    Looks for entries with a "state" key in the replay array.
+    Returns empty list if no states found or replay is unparseable.
+    """
+    if not replay_json:
+        return []
+    try:
+        replay = json.loads(replay_json)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(replay, list):
+        return []
+    return [
+        entry["state"] for entry in replay
+        if isinstance(entry, dict) and "state" in entry
+    ]

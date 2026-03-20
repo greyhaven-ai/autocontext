@@ -1736,6 +1736,34 @@ class TestStagePersistence:
         # Tournament has 2 outputs, so insert_match should be called twice
         assert sqlite.insert_match.call_count == 2
 
+    def test_skips_non_json_match_replay_but_persists_replay_payload(self) -> None:
+        """Non-serializable raw replay should not break persistence."""
+        ctx = _make_persistence_ctx()
+        artifacts = MagicMock()
+        artifacts.read_skill_lessons_raw.return_value = []
+        sqlite = MagicMock()
+        events = MagicMock()
+        trajectory = MagicMock()
+
+        stage_persistence(
+            ctx,
+            artifacts=artifacts,
+            sqlite=sqlite,
+            trajectory_builder=trajectory,
+            events=events,
+            curator=None,
+        )
+
+        first_insert = sqlite.insert_match.call_args_list[0]
+        assert first_insert.kwargs["replay_json"] == ""
+
+        persist_kwargs = artifacts.persist_generation.call_args.kwargs
+        assert persist_kwargs["replay_payload"] == {
+            "scenario": "test",
+            "seed": 1001,
+            "timeline": [],
+        }
+
     def test_emits_generation_completed(self) -> None:
         """events.emit is called with 'generation_completed'."""
         ctx = _make_persistence_ctx()

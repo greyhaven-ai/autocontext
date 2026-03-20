@@ -142,14 +142,25 @@ class SQLiteStore:
         score: float,
         passed_validation: bool,
         validation_errors: str,
+        winner: str = "",
+        strategy_json: str = "",
+        replay_json: str = "",
     ) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO matches(run_id, generation_index, seed, score, passed_validation, validation_errors)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO matches(
+                    run_id, generation_index, seed, score,
+                    passed_validation, validation_errors,
+                    winner, strategy_json, replay_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (run_id, generation_index, seed, score, int(passed_validation), validation_errors),
+                (
+                    run_id, generation_index, seed, score,
+                    int(passed_validation), validation_errors,
+                    winner or "", strategy_json or "", replay_json or "",
+                ),
             )
 
     def insert_staged_validation_results(
