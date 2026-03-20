@@ -1,0 +1,5 @@
+GEPA-inspired ASI/Pareto optimizer wired into improvement loop
+Component sensitivity profiling and credit assignment
+Pluggable scoring backends with Elo and Glicko support
+Novelty exploration and multi-basin playbook branching
+Cost-aware loop control and long-run presets

@@ -46,10 +46,19 @@ class AgentTaskRunSummary:
     met_threshold: bool
     termination_reason: str
 
-app = typer.Typer(help="autocontext control-plane CLI")
+app = typer.Typer(help="autocontext control-plane CLI", invoke_without_command=True)
 console = Console()
 
 _PRESET_HELP = f"Apply a named preset ({', '.join(sorted(VALID_PRESET_NAMES))}). Overrides AUTOCONTEXT_PRESET env var."
+
+
+@app.callback()
+def _main_callback(ctx: typer.Context) -> None:
+    """Show the banner when invoked without a subcommand."""
+    if ctx.invoked_subcommand is None:
+        from autocontext.banner import print_banner_rich
+
+        print_banner_rich()
 
 
 def _apply_preset_env(preset: str | None) -> None:
