@@ -400,6 +400,27 @@ export class SQLiteStore {
     return result;
   }
 
+  listRuns(limit = 50, scenario?: string): RunRow[] {
+    if (scenario) {
+      return this.db
+        .prepare(
+          `SELECT * FROM runs WHERE scenario = ? ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(scenario, limit) as RunRow[];
+    }
+    return this.db
+      .prepare(`SELECT * FROM runs ORDER BY created_at DESC LIMIT ?`)
+      .all(limit) as RunRow[];
+  }
+
+  getMatchesForGeneration(runId: string, generationIndex: number): MatchRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM matches WHERE run_id = ? AND generation_index = ? ORDER BY id`,
+      )
+      .all(runId, generationIndex) as MatchRow[];
+  }
+
   close(): void {
     this.db.close();
   }

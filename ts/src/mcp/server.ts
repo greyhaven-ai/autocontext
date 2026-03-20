@@ -19,13 +19,17 @@ export interface MtsServerOpts {
   model?: string;
   /** Directory for agent task spec JSON files */
   tasksDir?: string;
+  /** Root directory for run artifacts */
+  runsRoot?: string;
+  /** Root directory for knowledge artifacts */
+  knowledgeRoot?: string;
 }
 
 export function createMcpServer(opts: MtsServerOpts): McpServer {
   const { store, provider, model = "" } = opts;
   const server = new McpServer({
     name: "autocontext",
-    version: "0.1.0",
+    version: "0.2.0",
   });
 
   // -- evaluate_output --
@@ -210,6 +214,195 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       }
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // -- list_scenarios (AC-312) --
+  server.tool(
+    "list_scenarios",
+    "List available scenarios with metadata",
+    {},
+    async () => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const scenarios = Object.keys(SCENARIO_REGISTRY).sort().map((name) => {
+        const instance = new SCENARIO_REGISTRY[name]();
+        return {
+          name,
+          rules: instance.describeRules(),
+          strategyInterface: instance.describeStrategyInterface(),
+        };
+      });
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ scenarios }, null, 2) }],
+      };
+    },
+  );
+
+  // -- get_scenario (AC-312) --
+  server.tool(
+    "get_scenario",
+    "Get detailed information about a scenario",
+    {
+      name: z.string().describe("Scenario name"),
+    },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const ScenarioClass = SCENARIO_REGISTRY[args.name];
+      if (!ScenarioClass) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.name}` }) }],
+        };
+      }
+      const instance = new ScenarioClass();
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            name: args.name,
+            rules: instance.describeRules(),
+            strategyInterface: instance.describeStrategyInterface(),
+            evaluationCriteria: instance.describeEvaluationCriteria(),
+            scoringDimensions: instance.scoringDimensions?.() ?? null,
+          }, null, 2),
+        }],
+      };
+    },
+  );
+
+  // -- list_runs (AC-312) --
+  server.tool(
+    "list_runs",
+    "List recent runs with optional filters",
+    {
+      limit: z.number().int().default(50).describe("Max runs to return"),
+      scenario: z.string().optional().describe("Filter by scenario name"),
+    },
+    async (args) => {
+      const runs = store.listRuns(args.limit, args.scenario);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ runs }, null, 2) }],
+      };
+    },
+  );
+
+  // -- get_run_status (AC-312) --
+  server.tool(
+    "get_run_status",
+    "Get run progress, scores, and generation details",
+    {
+      runId: z.string().describe("Run ID"),
+    },
+    async (args) => {
+      const run = store.getRun(args.runId);
+      if (!run) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: "Run not found" }) }],
+        };
+      }
+      const generations = store.getGenerations(args.runId);
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({ ...run, generations }, null, 2),
+        }],
+      };
+    },
+  );
+
+  // -- get_playbook (AC-312) --
+  server.tool(
+    "get_playbook",
+    "Read the accumulated playbook for a scenario",
+    {
+      scenario: z.string().describe("Scenario name"),
+    },
+    async (args) => {
+      const { ArtifactStore } = await import("../knowledge/artifact-store.js");
+      const artifacts = new ArtifactStore({
+        runsRoot: opts.runsRoot ?? "runs",
+        knowledgeRoot: opts.knowledgeRoot ?? "knowledge",
+      });
+      const content = artifacts.readPlaybook(args.scenario);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ scenario: args.scenario, content }, null, 2) }],
+      };
+    },
+  );
+
+  // -- run_scenario (AC-312) --
+  server.tool(
+    "run_scenario",
+    "Kick off a scenario run with configuration options",
+    {
+      scenario: z.string().describe("Scenario name"),
+      generations: z.number().int().default(1).describe("Number of generations"),
+      runId: z.string().optional().describe("Custom run ID"),
+      matchesPerGeneration: z.number().int().default(3).describe("Matches per generation"),
+    },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const { GenerationRunner } = await import("../loop/generation-runner.js");
+
+      const ScenarioClass = SCENARIO_REGISTRY[args.scenario];
+      if (!ScenarioClass) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.scenario}` }) }],
+        };
+      }
+
+      const runId = args.runId ?? `mcp-${Date.now()}`;
+      const runner = new GenerationRunner({
+        provider,
+        scenario: new ScenarioClass(),
+        store,
+        runsRoot: opts.runsRoot ?? "runs",
+        knowledgeRoot: opts.knowledgeRoot ?? "knowledge",
+        matchesPerGeneration: args.matchesPerGeneration,
+      });
+
+      // Fire and forget — run in background
+      runner.run(runId, args.generations).catch(() => {});
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({ runId, scenario: args.scenario, generations: args.generations, status: "started" }),
+        }],
+      };
+    },
+  );
+
+  // -- get_generation_detail (AC-312) --
+  server.tool(
+    "get_generation_detail",
+    "Get detailed results for a specific generation",
+    {
+      runId: z.string().describe("Run ID"),
+      generation: z.number().int().describe("Generation index"),
+    },
+    async (args) => {
+      const generations = store.getGenerations(args.runId);
+      const gen = generations.find((g) => g.generation_index === args.generation);
+      if (!gen) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: "Generation not found" }) }],
+        };
+      }
+      const matches = store.getMatchesForGeneration(args.runId, args.generation);
+      const agentOutputs = store.getAgentOutputs(args.runId, args.generation);
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            generation: gen,
+            matches,
+            agentOutputs: agentOutputs.map((o) => ({
+              role: o.role,
+              contentPreview: o.content.slice(0, 500),
+            })),
+          }, null, 2),
+        }],
       };
     },
   );
