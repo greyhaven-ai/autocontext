@@ -7,6 +7,7 @@
 
 import { ProviderError } from "../types/index.js";
 import type { CompletionResult, LLMProvider } from "../types/index.js";
+import { DeterministicProvider } from "./deterministic.js";
 
 // ---------------------------------------------------------------------------
 // Anthropic Provider
@@ -167,8 +168,12 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
     });
   }
 
+  if (type === "deterministic") {
+    return new DeterministicProvider();
+  }
+
   throw new ProviderError(
-    `Unknown provider type: ${JSON.stringify(type)}. Supported: anthropic, openai, openai-compatible, ollama, vllm`,
+    `Unknown provider type: ${JSON.stringify(type)}. Supported: anthropic, openai, openai-compatible, ollama, vllm, deterministic`,
   );
 }
 

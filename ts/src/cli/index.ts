@@ -23,6 +23,7 @@ const HELP = `
 autoctx — always-on agent evaluation harness
 
 Commands:
+  run         Run generation loop for a scenario
   judge       One-shot evaluation of output against a rubric
   improve     Run multi-round improvement loop
   queue       Add a task to the background runner queue
@@ -51,6 +52,9 @@ async function main(): Promise<void> {
   const dbPath = process.env.AUTOCONTEXT_DB_PATH ?? resolve("autocontext.db");
 
   switch (command) {
+    case "run":
+      await cmdRun(dbPath);
+      break;
     case "judge":
       await cmdJudge(dbPath);
       break;
@@ -84,6 +88,78 @@ async function getProvider() {
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
+  }
+}
+
+async function cmdRun(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      scenario: { type: "string", short: "s" },
+      gens: { type: "string", short: "g", default: "1" },
+      "run-id": { type: "string" },
+      provider: { type: "string" },
+      matches: { type: "string", default: "3" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help || !values.scenario) {
+    console.log("autoctx run --scenario <name> [--gens N] [--run-id ID] [--provider deterministic] [--matches N] [--json]");
+    process.exit(values.help ? 0 : 1);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const { GenerationRunner } = await import("../loop/generation-runner.js");
+  const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+
+  // Resolve provider
+  let provider;
+  if (values.provider) {
+    const { createProvider } = await import("../providers/index.js");
+    provider = createProvider({ providerType: values.provider });
+  } else {
+    const result = await getProvider();
+    provider = result.provider;
+  }
+
+  // Resolve scenario
+  const ScenarioClass = SCENARIO_REGISTRY[values.scenario];
+  if (!ScenarioClass) {
+    console.error(`Unknown scenario: ${values.scenario}. Available: ${Object.keys(SCENARIO_REGISTRY).join(", ")}`);
+    process.exit(1);
+  }
+  const scenario = new ScenarioClass();
+
+  // Setup storage
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+
+  const runId = values["run-id"] ?? `run-${Date.now()}`;
+  const gens = parseInt(values.gens ?? "1", 10);
+  const matches = parseInt(values.matches ?? "3", 10);
+
+  const runner = new GenerationRunner({
+    provider,
+    scenario,
+    store,
+    runsRoot: resolve("runs"),
+    knowledgeRoot: resolve("knowledge"),
+    matchesPerGeneration: matches,
+    maxRetries: 2,
+    minDelta: 0.005,
+  });
+
+  try {
+    const result = await runner.run(runId, gens);
+    if (values.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`Run ${result.runId}: ${result.generationsCompleted} generations, best score ${result.bestScore.toFixed(4)}, Elo ${result.currentElo.toFixed(1)}`);
+    }
+  } finally {
+    store.close();
   }
 }
 
