@@ -50,7 +50,17 @@ export type { LLMJudgeOpts, ParsedJudge } from "./judge/index.js";
 
 // Storage
 export { SQLiteStore } from "./storage/index.js";
-export type { TaskQueueRow, HumanFeedbackRow } from "./storage/index.js";
+export type {
+  TaskQueueRow,
+  HumanFeedbackRow,
+  RunRow,
+  GenerationRow,
+  MatchRow,
+  AgentOutputRow,
+  TrajectoryRow,
+  UpsertGenerationOpts,
+  RecordMatchOpts,
+} from "./storage/index.js";
 
 // Execution
 export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improvement-loop.js";
@@ -106,9 +116,13 @@ export {
 export { SkillPackage, exportAgentTaskSkill, cleanLessons, HarnessStore } from "./knowledge/index.js";
 export type { SkillPackageData, HarnessVersionEntry, HarnessVersionMap } from "./knowledge/index.js";
 
+// Config
+export { AppSettingsSchema, loadSettings, applyPreset, PRESETS } from "./config/index.js";
+export type { AppSettings } from "./config/index.js";
+
 // Loop (generation loop components)
-export { HypothesisTree, HypothesisNodeSchema } from "./loop/index.js";
-export type { HypothesisNode } from "./loop/index.js";
+export { HypothesisTree, HypothesisNodeSchema, EventStreamEmitter, LoopController } from "./loop/index.js";
+export type { HypothesisNode, EventCallback } from "./loop/index.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
