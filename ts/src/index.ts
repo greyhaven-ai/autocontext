@@ -133,8 +133,19 @@ export {
 } from "./scenarios/index.js";
 
 // Knowledge / Skill Export
-export { SkillPackage, exportAgentTaskSkill, cleanLessons, HarnessStore } from "./knowledge/index.js";
-export type { SkillPackageData, HarnessVersionEntry, HarnessVersionMap } from "./knowledge/index.js";
+export {
+  SkillPackage, exportAgentTaskSkill, cleanLessons, HarnessStore,
+  VersionedFileStore, PlaybookManager, PlaybookGuard, ArtifactStore,
+  ScoreTrajectoryBuilder, EMPTY_PLAYBOOK_SENTINEL, PLAYBOOK_MARKERS,
+} from "./knowledge/index.js";
+export type {
+  SkillPackageData, HarnessVersionEntry, HarnessVersionMap,
+  VersionedFileStoreOpts, GuardResult, ArtifactStoreOpts,
+  TrajectoryRow as KnowledgeTrajectoryRow,
+} from "./knowledge/index.js";
+
+// Prompts
+export { ContextBudget, estimateTokens } from "./prompts/context-budget.js";
 
 // Config
 export { AppSettingsSchema, loadSettings, applyPreset, PRESETS } from "./config/index.js";
