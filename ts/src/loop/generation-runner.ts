@@ -19,6 +19,8 @@ import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { PlaybookGuard, PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
 import { ContextBudget } from "../prompts/context-budget.js";
+import type { LoopController } from "./controller.js";
+import type { EventStreamEmitter } from "./events.js";
 import { join } from "node:path";
 
 export interface GenerationRunnerOpts {
@@ -31,6 +33,8 @@ export interface GenerationRunnerOpts {
   maxRetries?: number;
   minDelta?: number;
   seedBase?: number;
+  controller?: LoopController;
+  events?: EventStreamEmitter;
 }
 
 export interface RunResult {
@@ -51,6 +55,8 @@ export class GenerationRunner {
   private seedBase: number;
   private playbookGuard: PlaybookGuard;
   private contextBudget: ContextBudget;
+  private controller: LoopController | null;
+  private events: EventStreamEmitter | null;
 
   constructor(opts: GenerationRunnerOpts) {
     this.provider = opts.provider;
@@ -66,29 +72,46 @@ export class GenerationRunner {
     this.seedBase = opts.seedBase ?? 1000;
     this.playbookGuard = new PlaybookGuard();
     this.contextBudget = new ContextBudget();
+    this.controller = opts.controller ?? null;
+    this.events = opts.events ?? null;
   }
 
   async run(runId: string, generations: number): Promise<RunResult> {
     // Create run record
     this.store.createRun(runId, this.scenario.name, generations, "local");
+    this.emit("run_started", {
+      run_id: runId,
+      scenario: this.scenario.name,
+      target_generations: generations,
+    });
 
     let previousBest = 0;
     let currentElo = 1000;
     let bestScoreOverall = 0;
 
     for (let gen = 1; gen <= generations; gen++) {
+      await this.controller?.waitIfPaused();
       let retryCount = 0;
       let finalizedAttempt: GenerationAttempt | null = null;
+      this.emit("generation_started", { run_id: runId, generation: gen });
+      this.emit("agents_started", {
+        run_id: runId,
+        generation: gen,
+        roles: ["competitor", "analyst", "coach"],
+      });
 
       // Retry loop for this generation
       while (retryCount <= this.maxRetries) {
+        await this.controller?.waitIfPaused();
         const competitorPrompt = this.buildCompetitorPrompt(runId);
 
         // Step 1: Get strategy from provider (competitor role)
+        const competitorStartedAt = Date.now();
         const competitorResult = await this.provider.complete({
           systemPrompt: "",
           userPrompt: competitorPrompt,
         });
+        this.emitRoleCompleted("competitor", competitorStartedAt, competitorResult.usage);
 
         let strategy: Record<string, unknown>;
         try {
@@ -98,13 +121,36 @@ export class GenerationRunner {
         }
 
         // Step 2: Run tournament
+        await this.controller?.waitIfPaused();
         const seedForGen = this.seedBase + (gen - 1) * this.matchesPerGeneration;
         const tournament = new TournamentRunner(this.scenario, {
           matchCount: this.matchesPerGeneration,
           seedBase: seedForGen,
           initialElo: currentElo,
         });
+        this.emit("tournament_started", {
+          run_id: runId,
+          generation: gen,
+          matches: this.matchesPerGeneration,
+        });
         const tournamentResult = tournament.run(strategy);
+        tournamentResult.matches.forEach((match, matchIndex) => {
+          this.emit("match_completed", {
+            run_id: runId,
+            generation: gen,
+            match_index: matchIndex,
+            score: match.score,
+            winner: match.winner ?? "",
+          });
+        });
+        this.emit("tournament_completed", {
+          run_id: runId,
+          generation: gen,
+          mean_score: tournamentResult.meanScore,
+          best_score: tournamentResult.bestScore,
+          wins: tournamentResult.wins,
+          losses: tournamentResult.losses,
+        });
 
         // Step 3: Backpressure gate
         const decision = this.gate.evaluate(
@@ -113,7 +159,7 @@ export class GenerationRunner {
           retryCount,
           this.maxRetries,
         );
-        const gateDecision = decision.decision;
+        const gateDecision = this.controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
         const attempt: GenerationAttempt = {
           competitorPrompt,
           competitorResultText: competitorResult.text,
@@ -121,6 +167,13 @@ export class GenerationRunner {
           tournamentResult,
           gateDecision,
         };
+        this.emit("gate_decided", {
+          run_id: runId,
+          generation: gen,
+          decision: gateDecision,
+          delta: decision.delta,
+          threshold: decision.threshold,
+        });
 
         // Step 5: Apply gate decision
         if (gateDecision === "advance") {
@@ -148,8 +201,24 @@ export class GenerationRunner {
       }
 
       this.persistGeneration(runId, gen, finalizedAttempt);
+      await this.controller?.waitIfPaused();
       await this.runSupportRoles(runId, gen, finalizedAttempt);
+      this.emit("generation_completed", {
+        run_id: runId,
+        generation: gen,
+        mean_score: finalizedAttempt.tournamentResult.meanScore,
+        best_score: finalizedAttempt.tournamentResult.bestScore,
+        elo: finalizedAttempt.tournamentResult.elo,
+        gate_decision: finalizedAttempt.gateDecision,
+      });
     }
+
+    this.emit("run_completed", {
+      run_id: runId,
+      completed_generations: generations,
+      best_score: bestScoreOverall,
+      elo: currentElo,
+    });
 
     return {
       runId,
@@ -164,6 +233,7 @@ export class GenerationRunner {
       playbook: this.artifactStore.readPlaybook(this.scenario.name),
       trajectory: new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build(),
     });
+    const injectedHint = this.controller?.takeHint();
 
     const sections = [
       "Describe your strategy for the " + this.scenario.name + " scenario. Return JSON with the strategy parameters.",
@@ -175,6 +245,10 @@ export class GenerationRunner {
 
     if (trimmed.trajectory) {
       sections.push(`Recent Score Trajectory:\n${trimmed.trajectory}`);
+    }
+
+    if (injectedHint) {
+      sections.push(`Operator Hint:\n${injectedHint}`);
     }
 
     sections.push(
@@ -273,6 +347,8 @@ export class GenerationRunner {
     gen: number,
     attempt: GenerationAttempt,
   ): Promise<void> {
+    const analystStartedAt = Date.now();
+    const coachStartedAt = Date.now();
     const [analystResult, coachResult] = await Promise.all([
       this.provider.complete({
         systemPrompt: "",
@@ -283,6 +359,8 @@ export class GenerationRunner {
         userPrompt: this.buildSupportPrompt("coach", runId, attempt),
       }),
     ]);
+    this.emitRoleCompleted("analyst", analystStartedAt, analystResult.usage);
+    this.emitRoleCompleted("coach", coachStartedAt, coachResult.usage);
 
     this.store.appendAgentOutput(runId, gen, "analyst", analystResult.text);
     this.store.appendAgentOutput(runId, gen, "coach", coachResult.text);
@@ -313,6 +391,24 @@ export class GenerationRunner {
     if (hasStructuredPlaybook && playbookCheck.approved) {
       this.artifactStore.writePlaybook(this.scenario.name, coachResult.text);
     }
+  }
+
+  private emit(event: string, payload: Record<string, unknown>): void {
+    this.events?.emit(event, payload);
+  }
+
+  private emitRoleCompleted(
+    role: "competitor" | "analyst" | "coach",
+    startedAt: number,
+    usage: Record<string, number>,
+  ): void {
+    const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
+    const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
+    this.emit("role_completed", {
+      role,
+      latency_ms: Date.now() - startedAt,
+      tokens: inputTokens + outputTokens,
+    });
   }
 }
 

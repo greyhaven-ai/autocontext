@@ -172,6 +172,23 @@ export type { HypothesisNode, EventCallback } from "./loop/index.js";
 export { createMcpServer, startServer } from "./mcp/server.js";
 export type { MtsServerOpts } from "./mcp/server.js";
 
+// Interactive Server
+export {
+  PROTOCOL_VERSION,
+  parseClientMessage,
+  parseServerMessage,
+  RunManager,
+  InteractiveServer,
+} from "./server/index.js";
+export type {
+  ServerMessage,
+  ClientMessage,
+  RunManagerOpts,
+  RunManagerState,
+  EnvironmentInfo,
+  InteractiveServerOpts,
+} from "./server/index.js";
+
 // RLM (REPL-Loop Mode)
 export { RlmSession, extractCode } from "./rlm/index.js";
 export type {

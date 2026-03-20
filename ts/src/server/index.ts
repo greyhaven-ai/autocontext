@@ -36,4 +36,7 @@ export {
 export type { ServerMessage, ClientMessage } from "./protocol.js";
 
 export { RunManager } from "./run-manager.js";
-export type { RunManagerOpts, EnvironmentInfo } from "./run-manager.js";
+export type { RunManagerOpts, EnvironmentInfo, RunManagerState } from "./run-manager.js";
+
+export { InteractiveServer } from "./ws-server.js";
+export type { InteractiveServerOpts } from "./ws-server.js";

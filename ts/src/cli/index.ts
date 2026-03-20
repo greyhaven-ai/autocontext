@@ -172,33 +172,64 @@ async function cmdTui(dbPath: string): Promise<void> {
     args: process.argv.slice(3),
     options: {
       port: { type: "string", default: "8000" },
+      headless: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help) {
-    console.log("autoctx tui [--port 8000]");
-    console.log("Starts WebSocket server and interactive TUI.");
+    console.log("autoctx tui [--port 8000] [--headless]");
+    console.log("Starts the interactive WebSocket server and bundled terminal UI.");
     process.exit(0);
   }
 
   const port = parseInt(values.port ?? "8000", 10);
 
-  const { RunManager } = await import("../server/run-manager.js");
+  const { RunManager, InteractiveServer } = await import("../server/index.js");
   const mgr = new RunManager({
     dbPath,
     migrationsDir: getMigrationsDir(),
     runsRoot: resolve("runs"),
     knowledgeRoot: resolve("knowledge"),
     providerType: process.env.AUTOCONTEXT_PROVIDER ?? "deterministic",
+    apiKey: process.env.AUTOCONTEXT_API_KEY,
+    baseUrl: process.env.AUTOCONTEXT_BASE_URL,
+    model: process.env.AUTOCONTEXT_MODEL,
   });
+  const server = new InteractiveServer({ runManager: mgr, port });
+  await server.start();
 
-  console.log(`AutoContext TUI server starting on port ${port}...`);
-  console.log(`Run manager ready. Scenarios: ${mgr.listScenarios().join(", ")}`);
-  console.log("Connect a TUI client to ws://localhost:" + port + "/ws/interactive");
+  const headless = values.headless || !process.stdout.isTTY;
+  if (headless) {
+    console.log(`AutoContext interactive server listening at ${server.url}`);
+    console.log(`Scenarios: ${mgr.listScenarios().join(", ")}`);
+    await new Promise<void>((resolve) => {
+      const cleanup = () => {
+        process.off("SIGINT", cleanup);
+        process.off("SIGTERM", cleanup);
+        resolve();
+      };
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
+    });
+    await server.stop();
+    return;
+  }
 
-  // Keep process alive
-  await new Promise(() => {});
+  const React = await import("react");
+  const { render } = await import("ink");
+  const { InteractiveTui } = await import("../tui/app.js");
+
+  const app = render(React.createElement(InteractiveTui, {
+    manager: mgr,
+    serverUrl: server.url,
+  }));
+
+  try {
+    await app.waitUntilExit();
+  } finally {
+    await server.stop();
+  }
 }
 
 async function cmdJudge(_dbPath: string): Promise<void> {
