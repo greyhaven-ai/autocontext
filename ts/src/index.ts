@@ -74,8 +74,8 @@ export type { ActionDict, ScenarioLike, HarnessLoaderLike } from "./execution/ac
 export { StrategyValidator, ValidationResultSchema } from "./execution/strategy-validator.js";
 export type { ValidationResult, MatchResult as StrategyMatchResult, StrategyValidatorOpts, ExecuteMatchFn } from "./execution/strategy-validator.js";
 export { expectedScore, updateElo } from "./execution/elo.js";
-export { ExecutionSupervisor } from "./execution/supervisor.js";
-export type { ExecutionInput, ExecutionOutput } from "./execution/supervisor.js";
+export { ExecutionSupervisor, LocalExecutor } from "./execution/supervisor.js";
+export type { ExecutionInput, ExecutionOutput, ExecutionEngine } from "./execution/supervisor.js";
 export { TournamentRunner } from "./execution/tournament.js";
 export type { TournamentOpts, TournamentResult, MatchResult as TournamentMatchResult } from "./execution/tournament.js";
 

@@ -157,6 +157,50 @@ describe("ExecutionSupervisor", () => {
     expect(output.result.score).toBe(0.0);
     expect(output.result.passedValidation).toBe(false);
   });
+
+  it("delegates execution through the injected executor", async () => {
+    const { ExecutionSupervisor } = await import("../src/execution/supervisor.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+
+    const calls: Array<Record<string, unknown>> = [];
+    const supervisor = new ExecutionSupervisor({
+      execute(_scenario, strategy, seed, limits) {
+        calls.push({ strategy, seed, limits });
+        return {
+          result: {
+            score: 0.7,
+            winner: "challenger",
+            summary: "ok",
+            replay: [],
+            metrics: {},
+            validationErrors: [],
+            passedValidation: true,
+          },
+          replay: {
+            scenario: "grid_ctf",
+            seed,
+            narrative: "ok",
+            timeline: [],
+          },
+        };
+      },
+    });
+
+    const scenario = new GridCtfScenario();
+    const output = supervisor.run(scenario, {
+      strategy: { aggression: 0.6, defense: 0.4, path_bias: 0.5 },
+      seed: 9,
+      limits: { timeoutSeconds: 2, maxMemoryMb: 64, networkAccess: false },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      strategy: { aggression: 0.6, defense: 0.4, path_bias: 0.5 },
+      seed: 9,
+      limits: { timeoutSeconds: 2, maxMemoryMb: 64, networkAccess: false },
+    });
+    expect(output.result.score).toBe(0.7);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -197,6 +241,97 @@ describe("TournamentRunner", () => {
     expect(typeof result.elo).toBe("number");
     // Elo starts at 1000 and should move based on results
     expect(result.elo).not.toBe(1000);
+  });
+
+  it("routes tournament matches through the execution supervisor with limits", async () => {
+    const { TournamentRunner } = await import("../src/execution/tournament.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+
+    const scenario = new GridCtfScenario();
+    const calls: Array<Record<string, unknown>> = [];
+    const supervisor = {
+      run(_scenario: unknown, payload: Record<string, unknown>) {
+        calls.push(payload);
+        return {
+          result: {
+            score: 0.72,
+            winner: "challenger",
+            summary: "ok",
+            replay: [],
+            metrics: {},
+            validationErrors: [],
+            passedValidation: true,
+          },
+          replay: {
+            scenario: "grid_ctf",
+            seed: payload.seed,
+            narrative: "from envelope",
+            timeline: [{ event: "from-envelope" }],
+          },
+        };
+      },
+    };
+
+    const runner = new TournamentRunner(
+      scenario,
+      {
+        matchCount: 1,
+        seedBase: 77,
+        limits: { timeoutSeconds: 3, maxMemoryMb: 128, networkAccess: false },
+      },
+      supervisor,
+    );
+    const result = runner.run({ aggression: 0.6, defense: 0.4, path_bias: 0.5 });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].seed).toBe(77);
+    expect(calls[0].limits).toEqual({
+      timeoutSeconds: 3,
+      maxMemoryMb: 128,
+      networkAccess: false,
+    });
+    expect(result.matches[0].replay).toEqual([{ event: "from-envelope" }]);
+  });
+
+  it("uses continuous match scores for Elo updates", async () => {
+    const { TournamentRunner } = await import("../src/execution/tournament.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+
+    const scenario = new GridCtfScenario();
+    const makeSupervisor = (score: number) => ({
+      run() {
+        return {
+          result: {
+            score,
+            winner: "challenger",
+            summary: "ok",
+            replay: [],
+            metrics: {},
+            validationErrors: [],
+            passedValidation: true,
+          },
+          replay: {
+            scenario: "grid_ctf",
+            seed: 0,
+            narrative: "ok",
+            timeline: [],
+          },
+        };
+      },
+    });
+
+    const nearThreshold = new TournamentRunner(
+      scenario,
+      { matchCount: 1, seedBase: 1 },
+      makeSupervisor(0.56),
+    ).run({ aggression: 0.6, defense: 0.4, path_bias: 0.5 });
+    const strongWin = new TournamentRunner(
+      scenario,
+      { matchCount: 1, seedBase: 1 },
+      makeSupervisor(0.96),
+    ).run({ aggression: 0.6, defense: 0.4, path_bias: 0.5 });
+
+    expect(strongWin.elo).toBeGreaterThan(nearThreshold.elo);
   });
 
   it("each match has correct seed", async () => {

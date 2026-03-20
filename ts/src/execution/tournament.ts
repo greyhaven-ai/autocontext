@@ -3,7 +3,8 @@
  * Mirrors Python's tournament logic from loop/tournament_helpers.py.
  */
 
-import type { Result, ScenarioInterface } from "../scenarios/game-interface.js";
+import type { ExecutionLimits, ScenarioInterface } from "../scenarios/game-interface.js";
+import { ExecutionSupervisor } from "./supervisor.js";
 import { updateElo } from "./elo.js";
 
 export interface TournamentOpts {
@@ -11,6 +12,7 @@ export interface TournamentOpts {
   seedBase: number;
   initialElo?: number;
   opponentElo?: number;
+  limits?: ExecutionLimits;
 }
 
 export interface MatchResult {
@@ -34,15 +36,26 @@ export interface TournamentResult {
 export class TournamentRunner {
   private scenario: ScenarioInterface;
   private opts: Required<TournamentOpts>;
+  private supervisor: Pick<ExecutionSupervisor, "run">;
 
-  constructor(scenario: ScenarioInterface, opts: TournamentOpts) {
+  constructor(
+    scenario: ScenarioInterface,
+    opts: TournamentOpts,
+    supervisor: Pick<ExecutionSupervisor, "run"> = new ExecutionSupervisor(),
+  ) {
     this.scenario = scenario;
     this.opts = {
       matchCount: opts.matchCount,
       seedBase: opts.seedBase,
       initialElo: opts.initialElo ?? 1000.0,
       opponentElo: opts.opponentElo ?? 1000.0,
+      limits: opts.limits ?? {
+        timeoutSeconds: 10.0,
+        maxMemoryMb: 512,
+        networkAccess: false,
+      },
     };
+    this.supervisor = supervisor;
   }
 
   run(strategy: Record<string, unknown>): TournamentResult {
@@ -55,7 +68,12 @@ export class TournamentRunner {
 
     for (let i = 0; i < this.opts.matchCount; i++) {
       const seed = this.opts.seedBase + i;
-      const result: Result = this.scenario.executeMatch(strategy, seed);
+      const output = this.supervisor.run(this.scenario, {
+        strategy,
+        seed,
+        limits: this.opts.limits,
+      });
+      const { result, replay } = output;
 
       const matchResult: MatchResult = {
         seed,
@@ -63,7 +81,7 @@ export class TournamentRunner {
         winner: result.winner,
         passedValidation: result.passedValidation,
         validationErrors: result.validationErrors,
-        replay: result.replay,
+        replay: replay.timeline,
       };
       matches.push(matchResult);
 
@@ -72,10 +90,10 @@ export class TournamentRunner {
 
       if (result.winner === "challenger") {
         wins++;
-        elo = updateElo(elo, this.opts.opponentElo, 1.0);
+        elo = updateElo(elo, this.opts.opponentElo, result.score);
       } else {
         losses++;
-        elo = updateElo(elo, this.opts.opponentElo, 0.0);
+        elo = updateElo(elo, this.opts.opponentElo, result.score);
       }
     }
 
