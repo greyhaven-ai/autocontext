@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -282,6 +282,256 @@ describe("GenerationRunner", () => {
     await runner.run("test-matches", 1);
     const matches = store.getMatchesForRun("test-matches");
     expect(matches.length).toBe(3);
+
+    store.close();
+  });
+
+  it("uses playbook and trajectory context in live prompts and persists artifacts", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    class RecordingProvider {
+      readonly name = "recording";
+      prompts: string[] = [];
+
+      defaultModel(): string {
+        return "recording-model";
+      }
+
+      async complete(opts: { userPrompt: string }): Promise<{ text: string; model: string; usage: Record<string, number> }> {
+        this.prompts.push(opts.userPrompt);
+
+        if (opts.userPrompt.includes("Describe your strategy")) {
+          return {
+            text: JSON.stringify({ aggression: 0.60, defense: 0.55, path_bias: 0.50 }),
+            model: "recording-model",
+            usage: {},
+          };
+        }
+
+        if (opts.userPrompt.includes("Analyze strengths/failures")) {
+          return {
+            text: "## Findings\n\n- Pressure is balanced.\n\n## Recommendations\n\n- Preserve defender coverage.",
+            model: "recording-model",
+            usage: {},
+          };
+        }
+
+        return {
+          text:
+            "<!-- PLAYBOOK_START -->\n" +
+            "## Strategy Updates\n\n- Prefer safer flank openings after early overextension.\n\n" +
+            "<!-- PLAYBOOK_END -->\n\n" +
+            "<!-- LESSONS_START -->\n" +
+            "- Stable progress comes from balanced aggression and defense.\n" +
+            "<!-- LESSONS_END -->\n\n" +
+            "<!-- COMPETITOR_HINTS_START -->\n" +
+            "- Keep defender coverage above 0.5.\n" +
+            "<!-- COMPETITOR_HINTS_END -->",
+          model: "recording-model",
+          usage: {},
+        };
+      }
+    }
+
+    const provider = new RecordingProvider();
+    const dbPath = join(dir, "test.db");
+    const runsRoot = join(dir, "runs");
+    const knowledgeRoot = join(dir, "knowledge");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+
+    const runner = new GenerationRunner({
+      provider,
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot,
+      knowledgeRoot,
+      matchesPerGeneration: 2,
+      maxRetries: 0,
+      minDelta: 0.0,
+    });
+
+    await runner.run("test-knowledge-loop", 2);
+
+    const competitorPrompts = provider.prompts.filter((prompt) =>
+      prompt.includes("Describe your strategy"),
+    );
+    expect(competitorPrompts).toHaveLength(2);
+    expect(competitorPrompts[0]).toContain("Current Playbook:");
+    expect(competitorPrompts[0]).toContain("No playbook yet");
+    expect(competitorPrompts[1]).toContain("Prefer safer flank openings");
+    expect(competitorPrompts[1]).toContain("## Score Trajectory");
+
+    const playbookPath = join(knowledgeRoot, "grid_ctf", "playbook.md");
+    expect(existsSync(playbookPath)).toBe(true);
+    expect(readFileSync(playbookPath, "utf-8")).toContain("Prefer safer flank openings");
+
+    const promptArtifactPath = join(
+      runsRoot,
+      "test-knowledge-loop",
+      "generations",
+      "gen_1",
+      "competitor_prompt.md",
+    );
+    expect(existsSync(promptArtifactPath)).toBe(true);
+    expect(readFileSync(promptArtifactPath, "utf-8")).toContain("Strategy Interface");
+
+    const summaryPath = join(
+      runsRoot,
+      "test-knowledge-loop",
+      "generations",
+      "gen_2",
+      "tournament_summary.json",
+    );
+    expect(existsSync(summaryPath)).toBe(true);
+    expect(JSON.parse(readFileSync(summaryPath, "utf-8")).gate_decision).toBeDefined();
+
+    store.close();
+  });
+
+  it("persists only the final attempt when a generation retries", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+    const { ResultSchema } = await import("../src/scenarios/game-interface.js");
+
+    class FixedScoreScenario {
+      readonly name = "fixed_score";
+
+      describeRules(): string {
+        return "Score is taken directly from the submitted strategy.";
+      }
+
+      describeStrategyInterface(): string {
+        return "Return JSON with a numeric `score` field in [0,1].";
+      }
+
+      describeEvaluationCriteria(): string {
+        return "Higher score is better.";
+      }
+
+      initialState(seed = 0): Record<string, unknown> {
+        return { seed };
+      }
+
+      getObservation(): { narrative: string; state: Record<string, unknown>; constraints: string[] } {
+        return { narrative: "fixed", state: {}, constraints: [] };
+      }
+
+      validateActions(
+        _state: Record<string, unknown>,
+        _playerId: string,
+        actions: Record<string, unknown>,
+      ): [boolean, string] {
+        return typeof actions.score === "number" ? [true, "ok"] : [false, "missing score"];
+      }
+
+      step(state: Record<string, unknown>): Record<string, unknown> {
+        return state;
+      }
+
+      isTerminal(): boolean {
+        return true;
+      }
+
+      getResult(state: Record<string, unknown>) {
+        return ResultSchema.parse({
+          score: Number(state.score ?? 0),
+          winner: Number(state.score ?? 0) >= 0.5 ? "challenger" : "incumbent",
+          summary: `score ${Number(state.score ?? 0).toFixed(4)}`,
+          replay: [{ score: Number(state.score ?? 0) }],
+          metrics: { score: Number(state.score ?? 0) },
+        });
+      }
+
+      replayToNarrative(replay: Array<Record<string, unknown>>): string {
+        return JSON.stringify(replay);
+      }
+
+      renderFrame(state: Record<string, unknown>): Record<string, unknown> {
+        return state;
+      }
+
+      enumerateLegalActions(): null {
+        return null;
+      }
+
+      scoringDimensions(): null {
+        return null;
+      }
+
+      executeMatch(strategy: Record<string, unknown>, _seed: number) {
+        return ResultSchema.parse({
+          score: Number(strategy.score ?? 0),
+          winner: Number(strategy.score ?? 0) >= 0.5 ? "challenger" : "incumbent",
+          summary: `score ${Number(strategy.score ?? 0).toFixed(4)}`,
+          replay: [{ score: Number(strategy.score ?? 0) }],
+          metrics: { score: Number(strategy.score ?? 0) },
+        });
+      }
+    }
+
+    class RetryThenAdvanceProvider {
+      readonly name = "retry-provider";
+      private competitorCount = 0;
+
+      defaultModel(): string {
+        return "retry-provider";
+      }
+
+      async complete(opts: { userPrompt: string }): Promise<{ text: string; model: string; usage: Record<string, number> }> {
+        if (opts.userPrompt.includes("Describe your strategy")) {
+          this.competitorCount += 1;
+          if (this.competitorCount === 1) {
+            return { text: JSON.stringify({ score: 0.9 }), model: "retry-provider", usage: {} };
+          }
+          if (this.competitorCount === 2) {
+            return { text: JSON.stringify({ score: 0.9 }), model: "retry-provider", usage: {} };
+          }
+          return { text: JSON.stringify({ score: 0.96 }), model: "retry-provider", usage: {} };
+        }
+
+        if (opts.userPrompt.includes("Analyze strengths/failures")) {
+          return { text: "## Findings\n\n- Retry happened.", model: "retry-provider", usage: {} };
+        }
+
+        return {
+          text:
+            "<!-- PLAYBOOK_START -->\nRetry-safe playbook\n<!-- PLAYBOOK_END -->\n\n" +
+            "<!-- LESSONS_START -->\n- Keep iterating.\n<!-- LESSONS_END -->\n\n" +
+            "<!-- COMPETITOR_HINTS_START -->\n- Try a slightly higher score.\n<!-- COMPETITOR_HINTS_END -->",
+          model: "retry-provider",
+          usage: {},
+        };
+      }
+    }
+
+    const dbPath = join(dir, "retry.db");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+
+    const runner = new GenerationRunner({
+      provider: new RetryThenAdvanceProvider(),
+      scenario: new FixedScoreScenario(),
+      store,
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      matchesPerGeneration: 3,
+      maxRetries: 1,
+      minDelta: 0.05,
+    });
+
+    await runner.run("retry-run", 2);
+
+    const matches = store.getMatchesForRun("retry-run");
+    expect(matches).toHaveLength(6);
+    expect(matches.filter((match) => match.generation_index === 2)).toHaveLength(3);
+    expect(matches.filter((match) => match.generation_index === 2).every((match) => match.score === 0.96)).toBe(true);
+
+    const gen2Outputs = store.getAgentOutputs("retry-run", 2);
+    expect(gen2Outputs.filter((row) => row.role === "competitor")).toHaveLength(1);
+    expect(gen2Outputs.find((row) => row.role === "competitor")?.content).toContain("0.96");
 
     store.close();
   });
