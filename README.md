@@ -1,28 +1,38 @@
-<!-- autocontext-banner:start -->
-```
-                          .                                                 .                             .
-                        .o8                                               .o8                           .o8
- .oooo.   oooo  oooo  .o888oo  .ooooo.   .ooooo.   .ooooo.  ooo. .oo.   .o888oo  .ooooo.  oooo    ooo .o888oo
-`P  )88b  `888  `888    888   d88' `88b d88' `"Y8 d88' `88b `888P"Y88b    888   d88' `88b  `88b..8P'    888
- .oP"888   888   888    888   888   888 888       888   888  888   888    888   888ooo888    Y888'      888
-d8(  888   888   888    888 . 888   888 888   .o8 888   888  888   888    888 . 888    .o  .o8"'88b     888 .
-`Y888""8o  `V88V"V8P'   "888" `Y8bod8P' `Y8bod8P' `Y8bod8P' o888o o888o   "888" `Y8bod8P' o88'   888o   "888"
-```
+<!-- autocontext-readme-hero:start -->
+<p align="center">
+  <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" />
+</p>
 
-> **closed-loop control plane for agent improvement**
-
-## What's New
-
-- GEPA-inspired ASI/Pareto optimizer wired into improvement loop
-- Component sensitivity profiling and credit assignment
-- Pluggable scoring backends with Elo and Glicko support
-- Novelty exploration and multi-basin playbook branching
-- Cost-aware loop control and long-run presets
-<!-- autocontext-banner:end -->
+<p align="center"><strong>closed-loop control plane for agent improvement</strong></p>
+<!-- autocontext-readme-hero:end -->
 
 autocontext is a closed-loop control plane for improving agent behavior over repeated runs.
 
 It executes tasks, evaluates outcomes, updates persistent knowledge, and can distill successful behavior into cheaper local runtimes. The goal is to move from frontier-model exploration toward validated, reusable, lower-cost execution.
+
+## Why It Exists
+
+Most agent systems start every run cold. They do not reliably carry forward what worked, what failed, and what should change next.
+
+autocontext adds that missing feedback loop:
+
+- run the task
+- analyze what happened
+- persist validated lessons
+- use those lessons in the next run
+- optionally train and route to local models when the task is stable enough
+
+## How It Works
+
+Each generation runs through a structured multi-agent loop:
+
+- `competitor` proposes a strategy or artifact for the task
+- `analyst` explains what happened and why
+- `coach` turns that analysis into playbook updates and future hints
+- `architect` proposes tools, harness improvements, or structural changes
+- `curator` gates what knowledge is allowed to persist
+
+Strategies are then evaluated through scenario execution, staged validation, and gating. Weak changes are rolled back. Successful changes accumulate into reusable knowledge.
 
 ## Choose An Entry Point
 
@@ -30,6 +40,16 @@ It executes tasks, evaluates outcomes, updates persistent knowledge, and can dis
 - Want a lighter Node/TypeScript toolkit for judging outputs, running improvement loops, queueing work, or exposing MCP tools? Start with `ts/`.
 - Want to wire another agent into autocontext? Start with the CLI-first guide in `autocontext/docs/agent-integration.md`.
 - Want to contribute or point a coding agent at the repo? Read `CONTRIBUTING.md` and `AGENTS.md`.
+
+<!-- autocontext-whats-new:start -->
+## What's New
+
+- GEPA-inspired ASI/Pareto optimizer wired into improvement loop
+- Component sensitivity profiling and credit assignment
+- Pluggable scoring backends with Elo and Glicko support
+- Novelty exploration and multi-basin playbook branching
+- Cost-aware loop control and long-run presets
+<!-- autocontext-whats-new:end -->
 
 ## Core Capabilities
 
@@ -112,12 +132,6 @@ The Python package exposes the full `autoctx` control-plane CLI (`run`, `serve`,
 `operator-in-the-loop` remains a typed scenario family for capability discovery and experimentation, but autocontext does not scaffold executable operator-loop runtimes. Use datasets, tools, or live-agent experiments instead of harness-owned escalation scripts.
 
 MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenClaw agent to trigger training, use the file-based host watcher flow documented in [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md).
-
-## Recent Highlights
-
-- `v0.2.0` added typed scenario families, scenario-family-aware creation/routing, broader analytics, trace-grounded reporting, and trusted publishing for both PyPI and npm.
-- Current unreleased work adds session notebooks in runtime prompts and cockpit flows, world-state abstractions for stateful scenario families, and phased execution budgets for agent-task scaffolding vs execution.
-- Full details live in [CHANGELOG.md](CHANGELOG.md).
 
 ## Repository Layout
 

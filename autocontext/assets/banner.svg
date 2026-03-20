@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1364 256" width="1364" height="256" role="img" aria-label="autocontext ASCII banner">
+  <rect width="100%" height="100%" rx="24" fill="#161b22"/>
+  <g fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="20" font-weight="600">
+  <text x="28" y="50" xml:space="preserve">                          .                                                 .                             .</text>
+  <text x="28" y="78" xml:space="preserve">                        .o8                                               .o8                           .o8</text>
+  <text x="28" y="106" xml:space="preserve"> .oooo.   oooo  oooo  .o888oo  .ooooo.   .ooooo.   .ooooo.  ooo. .oo.   .o888oo  .ooooo.  oooo    ooo .o888oo</text>
+  <text x="28" y="134" xml:space="preserve">`P  )88b  `888  `888    888   d88' `88b d88' `"Y8 d88' `88b `888P"Y88b    888   d88' `88b  `88b..8P'    888</text>
+  <text x="28" y="162" xml:space="preserve"> .oP"888   888   888    888   888   888 888       888   888  888   888    888   888ooo888    Y888'      888</text>
+  <text x="28" y="190" xml:space="preserve">d8(  888   888   888    888 . 888   888 888   .o8 888   888  888   888    888 . 888    .o  .o8"'88b     888 .</text>
+  <text x="28" y="218" xml:space="preserve">`Y888""8o  `V88V"V8P'   "888" `Y8bod8P' `Y8bod8P' `Y8bod8P' o888o o888o   "888" `Y8bod8P' o88'   888o   "888"</text>
+  </g>
+</svg>
