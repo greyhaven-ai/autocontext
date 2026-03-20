@@ -9,6 +9,7 @@ export class LoopController {
   private gateOverride: string | null = null;
   private pendingHint: string | null = null;
   private chatQueue: Array<{ role: string; message: string; resolve: (response: string) => void }> = [];
+  private pendingChatResolvers: Array<(response: string) => void> = [];
 
   pause(): void {
     this.paused = true;
@@ -62,20 +63,15 @@ export class LoopController {
 
   pollChat(): [string, string] | null {
     if (this.chatQueue.length === 0) return null;
-    const entry = this.chatQueue[0];
-    // Store the resolver so respondChat can resolve it later
-    this.lastPolledResolve = entry.resolve;
-    this.chatQueue.shift();
+    const entry = this.chatQueue.shift()!;
+    this.pendingChatResolvers.push(entry.resolve);
     return [entry.role, entry.message];
   }
 
   respondChat(_role: string, response: string): void {
-    if (this.lastPolledResolve) {
-      const resolve = this.lastPolledResolve;
-      this.lastPolledResolve = null;
+    if (this.pendingChatResolvers.length > 0) {
+      const resolve = this.pendingChatResolvers.shift()!;
       resolve(response);
     }
   }
-
-  private lastPolledResolve: ((response: string) => void) | null = null;
 }

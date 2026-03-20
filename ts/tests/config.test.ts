@@ -42,6 +42,21 @@ describe("AppSettingsSchema", () => {
     expect(settings.modelArchitect).toContain("opus");
   });
 
+  it("should include OpenClaw runtime defaults", async () => {
+    const { AppSettingsSchema } = await import("../src/config/index.js");
+    const settings = AppSettingsSchema.parse({});
+    expect(settings.openclawRuntimeKind).toBe("factory");
+    expect(settings.openclawAgentFactory).toBe("");
+    expect(settings.openclawAgentCommand).toBe("");
+    expect(settings.openclawAgentHttpEndpoint).toBe("");
+    expect(settings.openclawCompatibilityVersion).toBe("1.0");
+    expect(settings.openclawTimeoutSeconds).toBe(30.0);
+    expect(settings.openclawMaxRetries).toBe(2);
+    expect(settings.openclawRetryBaseDelay).toBe(0.25);
+    expect(settings.openclawDistillSidecarFactory).toBe("");
+    expect(settings.openclawDistillSidecarCommand).toBe("");
+  });
+
   it("should include judge defaults", async () => {
     const { AppSettingsSchema } = await import("../src/config/index.js");
     const settings = AppSettingsSchema.parse({});
@@ -175,6 +190,26 @@ describe("loadSettings", () => {
     const { loadSettings } = await import("../src/config/index.js");
     const settings = loadSettings();
     expect(settings.anthropicApiKey).toBe("sk-test-123");
+  });
+
+  it("should read AUTOCONTEXT_OPENCLAW_* env vars", async () => {
+    process.env.AUTOCONTEXT_OPENCLAW_RUNTIME_KIND = "http";
+    process.env.AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT = "http://127.0.0.1:8001/run";
+    process.env.AUTOCONTEXT_OPENCLAW_AGENT_HTTP_HEADERS = '{"Authorization":"Bearer token"}';
+    process.env.AUTOCONTEXT_OPENCLAW_TIMEOUT_SECONDS = "45";
+    process.env.AUTOCONTEXT_OPENCLAW_MAX_RETRIES = "4";
+    process.env.AUTOCONTEXT_OPENCLAW_RETRY_BASE_DELAY = "0.5";
+    process.env.AUTOCONTEXT_OPENCLAW_DISTILL_SIDECAR_COMMAND = "python sidecar.py";
+
+    const { loadSettings } = await import("../src/config/index.js");
+    const settings = loadSettings();
+    expect(settings.openclawRuntimeKind).toBe("http");
+    expect(settings.openclawAgentHttpEndpoint).toBe("http://127.0.0.1:8001/run");
+    expect(settings.openclawAgentHttpHeaders).toBe('{"Authorization":"Bearer token"}');
+    expect(settings.openclawTimeoutSeconds).toBe(45);
+    expect(settings.openclawMaxRetries).toBe(4);
+    expect(settings.openclawRetryBaseDelay).toBe(0.5);
+    expect(settings.openclawDistillSidecarCommand).toBe("python sidecar.py");
   });
 });
 

@@ -153,4 +153,21 @@ describe("LoopController chat", () => {
     // Don't forget to respond to prevent hanging
     ctrl.respondChat("assistant", "ok");
   });
+
+  it("should preserve FIFO chat responses across multiple polled requests", async () => {
+    const { LoopController } = await import("../src/loop/controller.js");
+    const ctrl = new LoopController();
+
+    const firstResponse = ctrl.submitChat("user", "first");
+    const secondResponse = ctrl.submitChat("user", "second");
+
+    expect(ctrl.pollChat()).toEqual(["user", "first"]);
+    expect(ctrl.pollChat()).toEqual(["user", "second"]);
+
+    ctrl.respondChat("assistant", "response-one");
+    ctrl.respondChat("assistant", "response-two");
+
+    await expect(firstResponse).resolves.toBe("response-one");
+    await expect(secondResponse).resolves.toBe("response-two");
+  });
 });

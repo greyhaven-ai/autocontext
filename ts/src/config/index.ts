@@ -176,6 +176,19 @@ export const AppSettingsSchema = z.object({
   primeintellectApiBase: z.string().default("https://api.primeintellect.ai"),
   primeintellectApiKey: z.string().nullable().default(null),
 
+  // OpenClaw runtime
+  openclawRuntimeKind: z.string().default("factory"),
+  openclawAgentFactory: z.string().default(""),
+  openclawAgentCommand: z.string().default(""),
+  openclawAgentHttpEndpoint: z.string().default(""),
+  openclawAgentHttpHeaders: z.string().default(""),
+  openclawCompatibilityVersion: z.string().default("1.0"),
+  openclawTimeoutSeconds: z.number().min(1.0).default(30.0),
+  openclawMaxRetries: z.number().int().min(0).default(2),
+  openclawRetryBaseDelay: z.number().min(0.0).default(0.25),
+  openclawDistillSidecarFactory: z.string().default(""),
+  openclawDistillSidecarCommand: z.string().default(""),
+
   // Feature flags
   ablationNoFeedback: z.boolean().default(false),
   rlmEnabled: z.boolean().default(false),
