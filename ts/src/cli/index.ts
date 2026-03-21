@@ -117,6 +117,7 @@ async function cmdRun(dbPath: string): Promise<void> {
   const { SQLiteStore } = await import("../storage/index.js");
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+  const { loadSettings } = await import("../config/index.js");
 
   // Resolve provider
   let provider;
@@ -142,17 +143,33 @@ async function cmdRun(dbPath: string): Promise<void> {
 
   const runId = values["run-id"] ?? `run-${Date.now()}`;
   const gens = parseInt(values.gens ?? "1", 10);
-  const matches = parseInt(values.matches ?? "3", 10);
+  const settings = loadSettings();
+  const matches = parseInt(values.matches ?? String(settings.matchesPerGeneration), 10);
 
   const runner = new GenerationRunner({
     provider,
     scenario,
     store,
-    runsRoot: resolve("runs"),
-    knowledgeRoot: resolve("knowledge"),
+    runsRoot: resolve(settings.runsRoot),
+    knowledgeRoot: resolve(settings.knowledgeRoot),
     matchesPerGeneration: matches,
-    maxRetries: 2,
-    minDelta: 0.005,
+    maxRetries: settings.maxRetries,
+    minDelta: settings.backpressureMinDelta,
+    playbookMaxVersions: settings.playbookMaxVersions,
+    contextBudgetTokens: settings.contextBudgetTokens,
+    curatorEnabled: settings.curatorEnabled,
+    curatorConsolidateEveryNGens: settings.curatorConsolidateEveryNGens,
+    skillMaxLessons: settings.skillMaxLessons,
+    deadEndTrackingEnabled: settings.deadEndTrackingEnabled,
+    deadEndMaxEntries: settings.deadEndMaxEntries,
+    stagnationResetEnabled: settings.stagnationResetEnabled,
+    stagnationRollbackThreshold: settings.stagnationRollbackThreshold,
+    stagnationPlateauWindow: settings.stagnationPlateauWindow,
+    stagnationPlateauEpsilon: settings.stagnationPlateauEpsilon,
+    stagnationDistillTopLessons: settings.stagnationDistillTopLessons,
+    explorationMode: settings.explorationMode,
+    notifyWebhookUrl: settings.notifyWebhookUrl,
+    notifyOn: settings.notifyOn,
   });
 
   try {

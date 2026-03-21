@@ -96,6 +96,17 @@ describe("StagnationDetector", () => {
     expect(report.trigger).toBe("score_plateau");
   });
 
+  it("does not flag oscillating scores when stddev exceeds epsilon", async () => {
+    const { StagnationDetector } = await import("../src/loop/stagnation.js");
+    const detector = new StagnationDetector({ plateauWindow: 4, plateauEpsilon: 0.01 });
+    const report = detector.detect(
+      ["advance", "advance", "advance", "advance"],
+      [0.50, 0.60, 0.50, 0.60],
+    );
+    expect(report.isStagnated).toBe(false);
+    expect(report.trigger).toBe("none");
+  });
+
   it("returns no stagnation when insufficient history", async () => {
     const { StagnationDetector } = await import("../src/loop/stagnation.js");
     const detector = new StagnationDetector({ plateauWindow: 5 });

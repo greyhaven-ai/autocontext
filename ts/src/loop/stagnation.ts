@@ -50,11 +50,14 @@ export class StagnationDetector {
       const window = scoreHistory.slice(-this.plateauWindow);
       const mean = window.reduce((a, b) => a + b, 0) / window.length;
       const variance = window.reduce((sum, s) => sum + (s - mean) ** 2, 0) / window.length;
-      if (variance < this.plateauEpsilon) {
+      const stddev = Math.sqrt(variance);
+      if (stddev < this.plateauEpsilon) {
         return {
           isStagnated: true,
           trigger: "score_plateau",
-          detail: `score variance ${variance.toFixed(6)} < epsilon ${this.plateauEpsilon} over last ${this.plateauWindow} gens`,
+          detail:
+            `score stddev ${stddev.toFixed(6)} < epsilon ${this.plateauEpsilon} ` +
+            `over last ${this.plateauWindow} gens`,
         };
       }
     }

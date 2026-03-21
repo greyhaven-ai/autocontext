@@ -39,6 +39,7 @@ export function resolveMcpArtifactRoots(opts: Pick<MtsServerOpts, "runsRoot" | "
 
 export function createMcpServer(opts: MtsServerOpts): McpServer {
   const { store, provider, model = "" } = opts;
+  const settings = loadSettings();
   const { runsRoot, knowledgeRoot } = resolveMcpArtifactRoots(opts);
   const server = new McpServer({
     name: "autocontext",
@@ -372,6 +373,23 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
         runsRoot,
         knowledgeRoot,
         matchesPerGeneration: args.matchesPerGeneration,
+        maxRetries: settings.maxRetries,
+        minDelta: settings.backpressureMinDelta,
+        playbookMaxVersions: settings.playbookMaxVersions,
+        contextBudgetTokens: settings.contextBudgetTokens,
+        curatorEnabled: settings.curatorEnabled,
+        curatorConsolidateEveryNGens: settings.curatorConsolidateEveryNGens,
+        skillMaxLessons: settings.skillMaxLessons,
+        deadEndTrackingEnabled: settings.deadEndTrackingEnabled,
+        deadEndMaxEntries: settings.deadEndMaxEntries,
+        stagnationResetEnabled: settings.stagnationResetEnabled,
+        stagnationRollbackThreshold: settings.stagnationRollbackThreshold,
+        stagnationPlateauWindow: settings.stagnationPlateauWindow,
+        stagnationPlateauEpsilon: settings.stagnationPlateauEpsilon,
+        stagnationDistillTopLessons: settings.stagnationDistillTopLessons,
+        explorationMode: settings.explorationMode,
+        notifyWebhookUrl: settings.notifyWebhookUrl,
+        notifyOn: settings.notifyOn,
       });
 
       // Fire and forget — run in background
