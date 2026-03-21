@@ -15,12 +15,23 @@ import type { ScenarioInterface } from "../scenarios/game-interface.js";
 import type { SQLiteStore } from "../storage/index.js";
 import { TournamentRunner } from "../execution/tournament.js";
 import { BackpressureGate } from "./backpressure.js";
-import { ArtifactStore } from "../knowledge/artifact-store.js";
+import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "../knowledge/artifact-store.js";
 import { PlaybookGuard, PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
+import { DeadEndEntry, consolidateDeadEnds } from "../knowledge/dead-end.js";
+import { generateSessionReport } from "../knowledge/session-report.js";
 import { ContextBudget } from "../prompts/context-budget.js";
+import { parseCuratorLessonResult, parseCuratorPlaybookDecision } from "../agents/curator-parser.js";
+import {
+  CompositeNotifier,
+  HTTPNotifier,
+  StdoutNotifier,
+  type EventType,
+  type Notifier,
+} from "../notifications/index.js";
 import type { LoopController } from "./controller.js";
 import type { EventStreamEmitter } from "./events.js";
+import { StagnationDetector, type StagnationReport } from "./stagnation.js";
 import { join } from "node:path";
 
 export interface GenerationRunnerOpts {
@@ -33,6 +44,22 @@ export interface GenerationRunnerOpts {
   maxRetries?: number;
   minDelta?: number;
   seedBase?: number;
+  playbookMaxVersions?: number;
+  contextBudgetTokens?: number;
+  curatorEnabled?: boolean;
+  curatorConsolidateEveryNGens?: number;
+  skillMaxLessons?: number;
+  deadEndTrackingEnabled?: boolean;
+  deadEndMaxEntries?: number;
+  stagnationResetEnabled?: boolean;
+  stagnationRollbackThreshold?: number;
+  stagnationPlateauWindow?: number;
+  stagnationPlateauEpsilon?: number;
+  stagnationDistillTopLessons?: number;
+  explorationMode?: string;
+  notifyWebhookUrl?: string | null;
+  notifyOn?: string;
+  notifier?: Notifier | null;
   controller?: LoopController;
   events?: EventStreamEmitter;
 }
@@ -55,8 +82,23 @@ export class GenerationRunner {
   private seedBase: number;
   private playbookGuard: PlaybookGuard;
   private contextBudget: ContextBudget;
+  private curatorEnabled: boolean;
+  private curatorConsolidateEveryNGens: number;
+  private skillMaxLessons: number;
+  private deadEndTrackingEnabled: boolean;
+  private deadEndMaxEntries: number;
+  private stagnationResetEnabled: boolean;
+  private stagnationDistillTopLessons: number;
+  private stagnationDetector: StagnationDetector;
+  private explorationMode: string;
+  private notifier: Notifier | null;
+  private notifyOn: Set<EventType>;
   private controller: LoopController | null;
   private events: EventStreamEmitter | null;
+  private gateHistory: string[] = [];
+  private scoreHistory: number[] = [];
+  private pendingFreshStartHint: string | null = null;
+  private runStartedAtMs = 0;
 
   constructor(opts: GenerationRunnerOpts) {
     this.provider = opts.provider;
@@ -65,13 +107,31 @@ export class GenerationRunner {
     this.artifactStore = new ArtifactStore({
       runsRoot: opts.runsRoot,
       knowledgeRoot: opts.knowledgeRoot,
+      maxPlaybookVersions: opts.playbookMaxVersions,
     });
     this.matchesPerGeneration = opts.matchesPerGeneration ?? 3;
     this.maxRetries = opts.maxRetries ?? 2;
     this.gate = new BackpressureGate(opts.minDelta ?? 0.005);
     this.seedBase = opts.seedBase ?? 1000;
     this.playbookGuard = new PlaybookGuard();
-    this.contextBudget = new ContextBudget();
+    this.contextBudget = new ContextBudget(opts.contextBudgetTokens ?? 100_000);
+    this.curatorEnabled = opts.curatorEnabled ?? false;
+    this.curatorConsolidateEveryNGens = opts.curatorConsolidateEveryNGens ?? 3;
+    this.skillMaxLessons = opts.skillMaxLessons ?? 30;
+    this.deadEndTrackingEnabled = opts.deadEndTrackingEnabled ?? false;
+    this.deadEndMaxEntries = opts.deadEndMaxEntries ?? 20;
+    this.stagnationResetEnabled = opts.stagnationResetEnabled ?? false;
+    this.stagnationDistillTopLessons = opts.stagnationDistillTopLessons ?? 5;
+    this.stagnationDetector = new StagnationDetector({
+      rollbackThreshold: opts.stagnationRollbackThreshold,
+      plateauWindow: opts.stagnationPlateauWindow,
+      plateauEpsilon: opts.stagnationPlateauEpsilon,
+    });
+    this.explorationMode = opts.explorationMode ?? "linear";
+    this.notifyOn = parseNotificationFilter(opts.notifyOn);
+    this.notifier =
+      opts.notifier
+      ?? buildConfiguredNotifier(opts.notifyWebhookUrl ?? null, [...this.notifyOn]);
     this.controller = opts.controller ?? null;
     this.events = opts.events ?? null;
   }
@@ -79,6 +139,12 @@ export class GenerationRunner {
   async run(runId: string, generations: number): Promise<RunResult> {
     // Create run record
     this.store.createRun(runId, this.scenario.name, generations, "local");
+    this.gateHistory = [];
+    this.scoreHistory = [];
+    this.pendingFreshStartHint = null;
+    this.runStartedAtMs = Date.now();
+    let currentElo = 1000;
+    let bestScoreOverall = 0;
     try {
       this.emit("run_started", {
         run_id: runId,
@@ -87,18 +153,19 @@ export class GenerationRunner {
       });
 
       let previousBest = 0;
-      let currentElo = 1000;
-      let bestScoreOverall = 0;
 
       for (let gen = 1; gen <= generations; gen++) {
         await this.controller?.waitIfPaused();
         let retryCount = 0;
         let finalizedAttempt: GenerationAttempt | null = null;
+        const previousBestForGeneration = previousBest;
         this.emit("generation_started", { run_id: runId, generation: gen });
         this.emit("agents_started", {
           run_id: runId,
           generation: gen,
-          roles: ["competitor", "analyst", "coach"],
+          roles: this.curatorEnabled
+            ? ["competitor", "analyst", "coach", "curator"]
+            : ["competitor", "analyst", "coach"],
         });
 
         // Retry loop for this generation
@@ -204,6 +271,7 @@ export class GenerationRunner {
         this.persistGeneration(runId, gen, finalizedAttempt);
         await this.controller?.waitIfPaused();
         await this.runSupportRoles(runId, gen, finalizedAttempt);
+        await this.applyAdvancedFeatures(runId, gen, finalizedAttempt, previousBestForGeneration);
         this.emit("generation_completed", {
           run_id: runId,
           generation: gen,
@@ -215,11 +283,18 @@ export class GenerationRunner {
       }
 
       this.store.updateRunStatus(runId, "completed");
+      const sessionReportPath = this.persistSessionReport(runId);
       this.emit("run_completed", {
         run_id: runId,
         completed_generations: generations,
         best_score: bestScoreOverall,
         elo: currentElo,
+        session_report_path: sessionReportPath,
+        dead_ends_found: this.countDeadEnds(),
+      });
+      await this.notify("completion", runId, bestScoreOverall, {
+        roundCount: generations,
+        metadata: { session_report_path: sessionReportPath },
       });
 
       return {
@@ -234,14 +309,22 @@ export class GenerationRunner {
         run_id: runId,
         error: error instanceof Error ? error.message : String(error),
       });
+      await this.notify("failure", runId, bestScoreOverall, {
+        roundCount: this.scoreHistory.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }
 
   private buildCompetitorPrompt(runId: string): string {
+    const freshStartHint = this.pendingFreshStartHint;
+    this.pendingFreshStartHint = null;
     const trimmed = this.contextBudget.apply({
       playbook: this.artifactStore.readPlaybook(this.scenario.name),
       trajectory: new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build(),
+      dead_ends: this.artifactStore.readDeadEnds(this.scenario.name),
+      session_reports: this.artifactStore.readSessionReports(this.scenario.name),
     });
     const injectedHint = this.controller?.takeHint();
 
@@ -255,6 +338,18 @@ export class GenerationRunner {
 
     if (trimmed.trajectory) {
       sections.push(`Recent Score Trajectory:\n${trimmed.trajectory}`);
+    }
+
+    if (trimmed.dead_ends) {
+      sections.push(`Known Dead Ends (do not repeat these approaches):\n${trimmed.dead_ends}`);
+    }
+
+    if (trimmed.session_reports) {
+      sections.push(`Prior Session Reports:\n${trimmed.session_reports}`);
+    }
+
+    if (freshStartHint) {
+      sections.push(`Fresh Start Guidance:\n${freshStartHint}`);
     }
 
     if (injectedHint) {
@@ -281,6 +376,7 @@ export class GenerationRunner {
         `Best score: ${attempt.tournamentResult.bestScore.toFixed(4)}\n` +
         `Mean score: ${attempt.tournamentResult.meanScore.toFixed(4)}\n` +
         `Wins/Losses: ${attempt.tournamentResult.wins}/${attempt.tournamentResult.losses}`,
+      dead_ends: this.artifactStore.readDeadEnds(this.scenario.name),
     });
 
     const intro =
@@ -301,7 +397,52 @@ export class GenerationRunner {
       sections.push(`Recent Score Trajectory:\n${trimmed.trajectory}`);
     }
 
+    if (trimmed.dead_ends) {
+      sections.push(`Known Dead Ends:\n${trimmed.dead_ends}`);
+    }
+
     return sections.join("\n\n");
+  }
+
+  private buildCuratorPrompt(
+    runId: string,
+    currentPlaybook: string,
+    proposedPlaybook: string,
+    attempt: GenerationAttempt,
+  ): string {
+    const trajectory = new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build();
+    const sections = [
+      "You are a curator assessing playbook quality. Compare the CURRENT and PROPOSED playbooks.",
+      "Respond with reasoning, then include the following markers:",
+      "<!-- CURATOR_DECISION: accept|reject|merge -->",
+      "<!-- CURATOR_SCORE: 0-10 -->",
+      "If merging, include:",
+      "<!-- CURATOR_PLAYBOOK_START -->",
+      "...merged playbook...",
+      "<!-- CURATOR_PLAYBOOK_END -->",
+      `Tournament Summary:\nGate=${attempt.gateDecision}, Best=${attempt.tournamentResult.bestScore.toFixed(4)}, Mean=${attempt.tournamentResult.meanScore.toFixed(4)}`,
+      `Current Playbook:\n${currentPlaybook}`,
+      `Proposed Playbook:\n${proposedPlaybook}`,
+    ];
+
+    if (trajectory) {
+      sections.push(`Recent Score Trajectory:\n${trajectory}`);
+    }
+
+    return sections.join("\n\n");
+  }
+
+  private buildCuratorConsolidationPrompt(lessons: string): string {
+    return [
+      "You are a curator consolidating operational lessons.",
+      `Reduce duplication and keep at most ${this.skillMaxLessons} lessons.`,
+      "Respond with reasoning, then include the following markers:",
+      "<!-- CONSOLIDATED_LESSONS_START -->",
+      "...bullet lessons...",
+      "<!-- CONSOLIDATED_LESSONS_END -->",
+      "<!-- LESSONS_REMOVED: N -->",
+      `Existing Lessons:\n${lessons}`,
+    ].join("\n\n");
   }
 
   private persistGeneration(runId: string, gen: number, attempt: GenerationAttempt): void {
@@ -390,6 +531,8 @@ export class GenerationRunner {
     );
 
     const currentPlaybook = this.artifactStore.readPlaybook(this.scenario.name);
+    const normalizedPlaybook =
+      currentPlaybook === EMPTY_PLAYBOOK_SENTINEL ? "" : currentPlaybook;
     const hasStructuredPlaybook =
       coachResult.text.includes(PLAYBOOK_MARKERS.PLAYBOOK_START) &&
       coachResult.text.includes(PLAYBOOK_MARKERS.PLAYBOOK_END) &&
@@ -397,9 +540,235 @@ export class GenerationRunner {
       coachResult.text.includes(PLAYBOOK_MARKERS.LESSONS_END) &&
       coachResult.text.includes(PLAYBOOK_MARKERS.HINTS_START) &&
       coachResult.text.includes(PLAYBOOK_MARKERS.HINTS_END);
-    const playbookCheck = this.playbookGuard.check(currentPlaybook, coachResult.text);
+    const playbookCheck = this.playbookGuard.check(normalizedPlaybook, coachResult.text);
+
+    let nextPlaybook = "";
     if (hasStructuredPlaybook && playbookCheck.approved) {
-      this.artifactStore.writePlaybook(this.scenario.name, coachResult.text);
+      nextPlaybook = coachResult.text;
+    }
+
+    if (nextPlaybook && this.curatorEnabled && normalizedPlaybook) {
+      this.emit("curator_started", { run_id: runId, generation: gen });
+      const curatorStartedAt = Date.now();
+      const curatorResult = await this.provider.complete({
+        systemPrompt: "",
+        userPrompt: this.buildCuratorPrompt(runId, normalizedPlaybook, nextPlaybook, attempt),
+      });
+      this.emitRoleCompleted("curator", curatorStartedAt, curatorResult.usage);
+      this.store.appendAgentOutput(runId, gen, "curator", curatorResult.text);
+      this.artifactStore.writeMarkdown(join(generationDir, "curator.md"), curatorResult.text);
+      this.artifactStore.appendMarkdown(
+        join(this.artifactStore.runsRoot, runId, "support_log.md"),
+        curatorResult.text,
+        `Generation ${gen} Curator`,
+      );
+
+      const curatorDecision = parseCuratorPlaybookDecision(curatorResult.text);
+      if (curatorDecision.decision === "reject") {
+        nextPlaybook = "";
+      } else if (curatorDecision.decision === "merge" && curatorDecision.playbook) {
+        nextPlaybook = curatorDecision.playbook;
+      }
+      this.emit("curator_completed", {
+        run_id: runId,
+        generation: gen,
+        decision: curatorDecision.decision,
+      });
+    }
+
+    if (nextPlaybook) {
+      this.artifactStore.writePlaybook(this.scenario.name, nextPlaybook);
+    }
+
+    if (
+      this.curatorEnabled
+      && this.curatorConsolidateEveryNGens > 0
+      && gen % this.curatorConsolidateEveryNGens === 0
+    ) {
+      await this.runCuratorConsolidation(runId, gen);
+    }
+  }
+
+  private async runCuratorConsolidation(runId: string, gen: number): Promise<void> {
+    const playbook = this.artifactStore.readPlaybook(this.scenario.name);
+    if (!playbook || playbook === EMPTY_PLAYBOOK_SENTINEL) return;
+
+    const lessons = extractMarkedSection(
+      playbook,
+      PLAYBOOK_MARKERS.LESSONS_START,
+      PLAYBOOK_MARKERS.LESSONS_END,
+    );
+    if (!lessons.trim()) return;
+
+    const result = await this.provider.complete({
+      systemPrompt: "",
+      userPrompt: this.buildCuratorConsolidationPrompt(lessons),
+    });
+    this.store.appendAgentOutput(runId, gen, "curator_consolidation", result.text);
+    this.artifactStore.writeMarkdown(
+      join(this.artifactStore.generationDir(runId, gen), "curator_consolidation.md"),
+      result.text,
+    );
+    this.artifactStore.appendMarkdown(
+      join(this.artifactStore.runsRoot, runId, "support_log.md"),
+      result.text,
+      `Generation ${gen} Curator Consolidation`,
+    );
+
+    const parsed = parseCuratorLessonResult(result.text);
+    if (!parsed.consolidatedLessons.trim()) return;
+
+    const updatedPlaybook = replaceMarkedSection(
+      playbook,
+      PLAYBOOK_MARKERS.LESSONS_START,
+      PLAYBOOK_MARKERS.LESSONS_END,
+      parsed.consolidatedLessons,
+    );
+    this.artifactStore.writePlaybook(this.scenario.name, updatedPlaybook);
+  }
+
+  private async applyAdvancedFeatures(
+    runId: string,
+    gen: number,
+    attempt: GenerationAttempt,
+    previousBestForGeneration: number,
+  ): Promise<void> {
+    this.gateHistory.push(attempt.gateDecision);
+    this.scoreHistory.push(attempt.tournamentResult.bestScore);
+
+    if (attempt.gateDecision === "rollback" && this.deadEndTrackingEnabled) {
+      const entry = DeadEndEntry.fromRollback(
+        gen,
+        JSON.stringify(attempt.strategy, null, 0),
+        attempt.tournamentResult.bestScore,
+      );
+      this.artifactStore.appendDeadEnd(this.scenario.name, entry.toMarkdown());
+      const deadEnds = this.artifactStore.readDeadEnds(this.scenario.name);
+      if (deadEnds) {
+        this.artifactStore.replaceDeadEnds(
+          this.scenario.name,
+          consolidateDeadEnds(deadEnds, this.deadEndMaxEntries),
+        );
+      }
+      this.emit("dead_end_recorded", {
+        run_id: runId,
+        generation: gen,
+        score: attempt.tournamentResult.bestScore,
+      });
+      await this.notify("regression", runId, attempt.tournamentResult.bestScore, {
+        previousBest: previousBestForGeneration,
+        roundCount: gen,
+        metadata: { gate_decision: attempt.gateDecision },
+      });
+    }
+
+    if (attempt.gateDecision === "advance" && attempt.tournamentResult.bestScore > previousBestForGeneration) {
+      await this.notify("threshold_met", runId, attempt.tournamentResult.bestScore, {
+        previousBest: previousBestForGeneration,
+        roundCount: gen,
+        metadata: { gate_decision: attempt.gateDecision },
+      });
+    }
+
+    if (!this.stagnationResetEnabled) return;
+
+    const report = this.stagnationDetector.detect(this.gateHistory, this.scoreHistory);
+    if (!report.isStagnated) return;
+
+    this.pendingFreshStartHint = this.buildFreshStartHint(report);
+    this.emit("fresh_start", {
+      run_id: runId,
+      generation: gen,
+      trigger: report.trigger,
+      detail: report.detail,
+    });
+  }
+
+  private buildFreshStartHint(report: StagnationReport): string {
+    const playbook = this.artifactStore.readPlaybook(this.scenario.name);
+    const lessons = extractMarkedSection(
+      playbook,
+      PLAYBOOK_MARKERS.LESSONS_START,
+      PLAYBOOK_MARKERS.LESSONS_END,
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("-"))
+      .slice(0, this.stagnationDistillTopLessons);
+
+    const deadEnds = this.artifactStore.readDeadEnds(this.scenario.name)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("- **Gen"))
+      .slice(-2);
+
+    const sections = [
+      `Stagnation detected via ${report.trigger}: ${report.detail}.`,
+      "Treat the next generation as a fresh start rather than a small local tweak.",
+    ];
+
+    if (lessons.length > 0) {
+      sections.push("Retain only these distilled lessons:");
+      sections.push(...lessons);
+    }
+
+    if (deadEnds.length > 0) {
+      sections.push("Avoid repeating these recent dead ends:");
+      sections.push(...deadEnds);
+    }
+
+    return sections.join("\n");
+  }
+
+  private persistSessionReport(runId: string): string {
+    const report = generateSessionReport(
+      runId,
+      this.scenario.name,
+      this.store.getScoreTrajectory(runId) as unknown as Array<Record<string, unknown>>,
+      {
+        durationSeconds: (Date.now() - this.runStartedAtMs) / 1000,
+        deadEndsFound: this.countDeadEnds(),
+        explorationMode: this.explorationMode,
+      },
+    );
+    const markdown = report.toMarkdown();
+    const runPath = join(this.artifactStore.runsRoot, runId, "session_report.md");
+    this.artifactStore.writeMarkdown(runPath, markdown);
+    this.artifactStore.writeSessionReport(this.scenario.name, runId, markdown);
+    return runPath;
+  }
+
+  private countDeadEnds(): number {
+    const content = this.artifactStore.readDeadEnds(this.scenario.name);
+    if (!content) return 0;
+    return content.split("\n").filter((line) => line.startsWith("### Dead End")).length;
+  }
+
+  private async notify(
+    type: EventType,
+    runId: string,
+    score: number,
+    extras: {
+      previousBest?: number;
+      roundCount?: number;
+      error?: string;
+      metadata?: Record<string, unknown>;
+    } = {},
+  ): Promise<void> {
+    if (!this.notifier || !this.notifyOn.has(type)) return;
+    try {
+      await this.notifier.notify({
+        type,
+        taskName: this.scenario.name,
+        taskId: runId,
+        score,
+        previousBest: extras.previousBest,
+        roundCount: extras.roundCount,
+        error: extras.error,
+        metadata: extras.metadata,
+      });
+    } catch {
+      // Notifications must never crash the loop.
     }
   }
 
@@ -408,7 +777,7 @@ export class GenerationRunner {
   }
 
   private emitRoleCompleted(
-    role: "competitor" | "analyst" | "coach",
+    role: "competitor" | "analyst" | "coach" | "curator",
     startedAt: number,
     usage: Record<string, number>,
   ): void {
@@ -428,4 +797,51 @@ interface GenerationAttempt {
   strategy: Record<string, unknown>;
   tournamentResult: ReturnType<TournamentRunner["run"]>;
   gateDecision: "advance" | "retry" | "rollback";
+}
+
+function parseNotificationFilter(spec?: string): Set<EventType> {
+  const raw = (spec ?? "threshold_met,failure")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const allowed = new Set<EventType>(["threshold_met", "regression", "completion", "failure"]);
+  const parsed = raw.filter((part): part is EventType => allowed.has(part as EventType));
+  return new Set(parsed);
+}
+
+function buildConfiguredNotifier(
+  webhookUrl: string | null,
+  eventFilter: EventType[],
+): Notifier | null {
+  if (!webhookUrl) return null;
+  return new CompositeNotifier(
+    [new StdoutNotifier(), new HTTPNotifier(webhookUrl)],
+    eventFilter,
+  );
+}
+
+function extractMarkedSection(content: string, startMarker: string, endMarker: string): string {
+  const start = content.indexOf(startMarker);
+  const end = content.indexOf(endMarker);
+  if (start === -1 || end === -1 || end <= start) return "";
+  return content.slice(start + startMarker.length, end).trim();
+}
+
+function replaceMarkedSection(
+  content: string,
+  startMarker: string,
+  endMarker: string,
+  replacement: string,
+): string {
+  const start = content.indexOf(startMarker);
+  const end = content.indexOf(endMarker);
+  if (start === -1 || end === -1 || end <= start) return content;
+  return [
+    content.slice(0, start + startMarker.length),
+    "\n",
+    replacement.trim(),
+    "\n",
+    content.slice(end),
+  ].join("");
 }

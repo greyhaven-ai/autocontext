@@ -29,6 +29,19 @@ export class DeterministicProvider implements LLMProvider {
         "## Findings\n\n- Strategy balances offense/defense.\n\n" +
         "## Root Causes\n\n- Moderate aggressiveness.\n\n" +
         "## Actionable Recommendations\n\n- Increase defensive weight.";
+    } else if (prompt.includes("curator") && prompt.includes("consolidat")) {
+      text =
+        "Consolidated lessons after removing duplicates and stale guidance.\n\n" +
+        "<!-- CONSOLIDATED_LESSONS_START -->\n" +
+        "- Preserve a defensive anchor above 0.5.\n" +
+        "- Keep aggression balanced with defense to avoid unstable regressions.\n" +
+        "<!-- CONSOLIDATED_LESSONS_END -->\n" +
+        "<!-- LESSONS_REMOVED: 1 -->";
+    } else if (prompt.includes("curator") && prompt.includes("playbook quality")) {
+      text =
+        "The proposed playbook keeps the useful structure and adds clearer guidance.\n\n" +
+        "<!-- CURATOR_DECISION: accept -->\n" +
+        "<!-- CURATOR_SCORE: 7 -->";
     } else if (prompt.includes("playbook coach") || prompt.includes("update the playbook") || prompt.includes("[coach]")) {
       text =
         "<!-- PLAYBOOK_START -->\n" +

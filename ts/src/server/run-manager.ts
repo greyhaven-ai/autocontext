@@ -22,6 +22,7 @@ import {
 import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import { SQLiteStore } from "../storage/index.js";
+import { loadSettings } from "../config/index.js";
 
 export interface RunManagerOpts {
   dbPath: string;
@@ -209,6 +210,7 @@ export class RunManager {
 
     const id = runId ?? `tui_${Date.now().toString(16).slice(-8)}`;
     const provider = this.buildProvider();
+    const settings = loadSettings();
 
     const store = new SQLiteStore(this.opts.dbPath);
     store.migrate(this.opts.migrationsDir);
@@ -219,6 +221,24 @@ export class RunManager {
       store,
       runsRoot: this.opts.runsRoot,
       knowledgeRoot: this.opts.knowledgeRoot,
+      matchesPerGeneration: settings.matchesPerGeneration,
+      maxRetries: settings.maxRetries,
+      minDelta: settings.backpressureMinDelta,
+      playbookMaxVersions: settings.playbookMaxVersions,
+      contextBudgetTokens: settings.contextBudgetTokens,
+      curatorEnabled: settings.curatorEnabled,
+      curatorConsolidateEveryNGens: settings.curatorConsolidateEveryNGens,
+      skillMaxLessons: settings.skillMaxLessons,
+      deadEndTrackingEnabled: settings.deadEndTrackingEnabled,
+      deadEndMaxEntries: settings.deadEndMaxEntries,
+      stagnationResetEnabled: settings.stagnationResetEnabled,
+      stagnationRollbackThreshold: settings.stagnationRollbackThreshold,
+      stagnationPlateauWindow: settings.stagnationPlateauWindow,
+      stagnationPlateauEpsilon: settings.stagnationPlateauEpsilon,
+      stagnationDistillTopLessons: settings.stagnationDistillTopLessons,
+      explorationMode: settings.explorationMode,
+      notifyWebhookUrl: settings.notifyWebhookUrl,
+      notifyOn: settings.notifyOn,
       controller: this.controller,
       events: this.events,
     });

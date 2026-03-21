@@ -535,6 +535,108 @@ describe("GenerationRunner", () => {
 
     store.close();
   });
+
+  it("runs curator, writes session reports, and dispatches notifications when advanced features are enabled", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+    const { CallbackNotifier } = await import("../src/notifications/index.js");
+
+    const dbPath = join(dir, "advanced.db");
+    const runsRoot = join(dir, "runs");
+    const knowledgeRoot = join(dir, "knowledge");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+
+    const notifications: Array<Record<string, unknown>> = [];
+    const runner = new GenerationRunner({
+      provider: new DeterministicProvider(),
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot,
+      knowledgeRoot,
+      matchesPerGeneration: 2,
+      maxRetries: 0,
+      minDelta: 0.0,
+      curatorEnabled: true,
+      curatorConsolidateEveryNGens: 1,
+      notifier: new CallbackNotifier((event) => notifications.push(event as Record<string, unknown>)),
+      notifyOn: "threshold_met,completion",
+    });
+
+    await runner.run("advanced-run", 2);
+
+    const outputs = store.getAgentOutputs("advanced-run", 2);
+    expect(outputs.some((row) => row.role === "curator")).toBe(true);
+    expect(outputs.some((row) => row.role === "curator_consolidation")).toBe(true);
+
+    const runReportPath = join(runsRoot, "advanced-run", "session_report.md");
+    const knowledgeReportPath = join(
+      knowledgeRoot,
+      "grid_ctf",
+      "session_reports",
+      "advanced-run.md",
+    );
+    expect(existsSync(runReportPath)).toBe(true);
+    expect(existsSync(knowledgeReportPath)).toBe(true);
+    expect(readFileSync(runReportPath, "utf-8")).toContain("# Session Report");
+
+    expect(notifications.some((event) => event.type === "threshold_met")).toBe(true);
+    expect(notifications.some((event) => event.type === "completion")).toBe(true);
+
+    store.close();
+  });
+
+  it("tracks dead ends and injects fresh-start guidance after stagnation", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    const dbPath = join(dir, "stagnation.db");
+    const runsRoot = join(dir, "runs");
+    const knowledgeRoot = join(dir, "knowledge");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+
+    const runner = new GenerationRunner({
+      provider: new DeterministicProvider(),
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot,
+      knowledgeRoot,
+      matchesPerGeneration: 2,
+      maxRetries: 0,
+      minDelta: 5.0,
+      deadEndTrackingEnabled: true,
+      deadEndMaxEntries: 5,
+      stagnationResetEnabled: true,
+      stagnationRollbackThreshold: 2,
+      stagnationPlateauWindow: 3,
+      stagnationPlateauEpsilon: 0.0001,
+    });
+
+    await runner.run("stagnation-run", 3);
+
+    const deadEndsPath = join(knowledgeRoot, "grid_ctf", "dead_ends.md");
+    expect(existsSync(deadEndsPath)).toBe(true);
+    expect(readFileSync(deadEndsPath, "utf-8")).toContain("### Dead End");
+
+    const promptPath = join(
+      runsRoot,
+      "stagnation-run",
+      "generations",
+      "gen_3",
+      "competitor_prompt.md",
+    );
+    expect(existsSync(promptPath)).toBe(true);
+    const prompt = readFileSync(promptPath, "utf-8");
+    expect(prompt).toContain("Fresh Start Guidance");
+    expect(prompt).toContain("Avoid repeating these recent dead ends");
+
+    store.close();
+  });
 });
 
 // ---------------------------------------------------------------------------
