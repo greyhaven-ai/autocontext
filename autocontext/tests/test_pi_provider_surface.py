@@ -7,6 +7,7 @@ as first-class top-level provider choices.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -69,17 +70,22 @@ class TestPiCLIProvider:
         assert config.workspace == "/my/workspace"
 
     def test_pi_resolves_scenario_model_handoff(self) -> None:
-        """When pi_model is set, model handoff should be attempted."""
-        settings = _settings(
-            agent_provider="pi",
-            pi_model="distilled-v1",
-        )
+        """Scenario-aware Pi clients should resolve the active checkpoint via the registry."""
+        settings = _settings(agent_provider="pi")
         with (
             patch("autocontext.runtimes.pi_cli.PiCLIRuntime") as MockRuntime,
-            patch("autocontext.providers.scenario_routing.resolve_pi_model", return_value=None),
+            patch(
+                "autocontext.providers.scenario_routing.resolve_pi_model",
+                return_value=SimpleNamespace(checkpoint_path="/models/grid-ctf/pi-v4"),
+            ) as mock_resolve,
         ):
             MockRuntime.return_value = MagicMock()
-            client = build_client_from_settings(settings)
+            client = build_client_from_settings(settings, scenario_name="grid_ctf")
+        call_args = MockRuntime.call_args
+        config = call_args[0][0] if call_args[0] else call_args[1].get("config")
+        assert config.model == "/models/grid-ctf/pi-v4"
+        assert mock_resolve.call_args.kwargs["scenario"] == "grid_ctf"
+        assert mock_resolve.call_args.kwargs["manual_override"] is None
         assert client is not None
 
 

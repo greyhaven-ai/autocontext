@@ -522,7 +522,11 @@ class DeterministicDevClient(LanguageModelClient):
         return json.dumps({"aggression": 0.58, "defense": 0.57, "path_bias": 0.54})
 
 
-def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
+def build_client_from_settings(
+    settings: AppSettings,
+    *,
+    scenario_name: str = "",
+) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
     if settings.agent_provider == "anthropic":
         api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", "")
@@ -567,17 +571,17 @@ def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
         from autocontext.training.model_registry import ModelRegistry
 
         resolved_model = settings.pi_model
-        if settings.pi_model:
+        if scenario_name or settings.pi_model:
             try:
                 handoff = resolve_pi_model(
                     ModelRegistry(settings.knowledge_root),
-                    scenario="",
+                    scenario=scenario_name,
                     backend="mlx",
-                    manual_override=settings.pi_model,
+                    manual_override=settings.pi_model or None,
                 )
             except Exception:
                 handoff = None
-            if handoff:
+            if handoff is not None:
                 resolved_model = handoff.checkpoint_path
 
         config = PiCLIConfig(
