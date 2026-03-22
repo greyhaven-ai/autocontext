@@ -179,6 +179,69 @@ describe("Agent Self-Improvement E2E", () => {
     }
   });
 
+  it("RLM can bootstrap and revise outputs in the improvement surface", async () => {
+    const provider: LLMProvider = {
+      name: "rlm-e2e",
+      defaultModel: () => "mock-model",
+      complete: async (args) => {
+        if (args.systemPrompt.includes("expert judge")) {
+          return {
+            text: makeJudgeResponse(0.95),
+            model: "mock-model",
+            usage: {},
+          };
+        }
+        if (args.systemPrompt.includes("REPL-loop mode")) {
+          if (args.userPrompt.includes("Current output:")) {
+            return {
+              text: '<code>answer.ready = true;\nanswer.content = "RLM revised answer";</code>',
+              model: "mock-model",
+              usage: {},
+            };
+          }
+          return {
+            text: '<code>answer.ready = true;\nanswer.content = "RLM initial answer";</code>',
+            model: "mock-model",
+            usage: {},
+          };
+        }
+        return {
+          text: "fallback output",
+          model: "mock-model",
+          usage: {},
+        };
+      },
+    };
+
+    const task = new SimpleAgentTask(
+      "Explain why testing matters.",
+      "Evaluate clarity and correctness.",
+      provider,
+      "mock-model",
+      undefined,
+      { enabled: true, maxTurns: 2 },
+    );
+
+    const initialOutput = await task.generateOutput();
+    expect(initialOutput).toBe("RLM initial answer");
+
+    const loop = new ImprovementLoop({
+      task,
+      maxRounds: 2,
+      qualityThreshold: 0.9,
+    });
+
+    const result = await loop.run({
+      initialOutput,
+      state: {},
+    });
+
+    expect(result.bestOutput).toBe("RLM initial answer");
+    expect(result.metThreshold).toBe(true);
+    const sessions = task.getRlmSessions();
+    expect(sessions.map((session) => session.phase)).toEqual(["generate"]);
+  });
+
   it("full pipeline: create → queue → run → export", async () => {
     const provider = makeMockProvider({
       judgeScores: [0.92],

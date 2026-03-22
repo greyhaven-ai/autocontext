@@ -59,7 +59,7 @@ describe("Smoke: single-round judge eval (MTS-29)", () => {
     const judge = new LLMJudge({ provider: mockProvider(makeResponse()), model: "m", rubric: RUBRIC });
     const r = await judge.evaluate({ taskPrompt: PROMPT, agentOutput: OUTPUT });
     expect(r.reasoning.length).toBeGreaterThan(0);
-    expect(r.reasoning).toContain("MTS");
+    expect(r.reasoning).toContain("AutoContext");
   });
 
   it("parse succeeds on first attempt (markers)", async () => {

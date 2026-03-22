@@ -34,6 +34,51 @@ function makeMockProvider(response = "mock output"): LLMProvider {
   };
 }
 
+function makeRlmProvider(opts?: {
+  draft?: string;
+  revision?: string;
+  judgeScore?: number;
+}): LLMProvider {
+  const draft = opts?.draft ?? "RLM draft output";
+  const revision = opts?.revision ?? "RLM revised output";
+  const judgeScore = opts?.judgeScore ?? 0.9;
+
+  return {
+    name: "rlm-mock",
+    defaultModel: () => "mock",
+    complete: async (prompt) => {
+      if (prompt.systemPrompt.includes("expert judge")) {
+        return {
+          text:
+            "<!-- JUDGE_RESULT_START -->\n" +
+            JSON.stringify({
+              score: judgeScore,
+              reasoning: "Judge approved",
+              dimensions: { quality: judgeScore },
+            }) +
+            "\n<!-- JUDGE_RESULT_END -->",
+          usage: {},
+        };
+      }
+
+      if (prompt.systemPrompt.includes("REPL-loop mode")) {
+        if (prompt.userPrompt.includes("Current output:")) {
+          return {
+            text: `<code>answer.ready = true;\nanswer.content = ${JSON.stringify(revision)};</code>`,
+            usage: {},
+          };
+        }
+        return {
+          text: `<code>answer.ready = true;\nanswer.content = ${JSON.stringify(draft)};</code>`,
+          usage: {},
+        };
+      }
+
+      return { text: "fallback output", usage: {} };
+    },
+  };
+}
+
 describe("enqueueTask", () => {
   it("creates task with UUID", () => {
     const store = createStore();
@@ -131,6 +176,31 @@ describe("TaskRunner", () => {
     expect(parsed.duration_ms).toBeTypeOf("number");
     expect(parsed.duration_ms).toBeGreaterThanOrEqual(0);
   });
+
+  it("uses RLM to bootstrap initial output and persists session traces", async () => {
+    const store = createStore();
+    enqueueTask(store, "rlm-spec", {
+      taskPrompt: "Write a greeting",
+      rubric: "Be friendly",
+      rlmEnabled: true,
+      rlmMaxTurns: 2,
+    });
+
+    const runner = new TaskRunner({
+      store,
+      provider: makeRlmProvider({ draft: "Hello from RLM" }),
+    });
+
+    const result = await runner.runOnce();
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("completed");
+    expect(result!.best_output).toBe("Hello from RLM");
+
+    const parsed = JSON.parse(result!.result_json!);
+    expect(parsed.rlm_sessions.length).toBeGreaterThanOrEqual(1);
+    expect(parsed.rlm_sessions[0].phase).toBe("generate");
+    expect(parsed.rlm_sessions[0].content).toBe("Hello from RLM");
+  });
 });
 
 describe("TaskRunner.runBatch", () => {
@@ -227,5 +297,31 @@ describe("SimpleAgentTask", () => {
       {},
     );
     expect(revised).toBe("generated text"); // Mock returns same for non-judge calls
+  });
+
+  it("can revise through RLM mode", async () => {
+    const task = new SimpleAgentTask(
+      "Write something",
+      "Be good",
+      makeRlmProvider({ revision: "RLM fixed draft" }),
+      "mock-model",
+      undefined,
+      { enabled: true, maxTurns: 2 },
+    );
+
+    await task.evaluateOutput("Original draft", {}, {
+      referenceContext: "Trusted facts",
+      requiredConcepts: ["clarity"],
+    });
+
+    const revised = await task.reviseOutput(
+      "Original draft",
+      { score: 0.4, reasoning: "Needs work", dimensionScores: { quality: 0.4 } },
+      {},
+    );
+
+    expect(revised).toBe("RLM fixed draft");
+    expect(task.getRlmSessions()).toHaveLength(1);
+    expect(task.getRlmSessions()[0].phase).toBe("revise");
   });
 });

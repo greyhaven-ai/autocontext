@@ -32,6 +32,28 @@ export const RlmContextSchema = z.object({
   summary: z.string(),
 });
 
+export const RlmTaskConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  model: z.string().optional(),
+  maxTurns: z.number().int().positive().max(25).default(6),
+  maxTokensPerTurn: z.number().int().positive().max(8192).default(2048),
+  temperature: z.number().min(0).max(2).default(0.2),
+  maxStdoutChars: z.number().int().positive().max(65536).default(8192),
+  codeTimeoutMs: z.number().int().positive().max(60000).default(10000),
+  memoryLimitMb: z.number().int().positive().max(512).default(64),
+});
+
+export const RlmPhaseSchema = z.enum(["generate", "revise"]);
+
+export const RlmSessionRecordSchema = z.object({
+  phase: RlmPhaseSchema,
+  backend: z.literal("secure_exec").default("secure_exec"),
+  content: z.string(),
+  turnsUsed: z.number().int().min(0),
+  executionHistory: z.array(ExecutionRecordSchema),
+  error: z.string().nullish(),
+});
+
 // ---------------------------------------------------------------------------
 // Inferred TypeScript types
 // ---------------------------------------------------------------------------
@@ -40,6 +62,9 @@ export type ReplCommand = z.infer<typeof ReplCommandSchema>;
 export type ReplResult = z.infer<typeof ReplResultSchema>;
 export type ExecutionRecord = z.infer<typeof ExecutionRecordSchema>;
 export type RlmContext = z.infer<typeof RlmContextSchema>;
+export type RlmTaskConfig = z.infer<typeof RlmTaskConfigSchema>;
+export type RlmPhase = z.infer<typeof RlmPhaseSchema>;
+export type RlmSessionRecord = z.infer<typeof RlmSessionRecordSchema>;
 
 // ---------------------------------------------------------------------------
 // Interfaces
