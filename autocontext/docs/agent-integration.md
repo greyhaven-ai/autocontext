@@ -235,19 +235,52 @@ autoctx run --scenario my_task --json
 AUTOCONTEXT_AGENT_PROVIDER=ollama \
 AUTOCONTEXT_JUDGE_PROVIDER=ollama \
 autoctx run --scenario my_task --json
+
+# Pi CLI (local Pi agent runtime)
+AUTOCONTEXT_AGENT_PROVIDER=pi \
+AUTOCONTEXT_PI_COMMAND=pi \
+AUTOCONTEXT_PI_TIMEOUT=120 \
+autoctx run --scenario my_task --json
+
+# Pi RPC (Pi agent via HTTP RPC — supports session persistence)
+AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
+AUTOCONTEXT_PI_RPC_ENDPOINT=http://localhost:3284 \
+AUTOCONTEXT_PI_RPC_API_KEY=your-key \
+autoctx run --scenario my_task --json
 ```
 
 Key environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `AUTOCONTEXT_AGENT_PROVIDER` | Agent provider: `anthropic`, `openai-compatible`, `ollama`, `vllm`, `deterministic` |
+| `AUTOCONTEXT_AGENT_PROVIDER` | Agent provider: `anthropic`, `openai-compatible`, `ollama`, `vllm`, `pi`, `pi-rpc`, `deterministic` |
 | `AUTOCONTEXT_JUDGE_PROVIDER` | Judge provider (defaults to `anthropic`) |
 | `AUTOCONTEXT_JUDGE_API_KEY` | API key for the judge provider |
 | `AUTOCONTEXT_JUDGE_BASE_URL` | Base URL for OpenAI-compatible judge endpoints |
 | `AUTOCONTEXT_JUDGE_MODEL` | Override judge model name |
 | `AUTOCONTEXT_MODEL_COMPETITOR` | Override competitor agent model |
 | `AUTOCONTEXT_DB_PATH` | SQLite database path |
+| `AUTOCONTEXT_PI_COMMAND` | Path to Pi CLI binary (default: `pi`) |
+| `AUTOCONTEXT_PI_TIMEOUT` | Pi CLI execution timeout in seconds (default: 120) |
+| `AUTOCONTEXT_PI_WORKSPACE` | Pi CLI working directory |
+| `AUTOCONTEXT_PI_MODEL` | Pi model override (enables scenario-aware model handoff) |
+| `AUTOCONTEXT_PI_RPC_ENDPOINT` | Pi RPC server URL (default: `http://localhost:3284`) |
+| `AUTOCONTEXT_PI_RPC_API_KEY` | Pi RPC API key |
+| `AUTOCONTEXT_PI_RPC_SESSION_PERSISTENCE` | Persist Pi sessions across turns (default: `true`) |
+
+#### Pi CLI vs Pi RPC
+
+**Pi CLI** (`AUTOCONTEXT_AGENT_PROVIDER=pi`) invokes the `pi` binary in non-interactive `--print` mode for each agent turn. Best for:
+- Simple setups where Pi is installed locally
+- Stateless, one-shot agent executions
+- CI/testing environments
+
+**Pi RPC** (`AUTOCONTEXT_AGENT_PROVIDER=pi-rpc`) communicates with Pi via HTTP RPC. Best for:
+- Session persistence across multi-turn improvement loops
+- Branch-on-retry strategies (Pi creates branches for each retry)
+- Remote Pi instances running as a service
+
+Both support **scenario-aware model handoff**: when `AUTOCONTEXT_PI_MODEL` is set, autocontext checks the distillation model registry for a scenario-specific checkpoint and routes to it automatically. This enables the distill→deploy loop where a fine-tuned model is used for specific scenarios while the base model handles others.
 
 ### Concrete CLI-First Integration Example
 

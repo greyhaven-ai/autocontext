@@ -44,6 +44,22 @@ AUTOCONTEXT_ANTHROPIC_API_KEY=... \
 uv run autoctx run --scenario grid_ctf --gens 3
 ```
 
+Run with Pi CLI (local Pi agent runtime):
+
+```bash
+AUTOCONTEXT_AGENT_PROVIDER=pi \
+AUTOCONTEXT_PI_COMMAND=pi \
+uv run autoctx run --scenario grid_ctf --gens 3
+```
+
+Run with Pi RPC (remote Pi agent via HTTP):
+
+```bash
+AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
+AUTOCONTEXT_PI_RPC_ENDPOINT=http://localhost:3284 \
+uv run autoctx run --scenario grid_ctf --gens 3
+```
+
 Start the API server and dashboard:
 
 ```bash

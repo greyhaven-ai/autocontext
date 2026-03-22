@@ -82,6 +82,12 @@ AUTOCONTEXT_AGENT_PROVIDER=deterministic AUTOCONTEXT_EXECUTOR_MODE=monty uv run 
 # Run (RLM with Monty backend — sandboxed REPL)
 AUTOCONTEXT_AGENT_PROVIDER=deterministic AUTOCONTEXT_RLM_ENABLED=true AUTOCONTEXT_RLM_BACKEND=monty uv run autoctx run --scenario grid_ctf --gens 3
 
+# Run (Pi CLI — local Pi agent runtime)
+AUTOCONTEXT_AGENT_PROVIDER=pi AUTOCONTEXT_PI_COMMAND=pi uv run autoctx run --scenario grid_ctf --gens 3
+
+# Run (Pi RPC — remote Pi agent via HTTP)
+AUTOCONTEXT_AGENT_PROVIDER=pi-rpc AUTOCONTEXT_PI_RPC_ENDPOINT=http://localhost:3284 uv run autoctx run --scenario grid_ctf --gens 3
+
 # Ecosystem mode (alternate providers across cycles, shared knowledge directory)
 uv run autoctx ecosystem --scenario grid_ctf --cycles 3 --gens-per-cycle 2 \
   --provider-a anthropic --provider-b agent_sdk --rlm-a --no-rlm-b
@@ -164,13 +170,15 @@ Per-scenario directory (`knowledge/<scenario>/`) stores: `playbook.md` (versione
 
 All config via `AUTOCONTEXT_*` env vars, loaded in `config/settings.py` as Pydantic `AppSettings`. See that file for the full list. Key groups:
 
-- **Provider**: `AUTOCONTEXT_AGENT_PROVIDER` (`deterministic`/`anthropic`/`agent_sdk`), `AUTOCONTEXT_MODEL_*` (per-role model selection)
+- **Provider**: `AUTOCONTEXT_AGENT_PROVIDER` (`deterministic`/`anthropic`/`agent_sdk`/`pi`/`pi-rpc`/`openai`/`ollama`/`vllm`), `AUTOCONTEXT_MODEL_*` (per-role model selection)
 - **Execution**: `AUTOCONTEXT_EXECUTOR_MODE` (`local`/`primeintellect`/`monty`), `AUTOCONTEXT_MATCHES_PER_GENERATION`, `AUTOCONTEXT_CODE_STRATEGIES_ENABLED`
 - **Loop tuning**: `AUTOCONTEXT_BACKPRESSURE_MIN_DELTA`, `AUTOCONTEXT_MAX_RETRIES`, `AUTOCONTEXT_ARCHITECT_EVERY_N_GENS`
 - **Curator**: `AUTOCONTEXT_CURATOR_ENABLED`, `AUTOCONTEXT_CURATOR_CONSOLIDATE_EVERY_N_GENS`, `AUTOCONTEXT_SKILL_MAX_LESSONS`
 - **Knowledge**: `AUTOCONTEXT_CROSS_RUN_INHERITANCE`, `AUTOCONTEXT_PLAYBOOK_MAX_VERSIONS`, `AUTOCONTEXT_ABLATION_NO_FEEDBACK`
 - **RLM**: `AUTOCONTEXT_RLM_ENABLED`, `AUTOCONTEXT_RLM_BACKEND`, `AUTOCONTEXT_RLM_MAX_TURNS`, `AUTOCONTEXT_RLM_SUB_MODEL`
 - **Judge**: `AUTOCONTEXT_JUDGE_PROVIDER`, `AUTOCONTEXT_JUDGE_MODEL`, `AUTOCONTEXT_JUDGE_SAMPLES`, `AUTOCONTEXT_JUDGE_TEMPERATURE`, `AUTOCONTEXT_JUDGE_BASE_URL`, `AUTOCONTEXT_JUDGE_API_KEY`
+- **Pi**: `AUTOCONTEXT_PI_COMMAND`, `AUTOCONTEXT_PI_TIMEOUT`, `AUTOCONTEXT_PI_WORKSPACE`, `AUTOCONTEXT_PI_MODEL`
+- **Pi RPC**: `AUTOCONTEXT_PI_RPC_ENDPOINT`, `AUTOCONTEXT_PI_RPC_API_KEY`, `AUTOCONTEXT_PI_RPC_SESSION_PERSISTENCE`
 - **Notifications**: `AUTOCONTEXT_NOTIFY_WEBHOOK_URL`, `AUTOCONTEXT_NOTIFY_ON`
 
 ## Code Style
