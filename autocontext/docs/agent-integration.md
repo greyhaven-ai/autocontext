@@ -638,6 +638,27 @@ Use autocontext_export_skill with scenario_name="grid_ctf".
 ```
 → Returns a portable skill package with playbook, lessons, best strategy.
 
+**7. Install the exported skill into Hermes:**
+```
+Take the result from autocontext_export_skill, read result.skill_markdown and
+result.suggested_filename, and write the markdown into your Hermes skill directory.
+```
+
+For raw MCP clients, `autocontext_export_skill` returns structured JSON that now includes:
+- `skill_markdown` — the rendered `SKILL.md` contents
+- `suggested_filename` — the recommended install filename, such as `grid-ctf-knowledge.md`
+
+Example shell flow once you have the tool result available as JSON:
+
+```bash
+mkdir -p "$HERMES_SKILLS_DIR"
+printf '%s\n' "$EXPORT_RESULT_JSON" \
+  | jq -r '.skill_markdown' \
+  > "$HERMES_SKILLS_DIR/$(printf '%s\n' "$EXPORT_RESULT_JSON" | jq -r '.suggested_filename')"
+```
+
+After writing the file, restart Hermes or reload its skills so the new knowledge file is picked up.
+
 #### Tool Naming and Ergonomics
 
 All tools use the `autocontext_` prefix (e.g., `autocontext_list_scenarios`). This is deliberate — it prevents collisions in multi-MCP-server setups. In Hermes, the prefix is visible in tool discovery and helps distinguish autocontext tools from other MCP servers.
