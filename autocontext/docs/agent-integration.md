@@ -355,6 +355,107 @@ if [ -f "training/${SCENARIO}.jsonl" ]; then
 fi
 ```
 
+### Hermes CLI-First Starter Workflow
+
+A Hermes agent can drive autocontext entirely through CLI commands. This workflow requires no custom glue code — it uses `autoctx` commands with `--json` output and standard shell primitives.
+
+#### Prerequisites
+
+```bash
+# Install autocontext (from repo root)
+cd autocontext && uv venv && source .venv/bin/activate && uv sync --group dev
+
+# Set the Hermes gateway env vars once
+export AUTOCONTEXT_AGENT_PROVIDER=openai-compatible
+export AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1
+export AUTOCONTEXT_AGENT_API_KEY=no-key
+export AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b
+
+# Optional: use Hermes as the judge too (or keep Anthropic default)
+export AUTOCONTEXT_JUDGE_PROVIDER=openai-compatible
+export AUTOCONTEXT_JUDGE_BASE_URL=http://localhost:8080/v1
+export AUTOCONTEXT_JUDGE_API_KEY=no-key
+export AUTOCONTEXT_JUDGE_MODEL=hermes-3-llama-3.1-70b
+```
+
+#### Step 1: Discover scenarios
+
+```bash
+autoctx list --json | jq '.[].run_id'        # list past runs
+# Or: autoctx run --help                      # see available scenarios
+```
+
+#### Step 2: Start a run
+
+```bash
+RUN_ID="hermes_$(date +%s)"
+mkdir -p logs
+
+autoctx run \
+  --scenario grid_ctf \
+  --gens 5 \
+  --run-id "$RUN_ID" \
+  --json \
+  >"logs/${RUN_ID}.json" \
+  2>"logs/${RUN_ID}.err" &
+RUN_PID=$!
+```
+
+The `--json` flag makes stdout fully machine-readable. `stderr` receives diagnostics. Because `autoctx run` is synchronous, background it when you want to poll progress from another shell loop.
+
+#### Step 3: Poll for completion (long-running jobs)
+
+For runs with many generations, poll `autoctx status` while the backgrounded `run` process is still active:
+
+```bash
+while kill -0 "$RUN_PID" 2>/dev/null; do
+  status=$(autoctx status "$RUN_ID" --json 2>/dev/null)
+  last_gate=$(echo "$status" | jq -r '.generations[-1].gate_decision // "pending"')
+  last_gen=$(echo "$status" | jq -r '.generations | length')
+  echo "Generation $last_gen: gate=$last_gate" >&2
+  sleep 10
+done
+
+wait "$RUN_PID"
+jq . "logs/${RUN_ID}.json"
+```
+
+**Timeouts**: Each `autoctx` command has its own timeout. For runs with many generations, the CLI may take minutes, so run it in the background and poll `status` from the foreground shell.
+
+**Idempotency**: `autoctx run` with the same `--run-id` is idempotent (INSERT OR IGNORE). Re-running is safe.
+
+#### Step 4: Export knowledge
+
+```bash
+autoctx export \
+  --scenario grid_ctf \
+  --output "hermes_knowledge.json" \
+  --json | jq .
+```
+
+#### Step 5: Solve on demand
+
+```bash
+autoctx solve \
+  --description "Design a grid capture-the-flag strategy that prioritizes safe flag captures, defends home base when behind, and adapts pathing when lanes are contested." \
+  --gens 3 \
+  --output "logs/${RUN_ID}_solve_package.json" \
+  --json | jq .
+```
+
+`autoctx solve` is a synchronous CLI wrapper around the solve-on-demand pipeline. Use the server or MCP solve APIs if you need background job submission and later result retrieval from a long-lived process.
+
+#### When to use which integration path
+
+| Path | Best for | Complexity |
+|------|----------|-----------|
+| **CLI-first** (this section) | Hermes agents driving `autoctx` via shell commands | Lowest |
+| **OpenAI-compatible provider** | autocontext calling Hermes for agent/judge completions | Low |
+| **MCP server** | Tool-catalog agents (Claude Code, MCP clients) | Medium |
+| **Native Hermes runtime** (future) | Session persistence, memory, tool routing | Highest |
+
+The CLI-first path is recommended for getting started. Move to the provider path when you want autocontext to call Hermes instead of Hermes calling autocontext.
+
 ## MCP Integration (Secondary)
 
 Use MCP when your agent framework specifically requires a tool-catalog protocol (e.g., Claude Code with tool discovery). For most agent integrations, the CLI is simpler.

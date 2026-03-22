@@ -51,6 +51,18 @@ class SolveManager:
         thread.start()
         return job_id
 
+    def solve_sync(self, description: str, generations: int = 5) -> SolveJob:
+        """Run solve-on-demand synchronously in the current process."""
+        job_id = f"solve_{uuid.uuid4().hex[:8]}"
+        job = SolveJob(
+            job_id=job_id,
+            description=description,
+            generations=generations,
+        )
+        self._jobs[job_id] = job
+        self._run_job(job)
+        return job
+
     def _run_job(self, job: SolveJob) -> None:
         """Background: create scenario -> run generations -> export skill package."""
         try:

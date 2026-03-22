@@ -373,7 +373,134 @@ class TestExportJson:
 
 
 # ---------------------------------------------------------------------------
-# 7. import-package --json
+# 7. solve --json
+# ---------------------------------------------------------------------------
+
+
+class TestSolveJson:
+    def test_solve_json_success(self, tmp_path: Path) -> None:
+        """solve --json should output structured solve results."""
+        from autocontext.knowledge.export import SkillPackage
+        from autocontext.knowledge.solver import SolveJob
+
+        settings = _make_settings(tmp_path)
+        pkg = SkillPackage(
+            scenario_name="grid_ctf",
+            display_name="Grid Ctf",
+            description="Solve result",
+            playbook="## Playbook",
+            lessons=["Scout lanes"],
+            best_strategy={"aggression": 0.6},
+            best_score=0.81,
+            best_elo=1512.0,
+            hints="Protect home base",
+        )
+        job = SolveJob(
+            job_id="solve_1234",
+            description="Design a strategy",
+            scenario_name="grid_ctf",
+            status="completed",
+            generations=2,
+            progress=2,
+            result=pkg,
+        )
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager.solve_sync", return_value=job),
+        ):
+            result = runner.invoke(app, ["solve", "--description", "Design a strategy", "--gens", "2", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output.strip())
+        assert data["job_id"] == "solve_1234"
+        assert data["status"] == "completed"
+        assert data["scenario_name"] == "grid_ctf"
+        assert data["generations"] == 2
+        assert data["progress"] == 2
+        assert data["result"]["scenario_name"] == "grid_ctf"
+
+    def test_solve_json_writes_output_file(self, tmp_path: Path) -> None:
+        """solve --json --output should write the package JSON to disk."""
+        from autocontext.knowledge.export import SkillPackage
+        from autocontext.knowledge.solver import SolveJob
+
+        settings = _make_settings(tmp_path)
+        pkg = SkillPackage(
+            scenario_name="grid_ctf",
+            display_name="Grid Ctf",
+            description="Solve result",
+            playbook="## Playbook",
+            lessons=["Scout lanes"],
+            best_strategy={"aggression": 0.6},
+            best_score=0.81,
+            best_elo=1512.0,
+            hints="Protect home base",
+        )
+        job = SolveJob(
+            job_id="solve_5678",
+            description="Design a strategy",
+            scenario_name="grid_ctf",
+            status="completed",
+            generations=3,
+            progress=3,
+            result=pkg,
+        )
+        output_path = tmp_path / "exports" / "solve.json"
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager.solve_sync", return_value=job),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "solve",
+                    "--description",
+                    "Design a strategy",
+                    "--gens",
+                    "3",
+                    "--output",
+                    str(output_path),
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output.strip())
+        assert data["output_path"] == str(output_path)
+        assert output_path.exists()
+        written = json.loads(output_path.read_text(encoding="utf-8"))
+        assert written["scenario_name"] == "grid_ctf"
+        assert written["best_strategy"]["aggression"] == 0.6
+
+    def test_solve_json_failure_writes_to_stderr(self, tmp_path: Path) -> None:
+        """solve --json failures should emit structured stderr and exit 1."""
+        from autocontext.knowledge.solver import SolveJob
+
+        settings = _make_settings(tmp_path)
+        job = SolveJob(
+            job_id="solve_fail",
+            description="Broken solve",
+            status="failed",
+            generations=1,
+            progress=0,
+            error="solver exploded",
+        )
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager.solve_sync", return_value=job),
+        ):
+            result = runner.invoke(app, ["solve", "--description", "Broken solve", "--json"])
+
+        assert result.exit_code == 1
+        error_data = json.loads(result.stderr.strip())
+        assert error_data["error"] == "solver exploded"
+
+
+# ---------------------------------------------------------------------------
+# 8. import-package --json
 # ---------------------------------------------------------------------------
 
 
@@ -419,7 +546,7 @@ class TestImportPackageJson:
 
 
 # ---------------------------------------------------------------------------
-# 8. ecosystem --json
+# 9. ecosystem --json
 # ---------------------------------------------------------------------------
 
 
@@ -460,7 +587,7 @@ class TestEcosystemJson:
 
 
 # ---------------------------------------------------------------------------
-# 9. wait --json
+# 10. wait --json
 # ---------------------------------------------------------------------------
 
 

@@ -46,6 +46,20 @@ class AgentTaskRunSummary:
     met_threshold: bool
     termination_reason: str
 
+
+@dataclass(slots=True)
+class SolveRunSummary:
+    """Result summary for solve-on-demand via the CLI."""
+
+    job_id: str
+    status: str
+    description: str
+    scenario_name: str | None
+    generations: int
+    progress: int
+    output_path: str | None
+    result: dict[str, object] | None
+
 app = typer.Typer(help="autocontext control-plane CLI", invoke_without_command=True)
 console = Console()
 
@@ -1040,6 +1054,77 @@ def export_cmd(
     else:
         console.print(f"[green]Exported {scenario} package to {output_path}[/green]")
         console.print(f"[dim]best_score={pkg.best_score:.4f} lessons={len(pkg.lessons)} harness={len(pkg.harness)}[/dim]")
+
+
+@app.command()
+def solve(
+    description: str = typer.Option(..., "--description", help="Natural-language scenario/problem description"),
+    gens: int = typer.Option(5, "--gens", min=1, max=50, help="Generations to run for the solve"),
+    output: str = typer.Option("", "--output", help="Optional JSON file path for the solved package"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
+    """Create a scenario on demand, run it, and export the solved package."""
+    from autocontext.knowledge.solver import SolveManager
+
+    settings = load_settings()
+    manager = SolveManager(settings)
+
+    try:
+        job = manager.solve_sync(description=description, generations=gens)
+    except KeyboardInterrupt:
+        if json_output:
+            _write_json_stderr("solve interrupted")
+        else:
+            console.print("[red]Solve interrupted[/red]")
+        raise typer.Exit(code=1) from None
+    except Exception as exc:
+        if json_output:
+            _write_json_stderr(str(exc))
+        else:
+            console.print(f"[red]Solve failed:[/red] {exc}")
+        raise typer.Exit(code=1) from None
+
+    if job.status != "completed" or job.result is None:
+        message = job.error or "solve did not complete successfully"
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            console.print(f"[red]Solve failed:[/red] {message}")
+        raise typer.Exit(code=1)
+
+    output_path: str | None = None
+    if output:
+        output_file = Path(output)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(json.dumps(job.result.to_dict(), indent=2), encoding="utf-8")
+        output_path = str(output_file)
+
+    summary = SolveRunSummary(
+        job_id=job.job_id,
+        status=job.status,
+        description=job.description,
+        scenario_name=job.scenario_name,
+        generations=job.generations,
+        progress=job.progress,
+        output_path=output_path,
+        result=job.result.to_dict(),
+    )
+
+    if json_output:
+        _write_json_stdout(dataclasses.asdict(summary))
+        return
+
+    table = Table(title="Solve Result")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Job ID", job.job_id)
+    table.add_row("Status", job.status)
+    table.add_row("Scenario", job.scenario_name or "unknown")
+    table.add_row("Generations", str(job.generations))
+    table.add_row("Progress", str(job.progress))
+    if output_path is not None:
+        table.add_row("Output", output_path)
+    console.print(table)
 
 
 @app.command("import-package")
