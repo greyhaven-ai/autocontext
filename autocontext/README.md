@@ -65,6 +65,7 @@ Run with Hermes (via OpenAI-compatible gateway):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
+AUTOCONTEXT_AGENT_API_KEY=no-key \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
 uv run autoctx run --scenario grid_ctf --gens 3
 ```
