@@ -593,7 +593,7 @@ For safe Hermes exposure, consider allowing tools by category:
 - `autocontext_run_replay` — Replay a generation
 - `autocontext_export_skill` — Export strategy package
 - `autocontext_solve_scenario` — Launch a solve job (long-running, creates artifacts)
-- `autocontext_sandbox_create` / `sandbox_run` / `sandbox_destroy` — Sandboxed execution
+- `autocontext_sandbox_create` / `autocontext_sandbox_run` / `autocontext_sandbox_destroy` — Sandboxed execution
 
 #### End-to-End Walkthrough
 
