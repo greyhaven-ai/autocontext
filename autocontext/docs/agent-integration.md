@@ -263,7 +263,7 @@ Key environment variables:
 | `AUTOCONTEXT_PI_COMMAND` | Path to Pi CLI binary (default: `pi`) |
 | `AUTOCONTEXT_PI_TIMEOUT` | Pi CLI execution timeout in seconds (default: 120) |
 | `AUTOCONTEXT_PI_WORKSPACE` | Pi CLI working directory |
-| `AUTOCONTEXT_PI_MODEL` | Pi model override (enables scenario-aware model handoff) |
+| `AUTOCONTEXT_PI_MODEL` | Manual Pi model override (pins a specific checkpoint/path) |
 | `AUTOCONTEXT_PI_RPC_ENDPOINT` | Pi RPC server URL (default: `http://localhost:3284`) |
 | `AUTOCONTEXT_PI_RPC_API_KEY` | Pi RPC API key |
 | `AUTOCONTEXT_PI_RPC_SESSION_PERSISTENCE` | Persist Pi sessions across turns (default: `true`) |
@@ -280,7 +280,7 @@ Key environment variables:
 - Branch-on-retry strategies (Pi creates branches for each retry)
 - Remote Pi instances running as a service
 
-Both support **scenario-aware model handoff**: when `AUTOCONTEXT_PI_MODEL` is set, autocontext checks the distillation model registry for a scenario-specific checkpoint and routes to it automatically. This enables the distill→deploy loop where a fine-tuned model is used for specific scenarios while the base model handles others.
+Both support **scenario-aware model handoff** when scenario context is available and no manual Pi model override is set. In that case, autocontext checks the distillation model registry for a scenario-specific checkpoint and routes to it automatically. If `AUTOCONTEXT_PI_MODEL` is set, that value is treated as a manual pin and used directly instead of consulting the registry. This enables the distill→deploy loop where a fine-tuned model is used for specific scenarios while still allowing operators to force a specific checkpoint when needed.
 
 ### Concrete CLI-First Integration Example
 
