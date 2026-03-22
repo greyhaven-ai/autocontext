@@ -356,6 +356,47 @@ class TestOrchestratorPerRoleWiring:
         assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf"}
 
     @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_default_pi_rpc_provider_rebinds_per_role_with_scenario_context(self, mock_create: MagicMock) -> None:
+        """Top-level pi-rpc should still isolate role sessions by creating per-role scenario clients."""
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        shared_client = MagicMock(spec=LanguageModelClient)
+        competitor_client = MagicMock(spec=LanguageModelClient)
+        analyst_client = MagicMock(spec=LanguageModelClient)
+        mock_create.side_effect = [competitor_client, analyst_client]
+
+        settings = AppSettings(agent_provider="pi-rpc", pi_rpc_endpoint="http://localhost:3284")
+        orch = AgentOrchestrator(shared_client, settings)
+
+        competitor_resolved, _ = orch.resolve_role_execution(
+            "competitor",
+            generation=1,
+            scenario_name="grid_ctf",
+        )
+        analyst_resolved, _ = orch.resolve_role_execution(
+            "analyst",
+            generation=1,
+            scenario_name="grid_ctf",
+        )
+        competitor_resolved_again, _ = orch.resolve_role_execution(
+            "competitor",
+            generation=2,
+            scenario_name="grid_ctf",
+        )
+
+        assert competitor_resolved is competitor_client
+        assert analyst_resolved is analyst_client
+        assert competitor_resolved is not shared_client
+        assert analyst_resolved is not shared_client
+        assert competitor_resolved is not analyst_resolved
+        assert competitor_resolved_again is competitor_client
+        assert mock_create.call_args_list[0].args == ("pi-rpc", settings)
+        assert mock_create.call_args_list[0].kwargs == {"scenario_name": "grid_ctf"}
+        assert mock_create.call_args_list[1].args == ("pi-rpc", settings)
+        assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf"}
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
     def test_override_does_not_affect_unset_roles(self, mock_create: MagicMock) -> None:
         """Roles without overrides still use the default provider."""
         from autocontext.agents.orchestrator import AgentOrchestrator

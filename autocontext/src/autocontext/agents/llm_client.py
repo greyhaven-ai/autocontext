@@ -522,7 +522,11 @@ class DeterministicDevClient(LanguageModelClient):
         return json.dumps({"aggression": 0.58, "defense": 0.57, "path_bias": 0.54})
 
 
-def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
+def build_client_from_settings(
+    settings: AppSettings,
+    *,
+    scenario_name: str = "",
+) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
     if settings.agent_provider == "anthropic":
         api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", "")
@@ -560,6 +564,43 @@ def build_client_from_settings(settings: AppSettings) -> LanguageModelClient:
             model=settings.agent_default_model,
         )
         return ProviderBridgeClient(provider, use_provider_default_model=True)
+    if settings.agent_provider == "pi":
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient
+        from autocontext.providers.scenario_routing import resolve_pi_model
+        from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
+        from autocontext.training.model_registry import ModelRegistry
+
+        resolved_model = settings.pi_model
+        if scenario_name or settings.pi_model:
+            try:
+                handoff = resolve_pi_model(
+                    ModelRegistry(settings.knowledge_root),
+                    scenario=scenario_name,
+                    backend="mlx",
+                    manual_override=settings.pi_model or None,
+                )
+            except Exception:
+                handoff = None
+            if handoff is not None:
+                resolved_model = handoff.checkpoint_path
+
+        config = PiCLIConfig(
+            pi_command=settings.pi_command,
+            timeout=settings.pi_timeout,
+            workspace=settings.pi_workspace,
+            model=resolved_model,
+        )
+        return RuntimeBridgeClient(PiCLIRuntime(config))
+    if settings.agent_provider == "pi-rpc":
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient
+        from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
+
+        rpc_config = PiRPCConfig(
+            endpoint=settings.pi_rpc_endpoint or "http://localhost:3284",
+            api_key=settings.pi_rpc_api_key,
+            session_persistence=settings.pi_rpc_session_persistence,
+        )
+        return RuntimeBridgeClient(PiRPCRuntime(rpc_config))
     raise ValueError(f"unsupported agent provider: {settings.agent_provider}")
 
 

@@ -288,6 +288,32 @@ class AgentOrchestrator:
             return [candidate_path] if candidate_path and Path(candidate_path).exists() else []
         return [model_path] if Path(model_path).exists() else []
 
+    def _scenario_bound_runtime_client(
+        self,
+        provider_type: str,
+        role: str,
+        *,
+        scenario_name: str,
+    ) -> LanguageModelClient | None:
+        if provider_type not in {"pi", "pi-rpc"} or not scenario_name:
+            return None
+
+        from autocontext.agents.provider_bridge import create_role_client
+
+        key = (f"{provider_type}:{role}", None, scenario_name)
+        cached = self._routed_clients.get(key)
+        if cached is not None:
+            return cached
+
+        client = create_role_client(
+            provider_type,
+            self.settings,
+            scenario_name=scenario_name,
+        )
+        if client is not None:
+            self._routed_clients[key] = client
+        return client
+
     def _scenario_bound_override_client(
         self,
         role: str,
@@ -295,23 +321,23 @@ class AgentOrchestrator:
         scenario_name: str,
     ) -> LanguageModelClient | None:
         explicit_provider = self._configured_role_provider(role)
-        if explicit_provider not in {"pi", "pi-rpc"} or not scenario_name:
-            return None
-
-        from autocontext.agents.provider_bridge import create_role_client
-
-        key = (explicit_provider, None, scenario_name)
-        cached = self._routed_clients.get(key)
-        if cached is not None:
-            return cached
-        client = create_role_client(
+        return self._scenario_bound_runtime_client(
             explicit_provider,
-            self.settings,
+            role,
             scenario_name=scenario_name,
         )
-        if client is not None:
-            self._routed_clients[key] = client
-        return client
+
+    def _scenario_bound_default_client(
+        self,
+        role: str,
+        *,
+        scenario_name: str,
+    ) -> LanguageModelClient | None:
+        return self._scenario_bound_runtime_client(
+            self.settings.agent_provider.lower().strip(),
+            role,
+            scenario_name=scenario_name,
+        )
 
     def _resolve_role_provider_config(
         self,
@@ -344,6 +370,7 @@ class AgentOrchestrator:
         scenario_name: str = "",
     ) -> LanguageModelClient:
         default_provider = self.settings.agent_provider.lower()
+        default_scenario_client = self._scenario_bound_default_client(role, scenario_name=scenario_name)
         openai_like_default = default_provider in ("openai", "openai-compatible", "ollama", "vllm")
         if (
             config.provider_type == self.settings.agent_provider
@@ -354,7 +381,7 @@ class AgentOrchestrator:
                 or config.model in (None, "", self.settings.agent_default_model)
             )
         ):
-            return self.client
+            return default_scenario_client or self.client
 
         explicit_provider = self._configured_role_provider(role)
         if explicit_provider and explicit_provider == config.provider_type.lower():
@@ -375,7 +402,7 @@ class AgentOrchestrator:
             and config.model == self.settings.mlx_model_path
             and not explicit_provider
         ):
-            return self.client
+            return default_scenario_client or self.client
 
         from autocontext.agents.provider_bridge import create_role_client
 
@@ -403,7 +430,11 @@ class AgentOrchestrator:
         is_plateau: bool = False,
         scenario_name: str = "",
     ) -> tuple[LanguageModelClient, str | None]:
-        client = self._scenario_bound_override_client(role, scenario_name=scenario_name) or self._client_for_role(role)
+        client = (
+            self._scenario_bound_override_client(role, scenario_name=scenario_name)
+            or self._scenario_bound_default_client(role, scenario_name=scenario_name)
+            or self._client_for_role(role)
+        )
         model = self.resolve_model(
             role,
             generation=generation,

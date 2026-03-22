@@ -276,7 +276,7 @@ class TrainingRunner:
 
     def _build_agent_client(self) -> LanguageModelClient:
         settings = load_settings().model_copy(update={"agent_provider": self.config.agent_provider})
-        return build_client_from_settings(settings)
+        return build_client_from_settings(settings, scenario_name=self.config.scenario)
 
     def _resolve_agent_model(self) -> str:
         """Resolve the effective model for the training-agent prompt revision loop.
