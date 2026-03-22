@@ -296,6 +296,19 @@ def create_role_client(
         )
         return RuntimeBridgeClient(PiRPCRuntime(rpc_config))
 
+    if provider_type == "hermes":
+        from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
+
+        config = HermesCLIConfig(
+            hermes_command=settings.hermes_command,
+            model=model_override or settings.hermes_model,
+            timeout=settings.hermes_timeout,
+            workspace=settings.hermes_workspace,
+            base_url=settings.hermes_base_url,
+            api_key=settings.hermes_api_key,
+        )
+        return RuntimeBridgeClient(HermesCLIRuntime(config))
+
     # LLMProvider-based providers — use the bridge
     if provider_type in ("mlx", "openai", "openai-compatible", "ollama", "vllm"):
         return _create_provider_bridge(provider_type, settings, model_override=model_override)

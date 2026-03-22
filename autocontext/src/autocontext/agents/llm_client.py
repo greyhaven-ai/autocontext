@@ -601,6 +601,19 @@ def build_client_from_settings(
             session_persistence=settings.pi_rpc_session_persistence,
         )
         return RuntimeBridgeClient(PiRPCRuntime(rpc_config))
+    if settings.agent_provider == "hermes":
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient
+        from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
+
+        hermes_config = HermesCLIConfig(
+            hermes_command=settings.hermes_command,
+            model=settings.hermes_model,
+            timeout=settings.hermes_timeout,
+            workspace=settings.hermes_workspace,
+            base_url=settings.hermes_base_url,
+            api_key=settings.hermes_api_key,
+        )
+        return RuntimeBridgeClient(HermesCLIRuntime(hermes_config))
     raise ValueError(f"unsupported agent provider: {settings.agent_provider}")
 
 
