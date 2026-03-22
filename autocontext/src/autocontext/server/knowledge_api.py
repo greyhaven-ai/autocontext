@@ -64,7 +64,10 @@ def export_skill(scenario_name: str, format: str = "skill") -> dict[str, Any]:
             strategy_pkg = export_strategy_package(_get_ctx(), scenario_name)
             return cast(dict[str, Any], json.loads(strategy_pkg.to_json()))
         skill_pkg = export_skill_package(_get_ctx(), scenario_name)
-        return skill_pkg.to_dict()
+        result = skill_pkg.to_dict()
+        result["skill_markdown"] = skill_pkg.to_skill_markdown()
+        result["suggested_filename"] = f"{scenario_name.replace('_', '-')}-knowledge.md"
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

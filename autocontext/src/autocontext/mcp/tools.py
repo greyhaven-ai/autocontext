@@ -209,11 +209,19 @@ def run_replay(ctx: MtsToolContext, run_id: str, generation: int) -> dict[str, o
 
 
 def export_skill(ctx: MtsToolContext, scenario_name: str) -> dict[str, object]:
-    """Export a portable skill package for a solved scenario."""
+    """Export a portable skill package for a solved scenario.
+
+    Returns the structured package dict with two additional keys:
+    - ``skill_markdown``: rendered SKILL.md ready for agent install
+    - ``suggested_filename``: e.g. ``grid-ctf-knowledge.md``
+    """
     from autocontext.knowledge.export import export_skill_package
 
     pkg = export_skill_package(ctx, scenario_name)
-    return pkg.to_dict()
+    result = pkg.to_dict()
+    result["skill_markdown"] = pkg.to_skill_markdown()
+    result["suggested_filename"] = f"{scenario_name.replace('_', '-')}-knowledge.md"
+    return result
 
 
 def list_solved(ctx: MtsToolContext) -> list[dict[str, object]]:
