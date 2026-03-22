@@ -278,13 +278,13 @@ def create_role_client(
             if handoff is not None:
                 resolved_model = handoff.checkpoint_path
 
-        config = PiCLIConfig(
+        pi_config = PiCLIConfig(
             pi_command=settings.pi_command,
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             model=resolved_model,
         )
-        return RuntimeBridgeClient(PiCLIRuntime(config))
+        return RuntimeBridgeClient(PiCLIRuntime(pi_config))
 
     if provider_type == "pi-rpc":
         from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
@@ -299,7 +299,7 @@ def create_role_client(
     if provider_type == "hermes":
         from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
 
-        config = HermesCLIConfig(
+        hermes_config = HermesCLIConfig(
             hermes_command=settings.hermes_command,
             model=model_override or settings.hermes_model,
             timeout=settings.hermes_timeout,
@@ -307,7 +307,7 @@ def create_role_client(
             base_url=settings.hermes_base_url,
             api_key=settings.hermes_api_key,
         )
-        return RuntimeBridgeClient(HermesCLIRuntime(config))
+        return RuntimeBridgeClient(HermesCLIRuntime(hermes_config))
 
     # LLMProvider-based providers — use the bridge
     if provider_type in ("mlx", "openai", "openai-compatible", "ollama", "vllm"):
