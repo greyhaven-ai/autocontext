@@ -4,6 +4,7 @@
 
 - judging agent outputs against rubrics
 - running multi-round improvement loops
+- running bounded REPL-loop generation and revision sessions
 - queueing and polling background tasks
 - exposing those workflows over MCP
 - embedding the toolkit directly in a TypeScript application
@@ -16,12 +17,13 @@ If you want the full multi-generation control plane, dashboard, training loop, s
 npm install autoctx
 ```
 
-From source:
+From source, run the commands below from the `ts/` directory:
 
 ```bash
 cd ts
 npm install
 npm run build
+npm run example:repl -- --help
 ```
 
 ## CLI Quick Start
@@ -31,12 +33,24 @@ The package ships an `autoctx` CLI with a focused command set:
 ```bash
 npx autoctx judge -p "Write a haiku about testing" -o "Draft output" -r "Score clarity, format, and relevance"
 npx autoctx improve -p "Write a haiku about testing" -o "Draft output" -r "Score clarity, format, and relevance" -n 3
+npx autoctx repl -p "Write a concise summary of AutoContext." -r "Reward clarity, accuracy, and completeness."
 npx autoctx queue -s my-task --priority 1
 npx autoctx status
 npx autoctx serve
 ```
 
 `serve` starts the MCP server on stdio.
+
+Development commands can also be run directly through `tsx`:
+
+```bash
+npx tsx src/cli/index.ts judge --help
+npx tsx src/cli/index.ts improve --help
+npx tsx src/cli/index.ts repl --help
+npx tsx src/cli/index.ts queue --help
+npx tsx src/cli/index.ts status
+npx tsx src/cli/index.ts serve
+```
 
 ## Provider Configuration
 
@@ -58,6 +72,60 @@ AUTOCONTEXT_PROVIDER=ollama \
 AUTOCONTEXT_MODEL=llama3.1 \
 npx autoctx improve -p "Write a haiku" -o "Draft" -r "Evaluate quality"
 ```
+
+## Which Surface To Use
+
+- `judge`: one-shot scoring of an output against a rubric
+- `improve`: multi-round improvement loop with judge feedback and best-output selection
+- `repl`: direct REPL-loop session for open-ended draft generation or revision
+- `queue`: background task enqueueing for the task runner store
+- `serve`: MCP server exposing the same evaluation, improvement, queue, and REPL surfaces
+
+## REPL Surfaces
+
+### Direct CLI REPL
+
+Use `repl` when you want one bounded REPL-loop session and the execution trace that produced it.
+
+```bash
+npx tsx src/cli/index.ts repl \
+  -p "Write a concise summary of AutoContext." \
+  -r "Reward clarity, accuracy, and completeness."
+```
+
+Revise an existing draft:
+
+```bash
+npx tsx src/cli/index.ts repl \
+  -p "Revise the answer to improve clarity." \
+  -r "Reward factual accuracy and readability." \
+  --phase revise \
+  -o "AutoContext is a system that helps agents get better over time."
+```
+
+Useful REPL controls:
+
+- `-m, --model`: override the model used for the REPL session
+- `-n, --turns`: max REPL turns
+- `--max-tokens`: per-turn token cap
+- `-t, --temperature`: REPL sampling temperature
+- `--max-stdout`: stdout cap per turn
+- `--timeout-ms`: code execution timeout
+- `--memory-mb`: memory cap for the sandboxed worker
+
+### Improvement Loop With RLM
+
+Use `improve` when you want best-output selection, thresholding, and judge-guided iteration. Add `--rlm` when you want bootstrap generation and revisions to go through the REPL surface.
+
+```bash
+npx tsx src/cli/index.ts improve \
+  -p "Write a summary of AutoContext." \
+  -r "Reward accuracy and clarity." \
+  --rlm \
+  --rlm-turns 6
+```
+
+If you already have a draft, pass it with `-o`. If you omit `-o` and set `--rlm`, the REPL session will generate the initial draft before the improvement loop starts.
 
 ## Library Usage
 
@@ -92,14 +160,40 @@ const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
 const improved = await loop.run({ initialOutput: "Binary search is fast.", state: {} });
 ```
 
-## MCP Usage
+## MCP Tools
 
-The package can expose evaluation tools over MCP:
+`serve` exposes these task-facing MCP tools:
+
+- `evaluate_output`
+- `run_improvement_loop`
+- `run_repl_session`
+- `queue_task`
+- `get_queue_status`
+- `get_task_result`
+
+Use `run_repl_session` when an external client wants the direct REPL artifact and execution trace. Use `run_improvement_loop` when the client wants judge-gated multi-round improvement and best-output selection.
+
+### Example MCP Client
+
+There is a runnable example client at [examples/run-repl-session.mjs](/Users/jayscambler/.codex/worktrees/86e3/MTS/ts/examples/run-repl-session.mjs).
+
+It spawns the local stdio MCP server, verifies that `run_repl_session` is registered, calls the tool, and prints the parsed JSON payload:
 
 ```bash
-ANTHROPIC_API_KEY=... npx autoctx serve
+cd ts
+ANTHROPIC_API_KEY=... npm run example:repl
 ```
 
-For a repo-level guide that compares CLI, MCP, and Python SDK integration paths, see [`../autocontext/docs/agent-integration.md`](../autocontext/docs/agent-integration.md).
+Pass custom arguments through `--`:
 
-Copy-paste integration snippets also live in [`../examples/README.md`](../examples/README.md).
+```bash
+cd ts
+ANTHROPIC_API_KEY=... npm run example:repl -- \
+  --prompt "Write a concise summary of AutoContext." \
+  --rubric "Reward clarity, accuracy, and completeness."
+```
+
+## Notes
+
+- The current TS REPL runtime is Node-based and uses `secure-exec` for bounded execution.
+- This surface is intentionally aligned with the shared task-runtime path, so CLI, queue, and MCP use the same REPL session implementation rather than separate codepaths.

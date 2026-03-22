@@ -13,6 +13,7 @@ import { enqueueTask } from "../execution/task-runner.js";
 import { SQLiteStore } from "../storage/index.js";
 import { SimpleAgentTask } from "../execution/task-runner.js";
 import { loadSettings } from "../config/index.js";
+import { runAgentTaskRlmSession } from "../rlm/index.js";
 
 export interface MtsServerOpts {
   store: SQLiteStore;
@@ -91,11 +92,19 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     {
       taskPrompt: z.string().describe("The task prompt"),
       rubric: z.string().describe("Evaluation rubric"),
-      initialOutput: z.string().describe("Starting output to improve"),
+      initialOutput: z.string().optional().describe("Starting output to improve"),
       maxRounds: z.number().int().default(5).describe("Maximum improvement rounds"),
       qualityThreshold: z.number().default(0.9).describe("Score threshold to stop"),
       referenceContext: z.string().optional(),
       requiredConcepts: z.array(z.string()).optional(),
+      rlmEnabled: z.boolean().optional().describe("Use REPL-loop mode for generation and revisions"),
+      rlmModel: z.string().optional().describe("Optional model override for REPL-loop mode"),
+      rlmMaxTurns: z.number().int().positive().optional(),
+      rlmMaxTokensPerTurn: z.number().int().positive().optional(),
+      rlmTemperature: z.number().min(0).max(2).optional(),
+      rlmMaxStdoutChars: z.number().int().positive().optional(),
+      rlmCodeTimeoutMs: z.number().int().positive().optional(),
+      rlmMemoryLimitMb: z.number().int().positive().optional(),
     },
     async (args) => {
       const task = new SimpleAgentTask(
@@ -103,18 +112,34 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
         args.rubric,
         provider,
         model,
+        undefined,
+        {
+          enabled: args.rlmEnabled ?? false,
+          model: args.rlmModel,
+          maxTurns: args.rlmMaxTurns,
+          maxTokensPerTurn: args.rlmMaxTokensPerTurn,
+          temperature: args.rlmTemperature,
+          maxStdoutChars: args.rlmMaxStdoutChars,
+          codeTimeoutMs: args.rlmCodeTimeoutMs,
+          memoryLimitMb: args.rlmMemoryLimitMb,
+        },
       );
+      const initialOutput = args.initialOutput ?? await task.generateOutput({
+        referenceContext: args.referenceContext,
+        requiredConcepts: args.requiredConcepts,
+      });
       const loop = new ImprovementLoop({
         task,
         maxRounds: args.maxRounds,
         qualityThreshold: args.qualityThreshold,
       });
       const result = await loop.run({
-        initialOutput: args.initialOutput,
+        initialOutput,
         state: {},
         referenceContext: args.referenceContext,
         requiredConcepts: args.requiredConcepts,
       });
+      const rlmSessions = task.getRlmSessions();
 
       return {
         content: [
@@ -135,10 +160,76 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
                   reasoningPreview: r.reasoning.slice(0, 200),
                 })),
                 bestOutputPreview: result.bestOutput.slice(0, 500),
+                ...(rlmSessions.length > 0 ? { rlmSessions } : {}),
               },
               null,
               2,
             ),
+          },
+        ],
+      };
+    },
+  );
+
+  // -- run_repl_session --
+  server.tool(
+    "run_repl_session",
+    "Run a direct REPL-loop session for agent-task generation or revision",
+    {
+      taskPrompt: z.string().describe("The task prompt"),
+      rubric: z.string().describe("Evaluation rubric"),
+      phase: z.enum(["generate", "revise"]).default("generate"),
+      currentOutput: z.string().optional().describe("Current output when revising"),
+      referenceContext: z.string().optional(),
+      requiredConcepts: z.array(z.string()).optional(),
+      rlmModel: z.string().optional().describe("Optional model override for REPL-loop mode"),
+      rlmMaxTurns: z.number().int().positive().optional(),
+      rlmMaxTokensPerTurn: z.number().int().positive().optional(),
+      rlmTemperature: z.number().min(0).max(2).optional(),
+      rlmMaxStdoutChars: z.number().int().positive().optional(),
+      rlmCodeTimeoutMs: z.number().int().positive().optional(),
+      rlmMemoryLimitMb: z.number().int().positive().optional(),
+    },
+    async (args) => {
+      if (args.phase === "revise" && !args.currentOutput) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: "currentOutput is required when phase=revise",
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      const result = await runAgentTaskRlmSession({
+        provider,
+        model,
+        config: {
+          enabled: true,
+          model: args.rlmModel,
+          maxTurns: args.rlmMaxTurns ?? 6,
+          maxTokensPerTurn: args.rlmMaxTokensPerTurn ?? 2048,
+          temperature: args.rlmTemperature ?? 0.2,
+          maxStdoutChars: args.rlmMaxStdoutChars ?? 8192,
+          codeTimeoutMs: args.rlmCodeTimeoutMs ?? 10000,
+          memoryLimitMb: args.rlmMemoryLimitMb ?? 64,
+        },
+        phase: args.phase,
+        taskPrompt: args.taskPrompt,
+        rubric: args.rubric,
+        currentOutput: args.currentOutput,
+        referenceContext: args.referenceContext,
+        requiredConcepts: args.requiredConcepts,
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
           },
         ],
       };
@@ -157,6 +248,14 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       maxRounds: z.number().int().optional(),
       qualityThreshold: z.number().optional(),
       priority: z.number().int().default(0),
+      rlmEnabled: z.boolean().optional(),
+      rlmModel: z.string().optional(),
+      rlmMaxTurns: z.number().int().positive().optional(),
+      rlmMaxTokensPerTurn: z.number().int().positive().optional(),
+      rlmTemperature: z.number().min(0).max(2).optional(),
+      rlmMaxStdoutChars: z.number().int().positive().optional(),
+      rlmCodeTimeoutMs: z.number().int().positive().optional(),
+      rlmMemoryLimitMb: z.number().int().positive().optional(),
     },
     async (args) => {
       const taskId = enqueueTask(store, args.specName, {
@@ -166,6 +265,14 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
         maxRounds: args.maxRounds,
         qualityThreshold: args.qualityThreshold,
         priority: args.priority,
+        rlmEnabled: args.rlmEnabled,
+        rlmModel: args.rlmModel,
+        rlmMaxTurns: args.rlmMaxTurns,
+        rlmMaxTokensPerTurn: args.rlmMaxTokensPerTurn,
+        rlmTemperature: args.rlmTemperature,
+        rlmMaxStdoutChars: args.rlmMaxStdoutChars,
+        rlmCodeTimeoutMs: args.rlmCodeTimeoutMs,
+        rlmMemoryLimitMb: args.rlmMemoryLimitMb,
       });
       return {
         content: [

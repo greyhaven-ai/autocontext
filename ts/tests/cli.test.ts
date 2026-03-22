@@ -25,6 +25,7 @@ describe("CLI", () => {
     expect(stdout).toContain("autoctx");
     expect(stdout).toContain("judge");
     expect(stdout).toContain("improve");
+    expect(stdout).toContain("repl");
     expect(stdout).toContain("queue");
     expect(stdout).toContain("serve");
   });
@@ -55,10 +56,34 @@ describe("CLI", () => {
     const { stdout, exitCode } = runCli(["improve", "--help"]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("-v");
+    expect(stdout).toContain("--rlm");
   });
 
   it("improve requires args", () => {
     const { exitCode } = runCli(["improve"]);
+    expect(exitCode).toBe(1);
+  });
+
+  it("queue --help shows RLM flags", () => {
+    const { stdout, exitCode } = runCli(["queue", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("--rlm");
+  });
+
+  it("repl --help shows phase option", () => {
+    const { stdout, exitCode } = runCli(["repl", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("--phase");
+    expect(stdout).toContain("--reference-context");
+  });
+
+  it("repl requires prompt and rubric", () => {
+    const { exitCode } = runCli(["repl"]);
+    expect(exitCode).toBe(1);
+  });
+
+  it("repl revise requires current output", () => {
+    const { exitCode } = runCli(["repl", "-p", "Task", "-r", "Rubric", "--phase", "revise"]);
     expect(exitCode).toBe(1);
   });
 });

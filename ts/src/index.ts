@@ -200,10 +200,18 @@ export type {
   ReplResult,
   ExecutionRecord,
   RlmContext,
+  RlmTaskConfig,
+  RlmPhase,
+  RlmSessionRecord,
 } from "./rlm/index.js";
 export {
   ReplCommandSchema,
   ReplResultSchema,
   ExecutionRecordSchema,
   RlmContextSchema,
+  RlmTaskConfigSchema,
+  RlmPhaseSchema,
+  RlmSessionRecordSchema,
 } from "./rlm/index.js";
+export { SecureExecReplWorker, runAgentTaskRlmSession } from "./rlm/index.js";
+export type { SecureExecReplWorkerOpts, AgentTaskRlmOpts } from "./rlm/index.js";

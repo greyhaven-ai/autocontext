@@ -11,6 +11,9 @@ export {
   ReplResultSchema,
   ExecutionRecordSchema,
   RlmContextSchema,
+  RlmTaskConfigSchema,
+  RlmPhaseSchema,
+  RlmSessionRecordSchema,
 } from "./types.js";
 
 export type {
@@ -20,4 +23,12 @@ export type {
   RlmContext,
   ReplWorker,
   LlmComplete,
+  RlmTaskConfig,
+  RlmPhase,
+  RlmSessionRecord,
 } from "./types.js";
+
+export { SecureExecReplWorker } from "./secure-exec-worker.js";
+export type { SecureExecReplWorkerOpts } from "./secure-exec-worker.js";
+export { runAgentTaskRlmSession } from "./agent-task.js";
+export type { AgentTaskRlmOpts } from "./agent-task.js";

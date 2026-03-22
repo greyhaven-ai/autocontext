@@ -14,6 +14,12 @@ import type {
 import { ImprovementLoop } from "./improvement-loop.js";
 import { LLMJudge } from "../judge/index.js";
 import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
+import {
+  RlmTaskConfigSchema,
+  type RlmSessionRecord,
+  type RlmTaskConfig,
+} from "../rlm/index.js";
+import { runAgentTaskRlmSession } from "../rlm/index.js";
 
 export interface TaskConfig {
   maxRounds: number;
@@ -26,6 +32,7 @@ export interface TaskConfig {
   rubric?: string;
   taskPrompt?: string;
   revisionPrompt?: string;
+  rlm?: RlmTaskConfig;
 }
 
 const TaskConfigSchema = z.object({
@@ -39,7 +46,20 @@ const TaskConfigSchema = z.object({
   rubric: z.string().optional(),
   task_prompt: z.string().optional(),
   revision_prompt: z.string().optional(),
+  rlm_enabled: z.boolean().optional(),
+  rlm_model: z.string().optional(),
+  rlm_max_turns: z.number().int().positive().optional(),
+  rlm_max_tokens_per_turn: z.number().int().positive().optional(),
+  rlm_temperature: z.number().min(0).max(2).optional(),
+  rlm_max_stdout_chars: z.number().int().positive().optional(),
+  rlm_code_timeout_ms: z.number().int().positive().optional(),
+  rlm_memory_limit_mb: z.number().int().positive().optional(),
 }).passthrough();
+
+function resolveRlmConfig(raw: Partial<RlmTaskConfig> | null | undefined): RlmTaskConfig | null {
+  if (!raw?.enabled) return null;
+  return RlmTaskConfigSchema.parse(raw);
+}
 
 function parseTaskConfig(json: string | null): TaskConfig {
   if (!json) return { maxRounds: 5, qualityThreshold: 0.9, minRounds: 1 };
@@ -56,10 +76,23 @@ function parseTaskConfig(json: string | null): TaskConfig {
     rubric: d.rubric,
     taskPrompt: d.task_prompt,
     revisionPrompt: d.revision_prompt,
+    rlm: resolveRlmConfig({
+      enabled: d.rlm_enabled ?? false,
+      model: d.rlm_model,
+      maxTurns: d.rlm_max_turns,
+      maxTokensPerTurn: d.rlm_max_tokens_per_turn,
+      temperature: d.rlm_temperature,
+      maxStdoutChars: d.rlm_max_stdout_chars,
+      codeTimeoutMs: d.rlm_code_timeout_ms,
+      memoryLimitMb: d.rlm_memory_limit_mb,
+    }) ?? undefined,
   };
 }
 
-function serializeResult(result: ImprovementResult): string {
+function serializeResult(
+  result: ImprovementResult,
+  rlmSessions?: RlmSessionRecord[],
+): string {
   return JSON.stringify({
     rounds: result.rounds.map((r) => ({
       round_number: r.roundNumber,
@@ -74,6 +107,7 @@ function serializeResult(result: ImprovementResult): string {
     met_threshold: result.metThreshold,
     ...(result.durationMs != null ? { duration_ms: result.durationMs } : {}),
     ...(result.judgeCalls ? { judge_calls: result.judgeCalls } : {}),
+    ...(rlmSessions && rlmSessions.length > 0 ? { rlm_sessions: rlmSessions } : {}),
   });
 }
 
@@ -86,6 +120,10 @@ export class SimpleAgentTask implements AgentTaskInterface {
   private provider: LLMProvider;
   private model: string;
   private revisionPrompt?: string;
+  private readonly rlmConfig: RlmTaskConfig | null;
+  private readonly rlmSessions: RlmSessionRecord[] = [];
+  private lastReferenceContext?: string;
+  private lastRequiredConcepts?: string[];
 
   constructor(
     taskPrompt: string,
@@ -93,12 +131,14 @@ export class SimpleAgentTask implements AgentTaskInterface {
     provider: LLMProvider,
     model?: string,
     revisionPrompt?: string,
+    rlmConfig?: Partial<RlmTaskConfig> | null,
   ) {
     this.taskPrompt = taskPrompt;
     this.rubric = rubric;
     this.provider = provider;
     this.model = model || provider.defaultModel();
     this.revisionPrompt = revisionPrompt;
+    this.rlmConfig = resolveRlmConfig(rlmConfig);
   }
 
   getTaskPrompt(): string {
@@ -127,6 +167,8 @@ export class SimpleAgentTask implements AgentTaskInterface {
       pinnedDimensions?: string[];
     },
   ): Promise<AgentTaskResult> {
+    this.lastReferenceContext = opts?.referenceContext;
+    this.lastRequiredConcepts = opts?.requiredConcepts;
     const judge = new LLMJudge({
       provider: this.provider,
       model: this.model,
@@ -148,7 +190,45 @@ export class SimpleAgentTask implements AgentTaskInterface {
     };
   }
 
-  async generateOutput(): Promise<string> {
+  getRlmSessions(): RlmSessionRecord[] {
+    return this.rlmSessions.slice();
+  }
+
+  private async runRlm(phase: "generate" | "revise", opts: {
+    currentOutput?: string;
+    judgeResult?: AgentTaskResult;
+    referenceContext?: string;
+    requiredConcepts?: string[];
+  }): Promise<string | null> {
+    if (!this.rlmConfig) return null;
+    const record = await runAgentTaskRlmSession({
+      provider: this.provider,
+      model: this.model,
+      config: this.rlmConfig,
+      phase,
+      taskPrompt: this.taskPrompt,
+      rubric: this.rubric,
+      currentOutput: opts.currentOutput,
+      judgeResult: opts.judgeResult,
+      referenceContext: opts.referenceContext,
+      requiredConcepts: opts.requiredConcepts,
+      revisionPrompt: this.revisionPrompt,
+    });
+    this.rlmSessions.push(record);
+    const content = record.content.trim();
+    return content.length > 0 ? content : null;
+  }
+
+  async generateOutput(context?: {
+    referenceContext?: string;
+    requiredConcepts?: string[];
+  }): Promise<string> {
+    const rlmOutput = await this.runRlm("generate", {
+      referenceContext: context?.referenceContext,
+      requiredConcepts: context?.requiredConcepts,
+    });
+    if (rlmOutput) return rlmOutput;
+
     const result = await this.provider.complete({
       systemPrompt:
         "You are a skilled writer and analyst. Complete the task precisely.",
@@ -163,6 +243,14 @@ export class SimpleAgentTask implements AgentTaskInterface {
     judgeResult: AgentTaskResult,
     _state: Record<string, unknown>,
   ): Promise<string> {
+    const rlmOutput = await this.runRlm("revise", {
+      currentOutput: output,
+      judgeResult,
+      referenceContext: this.lastReferenceContext,
+      requiredConcepts: this.lastRequiredConcepts,
+    });
+    if (rlmOutput) return rlmOutput;
+
     const instruction =
       this.revisionPrompt ??
       "Revise the following output based on the judge's feedback. Maintain what works, fix what doesn't.";
@@ -257,11 +345,15 @@ export class TaskRunner {
         this.provider,
         this.model,
         config.revisionPrompt,
+        config.rlm,
       );
 
       let initialOutput = config.initialOutput;
       if (!initialOutput) {
-        initialOutput = await agentTask.generateOutput();
+        initialOutput = await agentTask.generateOutput({
+          referenceContext: config.referenceContext,
+          requiredConcepts: config.requiredConcepts,
+        });
       }
 
       const loop = new ImprovementLoop({
@@ -285,7 +377,7 @@ export class TaskRunner {
         result.bestOutput,
         result.totalRounds,
         result.metThreshold,
-        serializeResult(result),
+        serializeResult(result, agentTask.getRlmSessions()),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -307,6 +399,14 @@ export function enqueueTask(
     minRounds?: number;
     initialOutput?: string;
     priority?: number;
+    rlmEnabled?: boolean;
+    rlmModel?: string;
+    rlmMaxTurns?: number;
+    rlmMaxTokensPerTurn?: number;
+    rlmTemperature?: number;
+    rlmMaxStdoutChars?: number;
+    rlmCodeTimeoutMs?: number;
+    rlmMemoryLimitMb?: number;
   },
 ): string {
   const taskId = randomUUID();
@@ -319,6 +419,14 @@ export function enqueueTask(
   if (opts?.referenceContext) config.reference_context = opts.referenceContext;
   if (opts?.requiredConcepts) config.required_concepts = opts.requiredConcepts;
   if (opts?.initialOutput) config.initial_output = opts.initialOutput;
+  if (opts?.rlmEnabled != null) config.rlm_enabled = opts.rlmEnabled;
+  if (opts?.rlmModel) config.rlm_model = opts.rlmModel;
+  if (opts?.rlmMaxTurns != null) config.rlm_max_turns = opts.rlmMaxTurns;
+  if (opts?.rlmMaxTokensPerTurn != null) config.rlm_max_tokens_per_turn = opts.rlmMaxTokensPerTurn;
+  if (opts?.rlmTemperature != null) config.rlm_temperature = opts.rlmTemperature;
+  if (opts?.rlmMaxStdoutChars != null) config.rlm_max_stdout_chars = opts.rlmMaxStdoutChars;
+  if (opts?.rlmCodeTimeoutMs != null) config.rlm_code_timeout_ms = opts.rlmCodeTimeoutMs;
+  if (opts?.rlmMemoryLimitMb != null) config.rlm_memory_limit_mb = opts.rlmMemoryLimitMb;
 
   store.enqueueTask(
     taskId,
