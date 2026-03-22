@@ -540,6 +540,125 @@ Response:
 }
 ```
 
+### Hermes MCP Integration
+
+Hermes supports MCP servers natively. Add the autocontext MCP server to your Hermes `mcp_servers` configuration to give Hermes agents access to scenario discovery, evaluation, run management, and knowledge export.
+
+#### Configuration
+
+Add to your Hermes `mcp_servers` config (typically `~/.hermes/config.json` or the workspace config):
+
+```json
+{
+  "mcp_servers": {
+    "autocontext": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/autocontext", "autoctx", "mcp-serve"],
+      "env": {
+        "AUTOCONTEXT_AGENT_PROVIDER": "openai-compatible",
+        "AUTOCONTEXT_AGENT_BASE_URL": "http://localhost:8080/v1",
+        "AUTOCONTEXT_AGENT_API_KEY": "no-key",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL": "hermes-3-llama-3.1-8b"
+      }
+    }
+  }
+}
+```
+
+This starts the autocontext MCP server on stdio when Hermes connects. The server exposes all `autocontext_*` tools.
+
+#### Recommended Tool Allowlists
+
+For safe Hermes exposure, consider allowing tools by category:
+
+**Read-only (safe for any operator):**
+- `autocontext_list_scenarios` — Browse available scenarios
+- `autocontext_describe_scenario` — Get scenario details, rules, strategy interface
+- `autocontext_read_playbook` — Read accumulated strategy playbook
+- `autocontext_read_hints` — Read competitor hints
+- `autocontext_read_tools` — Read architect-generated tools
+- `autocontext_list_runs` — List past runs
+- `autocontext_run_status` — Check run progress
+- `autocontext_read_trajectory` — Score trajectory for a run
+- `autocontext_search_strategies` — Search past strategies by keyword
+- `autocontext_list_solved` — List scenarios with exported knowledge
+
+**Evaluation (stateless, safe):**
+- `autocontext_evaluate_output` — One-shot judge evaluation
+- `autocontext_validate_strategy` — Validate strategy JSON against scenario constraints
+- `autocontext_run_match` — Run a single match (deterministic)
+- `autocontext_run_tournament` — Run N matches with Elo scoring
+
+**Write operations (require operator trust):**
+- `autocontext_run_replay` — Replay a generation
+- `autocontext_export_skill` — Export strategy package
+- `autocontext_solve_scenario` — Launch a solve job (long-running, creates artifacts)
+- `autocontext_sandbox_create` / `autocontext_sandbox_run` / `autocontext_sandbox_destroy` — Sandboxed execution
+
+#### End-to-End Walkthrough
+
+Once configured, a Hermes agent can drive the full autocontext loop:
+
+**1. Discover scenarios:**
+```
+Use autocontext_list_scenarios to see what's available.
+```
+→ Returns JSON array of scenario names with descriptions.
+
+**2. Inspect a scenario:**
+```
+Use autocontext_describe_scenario with scenario_name="grid_ctf".
+```
+→ Returns rules, strategy interface, evaluation criteria, and scoring dimensions.
+
+**3. Validate a strategy:**
+```
+Use autocontext_validate_strategy with scenario_name="grid_ctf" and
+strategy='{"aggression": 0.6, "defense": 0.4, "path_bias": 0.5}'.
+```
+→ Returns `{"valid": true, "reason": "ok"}` or validation errors.
+
+**4. Run a tournament:**
+```
+Use autocontext_run_tournament with scenario_name="grid_ctf",
+strategy='{"aggression": 0.6, "defense": 0.4, "path_bias": 0.5}',
+matches=5.
+```
+→ Returns mean/best scores, Elo, wins/losses.
+
+**5. Read the playbook:**
+```
+Use autocontext_read_playbook with scenario_name="grid_ctf".
+```
+→ Returns the accumulated playbook markdown (or sentinel if none exists).
+
+**6. Export knowledge:**
+```
+Use autocontext_export_skill with scenario_name="grid_ctf".
+```
+→ Returns a portable skill package with playbook, lessons, best strategy.
+
+#### Tool Naming and Ergonomics
+
+All tools use the `autocontext_` prefix (e.g., `autocontext_list_scenarios`). This is deliberate — it prevents collisions in multi-MCP-server setups. In Hermes, the prefix is visible in tool discovery and helps distinguish autocontext tools from other MCP servers.
+
+**Known rough edges:**
+- Tool names are verbose — Hermes agents may need explicit instruction to use the `autocontext_` prefix
+- `autocontext_solve_scenario` is long-running and returns a `job_id`; poll with `autocontext_solve_status`
+- Sandbox tools require explicit create/destroy lifecycle management
+
+#### MCP vs CLI-First for Hermes
+
+| Aspect | MCP | CLI-first |
+|--------|-----|-----------|
+| **Setup** | Config in `mcp_servers` | Set env vars |
+| **Tool discovery** | Automatic (Hermes sees all tools) | Manual (`autoctx --help`) |
+| **Output format** | Structured MCP responses | `--json` stdout |
+| **Long-running jobs** | Poll via `autocontext_solve_status` | Poll via `autoctx status` |
+| **Best for** | Hermes agents with MCP support | Hermes agents with shell access |
+
+Use MCP when Hermes has native MCP client support and you want automatic tool discovery. Use CLI-first when you want simpler debugging or are scripting a workflow.
+
 ## Python SDK (Programmatic)
 
 For Python agents that want to skip the CLI, the package also exposes a typed SDK:
