@@ -81,6 +81,26 @@ When a change affects public commands, environment variables, package names, or 
 - `AGENTS.md`
 - `CHANGELOG.md`
 
+## Releases
+
+Publishing is split by package and uses GitHub OIDC trusted publishing rather than long-lived PyPI or npm tokens.
+
+- Python publishes through `.github/workflows/publish-python.yml`
+  - tag trigger: `py-v<version>`
+  - manual trigger: `workflow_dispatch` from `main`
+  - environment: `publish-python`
+- TypeScript publishes through `.github/workflows/publish-ts.yml`
+  - tag trigger: `ts-v<version>`
+  - manual trigger: `workflow_dispatch` from `main`
+  - environment: `publish-ts`
+
+Release notes:
+
+- Keep the GitHub environment branch/tag policy restricted to `main` and the matching tag namespace.
+- The trusted publisher registration in PyPI and npm must match the repo, workflow filename, and environment name exactly.
+- No `NPM_TOKEN`, `NODE_AUTH_TOKEN`, or PyPI API token should be required for the publish jobs.
+- After cutover, remove the old combined `.github/workflows/publish.yml` publisher registration from PyPI and npm.
+
 ## Pull Requests
 
 - Keep changes scoped to one feature or cleanup theme.
