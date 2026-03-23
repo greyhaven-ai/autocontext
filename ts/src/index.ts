@@ -167,8 +167,11 @@ export { AppSettingsSchema, loadSettings, applyPreset, PRESETS } from "./config/
 export type { AppSettings } from "./config/index.js";
 
 // Loop (generation loop components)
-export { HypothesisTree, HypothesisNodeSchema, EventStreamEmitter, LoopController } from "./loop/index.js";
-export type { HypothesisNode, EventCallback } from "./loop/index.js";
+export {
+  HypothesisTree, HypothesisNodeSchema, EventStreamEmitter, LoopController,
+  BackpressureGate, TrendAwareGate, GenerationRunner,
+} from "./loop/index.js";
+export type { HypothesisNode, EventCallback, GateDecision, GenerationRunnerOpts, RunResult } from "./loop/index.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
