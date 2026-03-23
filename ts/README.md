@@ -1,15 +1,14 @@
-# autoctx TypeScript Toolkit
+# autoctx — AutoContext TypeScript Package
 
-`autoctx` is the Node/TypeScript package in this repo. It is the best entry point if you want a lightweight toolkit for:
+`autoctx` is the Node/TypeScript package for AutoContext. It provides the same major operator workflows as the Python package:
 
-- judging agent outputs against rubrics
-- running multi-round improvement loops
-- running bounded REPL-loop generation and revision sessions
-- queueing and polling background tasks
-- exposing those workflows over MCP
-- embedding the toolkit directly in a TypeScript application
-
-If you want the full multi-generation control plane, dashboard, training loop, scenario runner, and export/import flows, use the Python package in [`../autocontext`](../autocontext/README.md) instead.
+- **Scenario execution**: run generation loops with tournament scoring and Elo progression
+- **Knowledge system**: versioned playbooks, score trajectories, session reports, dead-end tracking
+- **Interactive server**: HTTP dashboard + API, WebSocket control plane, TUI
+- **MCP control plane**: 40+ tools covering scenarios, runs, knowledge, evaluation, feedback, solve, sandbox, and export
+- **Provider routing**: Anthropic, OpenAI-compatible, Ollama, vLLM, Hermes, Pi, Pi-RPC, deterministic
+- **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
+- **Package management**: strategy package export/import, training data export
 
 ## Install
 
@@ -17,183 +16,179 @@ If you want the full multi-generation control plane, dashboard, training loop, s
 npm install autoctx
 ```
 
-From source, run the commands below from the `ts/` directory:
+From source:
 
 ```bash
 cd ts
 npm install
 npm run build
-npm run example:repl -- --help
 ```
 
-## CLI Quick Start
+## CLI Commands
 
-The package ships an `autoctx` CLI with a focused command set:
-
-```bash
-npx autoctx judge -p "Write a haiku about testing" -o "Draft output" -r "Score clarity, format, and relevance"
-npx autoctx improve -p "Write a haiku about testing" -o "Draft output" -r "Score clarity, format, and relevance" -n 3
-npx autoctx repl -p "Write a concise summary of AutoContext." -r "Reward clarity, accuracy, and completeness."
-npx autoctx queue -s my-task --priority 1
-npx autoctx status
-npx autoctx serve
-```
-
-`serve` starts the MCP server on stdio.
-
-Development commands can also be run directly through `tsx`:
+The package ships a full `autoctx` CLI with 17 commands:
 
 ```bash
-npx tsx src/cli/index.ts judge --help
-npx tsx src/cli/index.ts improve --help
-npx tsx src/cli/index.ts repl --help
-npx tsx src/cli/index.ts queue --help
-npx tsx src/cli/index.ts status
-npx tsx src/cli/index.ts serve
+# Scenario execution
+autoctx run --scenario grid_ctf --gens 3 --json
+autoctx list --json
+autoctx replay --run-id <id> --generation 1
+autoctx benchmark --scenario grid_ctf --runs 5
+
+# Package management
+autoctx export --scenario grid_ctf --output pkg.json
+autoctx export-training-data --run-id <id> --output data.jsonl
+autoctx import-package --file pkg.json
+autoctx new-scenario --description "Test summarization quality"
+
+# Interactive
+autoctx tui [--port 8000]
+autoctx serve [--port 8000]          # HTTP dashboard + API
+autoctx mcp-serve                     # MCP server on stdio
+
+# Evaluation
+autoctx judge -p <prompt> -o <output> -r <rubric>
+autoctx improve -p <prompt> -o <output> -r <rubric> [-n rounds]
+autoctx repl -p <prompt> -r <rubric>
+
+# Task queue
+autoctx queue -s <spec> [--priority N]
+autoctx status
 ```
 
 ## Provider Configuration
 
-The TypeScript package resolves its runtime provider from these environment variables:
-
-- `AUTOCONTEXT_PROVIDER`: `anthropic`, `openai`, `openai-compatible`, `ollama`, or `vllm`
-- `AUTOCONTEXT_MODEL`: override the default model name
-- `AUTOCONTEXT_BASE_URL`: override the OpenAI-compatible base URL
-- `AUTOCONTEXT_API_KEY`: generic API key override
-- `ANTHROPIC_API_KEY`: fallback for Anthropic
-- `OPENAI_API_KEY`: fallback for OpenAI-compatible providers
-
-Examples:
+Configure the agent provider via environment variables:
 
 ```bash
-ANTHROPIC_API_KEY=... npx autoctx judge -p "Write a haiku" -o "Draft" -r "Evaluate quality"
+# Anthropic (default)
+ANTHROPIC_API_KEY=sk-ant-... autoctx run --scenario grid_ctf --json
 
-AUTOCONTEXT_PROVIDER=ollama \
-AUTOCONTEXT_MODEL=llama3.1 \
-npx autoctx improve -p "Write a haiku" -o "Draft" -r "Evaluate quality"
+# OpenAI-compatible
+AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
+AUTOCONTEXT_AGENT_API_KEY=sk-... \
+AUTOCONTEXT_AGENT_BASE_URL=https://api.openai.com/v1 \
+autoctx run --scenario grid_ctf --json
+
+# Ollama (local)
+AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run --scenario grid_ctf --json
+
+# Hermes gateway
+AUTOCONTEXT_AGENT_PROVIDER=hermes \
+AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
+autoctx run --scenario grid_ctf --json
+
+# Pi CLI
+AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario grid_ctf --json
+
+# Deterministic (CI/testing)
+AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario grid_ctf --json
 ```
 
-## Which Surface To Use
+Supported providers: `anthropic`, `openai`, `openai-compatible`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
 
-- `judge`: one-shot scoring of an output against a rubric
-- `improve`: multi-round improvement loop with judge feedback and best-output selection
-- `repl`: direct REPL-loop session for open-ended draft generation or revision
-- `queue`: background task enqueueing for the task runner store
-- `serve`: MCP server exposing the same evaluation, improvement, queue, and REPL surfaces
+Key environment variables:
 
-## REPL Surfaces
+| Variable | Purpose |
+|----------|---------|
+| `AUTOCONTEXT_AGENT_PROVIDER` | Agent provider selection |
+| `AUTOCONTEXT_AGENT_API_KEY` | API key (or use provider-specific env vars) |
+| `AUTOCONTEXT_AGENT_BASE_URL` | Base URL for compatible providers |
+| `AUTOCONTEXT_AGENT_DEFAULT_MODEL` | Override default model |
+| `AUTOCONTEXT_DB_PATH` | SQLite database path |
 
-### Direct CLI REPL
+## MCP Tools (40+)
 
-Use `repl` when you want one bounded REPL-loop session and the execution trace that produced it.
+`mcp-serve` starts the MCP server on stdio with tools across these families:
 
-```bash
-npx tsx src/cli/index.ts repl \
-  -p "Write a concise summary of AutoContext." \
-  -r "Reward clarity, accuracy, and completeness."
+| Family | Tools |
+|--------|-------|
+| Scenarios | list_scenarios, get_scenario, validate_strategy, run_match, run_tournament, run_scenario |
+| Runs | list_runs, get_run_status, get_generation_detail, run_replay |
+| Knowledge | get_playbook, read_trajectory, read_hints, read_analysis, read_tools, read_skills |
+| Evaluation | evaluate_output, run_improvement_loop, run_repl_session, generate_output |
+| Task queue | queue_task, get_queue_status, get_task_result |
+| Export/Search | export_skill, export_package, import_package, list_solved, search_strategies |
+| Feedback | record_feedback, get_feedback |
+| Solve | solve_scenario, solve_status, solve_result |
+| Sandbox | sandbox_create, sandbox_run, sandbox_status, sandbox_playbook, sandbox_list, sandbox_destroy |
+| Agent tasks | create_agent_task, list_agent_tasks, get_agent_task |
+| Discovery | capabilities |
+
+### Claude Code integration
+
+```json
+{
+  "mcpServers": {
+    "autocontext": {
+      "command": "npx",
+      "args": ["autoctx", "mcp-serve"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
+    }
+  }
+}
 ```
-
-Revise an existing draft:
-
-```bash
-npx tsx src/cli/index.ts repl \
-  -p "Revise the answer to improve clarity." \
-  -r "Reward factual accuracy and readability." \
-  --phase revise \
-  -o "AutoContext is a system that helps agents get better over time."
-```
-
-Useful REPL controls:
-
-- `-m, --model`: override the model used for the REPL session
-- `-n, --turns`: max REPL turns
-- `--max-tokens`: per-turn token cap
-- `-t, --temperature`: REPL sampling temperature
-- `--max-stdout`: stdout cap per turn
-- `--timeout-ms`: code execution timeout
-- `--memory-mb`: memory cap for the sandboxed worker
-
-### Improvement Loop With RLM
-
-Use `improve` when you want best-output selection, thresholding, and judge-guided iteration. Add `--rlm` when you want bootstrap generation and revisions to go through the REPL surface.
-
-```bash
-npx tsx src/cli/index.ts improve \
-  -p "Write a summary of AutoContext." \
-  -r "Reward accuracy and clarity." \
-  --rlm \
-  --rlm-turns 6
-```
-
-If you already have a draft, pass it with `-o`. If you omit `-o` and set `--rlm`, the REPL session will generate the initial draft before the improvement loop starts.
 
 ## Library Usage
 
 ```ts
-import { createProvider, LLMJudge, ImprovementLoop, SimpleAgentTask } from "autoctx";
+import {
+  createProvider,
+  LLMJudge,
+  ImprovementLoop,
+  SimpleAgentTask,
+  GenerationRunner,
+  GridCtfScenario,
+  SQLiteStore,
+} from "autoctx";
 
-const provider = createProvider({
-  providerType: "ollama",
-  baseUrl: "http://localhost:11434/v1",
-  model: "llama3.1",
-});
-
-const judge = new LLMJudge({
-  provider,
-  model: provider.defaultModel(),
-  rubric: "Score clarity, correctness, and usefulness on a 0-1 scale.",
-});
-
+// One-shot evaluation
+const provider = createProvider({ providerType: "anthropic", apiKey: "sk-ant-..." });
+const judge = new LLMJudge({ provider, rubric: "Score clarity and correctness." });
 const result = await judge.evaluate({
-  taskPrompt: "Explain binary search to a new engineer.",
-  agentOutput: "Binary search checks the middle element and halves the search space.",
+  taskPrompt: "Explain binary search.",
+  agentOutput: "Binary search halves the search space each step.",
 });
 
-const task = new SimpleAgentTask(
-  "Explain binary search to a new engineer.",
-  "Score clarity, correctness, and usefulness on a 0-1 scale.",
-  provider,
-  provider.defaultModel(),
-);
-
+// Multi-round improvement
+const task = new SimpleAgentTask("Explain binary search.", "Score clarity.", provider);
 const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
 const improved = await loop.run({ initialOutput: "Binary search is fast.", state: {} });
+
+// Generation loop
+const store = new SQLiteStore("autocontext.db");
+store.migrate("./migrations");
+const runner = new GenerationRunner({
+  provider,
+  scenario: new GridCtfScenario(),
+  store,
+  runsRoot: "runs",
+  knowledgeRoot: "knowledge",
+});
+const run = await runner.run("my-run", 3);
 ```
 
-## MCP Tools
+## Python-Only Commands
 
-`serve` exposes these task-facing MCP tools:
+These workflows require infrastructure not available in the npm package:
 
-- `evaluate_output`
-- `run_improvement_loop`
-- `run_repl_session`
-- `queue_task`
-- `get_queue_status`
-- `get_task_result`
+- `train` — Requires MLX/CUDA training backends
+- `ecosystem` — Multi-provider cycling
+- `ab-test` — Requires ecosystem runner
+- `resume` / `wait` — Run recovery infrastructure
+- `trigger-distillation` — Training pipeline
+- Monitor conditions — Monitoring engine
 
-Use `run_repl_session` when an external client wants the direct REPL artifact and execution trace. Use `run_improvement_loop` when the client wants judge-gated multi-round improvement and best-output selection.
+Use the Python package (`pip install autocontext`) for these workflows.
 
-### Example MCP Client
-
-There is a runnable example client at [examples/run-repl-session.mjs](/Users/jayscambler/.codex/worktrees/86e3/MTS/ts/examples/run-repl-session.mjs).
-
-It spawns the local stdio MCP server, verifies that `run_repl_session` is registered, calls the tool, and prints the parsed JSON payload:
+## Development
 
 ```bash
 cd ts
-ANTHROPIC_API_KEY=... npm run example:repl
+npm install
+npm test              # vitest
+npm run lint          # tsc --noEmit
+npm run build         # tsc (outputs to dist/)
 ```
-
-Pass custom arguments through `--`:
-
-```bash
-cd ts
-ANTHROPIC_API_KEY=... npm run example:repl -- \
-  --prompt "Write a concise summary of AutoContext." \
-  --rubric "Reward clarity, accuracy, and completeness."
-```
-
-## Notes
-
-- The current TS REPL runtime is Node-based and uses `secure-exec` for bounded execution.
-- This surface is intentionally aligned with the shared task-runtime path, so CLI, queue, and MCP use the same REPL session implementation rather than separate codepaths.
