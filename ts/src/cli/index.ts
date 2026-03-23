@@ -778,15 +778,18 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
     options: {
       "run-id": { type: "string" },
       scenario: { type: "string" },
+      "all-runs": { type: "boolean" },
       output: { type: "string", short: "o" },
       "include-matches": { type: "boolean" },
       "kept-only": { type: "boolean" },
+      "runs-root": { type: "string" },
+      "knowledge-root": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help) {
-    console.log("autoctx export-training-data --run-id <id> [--scenario <name>] [--output <file>] [--include-matches] [--kept-only]");
+    console.log("autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only] [--runs-root <dir>] [--knowledge-root <dir>]");
     process.exit(0);
   }
 
@@ -795,14 +798,26 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
     process.exit(1);
   }
 
+  if (values.scenario && !values["run-id"] && !values["all-runs"]) {
+    console.error("Error: use --all-runs with --scenario to confirm multi-run export");
+    process.exit(1);
+  }
+
+  const { loadSettings } = await import("../config/index.js");
+  const { ArtifactStore } = await import("../knowledge/artifact-store.js");
   const { SQLiteStore } = await import("../storage/index.js");
   const { exportTrainingData } = await import("../training/export.js");
 
+  const settings = loadSettings();
   const store = new SQLiteStore(dbPath);
   store.migrate(getMigrationsDir());
+  const artifacts = new ArtifactStore({
+    runsRoot: resolve(values["runs-root"] ?? settings.runsRoot),
+    knowledgeRoot: resolve(values["knowledge-root"] ?? settings.knowledgeRoot),
+  });
 
   try {
-    const records = exportTrainingData(store, {
+    const records = exportTrainingData(store, artifacts, {
       runId: values["run-id"],
       scenario: values.scenario,
       includeMatches: values["include-matches"],
