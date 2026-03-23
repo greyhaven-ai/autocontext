@@ -1,10 +1,12 @@
 /**
- * MCP server for autocontext — full package control plane.
+ * MCP server for autocontext — expanded package control plane.
  * Covers evaluation, scenarios, runs, knowledge, feedback, and exports.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import type { LLMProvider } from "../types/index.js";
 import { LLMJudge } from "../judge/index.js";
@@ -36,6 +38,30 @@ export function resolveMcpArtifactRoots(opts: Pick<MtsServerOpts, "runsRoot" | "
     runsRoot: opts.runsRoot ?? settings.runsRoot,
     knowledgeRoot: opts.knowledgeRoot ?? settings.knowledgeRoot,
   };
+}
+
+function readReplayArtifact(
+  runsRoot: string,
+  runId: string,
+  generation: number,
+): Record<string, unknown> {
+  const replayDir = join(
+    runsRoot,
+    runId,
+    "generations",
+    `gen_${generation}`,
+    "replays",
+  );
+  if (!existsSync(replayDir)) {
+    return { error: `no replay directory for run=${runId} gen=${generation}` };
+  }
+  const replayFiles = readdirSync(replayDir)
+    .filter((name) => name.endsWith(".json"))
+    .sort();
+  if (replayFiles.length === 0) {
+    return { error: `no replay files under ${replayDir}` };
+  }
+  return JSON.parse(readFileSync(join(replayDir, replayFiles[0]), "utf-8")) as Record<string, unknown>;
 }
 
 export function createMcpServer(opts: MtsServerOpts): McpServer {
@@ -672,15 +698,22 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     { scenario: z.string() },
     async (args) => {
       const { ArtifactStore } = await import("../knowledge/artifact-store.js");
-      const { SkillPackage } = await import("../knowledge/skill-package.js");
+      const { exportStrategyPackage } = await import("../knowledge/package.js");
       const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
-      const playbook = artifacts.readPlaybook(args.scenario);
-      const pkg = new SkillPackage({
-        scenarioName: args.scenario, displayName: args.scenario.replace(/_/g, " "),
-        description: `Exported knowledge for ${args.scenario}`, playbook,
-        lessons: [], bestStrategy: null, bestScore: 0, bestElo: 1000, hints: "",
+      const pkg = exportStrategyPackage({
+        scenarioName: args.scenario,
+        artifacts,
+        store,
       });
-      return { content: [{ type: "text" as const, text: JSON.stringify({ ...pkg.toDict(), skill_markdown: pkg.toSkillMarkdown(), suggested_filename: `${args.scenario.replace(/_/g, "-")}-knowledge.md` }, null, 2) }] };
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            ...pkg,
+            suggested_filename: `${args.scenario.replace(/_/g, "-")}-knowledge.md`,
+          }, null, 2),
+        }],
+      };
     },
   );
 
@@ -754,12 +787,13 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
   // -- run_replay (AC-365) --
   server.tool(
     "run_replay",
-    "Retrieve matches and agent outputs for a specific generation (replay data)",
+    "Read replay JSON for a specific generation",
     { runId: z.string(), generation: z.number().int() },
     async (args) => {
-      const matches = store.getMatchesForGeneration(args.runId, args.generation);
-      const outputs = store.getAgentOutputs(args.runId, args.generation);
-      return { content: [{ type: "text" as const, text: JSON.stringify({ runId: args.runId, generation: args.generation, matches, agentOutputs: outputs.map((o) => ({ role: o.role, preview: o.content.slice(0, 500) })) }, null, 2) }] };
+      const payload = readReplayArtifact(runsRoot, args.runId, args.generation);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+      };
     },
   );
 
