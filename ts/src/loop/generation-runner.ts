@@ -33,9 +33,12 @@ import type { LoopController } from "./controller.js";
 import type { EventStreamEmitter } from "./events.js";
 import { StagnationDetector, type StagnationReport } from "./stagnation.js";
 import { join } from "node:path";
+import type { GenerationRole } from "../providers/index.js";
 
 export interface GenerationRunnerOpts {
   provider: LLMProvider;
+  roleProviders?: Partial<Record<GenerationRole, LLMProvider>>;
+  roleModels?: Partial<Record<GenerationRole, string>>;
   scenario: ScenarioInterface;
   store: SQLiteStore;
   runsRoot: string;
@@ -73,6 +76,8 @@ export interface RunResult {
 
 export class GenerationRunner {
   private provider: LLMProvider;
+  private roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
+  private roleModels: Partial<Record<GenerationRole, string>>;
   private scenario: ScenarioInterface;
   private store: SQLiteStore;
   private artifactStore: ArtifactStore;
@@ -102,6 +107,8 @@ export class GenerationRunner {
 
   constructor(opts: GenerationRunnerOpts) {
     this.provider = opts.provider;
+    this.roleProviders = opts.roleProviders ?? {};
+    this.roleModels = opts.roleModels ?? {};
     this.scenario = opts.scenario;
     this.store = opts.store;
     this.artifactStore = new ArtifactStore({
@@ -175,10 +182,7 @@ export class GenerationRunner {
 
           // Step 1: Get strategy from provider (competitor role)
           const competitorStartedAt = Date.now();
-          const competitorResult = await this.provider.complete({
-            systemPrompt: "",
-            userPrompt: competitorPrompt,
-          });
+          const competitorResult = await this.completeRole("competitor", competitorPrompt);
           this.emitRoleCompleted("competitor", competitorStartedAt, competitorResult.usage);
 
           let strategy: Record<string, unknown>;
@@ -445,6 +449,22 @@ export class GenerationRunner {
     ].join("\n\n");
   }
 
+  private providerForRole(role: GenerationRole): LLMProvider {
+    return this.roleProviders[role] ?? this.provider;
+  }
+
+  private modelForRole(role: GenerationRole): string | undefined {
+    return this.roleModels[role];
+  }
+
+  private completeRole(role: GenerationRole, userPrompt: string, systemPrompt = "") {
+    return this.providerForRole(role).complete({
+      systemPrompt,
+      userPrompt,
+      model: this.modelForRole(role),
+    });
+  }
+
   private persistGeneration(runId: string, gen: number, attempt: GenerationAttempt): void {
     this.store.upsertGeneration(runId, gen, {
       meanScore: attempt.tournamentResult.meanScore,
@@ -522,14 +542,8 @@ export class GenerationRunner {
     const analystStartedAt = Date.now();
     const coachStartedAt = Date.now();
     const [analystResult, coachResult] = await Promise.all([
-      this.provider.complete({
-        systemPrompt: "",
-        userPrompt: this.buildSupportPrompt("analyst", runId, attempt),
-      }),
-      this.provider.complete({
-        systemPrompt: "",
-        userPrompt: this.buildSupportPrompt("coach", runId, attempt),
-      }),
+      this.completeRole("analyst", this.buildSupportPrompt("analyst", runId, attempt)),
+      this.completeRole("coach", this.buildSupportPrompt("coach", runId, attempt)),
     ]);
     this.emitRoleCompleted("analyst", analystStartedAt, analystResult.usage);
     this.emitRoleCompleted("coach", coachStartedAt, coachResult.usage);
@@ -571,10 +585,10 @@ export class GenerationRunner {
     if (nextPlaybook && this.curatorEnabled && normalizedPlaybook) {
       this.emit("curator_started", { run_id: runId, generation: gen });
       const curatorStartedAt = Date.now();
-      const curatorResult = await this.provider.complete({
-        systemPrompt: "",
-        userPrompt: this.buildCuratorPrompt(runId, normalizedPlaybook, nextPlaybook, attempt),
-      });
+      const curatorResult = await this.completeRole(
+        "curator",
+        this.buildCuratorPrompt(runId, normalizedPlaybook, nextPlaybook, attempt),
+      );
       this.emitRoleCompleted("curator", curatorStartedAt, curatorResult.usage);
       this.store.appendAgentOutput(runId, gen, "curator", curatorResult.text);
       this.artifactStore.writeMarkdown(join(generationDir, "curator.md"), curatorResult.text);
@@ -621,10 +635,10 @@ export class GenerationRunner {
     );
     if (!lessons.trim()) return;
 
-    const result = await this.provider.complete({
-      systemPrompt: "",
-      userPrompt: this.buildCuratorConsolidationPrompt(lessons),
-    });
+    const result = await this.completeRole(
+      "curator",
+      this.buildCuratorConsolidationPrompt(lessons),
+    );
     this.store.appendAgentOutput(runId, gen, "curator_consolidation", result.text);
     this.artifactStore.writeMarkdown(
       join(this.artifactStore.generationDir(runId, gen), "curator_consolidation.md"),

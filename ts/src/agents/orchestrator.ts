@@ -6,6 +6,7 @@
  */
 
 import type { LLMProvider } from "../types/index.js";
+import type { GenerationRole } from "../providers/index.js";
 import {
   parseAnalystOutput,
   parseArchitectOutput,
@@ -33,19 +34,37 @@ export interface GenerationResult {
   architectOutput: ArchitectOutput;
 }
 
+export interface AgentOrchestratorOpts {
+  roleProviders?: Partial<Record<GenerationRole, LLMProvider>>;
+  roleModels?: Partial<Record<GenerationRole, string>>;
+}
+
 export class AgentOrchestrator {
   private provider: LLMProvider;
+  private roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
+  private roleModels: Partial<Record<GenerationRole, string>>;
 
-  constructor(provider: LLMProvider) {
+  constructor(provider: LLMProvider, opts: AgentOrchestratorOpts = {}) {
     this.provider = provider;
+    this.roleProviders = opts.roleProviders ?? {};
+    this.roleModels = opts.roleModels ?? {};
+  }
+
+  private providerForRole(role: GenerationRole): LLMProvider {
+    return this.roleProviders[role] ?? this.provider;
+  }
+
+  private completeRole(role: GenerationRole, userPrompt: string) {
+    return this.providerForRole(role).complete({
+      systemPrompt: "",
+      userPrompt,
+      model: this.roleModels[role],
+    });
   }
 
   async runGeneration(prompts: GenerationPrompts): Promise<GenerationResult> {
     // Phase 1: Competitor
-    const competitorResult = await this.provider.complete({
-      systemPrompt: "",
-      userPrompt: prompts.competitorPrompt,
-    });
+    const competitorResult = await this.completeRole("competitor", prompts.competitorPrompt);
     let strategy: Record<string, unknown> = {};
     try {
       strategy = JSON.parse(competitorResult.text);
@@ -56,19 +75,10 @@ export class AgentOrchestrator {
 
     // Phase 2: Analyst, Coach, Architect in parallel
     const [analystResult, coachResult, architectResult] = await Promise.all([
-      this.provider.complete({
-        systemPrompt: "",
-        userPrompt: prompts.analystPrompt,
-      }),
-      this.provider.complete({
-        systemPrompt: "",
-        userPrompt: prompts.coachPrompt,
-      }),
+      this.completeRole("analyst", prompts.analystPrompt),
+      this.completeRole("coach", prompts.coachPrompt),
       prompts.architectPrompt
-        ? this.provider.complete({
-            systemPrompt: "",
-            userPrompt: prompts.architectPrompt,
-          })
+        ? this.completeRole("architect", prompts.architectPrompt)
         : Promise.resolve({ text: "", usage: {} }),
     ]);
 

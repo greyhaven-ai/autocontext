@@ -9,7 +9,10 @@ import { GenerationRunner } from "../loop/generation-runner.js";
 import { LoopController } from "../loop/controller.js";
 import { EventStreamEmitter } from "../loop/events.js";
 import type { EventCallback } from "../loop/events.js";
-import { createProvider } from "../providers/index.js";
+import {
+  buildRoleProviderBundle,
+  type GenerationRole,
+} from "../providers/index.js";
 import {
   type CreatedScenarioResult,
   type CustomScenarioEntry,
@@ -128,7 +131,7 @@ export class RunManager {
         { mode: "local", available: true, description: "Local subprocess execution" },
       ],
       currentExecutor: "local",
-      agentProvider: this.opts.providerType ?? "anthropic",
+      agentProvider: this.opts.providerType ?? loadSettings().agentProvider,
     };
   }
 
@@ -174,10 +177,13 @@ export class RunManager {
   }
 
   async chatAgent(role: string, message: string): Promise<string> {
-    const provider = this.buildProvider();
+    const normalizedRole = isGenerationRole(role) ? role : undefined;
+    const bundle = this.resolveProviderBundle();
+    const provider = this.buildProvider(normalizedRole);
     const state = this.getState();
     const response = await provider.complete({
       systemPrompt: "",
+      model: normalizedRole ? bundle.roleModels[normalizedRole] : bundle.defaultConfig.model,
       userPrompt: [
         `[${role}]`,
         "You are helping from the interactive AutoContext control plane.",
@@ -209,14 +215,16 @@ export class RunManager {
     }
 
     const id = runId ?? `tui_${Date.now().toString(16).slice(-8)}`;
-    const provider = this.buildProvider();
     const settings = loadSettings();
+    const providerBundle = this.resolveProviderBundle(settings);
 
     const store = new SQLiteStore(this.opts.dbPath);
     store.migrate(this.opts.migrationsDir);
 
     const runner = new GenerationRunner({
-      provider,
+      provider: providerBundle.defaultProvider,
+      roleProviders: providerBundle.roleProviders,
+      roleModels: providerBundle.roleModels,
       scenario: new ScenarioClass(),
       store,
       runsRoot: this.opts.runsRoot,
@@ -328,13 +336,21 @@ export class RunManager {
     return { name: pending.preview.name, testScores: [] };
   }
 
-  private buildProvider() {
-    return createProvider({
-      providerType: this.opts.providerType ?? "deterministic",
+  private resolveProviderBundle(settings = loadSettings()) {
+    return buildRoleProviderBundle(settings, {
+      providerType: this.opts.providerType,
       apiKey: this.opts.apiKey,
       baseUrl: this.opts.baseUrl,
       model: this.opts.model,
     });
+  }
+
+  private buildProvider(role?: GenerationRole) {
+    const bundle = this.resolveProviderBundle();
+    if (role) {
+      return bundle.roleProviders[role] ?? bundle.defaultProvider;
+    }
+    return bundle.defaultProvider;
   }
 
   private applyEventState(event: string, payload: Record<string, unknown>): void {
@@ -480,4 +496,12 @@ export class RunManager {
       .map((part) => part[0]!.toUpperCase() + part.slice(1))
       .join(" ");
   }
+}
+
+function isGenerationRole(value: string): value is GenerationRole {
+  return value === "competitor"
+    || value === "analyst"
+    || value === "coach"
+    || value === "architect"
+    || value === "curator";
 }

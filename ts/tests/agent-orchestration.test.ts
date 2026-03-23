@@ -451,4 +451,61 @@ describe("AgentOrchestrator", () => {
     expect(result.coachOutput.playbook).toContain("Be aggressive");
     expect(result.coachOutput.lessons).toContain("Lesson 1");
   });
+
+  it("supports per-role providers and models", async () => {
+    const { AgentOrchestrator } = await import("../src/agents/orchestrator.js");
+
+    const calls: Array<{ role: string; model?: string }> = [];
+    let defaultCalls = 0;
+
+    const defaultProvider = {
+      name: "default",
+      defaultModel: () => "default-model",
+      complete: async () => {
+        defaultCalls++;
+        return { text: "{}", usage: {} };
+      },
+    };
+
+    const providerFor = (role: string, text: string) => ({
+      name: `${role}-provider`,
+      defaultModel: () => `${role}-default`,
+      complete: async (opts: { model?: string }) => {
+        calls.push({ role, model: opts.model });
+        return { text, usage: {}, model: opts.model };
+      },
+    });
+
+    const orchestrator = new AgentOrchestrator(defaultProvider as any, {
+      roleProviders: {
+        competitor: providerFor("competitor", '{"aggression": 0.9}') as any,
+        analyst: providerFor("analyst", "## Findings\n- Strong opening") as any,
+        coach: providerFor("coach", "<!-- PLAYBOOK_START -->\nplaybook\n<!-- PLAYBOOK_END -->") as any,
+        architect: providerFor("architect", "No tools needed.") as any,
+      },
+      roleModels: {
+        competitor: "competitor-model",
+        analyst: "analyst-model",
+        coach: "coach-model",
+        architect: "architect-model",
+      },
+    });
+
+    const result = await orchestrator.runGeneration({
+      competitorPrompt: "[competitor] go",
+      analystPrompt: "[analyst] go",
+      coachPrompt: "[coach] go",
+      architectPrompt: "[architect] go",
+    });
+
+    expect(defaultCalls).toBe(0);
+    expect(calls).toEqual([
+      { role: "competitor", model: "competitor-model" },
+      { role: "analyst", model: "analyst-model" },
+      { role: "coach", model: "coach-model" },
+      { role: "architect", model: "architect-model" },
+    ]);
+    expect(result.competitorOutput.rawText).toContain("aggression");
+    expect(result.analystOutput.findings).toContain("Strong opening");
+  });
 });

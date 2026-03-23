@@ -110,13 +110,12 @@ async function main(): Promise<void> {
   }
 }
 
-async function getProvider() {
-  const { resolveProviderConfig, createProvider } = await import("../providers/index.js");
+async function getProvider(overrides: { providerType?: string; apiKey?: string; baseUrl?: string; model?: string } = {}) {
+  const { createConfiguredProvider } = await import("../providers/index.js");
 
   try {
-    const config = resolveProviderConfig();
-    const provider = createProvider(config);
-    const model = provider.defaultModel();
+    const { provider, config } = createConfiguredProvider(overrides);
+    const model = config.model ?? provider.defaultModel();
     return { provider, model };
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
@@ -147,16 +146,13 @@ async function cmdRun(dbPath: string): Promise<void> {
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
   const { loadSettings } = await import("../config/index.js");
+  const { buildRoleProviderBundle } = await import("../providers/index.js");
 
-  // Resolve provider
-  let provider;
-  if (values.provider) {
-    const { createProvider } = await import("../providers/index.js");
-    provider = createProvider({ providerType: values.provider });
-  } else {
-    const result = await getProvider();
-    provider = result.provider;
-  }
+  const settings = loadSettings();
+  const providerBundle = buildRoleProviderBundle(
+    settings,
+    values.provider ? { providerType: values.provider } : {},
+  );
 
   // Resolve scenario
   const ScenarioClass = SCENARIO_REGISTRY[values.scenario];
@@ -172,11 +168,12 @@ async function cmdRun(dbPath: string): Promise<void> {
 
   const runId = values["run-id"] ?? `run-${Date.now()}`;
   const gens = parseInt(values.gens ?? "1", 10);
-  const settings = loadSettings();
   const matches = parseInt(values.matches ?? String(settings.matchesPerGeneration), 10);
 
   const runner = new GenerationRunner({
-    provider,
+    provider: providerBundle.defaultProvider,
+    roleProviders: providerBundle.roleProviders,
+    roleModels: providerBundle.roleModels,
     scenario,
     store,
     runsRoot: resolve(settings.runsRoot),
@@ -232,15 +229,19 @@ async function cmdTui(dbPath: string): Promise<void> {
   const port = parseInt(values.port ?? "8000", 10);
 
   const { RunManager, InteractiveServer } = await import("../server/index.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { resolveProviderConfig } = await import("../providers/index.js");
+  const settings = loadSettings();
+  const providerConfig = resolveProviderConfig();
   const mgr = new RunManager({
     dbPath,
     migrationsDir: getMigrationsDir(),
-    runsRoot: resolve("runs"),
-    knowledgeRoot: resolve("knowledge"),
-    providerType: process.env.AUTOCONTEXT_PROVIDER ?? "deterministic",
-    apiKey: process.env.AUTOCONTEXT_API_KEY,
-    baseUrl: process.env.AUTOCONTEXT_BASE_URL,
-    model: process.env.AUTOCONTEXT_MODEL,
+    runsRoot: resolve(settings.runsRoot),
+    knowledgeRoot: resolve(settings.knowledgeRoot),
+    providerType: providerConfig.providerType,
+    apiKey: providerConfig.apiKey,
+    baseUrl: providerConfig.baseUrl,
+    model: providerConfig.model,
   });
   const server = new InteractiveServer({ runManager: mgr, port });
   await server.start();
@@ -666,6 +667,7 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
   const { loadSettings } = await import("../config/index.js");
+  const { buildRoleProviderBundle } = await import("../providers/index.js");
 
   const scenarioName = values.scenario ?? "grid_ctf";
   const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
@@ -674,18 +676,10 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     process.exit(1);
   }
 
-  let provider;
-  if (process.env.AUTOCONTEXT_AGENT_PROVIDER) {
-    const { createProvider } = await import("../providers/index.js");
-    provider = createProvider({ providerType: process.env.AUTOCONTEXT_AGENT_PROVIDER });
-  } else {
-    const result = await getProvider();
-    provider = result.provider;
-  }
-
   const numRuns = parseInt(values.runs ?? "3", 10);
   const numGens = parseInt(values.gens ?? "1", 10);
   const settings = loadSettings();
+  const providerBundle = buildRoleProviderBundle(settings);
   const scores: number[] = [];
 
   for (let i = 0; i < numRuns; i++) {
@@ -693,7 +687,9 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     store.migrate(getMigrationsDir());
     const runId = `bench_${Date.now()}_${i}`;
     const runner = new GenerationRunner({
-      provider,
+      provider: providerBundle.defaultProvider,
+      roleProviders: providerBundle.roleProviders,
+      roleModels: providerBundle.roleModels,
       scenario: new ScenarioClass(),
       store,
       runsRoot: resolve(settings.runsRoot),
