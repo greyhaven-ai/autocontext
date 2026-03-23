@@ -669,21 +669,16 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     },
     async (args) => {
       const { ArtifactStore } = await import("../knowledge/artifact-store.js");
-      const { SkillPackage } = await import("../knowledge/skill-package.js");
+      const { exportStrategyPackage } = await import("../knowledge/package.js");
       const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
-      const playbook = artifacts.readPlaybook(args.scenario);
-      const pkg = new SkillPackage({
-        scenarioName: args.scenario,
-        displayName: args.scenario.replace(/_/g, " "),
-        description: `Exported knowledge for ${args.scenario}`,
-        playbook,
-        lessons: [],
-        bestStrategy: null,
-        bestScore: 0,
-        bestElo: 1000,
-        hints: "",
-      });
-      const result = { ...pkg.toDict(), skill_markdown: pkg.toSkillMarkdown(), suggested_filename: `${args.scenario.replace(/_/g, "-")}-knowledge.md` };
+      const result = {
+        ...exportStrategyPackage({
+          scenarioName: args.scenario,
+          artifacts,
+          store,
+        }),
+        suggested_filename: `${args.scenario.replace(/_/g, "-")}-knowledge.md`,
+      };
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
