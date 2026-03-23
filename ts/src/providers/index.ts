@@ -168,12 +168,22 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
     });
   }
 
+  if (type === "hermes") {
+    // Hermes gateway via OpenAI-compatible API with hermes-specific defaults
+    const inner = createOpenAICompatibleProvider({
+      apiKey: opts.apiKey ?? "no-key",
+      baseUrl: opts.baseUrl ?? "http://localhost:8080/v1",
+      model: opts.model ?? "hermes-3-llama-3.1-8b",
+    });
+    return { ...inner, name: "hermes-gateway" };
+  }
+
   if (type === "deterministic") {
     return new DeterministicProvider();
   }
 
   throw new ProviderError(
-    `Unknown provider type: ${JSON.stringify(type)}. Supported: anthropic, openai, openai-compatible, ollama, vllm, deterministic`,
+    `Unknown provider type: ${JSON.stringify(type)}. Supported: anthropic, openai, openai-compatible, ollama, vllm, hermes, deterministic`,
   );
 }
 
@@ -189,18 +199,33 @@ export interface ProviderConfig {
 }
 
 export function resolveProviderConfig(): ProviderConfig {
-  const providerType = process.env.AUTOCONTEXT_PROVIDER ?? "anthropic";
-  const model = process.env.AUTOCONTEXT_MODEL;
-  const baseUrl = process.env.AUTOCONTEXT_BASE_URL;
-  const genericKey = process.env.AUTOCONTEXT_API_KEY;
+  // Python-compatible: AUTOCONTEXT_AGENT_PROVIDER takes precedence
+  const providerType =
+    process.env.AUTOCONTEXT_AGENT_PROVIDER ??
+    process.env.AUTOCONTEXT_PROVIDER ??
+    "anthropic";
+  // Agent-specific env vars (Python-compatible) with fallback to generic
+  const model =
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
+    process.env.AUTOCONTEXT_MODEL;
+  const baseUrl =
+    process.env.AUTOCONTEXT_AGENT_BASE_URL ??
+    process.env.AUTOCONTEXT_BASE_URL;
+  const genericKey =
+    process.env.AUTOCONTEXT_AGENT_API_KEY ??
+    process.env.AUTOCONTEXT_API_KEY;
 
   const type = providerType.toLowerCase().trim();
+
+  if (type === "deterministic") {
+    return { providerType: type, model };
+  }
 
   if (type === "anthropic") {
     const apiKey = genericKey ?? process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new ProviderError(
-        "ANTHROPIC_API_KEY environment variable required (or set AUTOCONTEXT_API_KEY)",
+        "ANTHROPIC_API_KEY environment variable required (or set AUTOCONTEXT_API_KEY / AUTOCONTEXT_AGENT_API_KEY)",
       );
     }
     return { providerType: type, apiKey, model, baseUrl };
@@ -224,11 +249,20 @@ export function resolveProviderConfig(): ProviderConfig {
     };
   }
 
+  if (type === "hermes") {
+    return {
+      providerType: type,
+      apiKey: genericKey ?? "no-key",
+      baseUrl: baseUrl ?? "http://localhost:8080/v1",
+      model: model ?? "hermes-3-llama-3.1-8b",
+    };
+  }
+
   // openai, openai-compatible, and other generic types
   const apiKey = genericKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new ProviderError(
-      "API key required: set AUTOCONTEXT_API_KEY or OPENAI_API_KEY",
+      "API key required: set AUTOCONTEXT_API_KEY, AUTOCONTEXT_AGENT_API_KEY, or OPENAI_API_KEY",
     );
   }
   return { providerType: type, apiKey, baseUrl, model };
