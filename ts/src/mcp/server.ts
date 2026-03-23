@@ -1,6 +1,6 @@
 /**
- * MCP server for autocontext — agent task evaluation tools.
- * Port of autocontext/src/autocontext/mcp/tools.py (agent task subset).
+ * MCP server for autocontext — full package control plane.
+ * Covers evaluation, scenarios, runs, knowledge, feedback, and exports.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -542,6 +542,149 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
           }, null, 2),
         }],
       };
+    },
+  );
+
+  // -- validate_strategy (AC-365) --
+  server.tool(
+    "validate_strategy",
+    "Validate a strategy JSON against a scenario's constraints",
+    {
+      scenario: z.string().describe("Scenario name"),
+      strategy: z.string().describe("Strategy JSON string"),
+    },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const ScenarioClass = SCENARIO_REGISTRY[args.scenario];
+      if (!ScenarioClass) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.scenario}` }) }] };
+      }
+      const instance = new ScenarioClass();
+      let strategy: Record<string, unknown>;
+      try { strategy = JSON.parse(args.strategy); } catch { return { content: [{ type: "text" as const, text: JSON.stringify({ valid: false, reason: "Invalid JSON" }) }] }; }
+      const [valid, reason] = instance.validateActions(instance.initialState(42), "challenger", strategy);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ valid, reason }) }] };
+    },
+  );
+
+  // -- run_match (AC-365) --
+  server.tool(
+    "run_match",
+    "Execute a single match for a scenario",
+    {
+      scenario: z.string().describe("Scenario name"),
+      strategy: z.string().describe("Strategy JSON string"),
+      seed: z.number().int().default(42).describe("Random seed"),
+    },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const ScenarioClass = SCENARIO_REGISTRY[args.scenario];
+      if (!ScenarioClass) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.scenario}` }) }] };
+      }
+      let strategy: Record<string, unknown>;
+      try { strategy = JSON.parse(args.strategy); } catch { return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid JSON" }) }] }; }
+      const result = new ScenarioClass().executeMatch(strategy, args.seed);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  // -- run_tournament (AC-365) --
+  server.tool(
+    "run_tournament",
+    "Run N matches with Elo scoring",
+    {
+      scenario: z.string().describe("Scenario name"),
+      strategy: z.string().describe("Strategy JSON string"),
+      matches: z.number().int().default(3).describe("Number of matches"),
+      seedBase: z.number().int().default(1000).describe("Base seed"),
+    },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const { TournamentRunner } = await import("../execution/tournament.js");
+      const ScenarioClass = SCENARIO_REGISTRY[args.scenario];
+      if (!ScenarioClass) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.scenario}` }) }] };
+      }
+      let strategy: Record<string, unknown>;
+      try { strategy = JSON.parse(args.strategy); } catch { return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid JSON" }) }] }; }
+      const runner = new TournamentRunner(new ScenarioClass(), { matchCount: args.matches, seedBase: args.seedBase });
+      const result = runner.run(strategy);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ meanScore: result.meanScore, bestScore: result.bestScore, elo: result.elo, wins: result.wins, losses: result.losses }, null, 2) }] };
+    },
+  );
+
+  // -- read_trajectory (AC-365) --
+  server.tool(
+    "read_trajectory",
+    "Read the score trajectory for a run as markdown",
+    {
+      runId: z.string().describe("Run ID"),
+    },
+    async (args) => {
+      const { ScoreTrajectoryBuilder } = await import("../knowledge/trajectory.js");
+      const trajectory = store.getScoreTrajectory(args.runId);
+      const md = new ScoreTrajectoryBuilder(trajectory).build();
+      return { content: [{ type: "text" as const, text: md || "No trajectory data." }] };
+    },
+  );
+
+  // -- record_feedback (AC-365) --
+  server.tool(
+    "record_feedback",
+    "Record human feedback for a scenario evaluation",
+    {
+      scenario: z.string().describe("Scenario name"),
+      agentOutput: z.string().describe("Agent output being evaluated"),
+      score: z.number().min(0).max(1).optional().describe("Human score [0,1]"),
+      notes: z.string().default("").describe("Human notes"),
+      generationId: z.string().optional().describe("Associated generation ID"),
+    },
+    async (args) => {
+      const id = store.insertHumanFeedback(args.scenario, args.agentOutput, args.score, args.notes, args.generationId);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ feedbackId: id, scenario: args.scenario }) }] };
+    },
+  );
+
+  // -- get_feedback (AC-365) --
+  server.tool(
+    "get_feedback",
+    "Retrieve human feedback for a scenario",
+    {
+      scenario: z.string().describe("Scenario name"),
+      limit: z.number().int().default(10).describe("Max entries"),
+    },
+    async (args) => {
+      const feedback = store.getHumanFeedback(args.scenario, args.limit);
+      return { content: [{ type: "text" as const, text: JSON.stringify(feedback, null, 2) }] };
+    },
+  );
+
+  // -- export_skill (AC-365) --
+  server.tool(
+    "export_skill",
+    "Export a portable skill package with markdown for agent install",
+    {
+      scenario: z.string().describe("Scenario name"),
+    },
+    async (args) => {
+      const { ArtifactStore } = await import("../knowledge/artifact-store.js");
+      const { SkillPackage } = await import("../knowledge/skill-package.js");
+      const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
+      const playbook = artifacts.readPlaybook(args.scenario);
+      const pkg = new SkillPackage({
+        scenarioName: args.scenario,
+        displayName: args.scenario.replace(/_/g, " "),
+        description: `Exported knowledge for ${args.scenario}`,
+        playbook,
+        lessons: [],
+        bestStrategy: null,
+        bestScore: 0,
+        bestElo: 1000,
+        hints: "",
+      });
+      const result = { ...pkg.toDict(), skill_markdown: pkg.toSkillMarkdown(), suggested_filename: `${args.scenario.replace(/_/g, "-")}-knowledge.md` };
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
 
