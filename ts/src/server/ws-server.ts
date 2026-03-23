@@ -2,7 +2,9 @@
  * Interactive WebSocket server for the TS control plane (AC-347 Task 25).
  */
 
-import { createServer, type Server as HttpServer } from "node:http";
+import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
 import { parseClientMessage } from "./protocol.js";
@@ -10,6 +12,8 @@ import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { RunManager } from "./run-manager.js";
 import type { RunManagerState } from "./run-manager.js";
 import type { EventCallback } from "../loop/events.js";
+import { SQLiteStore } from "../storage/index.js";
+import { ArtifactStore } from "../knowledge/artifact-store.js";
 
 export interface InteractiveServerOpts {
   runManager: RunManager;
@@ -45,13 +49,7 @@ export class InteractiveServer {
     }
 
     const httpServer = createServer((req, res) => {
-      if (req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-        return;
-      }
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Not found");
+      this.handleHttpRequest(req, res);
     });
 
     const wsServer = new WebSocketServer({ noServer: true });
@@ -81,6 +79,123 @@ export class InteractiveServer {
     this.wsServer = wsServer;
     this.boundPort = (httpServer.address() as AddressInfo).port;
     return this.boundPort;
+  }
+
+  // ---------------------------------------------------------------------------
+  // HTTP REST API (AC-364)
+  // ---------------------------------------------------------------------------
+
+  private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
+    const url = req.url ?? "";
+    const method = req.method ?? "GET";
+
+    // CORS headers for dashboard
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    if (method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const json = (status: number, body: unknown) => {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body, null, 2));
+    };
+
+    // Health
+    if (url === "/health") {
+      json(200, { ok: true });
+      return;
+    }
+
+    // GET /api/runs
+    if (url === "/api/runs" || url.startsWith("/api/runs?")) {
+      this.withStore((store) => {
+        json(200, store.listRuns());
+      });
+      return;
+    }
+
+    // GET /api/runs/:id/replay/:gen
+    const replayMatch = url.match(/^\/api\/runs\/([^/]+)\/replay\/(\d+)$/);
+    if (replayMatch) {
+      const [, runId, genStr] = replayMatch;
+      const gen = parseInt(genStr!, 10);
+      const replayDir = join(
+        this.runManager["opts"].runsRoot,
+        runId!,
+        "generations",
+        `gen_${gen}`,
+        "replays",
+      );
+      if (!existsSync(replayDir)) {
+        json(404, { error: `No replay files found under ${replayDir}` });
+        return;
+      }
+      const replayFiles = readdirSync(replayDir)
+        .filter((name) => name.endsWith(".json"))
+        .sort();
+      if (replayFiles.length === 0) {
+        json(404, { error: `No replay files found under ${replayDir}` });
+        return;
+      }
+      const payload = JSON.parse(readFileSync(join(replayDir, replayFiles[0]), "utf-8"));
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        json(500, { error: "Replay payload is not a JSON object" });
+        return;
+      }
+      json(200, payload);
+      return;
+    }
+
+    // GET /api/runs/:id/status
+    const statusMatch = url.match(/^\/api\/runs\/([^/]+)\/status$/);
+    if (statusMatch) {
+      const [, runId] = statusMatch;
+      this.withStore((store) => {
+        const run = store.getRun(runId!);
+        if (!run) {
+          json(404, { error: `Run '${runId}' not found` });
+          return;
+        }
+        json(200, store.getGenerations(runId!));
+      });
+      return;
+    }
+
+    // GET /api/knowledge/playbook/:scenario
+    const playbookMatch = url.match(/^\/api\/knowledge\/playbook\/([^/]+)$/);
+    if (playbookMatch) {
+      const [, scenario] = playbookMatch;
+      const artifacts = new ArtifactStore({
+        runsRoot: this.runManager["opts"].runsRoot,
+        knowledgeRoot: this.runManager["opts"].knowledgeRoot,
+      });
+      json(200, { scenario, content: artifacts.readPlaybook(scenario!) });
+      return;
+    }
+
+    // GET /api/scenarios
+    if (url === "/api/scenarios") {
+      json(200, this.runManager.getEnvironmentInfo().scenarios);
+      return;
+    }
+
+    // 404 fallback
+    json(404, { error: "Not found" });
+  }
+
+  private withStore(fn: (store: SQLiteStore) => void): void {
+    const store = new SQLiteStore(this.runManager["opts"].dbPath);
+    store.migrate(this.runManager["opts"].migrationsDir);
+    try {
+      fn(store);
+    } finally {
+      store.close();
+    }
   }
 
   async stop(): Promise<void> {
