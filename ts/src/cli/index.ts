@@ -8,7 +8,8 @@
  *   autoctx repl      — run a direct REPL-loop session
  *   autoctx queue     — add task to background queue
  *   autoctx status    — check queue status
- *   autoctx serve     — start MCP server on stdio
+ *   autoctx serve     — start HTTP dashboard + API server
+ *   autoctx mcp-serve — start MCP server on stdio
  */
 
 import { parseArgs } from "node:util";
@@ -38,8 +39,12 @@ Commands:
   repl             Run a direct REPL-loop session
   queue            Add a task to the background runner queue
   status           Show queue status
-  serve            Start MCP server on stdio
+  serve            Start HTTP dashboard + API server
+  mcp-serve        Start MCP server on stdio
   version          Show version
+
+Python-only commands (not supported in npm package):
+  train, ecosystem, ab-test, resume, wait, trigger-distillation
 
 Run \`autoctx <command> --help\` for command-specific options.
 `.trim();
@@ -105,7 +110,10 @@ async function main(): Promise<void> {
       await cmdStatus(dbPath);
       break;
     case "serve":
-      await cmdServe(dbPath);
+      await cmdServeHttp(dbPath);
+      break;
+    case "mcp-serve":
+      await cmdMcpServe(dbPath);
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -541,14 +549,72 @@ async function cmdStatus(dbPath: string): Promise<void> {
   }
 }
 
-async function cmdServe(dbPath: string): Promise<void> {
+async function cmdServeHttp(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      port: { type: "string", default: "8000" },
+      host: { type: "string", default: "127.0.0.1" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx serve [--port 8000] [--host 127.0.0.1]");
+    console.log("Starts the HTTP dashboard + API server (matches Python 'autoctx serve').");
+    process.exit(0);
+  }
+
+  const port = parseInt(values.port ?? "8000", 10);
+  const host = values.host ?? "127.0.0.1";
+
+  const { RunManager, InteractiveServer } = await import("../server/index.js");
+  const { loadSettings } = await import("../config/index.js");
+  const settings = loadSettings();
+
+  const mgr = new RunManager({
+    dbPath,
+    migrationsDir: getMigrationsDir(),
+    runsRoot: resolve(settings.runsRoot),
+    knowledgeRoot: resolve(settings.knowledgeRoot),
+    providerType: settings.agentProvider,
+  });
+  const server = new InteractiveServer({ runManager: mgr, port, host });
+  await server.start();
+
+  console.log(`AutoContext server listening at http://${host}:${server.port}`);
+  console.log(`API: http://${host}:${server.port}/api/runs`);
+  console.log(`WebSocket: ws://${host}:${server.port}/ws/interactive`);
+  console.log(`Scenarios: ${mgr.listScenarios().join(", ")}`);
+
+  await new Promise<void>((res) => {
+    const cleanup = () => { process.off("SIGINT", cleanup); process.off("SIGTERM", cleanup); res(); };
+    process.on("SIGINT", cleanup);
+    process.on("SIGTERM", cleanup);
+  });
+  await server.stop();
+}
+
+async function cmdMcpServe(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx mcp-serve");
+    console.log("Starts the MCP server on stdio (matches Python 'autoctx mcp-serve').");
+    process.exit(0);
+  }
+
   const { SQLiteStore } = await import("../storage/index.js");
   const { startServer } = await import("../mcp/server.js");
   const { loadSettings } = await import("../config/index.js");
 
   const store = new SQLiteStore(dbPath);
-  const migrationsDir = getMigrationsDir();
-  store.migrate(migrationsDir);
+  store.migrate(getMigrationsDir());
 
   const { provider, model } = await getProvider();
   const settings = loadSettings();

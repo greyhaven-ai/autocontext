@@ -22,6 +22,12 @@ async function fetchJson(url: string): Promise<{ status: number; body: unknown }
   return { status: res.status, body };
 }
 
+async function fetchText(url: string): Promise<{ status: number; body: string }> {
+  const res = await fetch(url);
+  const body = await res.text();
+  return { status: res.status, body };
+}
+
 async function createTestServer(dir: string) {
   const { RunManager, InteractiveServer } = await import("../src/server/index.js");
   const { SQLiteStore } = await import("../src/storage/index.js");
@@ -115,6 +121,13 @@ describe("HTTP API — health", () => {
     const { status, body } = await fetchJson(`${baseUrl}/health`);
     expect(status).toBe(200);
     expect((body as Record<string, unknown>).ok).toBe(true);
+  });
+
+  it("GET / serves the dashboard HTML", async () => {
+    const { status, body } = await fetchText(`${baseUrl}/`);
+    expect(status).toBe(200);
+    expect(body).toContain("<title>autocontext Dashboard</title>");
+    expect(body).toContain("Live Events");
   });
 });
 
@@ -211,4 +224,55 @@ describe("HTTP API — knowledge", () => {
     expect(scenarios.some((s) => s.name === "grid_ctf")).toBe(true);
     expect(scenarios.some((s) => s.name === "custom_agent_task")).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Dashboard event websocket
+// ---------------------------------------------------------------------------
+
+describe("HTTP API — dashboard event stream", () => {
+  let dir: string;
+  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
+  let mgr: Awaited<ReturnType<typeof createTestServer>>["mgr"];
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    dir = makeTempDir();
+    const s = await createTestServer(dir);
+    server = s.server;
+    mgr = s.mgr;
+    baseUrl = s.baseUrl;
+  });
+
+  afterEach(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("streams live events over /ws/events for the dashboard", async () => {
+    const { WebSocket } = await import("ws");
+    const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/events";
+
+    const raw = await new Promise<string>((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      ws.once("open", () => {
+        ws.once("message", (data) => {
+          resolve(data.toString());
+          ws.close();
+        });
+        ws.once("error", reject);
+
+        const events = (mgr as unknown as {
+          events: { emit: (event: string, payload: Record<string, unknown>) => void };
+        }).events;
+        events.emit("run_started", { run_id: "ws-test", scenario: "grid_ctf" });
+      });
+      ws.once("error", reject);
+    });
+    const payload = JSON.parse(raw) as Record<string, unknown>;
+    expect(payload.event).toBe("run_started");
+    expect(payload.v).toBe(1);
+    expect(payload.channel).toBe("generation");
+    expect((payload.payload as Record<string, unknown>).run_id).toBe("ws-test");
+  }, 15000);
 });

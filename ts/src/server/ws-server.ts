@@ -4,9 +4,10 @@
 
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, extname, join, normalize } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
+import { fileURLToPath } from "node:url";
 import { parseClientMessage } from "./protocol.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { RunManager } from "./run-manager.js";
@@ -54,18 +55,22 @@ export class InteractiveServer {
 
     const wsServer = new WebSocketServer({ noServer: true });
     httpServer.on("upgrade", (req, socket, head) => {
-      if (req.url !== "/ws/interactive") {
-        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-        socket.destroy();
+      if (req.url === "/ws/interactive") {
+        wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+          this.attachClient(ws);
+        });
         return;
       }
-      wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-        wsServer.emit("connection", ws, req);
-      });
-    });
-
-    wsServer.on("connection", (ws: WebSocket) => {
-      this.attachClient(ws);
+      if (req.url === "/ws/events") {
+        wsServer.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+          this.attachEventStreamClient(ws);
+        });
+        return;
+      }
+      {
+        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+        socket.destroy();
+      }
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -104,6 +109,13 @@ export class InteractiveServer {
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body, null, 2));
     };
+
+    if (method === "GET") {
+      const served = this.tryServeDashboard(url, res);
+      if (served) {
+        return;
+      }
+    }
 
     // Health
     if (url === "/health") {
@@ -186,6 +198,55 @@ export class InteractiveServer {
 
     // 404 fallback
     json(404, { error: "Not found" });
+  }
+
+  private tryServeDashboard(url: string, res: ServerResponse): boolean {
+    const dashboardDir = this.dashboardDir();
+    if (!existsSync(dashboardDir)) {
+      return false;
+    }
+
+    const sendFile = (path: string): boolean => {
+      if (!existsSync(path)) {
+        return false;
+      }
+      const ext = extname(path).toLowerCase();
+      const contentType = ({
+        ".html": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".svg": "image/svg+xml",
+      } as Record<string, string>)[ext] ?? "application/octet-stream";
+      res.writeHead(200, { "Content-Type": contentType });
+      res.end(readFileSync(path));
+      return true;
+    };
+
+    if (url === "/" || url === "/dashboard" || url === "/dashboard/" || url === "/dashboard/index.html") {
+      return sendFile(join(dashboardDir, "index.html"));
+    }
+
+    if (!url.startsWith("/dashboard/")) {
+      return false;
+    }
+
+    const relativePath = normalize(url.slice("/dashboard/".length)).replace(/^(\.\.(\/|\\|$))+/, "");
+    if (!relativePath || relativePath.startsWith("..")) {
+      return false;
+    }
+    return sendFile(join(dashboardDir, relativePath));
+  }
+
+  private dashboardDir(): string {
+    return join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "..",
+      "autocontext",
+      "dashboard",
+    );
   }
 
   private withStore(fn: (store: SQLiteStore) => void): void {
@@ -286,6 +347,27 @@ export class InteractiveServer {
     ws.on("close", () => {
       this.runManager.unsubscribeEvents(eventCallback);
       this.runManager.unsubscribeState(stateCallback);
+    });
+  }
+
+  private attachEventStreamClient(ws: WebSocket): void {
+    const eventCallback: EventCallback = (event, payload) => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      ws.send(JSON.stringify({
+        channel: "generation",
+        event,
+        payload,
+        ts: new Date().toISOString(),
+        v: 1,
+      }));
+    };
+
+    this.runManager.subscribeEvents(eventCallback);
+
+    ws.on("close", () => {
+      this.runManager.unsubscribeEvents(eventCallback);
     });
   }
 
