@@ -1,13 +1,13 @@
-name: publish
+name: publish-python
 
 on:
   push:
     tags:
-      - "v*"
+      - "py-v*"
   workflow_dispatch:
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-python-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -24,6 +24,26 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      - name: Validate tag matches Python package version
+        if: startsWith(github.ref, 'refs/tags/py-v')
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as fh:
+              version = tomllib.load(fh)["project"]["version"]
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          expected = tag.removeprefix("py-v")
+          if version != expected:
+              print(
+                  f"Tag {tag!r} does not match autocontext/pyproject.toml version {version!r}.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -40,7 +60,7 @@ jobs:
   publish-pypi:
     needs: build-python
     runs-on: ubuntu-latest
-    environment: release
+    environment: publish-python
     permissions:
       contents: read
       id-token: write
@@ -54,27 +74,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-
-  publish-npm:
-    runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: read
-      id-token: write
-    defaults:
-      run:
-        working-directory: ts
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-      - name: Install dependencies
-        run: npm ci
-      - name: Show npm version
-        run: npm --version
-      - name: Build package
-        run: npm run build
-      - name: Publish to npm
-        run: npm publish --access public --provenance

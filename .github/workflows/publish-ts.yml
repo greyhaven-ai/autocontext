@@ -1,0 +1,48 @@
+name: publish-ts
+
+on:
+  push:
+    tags:
+      - "ts-v*"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-ts-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    environment: publish-ts
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Validate tag matches TypeScript package version
+        if: startsWith(github.ref, 'refs/tags/ts-v')
+        run: |
+          expected="${GITHUB_REF_NAME#ts-v}"
+          actual="$(node -p "require('./package.json').version")"
+          if [ "$actual" != "$expected" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match ts/package.json version ${actual}." >&2
+            exit 1
+          fi
+      - name: Install dependencies
+        run: npm ci
+      - name: Show npm version
+        run: npm --version
+      - name: Build package
+        run: npm run build
+      - name: Publish to npm
+        run: npm publish --access public --provenance
