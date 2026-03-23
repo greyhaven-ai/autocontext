@@ -4,22 +4,83 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
-const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
+const PACKAGE_ROOT = join(import.meta.dirname, "..");
+const PACKAGE_JSON = JSON.parse(
+  readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"),
+) as { bin: { autoctx: string } };
+let didBuild = false;
+
+function ensureBuiltPackage(): void {
+  if (didBuild) return;
+  execFileSync("npm", ["run", "build"], {
+    cwd: PACKAGE_ROOT,
+    encoding: "utf8",
+    timeout: 120000,
+    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+  });
+  didBuild = true;
+}
+
+function createConsumerWorkspace(): string {
+  const workspace = join(
+    tmpdir(),
+    `autoctx-package-parity-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  mkdirSync(join(workspace, "node_modules"), { recursive: true });
+  symlinkSync(PACKAGE_ROOT, join(workspace, "node_modules", "autoctx"), "dir");
+  writeFileSync(join(workspace, "package.json"), JSON.stringify({ name: "package-parity-fixture", type: "module" }), "utf-8");
+  return workspace;
+}
+
+function withConsumerWorkspace<T>(fn: (workspace: string) => T): T {
+  ensureBuiltPackage();
+  const workspace = createConsumerWorkspace();
+  try {
+    return fn(workspace);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+}
 
 function runCli(args: string[]): string {
-  try {
-    return execFileSync("npx", ["tsx", CLI, ...args], {
-      encoding: "utf8",
-      timeout: 10000,
-      env: { ...process.env, NODE_NO_WARNINGS: "1" },
-    });
-  } catch (err: unknown) {
-    return (err as { stdout?: string }).stdout ?? "";
-  }
+  return withConsumerWorkspace((workspace) => {
+    const cli = join(workspace, "node_modules", "autoctx", PACKAGE_JSON.bin.autoctx);
+    try {
+      return execFileSync("node", [cli, ...args], {
+        cwd: workspace,
+        encoding: "utf8",
+        timeout: 10000,
+        env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      });
+    } catch (err: unknown) {
+      return (err as { stdout?: string }).stdout ?? "";
+    }
+  });
+}
+
+function importPackageExport(exportName: string): boolean {
+  return withConsumerWorkspace((workspace) => {
+    const output = execFileSync(
+      "node",
+      [
+        "--input-type=module",
+        "-e",
+        `import("autoctx").then((mod) => { console.log(${JSON.stringify(exportName)} in mod ? "yes" : "no"); });`,
+      ],
+      {
+        cwd: workspace,
+        encoding: "utf8",
+        timeout: 10000,
+        env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      },
+    );
+    return output.trim() === "yes";
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -95,32 +156,26 @@ describe("CLI help matches README", () => {
 
 describe("Package exports", () => {
   it("exports GenerationRunner", async () => {
-    const mod = await import("../src/index.js");
-    expect(mod.GenerationRunner).toBeDefined();
+    expect(importPackageExport("GenerationRunner")).toBe(true);
   });
 
   it("exports GridCtfScenario", async () => {
-    const mod = await import("../src/index.js");
-    expect(mod.GridCtfScenario).toBeDefined();
+    expect(importPackageExport("GridCtfScenario")).toBe(true);
   });
 
   it("exports SQLiteStore", async () => {
-    const mod = await import("../src/index.js");
-    expect(mod.SQLiteStore).toBeDefined();
+    expect(importPackageExport("SQLiteStore")).toBe(true);
   });
 
   it("exports createProvider", async () => {
-    const mod = await import("../src/index.js");
-    expect(mod.createProvider).toBeDefined();
+    expect(importPackageExport("createProvider")).toBe(true);
   });
 
   it("exports EventStreamEmitter", async () => {
-    const mod = await import("../src/index.js");
-    expect(mod.EventStreamEmitter).toBeDefined();
+    expect(importPackageExport("EventStreamEmitter")).toBe(true);
   });
 
   it("exports LoopController", async () => {
-    const mod = await import("../src/index.js");
-    expect(mod.LoopController).toBeDefined();
+    expect(importPackageExport("LoopController")).toBe(true);
   });
 });

@@ -143,6 +143,11 @@ import {
   GridCtfScenario,
   SQLiteStore,
 } from "autoctx";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+
+const require = createRequire(import.meta.url);
+const autoctxRoot = dirname(require.resolve("autoctx/package.json"));
 
 // One-shot evaluation
 const provider = createProvider({ providerType: "anthropic", apiKey: "sk-ant-..." });
@@ -159,7 +164,7 @@ const improved = await loop.run({ initialOutput: "Binary search is fast.", state
 
 // Generation loop
 const store = new SQLiteStore("autocontext.db");
-store.migrate("./migrations");
+store.migrate(join(autoctxRoot, "migrations"));
 const runner = new GenerationRunner({
   provider,
   scenario: new GridCtfScenario(),
