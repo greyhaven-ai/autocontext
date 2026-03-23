@@ -24,15 +24,21 @@ const HELP = `
 autoctx — always-on agent evaluation harness
 
 Commands:
-  run         Run generation loop for a scenario
-  tui         Start interactive TUI (WebSocket server + Ink UI)
-  judge       One-shot evaluation of output against a rubric
-  improve     Run multi-round improvement loop
-  repl        Run a direct REPL-loop session
-  queue       Add a task to the background runner queue
-  status      Show queue status
-  serve       Start MCP server on stdio
-  version     Show version
+  run              Run generation loop for a scenario
+  list             List recent runs
+  replay           Print replay JSON for a generation
+  benchmark        Run benchmark (multiple runs, aggregate stats)
+  export           Export strategy package for a scenario
+  import-package   Import a strategy package from file
+  new-scenario     Create a scenario from natural language description
+  tui              Start interactive TUI (WebSocket server + Ink UI)
+  judge            One-shot evaluation of output against a rubric
+  improve          Run multi-round improvement loop
+  repl             Run a direct REPL-loop session
+  queue            Add a task to the background runner queue
+  status           Show queue status
+  serve            Start MCP server on stdio
+  version          Show version
 
 Run \`autoctx <command> --help\` for command-specific options.
 `.trim();
@@ -57,6 +63,24 @@ async function main(): Promise<void> {
   switch (command) {
     case "run":
       await cmdRun(dbPath);
+      break;
+    case "list":
+      await cmdList(dbPath);
+      break;
+    case "replay":
+      await cmdReplay(dbPath);
+      break;
+    case "benchmark":
+      await cmdBenchmark(dbPath);
+      break;
+    case "export":
+      await cmdExport(dbPath);
+      break;
+    case "import-package":
+      await cmdImportPackage(dbPath);
+      break;
+    case "new-scenario":
+      await cmdNewScenario(dbPath);
       break;
     case "tui":
       await cmdTui(dbPath);
@@ -530,6 +554,291 @@ async function cmdServe(dbPath: string): Promise<void> {
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
   });
+}
+
+// ---------------------------------------------------------------------------
+// New parity commands (AC-363)
+// ---------------------------------------------------------------------------
+
+async function cmdList(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      limit: { type: "string", default: "50" },
+      scenario: { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx list [--limit N] [--scenario <name>] [--json]");
+    process.exit(0);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+
+  try {
+    const runs = store.listRuns(parseInt(values.limit ?? "50", 10), values.scenario);
+    if (values.json) {
+      console.log(JSON.stringify(runs, null, 2));
+    } else {
+      if (runs.length === 0) {
+        console.log("No runs found.");
+      } else {
+        for (const run of runs) {
+          console.log(`${run.run_id}  ${run.scenario}  ${run.status}  ${run.created_at}`);
+        }
+      }
+    }
+  } finally {
+    store.close();
+  }
+}
+
+async function cmdReplay(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      "run-id": { type: "string" },
+      generation: { type: "string", default: "1" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx replay --run-id <id> [--generation N]");
+    process.exit(0);
+  }
+
+  if (!values["run-id"]) {
+    console.error("Error: --run-id is required");
+    process.exit(1);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+
+  try {
+    const gen = parseInt(values.generation ?? "1", 10);
+    const matches = store.getMatchesForGeneration(values["run-id"], gen);
+    const outputs = store.getAgentOutputs(values["run-id"], gen);
+    console.log(JSON.stringify({ runId: values["run-id"], generation: gen, matches, outputs }, null, 2));
+  } finally {
+    store.close();
+  }
+}
+
+async function cmdBenchmark(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      scenario: { type: "string", default: "grid_ctf" },
+      runs: { type: "string", default: "3" },
+      gens: { type: "string", default: "1" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx benchmark [--scenario <name>] [--runs N] [--gens N] [--json]");
+    process.exit(0);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const { GenerationRunner } = await import("../loop/generation-runner.js");
+  const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+  const { loadSettings } = await import("../config/index.js");
+
+  const scenarioName = values.scenario ?? "grid_ctf";
+  const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
+  if (!ScenarioClass) {
+    console.error(`Unknown scenario: ${scenarioName}`);
+    process.exit(1);
+  }
+
+  let provider;
+  if (process.env.AUTOCONTEXT_AGENT_PROVIDER) {
+    const { createProvider } = await import("../providers/index.js");
+    provider = createProvider({ providerType: process.env.AUTOCONTEXT_AGENT_PROVIDER });
+  } else {
+    const result = await getProvider();
+    provider = result.provider;
+  }
+
+  const numRuns = parseInt(values.runs ?? "3", 10);
+  const numGens = parseInt(values.gens ?? "1", 10);
+  const settings = loadSettings();
+  const scores: number[] = [];
+
+  for (let i = 0; i < numRuns; i++) {
+    const store = new SQLiteStore(dbPath);
+    store.migrate(getMigrationsDir());
+    const runId = `bench_${Date.now()}_${i}`;
+    const runner = new GenerationRunner({
+      provider,
+      scenario: new ScenarioClass(),
+      store,
+      runsRoot: resolve(settings.runsRoot),
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+    });
+    const result = await runner.run(runId, numGens);
+    scores.push(result.bestScore);
+    store.close();
+  }
+
+  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+  const output = { scenario: scenarioName, runs: numRuns, generations: numGens, scores, meanBestScore: mean };
+  if (values.json) {
+    console.log(JSON.stringify(output, null, 2));
+  } else {
+    console.log(`Benchmark: ${scenarioName}, ${numRuns} runs x ${numGens} gens`);
+    console.log(`Scores: ${scores.map(s => s.toFixed(4)).join(", ")}`);
+    console.log(`Mean best score: ${mean.toFixed(4)}`);
+  }
+}
+
+async function cmdExport(_dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      scenario: { type: "string", short: "s" },
+      output: { type: "string", short: "o" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx export --scenario <name> [--output <file>] [--json]");
+    process.exit(0);
+  }
+
+  if (!values.scenario) {
+    console.error("Error: --scenario is required");
+    process.exit(1);
+  }
+
+  const { loadSettings } = await import("../config/index.js");
+  const { ArtifactStore } = await import("../knowledge/artifact-store.js");
+  const { SkillPackage } = await import("../knowledge/skill-package.js");
+
+  const settings = loadSettings();
+  const artifacts = new ArtifactStore({
+    runsRoot: resolve(settings.runsRoot),
+    knowledgeRoot: resolve(settings.knowledgeRoot),
+  });
+
+  const playbook = artifacts.readPlaybook(values.scenario);
+  const pkg = new SkillPackage({
+    scenarioName: values.scenario,
+    displayName: values.scenario.replace(/_/g, " "),
+    description: `Exported knowledge for ${values.scenario}`,
+    playbook,
+    lessons: [],
+    bestStrategy: null,
+    bestScore: 0,
+    bestElo: 1000,
+    hints: "",
+  });
+
+  const result = { ...pkg.toDict(), skill_markdown: pkg.toSkillMarkdown() };
+
+  if (values.output) {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    mkdirSync(dirname(values.output), { recursive: true });
+    writeFileSync(values.output, JSON.stringify(result, null, 2), "utf-8");
+    console.log(values.json ? JSON.stringify({ output: values.output }) : `Exported to ${values.output}`);
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
+}
+
+async function cmdImportPackage(_dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      file: { type: "string", short: "f" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx import-package --file <path> [--json]");
+    process.exit(0);
+  }
+
+  if (!values.file) {
+    console.error("Error: --file is required");
+    process.exit(1);
+  }
+
+  const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { loadSettings } = await import("../config/index.js");
+  const { ArtifactStore } = await import("../knowledge/artifact-store.js");
+
+  const settings = loadSettings();
+  const raw = readFileSync(values.file, "utf-8");
+  const pkg = JSON.parse(raw);
+
+  const scenarioName = pkg.scenario_name ?? pkg.scenarioName ?? "unknown";
+  const artifacts = new ArtifactStore({
+    runsRoot: resolve(settings.runsRoot),
+    knowledgeRoot: resolve(settings.knowledgeRoot),
+  });
+
+  if (pkg.playbook) {
+    artifacts.writePlaybook(scenarioName, pkg.playbook);
+  }
+
+  const result = { scenario: scenarioName, imported: true, playbook_written: !!pkg.playbook };
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function cmdNewScenario(_dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      description: { type: "string", short: "d" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx new-scenario --description <text> [--json]");
+    process.exit(0);
+  }
+
+  if (!values.description) {
+    console.error("Error: --description is required");
+    process.exit(1);
+  }
+
+  const { createScenarioFromDescription } = await import("../scenarios/scenario-creator.js");
+
+  let provider;
+  try {
+    const result = await getProvider();
+    provider = result.provider;
+  } catch {
+    const { DeterministicProvider } = await import("../providers/deterministic.js");
+    provider = new DeterministicProvider();
+  }
+
+  const result = await createScenarioFromDescription(values.description, provider);
+  if (values.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`Created scenario: ${result.name} (family: ${result.family})`);
+    console.log(`Task prompt: ${result.spec.taskPrompt}`);
+    console.log(`Rubric: ${result.spec.rubric}`);
+  }
 }
 
 main().catch((err) => {
