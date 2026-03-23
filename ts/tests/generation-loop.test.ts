@@ -388,6 +388,17 @@ describe("GenerationRunner", () => {
     expect(existsSync(summaryPath)).toBe(true);
     expect(JSON.parse(readFileSync(summaryPath, "utf-8")).gate_decision).toBeDefined();
 
+    const replayPath = join(
+      runsRoot,
+      "test-knowledge-loop",
+      "generations",
+      "gen_2",
+      "replays",
+      "grid_ctf_2.json",
+    );
+    expect(existsSync(replayPath)).toBe(true);
+    expect(JSON.parse(readFileSync(replayPath, "utf-8")).timeline).toBeDefined();
+
     store.close();
   });
 

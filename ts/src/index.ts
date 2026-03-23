@@ -137,11 +137,13 @@ export {
   SkillPackage, exportAgentTaskSkill, cleanLessons, HarnessStore,
   VersionedFileStore, PlaybookManager, PlaybookGuard, ArtifactStore,
   ScoreTrajectoryBuilder, EMPTY_PLAYBOOK_SENTINEL, PLAYBOOK_MARKERS,
+  exportStrategyPackage, importStrategyPackage,
 } from "./knowledge/index.js";
 export type {
   SkillPackageData, HarnessVersionEntry, HarnessVersionMap,
   VersionedFileStoreOpts, GuardResult, ArtifactStoreOpts,
   TrajectoryRow as KnowledgeTrajectoryRow,
+  StrategyPackageData, ImportStrategyPackageResult, ConflictPolicy,
 } from "./knowledge/index.js";
 
 // Prompts

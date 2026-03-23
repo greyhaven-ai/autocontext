@@ -17,3 +17,5 @@ export { ArtifactStore } from "./artifact-store.js";
 export type { ArtifactStoreOpts } from "./artifact-store.js";
 export { ScoreTrajectoryBuilder } from "./trajectory.js";
 export type { TrajectoryRow } from "./trajectory.js";
+export { exportStrategyPackage, importStrategyPackage } from "./package.js";
+export type { StrategyPackageData, ImportStrategyPackageResult, ConflictPolicy } from "./package.js";

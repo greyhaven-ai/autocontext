@@ -306,6 +306,53 @@ export class SQLiteStore {
       .all(runId) as GenerationRow[];
   }
 
+  countCompletedRuns(scenario: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) as cnt
+         FROM runs
+         WHERE scenario = ? AND status = 'completed'`,
+      )
+      .get(scenario) as { cnt: number };
+    return row.cnt;
+  }
+
+  getBestGenerationForScenario(
+    scenario: string,
+  ): (GenerationRow & { run_id: string }) | null {
+    return (
+      (this.db
+        .prepare(
+          `SELECT g.*
+           FROM generations g
+           JOIN runs r ON r.run_id = g.run_id
+           WHERE r.scenario = ?
+             AND r.status = 'completed'
+             AND g.status = 'completed'
+           ORDER BY g.best_score DESC, g.elo DESC, g.updated_at DESC
+           LIMIT 1`,
+        )
+        .get(scenario) as (GenerationRow & { run_id: string }) | undefined) ?? null
+    );
+  }
+
+  getBestMatchForScenario(scenario: string): MatchRow | null {
+    return (
+      (this.db
+        .prepare(
+          `SELECT m.*
+           FROM matches m
+           JOIN runs r ON r.run_id = m.run_id
+           WHERE r.scenario = ?
+             AND r.status = 'completed'
+             AND m.strategy_json != ''
+           ORDER BY m.score DESC, m.created_at DESC
+           LIMIT 1`,
+        )
+        .get(scenario) as MatchRow | undefined) ?? null
+    );
+  }
+
   recordMatch(
     runId: string,
     generationIndex: number,

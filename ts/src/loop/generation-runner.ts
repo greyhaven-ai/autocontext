@@ -483,6 +483,27 @@ export class GenerationRunner {
       join(generationDir, "trajectory.md"),
       new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build() || "No prior trajectory yet.",
     );
+    const bestReplayMatch = attempt.tournamentResult.matches.reduce((best, current) => (
+      current.score > best.score ? current : best
+    ));
+    this.artifactStore.writeJson(join(generationDir, "replays", `${this.scenario.name}_${gen}.json`), {
+      run_id: runId,
+      generation: gen,
+      scenario: this.scenario.name,
+      seed: bestReplayMatch.seed,
+      score: bestReplayMatch.score,
+      winner: bestReplayMatch.winner,
+      narrative: this.scenario.replayToNarrative(bestReplayMatch.replay),
+      timeline: bestReplayMatch.replay,
+      matches: attempt.tournamentResult.matches.map((match) => ({
+        seed: match.seed,
+        score: match.score,
+        winner: match.winner,
+        passed_validation: match.passedValidation,
+        validation_errors: match.validationErrors,
+        timeline: match.replay,
+      })),
+    });
     this.artifactStore.writeJson(join(generationDir, "tournament_summary.json"), {
       gate_decision: attempt.gateDecision,
       mean_score: attempt.tournamentResult.meanScore,
