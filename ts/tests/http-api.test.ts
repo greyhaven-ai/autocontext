@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -49,6 +49,34 @@ async function createTestServer(dir: string) {
   });
   store.appendAgentOutput("test-run-1", 1, "competitor", '{"aggression": 0.6}');
   store.close();
+
+  const replayDir = join(dir, "runs", "test-run-1", "generations", "gen_1", "replays");
+  mkdirSync(replayDir, { recursive: true });
+  writeFileSync(
+    join(replayDir, "grid_ctf_1.json"),
+    JSON.stringify({
+      scenario: "grid_ctf",
+      seed: 42,
+      narrative: "Blue team secured the center route.",
+      timeline: [{ turn: 1, action: "advance" }],
+      matches: [{ seed: 42, score: 0.7, winner: "challenger" }],
+    }, null, 2),
+    "utf-8",
+  );
+
+  const customDir = join(dir, "knowledge", "_custom_scenarios", "custom_agent_task");
+  mkdirSync(customDir, { recursive: true });
+  writeFileSync(
+    join(customDir, "agent_task_spec.json"),
+    JSON.stringify({
+      task_prompt: "Summarize the control-plane state.",
+      judge_rubric: "Prefer concise and accurate summaries.",
+      output_format: "free_text",
+      max_rounds: 1,
+      quality_threshold: 0.9,
+    }, null, 2),
+    "utf-8",
+  );
 
   const mgr = new RunManager({
     dbPath,
@@ -132,12 +160,18 @@ describe("HTTP API — runs", () => {
     expect(res.status).toBe(404);
   });
 
-  it("GET /api/runs/:id/replay/:gen returns matches and outputs", async () => {
+  it("GET /api/runs/:id/replay/:gen returns persisted replay artifact", async () => {
     const { status, body } = await fetchJson(`${baseUrl}/api/runs/test-run-1/replay/1`);
     expect(status).toBe(200);
     const data = body as Record<string, unknown>;
-    expect((data.matches as unknown[]).length).toBe(1);
-    expect((data.agent_outputs as unknown[]).length).toBe(1);
+    expect(data.scenario).toBe("grid_ctf");
+    expect(data.narrative).toBe("Blue team secured the center route.");
+    expect((data.timeline as unknown[]).length).toBe(1);
+  });
+
+  it("GET /api/runs/:id/replay/:gen returns 404 when replay artifact is missing", async () => {
+    const res = await fetch(`${baseUrl}/api/runs/test-run-1/replay/99`);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -175,5 +209,6 @@ describe("HTTP API — knowledge", () => {
     const scenarios = body as Array<Record<string, unknown>>;
     expect(scenarios.length).toBeGreaterThan(0);
     expect(scenarios.some((s) => s.name === "grid_ctf")).toBe(true);
+    expect(scenarios.some((s) => s.name === "custom_agent_task")).toBe(true);
   });
 });

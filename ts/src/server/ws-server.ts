@@ -3,6 +3,8 @@
  */
 
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
 import { parseClientMessage } from "./protocol.js";
@@ -12,7 +14,6 @@ import type { RunManagerState } from "./run-manager.js";
 import type { EventCallback } from "../loop/events.js";
 import { SQLiteStore } from "../storage/index.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
-import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 
 export interface InteractiveServerOpts {
   runManager: RunManager;
@@ -123,11 +124,30 @@ export class InteractiveServer {
     if (replayMatch) {
       const [, runId, genStr] = replayMatch;
       const gen = parseInt(genStr!, 10);
-      this.withStore((store) => {
-        const matches = store.getMatchesForGeneration(runId!, gen);
-        const outputs = store.getAgentOutputs(runId!, gen);
-        json(200, { matches, agent_outputs: outputs });
-      });
+      const replayDir = join(
+        this.runManager["opts"].runsRoot,
+        runId!,
+        "generations",
+        `gen_${gen}`,
+        "replays",
+      );
+      if (!existsSync(replayDir)) {
+        json(404, { error: `No replay files found under ${replayDir}` });
+        return;
+      }
+      const replayFiles = readdirSync(replayDir)
+        .filter((name) => name.endsWith(".json"))
+        .sort();
+      if (replayFiles.length === 0) {
+        json(404, { error: `No replay files found under ${replayDir}` });
+        return;
+      }
+      const payload = JSON.parse(readFileSync(join(replayDir, replayFiles[0]), "utf-8"));
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        json(500, { error: "Replay payload is not a JSON object" });
+        return;
+      }
+      json(200, payload);
       return;
     }
 
@@ -160,11 +180,7 @@ export class InteractiveServer {
 
     // GET /api/scenarios
     if (url === "/api/scenarios") {
-      const scenarios = Object.keys(SCENARIO_REGISTRY).sort().map((name) => {
-        const instance = new SCENARIO_REGISTRY[name]();
-        return { name, description: instance.describeRules() };
-      });
-      json(200, scenarios);
+      json(200, this.runManager.getEnvironmentInfo().scenarios);
       return;
     }
 
