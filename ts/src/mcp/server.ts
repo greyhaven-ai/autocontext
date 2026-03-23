@@ -1,10 +1,12 @@
 /**
- * MCP server for autocontext — agent task evaluation tools.
- * Port of autocontext/src/autocontext/mcp/tools.py (agent task subset).
+ * MCP server for autocontext — expanded package control plane.
+ * Covers evaluation, scenarios, runs, knowledge, feedback, and exports.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import type { LLMProvider } from "../types/index.js";
 import { LLMJudge } from "../judge/index.js";
@@ -36,6 +38,30 @@ export function resolveMcpArtifactRoots(opts: Pick<MtsServerOpts, "runsRoot" | "
     runsRoot: opts.runsRoot ?? settings.runsRoot,
     knowledgeRoot: opts.knowledgeRoot ?? settings.knowledgeRoot,
   };
+}
+
+function readReplayArtifact(
+  runsRoot: string,
+  runId: string,
+  generation: number,
+): Record<string, unknown> {
+  const replayDir = join(
+    runsRoot,
+    runId,
+    "generations",
+    `gen_${generation}`,
+    "replays",
+  );
+  if (!existsSync(replayDir)) {
+    return { error: `no replay directory for run=${runId} gen=${generation}` };
+  }
+  const replayFiles = readdirSync(replayDir)
+    .filter((name) => name.endsWith(".json"))
+    .sort();
+  if (replayFiles.length === 0) {
+    return { error: `no replay files under ${replayDir}` };
+  }
+  return JSON.parse(readFileSync(join(replayDir, replayFiles[0]), "utf-8")) as Record<string, unknown>;
 }
 
 export function createMcpServer(opts: MtsServerOpts): McpServer {
@@ -541,6 +567,232 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
             })),
           }, null, 2),
         }],
+      };
+    },
+  );
+
+  // -- validate_strategy (AC-365) --
+  server.tool(
+    "validate_strategy",
+    "Validate a strategy JSON against a scenario's constraints",
+    { scenario: z.string(), strategy: z.string() },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const Cls = SCENARIO_REGISTRY[args.scenario];
+      if (!Cls) return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.scenario}` }) }] };
+      const inst = new Cls();
+      let strat: Record<string, unknown>;
+      try { strat = JSON.parse(args.strategy); } catch { return { content: [{ type: "text" as const, text: JSON.stringify({ valid: false, reason: "Invalid JSON" }) }] }; }
+      const [valid, reason] = inst.validateActions(inst.initialState(42), "challenger", strat);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ valid, reason }) }] };
+    },
+  );
+
+  // -- run_match (AC-365) --
+  server.tool(
+    "run_match",
+    "Execute a single match for a scenario",
+    { scenario: z.string(), strategy: z.string(), seed: z.number().int().default(42) },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const Cls = SCENARIO_REGISTRY[args.scenario];
+      if (!Cls) return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.scenario}` }) }] };
+      let strat: Record<string, unknown>;
+      try { strat = JSON.parse(args.strategy); } catch { return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid JSON" }) }] }; }
+      const result = new Cls().executeMatch(strat, args.seed);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  // -- run_tournament (AC-365) --
+  server.tool(
+    "run_tournament",
+    "Run N matches with Elo scoring",
+    { scenario: z.string(), strategy: z.string(), matches: z.number().int().default(3), seedBase: z.number().int().default(1000) },
+    async (args) => {
+      const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+      const { TournamentRunner } = await import("../execution/tournament.js");
+      const Cls = SCENARIO_REGISTRY[args.scenario];
+      if (!Cls) return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown scenario: ${args.scenario}` }) }] };
+      let strat: Record<string, unknown>;
+      try { strat = JSON.parse(args.strategy); } catch { return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid JSON" }) }] }; }
+      const r = new TournamentRunner(new Cls(), { matchCount: args.matches, seedBase: args.seedBase });
+      const result = r.run(strat);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ meanScore: result.meanScore, bestScore: result.bestScore, elo: result.elo, wins: result.wins, losses: result.losses }, null, 2) }] };
+    },
+  );
+
+  // -- read_trajectory (AC-365) --
+  server.tool(
+    "read_trajectory",
+    "Read the score trajectory for a run as markdown",
+    { runId: z.string() },
+    async (args) => {
+      const { ScoreTrajectoryBuilder } = await import("../knowledge/trajectory.js");
+      const traj = store.getScoreTrajectory(args.runId);
+      return { content: [{ type: "text" as const, text: new ScoreTrajectoryBuilder(traj).build() || "No trajectory data." }] };
+    },
+  );
+
+  // -- read_hints (AC-365) --
+  server.tool(
+    "read_hints",
+    "Read competitor hints for a scenario",
+    { scenario: z.string() },
+    async (args) => {
+      const { ArtifactStore } = await import("../knowledge/artifact-store.js");
+      const { extractDelimitedSection } = await import("../agents/roles.js");
+      const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
+      const playbook = artifacts.readPlaybook(args.scenario);
+      const hints = extractDelimitedSection(playbook, "<!-- COMPETITOR_HINTS_START -->", "<!-- COMPETITOR_HINTS_END -->") ?? "";
+      return { content: [{ type: "text" as const, text: hints || "No hints available." }] };
+    },
+  );
+
+  // -- read_analysis (AC-365) --
+  server.tool(
+    "read_analysis",
+    "Read the analyst output for a specific generation",
+    { runId: z.string(), generation: z.number().int() },
+    async (args) => {
+      const outputs = store.getAgentOutputs(args.runId, args.generation);
+      const analyst = outputs.find((o) => o.role === "analyst");
+      return { content: [{ type: "text" as const, text: analyst?.content ?? "No analysis found." }] };
+    },
+  );
+
+  // -- read_tools (AC-365) --
+  server.tool(
+    "read_tools",
+    "Read architect-generated tools for a scenario",
+    { scenario: z.string() },
+    async (args) => {
+      const { existsSync, readdirSync, readFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const toolsDir = join(knowledgeRoot, args.scenario, "tools");
+      if (!existsSync(toolsDir)) return { content: [{ type: "text" as const, text: "No tools directory." }] };
+      const files = readdirSync(toolsDir).filter((f: string) => f.endsWith(".py") || f.endsWith(".ts"));
+      const tools = files.map((f: string) => ({ name: f, code: readFileSync(join(toolsDir, f), "utf-8") }));
+      return { content: [{ type: "text" as const, text: JSON.stringify(tools, null, 2) }] };
+    },
+  );
+
+  // -- read_skills (AC-365) --
+  server.tool(
+    "read_skills",
+    "Read skill notes for a scenario",
+    { scenario: z.string() },
+    async (args) => {
+      const { existsSync, readFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const skillPath = join(knowledgeRoot, args.scenario, "SKILL.md");
+      if (!existsSync(skillPath)) return { content: [{ type: "text" as const, text: "No skill notes found." }] };
+      return { content: [{ type: "text" as const, text: readFileSync(skillPath, "utf-8") }] };
+    },
+  );
+
+  // -- export_skill (AC-365) --
+  server.tool(
+    "export_skill",
+    "Export a portable skill package with markdown for agent install",
+    { scenario: z.string() },
+    async (args) => {
+      const { ArtifactStore } = await import("../knowledge/artifact-store.js");
+      const { exportStrategyPackage } = await import("../knowledge/package.js");
+      const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
+      const pkg = exportStrategyPackage({
+        scenarioName: args.scenario,
+        artifacts,
+        store,
+      });
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            ...pkg,
+            suggested_filename: `${args.scenario.replace(/_/g, "-")}-knowledge.md`,
+          }, null, 2),
+        }],
+      };
+    },
+  );
+
+  // -- list_solved (AC-365) --
+  server.tool(
+    "list_solved",
+    "List scenarios with exported knowledge or completed runs",
+    {},
+    async () => {
+      const { existsSync, readdirSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const solved: Array<{ scenario: string; hasPlaybook: boolean }> = [];
+      if (existsSync(knowledgeRoot)) {
+        for (const name of readdirSync(knowledgeRoot)) {
+          if (name.startsWith("_")) continue;
+          const hasPlaybook = existsSync(join(knowledgeRoot, name, "playbook.md"));
+          if (hasPlaybook) solved.push({ scenario: name, hasPlaybook });
+        }
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(solved, null, 2) }] };
+    },
+  );
+
+  // -- search_strategies (AC-365) --
+  server.tool(
+    "search_strategies",
+    "Search past strategies by keyword",
+    { query: z.string(), limit: z.number().int().default(5) },
+    async (args) => {
+      const runs = store.listRuns(100);
+      const results: Array<{ runId: string; scenario: string; generation: number; score: number; strategy: string }> = [];
+      const queryLower = args.query.toLowerCase();
+      for (const run of runs) {
+        const gens = store.getGenerations(run.run_id);
+        for (const gen of gens) {
+          const outputs = store.getAgentOutputs(run.run_id, gen.generation_index);
+          const comp = outputs.find((o) => o.role === "competitor");
+          if (comp && comp.content.toLowerCase().includes(queryLower)) {
+            results.push({ runId: run.run_id, scenario: run.scenario, generation: gen.generation_index, score: gen.best_score, strategy: comp.content.slice(0, 200) });
+            if (results.length >= args.limit) break;
+          }
+        }
+        if (results.length >= args.limit) break;
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
+    },
+  );
+
+  // -- record_feedback (AC-365) --
+  server.tool(
+    "record_feedback",
+    "Record human feedback for a scenario evaluation",
+    { scenario: z.string(), agentOutput: z.string(), score: z.number().min(0).max(1).optional(), notes: z.string().default(""), generationId: z.string().optional() },
+    async (args) => {
+      const id = store.insertHumanFeedback(args.scenario, args.agentOutput, args.score, args.notes, args.generationId);
+      return { content: [{ type: "text" as const, text: JSON.stringify({ feedbackId: id, scenario: args.scenario }) }] };
+    },
+  );
+
+  // -- get_feedback (AC-365) --
+  server.tool(
+    "get_feedback",
+    "Retrieve human feedback for a scenario",
+    { scenario: z.string(), limit: z.number().int().default(10) },
+    async (args) => {
+      const feedback = store.getHumanFeedback(args.scenario, args.limit);
+      return { content: [{ type: "text" as const, text: JSON.stringify(feedback, null, 2) }] };
+    },
+  );
+
+  // -- run_replay (AC-365) --
+  server.tool(
+    "run_replay",
+    "Read replay JSON for a specific generation",
+    { runId: z.string(), generation: z.number().int() },
+    async (args) => {
+      const payload = readReplayArtifact(runsRoot, args.runId, args.generation);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
       };
     },
   );
