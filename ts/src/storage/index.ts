@@ -471,6 +471,14 @@ export class SQLiteStore {
       .all(limit) as RunRow[];
   }
 
+  listRunsForScenario(scenario: string): RunRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM runs WHERE scenario = ? ORDER BY created_at ASC`,
+      )
+      .all(scenario) as RunRow[];
+  }
+
   getMatchesForGeneration(runId: string, generationIndex: number): MatchRow[] {
     return this.db
       .prepare(

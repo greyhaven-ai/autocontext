@@ -29,6 +29,7 @@ Commands:
   replay           Print replay JSON for a generation
   benchmark        Run benchmark (multiple runs, aggregate stats)
   export           Export strategy package for a scenario
+  export-training-data  Export training data as JSONL
   import-package   Import a strategy package from file
   new-scenario     Create a scenario from natural language description
   tui              Start interactive TUI (WebSocket server + Ink UI)
@@ -75,6 +76,9 @@ async function main(): Promise<void> {
       break;
     case "export":
       await cmdExport(dbPath);
+      break;
+    case "export-training-data":
+      await cmdExportTrainingData(dbPath);
       break;
     case "import-package":
       await cmdImportPackage(dbPath);
@@ -759,6 +763,73 @@ async function cmdExport(dbPath: string): Promise<void> {
       console.log(values.json ? JSON.stringify({ output: values.output }) : `Exported to ${values.output}`);
     } else {
       console.log(JSON.stringify(result, null, 2));
+    }
+  } finally {
+    store.close();
+  }
+}
+
+async function cmdExportTrainingData(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      "run-id": { type: "string" },
+      scenario: { type: "string" },
+      "all-runs": { type: "boolean" },
+      output: { type: "string", short: "o" },
+      "include-matches": { type: "boolean" },
+      "kept-only": { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only]");
+    console.log("\nExports training data as JSONL with Python-compatible snake_case fields.");
+    console.log("\nUnsupported Python commands: train, trigger-distillation (require MLX/CUDA backends)");
+    process.exit(0);
+  }
+
+  if (!values["run-id"] && !values.scenario) {
+    console.error("Error: --run-id or --scenario is required");
+    process.exit(1);
+  }
+
+  if (values.scenario && !values["run-id"] && !values["all-runs"]) {
+    console.error("Error: --all-runs is required with --scenario");
+    process.exit(1);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { ArtifactStore } = await import("../knowledge/artifact-store.js");
+  const { exportTrainingData } = await import("../training/export.js");
+
+  const settings = loadSettings();
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+  const artifacts = new ArtifactStore({
+    runsRoot: resolve(settings.runsRoot),
+    knowledgeRoot: resolve(settings.knowledgeRoot),
+  });
+
+  try {
+    const records = exportTrainingData(store, artifacts, {
+      runId: values["run-id"],
+      scenario: values.scenario,
+      includeMatches: values["include-matches"],
+      keptOnly: values["kept-only"],
+    });
+
+    const jsonl = records.map((r) => JSON.stringify(r)).join("\n");
+
+    if (values.output) {
+      const { writeFileSync, mkdirSync } = await import("node:fs");
+      mkdirSync(dirname(values.output), { recursive: true });
+      writeFileSync(values.output, jsonl + "\n", "utf-8");
+      console.log(JSON.stringify({ output: values.output, records: records.length }));
+    } else {
+      console.log(jsonl);
     }
   } finally {
     store.close();
