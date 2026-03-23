@@ -135,6 +135,13 @@ export interface CreateProviderOpts {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  piCommand?: string;
+  piTimeout?: number;
+  piWorkspace?: string;
+  piModel?: string;
+  piRpcEndpoint?: string;
+  piRpcApiKey?: string;
+  piRpcSessionPersistence?: boolean;
 }
 
 export function createProvider(opts: CreateProviderOpts): LLMProvider {
@@ -182,12 +189,22 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
   }
 
   if (type === "pi") {
-    const runtime = new PiCLIRuntime(new PiCLIConfig({ model: opts.model }));
-    return new RuntimeBridgeProvider(runtime as any, opts.model ?? "pi-default");
+    const resolvedModel = opts.model ?? opts.piModel;
+    const runtime = new PiCLIRuntime(new PiCLIConfig({
+      piCommand: opts.piCommand,
+      timeout: opts.piTimeout,
+      workspace: opts.piWorkspace,
+      model: resolvedModel,
+    }));
+    return new RuntimeBridgeProvider(runtime as any, resolvedModel ?? "pi-default");
   }
 
   if (type === "pi-rpc") {
-    const runtime = new PiRPCRuntime(new PiRPCConfig({ endpoint: opts.baseUrl, apiKey: opts.apiKey }));
+    const runtime = new PiRPCRuntime(new PiRPCConfig({
+      endpoint: opts.piRpcEndpoint ?? opts.baseUrl,
+      apiKey: opts.piRpcApiKey ?? opts.apiKey,
+      sessionPersistence: opts.piRpcSessionPersistence,
+    }));
     return new RuntimeBridgeProvider(runtime as any, opts.model ?? "pi-rpc-default");
   }
 
@@ -289,13 +306,16 @@ export function resolveProviderConfig(overrides: Partial<ProviderConfig> = {}): 
   return { providerType: type, apiKey, baseUrl, model };
 }
 
-export function createConfiguredProvider(overrides: Partial<ProviderConfig> = {}): {
+export function createConfiguredProvider(
+  overrides: Partial<ProviderConfig> = {},
+  settings: Partial<RoleProviderSettings> = {},
+): {
   provider: LLMProvider;
   config: ProviderConfig;
 } {
   const config = resolveProviderConfig(overrides);
   return {
-    provider: createProvider(config),
+    provider: createProvider(withRuntimeSettings(config, settings)),
     config,
   };
 }
@@ -313,6 +333,13 @@ export interface RoleProviderSettings {
   modelCoach?: string;
   modelArchitect?: string;
   modelCurator?: string;
+  piCommand?: string;
+  piTimeout?: number;
+  piWorkspace?: string;
+  piModel?: string;
+  piRpcEndpoint?: string;
+  piRpcApiKey?: string;
+  piRpcSessionPersistence?: boolean;
 }
 
 export interface RoleProviderBundle {
@@ -320,6 +347,22 @@ export interface RoleProviderBundle {
   defaultConfig: ProviderConfig;
   roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
   roleModels: Partial<Record<GenerationRole, string>>;
+}
+
+function withRuntimeSettings(
+  config: ProviderConfig,
+  settings: Partial<RoleProviderSettings> = {},
+): CreateProviderOpts {
+  return {
+    ...config,
+    piCommand: settings.piCommand,
+    piTimeout: settings.piTimeout,
+    piWorkspace: settings.piWorkspace,
+    piModel: settings.piModel,
+    piRpcEndpoint: settings.piRpcEndpoint,
+    piRpcApiKey: settings.piRpcApiKey,
+    piRpcSessionPersistence: settings.piRpcSessionPersistence,
+  };
 }
 
 export function buildRoleProviderBundle(
@@ -330,7 +373,7 @@ export function buildRoleProviderBundle(
     ...overrides,
     providerType: overrides.providerType ?? settings.agentProvider,
   });
-  const defaultProvider = createProvider(defaultConfig);
+  const defaultProvider = createProvider(withRuntimeSettings(defaultConfig, settings));
 
   const roleConfigs: Record<GenerationRole, ProviderConfig> = {
     competitor: resolveProviderConfig({
@@ -364,11 +407,11 @@ export function buildRoleProviderBundle(
     defaultProvider,
     defaultConfig,
     roleProviders: {
-      competitor: createProvider(roleConfigs.competitor),
-      analyst: createProvider(roleConfigs.analyst),
-      coach: createProvider(roleConfigs.coach),
-      architect: createProvider(roleConfigs.architect),
-      curator: createProvider(roleConfigs.curator),
+      competitor: createProvider(withRuntimeSettings(roleConfigs.competitor, settings)),
+      analyst: createProvider(withRuntimeSettings(roleConfigs.analyst, settings)),
+      coach: createProvider(withRuntimeSettings(roleConfigs.coach, settings)),
+      architect: createProvider(withRuntimeSettings(roleConfigs.architect, settings)),
+      curator: createProvider(withRuntimeSettings(roleConfigs.curator, settings)),
     },
     roleModels: {
       competitor: roleConfigs.competitor.model,

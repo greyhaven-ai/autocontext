@@ -112,9 +112,10 @@ async function main(): Promise<void> {
 
 async function getProvider(overrides: { providerType?: string; apiKey?: string; baseUrl?: string; model?: string } = {}) {
   const { createConfiguredProvider } = await import("../providers/index.js");
+  const { loadSettings } = await import("../config/index.js");
 
   try {
-    const { provider, config } = createConfiguredProvider(overrides);
+    const { provider, config } = createConfiguredProvider(overrides, loadSettings());
     const model = config.model ?? provider.defaultModel();
     return { provider, model };
   } catch (err) {

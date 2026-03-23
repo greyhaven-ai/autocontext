@@ -70,13 +70,15 @@ export class PiCLIRuntime {
     if (this.config.model) {
       args.push("--model", this.config.model);
     }
-    args.push(prompt);
+    if (this.config.workspace) {
+      args.push("--workspace", this.config.workspace);
+    }
 
     try {
       const stdout = execFileSync(args[0], args.slice(1), {
+        input: prompt,
         timeout: this.config.timeout * 1000,
         encoding: "utf-8",
-        cwd: this.config.workspace || undefined,
         stdio: ["pipe", "pipe", "pipe"],
       });
       return this.parseOutput(stdout);

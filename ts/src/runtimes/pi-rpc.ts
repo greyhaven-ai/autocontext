@@ -57,7 +57,7 @@ export class PiRPCRuntime {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.config.timeout * 1000);
 
-      const res = await fetch(`${this.config.endpoint}/generate`, {
+      const res = await fetch(`${this.config.endpoint}/v1/generate`, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
