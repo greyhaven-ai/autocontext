@@ -599,28 +599,28 @@ This starts the autocontext MCP server on stdio when Hermes connects.
 For safe Hermes exposure, consider allowing tools by category:
 
 **Read-only (safe for any operator):**
-- `autocontext_list_scenarios` — Browse available scenarios
-- `autocontext_describe_scenario` — Get scenario details, rules, strategy interface
-- `autocontext_read_playbook` — Read accumulated strategy playbook
-- `autocontext_read_hints` — Read competitor hints
-- `autocontext_read_tools` — Read architect-generated tools
-- `autocontext_list_runs` — List past runs
-- `autocontext_run_status` — Check run progress
-- `autocontext_read_trajectory` — Score trajectory for a run
-- `autocontext_search_strategies` — Search past strategies by keyword
-- `autocontext_list_solved` — List scenarios with exported knowledge
+- `mcp_autocontext_list_scenarios` — Browse available scenarios
+- `mcp_autocontext_describe_scenario` — Get scenario details, rules, strategy interface
+- `mcp_autocontext_read_playbook` — Read accumulated strategy playbook
+- `mcp_autocontext_read_hints` — Read competitor hints
+- `mcp_autocontext_read_tools` — Read architect-generated tools
+- `mcp_autocontext_list_runs` — List past runs
+- `mcp_autocontext_run_status` — Check run progress
+- `mcp_autocontext_read_trajectory` — Score trajectory for a run
+- `mcp_autocontext_search_strategies` — Search past strategies by keyword
+- `mcp_autocontext_list_solved` — List scenarios with exported knowledge
 
 **Evaluation (stateless, safe):**
-- `autocontext_evaluate_output` — One-shot judge evaluation
-- `autocontext_validate_strategy` — Validate strategy JSON against scenario constraints
-- `autocontext_run_match` — Run a single match (deterministic)
-- `autocontext_run_tournament` — Run N matches with Elo scoring
+- `mcp_autocontext_evaluate_output` — One-shot judge evaluation
+- `mcp_autocontext_validate_strategy` — Validate strategy JSON against scenario constraints
+- `mcp_autocontext_run_match` — Run a single match (deterministic)
+- `mcp_autocontext_run_tournament` — Run N matches with Elo scoring
 
 **Write operations (require operator trust):**
-- `autocontext_run_replay` — Replay a generation
-- `autocontext_export_skill` — Export strategy package
-- `autocontext_solve_scenario` — Launch a solve job (long-running, creates artifacts)
-- `autocontext_sandbox_create` / `autocontext_sandbox_run` / `autocontext_sandbox_destroy` — Sandboxed execution
+- `mcp_autocontext_run_replay` — Replay a generation
+- `mcp_autocontext_export_skill` — Export strategy package
+- `mcp_autocontext_solve_scenario` — Launch a solve job (long-running, creates artifacts)
+- `mcp_autocontext_sandbox_create` / `mcp_autocontext_sandbox_run` / `mcp_autocontext_sandbox_destroy` — Sandboxed execution
 
 #### End-to-End Walkthrough
 
