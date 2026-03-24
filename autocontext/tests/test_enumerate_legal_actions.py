@@ -1,4 +1,4 @@
-"""Tests for ScenarioInterface.enumerate_legal_actions (MTS-84)."""
+"""Tests for ScenarioInterface.enumerate_legal_actions (AC-84)."""
 from __future__ import annotations
 
 from collections.abc import Mapping

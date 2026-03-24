@@ -249,7 +249,7 @@ class TestSettingsIntegration:
 
 
 # ---------------------------------------------------------------------------
-# Fallback parser tests (MTS-12)
+# Fallback parser tests (AC-12)
 # ---------------------------------------------------------------------------
 
 class TestJudgeFallbackParser:

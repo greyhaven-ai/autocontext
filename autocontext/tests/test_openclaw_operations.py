@@ -1,4 +1,4 @@
-"""Tests for OpenClaw MCP/API operations (MTS-191).
+"""Tests for OpenClaw MCP/API operations (AC-191).
 
 Tests for evaluate, validate, publish, fetch, distill-status MCP tools
 and corresponding REST endpoints.

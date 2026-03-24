@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "mts-tui",
+      "name": "autocontext-tui",
       "dependencies": {
         "ink": "^5.1.0",
         "ink-text-input": "^6.0.0",

@@ -1,4 +1,4 @@
-"""Tests for ImprovementLoop resilience to judge parse failures (MTS-13)."""
+"""Tests for ImprovementLoop resilience to judge parse failures (AC-13)."""
 
 from __future__ import annotations
 

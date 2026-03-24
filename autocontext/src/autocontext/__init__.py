@@ -1,4 +1,4 @@
-"""AutoContext control plane package."""
+"""autocontext control plane package."""
 
 from autocontext.sdk import AutoContext
 

@@ -1,4 +1,4 @@
-"""Integration test: 3-round improvement cycle (MTS-30).
+"""Integration test: 3-round improvement cycle (AC-30).
 
 Validates improvement loop: agent revises based on feedback, score improves.
 Uses mock task with improving scores across rounds.
@@ -53,7 +53,7 @@ class _ImprovingMockTask(AgentTaskInterface):
 
 
 class TestIntegrationImprovementCycle:
-    """MTS-30: 3-round improvement cycle with score improvement."""
+    """AC-30: 3-round improvement cycle with score improvement."""
 
     def test_three_rounds_complete(self) -> None:
         task = _ImprovingMockTask()

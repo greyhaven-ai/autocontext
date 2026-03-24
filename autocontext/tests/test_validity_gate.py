@@ -1,4 +1,4 @@
-"""Tests for ValidityGate — MTS-158: separate retry budget for invalid strategies."""
+"""Tests for ValidityGate — AC-158: separate retry budget for invalid strategies."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock

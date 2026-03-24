@@ -1,4 +1,4 @@
-"""REST API router for OpenClaw artifact operations (MTS-191)."""
+"""REST API router for OpenClaw artifact operations (AC-191)."""
 
 from __future__ import annotations
 

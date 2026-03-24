@@ -1,4 +1,4 @@
-"""Typed result models for the AutoContext SDK (AC-187).
+"""Typed result models for the autocontext SDK (AC-187).
 
 These Pydantic models provide structured return types for SDK operations,
 insulating callers from internal dict shapes.

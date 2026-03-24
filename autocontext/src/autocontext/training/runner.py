@@ -156,7 +156,7 @@ class TrainingRunner:
                 check=True,
             )
             subprocess.run(
-                ["git", "config", "user.name", "AutoContext Training"],
+                ["git", "config", "user.name", "autocontext Training"],
                 cwd=self.work_dir,
                 capture_output=True,
                 check=True,

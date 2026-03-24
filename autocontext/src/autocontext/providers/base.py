@@ -24,7 +24,7 @@ class LLMProvider(ABC):
     """Abstract base class for LLM providers.
 
     Implementations must provide `complete()` for synchronous calls.
-    The interface is intentionally simple — AutoContext only needs
+    The interface is intentionally simple — autocontext only needs
     (system_prompt, user_prompt) -> text for judging.
     """
 

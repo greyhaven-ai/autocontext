@@ -1,4 +1,4 @@
-"""Tests for AC-192: ClawHub skill wrapper for MTS scenarios and artifacts."""
+"""Tests for AC-192: ClawHub skill wrapper for autocontext scenarios and artifacts."""
 from __future__ import annotations
 
 import json

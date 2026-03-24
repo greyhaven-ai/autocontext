@@ -1,4 +1,4 @@
-"""Adapter building a harness PipelineEngine from AutoContext orchestrator components."""
+"""Adapter building a harness PipelineEngine from autocontext orchestrator components."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -15,7 +15,7 @@ RoleHandler = Callable[[str, str, dict[str, RoleExecution]], RoleExecution]
 
 
 def build_mts_dag() -> RoleDAG:
-    """Build the standard AutoContext 5-role DAG.
+    """Build the standard autocontext 5-role DAG.
 
     competitor -> translator -> analyst -> coach
                              -> architect (parallel with analyst; coach depends on analyst)

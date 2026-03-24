@@ -1,4 +1,4 @@
-"""Tests for training package import guards and CLI error handling (MTS-181)."""
+"""Tests for training package import guards and CLI error handling (AC-181)."""
 from __future__ import annotations
 
 import subprocess

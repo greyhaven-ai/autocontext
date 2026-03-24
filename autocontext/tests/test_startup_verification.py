@@ -1,4 +1,4 @@
-"""Tests for session startup verification (MTS-22)."""
+"""Tests for session startup verification (AC-22)."""
 from __future__ import annotations
 
 import json

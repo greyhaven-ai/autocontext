@@ -1,4 +1,4 @@
-"""Tests for named preset system (MTS-173).
+"""Tests for named preset system (AC-173).
 
 Replaces legacy conservative/aggressive/experimental presets with
 quick/standard/deep/rapid.

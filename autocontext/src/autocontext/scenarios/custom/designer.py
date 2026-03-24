@@ -93,7 +93,7 @@ _SCHEMA_EXAMPLE = """\
 }"""
 
 SCENARIO_DESIGNER_SYSTEM = (
-    "You are a scenario designer for AutoContext, a strategy evaluation system. "
+    "You are a scenario designer for autocontext, a strategy evaluation system. "
     "Given a natural language description of a game scenario, produce a "
     "structured ScenarioSpec JSON that defines strategy parameters, "
     "scoring components, constraints, and environment variables.\n\n"

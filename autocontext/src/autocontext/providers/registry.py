@@ -89,7 +89,7 @@ def create_provider(
 
 
 def get_provider(settings: AppSettings) -> LLMProvider:
-    """Create a judge provider from AutoContext settings.
+    """Create a judge provider from autocontext settings.
 
     Uses ``settings.judge_provider``, ``settings.judge_base_url``, and
     ``settings.judge_api_key``. Falls back to provider-specific env vars

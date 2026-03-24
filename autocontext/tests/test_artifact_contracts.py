@@ -1,4 +1,4 @@
-"""Tests for OpenClaw artifact contract schemas (MTS-194).
+"""Tests for OpenClaw artifact contract schemas (AC-194).
 
 RED phase: these tests define the expected interface for HarnessArtifact,
 PolicyArtifact, DistilledModelArtifact, and ArtifactManifest.

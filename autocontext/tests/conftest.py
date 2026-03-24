@@ -6,7 +6,7 @@ from autocontext.harness.orchestration.types import RoleSpec
 
 
 def make_base_dag() -> RoleDAG:
-    """Standard 5-role AutoContext DAG used across multiple test modules."""
+    """Standard 5-role autocontext DAG used across multiple test modules."""
     return RoleDAG([
         RoleSpec(name="competitor"),
         RoleSpec(name="translator", depends_on=("competitor",)),

@@ -1,4 +1,4 @@
-"""Tests for competitor refinement prompt (MTS-79)."""
+"""Tests for competitor refinement prompt (AC-79)."""
 
 from __future__ import annotations
 

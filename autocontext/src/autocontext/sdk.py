@@ -1,4 +1,4 @@
-"""Thin SDK client for programmatic AutoContext usage (AC-187).
+"""Thin SDK client for programmatic autocontext usage (AC-187).
 
 Provides a high-level ``AutoContext`` class that delegates to the same pure-function
 tool implementations used by the CLI and MCP server, returning typed result
@@ -27,7 +27,7 @@ from autocontext.sdk_models import EvaluateResult, MatchResult, SearchResult, Va
 
 
 class AutoContext:
-    """High-level SDK for programmatic AutoContext usage.
+    """High-level SDK for programmatic autocontext usage.
 
     Wraps the shared tool layer that the CLI and MCP server also use,
     exposing a small, stable API with typed return values.

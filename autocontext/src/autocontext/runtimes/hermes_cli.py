@@ -1,7 +1,7 @@
 """Hermes CLI runtime — wraps `hermes` for agent execution (AC-351).
 
 Uses Hermes's non-interactive mode as an agent runtime, capturing
-output and normalizing into AutoContext artifacts. Follows the same
+output and normalizing into autocontext artifacts. Follows the same
 pattern as CodexCLIRuntime and PiCLIRuntime.
 """
 

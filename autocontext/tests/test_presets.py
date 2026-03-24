@@ -1,4 +1,4 @@
-"""Tests for settings preset system (MTS-25, updated for MTS-173)."""
+"""Tests for settings preset system (AC-25, updated for AC-173)."""
 from __future__ import annotations
 
 import os

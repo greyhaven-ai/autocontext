@@ -1,4 +1,4 @@
-"""Smoke test: single-round judge eval (MTS-29).
+"""Smoke test: single-round judge eval (AC-29).
 
 Validates basic wiring: judge scores, parses, and returns correctly
 on a canned prompt+output with a mock provider.
@@ -24,9 +24,9 @@ class _MockProvider(LLMProvider):
         return "mock-v1"
 
 
-CANNED_PROMPT = "Write a one-paragraph summary of what AutoContext does"
+CANNED_PROMPT = "Write a one-paragraph summary of what autocontext does"
 CANNED_OUTPUT = (
-    "AutoContext is an iterative strategy generation system that uses multi-agent "
+    "autocontext is an iterative strategy generation system that uses multi-agent "
     "collaboration to evolve strategies through tournament matches and LLM "
     "judge evaluation with Elo-based progression gating."
 )
@@ -39,14 +39,14 @@ def _make_judge_response(
 ) -> str:
     data = {
         "score": score,
-        "reasoning": "The summary accurately captures the core AutoContext loop.",
+        "reasoning": "The summary accurately captures the core autocontext loop.",
         "dimensions": dims or {"accuracy": 0.9, "clarity": 0.85, "completeness": 0.8},
     }
     return f"<!-- JUDGE_RESULT_START -->\n{json.dumps(data)}\n<!-- JUDGE_RESULT_END -->"
 
 
 class TestSmokeJudgeEval:
-    """MTS-29: Validate judge returns valid result with score, dimensions, reasoning."""
+    """AC-29: Validate judge returns valid result with score, dimensions, reasoning."""
 
     def test_judge_returns_valid_result(self) -> None:
         provider = _MockProvider(_make_judge_response())
@@ -78,7 +78,7 @@ class TestSmokeJudgeEval:
         judge = LLMJudge(model="mock-v1", rubric=RUBRIC, provider=provider)
         result = judge.evaluate(CANNED_PROMPT, CANNED_OUTPUT)
         assert len(result.reasoning) > 0
-        assert "AutoContext" in result.reasoning
+        assert "autocontext" in result.reasoning
 
     def test_parse_succeeds_first_attempt(self) -> None:
         provider = _MockProvider(_make_judge_response())

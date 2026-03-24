@@ -1,4 +1,4 @@
-"""Tests for --preset CLI flag (MTS-175)."""
+"""Tests for --preset CLI flag (AC-175)."""
 from __future__ import annotations
 
 import os

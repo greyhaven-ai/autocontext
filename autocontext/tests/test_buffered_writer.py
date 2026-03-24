@@ -1,4 +1,4 @@
-"""Tests for buffered artifact writer (MTS-24)."""
+"""Tests for buffered artifact writer (AC-24)."""
 from __future__ import annotations
 
 import json

@@ -1,4 +1,4 @@
-"""Tests for othello enumerate_legal_actions (MTS-86)."""
+"""Tests for othello enumerate_legal_actions (AC-86)."""
 
 from __future__ import annotations
 

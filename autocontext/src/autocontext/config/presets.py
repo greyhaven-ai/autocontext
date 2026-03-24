@@ -1,4 +1,4 @@
-"""Settings preset definitions (MTS-173).
+"""Settings preset definitions (AC-173).
 
 Named presets: quick, standard, deep, rapid, long_run, short_run.
 Each preset is a dict of field_name -> default_value overrides.

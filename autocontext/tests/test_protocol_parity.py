@@ -1,6 +1,6 @@
 """Tests for protocol parity between server (Python) and TUI (TypeScript).
 
-MTS-142: Ensure the TUI protocol.ts is generated/validated from the server
+AC-142: Ensure the TUI protocol.ts is generated/validated from the server
 protocol.py JSON Schema, so protocol drift is caught automatically.
 """
 from __future__ import annotations
@@ -96,7 +96,7 @@ class TestProtocolGenerationScript:
 
 
 class TestScenarioErrorMsgStage:
-    """MTS-142 acceptance: ScenarioErrorMsg.stage is in the exported schema."""
+    """AC-142 acceptance: ScenarioErrorMsg.stage is in the exported schema."""
 
     def test_scenario_error_has_stage_field(self) -> None:
         schema = export_json_schema()

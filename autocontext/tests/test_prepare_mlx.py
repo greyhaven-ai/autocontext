@@ -1,4 +1,4 @@
-"""Tests for autoresearch prepare.py data loading and assessment oracle (MTS-177).
+"""Tests for autoresearch prepare.py data loading and assessment oracle (AC-177).
 
 Tests involving MLX are skipped when MLX is not installed (CI-safe).
 """

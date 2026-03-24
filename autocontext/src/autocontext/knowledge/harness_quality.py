@@ -1,4 +1,4 @@
-"""Harness quality signal computation for Curator evaluation (MTS-93)."""
+"""Harness quality signal computation for Curator evaluation (AC-93)."""
 from __future__ import annotations
 
 from dataclasses import dataclass

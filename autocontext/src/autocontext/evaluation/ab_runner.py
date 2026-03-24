@@ -1,4 +1,4 @@
-"""A/B testing framework for AutoContext configuration comparison.
+"""A/B testing framework for autocontext configuration comparison.
 
 Inspired by Plankton's SWE-bench A/B testing with McNemar's test,
 randomized condition order, and abort criteria.
@@ -52,7 +52,7 @@ class ABTestResult:
 
 
 class ABTestRunner:
-    """Runs paired A/B tests comparing two AutoContext configurations."""
+    """Runs paired A/B tests comparing two autocontext configurations."""
 
     def __init__(self, config: ABTestConfig) -> None:
         self._config = config

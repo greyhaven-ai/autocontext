@@ -1,6 +1,6 @@
-# autoctx — AutoContext TypeScript Package
+# autoctx — autocontext TypeScript Package
 
-`autoctx` is the Node/TypeScript package for AutoContext. It provides the same major operator workflows as the Python package:
+`autoctx` is the Node/TypeScript package for autocontext. It provides the same major operator workflows as the Python package:
 
 - **Scenario execution**: run generation loops with tournament scoring and Elo progression
 - **Knowledge system**: versioned playbooks, score trajectories, session reports, dead-end tracking

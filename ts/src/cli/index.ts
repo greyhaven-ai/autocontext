@@ -261,7 +261,7 @@ async function cmdTui(dbPath: string): Promise<void> {
 
   const headless = values.headless || !process.stdout.isTTY;
   if (headless) {
-    console.log(`AutoContext interactive server listening at ${server.url}`);
+    console.log(`autocontext interactive server listening at ${server.url}`);
     console.log(`Scenarios: ${mgr.listScenarios().join(", ")}`);
     await new Promise<void>((resolve) => {
       const cleanup = () => {
@@ -582,7 +582,7 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
   const server = new InteractiveServer({ runManager: mgr, port, host });
   await server.start();
 
-  console.log(`AutoContext server listening at http://${host}:${server.port}`);
+  console.log(`autocontext server listening at http://${host}:${server.port}`);
   console.log(`API: http://${host}:${server.port}/api/runs`);
   console.log(`WebSocket: ws://${host}:${server.port}/ws/interactive`);
   console.log(`Scenarios: ${mgr.listScenarios().join(", ")}`);

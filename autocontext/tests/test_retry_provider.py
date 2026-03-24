@@ -1,4 +1,4 @@
-"""Tests for RetryProvider — provider error recovery (MTS-15)."""
+"""Tests for RetryProvider — provider error recovery (AC-15)."""
 
 from __future__ import annotations
 
