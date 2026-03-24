@@ -20,12 +20,14 @@ export interface InteractiveServerOpts {
   runManager: RunManager;
   port?: number;
   host?: string;
+  dashboardDirOverride?: string;
 }
 
 export class InteractiveServer {
   private readonly runManager: RunManager;
   private readonly host: string;
   private readonly requestedPort: number;
+  private readonly dashboardDirOverride?: string;
   private httpServer: HttpServer | null = null;
   private wsServer: WebSocketServer | null = null;
   private boundPort = 0;
@@ -34,6 +36,7 @@ export class InteractiveServer {
     this.runManager = opts.runManager;
     this.host = opts.host ?? "127.0.0.1";
     this.requestedPort = opts.port ?? 8000;
+    this.dashboardDirOverride = opts.dashboardDirOverride;
   }
 
   get port(): number {
@@ -196,7 +199,20 @@ export class InteractiveServer {
       return;
     }
 
-    // 404 fallback
+    // 404 fallback — helpful message for dashboard URLs
+    if (url === "/" || url.startsWith("/dashboard")) {
+      json(404, {
+        error: "Not found",
+        message: "Dashboard files not found. Use the API endpoints (/api/runs, /api/scenarios, /health) or connect via WebSocket (/ws/interactive).",
+        api: {
+          health: "/health",
+          runs: "/api/runs",
+          scenarios: "/api/scenarios",
+          websocket: "/ws/interactive",
+        },
+      });
+      return;
+    }
     json(404, { error: "Not found" });
   }
 
@@ -239,14 +255,21 @@ export class InteractiveServer {
   }
 
   private dashboardDir(): string {
-    return join(
-      dirname(fileURLToPath(import.meta.url)),
-      "..",
-      "..",
-      "..",
-      "autocontext",
-      "dashboard",
-    );
+    if (this.dashboardDirOverride !== undefined) {
+      return this.dashboardDirOverride;
+    }
+
+    // Look for dashboard relative to the package root (works in both
+    // monorepo dev and published npm package)
+    const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const candidates = [
+      join(packageRoot, "dashboard"),                    // ts/dashboard/ (bundled in npm)
+      join(packageRoot, "..", "autocontext", "dashboard"), // monorepo fallback
+    ];
+    for (const dir of candidates) {
+      if (existsSync(dir)) return dir;
+    }
+    return candidates[0]; // default to package-local path (will fail gracefully)
   }
 
   private withStore(fn: (store: SQLiteStore) => void): void {

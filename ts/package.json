@@ -8,6 +8,7 @@
   "files": [
     "README.md",
     "dist",
+    "dashboard",
     "migrations"
   ],
   "keywords": [

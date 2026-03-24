@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>autocontext Dashboard</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #e2e8f0; }
+      h1, h2 { margin: 0 0 12px 0; }
+      .row { display: flex; gap: 16px; align-items: flex-start; }
+      .card { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 12px; width: 100%; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 6px 8px; border-bottom: 1px solid #1f2937; text-align: left; font-size: 13px; }
+      pre { white-space: pre-wrap; background: #020617; border: 1px solid #1f2937; padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; }
+      button, input { background: #1f2937; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 8px; }
+      .controls { margin-bottom: 10px; display: flex; gap: 8px; }
+      .hero { margin-bottom: 16px; }
+      .ascii-banner { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 7.5px; line-height: 1.15; color: #67e8f9; white-space: pre; overflow-x: auto; margin: 0 0 4px 0; padding: 12px 0; letter-spacing: 0.5px; }
+      .ascii-tagline { font-family: 'SF Mono', monospace; font-size: 11px; color: #475569; letter-spacing: 2px; margin: 0 0 16px 0; }
+      .whats-new { max-width: 760px; }
+      .whats-new ul { margin: 0; padding-left: 20px; color: #cbd5e1; }
+      .whats-new li { margin: 0 0 6px 0; }
+    </style>
+  </head>
+  <body>
+    <!-- autocontext-readme-hero:start -->
+    <section class="hero">
+      <pre class="ascii-banner">                          .                                                 .                             .
+                        .o8                                               .o8                           .o8
+ .oooo.   oooo  oooo  .o888oo  .ooooo.   .ooooo.   .ooooo.  ooo. .oo.   .o888oo  .ooooo.  oooo    ooo .o888oo
+`P  )88b  `888  `888    888   d88' `88b d88' `"Y8 d88' `88b `888P"Y88b    888   d88' `88b  `88b..8P'    888
+ .oP"888   888   888    888   888   888 888       888   888  888   888    888   888ooo888    Y888'      888
+d8(  888   888   888    888 . 888   888 888   .o8 888   888  888   888    888 . 888    .o  .o8"'88b     888 .
+`Y888""8o  `V88V"V8P'   "888" `Y8bod8P' `Y8bod8P' `Y8bod8P' o888o o888o   "888" `Y8bod8P' o88'   888o   "888"</pre>
+      <p class="ascii-tagline">closed-loop control plane for agent improvement</p>
+      <div class="card whats-new">
+        <h2>What's New</h2>
+        <ul>
+          <li>GEPA-inspired ASI/Pareto optimizer wired into improvement loop</li>
+          <li>Component sensitivity profiling and credit assignment</li>
+          <li>Pluggable scoring backends with Elo and Glicko support</li>
+          <li>Novelty exploration and multi-basin playbook branching</li>
+          <li>Cost-aware loop control and long-run presets</li>
+        </ul>
+      </div>
+    </section>
+<!-- autocontext-readme-hero:end -->
+    <div class="row">
+      <div class="card">
+        <h2>Runs</h2>
+        <div class="controls">
+          <button id="refreshRuns">Refresh</button>
+          <input id="runIdInput" placeholder="run_id for status/replay" />
+          <input id="genInput" type="number" min="1" value="1" />
+          <button id="loadStatus">Load Status</button>
+          <button id="loadReplay">Load Replay</button>
+        </div>
+        <table id="runsTable">
+          <thead><tr><th>Run ID</th><th>Scenario</th><th>Status</th><th>Created</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Run Status</h2>
+        <pre id="statusOut">{}</pre>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px;">
+      <div class="card">
+        <h2>Replay Viewer</h2>
+        <pre id="replayOut">{}</pre>
+      </div>
+      <div class="card">
+        <h2>Live Events</h2>
+        <pre id="eventsOut"></pre>
+      </div>
+    </div>
+    <script>
+      const runsTableBody = document.querySelector("#runsTable tbody");
+      const statusOut = document.getElementById("statusOut");
+      const replayOut = document.getElementById("replayOut");
+      const eventsOut = document.getElementById("eventsOut");
+      const runIdInput = document.getElementById("runIdInput");
+      const genInput = document.getElementById("genInput");
+
+      function appendCell(row, value) {
+        const td = document.createElement("td");
+        td.textContent = String(value ?? "");
+        row.appendChild(td);
+      }
+
+      async function refreshRuns() {
+        const res = await fetch("/api/runs");
+        const data = await res.json();
+        runsTableBody.replaceChildren();
+        for (const row of data) {
+          const tr = document.createElement("tr");
+          appendCell(tr, row.run_id);
+          appendCell(tr, row.scenario);
+          appendCell(tr, row.status);
+          appendCell(tr, row.created_at);
+          tr.addEventListener("click", () => {
+            runIdInput.value = row.run_id;
+          });
+          runsTableBody.appendChild(tr);
+        }
+      }
+
+      async function loadStatus() {
+        if (!runIdInput.value) return;
+        const res = await fetch(`/api/runs/${runIdInput.value}/status`);
+        const data = await res.json();
+        statusOut.textContent = JSON.stringify(data, null, 2);
+      }
+
+      async function loadReplay() {
+        if (!runIdInput.value) return;
+        const gen = Number(genInput.value || "1");
+        const res = await fetch(`/api/runs/${runIdInput.value}/replay/${gen}`);
+        const data = await res.json();
+        replayOut.textContent = JSON.stringify(data, null, 2);
+      }
+
+      function connectWs() {
+        const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/events`);
+        ws.onmessage = (evt) => {
+          eventsOut.textContent += evt.data + "\n";
+          eventsOut.scrollTop = eventsOut.scrollHeight;
+        };
+        ws.onclose = () => setTimeout(connectWs, 1500);
+      }
+
+      document.getElementById("refreshRuns").addEventListener("click", refreshRuns);
+      document.getElementById("loadStatus").addEventListener("click", loadStatus);
+      document.getElementById("loadReplay").addEventListener("click", loadReplay);
+      refreshRuns();
+      connectWs();
+    </script>
+  </body>
+</html>
