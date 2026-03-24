@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,7 @@ function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-dashboard-"));
 }
 
-async function createTestServer(dir: string) {
+async function createTestServer(dir: string, dashboardDirOverride?: string) {
   const { RunManager, InteractiveServer } = await import("../src/server/index.js");
   const { SQLiteStore } = await import("../src/storage/index.js");
 
@@ -35,7 +35,11 @@ async function createTestServer(dir: string) {
     knowledgeRoot: join(dir, "knowledge"),
     providerType: "deterministic",
   });
-  const server = new InteractiveServer({ runManager: mgr, port: 0 });
+  const server = new InteractiveServer({
+    runManager: mgr,
+    port: 0,
+    dashboardDirOverride,
+  });
   await server.start();
   return { server, baseUrl: `http://localhost:${server.port}` };
 }
@@ -57,37 +61,52 @@ describe("Dashboard route", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("GET / returns a useful response instead of crashing", async () => {
+  it("GET / serves bundled dashboard when available", async () => {
     const res = await fetch(`${baseUrl}/`);
-    // Should not be 500 — either serves dashboard or returns a helpful message
-    expect(res.status).not.toBe(500);
-    expect([200, 404].includes(res.status)).toBe(true);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("html");
+    expect(body).toContain("autocontext Dashboard");
   });
 
-  it("GET / serves dashboard or returns helpful fallback", async () => {
-    const res = await fetch(`${baseUrl}/`);
-    if (res.status === 200) {
-      // Dashboard was found (monorepo or bundled) — should be HTML
-      const body = await res.text();
-      expect(body).toContain("html");
-    } else {
-      // Dashboard not found — should return helpful JSON with API links
-      const body = await res.json();
-      expect(body).toHaveProperty("message");
-      expect(body.message).toContain("dashboard");
-      expect(body.api).toBeDefined();
-      expect(body.api.runs).toBe("/api/runs");
-    }
+  it("GET / and /dashboard/* return a helpful fallback when dashboard files are unavailable", async () => {
+    await server.stop();
+    const missingDashboardDir = join(dir, "missing-dashboard");
+    const restarted = await createTestServer(dir, missingDashboardDir);
+    server = restarted.server;
+    baseUrl = restarted.baseUrl;
+
+    const rootRes = await fetch(`${baseUrl}/`);
+    expect(rootRes.status).toBe(404);
+    const rootBody = await rootRes.json();
+    expect(rootBody.message).toContain("Dashboard files not found");
+    expect(rootBody.api.runs).toBe("/api/runs");
+
+    const dashboardRes = await fetch(`${baseUrl}/dashboard/index.html`);
+    expect(dashboardRes.status).toBe(404);
+    const dashboardBody = await dashboardRes.json();
+    expect(dashboardBody.message).toContain("Dashboard files not found");
+    expect(dashboardBody.api.websocket).toBe("/ws/interactive");
   });
 
-  it("GET /health still works regardless of dashboard state", async () => {
+  it("GET /health still works when dashboard files are unavailable", async () => {
+    await server.stop();
+    const restarted = await createTestServer(dir, join(dir, "missing-dashboard"));
+    server = restarted.server;
+    baseUrl = restarted.baseUrl;
+
     const res = await fetch(`${baseUrl}/health`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
   });
 
-  it("GET /api/runs still works regardless of dashboard state", async () => {
+  it("GET /api/runs still works when dashboard files are unavailable", async () => {
+    await server.stop();
+    const restarted = await createTestServer(dir, join(dir, "missing-dashboard"));
+    server = restarted.server;
+    baseUrl = restarted.baseUrl;
+
     const res = await fetch(`${baseUrl}/api/runs`);
     expect(res.status).toBe(200);
   });
