@@ -724,13 +724,14 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
       scenario: { type: "string", default: "grid_ctf" },
       runs: { type: "string", default: "3" },
       gens: { type: "string", default: "1" },
+      provider: { type: "string" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help) {
-    console.log("autoctx benchmark [--scenario <name>] [--runs N] [--gens N] [--json]");
+    console.log("autoctx benchmark [--scenario <name>] [--runs N] [--gens N] [--provider deterministic] [--json]");
     process.exit(0);
   }
 
@@ -750,7 +751,10 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
   const numRuns = parseInt(values.runs ?? "3", 10);
   const numGens = parseInt(values.gens ?? "1", 10);
   const settings = loadSettings();
-  const providerBundle = buildRoleProviderBundle(settings);
+  const providerBundle = buildRoleProviderBundle(
+    settings,
+    values.provider ? { providerType: values.provider } : {},
+  );
   const scores: number[] = [];
 
   for (let i = 0; i < numRuns; i++) {
