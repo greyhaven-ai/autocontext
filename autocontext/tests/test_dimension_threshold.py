@@ -1,4 +1,4 @@
-"""Tests for MTS-43: Dimension threshold gating + worst dimension tracking."""
+"""Tests for AC-43: Dimension threshold gating + worst dimension tracking."""
 
 from __future__ import annotations
 

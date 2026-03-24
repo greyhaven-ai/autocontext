@@ -1,4 +1,4 @@
-"""Tests for probe integration in GenerationPipeline (MTS-26)."""
+"""Tests for probe integration in GenerationPipeline (AC-26)."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

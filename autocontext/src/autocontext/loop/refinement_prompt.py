@@ -1,4 +1,4 @@
-"""Refinement prompt for tree search mode (MTS-79)."""
+"""Refinement prompt for tree search mode (AC-79)."""
 
 from __future__ import annotations
 

@@ -205,7 +205,7 @@ def autocontext_search_strategies(query: str, top_k: int = 5) -> str:
 
 @mcp.tool()
 def autocontext_solve_scenario(description: str, generations: int = 5) -> str:
-    """Submit a new problem for on-demand solving. MTS creates a scenario from the
+    """Submit a new problem for on-demand solving. autocontext creates a scenario from the
     description, runs strategy evolution, and produces a skill package.
     Returns a job_id for polling status."""
     from autocontext.knowledge.solver import SolveManager
@@ -392,7 +392,7 @@ def autocontext_export_agent_task_skill(task_name: str) -> str:
     return json.dumps(result, indent=2, default=str)
 
 
-# -- OpenClaw tools (MTS-191) --
+# -- OpenClaw tools (AC-191) --
 
 
 @mcp.tool()
@@ -494,7 +494,7 @@ def autocontext_update_distill_job(
 
 @mcp.tool()
 def autocontext_capabilities() -> str:
-    """Return capability metadata for this MTS instance."""
+    """Return capability metadata for this autocontext instance."""
     return json.dumps(tools.get_capabilities())
 
 
@@ -550,7 +550,7 @@ def autocontext_skill_scenario_artifacts(scenario_name: str) -> str:
 
 @mcp.tool()
 def autocontext_skill_manifest() -> str:
-    """Get the ClawHub skill manifest for this MTS instance.
+    """Get the ClawHub skill manifest for this autocontext instance.
     Returns name, version, capabilities, scenarios, and tool list."""
     return json.dumps(tools.skill_manifest(_get_ctx()))
 

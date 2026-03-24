@@ -607,7 +607,7 @@ class TestOrchestratorCompetitorRlm:
 
 
 # ===========================================================================
-# 6. RLM Trial Summary & Experiment Log Tests (MTS-100)
+# 6. RLM Trial Summary & Experiment Log Tests (AC-100)
 # ===========================================================================
 
 

@@ -1,4 +1,4 @@
-"""Tests for probe-based strategy refinement (MTS-26)."""
+"""Tests for probe-based strategy refinement (AC-26)."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

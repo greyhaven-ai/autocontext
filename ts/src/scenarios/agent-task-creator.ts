@@ -85,7 +85,7 @@ export class AgentTaskCreator {
   }
 
   /** Stop words excluded from derived names.
-   * NOTE: Keep in sync with mts/src/mts/scenarios/custom/agent_task_creator.py STOP_WORDS */
+   * NOTE: Keep in sync with autocontext/src/autocontext/scenarios/custom/agent_task_creator.py STOP_WORDS */
   static readonly STOP_WORDS = new Set([
     "a", "an", "the", "task", "where", "you", "with", "and", "or", "of", "for",
     "i", "want", "need", "make", "create", "build", "write", "develop", "implement",

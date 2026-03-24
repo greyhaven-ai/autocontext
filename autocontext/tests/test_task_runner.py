@@ -285,7 +285,7 @@ class TestTaskRunner:
         assert count == 0  # Should stop immediately
 
     def test_run_batch_processes_multiple(self, store):
-        """MTS-54: run_batch processes multiple tasks concurrently."""
+        """AC-54: run_batch processes multiple tasks concurrently."""
         provider = _MockProvider([
             "Output 1", _judge_response(0.95),
             "Output 2", _judge_response(0.95),
@@ -742,7 +742,7 @@ class TestSerialization:
 
 
 # ---------------------------------------------------------------------------
-# MTS-53: min_rounds wiring
+# AC-53: min_rounds wiring
 # ---------------------------------------------------------------------------
 
 class TestMinRoundsWiring:
@@ -791,7 +791,7 @@ class TestMinRoundsWiring:
 
 
 # ---------------------------------------------------------------------------
-# MTS-54: run_batch in run() loop
+# AC-54: run_batch in run() loop
 # ---------------------------------------------------------------------------
 
 class TestRunUsesRunBatch:
@@ -816,7 +816,7 @@ class TestRunUsesRunBatch:
 
 
 # ---------------------------------------------------------------------------
-# MTS-41: Dimension-aware revision
+# AC-41: Dimension-aware revision
 # ---------------------------------------------------------------------------
 
 class TestDimensionAwareRevision:

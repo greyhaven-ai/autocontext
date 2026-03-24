@@ -51,7 +51,7 @@ const EXAMPLE_SPEC = {
   revision_prompt: null,
 };
 
-export const AGENT_TASK_DESIGNER_SYSTEM = `You are a scenario designer for MTS, an agent evaluation system. \
+export const AGENT_TASK_DESIGNER_SYSTEM = `You are a scenario designer for autocontext, an agent evaluation system. \
 Given a natural language description, produce an AgentTaskSpec JSON \
 that defines a task prompt, evaluation rubric, output format, and judge model.
 

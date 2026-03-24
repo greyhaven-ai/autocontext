@@ -1,4 +1,4 @@
-"""Tests for RoleDAG mutation methods (MTS-27)."""
+"""Tests for RoleDAG mutation methods (AC-27)."""
 
 from __future__ import annotations
 

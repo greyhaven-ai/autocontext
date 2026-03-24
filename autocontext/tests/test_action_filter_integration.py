@@ -1,4 +1,4 @@
-"""Integration tests for action filter pipeline (MTS-89).
+"""Integration tests for action filter pipeline (AC-89).
 
 Tests the ActionFilterHarness with real scenarios and HarnessMode settings.
 Covers end-to-end flows for filter and verify modes.

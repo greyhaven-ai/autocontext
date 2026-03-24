@@ -1,4 +1,4 @@
-"""Tests for buffered artifact integration (MTS-24)."""
+"""Tests for buffered artifact integration (AC-24)."""
 from __future__ import annotations
 
 from pathlib import Path

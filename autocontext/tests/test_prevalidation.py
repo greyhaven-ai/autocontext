@@ -554,7 +554,7 @@ class TestPipelineWiring:
 
 
 # ---------------------------------------------------------------------------
-# 8. Dead-end recording from pre-validation failures (MTS-107)
+# 8. Dead-end recording from pre-validation failures (AC-107)
 # ---------------------------------------------------------------------------
 
 

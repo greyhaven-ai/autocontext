@@ -1,4 +1,4 @@
-"""Tests for context budget management (MTS-21)."""
+"""Tests for context budget management (AC-21)."""
 from __future__ import annotations
 
 import autocontext.scenarios  # noqa: F401  # pre-import to avoid circular import through prompts.__init__

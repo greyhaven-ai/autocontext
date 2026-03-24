@@ -1,4 +1,4 @@
-"""End-to-end smoke test — exercises the full MTS Phase A stack with a real provider.
+"""End-to-end smoke test — exercises the full autocontext Phase A stack with a real provider.
 
 Tests:
 1. AnthropicProvider.complete() — real API call
@@ -16,14 +16,14 @@ from pathlib import Path
 # Ensure we import from this repo
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from mts.providers.anthropic import AnthropicProvider
-from mts.providers.registry import create_provider
-from mts.execution.judge import LLMJudge
-from mts.execution.task_runner import TaskRunner, enqueue_task
-from mts.storage.sqlite_store import SQLiteStore
-from mts.notifications.callback import CallbackNotifier
-from mts.notifications.base import EventType
-from mts.runtimes.direct_api import DirectAPIRuntime
+from autocontext.providers.anthropic import AnthropicProvider
+from autocontext.providers.registry import create_provider
+from autocontext.execution.judge import LLMJudge
+from autocontext.execution.task_runner import TaskRunner, enqueue_task
+from autocontext.storage.sqlite_store import SQLiteStore
+from autocontext.notifications.callback import CallbackNotifier
+from autocontext.notifications.base import EventType
+from autocontext.runtimes.direct_api import DirectAPIRuntime
 
 
 def section(title: str):
@@ -40,7 +40,7 @@ def main():
     provider = create_provider("anthropic", model="claude-sonnet-4-20250514")
     result = provider.complete(
         system_prompt="You are a helpful assistant. Reply in exactly one sentence.",
-        user_prompt="What is MTS (Monitoring The Situation)?",
+        user_prompt="What is autocontext?",
     )
     print(f"  Model: {result.model}")
     print(f"  Response: {result.text[:150]}...")

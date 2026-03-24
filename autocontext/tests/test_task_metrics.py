@@ -1,4 +1,4 @@
-"""Tests for per-task metrics tracking (MTS-55).
+"""Tests for per-task metrics tracking (AC-55).
 
 Verifies that ImprovementLoop results include:
 - duration_ms on ImprovementResult

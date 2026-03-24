@@ -1,4 +1,4 @@
-"""Tests for autoresearch program.md template rendering (MTS-178)."""
+"""Tests for autoresearch program.md template rendering (AC-178)."""
 from __future__ import annotations
 
 

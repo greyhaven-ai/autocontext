@@ -1,4 +1,4 @@
-"""Tests for ArtifactStore harness directory CRUD operations (MTS-73)."""
+"""Tests for ArtifactStore harness directory CRUD operations (AC-73)."""
 from __future__ import annotations
 
 from pathlib import Path

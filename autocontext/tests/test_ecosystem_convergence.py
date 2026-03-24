@@ -1,4 +1,4 @@
-"""Tests for ecosystem convergence detection (MTS-28)."""
+"""Tests for ecosystem convergence detection (AC-28)."""
 from __future__ import annotations
 
 from autocontext.loop.ecosystem_runner import compute_playbook_divergence, detect_oscillation

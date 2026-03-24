@@ -1,4 +1,4 @@
-"""Tests for ArtifactStore harness versioning (MTS-91)."""
+"""Tests for ArtifactStore harness versioning (AC-91)."""
 from __future__ import annotations
 
 import json

@@ -1,4 +1,4 @@
-"""Smoke test: single-round judge eval (MTS-29).
+"""Smoke test: single-round judge eval (AC-29).
 
 Validates basic wiring: judge scores, parses, and returns correctly
 on a canned prompt+output with a mock provider.
@@ -46,7 +46,7 @@ def _make_judge_response(
 
 
 class TestSmokeJudgeEval:
-    """MTS-29: Validate judge returns valid result with score, dimensions, reasoning."""
+    """AC-29: Validate judge returns valid result with score, dimensions, reasoning."""
 
     def test_judge_returns_valid_result(self) -> None:
         provider = _MockProvider(_make_judge_response())

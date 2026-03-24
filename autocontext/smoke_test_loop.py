@@ -12,10 +12,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from mts.providers.anthropic import AnthropicProvider
-from mts.execution.judge import LLMJudge, JudgeResult
-from mts.execution.improvement_loop import ImprovementLoop, ImprovementResult
-from mts.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
+from autocontext.providers.anthropic import AnthropicProvider
+from autocontext.execution.judge import LLMJudge, JudgeResult
+from autocontext.execution.improvement_loop import ImprovementLoop, ImprovementResult
+from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 
 class LinkedInPostTask(AgentTaskInterface):

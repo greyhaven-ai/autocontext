@@ -1,4 +1,4 @@
-"""Tests for harness quality signal computation (MTS-93)."""
+"""Tests for harness quality signal computation (AC-93)."""
 from __future__ import annotations
 
 from autocontext.harness.evaluation.types import EvaluationResult

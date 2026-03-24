@@ -1,4 +1,4 @@
-"""Tests for knowledge coherence verification (MTS-23)."""
+"""Tests for knowledge coherence verification (AC-23)."""
 from __future__ import annotations
 
 from pathlib import Path

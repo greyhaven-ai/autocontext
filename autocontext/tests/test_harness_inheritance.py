@@ -1,4 +1,4 @@
-"""Tests for harness inheritance in ArtifactStore lifecycle (MTS-92)."""
+"""Tests for harness inheritance in ArtifactStore lifecycle (AC-92)."""
 from __future__ import annotations
 
 from pathlib import Path

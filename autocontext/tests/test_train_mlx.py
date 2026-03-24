@@ -1,4 +1,4 @@
-"""Tests for MLX GPT training model (MTS-176).
+"""Tests for MLX GPT training model (AC-176).
 
 All tests are skipped when MLX is not installed (CI-safe).
 Note: mx.eval() is MLX's lazy evaluation trigger, not Python's eval().

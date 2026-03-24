@@ -179,7 +179,7 @@ export function InteractiveTui({ manager, serverUrl }: InteractiveTuiProps) {
   return (
     <Box flexDirection="column">
       <Box borderStyle="round" paddingX={1} flexDirection="column">
-        <Text bold>AutoContext Interactive TUI</Text>
+        <Text bold>autocontext Interactive TUI</Text>
         <Text>server: {serverUrl}</Text>
         <Text>
           run: {state.runId ?? "none"} • scenario: {state.scenario ?? "none"} • status: {statusText}

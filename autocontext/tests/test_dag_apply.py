@@ -1,4 +1,4 @@
-"""Tests for applying DAG changes in the orchestrator (MTS-27)."""
+"""Tests for applying DAG changes in the orchestrator (AC-27)."""
 from __future__ import annotations
 
 from conftest import make_base_dag
