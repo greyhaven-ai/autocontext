@@ -284,7 +284,13 @@ class SimulationInterface(ScenarioInterface):
         del player_id
         plan = actions.get("actions")
         if not isinstance(plan, list):
-            return False, "strategy must contain an 'actions' list"
+            # Coerce single-action dict into actions-list wrapper (AC-376).
+            # LLMs sometimes return {"name": "...", "parameters": {...}} instead
+            # of the required {"actions": [...]}.
+            if isinstance(actions.get("name"), str):
+                plan = [dict(actions)]
+            else:
+                return False, "strategy must contain an 'actions' list"
         available_names = {spec.name for spec in self.get_available_actions(dict(state))}
         for idx, raw_action in enumerate(plan):
             if not isinstance(raw_action, Mapping):
