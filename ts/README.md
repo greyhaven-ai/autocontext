@@ -80,7 +80,13 @@ autoctx run --scenario grid_ctf --json
 # Ollama (local)
 AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run --scenario grid_ctf --json
 
-# Hermes gateway
+# Hermes (via OpenAI-compatible gateway)
+AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
+AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
+AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
+autoctx run --scenario grid_ctf --json
+
+# Hermes shortcut provider (same gateway path, Hermes defaults)
 AUTOCONTEXT_AGENT_PROVIDER=hermes \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 autoctx run --scenario grid_ctf --json
