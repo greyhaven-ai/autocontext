@@ -280,10 +280,18 @@ class SimulationInterface(ScenarioInterface):
             constraints=[f"max_steps={self.max_steps()}"],
         )
 
+    def _extract_action_plan(self, actions: Mapping[str, Any]) -> list[Any] | None:
+        plan = actions.get("actions")
+        if isinstance(plan, list):
+            return plan
+        if "actions" not in actions and isinstance(actions.get("name"), str):
+            return [dict(actions)]
+        return None
+
     def validate_actions(self, state: Mapping[str, Any], player_id: str, actions: Mapping[str, Any]) -> tuple[bool, str]:
         del player_id
-        plan = actions.get("actions")
-        if not isinstance(plan, list):
+        plan = self._extract_action_plan(actions)
+        if plan is None:
             return False, "strategy must contain an 'actions' list"
         available_names = {spec.name for spec in self.get_available_actions(dict(state))}
         for idx, raw_action in enumerate(plan):
@@ -312,8 +320,8 @@ class SimulationInterface(ScenarioInterface):
     def _execute_plan(self, state: dict[str, Any], actions: Mapping[str, Any]) -> tuple[dict[str, Any], ActionTrace]:
         current_state = dict(state)
         records: list[ActionRecord] = []
-        plan = actions.get("actions", [])
-        if not isinstance(plan, list):
+        plan = self._extract_action_plan(actions)
+        if plan is None:
             return current_state, ActionTrace(records=[])
         for idx, raw_action in enumerate(plan[: self.max_steps()]):
             if not isinstance(raw_action, Mapping):
