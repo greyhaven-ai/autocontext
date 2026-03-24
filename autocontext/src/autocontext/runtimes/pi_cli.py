@@ -55,7 +55,7 @@ class PiCLIRuntime(AgentRuntime):
         full_prompt = prompt
         if system:
             full_prompt = f"{system}\n\n{prompt}"
-        args = self._build_args()
+        args = self._build_args(full_prompt)
         return self._invoke(full_prompt, args)
 
     def revise(
@@ -75,21 +75,26 @@ class PiCLIRuntime(AgentRuntime):
         full_prompt = revision_prompt
         if system:
             full_prompt = f"{system}\n\n{revision_prompt}"
-        args = self._build_args()
+        args = self._build_args(full_prompt)
         return self._invoke(full_prompt, args)
 
-    def _build_args(self) -> list[str]:
-        """Build the pi CLI argument list."""
+    def _build_args(self, prompt: str) -> list[str]:
+        """Build the pi CLI argument list.
+
+        Uses --print for one-shot mode per Pi's documented interface.
+        Workspace is handled via subprocess cwd (Pi has no --workspace flag).
+        """
         pi = self._pi_path or self._config.pi_command
         args = [pi, "--print"]
 
         if self._config.model:
             args.extend(["--model", self._config.model])
 
-        if self._config.workspace:
-            args.extend(["--workspace", self._config.workspace])
+        # NOTE: Pi does not have a --workspace CLI flag.
+        # Workspace is passed as subprocess cwd instead (see _invoke).
 
         args.extend(self._config.extra_args)
+        args.append(prompt)
         return args
 
     def _invoke(self, prompt: str, args: list[str]) -> AgentOutput:
@@ -100,10 +105,10 @@ class PiCLIRuntime(AgentRuntime):
         try:
             result = subprocess.run(
                 args,
-                input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=self._config.timeout,
+                cwd=self._config.workspace or None,
             )
         except subprocess.TimeoutExpired:
             logger.error("pi CLI timed out after %.0fs", self._config.timeout)

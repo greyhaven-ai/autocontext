@@ -1,7 +1,13 @@
-"""Tests for AC-225: Spike Pi RPC/session integration."""
+"""Tests for Pi RPC runtime — stdin/stdout JSONL protocol (AC-375).
+
+Updated from the original AC-225 HTTP-based tests to match Pi's
+actual documented RPC protocol: subprocess communication over
+stdin/stdout with JSONL framing.
+"""
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 from autocontext.agents.provider_bridge import RuntimeBridgeClient, create_role_client
@@ -12,11 +18,9 @@ from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
 # PiRPCConfig defaults
 # ---------------------------------------------------------------------------
 
-
 def test_config_defaults() -> None:
     c = PiRPCConfig()
-    assert c.endpoint == "http://localhost:3284"
-    assert c.api_key == ""
+    assert c.pi_command == "pi"
     assert c.timeout == 120.0
     assert c.session_persistence is True
     assert c.branch_on_retry is True
@@ -26,7 +30,6 @@ def test_config_defaults() -> None:
 # Settings fields
 # ---------------------------------------------------------------------------
 
-
 def test_settings_pi_rpc_fields() -> None:
     s = AppSettings()
     assert s.pi_rpc_endpoint == ""
@@ -35,94 +38,78 @@ def test_settings_pi_rpc_fields() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PiRPCRuntime.generate() — mocked HTTP
+# PiRPCRuntime build_args
 # ---------------------------------------------------------------------------
 
+def test_build_args_includes_mode_rpc() -> None:
+    runtime = PiRPCRuntime()
+    args = runtime._build_args()
+    assert "--mode" in args
+    assert "rpc" in args
+
+
+def test_build_args_includes_model() -> None:
+    runtime = PiRPCRuntime(PiRPCConfig(model="test-model"))
+    args = runtime._build_args()
+    assert "--model" in args
+    assert "test-model" in args
+
+
+def test_build_args_no_session() -> None:
+    runtime = PiRPCRuntime(PiRPCConfig(session_persistence=False))
+    args = runtime._build_args()
+    assert "--no-session" in args
+
+
+# ---------------------------------------------------------------------------
+# PiRPCRuntime.generate() — mocked subprocess
+# ---------------------------------------------------------------------------
 
 def test_generate_success() -> None:
-    runtime = PiRPCRuntime(PiRPCConfig(endpoint="http://mock:3284"))
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"result": "generated text", "model": "pi-rpc", "session_id": "s1"}
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        output = runtime.generate("test prompt", system="sys prompt")
-    assert output.text == "generated text"
-    assert output.model == "pi-rpc"
-    assert output.session_id == "s1"
-    call_kwargs = mock_post.call_args
-    payload = call_kwargs[1]["json"]
-    assert payload["prompt"] == "test prompt"
-    assert payload["system"] == "sys prompt"
+    """generate() sends JSONL command and parses response."""
+    runtime = PiRPCRuntime()
+    rpc_response = json.dumps({
+        "type": "agent_end",
+        "messages": [{"role": "assistant", "content": "Strategy analysis complete."}],
+    })
+    completed = MagicMock(returncode=0, stdout=rpc_response + "\n", stderr="")
+    with patch("subprocess.run", return_value=completed):
+        output = runtime.generate("Analyze this strategy")
+    assert output.text == "Strategy analysis complete."
 
 
 def test_generate_timeout() -> None:
-    import httpx
+    """generate() handles subprocess timeout gracefully."""
+    import subprocess as sp
 
-    runtime = PiRPCRuntime(PiRPCConfig(endpoint="http://mock:3284"))
-    with patch("httpx.post", side_effect=httpx.TimeoutException("timeout")):
+    runtime = PiRPCRuntime()
+    with patch("subprocess.run", side_effect=sp.TimeoutExpired("pi", 120)):
         output = runtime.generate("test")
+    assert output.text == ""
     assert output.metadata.get("error") == "timeout"
 
 
-# ---------------------------------------------------------------------------
-# PiRPCRuntime.revise() — mocked HTTP
-# ---------------------------------------------------------------------------
-
-
 def test_revise_success() -> None:
-    runtime = PiRPCRuntime(PiRPCConfig(endpoint="http://mock:3284", branch_on_retry=False))
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"result": "revised", "model": "pi"}
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("httpx.post", return_value=mock_response):
-        output = runtime.revise("task", "old output", "fix it")
-    assert output.text == "revised"
-
-
-# ---------------------------------------------------------------------------
-# Session management
-# ---------------------------------------------------------------------------
-
-
-def test_create_session() -> None:
-    runtime = PiRPCRuntime(PiRPCConfig(endpoint="http://mock:3284"))
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"session_id": "new-session-123"}
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("httpx.post", return_value=mock_response):
-        sid = runtime.create_session()
-    assert sid == "new-session-123"
-    assert runtime._current_session_id == "new-session-123"
-
-
-def test_branch_session() -> None:
-    runtime = PiRPCRuntime(PiRPCConfig(endpoint="http://mock:3284"))
-    runtime._current_session_id = "original"
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"branch_id": "branch-456"}
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("httpx.post", return_value=mock_response):
-        bid = runtime.branch_session("original")
-    assert bid == "branch-456"
-    assert runtime._current_session_id == "branch-456"
-
-
-def test_resume_session() -> None:
-    runtime = PiRPCRuntime(PiRPCConfig())
-    runtime.resume_session("existing-session")
-    assert runtime._current_session_id == "existing-session"
+    """revise() sends a revision prompt through generate()."""
+    runtime = PiRPCRuntime()
+    rpc_response = json.dumps({
+        "type": "agent_end",
+        "messages": [{"role": "assistant", "content": "Revised output."}],
+    })
+    completed = MagicMock(returncode=0, stdout=rpc_response + "\n", stderr="")
+    with patch("subprocess.run", return_value=completed):
+        output = runtime.revise("original", "prev output", "feedback")
+    assert output.text == "Revised output."
 
 
 # ---------------------------------------------------------------------------
-# create_role_client("pi-rpc")
+# create_role_client integration
 # ---------------------------------------------------------------------------
-
 
 def test_create_role_client_pi_rpc() -> None:
-    s = AppSettings(pi_rpc_endpoint="http://pi:3284", pi_rpc_api_key="key-123")
-    client = create_role_client("pi-rpc", s)
+    """create_role_client('pi-rpc') should return a RuntimeBridgeClient."""
+    settings = AppSettings()
+    with patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as MockRuntime:
+        MockRuntime.return_value = MagicMock()
+        client = create_role_client("pi-rpc", settings)
     assert isinstance(client, RuntimeBridgeClient)

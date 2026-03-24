@@ -343,14 +343,15 @@ class TestPiFailureModes:
         with pytest.raises(ValueError, match="unsupported agent provider"):
             build_client_from_settings(settings)
 
-    def test_pi_rpc_default_endpoint_when_not_configured(self) -> None:
-        """Pi RPC should fall back to localhost:3284 when endpoint is empty."""
-        settings = _settings(agent_provider="pi-rpc", pi_rpc_endpoint="")
+    def test_pi_rpc_uses_subprocess_not_http(self) -> None:
+        """Pi RPC should use subprocess (stdin/stdout JSONL), not HTTP."""
+        settings = _settings(agent_provider="pi-rpc")
         with patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as MockRuntime:
             MockRuntime.return_value = MagicMock()
             build_client_from_settings(settings)
         config = MockRuntime.call_args[0][0]
-        assert config.endpoint == "http://localhost:3284"
+        assert config.pi_command == "pi"
+        assert not hasattr(config, "endpoint") or getattr(config, "endpoint", "") == ""
 
     def test_pi_cli_runtime_unavailable_does_not_crash_construction(self) -> None:
         """Client construction should succeed even if pi binary is not on PATH."""

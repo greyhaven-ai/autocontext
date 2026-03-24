@@ -118,11 +118,9 @@ class TestPiRPCProvider:
         assert isinstance(client, RuntimeBridgeClient)
 
     def test_pi_rpc_passes_config_from_settings(self) -> None:
-        """Pi RPC config should use settings values for endpoint, api_key, session_persistence."""
+        """Pi RPC config should use settings values for session_persistence."""
         settings = _settings(
             agent_provider="pi-rpc",
-            pi_rpc_endpoint="http://10.0.0.1:4000",
-            pi_rpc_api_key="rpc-key-123",
             pi_rpc_session_persistence=False,
         )
         with patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as MockRuntime:
@@ -130,9 +128,8 @@ class TestPiRPCProvider:
             build_client_from_settings(settings)
         call_args = MockRuntime.call_args
         config = call_args[0][0] if call_args[0] else call_args[1].get("config")
-        assert config.endpoint == "http://10.0.0.1:4000"
-        assert config.api_key == "rpc-key-123"
         assert config.session_persistence is False
+        assert config.pi_command == "pi"
 
 
 # ---------------------------------------------------------------------------

@@ -596,8 +596,7 @@ def build_client_from_settings(
         from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
 
         rpc_config = PiRPCConfig(
-            endpoint=settings.pi_rpc_endpoint or "http://localhost:3284",
-            api_key=settings.pi_rpc_api_key,
+            pi_command=settings.pi_command,
             session_persistence=settings.pi_rpc_session_persistence,
         )
         return RuntimeBridgeClient(PiRPCRuntime(rpc_config))

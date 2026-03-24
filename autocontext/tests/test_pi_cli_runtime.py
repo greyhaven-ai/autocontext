@@ -141,20 +141,20 @@ def test_generate_nonzero_exit_with_stdout() -> None:
 def test_revise_builds_correct_prompt() -> None:
     runtime = PiCLIRuntime(PiCLIConfig())
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="revised output\n", stderr="")
-    captured_input = None
+    captured_args: list[str] = []
 
     def mock_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        nonlocal captured_input
-        captured_input = kwargs.get("input")
+        captured_args.extend(args)
         return mock_result
 
     with patch("subprocess.run", side_effect=mock_run), patch("shutil.which", return_value="/usr/bin/pi"):
         output = runtime.revise("original task", "old output", "fix the formatting")
     assert output.text == "revised output"
-    assert captured_input is not None
-    assert "original task" in captured_input
-    assert "old output" in captured_input
-    assert "fix the formatting" in captured_input
+    # The prompt (last arg) should contain all revision parts
+    prompt_arg = captured_args[-1]
+    assert "original task" in prompt_arg
+    assert "old output" in prompt_arg
+    assert "fix the formatting" in prompt_arg
 
 
 # ---------------------------------------------------------------------------
@@ -175,24 +175,25 @@ def test_generate_binary_not_found() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_build_args_includes_model_and_workspace() -> None:
+def test_build_args_includes_model_and_prompt() -> None:
     runtime = PiCLIRuntime(PiCLIConfig(model="pi-turbo", workspace="/tmp/ws", extra_args=["--verbose"]))
     with patch("shutil.which", return_value="/usr/bin/pi"):
-        args = runtime._build_args()
+        args = runtime._build_args("test prompt")
     assert "--model" in args
     assert "pi-turbo" in args
-    assert "--workspace" in args
-    assert "/tmp/ws" in args
     assert "--verbose" in args
+    assert "test prompt" in args
+    # workspace is NOT a Pi flag — handled via cwd
+    assert "--workspace" not in args
 
 
 def test_build_args_minimal() -> None:
     with patch("shutil.which", return_value="/usr/bin/pi"):
         runtime = PiCLIRuntime(PiCLIConfig())
-    args = runtime._build_args()
+    args = runtime._build_args("hello")
     assert args[:2] == ["/usr/bin/pi", "--print"]
     assert "--model" not in args
-    assert "--workspace" not in args
+    assert "hello" in args
 
 
 # ---------------------------------------------------------------------------
@@ -274,15 +275,15 @@ def test_not_available_when_missing() -> None:
 def test_generate_with_system_prompt() -> None:
     runtime = PiCLIRuntime(PiCLIConfig())
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="output\n", stderr="")
-    captured_input = None
+    captured_args: list[str] = []
 
     def mock_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        nonlocal captured_input
-        captured_input = kwargs.get("input")
+        captured_args.extend(args)
         return mock_result
 
     with patch("subprocess.run", side_effect=mock_run), patch("shutil.which", return_value="/usr/bin/pi"):
         runtime.generate("user prompt", system="system prompt")
-    assert captured_input is not None
-    assert "system prompt" in captured_input
-    assert "user prompt" in captured_input
+    # System + user prompt should be combined in the last arg
+    prompt_arg = captured_args[-1]
+    assert "system prompt" in prompt_arg
+    assert "user prompt" in prompt_arg
