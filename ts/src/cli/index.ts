@@ -67,9 +67,6 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // All commands need a database
-  const dbPath = process.env.AUTOCONTEXT_DB_PATH ?? resolve("autocontext.db");
-
   switch (command) {
     case "init":
       await cmdInit();
@@ -84,52 +81,52 @@ async function main(): Promise<void> {
       await cmdWhoami();
       break;
     case "run":
-      await cmdRun(dbPath);
+      await cmdRun(await getDbPath());
       break;
     case "list":
-      await cmdList(dbPath);
+      await cmdList(await getDbPath());
       break;
     case "replay":
-      await cmdReplay(dbPath);
+      await cmdReplay(await getDbPath());
       break;
     case "benchmark":
-      await cmdBenchmark(dbPath);
+      await cmdBenchmark(await getDbPath());
       break;
     case "export":
-      await cmdExport(dbPath);
+      await cmdExport(await getDbPath());
       break;
     case "export-training-data":
-      await cmdExportTrainingData(dbPath);
+      await cmdExportTrainingData(await getDbPath());
       break;
     case "import-package":
-      await cmdImportPackage(dbPath);
+      await cmdImportPackage(await getDbPath());
       break;
     case "new-scenario":
-      await cmdNewScenario(dbPath);
+      await cmdNewScenario(await getDbPath());
       break;
     case "tui":
-      await cmdTui(dbPath);
+      await cmdTui(await getDbPath());
       break;
     case "judge":
-      await cmdJudge(dbPath);
+      await cmdJudge(await getDbPath());
       break;
     case "improve":
-      await cmdImprove(dbPath);
+      await cmdImprove(await getDbPath());
       break;
     case "repl":
-      await cmdRepl(dbPath);
+      await cmdRepl(await getDbPath());
       break;
     case "queue":
-      await cmdQueue(dbPath);
+      await cmdQueue(await getDbPath());
       break;
     case "status":
-      await cmdStatus(dbPath);
+      await cmdStatus(await getDbPath());
       break;
     case "serve":
-      await cmdServeHttp(dbPath);
+      await cmdServeHttp(await getDbPath());
       break;
     case "mcp-serve":
-      await cmdMcpServe(dbPath);
+      await cmdMcpServe(await getDbPath());
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -147,6 +144,26 @@ function formatFatalCliError(err: unknown): string {
     return `Error: ${err.message}`;
   }
   return String(err);
+}
+
+async function getDbPath(): Promise<string> {
+  const { loadSettings } = await import("../config/index.js");
+  const { mkdirSync } = await import("node:fs");
+  const dbPath = resolve(loadSettings().dbPath);
+  mkdirSync(dirname(dbPath), { recursive: true });
+  return dbPath;
+}
+
+async function loadProjectDefaults() {
+  const { loadProjectConfig } = await import("../config/index.js");
+  return loadProjectConfig();
+}
+
+async function resolveScenarioOption(explicit?: string): Promise<string | undefined> {
+  if (explicit?.trim()) {
+    return explicit.trim();
+  }
+  return (await loadProjectDefaults())?.defaultScenario;
 }
 
 async function getProvider(overrides: { providerType?: string; apiKey?: string; baseUrl?: string; model?: string } = {}) {
@@ -177,7 +194,8 @@ async function cmdRun(dbPath: string): Promise<void> {
     },
   });
 
-  if (values.help || !values.scenario) {
+  const scenarioName = await resolveScenarioOption(values.scenario);
+  if (values.help || !scenarioName) {
     console.log("autoctx run --scenario <name> [--gens N] [--run-id ID] [--provider deterministic] [--matches N] [--json]");
     process.exit(values.help ? 0 : 1);
   }
@@ -195,9 +213,9 @@ async function cmdRun(dbPath: string): Promise<void> {
   );
 
   // Resolve scenario
-  const ScenarioClass = SCENARIO_REGISTRY[values.scenario];
+  const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
   if (!ScenarioClass) {
-    console.error(`Unknown scenario: ${values.scenario}. Available: ${Object.keys(SCENARIO_REGISTRY).join(", ")}`);
+    console.error(`Unknown scenario: ${scenarioName}. Available: ${Object.keys(SCENARIO_REGISTRY).join(", ")}`);
     process.exit(1);
   }
   const scenario = new ScenarioClass();
@@ -611,10 +629,23 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
   const server = new InteractiveServer({ runManager: mgr, port, host });
   await server.start();
 
-  console.log(`autocontext server listening at http://${host}:${server.port}`);
-  console.log(`API: http://${host}:${server.port}/api/runs`);
-  console.log(`WebSocket: ws://${host}:${server.port}/ws/interactive`);
-  console.log(`Scenarios: ${mgr.listScenarios().join(", ")}`);
+  const startupInfo = {
+    url: `http://${host}:${server.port}`,
+    apiUrl: `http://${host}:${server.port}/api/runs`,
+    wsUrl: `ws://${host}:${server.port}/ws/interactive`,
+    host,
+    port: server.port,
+    scenarios: mgr.listScenarios(),
+  };
+
+  if (values.json) {
+    console.log(JSON.stringify(startupInfo));
+  } else {
+    console.log(`autocontext server listening at ${startupInfo.url}`);
+    console.log(`API: ${startupInfo.apiUrl}`);
+    console.log(`WebSocket: ${startupInfo.wsUrl}`);
+    console.log(`Scenarios: ${startupInfo.scenarios.join(", ")}`);
+  }
 
   await new Promise<void>((res) => {
     const cleanup = () => { process.off("SIGINT", cleanup); process.off("SIGTERM", cleanup); res(); };
@@ -770,7 +801,7 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
 
-  const scenarioName = values.scenario ?? "grid_ctf";
+  const scenarioName = (await resolveScenarioOption(values.scenario)) ?? "grid_ctf";
   const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
   if (!ScenarioClass) {
     console.error(`Unknown scenario: ${scenarioName}`);
@@ -831,7 +862,8 @@ async function cmdExport(dbPath: string): Promise<void> {
     process.exit(0);
   }
 
-  if (!values.scenario) {
+  const scenarioName = await resolveScenarioOption(values.scenario);
+  if (!scenarioName) {
     console.error("Error: --scenario is required");
     process.exit(1);
   }
@@ -850,7 +882,7 @@ async function cmdExport(dbPath: string): Promise<void> {
   });
   try {
     const result = exportStrategyPackage({
-      scenarioName: values.scenario,
+      scenarioName,
       artifacts,
       store,
     });
@@ -1230,7 +1262,8 @@ async function cmdLogin(): Promise<void> {
   }
 
   const { mkdirSync, writeFileSync } = await import("node:fs");
-  const configDir = values["config-dir"] ?? join(process.env.HOME ?? "~", ".config", "autoctx");
+  const { resolveConfigDir } = await import("../config/index.js");
+  const configDir = resolveConfigDir(values["config-dir"]);
   mkdirSync(configDir, { recursive: true });
   const creds = { provider: values.provider, apiKey: values.key, savedAt: new Date().toISOString() };
   writeFileSync(join(configDir, "credentials.json"), JSON.stringify(creds, null, 2), "utf-8");
@@ -1238,10 +1271,37 @@ async function cmdLogin(): Promise<void> {
 }
 
 async function cmdWhoami(): Promise<void> {
-  const provider = process.env.AUTOCONTEXT_AGENT_PROVIDER ?? process.env.AUTOCONTEXT_PROVIDER ?? "not configured";
-  const model = process.env.AUTOCONTEXT_MODEL ?? process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ?? "default";
-  const hasKey = !!(process.env.ANTHROPIC_API_KEY || process.env.AUTOCONTEXT_API_KEY || process.env.AUTOCONTEXT_AGENT_API_KEY || process.env.OPENAI_API_KEY);
-  console.log(JSON.stringify({ provider, model, authenticated: hasKey }, null, 2));
+  const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
+  const { resolveProviderConfig } = await import("../providers/index.js");
+
+  const projectConfig = loadProjectConfig();
+  const persistedCredentials = loadPersistedCredentials();
+  let resolvedConfig: { providerType: string; apiKey?: string; model?: string } | null = null;
+
+  try {
+    resolvedConfig = resolveProviderConfig();
+  } catch {
+    resolvedConfig = null;
+  }
+
+  const provider =
+    resolvedConfig?.providerType ??
+    projectConfig?.provider ??
+    persistedCredentials?.provider ??
+    "not configured";
+  const model =
+    resolvedConfig?.model ??
+    process.env.AUTOCONTEXT_MODEL ??
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
+    "default";
+  const authenticated = Boolean(
+    resolvedConfig?.apiKey ??
+    process.env.ANTHROPIC_API_KEY ??
+    process.env.OPENAI_API_KEY ??
+    persistedCredentials?.apiKey,
+  );
+
+  console.log(JSON.stringify({ provider, model, authenticated }, null, 2));
 }
 
 main().catch((err) => {

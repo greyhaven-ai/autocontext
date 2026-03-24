@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -233,9 +233,10 @@ describe("Capabilities discovery", () => {
   it("returns capability metadata", async () => {
     const { getCapabilities } = await import("../src/mcp/capabilities.js");
     const caps = getCapabilities();
+    const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"));
     expect(caps.scenarios).toBeDefined();
     expect(caps.providers).toBeDefined();
-    expect(caps.version).toBe("0.2.3");
+    expect(caps.version).toBe(pkg.version);
     expect(Array.isArray(caps.scenarios)).toBe(true);
     expect(caps.scenarios.length).toBeGreaterThan(0);
   });

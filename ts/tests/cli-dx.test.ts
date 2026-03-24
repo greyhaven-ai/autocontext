@@ -7,8 +7,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -31,6 +31,56 @@ function runCli(args: string[], opts: { env?: Record<string, string>; cwd?: stri
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-cli-dx-"));
+}
+
+async function runLongLivedCli(
+  args: string[],
+  opts: { env?: Record<string, string>; cwd?: string } = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return await new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn("npx", ["tsx", CLI, ...args], {
+      cwd: opts.cwd,
+      env: { ...process.env, NODE_NO_WARNINGS: "1", ...opts.env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let sawOutput = false;
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      rejectPromise(new Error(`Timed out waiting for CLI output.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    }, 15000);
+
+    const maybeStop = () => {
+      if (!sawOutput && /[\r\n]/.test(stdout)) {
+        sawOutput = true;
+        child.kill("SIGTERM");
+      }
+    };
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      maybeStop();
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      rejectPromise(err);
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timeout);
+      if (sawOutput) {
+        resolvePromise({ stdout, stderr, exitCode: code ?? 0 });
+        return;
+      }
+      rejectPromise(new Error(`CLI exited before producing startup output.\nstdout:\n${stdout}\nstderr:\n${stderr}`));
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +108,26 @@ describe("AC-393: autoctx init", () => {
     const config = JSON.parse(readFileSync(join(dir, ".autoctx.json"), "utf-8"));
     expect(config.default_scenario).toBeDefined();
     expect(config.provider).toBeDefined();
+  });
+
+  it("list uses configured runs_dir for the project database", () => {
+    runCli(["init", "--dir", dir]);
+    const configPath = join(dir, ".autoctx.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    config.runs_dir = "./custom-runs";
+    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+    const { stdout, exitCode } = runCli(["list", "--json"], { cwd: dir });
+    expect(exitCode).toBe(0);
+    expect(Array.isArray(JSON.parse(stdout))).toBe(true);
+    expect(existsSync(join(dir, "custom-runs", "autocontext.sqlite3"))).toBe(true);
+  });
+
+  it("run falls back to default_scenario from .autoctx.json", () => {
+    runCli(["init", "--dir", dir, "--scenario", "nonexistent_scenario_xyz"]);
+    const { stderr, exitCode } = runCli(["run"], { cwd: dir });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Unknown scenario: nonexistent_scenario_xyz");
   });
 
   it("does not overwrite existing config", () => {
@@ -131,13 +201,25 @@ describe("AC-407: credential management", () => {
     expect(stdout).toContain("deterministic");
   });
 
-  it("login --provider stores credentials", () => {
+  it("login persists credentials that whoami and run can reuse", () => {
+    const configDir = join(dir, "config");
+    const env = { AUTOCONTEXT_CONFIG_DIR: configDir };
+
     const { exitCode } = runCli(
-      ["login", "--provider", "anthropic", "--key", "sk-test-123", "--config-dir", dir],
+      ["login", "--provider", "anthropic", "--key", "sk-test-123", "--config-dir", configDir],
+      { env },
     );
     expect(exitCode).toBe(0);
-    const creds = JSON.parse(readFileSync(join(dir, "credentials.json"), "utf-8"));
+    const creds = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf-8"));
     expect(creds.provider).toBe("anthropic");
+
+    const whoami = JSON.parse(runCli(["whoami"], { env }).stdout);
+    expect(whoami.provider).toBe("anthropic");
+    expect(whoami.authenticated).toBe(true);
+
+    const runResult = runCli(["run", "--scenario", "nonexistent_scenario_xyz"], { env });
+    expect(runResult.stderr).toContain("Unknown scenario: nonexistent_scenario_xyz");
+    expect(runResult.stderr).not.toContain("API key required");
   });
 });
 
@@ -176,6 +258,19 @@ describe("AC-421: serve --json", () => {
   it("serve --help mentions --json flag", () => {
     const { stdout } = runCli(["serve", "--help"]);
     expect(stdout).toContain("--json");
+  });
+
+  it("serve --json emits machine-parseable startup metadata", async () => {
+    const { stdout, stderr } = await runLongLivedCli(["serve", "--json", "--port", "0"]);
+    expect(stderr).toBe("");
+
+    const startup = JSON.parse(stdout.trim().split(/\r?\n/, 1)[0] ?? "");
+    expect(startup.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(startup.apiUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/api\/runs$/);
+    expect(startup.wsUrl).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/ws\/interactive$/);
+    expect(startup.port).toBeGreaterThan(0);
+    expect(Array.isArray(startup.scenarios)).toBe(true);
+    expect(stdout).not.toContain("API:");
   });
 });
 

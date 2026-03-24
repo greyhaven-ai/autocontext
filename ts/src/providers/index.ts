@@ -7,6 +7,7 @@
 
 import { ProviderError } from "../types/index.js";
 import type { CompletionResult, LLMProvider } from "../types/index.js";
+import { loadPersistedCredentials, loadProjectConfig } from "../config/index.js";
 import { DeterministicProvider } from "./deterministic.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
@@ -229,11 +230,16 @@ export interface ProviderConfig {
 }
 
 export function resolveProviderConfig(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
+  const projectConfig = loadProjectConfig();
+  const persistedCredentials = loadPersistedCredentials();
+
   // Python-compatible: AUTOCONTEXT_AGENT_PROVIDER takes precedence
   const providerType =
     overrides.providerType ??
     process.env.AUTOCONTEXT_AGENT_PROVIDER ??
     process.env.AUTOCONTEXT_PROVIDER ??
+    projectConfig?.provider ??
+    persistedCredentials?.provider ??
     "anthropic";
   // Agent-specific env vars (Python-compatible) with fallback to generic
   const model =
@@ -247,7 +253,8 @@ export function resolveProviderConfig(overrides: Partial<ProviderConfig> = {}): 
   const genericKey =
     overrides.apiKey ??
     process.env.AUTOCONTEXT_AGENT_API_KEY ??
-    process.env.AUTOCONTEXT_API_KEY;
+    process.env.AUTOCONTEXT_API_KEY ??
+    persistedCredentials?.apiKey;
 
   const type = providerType.toLowerCase().trim();
 

@@ -26,9 +26,15 @@ npm run build
 
 ## CLI Commands
 
-The package ships a full `autoctx` CLI with 17 commands:
+The package ships a full `autoctx` CLI with 21 commands:
 
 ```bash
+# Project setup and discovery
+autoctx init
+autoctx capabilities
+autoctx login --provider anthropic --key sk-ant-...
+autoctx whoami
+
 # Scenario execution
 autoctx run --scenario grid_ctf --gens 3 --json
 autoctx list --json
@@ -43,7 +49,7 @@ autoctx new-scenario --description "Test summarization quality"
 
 # Interactive
 autoctx tui [--port 8000]
-autoctx serve [--port 8000]          # HTTP dashboard + API
+autoctx serve [--port 8000] [--json] # HTTP dashboard + API
 autoctx mcp-serve                     # MCP server on stdio
 
 # Evaluation
@@ -95,7 +101,17 @@ Key environment variables:
 | `AUTOCONTEXT_AGENT_API_KEY` | API key (or use provider-specific env vars) |
 | `AUTOCONTEXT_AGENT_BASE_URL` | Base URL for compatible providers |
 | `AUTOCONTEXT_AGENT_DEFAULT_MODEL` | Override default model |
+| `AUTOCONTEXT_CONFIG_DIR` | Override where `login` / `whoami` read saved credentials |
 | `AUTOCONTEXT_DB_PATH` | SQLite database path |
+
+## Project Defaults
+
+`autoctx init` scaffolds a `.autoctx.json` file in your project. When present, the CLI uses it for:
+
+- Default provider selection
+- Default scenario for `run`, `benchmark`, and `export`
+- Project `runs/` and `knowledge/` roots
+- The default SQLite database location under the configured `runs_dir`
 
 ## MCP Tools (40+)
 
