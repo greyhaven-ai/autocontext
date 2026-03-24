@@ -969,18 +969,113 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
     args: process.argv.slice(3),
     options: {
       description: { type: "string", short: "d" },
+      "from-spec": { type: "string" },
+      "from-stdin": { type: "boolean" },
+      "prompt-only": { type: "boolean" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help) {
-    console.log("autoctx new-scenario --description <text> [--json]");
+    console.log(`autoctx new-scenario — create a scenario
+
+Modes:
+  --description <text>    Generate scenario from natural language (requires LLM provider)
+  --from-spec <file>      Register a scenario from a JSON spec file (no LLM needed)
+  --from-stdin            Read a JSON spec from stdin (no LLM needed)
+  --prompt-only           Output the generation prompt without calling an LLM
+
+Spec schema (for --from-spec and --from-stdin):
+  { "name": "...", "taskPrompt": "...", "rubric": "...", "description": "..." }
+
+Options:
+  --json                  Output as JSON
+  -h, --help              Show this help`);
     process.exit(0);
   }
 
+  // Mode 1: --from-spec <file>
+  if (values["from-spec"]) {
+    const { readFileSync } = await import("node:fs");
+    let spec: Record<string, unknown>;
+    try {
+      spec = JSON.parse(readFileSync(values["from-spec"], "utf-8"));
+    } catch (err) {
+      console.error(`Error reading spec file: ${(err as Error).message}`);
+      process.exit(1);
+    }
+    if (!spec.name || !spec.taskPrompt || !spec.rubric) {
+      console.error("Error: spec must contain name, taskPrompt, and rubric fields");
+      process.exit(1);
+    }
+    const result = {
+      name: spec.name as string,
+      family: "agent_task",
+      spec: {
+        taskPrompt: spec.taskPrompt as string,
+        rubric: spec.rubric as string,
+        description: (spec.description as string) ?? "",
+      },
+    };
+    console.log(values.json ? JSON.stringify(result, null, 2) : `Registered scenario: ${result.name}`);
+    return;
+  }
+
+  // Mode 2: --from-stdin
+  if (values["from-stdin"]) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(chunk as Buffer);
+    }
+    const raw = Buffer.concat(chunks).toString("utf-8");
+    let spec: Record<string, unknown>;
+    try {
+      spec = JSON.parse(raw);
+    } catch {
+      console.error("Error: stdin must contain valid JSON");
+      process.exit(1);
+    }
+    if (!spec.name || !spec.taskPrompt || !spec.rubric) {
+      console.error("Error: spec must contain name, taskPrompt, and rubric fields");
+      process.exit(1);
+    }
+    const result = {
+      name: spec.name as string,
+      family: "agent_task",
+      spec: {
+        taskPrompt: spec.taskPrompt as string,
+        rubric: spec.rubric as string,
+        description: (spec.description as string) ?? "",
+      },
+    };
+    console.log(values.json ? JSON.stringify(result, null, 2) : `Registered scenario: ${result.name}`);
+    return;
+  }
+
+  // Mode 3: --prompt-only (output the prompt, no LLM call)
+  if (values["prompt-only"]) {
+    if (!values.description) {
+      console.error("Error: --description is required with --prompt-only");
+      process.exit(1);
+    }
+    const prompt = [
+      "You are a scenario designer for an agent evaluation harness.",
+      "Given a user's description, generate a JSON spec with these fields:",
+      '  - taskPrompt: the task the agent will be given',
+      '  - rubric: evaluation criteria for judging the output',
+      '  - description: a brief description of what the scenario tests',
+      "Respond with ONLY the JSON object, no markdown fences.",
+      "",
+      `User description: ${values.description}`,
+    ].join("\n");
+    console.log(prompt);
+    return;
+  }
+
+  // Default: --description mode (requires LLM)
   if (!values.description) {
-    console.error("Error: --description is required");
+    console.error("Error: --description, --from-spec, --from-stdin, or --prompt-only is required");
     process.exit(1);
   }
 
