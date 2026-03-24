@@ -73,9 +73,13 @@ def test_generate_success() -> None:
         "messages": [{"role": "assistant", "content": "Strategy analysis complete."}],
     })
     completed = MagicMock(returncode=0, stdout=rpc_response + "\n", stderr="")
-    with patch("subprocess.run", return_value=completed):
+    with patch("subprocess.run", return_value=completed) as mock_run:
         output = runtime.generate("Analyze this strategy")
+    sent = json.loads(mock_run.call_args.kwargs["input"])
+    assert sent["message"] == "Analyze this strategy"
+    assert "content" not in sent
     assert output.text == "Strategy analysis complete."
+    assert output.metadata["exit_code"] == 0
 
 
 def test_generate_timeout() -> None:
@@ -87,6 +91,36 @@ def test_generate_timeout() -> None:
         output = runtime.generate("test")
     assert output.text == ""
     assert output.metadata.get("error") == "timeout"
+
+
+def test_generate_rpc_error_response() -> None:
+    """generate() surfaces Pi RPC error responses as errors, not model text."""
+    runtime = PiRPCRuntime()
+    rpc_response = json.dumps({
+        "type": "response",
+        "command": "prompt",
+        "success": False,
+        "error": "bad payload",
+    })
+    completed = MagicMock(returncode=0, stdout=rpc_response + "\n", stderr="")
+    with patch("subprocess.run", return_value=completed):
+        output = runtime.generate("test")
+    assert output.text == ""
+    assert output.metadata["error"] == "rpc_response_error"
+    assert output.metadata["rpc_command"] == "prompt"
+    assert output.metadata["rpc_message"] == "bad payload"
+
+
+def test_generate_nonzero_exit_without_stdout() -> None:
+    """generate() surfaces transport/process failures when Pi exits non-zero."""
+    runtime = PiRPCRuntime()
+    completed = MagicMock(returncode=2, stdout="", stderr="permission denied")
+    with patch("subprocess.run", return_value=completed):
+        output = runtime.generate("test")
+    assert output.text == ""
+    assert output.metadata["error"] == "nonzero_exit"
+    assert output.metadata["exit_code"] == 2
+    assert output.metadata["stderr"] == "permission denied"
 
 
 def test_revise_success() -> None:

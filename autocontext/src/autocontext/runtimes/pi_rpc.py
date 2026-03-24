@@ -64,6 +64,28 @@ class PiRPCRuntime(AgentRuntime):
         args.extend(self._config.extra_args)
         return args
 
+    def _build_prompt_command(self, prompt: str) -> dict[str, object]:
+        """Build a Pi RPC prompt command.
+
+        Pi's documented RPC protocol expects the user payload under ``message``.
+        """
+        return {
+            "type": "prompt",
+            "id": uuid.uuid4().hex[:8],
+            "message": prompt,
+        }
+
+    def _nonzero_exit_output(self, exit_code: int, stderr: str, stdout: str = "") -> AgentOutput:
+        metadata: dict[str, object] = {
+            "error": "nonzero_exit",
+            "exit_code": exit_code,
+        }
+        if stderr:
+            metadata["stderr"] = stderr[:500]
+        if stdout:
+            metadata["stdout"] = stdout[:500]
+        return AgentOutput(text="", metadata=metadata)
+
     def generate(
         self,
         prompt: str,
@@ -75,12 +97,7 @@ class PiRPCRuntime(AgentRuntime):
         if system:
             full_prompt = f"{system}\n\n{prompt}"
 
-        # Build the RPC command
-        command: dict[str, object] = {
-            "type": "prompt",
-            "id": uuid.uuid4().hex[:8],
-            "content": full_prompt,
-        }
+        command = self._build_prompt_command(full_prompt)
 
         args = self._build_args()
         try:
@@ -100,7 +117,19 @@ class PiRPCRuntime(AgentRuntime):
             logger.error("pi CLI not found at %r", self._config.pi_command)
             return AgentOutput(text="", metadata={"error": "pi_not_found"})
 
-        return self._parse_rpc_output(result.stdout)
+        if result.returncode != 0 and not result.stdout.strip():
+            logger.warning("pi RPC exited with code %d: %s", result.returncode, result.stderr[:200])
+            return self._nonzero_exit_output(result.returncode, result.stderr)
+
+        output = self._parse_rpc_output(
+            result.stdout,
+            exit_code=result.returncode,
+            stderr=result.stderr,
+        )
+        if result.returncode != 0 and not output.metadata.get("error"):
+            logger.warning("pi RPC exited with code %d: %s", result.returncode, result.stderr[:200])
+            return self._nonzero_exit_output(result.returncode, result.stderr, result.stdout)
+        return output
 
     def revise(
         self,
@@ -118,7 +147,13 @@ class PiRPCRuntime(AgentRuntime):
         )
         return self.generate(revision_prompt, system=system)
 
-    def _parse_rpc_output(self, raw: str) -> AgentOutput:
+    def _parse_rpc_output(
+        self,
+        raw: str,
+        *,
+        exit_code: int = 0,
+        stderr: str = "",
+    ) -> AgentOutput:
         """Parse JSONL output from pi --mode rpc.
 
         Collects message_end events to extract the assistant's response.
@@ -135,15 +170,28 @@ class PiRPCRuntime(AgentRuntime):
                 event_type = event.get("type", "")
 
                 # Collect assistant text from message_end or response events
-                if event_type == "message_end":
+                if event_type == "response":
+                    if event.get("success") is False:
+                        metadata: dict[str, object] = {
+                            "error": "rpc_response_error",
+                            "rpc_command": str(event.get("command", "")),
+                            "exit_code": exit_code,
+                        }
+                        error_message = event.get("error")
+                        if error_message is not None:
+                            metadata["rpc_message"] = str(error_message)
+                        if stderr:
+                            metadata["stderr"] = stderr[:500]
+                        return AgentOutput(text="", metadata=metadata)
+
+                    data = event.get("data", {})
+                    if isinstance(data, dict) and "content" in data:
+                        text_parts.append(str(data["content"]))
+                elif event_type == "message_end":
                     msg = event.get("message", {})
                     content = msg.get("content", "")
                     if isinstance(content, str) and content:
                         text_parts.append(content)
-                elif event_type == "response":
-                    data = event.get("data", {})
-                    if isinstance(data, dict) and "content" in data:
-                        text_parts.append(str(data["content"]))
                 elif event_type == "agent_end":
                     # Final messages array
                     messages = event.get("messages", [])
@@ -155,9 +203,13 @@ class PiRPCRuntime(AgentRuntime):
             except (json.JSONDecodeError, TypeError):
                 # Not JSONL — treat as plain text fallback
                 if not text_parts:
-                    return AgentOutput(text=raw.strip())
+                    if exit_code != 0:
+                        return self._nonzero_exit_output(exit_code, stderr, raw.strip())
+                    return AgentOutput(text=raw.strip(), metadata={"exit_code": exit_code})
 
         if text_parts:
-            return AgentOutput(text=text_parts[-1])  # Last assistant message
+            return AgentOutput(text=text_parts[-1], metadata={"exit_code": exit_code})  # Last assistant message
 
-        return AgentOutput(text=raw.strip())
+        if exit_code != 0:
+            return self._nonzero_exit_output(exit_code, stderr, raw.strip())
+        return AgentOutput(text=raw.strip(), metadata={"exit_code": exit_code})
