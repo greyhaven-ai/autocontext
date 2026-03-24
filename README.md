@@ -159,9 +159,6 @@ MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenCl
 - Sandbox and executor notes: [autocontext/docs/sandbox.md](autocontext/docs/sandbox.md)
 - License: [LICENSE](LICENSE)
 
-## Note
-
-This repo was previously named `MTS`. Some historical references may still use the older name or issue prefixes.
 
 ## Project Signals
 

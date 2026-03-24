@@ -1,4 +1,4 @@
-"""Pi session artifact contract — maps Pi outputs into AutoContext artifacts.
+"""Pi session artifact contract — maps Pi outputs into autocontext artifacts.
 
 Defines PiExecutionTrace for structured persistence and replay of Pi
 CLI/RPC sessions within the generation directory layout.

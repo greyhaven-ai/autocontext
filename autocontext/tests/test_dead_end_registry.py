@@ -1,10 +1,10 @@
-"""Tests for the dead-end registry feature (MTS-102 through MTS-108).
+"""Tests for the dead-end registry feature (AC-102 through AC-108).
 
 Covers:
-- AppSettings fields for dead-end tracking (MTS-102)
-- ArtifactStore methods for dead_ends.md (MTS-103)
-- DeadEndEntry dataclass and consolidation logic (MTS-106)
-- Prompt bundle integration (MTS-105)
+- AppSettings fields for dead-end tracking (AC-102)
+- ArtifactStore methods for dead_ends.md (AC-103)
+- DeadEndEntry dataclass and consolidation logic (AC-106)
+- Prompt bundle integration (AC-105)
 """
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-# Import autocontext.agents first to break circular import with mts.prompts.templates.
-# See: autocontext.prompts.templates -> mts.scenarios.base -> mts.scenarios.__init__
-#      -> autocontext.scenarios.custom -> mts.agents -> mts.agents.orchestrator
+# Import autocontext.agents first to break circular import with autocontext.prompts.templates.
+# See: autocontext.prompts.templates -> autocontext.scenarios.base -> autocontext.scenarios.__init__
+#      -> autocontext.scenarios.custom -> autocontext.agents -> autocontext.agents.orchestrator
 #      -> autocontext.prompts.templates (circular).
 import autocontext.agents  # noqa: F401
 from autocontext.config.settings import AppSettings, load_settings
@@ -24,7 +24,7 @@ from autocontext.scenarios.base import Observation
 from autocontext.storage.artifacts import ArtifactStore
 
 # ---------------------------------------------------------------------------
-# MTS-102: Settings fields
+# AC-102: Settings fields
 # ---------------------------------------------------------------------------
 
 
@@ -46,7 +46,7 @@ class TestDeadEndSettings:
 
 
 # ---------------------------------------------------------------------------
-# MTS-103: ArtifactStore dead-end methods
+# AC-103: ArtifactStore dead-end methods
 # ---------------------------------------------------------------------------
 
 
@@ -93,7 +93,7 @@ class TestArtifactStoreDeadEnds:
 
 
 # ---------------------------------------------------------------------------
-# MTS-106: DeadEndEntry dataclass
+# AC-106: DeadEndEntry dataclass
 # ---------------------------------------------------------------------------
 
 
@@ -126,7 +126,7 @@ class TestDeadEndEntry:
 
 
 # ---------------------------------------------------------------------------
-# MTS-106: Consolidation
+# AC-106: Consolidation
 # ---------------------------------------------------------------------------
 
 
@@ -157,7 +157,7 @@ class TestConsolidateDeadEnds:
 
 
 # ---------------------------------------------------------------------------
-# MTS-105: Prompt bundle integration
+# AC-105: Prompt bundle integration
 # ---------------------------------------------------------------------------
 
 

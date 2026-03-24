@@ -1,4 +1,4 @@
-"""Tests for TieredGateResult and TieredGateOrchestrator — MTS-159."""
+"""Tests for TieredGateResult and TieredGateOrchestrator — AC-159."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock

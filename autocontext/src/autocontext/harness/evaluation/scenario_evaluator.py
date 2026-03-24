@@ -1,4 +1,4 @@
-"""ScenarioEvaluator — adapter bridging AutoContext ScenarioInterface to harness Evaluator protocol."""
+"""ScenarioEvaluator — adapter bridging autocontext ScenarioInterface to harness Evaluator protocol."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -15,7 +15,7 @@ class ScenarioEvaluator:
     """Adapts a ScenarioInterface + ExecutionSupervisor to the Evaluator protocol.
 
     Uses duck typing — accepts any object with the right method signatures.
-    This avoids importing AutoContext-domain types into the harness layer at module level.
+    This avoids importing autocontext-domain types into the harness layer at module level.
     """
 
     def __init__(self, scenario: Any, supervisor: Any) -> None:

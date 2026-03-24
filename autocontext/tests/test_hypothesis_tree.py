@@ -1,4 +1,4 @@
-"""Tests for HypothesisTree (MTS-78)."""
+"""Tests for HypothesisTree (AC-78)."""
 
 from __future__ import annotations
 

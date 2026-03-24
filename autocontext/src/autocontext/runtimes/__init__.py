@@ -1,7 +1,7 @@
-"""Agent runtime abstraction for AutoContext.
+"""Agent runtime abstraction for autocontext.
 
 Runtimes handle generation and revision of agent outputs.
-AutoContext orchestrates and judges; runtimes do the actual work.
+autocontext orchestrates and judges; runtimes do the actual work.
 """
 
 from autocontext.runtimes.base import AgentOutput, AgentRuntime

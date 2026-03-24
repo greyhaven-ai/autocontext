@@ -837,7 +837,7 @@ def export_agent_task_skill(
     return skill_package
 
 
-# -- OpenClaw operations (MTS-191) --
+# -- OpenClaw operations (AC-191) --
 
 
 _OPENCLAW_VERSION = "0.1.0"

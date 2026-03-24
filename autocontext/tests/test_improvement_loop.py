@@ -235,7 +235,7 @@ class TestImprovementLoop:
         assert not result.improved
 
     def test_verify_facts_called_and_issues_appended(self):
-        """MTS-50: verifyFacts callback appends issues to reasoning."""
+        """AC-50: verifyFacts callback appends issues to reasoning."""
 
         class VerifyTask(AgentTaskInterface):
             def get_task_prompt(self, state):
@@ -263,7 +263,7 @@ class TestImprovementLoop:
         assert result.best_score == 0.95 * 0.9  # 0.855
 
     def test_threshold_sensitivity_near_threshold_continues(self):
-        """MTS-53: Score 0.91 with threshold 0.90 does not stop immediately."""
+        """AC-53: Score 0.91 with threshold 0.90 does not stop immediately."""
 
         class StableTask(AgentTaskInterface):
             def __init__(self):
@@ -292,7 +292,7 @@ class TestImprovementLoop:
         assert task._count == 2
 
     def test_threshold_sensitivity_clearly_above_stops_immediately(self):
-        """MTS-53: Score 0.95 with threshold 0.90 stops on first round."""
+        """AC-53: Score 0.95 with threshold 0.90 stops on first round."""
 
         class ClearTask(AgentTaskInterface):
             def __init__(self):
@@ -318,7 +318,7 @@ class TestImprovementLoop:
         assert task._count == 1
 
     def test_threshold_sensitivity_drop_then_recover(self):
-        """MTS-53: Score drops below threshold after near-miss, then recovers."""
+        """AC-53: Score drops below threshold after near-miss, then recovers."""
 
         class DropRecoverTask(AgentTaskInterface):
             def __init__(self):

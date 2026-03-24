@@ -1,4 +1,4 @@
-"""LLM provider abstraction for AutoContext.
+"""LLM provider abstraction for autocontext.
 
 Supports Anthropic, OpenAI, and any OpenAI-compatible endpoint (vLLM, Ollama, etc.).
 """

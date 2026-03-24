@@ -1,4 +1,4 @@
-"""Tests for task queue priority ordering and concurrent access (MTS-14)."""
+"""Tests for task queue priority ordering and concurrent access (AC-14)."""
 
 from __future__ import annotations
 

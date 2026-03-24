@@ -1,4 +1,4 @@
-"""Tests for settings simplification (MTS-25)."""
+"""Tests for settings simplification (AC-25)."""
 from __future__ import annotations
 
 from autocontext.config.settings import AppSettings, load_settings

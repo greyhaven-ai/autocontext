@@ -1,4 +1,4 @@
-"""Tests for ActionFilterHarness (MTS-87)."""
+"""Tests for ActionFilterHarness (AC-87)."""
 
 from __future__ import annotations
 

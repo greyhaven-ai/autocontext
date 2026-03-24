@@ -53,7 +53,7 @@ _EXAMPLE_SPEC = {
 }
 
 AGENT_TASK_DESIGNER_SYSTEM = (
-    "You are a scenario designer for AutoContext, an agent evaluation system. "
+    "You are a scenario designer for autocontext, an agent evaluation system. "
     "Given a natural language description, produce an AgentTaskSpec JSON "
     "that defines a task prompt, evaluation rubric, output format, and optional judge model.\n\n"
     f"The output must be valid JSON wrapped in delimiters:\n"

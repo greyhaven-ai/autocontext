@@ -1,4 +1,4 @@
-"""Tests for factual_confidence dimension support (MTS-50)."""
+"""Tests for factual_confidence dimension support (AC-50)."""
 
 from __future__ import annotations
 

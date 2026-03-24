@@ -1,7 +1,7 @@
 /**
  * Agent Self-Improvement E2E tests.
  *
- * Exercises the full AutoContext pipeline: task creation → judge evaluation →
+ * Exercises the full autocontext pipeline: task creation → judge evaluation →
  * improvement loop → task queue → skill export, all with mock providers.
  */
 

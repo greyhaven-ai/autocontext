@@ -5,7 +5,7 @@ description: Operational knowledge for the grid_ctf scenario including strategy 
 
 # Grid Ctf Operational Knowledge
 
-Accumulated knowledge from AutoContext strategy evolution.
+Accumulated knowledge from autocontext strategy evolution.
 
 ## Operational Lessons
 

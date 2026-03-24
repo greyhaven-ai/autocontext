@@ -267,7 +267,7 @@ class TestSearchIndexAgentTaskFields:
 
 
 class TestHarnessInSkillPackage:
-    """MTS-93: harness field in SkillPackage."""
+    """AC-93: harness field in SkillPackage."""
 
     def test_to_dict_includes_harness(self) -> None:
         pkg = SkillPackage(

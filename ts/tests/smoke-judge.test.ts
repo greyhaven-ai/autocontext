@@ -17,9 +17,9 @@ function mockProvider(responseText: string): LLMProvider {
   };
 }
 
-const PROMPT = "Write a one-paragraph summary of what AutoContext does";
+const PROMPT = "Write a one-paragraph summary of what autocontext does";
 const OUTPUT =
-  "AutoContext is an iterative strategy generation system that uses multi-agent " +
+  "autocontext is an iterative strategy generation system that uses multi-agent " +
   "collaboration to evolve strategies through tournament matches and LLM " +
   "judge evaluation with Elo-based progression gating.";
 const RUBRIC =
@@ -31,7 +31,7 @@ function makeResponse(
 ) {
   const data = {
     score,
-    reasoning: "The summary accurately captures the core AutoContext loop.",
+    reasoning: "The summary accurately captures the core autocontext loop.",
     dimensions: dims,
   };
   return `<!-- JUDGE_RESULT_START -->\n${JSON.stringify(data)}\n<!-- JUDGE_RESULT_END -->`;
@@ -59,7 +59,7 @@ describe("Smoke: single-round judge eval (AC-29)", () => {
     const judge = new LLMJudge({ provider: mockProvider(makeResponse()), model: "m", rubric: RUBRIC });
     const r = await judge.evaluate({ taskPrompt: PROMPT, agentOutput: OUTPUT });
     expect(r.reasoning.length).toBeGreaterThan(0);
-    expect(r.reasoning).toContain("AutoContext");
+    expect(r.reasoning).toContain("autocontext");
   });
 
   it("parse succeeds on first attempt (markers)", async () => {

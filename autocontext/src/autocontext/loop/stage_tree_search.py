@@ -1,4 +1,4 @@
-"""Tree search stage — multi-hypothesis strategy search with Thompson sampling (MTS-80)."""
+"""Tree search stage — multi-hypothesis strategy search with Thompson sampling (AC-80)."""
 
 from __future__ import annotations
 

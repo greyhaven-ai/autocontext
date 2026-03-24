@@ -1,4 +1,4 @@
-"""Tests for parsing DAG change directives from architect output (MTS-27)."""
+"""Tests for parsing DAG change directives from architect output (AC-27)."""
 from __future__ import annotations
 
 from autocontext.agents.architect import parse_dag_changes

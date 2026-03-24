@@ -1,4 +1,4 @@
-"""Tests for grid_ctf enumerate_legal_actions (MTS-85)."""
+"""Tests for grid_ctf enumerate_legal_actions (AC-85)."""
 
 from __future__ import annotations
 

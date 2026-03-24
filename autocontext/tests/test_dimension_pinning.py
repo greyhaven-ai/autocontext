@@ -1,4 +1,4 @@
-"""Tests for dimension pinning across improvement loop rounds (MTS-48).
+"""Tests for dimension pinning across improvement loop rounds (AC-48).
 
 When the rubric is vague, the judge invents dimension names. These can change
 between rounds, making scores incomparable. After the first successful judge

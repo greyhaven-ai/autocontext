@@ -186,7 +186,7 @@ export class RunManager {
       model: normalizedRole ? bundle.roleModels[normalizedRole] : bundle.defaultConfig.model,
       userPrompt: [
         `[${role}]`,
-        "You are helping from the interactive AutoContext control plane.",
+        "You are helping from the interactive autocontext control plane.",
         `Run active: ${state.active ? "yes" : "no"}`,
         `Scenario: ${state.scenario ?? "none"}`,
         `Generation: ${state.generation ?? 0}`,

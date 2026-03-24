@@ -21,7 +21,7 @@ class AgentOutput:
 class AgentRuntime(ABC):
     """Abstract base for agent runtimes.
 
-    AutoContext uses runtimes to generate and revise content. The runtime
+    autocontext uses runtimes to generate and revise content. The runtime
     could be a direct API call, a Claude Code CLI invocation,
     or any other agent framework.
     """

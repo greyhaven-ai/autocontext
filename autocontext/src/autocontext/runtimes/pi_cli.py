@@ -1,7 +1,7 @@
 """Pi CLI runtime — wraps `pi --print` for agent execution.
 
 Uses Pi's non-interactive print mode as a one-shot agent runtime,
-capturing output and normalizing into AutoContext artifacts.
+capturing output and normalizing into autocontext artifacts.
 """
 
 from __future__ import annotations

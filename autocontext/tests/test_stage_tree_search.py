@@ -1,4 +1,4 @@
-"""Tests for tree search stage (MTS-80)."""
+"""Tests for tree search stage (AC-80)."""
 
 from __future__ import annotations
 

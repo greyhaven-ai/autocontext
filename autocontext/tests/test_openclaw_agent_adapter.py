@@ -1,4 +1,4 @@
-"""Tests for AC-193: OpenClaw agent adapter for running agents inside MTS harness."""
+"""Tests for AC-193: OpenClaw agent adapter for running agents inside autocontext harness."""
 from __future__ import annotations
 
 import time

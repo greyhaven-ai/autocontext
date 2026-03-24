@@ -9,7 +9,7 @@ const THIS_DIR = dirname(fileURLToPath(import.meta.url));
 const TS_ROOT = join(THIS_DIR, "..");
 
 const HELP = `
-run-repl-session.mjs — example MCP client for AutoContext's run_repl_session tool
+run-repl-session.mjs — example MCP client for autocontext's run_repl_session tool
 
 Usage:
   node examples/run-repl-session.mjs [options]
@@ -30,7 +30,7 @@ Options:
   --memory-mb N               Memory cap in MB (default: 64)
   --help                      Show this help
 
-This script spawns the local AutoContext TypeScript MCP server over stdio:
+This script spawns the local autocontext TypeScript MCP server over stdio:
   npx tsx src/cli/index.ts serve
 
 Requirements:
@@ -40,7 +40,7 @@ Requirements:
 
 function parseArgs(argv) {
   const values = {
-    prompt: "Write a concise summary of what AutoContext does.",
+    prompt: "Write a concise summary of what autocontext does.",
     rubric: "Reward clarity, factual accuracy, and completeness.",
     phase: "generate",
     currentOutput: undefined,

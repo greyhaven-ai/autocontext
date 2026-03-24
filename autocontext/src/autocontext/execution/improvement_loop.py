@@ -429,7 +429,7 @@ class ImprovementLoop:
                 threshold_met_round = None
 
             if round_num < self.max_rounds:
-                # Enrich feedback with dimension scores + regression warnings (MTS-41)
+                # Enrich feedback with dimension scores + regression warnings (AC-41)
                 revision_result = result
                 if result.dimension_scores and round_num > 1:
                     prev_valid = [r for r in rounds[:-1] if not r.judge_failed]
