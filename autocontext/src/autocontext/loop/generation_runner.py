@@ -942,6 +942,18 @@ class GenerationRunner:
         except (TypeError, ValueError):
             return default
 
+    def _optional_float_value(
+        self,
+        value: object,
+        default: float | None = None,
+    ) -> float | None:
+        if value is None:
+            return default
+        try:
+            return float(cast(int | float | str, value))
+        except (TypeError, ValueError):
+            return default
+
     def _recover_stale_run_state(self, run_id: str) -> None:
         """Repair an interrupted run before attempting a resume.
 
@@ -1008,11 +1020,10 @@ class GenerationRunner:
     def _hydrate_run_state(
         self,
         run_id: str,
-    ) -> tuple[float, float, float, list[float], list[str]]:
+    ) -> tuple[float, float, float | None, list[float], list[str]]:
         """Restore prior completed-generation state for resume/retry flows."""
-        default_uncertainty = self._float_value(
+        default_uncertainty = self._optional_float_value(
             get_backend(self.settings.scoring_backend).default_uncertainty,
-            0.0,
         )
         generation_rows = self.sqlite.get_generation_metrics(run_id)
         completed_rows = [
@@ -1024,7 +1035,7 @@ class GenerationRunner:
         latest = completed_rows[-1]
         previous_best = self._float_value(latest.get("best_score"), 0.0)
         challenger_elo = self._float_value(latest.get("elo"), 1000.0)
-        challenger_uncertainty = self._float_value(
+        challenger_uncertainty = self._optional_float_value(
             latest.get("rating_uncertainty"),
             default_uncertainty,
         )
@@ -1214,7 +1225,7 @@ class GenerationRunner:
                     )
                     previous_best = ctx.previous_best
                     challenger_elo = ctx.challenger_elo
-                    challenger_uncertainty = self._float_value(
+                    challenger_uncertainty = self._optional_float_value(
                         ctx.challenger_uncertainty,
                         challenger_uncertainty,
                     )
