@@ -3,6 +3,8 @@
  * Mirrors Python's autocontext/config/settings.py + presets.py.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -338,6 +340,140 @@ function coerceEnvValue(val: string, fieldDefault: unknown): unknown {
 }
 
 // ---------------------------------------------------------------------------
+// Project config + persisted credentials
+// ---------------------------------------------------------------------------
+
+const PROJECT_CONFIG_FILE = ".autoctx.json";
+const CREDENTIALS_FILE = "credentials.json";
+
+export interface ProjectConfig {
+  defaultScenario?: string;
+  provider?: string;
+  model?: string;
+  gens?: number;
+  knowledgeDir?: string;
+  runsDir?: string;
+  dbPath?: string;
+}
+
+export interface StoredCredentials {
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  savedAt?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readJsonObject(path: string, label: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf-8"));
+  } catch (err) {
+    throw new Error(`Invalid ${label}: ${(err as Error).message}`);
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`Invalid ${label}: expected a JSON object`);
+  }
+  return parsed;
+}
+
+function coercePositiveInt(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+export function findProjectConfigPath(startDir = process.cwd()): string | null {
+  let current = resolve(startDir);
+  while (true) {
+    const candidate = join(current, PROJECT_CONFIG_FILE);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+export function loadProjectConfig(startDir = process.cwd()): ProjectConfig | null {
+  const configPath = findProjectConfigPath(startDir);
+  if (!configPath) {
+    return null;
+  }
+
+  const raw = readJsonObject(configPath, PROJECT_CONFIG_FILE);
+  const config: ProjectConfig = {};
+
+  if (typeof raw.default_scenario === "string" && raw.default_scenario.trim()) {
+    config.defaultScenario = raw.default_scenario.trim();
+  }
+  if (typeof raw.provider === "string" && raw.provider.trim()) {
+    config.provider = raw.provider.trim();
+  }
+  if (typeof raw.model === "string" && raw.model.trim()) {
+    config.model = raw.model.trim();
+  }
+  if (typeof raw.knowledge_dir === "string" && raw.knowledge_dir.trim()) {
+    config.knowledgeDir = raw.knowledge_dir.trim();
+  }
+  if (typeof raw.runs_dir === "string" && raw.runs_dir.trim()) {
+    config.runsDir = raw.runs_dir.trim();
+  }
+  if (typeof raw.db_path === "string" && raw.db_path.trim()) {
+    config.dbPath = raw.db_path.trim();
+  }
+  config.gens = coercePositiveInt(raw.gens);
+
+  return config;
+}
+
+export function resolveConfigDir(explicit?: string): string {
+  return explicit ?? process.env.AUTOCONTEXT_CONFIG_DIR ?? join(process.env.HOME ?? "~", ".config", "autoctx");
+}
+
+export function loadPersistedCredentials(configDir = resolveConfigDir()): StoredCredentials | null {
+  const credentialsPath = join(configDir, CREDENTIALS_FILE);
+  if (!existsSync(credentialsPath)) {
+    return null;
+  }
+
+  const raw = readJsonObject(credentialsPath, CREDENTIALS_FILE);
+  const credentials: StoredCredentials = {};
+
+  if (typeof raw.provider === "string" && raw.provider.trim()) {
+    credentials.provider = raw.provider.trim();
+  }
+  if (typeof raw.apiKey === "string" && raw.apiKey.trim()) {
+    credentials.apiKey = raw.apiKey.trim();
+  }
+  if (typeof raw.model === "string" && raw.model.trim()) {
+    credentials.model = raw.model.trim();
+  }
+  if (typeof raw.baseUrl === "string" && raw.baseUrl.trim()) {
+    credentials.baseUrl = raw.baseUrl.trim();
+  }
+  if (typeof raw.savedAt === "string" && raw.savedAt.trim()) {
+    credentials.savedAt = raw.savedAt.trim();
+  }
+
+  return credentials;
+}
+
+// ---------------------------------------------------------------------------
 // loadSettings — read from AUTOCONTEXT_* env vars + optional preset
 // ---------------------------------------------------------------------------
 
@@ -353,6 +489,27 @@ export function loadSettings(): AppSettings {
   // Apply preset overrides first
   for (const [key, value] of Object.entries(presetOverrides)) {
     kwargs[key] = value;
+  }
+
+  // Then apply project config (.autoctx.json) if present
+  const projectConfig = loadProjectConfig();
+  if (projectConfig) {
+    if (projectConfig.provider) {
+      kwargs.agentProvider = projectConfig.provider;
+    }
+    if (projectConfig.knowledgeDir) {
+      kwargs.knowledgeRoot = projectConfig.knowledgeDir;
+    }
+    if (projectConfig.runsDir) {
+      kwargs.runsRoot = projectConfig.runsDir;
+      kwargs.dbPath = join(projectConfig.runsDir, "autocontext.sqlite3");
+    }
+    if (projectConfig.dbPath) {
+      kwargs.dbPath = projectConfig.dbPath;
+    }
+    if (projectConfig.gens !== undefined) {
+      kwargs.defaultGenerations = projectConfig.gens;
+    }
   }
 
   // Then apply env vars (env wins over preset)

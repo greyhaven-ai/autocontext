@@ -42,9 +42,20 @@ export interface ExportOpts {
   scenario?: string;
   keptOnly?: boolean;
   includeMatches?: boolean;
+  onProgress?: (progress: ExportProgress) => void;
 }
 
 export type TrainingExportRecord = TrainingRecord | MatchRecord;
+
+export interface ExportProgress {
+  phase: "start" | "run" | "generation";
+  totalRuns: number;
+  runIndex: number;
+  runId: string;
+  scenario: string;
+  generationIndex?: number;
+  recordsEmitted: number;
+}
 
 function extractHints(playbook: string): string {
   return (
@@ -94,7 +105,25 @@ export function exportTrainingData(
     return [];
   }
 
-  for (const run of runs) {
+  opts.onProgress?.({
+    phase: "start",
+    totalRuns: runs.length,
+    runIndex: 0,
+    runId: "",
+    scenario: opts.scenario ?? "",
+    recordsEmitted: records.length,
+  });
+
+  for (const [runIndex, run] of runs.entries()) {
+    opts.onProgress?.({
+      phase: "run",
+      totalRuns: runs.length,
+      runIndex: runIndex + 1,
+      runId: run.run_id,
+      scenario: run.scenario,
+      recordsEmitted: records.length,
+    });
+
     const playbook = artifacts.readPlaybook(run.scenario);
     const hints = extractHints(playbook);
     const generations = store.getGenerations(run.run_id);
@@ -135,6 +164,16 @@ export function exportTrainingData(
           })),
         );
       }
+
+      opts.onProgress?.({
+        phase: "generation",
+        totalRuns: runs.length,
+        runIndex: runIndex + 1,
+        runId: run.run_id,
+        scenario: run.scenario,
+        generationIndex: gen.generation_index,
+        recordsEmitted: records.length,
+      });
     }
   }
 

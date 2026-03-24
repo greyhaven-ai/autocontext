@@ -25,6 +25,7 @@ const HELP = `
 autoctx — always-on agent evaluation harness
 
 Commands:
+  init             Scaffold project config (.autoctx.json)
   run              Run generation loop for a scenario
   list             List recent runs
   replay           Print replay JSON for a generation
@@ -33,13 +34,17 @@ Commands:
   export-training-data  Export training data as JSONL
   import-package   Import a strategy package from file
   new-scenario     Create a scenario from natural language description
+  capabilities     Show available scenarios, providers, and features (JSON)
+  login            Store provider credentials persistently
+  whoami           Show current auth status and provider
+  logout           Clear stored provider credentials
   tui              Start interactive TUI (WebSocket server + Ink UI)
   judge            One-shot evaluation of output against a rubric
   improve          Run multi-round improvement loop
   repl             Run a direct REPL-loop session
   queue            Add a task to the background runner queue
   status           Show queue status
-  serve            Start HTTP dashboard + API server
+  serve            Start HTTP dashboard + API server [--json]
   mcp-serve        Start MCP server on stdio
   version          Show version
 
@@ -63,57 +68,69 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // All commands need a database
-  const dbPath = process.env.AUTOCONTEXT_DB_PATH ?? resolve("autocontext.db");
-
   switch (command) {
+    case "init":
+      await cmdInit();
+      break;
+    case "capabilities":
+      await cmdCapabilities();
+      break;
+    case "login":
+      await cmdLogin();
+      break;
+    case "whoami":
+      await cmdWhoami();
+      break;
+    case "logout":
+      await cmdLogout();
+      break;
     case "run":
-      await cmdRun(dbPath);
+      await cmdRun(await getDbPath());
       break;
     case "list":
-      await cmdList(dbPath);
+      await cmdList(await getDbPath());
       break;
     case "replay":
-      await cmdReplay(dbPath);
+      await cmdReplay(await getDbPath());
       break;
     case "benchmark":
-      await cmdBenchmark(dbPath);
+      await cmdBenchmark(await getDbPath());
       break;
     case "export":
-      await cmdExport(dbPath);
+      await cmdExport(await getDbPath());
       break;
     case "export-training-data":
-      await cmdExportTrainingData(dbPath);
+      await cmdExportTrainingData(await getDbPath());
       break;
     case "import-package":
-      await cmdImportPackage(dbPath);
+      await cmdImportPackage(await getDbPath());
       break;
     case "new-scenario":
-      await cmdNewScenario(dbPath);
+      await cmdNewScenario(await getDbPath());
       break;
     case "tui":
-      await cmdTui(dbPath);
+      await cmdTui(await getDbPath());
       break;
     case "judge":
-      await cmdJudge(dbPath);
+      await cmdJudge(await getDbPath());
       break;
     case "improve":
-      await cmdImprove(dbPath);
+      await cmdImprove(await getDbPath());
       break;
     case "repl":
-      await cmdRepl(dbPath);
+      await cmdRepl(await getDbPath());
       break;
     case "queue":
-      await cmdQueue(dbPath);
+      await cmdQueue(await getDbPath());
       break;
     case "status":
-      await cmdStatus(dbPath);
+      await cmdStatus(await getDbPath());
       break;
     case "serve":
-      await cmdServeHttp(dbPath);
+      await cmdServeHttp(await getDbPath());
       break;
     case "mcp-serve":
-      await cmdMcpServe(dbPath);
+      await cmdMcpServe(await getDbPath());
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -123,13 +140,157 @@ async function main(): Promise<void> {
 }
 
 function formatFatalCliError(err: unknown): string {
-  if (err instanceof Error && err.name === "PortInUseError") {
-    return err.message;
-  }
   if (err instanceof Error) {
-    return err.stack ?? err.message;
+    // Clean message only — no stack traces unless DEBUG is set
+    if (process.env.DEBUG) {
+      return err.stack ?? err.message;
+    }
+    return `Error: ${err.message}`;
   }
   return String(err);
+}
+
+async function getDbPath(): Promise<string> {
+  const { loadSettings } = await import("../config/index.js");
+  const { mkdirSync } = await import("node:fs");
+  const dbPath = resolve(loadSettings().dbPath);
+  mkdirSync(dirname(dbPath), { recursive: true });
+  return dbPath;
+}
+
+async function loadProjectDefaults() {
+  const { loadProjectConfig } = await import("../config/index.js");
+  return loadProjectConfig();
+}
+
+async function resolveScenarioOption(explicit?: string): Promise<string | undefined> {
+  if (explicit?.trim()) {
+    return explicit.trim();
+  }
+  return (await loadProjectDefaults())?.defaultScenario;
+}
+
+async function promptForValue(label: string): Promise<string> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return (await rl.question(`${label}: `)).trim();
+  } finally {
+    rl.close();
+  }
+}
+
+async function summarizeDirectory(root: string): Promise<{ exists: boolean; directories: number; files: number }> {
+  const { existsSync, readdirSync } = await import("node:fs");
+  if (!existsSync(root)) {
+    return { exists: false, directories: 0, files: 0 };
+  }
+
+  let directories = 0;
+  let files = 0;
+  const stack = [root];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        directories += 1;
+        stack.push(join(current, entry.name));
+      } else {
+        files += 1;
+      }
+    }
+  }
+
+  return { exists: true, directories, files };
+}
+
+async function buildProjectConfigSummary(): Promise<Record<string, unknown> | null> {
+  const { findProjectConfigPath, loadProjectConfig, loadSettings } = await import("../config/index.js");
+  const projectConfig = loadProjectConfig();
+  if (!projectConfig) {
+    return null;
+  }
+
+  const configPath = findProjectConfigPath();
+  const settings = loadSettings();
+  const dbPath = resolve(settings.dbPath);
+  const knowledgeRoot = resolve(settings.knowledgeRoot);
+  const { existsSync } = await import("node:fs");
+
+  let totalRuns = 0;
+  let activeRuns = 0;
+  if (existsSync(dbPath)) {
+    const { SQLiteStore } = await import("../storage/index.js");
+    const store = new SQLiteStore(dbPath);
+    try {
+      store.migrate(getMigrationsDir());
+      const runs = store.listRuns(1000);
+      totalRuns = runs.length;
+      activeRuns = runs.filter((run) => run.status === "running").length;
+    } finally {
+      store.close();
+    }
+  }
+
+  return {
+    path: configPath,
+    default_scenario: projectConfig.defaultScenario ?? null,
+    provider: projectConfig.provider ?? null,
+    model: projectConfig.model ?? null,
+    gens: projectConfig.gens ?? null,
+    runs_root: settings.runsRoot,
+    knowledge_root: settings.knowledgeRoot,
+    db_path: settings.dbPath,
+    active_runs: activeRuns,
+    total_runs: totalRuns,
+    knowledge_state: await summarizeDirectory(knowledgeRoot),
+  };
+}
+
+async function writeAgentsGuide(targetDir: string): Promise<boolean> {
+  const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+  const agentsPath = join(targetDir, "AGENTS.md");
+  const block = [
+    "## AutoContext",
+    "",
+    "- Use `autoctx capabilities` to inspect supported commands and project state.",
+    "- Use `autoctx whoami` to confirm provider credentials before running evaluations.",
+    "- Run `autoctx run` from this directory to use the defaults stored in `.autoctx.json`.",
+  ].join("\n");
+
+  if (existsSync(agentsPath)) {
+    const existing = readFileSync(agentsPath, "utf-8");
+    if (existing.includes("## AutoContext")) {
+      return false;
+    }
+    writeFileSync(agentsPath, `${existing.trimEnd()}\n\n${block}\n`, "utf-8");
+    return true;
+  }
+
+  writeFileSync(agentsPath, `# Agent Guide\n\n${block}\n`, "utf-8");
+  return true;
+}
+
+function normalizeOllamaBaseUrl(baseUrl?: string): string {
+  const normalized = (baseUrl ?? "http://localhost:11434").replace(/\/+$/, "");
+  return normalized.endsWith("/v1") ? normalized.slice(0, -3) : normalized;
+}
+
+async function validateOllamaConnection(baseUrl: string): Promise<void> {
+  try {
+    const response = await fetch(`${normalizeOllamaBaseUrl(baseUrl)}/api/tags`);
+    if (!response.ok) {
+      throw new Error(`Ollama connection failed: ${response.status} ${response.statusText}`);
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Ollama connection failed:")) {
+      throw err;
+    }
+    throw new Error(
+      `Ollama connection failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 async function getProvider(overrides: { providerType?: string; apiKey?: string; baseUrl?: string; model?: string } = {}) {
@@ -160,7 +321,8 @@ async function cmdRun(dbPath: string): Promise<void> {
     },
   });
 
-  if (values.help || !values.scenario) {
+  const scenarioName = await resolveScenarioOption(values.scenario);
+  if (values.help || !scenarioName) {
     console.log("autoctx run --scenario <name> [--gens N] [--run-id ID] [--provider deterministic] [--matches N] [--json]");
     process.exit(values.help ? 0 : 1);
   }
@@ -178,9 +340,9 @@ async function cmdRun(dbPath: string): Promise<void> {
   );
 
   // Resolve scenario
-  const ScenarioClass = SCENARIO_REGISTRY[values.scenario];
+  const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
   if (!ScenarioClass) {
-    console.error(`Unknown scenario: ${values.scenario}. Available: ${Object.keys(SCENARIO_REGISTRY).join(", ")}`);
+    console.error(`Unknown scenario: ${scenarioName}. Available: ${Object.keys(SCENARIO_REGISTRY).join(", ")}`);
     process.exit(1);
   }
   const scenario = new ScenarioClass();
@@ -565,13 +727,15 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
     options: {
       port: { type: "string", default: "8000" },
       host: { type: "string", default: "127.0.0.1" },
+      json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
 
   if (values.help) {
-    console.log("autoctx serve [--port 8000] [--host 127.0.0.1]");
+    console.log("autoctx serve [--port 8000] [--host 127.0.0.1] [--json]");
     console.log("Starts the HTTP dashboard + API server (matches Python 'autoctx serve').");
+    console.log("With --json, prints a machine-parseable JSON line on startup.");
     process.exit(0);
   }
 
@@ -592,10 +756,23 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
   const server = new InteractiveServer({ runManager: mgr, port, host });
   await server.start();
 
-  console.log(`autocontext server listening at http://${host}:${server.port}`);
-  console.log(`API: http://${host}:${server.port}/api/runs`);
-  console.log(`WebSocket: ws://${host}:${server.port}/ws/interactive`);
-  console.log(`Scenarios: ${mgr.listScenarios().join(", ")}`);
+  const startupInfo = {
+    url: `http://${host}:${server.port}`,
+    apiUrl: `http://${host}:${server.port}/api/runs`,
+    wsUrl: `ws://${host}:${server.port}/ws/interactive`,
+    host,
+    port: server.port,
+    scenarios: mgr.listScenarios(),
+  };
+
+  if (values.json) {
+    console.log(JSON.stringify(startupInfo));
+  } else {
+    console.log(`autocontext server listening at ${startupInfo.url}`);
+    console.log(`API: ${startupInfo.apiUrl}`);
+    console.log(`WebSocket: ${startupInfo.wsUrl}`);
+    console.log(`Scenarios: ${startupInfo.scenarios.join(", ")}`);
+  }
 
   await new Promise<void>((res) => {
     const cleanup = () => { process.off("SIGINT", cleanup); process.off("SIGTERM", cleanup); res(); };
@@ -705,6 +882,20 @@ async function cmdReplay(_dbPath: string): Promise<void> {
 
   const gen = parseInt(values.generation ?? "1", 10);
   const settings = loadSettings();
+  const generationsDir = join(
+    resolve(settings.runsRoot),
+    values["run-id"],
+    "generations",
+  );
+  const availableGenerations = existsSync(generationsDir)
+    ? readdirSync(generationsDir)
+      .map((name) => {
+        const match = /^gen_(\d+)$/.exec(name);
+        return match ? parseInt(match[1] ?? "", 10) : null;
+      })
+      .filter((value): value is number => value !== null)
+      .sort((a, b) => a - b)
+    : [];
   const replayDir = join(
     resolve(settings.runsRoot),
     values["run-id"],
@@ -713,17 +904,25 @@ async function cmdReplay(_dbPath: string): Promise<void> {
     "replays",
   );
   if (!existsSync(replayDir)) {
-    console.error(`No replay files found under ${replayDir}`);
+    const available = availableGenerations.length > 0
+      ? ` Available generations: ${availableGenerations.join(", ")}.`
+      : "";
+    console.error(`No replay files found under ${replayDir}.${available}`);
     process.exit(1);
   }
   const replayFiles = readdirSync(replayDir)
     .filter((name) => name.endsWith(".json"))
     .sort();
   if (replayFiles.length === 0) {
-    console.error(`No replay files found under ${replayDir}`);
+    const available = availableGenerations.length > 0
+      ? ` Available generations: ${availableGenerations.join(", ")}.`
+      : "";
+    console.error(`No replay files found under ${replayDir}.${available}`);
     process.exit(1);
   }
   const payload = JSON.parse(readFileSync(join(replayDir, replayFiles[0]), "utf-8"));
+  const available = availableGenerations.length > 0 ? availableGenerations.join(", ") : String(gen);
+  console.error(`Replaying generation ${gen}. Available generations: ${available}`);
   console.log(JSON.stringify(payload, null, 2));
 }
 
@@ -751,7 +950,7 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
 
-  const scenarioName = values.scenario ?? "grid_ctf";
+  const scenarioName = (await resolveScenarioOption(values.scenario)) ?? "grid_ctf";
   const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
   if (!ScenarioClass) {
     console.error(`Unknown scenario: ${scenarioName}`);
@@ -812,7 +1011,8 @@ async function cmdExport(dbPath: string): Promise<void> {
     process.exit(0);
   }
 
-  if (!values.scenario) {
+  const scenarioName = await resolveScenarioOption(values.scenario);
+  if (!scenarioName) {
     console.error("Error: --scenario is required");
     process.exit(1);
   }
@@ -831,7 +1031,7 @@ async function cmdExport(dbPath: string): Promise<void> {
   });
   try {
     const result = exportStrategyPackage({
-      scenarioName: values.scenario,
+      scenarioName,
       artifacts,
       store,
     });
@@ -894,14 +1094,27 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
   });
 
   try {
+    console.error(`Exporting training data${values["run-id"] ? ` for run ${values["run-id"]}` : ` for scenario ${values.scenario}` }...`);
     const records = exportTrainingData(store, artifacts, {
       runId: values["run-id"],
       scenario: values.scenario,
       includeMatches: values["include-matches"],
       keptOnly: values["kept-only"],
+      onProgress: (progress) => {
+        if (progress.phase === "start") {
+          console.error(`Scanning ${progress.totalRuns} run(s)...`);
+          return;
+        }
+        if (progress.phase === "generation" && progress.generationIndex !== undefined) {
+          console.error(
+            `Processed run ${progress.runId} generation ${progress.generationIndex} (${progress.recordsEmitted} records)`,
+          );
+        }
+      },
     });
 
     const jsonl = records.map((r) => JSON.stringify(r)).join("\n");
+    console.error(`Exported ${records.length} record(s).`);
 
     if (values.output) {
       const { writeFileSync, mkdirSync } = await import("node:fs");
@@ -1113,6 +1326,272 @@ Options:
     console.log(`Task prompt: ${result.spec.taskPrompt}`);
     console.log(`Rubric: ${result.spec.rubric}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// New DX commands (AC-393, AC-405, AC-407)
+// ---------------------------------------------------------------------------
+
+async function cmdInit(): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      dir: { type: "string", default: "." },
+      scenario: { type: "string" },
+      provider: { type: "string" },
+      model: { type: "string" },
+      gens: { type: "string", default: "3" },
+      "agents-md": { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx init [--dir <path>] [--scenario <name>] [--provider <type>] [--model <name>] [--gens N] [--agents-md]");
+    console.log("Scaffolds a .autoctx.json project config file, auto-detecting provider/model defaults when available.");
+    process.exit(0);
+  }
+
+  const { existsSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
+  const { resolveProviderConfig } = await import("../providers/index.js");
+  const targetDir = resolve(values.dir ?? ".");
+  const configPath = join(targetDir, ".autoctx.json");
+  const projectDefaults = loadProjectConfig(targetDir);
+  const persistedCredentials = loadPersistedCredentials();
+
+  if (existsSync(configPath)) {
+    console.error("Error: .autoctx.json already exists in " + targetDir);
+    process.exit(1);
+  }
+
+  mkdirSync(targetDir, { recursive: true });
+  let detectedProvider =
+    values.provider?.trim() ??
+    projectDefaults?.provider ??
+    process.env.AUTOCONTEXT_AGENT_PROVIDER?.trim() ??
+    process.env.AUTOCONTEXT_PROVIDER?.trim() ??
+    persistedCredentials?.provider;
+  let detectedModel =
+    values.model?.trim() ??
+    projectDefaults?.model ??
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL?.trim() ??
+    process.env.AUTOCONTEXT_MODEL?.trim() ??
+    persistedCredentials?.model;
+  try {
+    const resolved = resolveProviderConfig();
+    detectedProvider = detectedProvider ?? resolved.providerType;
+    detectedModel = detectedModel ?? resolved.model;
+  } catch {
+    detectedProvider = detectedProvider ?? "deterministic";
+  }
+
+  const config: Record<string, unknown> = {
+    default_scenario: values.scenario ?? projectDefaults?.defaultScenario ?? "grid_ctf",
+    provider: detectedProvider ?? "deterministic",
+    gens: parseInt(values.gens ?? "3", 10) || 3,
+    knowledge_dir: projectDefaults?.knowledgeDir ?? "./knowledge",
+    runs_dir: projectDefaults?.runsDir ?? "./runs",
+  };
+  if (detectedModel) {
+    config.model = detectedModel;
+  }
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+  let agentsMdUpdated = false;
+  if (values["agents-md"]) {
+    agentsMdUpdated = await writeAgentsGuide(targetDir);
+  }
+
+  console.log(`Created ${configPath}`);
+  if (values["agents-md"]) {
+    console.log(agentsMdUpdated ? `Updated ${join(targetDir, "AGENTS.md")}` : `AGENTS.md already contained AutoContext guidance`);
+  }
+}
+
+async function cmdCapabilities(): Promise<void> {
+  const pkg = await import("../../package.json", { with: { type: "json" } });
+  const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
+  const projectConfig = await buildProjectConfigSummary();
+
+  const capabilities = {
+    version: pkg.default.version,
+    commands: [
+      "init", "run", "list", "replay", "benchmark", "export",
+      "export-training-data", "import-package", "new-scenario",
+      "capabilities", "login", "whoami", "logout", "tui", "judge", "improve",
+      "repl", "queue", "status", "serve", "mcp-serve", "version",
+    ],
+    scenarios: Object.keys(SCENARIO_REGISTRY).sort(),
+    providers: [
+      "anthropic", "openai", "openai-compatible", "ollama", "vllm",
+      "hermes", "pi", "pi-rpc", "deterministic",
+    ],
+    features: {
+      mcp_server: true,
+      training_export: true,
+      custom_scenarios: true,
+      interactive_server: true,
+      playbook_versioning: true,
+    },
+    pythonOnly: [
+      "train", "ecosystem", "ab-test", "resume", "wait", "trigger-distillation",
+    ],
+    project_config: projectConfig,
+  };
+  console.log(JSON.stringify(capabilities, null, 2));
+}
+
+async function cmdLogin(): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      provider: { type: "string" },
+      key: { type: "string" },
+      model: { type: "string" },
+      "base-url": { type: "string" },
+      "config-dir": { type: "string" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx login [--provider <type>] [--key <api-key>] [--model <name>] [--base-url <url>] [--config-dir <path>]");
+    console.log("Stores provider credentials persistently. Without flags, prompts for provider and key.");
+    process.exit(0);
+  }
+
+  let provider = values.provider?.trim();
+  if (!provider) {
+    provider = await promptForValue("Provider");
+  }
+  if (!provider) {
+    console.error("Error: provider is required");
+    process.exit(1);
+  }
+  provider = provider.toLowerCase();
+
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { resolveConfigDir } = await import("../config/index.js");
+  let apiKey = values.key?.trim();
+  let baseUrl = values["base-url"]?.trim();
+  const model = values.model?.trim();
+
+  if (provider === "ollama") {
+    baseUrl = normalizeOllamaBaseUrl(
+      baseUrl ??
+      process.env.AUTOCONTEXT_AGENT_BASE_URL ??
+      process.env.AUTOCONTEXT_BASE_URL ??
+      "http://localhost:11434",
+    );
+    await validateOllamaConnection(baseUrl);
+  } else {
+    if (!apiKey) {
+      apiKey = await promptForValue("API key");
+    }
+    if (!apiKey) {
+      console.error("Error: --key is required for this provider");
+      process.exit(1);
+    }
+  }
+
+  const configDir = resolveConfigDir(values["config-dir"]);
+  mkdirSync(configDir, { recursive: true });
+  const creds: Record<string, unknown> = {
+    provider,
+    savedAt: new Date().toISOString(),
+  };
+  if (apiKey) {
+    creds.apiKey = apiKey;
+  }
+  if (model) {
+    creds.model = model;
+  }
+  if (baseUrl) {
+    creds.baseUrl = baseUrl;
+  }
+  writeFileSync(join(configDir, "credentials.json"), JSON.stringify(creds, null, 2), "utf-8");
+  if (provider === "ollama") {
+    console.log(`Connected to Ollama at ${baseUrl}`);
+  } else {
+    console.log(`Credentials saved for ${provider}`);
+  }
+}
+
+async function cmdWhoami(): Promise<void> {
+  const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
+  const { resolveProviderConfig } = await import("../providers/index.js");
+
+  const projectConfig = loadProjectConfig();
+  const persistedCredentials = loadPersistedCredentials();
+  let resolvedConfig: { providerType: string; apiKey?: string; model?: string; baseUrl?: string } | null = null;
+
+  try {
+    resolvedConfig = resolveProviderConfig();
+  } catch {
+    resolvedConfig = null;
+  }
+
+  const provider =
+    resolvedConfig?.providerType ??
+    projectConfig?.provider ??
+    persistedCredentials?.provider ??
+    "not configured";
+  const model =
+    resolvedConfig?.model ??
+    projectConfig?.model ??
+    persistedCredentials?.model ??
+    process.env.AUTOCONTEXT_MODEL ??
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
+    "default";
+  const baseUrl =
+    resolvedConfig?.baseUrl ??
+    persistedCredentials?.baseUrl ??
+    process.env.AUTOCONTEXT_AGENT_BASE_URL ??
+    process.env.AUTOCONTEXT_BASE_URL;
+  const authenticated = provider === "ollama" || Boolean(
+    resolvedConfig?.apiKey ??
+    process.env.ANTHROPIC_API_KEY ??
+    process.env.OPENAI_API_KEY ??
+    persistedCredentials?.apiKey,
+  );
+
+  console.log(JSON.stringify({
+    provider,
+    model,
+    authenticated,
+    ...(baseUrl ? { baseUrl } : {}),
+  }, null, 2));
+}
+
+async function cmdLogout(): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      "config-dir": { type: "string" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log("autoctx logout [--config-dir <path>]");
+    console.log("Clears stored provider credentials.");
+    process.exit(0);
+  }
+
+  const { existsSync, unlinkSync } = await import("node:fs");
+  const { loadPersistedCredentials, resolveConfigDir } = await import("../config/index.js");
+  const configDir = resolveConfigDir(values["config-dir"]);
+  const credentialsPath = join(configDir, "credentials.json");
+  const existing = loadPersistedCredentials(configDir);
+
+  if (!existsSync(credentialsPath)) {
+    console.log("No stored credentials found.");
+    return;
+  }
+
+  unlinkSync(credentialsPath);
+  console.log(existing?.provider ? `Logged out from ${existing.provider}` : "Logged out.");
 }
 
 main().catch((err) => {

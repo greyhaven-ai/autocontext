@@ -26,9 +26,16 @@ npm run build
 
 ## CLI Commands
 
-The package ships a full `autoctx` CLI with 17 commands:
+The package ships a full `autoctx` CLI with 22 commands:
 
 ```bash
+# Project setup and discovery
+autoctx init --agents-md
+autoctx capabilities
+autoctx login
+autoctx whoami
+autoctx logout
+
 # Scenario execution
 autoctx run --scenario grid_ctf --gens 3 --json
 autoctx list --json
@@ -43,7 +50,7 @@ autoctx new-scenario --description "Test summarization quality"
 
 # Interactive
 autoctx tui [--port 8000]
-autoctx serve [--port 8000]          # HTTP dashboard + API
+autoctx serve [--port 8000] [--json] # HTTP dashboard + API
 autoctx mcp-serve                     # MCP server on stdio
 
 # Evaluation
@@ -95,7 +102,33 @@ Key environment variables:
 | `AUTOCONTEXT_AGENT_API_KEY` | API key (or use provider-specific env vars) |
 | `AUTOCONTEXT_AGENT_BASE_URL` | Base URL for compatible providers |
 | `AUTOCONTEXT_AGENT_DEFAULT_MODEL` | Override default model |
+| `AUTOCONTEXT_CONFIG_DIR` | Override where `login` / `whoami` read saved credentials |
 | `AUTOCONTEXT_DB_PATH` | SQLite database path |
+
+Credential resolution order is:
+
+1. Environment variables
+2. CLI flags
+3. Project config (`.autoctx.json`)
+4. Credential store (`~/.config/autoctx/credentials.json`)
+
+## Project Defaults
+
+`autoctx init` scaffolds a `.autoctx.json` file in your project. When present, the CLI uses it for:
+
+- Default provider selection
+- Default model preference
+- Default scenario for `run`, `benchmark`, and `export`
+- Project `runs/` and `knowledge/` roots
+- The default SQLite database location under the configured `runs_dir`
+
+Add `--agents-md` during init to generate a small `AGENTS.md` block with the recommended local AutoContext workflow.
+
+`autoctx capabilities` returns structured JSON describing commands, providers, scenarios, and project-specific state such as the current project config, active runs, and knowledge directory summary.
+
+`autoctx login` can prompt interactively for provider credentials. `autoctx login --provider ollama` validates that a local Ollama server is reachable before persisting the connection details, and `autoctx logout` clears the stored credentials.
+
+`autoctx replay` writes the selected generation and available generations to `stderr` before printing the replay JSON payload. `autoctx export-training-data` writes progress updates to `stderr` while keeping JSONL records on `stdout`.
 
 ## MCP Tools (40+)
 

@@ -137,9 +137,10 @@ describe("README positioning", () => {
 // ---------------------------------------------------------------------------
 
 describe("CLI help matches README", () => {
-  it("lists all 17 commands in help", () => {
+  it("lists all documented commands in help", () => {
     const help = runCli(["--help"]);
     const expected = [
+      "init", "capabilities", "login", "whoami", "logout",
       "run", "list", "replay", "benchmark", "export", "export-training-data",
       "import-package", "new-scenario", "tui", "judge", "improve", "repl",
       "queue", "status", "serve", "mcp-serve", "version",

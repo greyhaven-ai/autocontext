@@ -7,6 +7,7 @@
 
 import { ProviderError } from "../types/index.js";
 import type { CompletionResult, LLMProvider } from "../types/index.js";
+import { loadPersistedCredentials, loadProjectConfig } from "../config/index.js";
 import { DeterministicProvider } from "./deterministic.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
@@ -228,26 +229,49 @@ export interface ProviderConfig {
   model?: string;
 }
 
-export function resolveProviderConfig(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
+interface ResolveProviderConfigOpts {
+  preferProviderOverride?: boolean;
+  preferModelOverride?: boolean;
+}
+
+export function resolveProviderConfig(
+  overrides: Partial<ProviderConfig> = {},
+  opts: ResolveProviderConfigOpts = {},
+): ProviderConfig {
+  const projectConfig = loadProjectConfig();
+  const persistedCredentials = loadPersistedCredentials();
+  const envProviderType =
+    process.env.AUTOCONTEXT_AGENT_PROVIDER ??
+    process.env.AUTOCONTEXT_PROVIDER;
+  const envModel =
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
+    process.env.AUTOCONTEXT_MODEL;
+
   // Python-compatible: AUTOCONTEXT_AGENT_PROVIDER takes precedence
   const providerType =
+    (opts.preferProviderOverride ? overrides.providerType : undefined) ??
+    envProviderType ??
     overrides.providerType ??
-    process.env.AUTOCONTEXT_AGENT_PROVIDER ??
-    process.env.AUTOCONTEXT_PROVIDER ??
+    projectConfig?.provider ??
+    persistedCredentials?.provider ??
     "anthropic";
   // Agent-specific env vars (Python-compatible) with fallback to generic
   const model =
+    (opts.preferModelOverride ? overrides.model : undefined) ??
+    envModel ??
     overrides.model ??
-    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
-    process.env.AUTOCONTEXT_MODEL;
+    projectConfig?.model ??
+    persistedCredentials?.model;
   const baseUrl =
-    overrides.baseUrl ??
     process.env.AUTOCONTEXT_AGENT_BASE_URL ??
-    process.env.AUTOCONTEXT_BASE_URL;
+    process.env.AUTOCONTEXT_BASE_URL ??
+    overrides.baseUrl ??
+    persistedCredentials?.baseUrl;
   const genericKey =
-    overrides.apiKey ??
     process.env.AUTOCONTEXT_AGENT_API_KEY ??
-    process.env.AUTOCONTEXT_API_KEY;
+    process.env.AUTOCONTEXT_API_KEY ??
+    overrides.apiKey ??
+    persistedCredentials?.apiKey;
 
   const type = providerType.toLowerCase().trim();
 
@@ -380,26 +404,40 @@ export function buildRoleProviderBundle(
       ...overrides,
       providerType: settings.competitorProvider || defaultConfig.providerType,
       model: settings.modelCompetitor ?? defaultConfig.model,
+    }, {
+      preferProviderOverride: Boolean(settings.competitorProvider),
+      preferModelOverride: Boolean(settings.modelCompetitor),
     }),
     analyst: resolveProviderConfig({
       ...overrides,
       providerType: settings.analystProvider || defaultConfig.providerType,
       model: settings.modelAnalyst ?? defaultConfig.model,
+    }, {
+      preferProviderOverride: Boolean(settings.analystProvider),
+      preferModelOverride: Boolean(settings.modelAnalyst),
     }),
     coach: resolveProviderConfig({
       ...overrides,
       providerType: settings.coachProvider || defaultConfig.providerType,
       model: settings.modelCoach ?? defaultConfig.model,
+    }, {
+      preferProviderOverride: Boolean(settings.coachProvider),
+      preferModelOverride: Boolean(settings.modelCoach),
     }),
     architect: resolveProviderConfig({
       ...overrides,
       providerType: settings.architectProvider || defaultConfig.providerType,
       model: settings.modelArchitect ?? defaultConfig.model,
+    }, {
+      preferProviderOverride: Boolean(settings.architectProvider),
+      preferModelOverride: Boolean(settings.modelArchitect),
     }),
     curator: resolveProviderConfig({
       ...overrides,
       providerType: defaultConfig.providerType,
       model: settings.modelCurator ?? defaultConfig.model,
+    }, {
+      preferModelOverride: Boolean(settings.modelCurator),
     }),
   };
 

@@ -3,7 +3,11 @@
  * Mirrors Python's autocontext/mcp/tools.py::get_capabilities.
  */
 
+import { createRequire } from "node:module";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../../package.json") as { version: string };
 
 export interface Capabilities {
   version: string;
@@ -15,7 +19,7 @@ export interface Capabilities {
 
 export function getCapabilities(): Capabilities {
   return {
-    version: "0.2.3",
+    version: pkg.version,
     scenarios: Object.keys(SCENARIO_REGISTRY).sort(),
     providers: [
       "anthropic",
