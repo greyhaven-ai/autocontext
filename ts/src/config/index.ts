@@ -349,6 +349,7 @@ const CREDENTIALS_FILE = "credentials.json";
 export interface ProjectConfig {
   defaultScenario?: string;
   provider?: string;
+  model?: string;
   gens?: number;
   knowledgeDir?: string;
   runsDir?: string;
@@ -358,6 +359,8 @@ export interface ProjectConfig {
 export interface StoredCredentials {
   provider?: string;
   apiKey?: string;
+  model?: string;
+  baseUrl?: string;
   savedAt?: string;
 }
 
@@ -421,6 +424,9 @@ export function loadProjectConfig(startDir = process.cwd()): ProjectConfig | nul
   if (typeof raw.provider === "string" && raw.provider.trim()) {
     config.provider = raw.provider.trim();
   }
+  if (typeof raw.model === "string" && raw.model.trim()) {
+    config.model = raw.model.trim();
+  }
   if (typeof raw.knowledge_dir === "string" && raw.knowledge_dir.trim()) {
     config.knowledgeDir = raw.knowledge_dir.trim();
   }
@@ -453,6 +459,12 @@ export function loadPersistedCredentials(configDir = resolveConfigDir()): Stored
   }
   if (typeof raw.apiKey === "string" && raw.apiKey.trim()) {
     credentials.apiKey = raw.apiKey.trim();
+  }
+  if (typeof raw.model === "string" && raw.model.trim()) {
+    credentials.model = raw.model.trim();
+  }
+  if (typeof raw.baseUrl === "string" && raw.baseUrl.trim()) {
+    credentials.baseUrl = raw.baseUrl.trim();
   }
   if (typeof raw.savedAt === "string" && raw.savedAt.trim()) {
     credentials.savedAt = raw.savedAt.trim();
