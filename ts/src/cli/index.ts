@@ -407,8 +407,26 @@ async function cmdRun(dbPath: string): Promise<void> {
 
   const scenarioName = await resolveScenarioOption(values.scenario);
   if (values.help) {
-    console.log("autoctx run [--scenario <name>] [--gens N] [--run-id ID] [--provider deterministic] [--matches N] [--json]");
-    console.log("If project config exists, --scenario and --gens default from that config.");
+    console.log(`autoctx run — Run the generation loop for a scenario
+
+Usage: autoctx run [options]
+
+Options:
+  --scenario <name>    Scenario to run (current built-in: grid_ctf)
+  --gens N             Number of generations to run (default: from config or 1)
+  --run-id <id>        Custom run identifier (default: auto-generated)
+  --provider <type>    LLM provider: anthropic, openai, ollama, deterministic, etc.
+  --matches N          Matches per generation (default: 3)
+  --json               Output results as JSON
+
+If project config (.autoctx.json) exists, --scenario and --gens default from it.
+
+Examples:
+  autoctx run --scenario grid_ctf --provider deterministic --gens 3
+  autoctx run --scenario grid_ctf --gens 5 --matches 5
+  autoctx run                          # uses defaults from .autoctx.json
+
+See also: list, replay, export, benchmark`);
     process.exit(0);
   }
   if (!scenarioName) {
@@ -570,7 +588,23 @@ async function cmdJudge(_dbPath: string): Promise<void> {
   });
 
   if (values.help || !values.output || (!values.scenario && (!values.prompt || !values.rubric))) {
-    console.log("autoctx judge (-s <saved-scenario> | -p <task-prompt>) -o <agent-output> [-r <rubric>]");
+    console.log(`autoctx judge — One-shot evaluation of output against a rubric
+
+Usage: autoctx judge [options]
+
+Options:
+  -s, --scenario <name>  Use a saved custom scenario (provides prompt + rubric)
+  -p, --prompt <text>    Task prompt (what was asked of the agent)
+  -o, --output <text>    Agent output to evaluate (required)
+  -r, --rubric <text>    Evaluation rubric/criteria
+
+Provide either --scenario or both --prompt and --rubric.
+
+Examples:
+  autoctx judge -p "Summarize this doc" -o "The doc covers..." -r "Score clarity 0-1"
+  autoctx judge -s my_saved_task -o "Agent response here"
+
+See also: improve, queue, run`);
     process.exit(values.help ? 0 : 1);
   }
 
@@ -629,10 +663,29 @@ async function cmdImprove(_dbPath: string): Promise<void> {
   });
 
   if (values.help || (!values.scenario && (!values.prompt || !values.rubric)) || (!values.output && !values.rlm && !values.scenario)) {
-    console.log(
-      "autoctx improve (-s <saved-scenario> | -p <task-prompt>) [-o <initial-output>] [-r <rubric>] " +
-      "[-n rounds] [-t threshold] [--min-rounds N] [--rlm] [--rlm-turns N] [-v]",
-    );
+    console.log(`autoctx improve — Run multi-round improvement loop
+
+Usage: autoctx improve [options]
+
+Options:
+  -s, --scenario <name>   Use a saved custom scenario (provides prompt + rubric)
+  -p, --prompt <text>     Task prompt
+  -o, --output <text>     Initial agent output to improve
+  -r, --rubric <text>     Evaluation rubric/criteria
+  -n, --rounds N          Maximum improvement rounds (default: 5)
+  -t, --threshold N       Quality threshold to stop early (default: 0.9)
+  --min-rounds N          Minimum rounds before early stop (default: 1)
+  --rlm                   Use REPL-loop mode (agent writes + runs code)
+  --rlm-turns N           Max REPL turns per round
+  -v, --verbose           Show detailed round-by-round output
+
+Provide either --scenario or both --prompt and --rubric.
+
+Examples:
+  autoctx improve -p "Write a summary" -o "Draft here" -r "Score clarity" -n 3
+  autoctx improve -s my_task -o "Initial draft" --threshold 0.95
+
+See also: judge, queue, run`);
     process.exit(values.help ? 0 : 1);
   }
 
@@ -950,8 +1003,28 @@ async function cmdMcpServe(dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx mcp-serve");
-    console.log("Starts the MCP server on stdio (matches Python 'autoctx mcp-serve').");
+    console.log(`autoctx mcp-serve — Start MCP server on stdio
+
+Starts the Model Context Protocol server on stdio for integration with
+Claude Code, Cursor, and other MCP-compatible editors.
+
+Core exported tools:
+  evaluate_output       Evaluate output against a rubric
+  run_improvement_loop  Multi-round improvement loop
+  queue_task            Enqueue a task for background evaluation
+  get_queue_status      Check task queue status
+  list_runs             List recent runs
+  get_run_status        Get detailed run status
+  run_replay            Replay a generation
+  list_scenarios        List available scenarios
+  export_package        Export strategy package data
+  create_agent_task     Create a saved agent-task scenario
+
+Additional tools cover playbooks, sandboxing, tournaments, and package import/export.
+
+Transport: stdio (JSON-RPC over stdin/stdout)
+
+See also: serve, judge, improve`);
     process.exit(0);
   }
 
@@ -990,7 +1063,16 @@ async function cmdList(dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx list [--limit N] [--scenario <name>] [--json]");
+    console.log(`autoctx list — List recent runs
+
+Usage: autoctx list [options]
+
+Options:
+  --limit N            Maximum number of runs to show (default: 50)
+  --scenario <name>    Filter runs by scenario name
+  --json               Output as JSON array
+
+See also: run, replay, status`);
     process.exit(0);
   }
 
@@ -1027,7 +1109,15 @@ async function cmdReplay(_dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx replay --run-id <id> [--generation N]");
+    console.log(`autoctx replay — Print replay JSON for a generation
+
+Usage: autoctx replay [options]
+
+Options:
+  --run-id <id>        Run to replay (required)
+  --generation N       Generation number to replay (default: 1)
+
+See also: run, list, export`);
     process.exit(0);
   }
 
@@ -1099,7 +1189,22 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx benchmark [--scenario <name>] [--runs N] [--gens N] [--provider deterministic] [--json]");
+    console.log(`autoctx benchmark — Run benchmark (multiple runs, aggregate stats)
+
+Usage: autoctx benchmark [options]
+
+Options:
+  --scenario <name>    Scenario to benchmark (default: grid_ctf)
+  --runs N             Number of independent runs (default: 3)
+  --gens N             Generations per run (default: 1)
+  --provider <type>    LLM provider to use
+  --json               Output aggregate stats as JSON
+
+Examples:
+  autoctx benchmark --scenario grid_ctf --runs 5 --gens 3
+  autoctx benchmark --provider deterministic --json
+
+See also: run, list`);
     process.exit(0);
   }
 
@@ -1169,7 +1274,16 @@ async function cmdExport(dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx export --scenario <name> [--output <file>] [--json]");
+    console.log(`autoctx export — Export strategy package for a scenario
+
+Usage: autoctx export [options]
+
+Options:
+  --scenario <name>    Scenario to export (required)
+  --output <file>      Output file path (default: stdout)
+  --json               Force JSON output format
+
+See also: import-package, run, replay`);
     process.exit(0);
   }
 
@@ -1509,8 +1623,25 @@ async function cmdInit(): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx init [--dir <path>] [--scenario <name>] [--provider <type>] [--model <name>] [--gens N] [--agents-md]");
-    console.log("Scaffolds a .autoctx.json project config file and writes AGENTS.md guidance, auto-detecting provider/model defaults when available.");
+    console.log(`autoctx init — Scaffold project config and AGENTS guidance
+
+Usage: autoctx init [options]
+
+Options:
+  --dir <path>         Directory to initialize (default: current directory)
+  --scenario <name>    Default scenario (default: grid_ctf)
+  --provider <type>    Default provider (default: deterministic)
+  --model <name>       Default model for the provider
+  --gens N             Default generations per run (default: 3)
+
+Creates .autoctx.json, AGENTS.md, runs/, and knowledge/ directories.
+
+Examples:
+  autoctx init
+  autoctx init --scenario grid_ctf --provider anthropic --gens 5
+  autoctx init --dir ./my-project
+
+See also: run, login, capabilities`);
     process.exit(0);
   }
 
@@ -1616,8 +1747,26 @@ async function cmdLogin(): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx login [--provider <type>] [--key <api-key>] [--model <name>] [--base-url <url>] [--config-dir <path>]");
-    console.log("Stores provider credentials persistently. Without flags, prompts for provider and key.");
+    console.log(`autoctx login — Store provider credentials persistently
+
+Usage: autoctx login [options]
+
+Options:
+  --provider <type>    Provider name: anthropic, openai, gemini, ollama, groq, etc.
+  --key <api-key>      API key (omit to be prompted interactively)
+  --model <name>       Default model for this provider
+  --base-url <url>     Custom base URL (for Ollama, vLLM, proxies)
+  --config-dir <path>  Config directory (default: ~/.config/autoctx)
+
+Without flags, prompts interactively for provider and key.
+Keys starting with ! are executed as shell commands (e.g. !security find-generic-password).
+
+Examples:
+  autoctx login --provider anthropic --key sk-ant-...
+  autoctx login --provider ollama --base-url http://localhost:11434
+  autoctx login                            # interactive prompt
+
+See also: whoami, logout, providers, models`);
     process.exit(0);
   }
 
