@@ -507,6 +507,59 @@ export class InteractiveServer {
         this.runManager.cancelScenario();
         this.send(ws, { type: "ack", action: "cancel_scenario" });
         return;
+      case "login": {
+        const { handleTuiLogin } = await import("./tui-auth.js");
+        const { resolveConfigDir } = await import("../config/index.js");
+        const configDir = resolveConfigDir();
+        const loginResult = await handleTuiLogin(configDir, msg.provider, msg.apiKey, msg.model, msg.baseUrl);
+        this.send(ws, {
+          type: "auth_status",
+          provider: loginResult.provider,
+          authenticated: loginResult.saved,
+        });
+        return;
+      }
+      case "logout": {
+        const { handleTuiLogout, handleTuiWhoami } = await import("./tui-auth.js");
+        const { resolveConfigDir } = await import("../config/index.js");
+        const configDir = resolveConfigDir();
+        handleTuiLogout(configDir, msg.provider);
+        const status = handleTuiWhoami(configDir);
+        this.send(ws, {
+          type: "auth_status",
+          provider: status.provider,
+          authenticated: status.authenticated,
+        });
+        return;
+      }
+      case "switch_provider": {
+        const { handleTuiSwitchProvider, handleTuiWhoami } = await import("./tui-auth.js");
+        const { resolveConfigDir } = await import("../config/index.js");
+        const configDir = resolveConfigDir();
+        handleTuiSwitchProvider(configDir, msg.provider);
+        const status = handleTuiWhoami(configDir);
+        this.send(ws, {
+          type: "auth_status",
+          provider: status.provider,
+          authenticated: status.authenticated,
+          ...(status.model ? { model: status.model } : {}),
+        });
+        return;
+      }
+      case "whoami": {
+        const { handleTuiWhoami } = await import("./tui-auth.js");
+        const { resolveConfigDir } = await import("../config/index.js");
+        const configDir = resolveConfigDir();
+        const status = handleTuiWhoami(configDir);
+        this.send(ws, {
+          type: "auth_status",
+          provider: status.provider,
+          authenticated: status.authenticated,
+          ...(status.model ? { model: status.model } : {}),
+          ...(status.configuredProviders ? { configuredProviders: status.configuredProviders } : {}),
+        });
+        return;
+      }
     }
   }
 

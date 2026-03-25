@@ -134,6 +134,18 @@ export const MonitorAlertMsgSchema = z.object({
   detail: z.record(z.unknown()),
 });
 
+// Auth status response (AC-408)
+export const AuthStatusMsgSchema = z.object({
+  type: z.literal("auth_status"),
+  provider: z.string(),
+  authenticated: z.boolean(),
+  model: z.string().optional(),
+  configuredProviders: z.array(z.object({
+    provider: z.string(),
+    hasApiKey: z.boolean(),
+  })).optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Client → Server commands
 // ---------------------------------------------------------------------------
@@ -185,6 +197,29 @@ export const CancelScenarioCmdSchema = z.object({
   type: z.literal("cancel_scenario"),
 });
 
+// Auth commands (AC-408)
+export const LoginCmdSchema = z.object({
+  type: z.literal("login"),
+  provider: z.string().min(1),
+  apiKey: z.string().optional(),
+  model: z.string().optional(),
+  baseUrl: z.string().optional(),
+});
+
+export const LogoutCmdSchema = z.object({
+  type: z.literal("logout"),
+  provider: z.string().optional(),
+});
+
+export const SwitchProviderCmdSchema = z.object({
+  type: z.literal("switch_provider"),
+  provider: z.string().min(1),
+});
+
+export const WhoamiCmdSchema = z.object({
+  type: z.literal("whoami"),
+});
+
 // ---------------------------------------------------------------------------
 // Discriminated unions
 // ---------------------------------------------------------------------------
@@ -203,6 +238,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ScenarioReadyMsgSchema,
   ScenarioErrorMsgSchema,
   MonitorAlertMsgSchema,
+  AuthStatusMsgSchema,
 ]);
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -217,6 +253,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ConfirmScenarioCmdSchema,
   ReviseScenarioCmdSchema,
   CancelScenarioCmdSchema,
+  LoginCmdSchema,
+  LogoutCmdSchema,
+  SwitchProviderCmdSchema,
+  WhoamiCmdSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
