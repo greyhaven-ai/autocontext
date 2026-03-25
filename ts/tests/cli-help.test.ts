@@ -61,6 +61,12 @@ describe("run --help", () => {
     expect(out).toContain("list");
     expect(out).toContain("replay");
   });
+
+  it("only uses runnable built-in scenario examples", () => {
+    expect(out).toContain("grid_ctf");
+    expect(out).not.toContain("othello");
+    expect(out).not.toContain("resource_trader");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -78,6 +84,10 @@ describe("list --help", () => {
   it("includes cross-references", () => {
     expect(out.toLowerCase()).toContain("see also");
   });
+
+  it("documents the real default limit", () => {
+    expect(out).toContain("default: 50");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -94,6 +104,10 @@ describe("replay --help", () => {
 
   it("includes cross-references", () => {
     expect(out.toLowerCase()).toContain("see also");
+  });
+
+  it("documents the real default generation", () => {
+    expect(out).toContain("default: 1");
   });
 });
 
@@ -136,7 +150,10 @@ describe("mcp-serve --help", () => {
   const out = runHelp("mcp-serve");
 
   it("documents exposed tools", () => {
-    expect(out).toContain("autocontext_");
+    expect(out).toContain("evaluate_output");
+    expect(out).toContain("run_improvement_loop");
+    expect(out).toContain("queue_task");
+    expect(out).not.toContain("autocontext_judge");
   });
 
   it("mentions stdio transport", () => {
@@ -216,5 +233,11 @@ describe("init --help", () => {
 
   it("includes usage examples", () => {
     expect(out.toLowerCase()).toContain("example");
+  });
+
+  it("matches the actual scaffolding behavior", () => {
+    expect(out).toContain("AGENTS.md");
+    expect(out).not.toContain("--agents-md");
+    expect(out).not.toContain("othello");
   });
 });

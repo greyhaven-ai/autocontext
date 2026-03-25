@@ -412,7 +412,7 @@ async function cmdRun(dbPath: string): Promise<void> {
 Usage: autoctx run [options]
 
 Options:
-  --scenario <name>    Scenario to run (e.g. grid_ctf, othello, resource_trader)
+  --scenario <name>    Scenario to run (current built-in: grid_ctf)
   --gens N             Number of generations to run (default: from config or 1)
   --run-id <id>        Custom run identifier (default: auto-generated)
   --provider <type>    LLM provider: anthropic, openai, ollama, deterministic, etc.
@@ -423,7 +423,7 @@ If project config (.autoctx.json) exists, --scenario and --gens default from it.
 
 Examples:
   autoctx run --scenario grid_ctf --provider deterministic --gens 3
-  autoctx run --scenario othello --gens 5 --matches 5
+  autoctx run --scenario grid_ctf --gens 5 --matches 5
   autoctx run                          # uses defaults from .autoctx.json
 
 See also: list, replay, export, benchmark`);
@@ -1008,17 +1008,19 @@ async function cmdMcpServe(dbPath: string): Promise<void> {
 Starts the Model Context Protocol server on stdio for integration with
 Claude Code, Cursor, and other MCP-compatible editors.
 
-Exposed tools:
-  autocontext_judge           Evaluate output against a rubric
-  autocontext_improve         Multi-round improvement loop
-  autocontext_queue_task      Enqueue a task for background evaluation
-  autocontext_task_status     Check task queue status
-  autocontext_list_runs       List recent runs
-  autocontext_run_status      Get detailed run status
-  autocontext_replay          Replay a generation
-  autocontext_scenarios       List available scenarios
-  autocontext_export_skill    Export scenario knowledge as a skill package
-  autocontext_create_scenario Create a scenario from natural language
+Core exported tools:
+  evaluate_output       Evaluate output against a rubric
+  run_improvement_loop  Multi-round improvement loop
+  queue_task            Enqueue a task for background evaluation
+  get_queue_status      Check task queue status
+  list_runs             List recent runs
+  get_run_status        Get detailed run status
+  run_replay            Replay a generation
+  list_scenarios        List available scenarios
+  export_package        Export strategy package data
+  create_agent_task     Create a saved agent-task scenario
+
+Additional tools cover playbooks, sandboxing, tournaments, and package import/export.
 
 Transport: stdio (JSON-RPC over stdin/stdout)
 
@@ -1066,7 +1068,7 @@ async function cmdList(dbPath: string): Promise<void> {
 Usage: autoctx list [options]
 
 Options:
-  --limit N            Maximum number of runs to show (default: 20)
+  --limit N            Maximum number of runs to show (default: 50)
   --scenario <name>    Filter runs by scenario name
   --json               Output as JSON array
 
@@ -1113,7 +1115,7 @@ Usage: autoctx replay [options]
 
 Options:
   --run-id <id>        Run to replay (required)
-  --generation N       Generation number to replay (default: latest)
+  --generation N       Generation number to replay (default: 1)
 
 See also: run, list, export`);
     process.exit(0);
@@ -1631,13 +1633,12 @@ Options:
   --provider <type>    Default provider (default: deterministic)
   --model <name>       Default model for the provider
   --gens N             Default generations per run (default: 3)
-  --agents-md          Also generate AGENTS.md guidance file
 
-Creates .autoctx.json, runs/, and knowledge/ directories.
+Creates .autoctx.json, AGENTS.md, runs/, and knowledge/ directories.
 
 Examples:
   autoctx init
-  autoctx init --scenario othello --provider anthropic --gens 5
+  autoctx init --scenario grid_ctf --provider anthropic --gens 5
   autoctx init --dir ./my-project
 
 See also: run, login, capabilities`);
