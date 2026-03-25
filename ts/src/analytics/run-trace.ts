@@ -77,35 +77,43 @@ export class RunTrace {
   readonly events: TraceEvent[] = [];
   readonly createdAt: string;
 
-  constructor(runId: string, scenarioType: string) {
+  constructor(runId: string, scenarioType: string, createdAt?: string) {
     this.runId = runId;
     this.scenarioType = scenarioType;
-    this.createdAt = new Date().toISOString();
+    this.createdAt = createdAt ?? new Date().toISOString();
   }
 
   addEvent(event: TraceEvent): void {
     this.events.push(event);
   }
 
-  toJSON(): string {
-    return JSON.stringify({
+  toDict(): Record<string, unknown> {
+    return {
       run_id: this.runId,
       scenario_type: this.scenarioType,
       events: this.events.map((e) => e.toDict()),
       created_at: this.createdAt,
-    });
+    };
   }
 
-  static fromJSON(json: string): RunTrace {
-    const data = JSON.parse(json) as Record<string, unknown>;
+  toJSON(): string {
+    return JSON.stringify(this.toDict());
+  }
+
+  static fromDict(data: Record<string, unknown>): RunTrace {
     const trace = new RunTrace(
       (data.run_id as string) ?? "",
       (data.scenario_type as string) ?? "",
+      (data.created_at as string) ?? undefined,
     );
     const events = (data.events as Record<string, unknown>[]) ?? [];
-    for (const e of events) {
-      trace.addEvent(TraceEvent.fromDict(e));
+    for (const event of events) {
+      trace.addEvent(TraceEvent.fromDict(event));
     }
     return trace;
+  }
+
+  static fromJSON(json: string): RunTrace {
+    return RunTrace.fromDict(JSON.parse(json) as Record<string, unknown>);
   }
 }

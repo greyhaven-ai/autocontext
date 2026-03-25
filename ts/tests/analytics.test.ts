@@ -60,6 +60,7 @@ describe("RunTrace types", () => {
     const restored = RunTrace.fromJSON(json);
     expect(restored.events.length).toBe(1);
     expect(restored.runId).toBe("run-1");
+    expect(restored.createdAt).toBe(trace.createdAt);
   });
 });
 
@@ -77,30 +78,114 @@ describe("Rubric drift", () => {
     const { RubricDriftMonitor } = await import("../src/analytics/rubric-drift.js");
     const monitor = new RubricDriftMonitor();
 
-    // Add a window of scores trending upward
-    monitor.recordScore(0.5);
-    monitor.recordScore(0.6);
-    monitor.recordScore(0.7);
-    monitor.recordScore(0.85);
-    monitor.recordScore(0.95);
-    monitor.recordScore(0.98);
+    const facets = [
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.5,
+        createdAt: "2026-01-01T00:00:00Z",
+        totalGenerations: 2,
+        delightSignals: [],
+        retries: 0,
+        rollbacks: 0,
+      },
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.6,
+        createdAt: "2026-01-02T00:00:00Z",
+        totalGenerations: 2,
+        delightSignals: [],
+        retries: 0,
+        rollbacks: 0,
+      },
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.9,
+        createdAt: "2026-01-03T00:00:00Z",
+        totalGenerations: 2,
+        delightSignals: [{ signalType: "strong_improvement" }],
+        retries: 1,
+        rollbacks: 0,
+      },
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.98,
+        createdAt: "2026-01-04T00:00:00Z",
+        totalGenerations: 2,
+        delightSignals: [{ signalType: "strong_improvement" }],
+        retries: 2,
+        rollbacks: 1,
+      },
+    ];
 
-    const report = monitor.analyze();
+    const report = monitor.analyze(facets, {
+      release: "0.2.4",
+      scenarioFamily: "game",
+      agentProvider: "anthropic",
+    });
     expect(report.warnings.length).toBeGreaterThan(0);
-    expect(report.warnings.some((w) => w.type === "score_inflation" || w.type === "near_perfect_rate")).toBe(true);
+    expect(report.snapshot.agentProvider).toBe("anthropic");
+    expect(report.warnings.some((warning) => warning.warningType === "score_inflation" || warning.warningType === "perfect_rate_high")).toBe(true);
   });
 
   it("reports no drift for stable scores", async () => {
     const { RubricDriftMonitor } = await import("../src/analytics/rubric-drift.js");
     const monitor = new RubricDriftMonitor();
 
-    // Stable scores around 0.7
-    for (let i = 0; i < 10; i++) {
-      monitor.recordScore(0.65 + Math.random() * 0.1);
+    const stableScores = [0.6, 0.7, 0.74, 0.68, 0.78, 0.69, 0.63, 0.75];
+    for (const score of stableScores) {
+      monitor.recordScore(score);
     }
 
     const report = monitor.analyze();
     expect(report.stable).toBe(true);
+  });
+
+  it("detects baseline inflation separately from within-window inflation", async () => {
+    const { RubricDriftMonitor } = await import("../src/analytics/rubric-drift.js");
+    const monitor = new RubricDriftMonitor();
+    const baseline = monitor.computeSnapshot([
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.5,
+        createdAt: "2026-01-01T00:00:00Z",
+        totalGenerations: 1,
+        delightSignals: [],
+        retries: 0,
+        rollbacks: 0,
+      },
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.55,
+        createdAt: "2026-01-02T00:00:00Z",
+        totalGenerations: 1,
+        delightSignals: [],
+        retries: 0,
+        rollbacks: 0,
+      },
+    ]);
+
+    const report = monitor.analyze([
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.8,
+        createdAt: "2026-02-01T00:00:00Z",
+        totalGenerations: 1,
+        delightSignals: [],
+        retries: 0,
+        rollbacks: 0,
+      },
+      {
+        scenario: "grid_ctf",
+        bestScore: 0.85,
+        createdAt: "2026-02-02T00:00:00Z",
+        totalGenerations: 1,
+        delightSignals: [],
+        retries: 0,
+        rollbacks: 0,
+      },
+    ], { baseline });
+
+    expect(report.warnings.some((warning) => warning.metricName === "mean_score_delta")).toBe(true);
   });
 });
 
@@ -115,18 +200,44 @@ describe("Credit assignment", () => {
   });
 
   it("assigns credit to components based on score impact", async () => {
-    const { CreditAssigner } = await import("../src/analytics/credit-assignment.js");
+    const {
+      CreditAssigner,
+      attributeCredit,
+      computeChangeVector,
+      formatAttributionForAgent,
+    } = await import("../src/analytics/credit-assignment.js");
     const assigner = new CreditAssigner();
 
-    // Record component contributions
-    assigner.recordContribution("competitor", 0.3);
-    assigner.recordContribution("analyst", 0.15);
-    assigner.recordContribution("coach", 0.1);
-    assigner.recordContribution("competitor", 0.4);
+    const vector = computeChangeVector(
+      3,
+      0.3,
+      {
+        playbook: "old plan",
+        tools: ["grep"],
+        hints: "keep it simple",
+        analysis: "weak hypothesis",
+      },
+      {
+        playbook: "new plan with branches",
+        tools: ["grep", "rg"],
+        hints: "focus on invariants",
+        analysis: "stronger hypothesis with evidence",
+      },
+    );
 
+    const attribution = attributeCredit(vector);
+    expect(vector.changes.length).toBeGreaterThan(0);
+    expect(attribution.totalDelta).toBe(0.3);
+    expect(Object.values(attribution.credits).reduce((sum, value) => sum + value, 0)).toBeCloseTo(0.3, 5);
+
+    const formatted = formatAttributionForAgent(attribution, "coach");
+    expect(formatted).toContain("Previous Coaching Attribution");
+    expect(formatted).toContain("Total score improvement");
+
+    assigner.attributeCredit(vector);
     const credits = assigner.getCredits();
-    expect(credits.competitor).toBeGreaterThan(credits.analyst);
-    expect(credits.competitor).toBeGreaterThan(credits.coach);
+    expect(credits.playbook).toBeGreaterThan(0);
+    expect(credits.tools).toBeGreaterThan(0);
   });
 });
 
