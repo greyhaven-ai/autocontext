@@ -1324,41 +1324,28 @@ def improve(
     the improvement loop with judge-guided iteration.
     """
     from autocontext.execution.improvement_loop import ImprovementLoop
-    from autocontext.execution.judge import LLMJudge
+    from autocontext.execution.task_runner import SimpleAgentTask
     from autocontext.providers.registry import get_provider as get_judge_provider
-    from autocontext.scenarios.agent_task import AgentTaskResult
 
     settings = load_settings()
     if provider_override:
         settings = settings.model_copy(update={"judge_provider": provider_override})
 
-    judge_provider = get_judge_provider(settings)
-    judge = LLMJudge(provider=judge_provider, model=settings.judge_model, rubric=rubric)
-
-    # Inline task wrapping prompt + rubric
-    class _SimpleTask:
-        def get_task_prompt(self, state: dict | None = None) -> str:
-            return task_prompt
-
-        def get_rubric(self) -> str:
-            return rubric
-
-        def evaluate_output(self, output: str, state: dict | None = None, **kwargs: object) -> AgentTaskResult:
-            result = judge.evaluate(task_prompt=task_prompt, agent_output=output)
-            return AgentTaskResult(score=result.score, reasoning=result.reasoning, dimension_scores=result.dimension_scores)
-
-        def initial_state(self, seed: int | None = None) -> dict:
-            return {}
-
-        def describe_task(self) -> str:
-            return task_prompt
-
+    provider = get_judge_provider(settings)
+    task = SimpleAgentTask(
+        task_prompt=task_prompt,
+        rubric=rubric,
+        provider=provider,
+        model=settings.judge_model,
+    )
+    state = task.initial_state()
     loop = ImprovementLoop(
-        task=_SimpleTask(),  # type: ignore[arg-type]
+        task=task,
         max_rounds=max_rounds,
         quality_threshold=threshold,
     )
-    result = loop.run(initial_output=initial_output or task_prompt, state={})
+    starting_output = initial_output or task.generate_output(state)
+    result = loop.run(initial_output=starting_output, state=state)
 
     if json_output:
         _write_json_stdout({
@@ -1381,16 +1368,15 @@ def queue(
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Add a task to the background runner queue."""
+    from autocontext.execution.task_runner import enqueue_task
+
     settings = load_settings()
     store = _sqlite_from_settings(settings)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
     if migrations_dir.exists():
         store.migrate(migrations_dir)
 
-    import uuid
-
-    task_id = f"task_{uuid.uuid4().hex[:12]}"
-    store.enqueue_task(task_id, spec, priority=priority)
+    task_id = enqueue_task(store=store, spec_name=spec, priority=priority)
 
     if json_output:
         _write_json_stdout({"task_id": task_id, "spec_name": spec, "status": "queued"})
