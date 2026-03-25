@@ -187,6 +187,33 @@ describe("discoverAllProviders", () => {
     }
   });
 
+  it("detects providers from generic AUTOCONTEXT_* environment variables", async () => {
+    const { discoverAllProviders } = await import("../src/config/credentials.js");
+
+    const oldProvider = process.env.AUTOCONTEXT_AGENT_PROVIDER;
+    const oldKey = process.env.AUTOCONTEXT_AGENT_API_KEY;
+    const oldModel = process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL;
+    try {
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = "openai";
+      process.env.AUTOCONTEXT_AGENT_API_KEY = "sk-generic-env-key";
+      process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = "gpt-4o-mini";
+
+      const providers = discoverAllProviders(dir);
+      const openai = providers.find((p) => p.provider === "openai");
+      expect(openai).toBeDefined();
+      expect(openai!.hasApiKey).toBe(true);
+      expect(openai!.source).toBe("env");
+      expect(openai!.model).toBe("gpt-4o-mini");
+    } finally {
+      if (oldProvider === undefined) delete process.env.AUTOCONTEXT_AGENT_PROVIDER;
+      else process.env.AUTOCONTEXT_AGENT_PROVIDER = oldProvider;
+      if (oldKey === undefined) delete process.env.AUTOCONTEXT_AGENT_API_KEY;
+      else process.env.AUTOCONTEXT_AGENT_API_KEY = oldKey;
+      if (oldModel === undefined) delete process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL;
+      else process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL = oldModel;
+    }
+  });
+
   it("stored credentials take precedence over env vars", async () => {
     const { saveProviderCredentials, discoverAllProviders } = await import("../src/config/credentials.js");
     saveProviderCredentials(dir, "anthropic", { apiKey: "sk-ant-stored" });

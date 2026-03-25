@@ -207,6 +207,35 @@ export interface DiscoveredProvider extends ProviderAuthStatus {
   source: "stored" | "env";
 }
 
+function getGenericEnvProvider(): string | undefined {
+  const provider =
+    process.env.AUTOCONTEXT_AGENT_PROVIDER ??
+    process.env.AUTOCONTEXT_PROVIDER;
+  const trimmed = provider?.trim().toLowerCase();
+  return trimmed ? trimmed : undefined;
+}
+
+function getGenericEnvApiKey(): string | undefined {
+  const apiKey =
+    process.env.AUTOCONTEXT_AGENT_API_KEY ??
+    process.env.AUTOCONTEXT_API_KEY;
+  return apiKey?.trim() ? apiKey : undefined;
+}
+
+function getGenericEnvModel(): string | undefined {
+  const model =
+    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
+    process.env.AUTOCONTEXT_MODEL;
+  return model?.trim() ? model : undefined;
+}
+
+function getGenericEnvBaseUrl(): string | undefined {
+  const baseUrl =
+    process.env.AUTOCONTEXT_AGENT_BASE_URL ??
+    process.env.AUTOCONTEXT_BASE_URL;
+  return baseUrl?.trim() ? baseUrl : undefined;
+}
+
 export function discoverAllProviders(configDir: string): DiscoveredProvider[] {
   const result: DiscoveredProvider[] = [];
   const seen = new Set<string>();
@@ -223,6 +252,20 @@ export function discoverAllProviders(configDir: string): DiscoveredProvider[] {
       ...(creds.baseUrl ? { baseUrl: creds.baseUrl } : {}),
       ...(creds.savedAt ? { savedAt: creds.savedAt } : {}),
     });
+  }
+
+  const genericProvider = getGenericEnvProvider();
+  if (genericProvider && !seen.has(genericProvider)) {
+    const known = getKnownProvider(genericProvider);
+    const providerSpecificKey = known?.envVar ? process.env[known.envVar] : undefined;
+    result.push({
+      provider: genericProvider,
+      hasApiKey: Boolean(getGenericEnvApiKey() ?? providerSpecificKey) || Boolean(known && !known.requiresKey),
+      source: "env",
+      ...(getGenericEnvModel() ? { model: getGenericEnvModel() } : {}),
+      ...(getGenericEnvBaseUrl() ? { baseUrl: getGenericEnvBaseUrl() } : {}),
+    });
+    seen.add(genericProvider);
   }
 
   // Then check env vars for known providers not already stored

@@ -1631,7 +1631,6 @@ async function cmdLogin(): Promise<void> {
   }
   provider = provider.toLowerCase();
 
-  const { mkdirSync, writeFileSync } = await import("node:fs");
   const { resolveConfigDir } = await import("../config/index.js");
   let apiKey = values.key?.trim();
   let baseUrl = values["base-url"]?.trim();
@@ -1664,7 +1663,6 @@ async function cmdLogin(): Promise<void> {
     if (!validation.valid) {
       console.error(`Warning: ${validation.error}`);
     }
-    apiKey = resolvedKey;
   }
 
   // Save to multi-provider credential store with 0600 permissions (AC-430)
@@ -1686,9 +1684,11 @@ async function cmdLogin(): Promise<void> {
 async function cmdWhoami(): Promise<void> {
   const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
   const { resolveProviderConfig } = await import("../providers/index.js");
+  const { resolveConfigDir } = await import("../config/index.js");
 
   const projectConfig = loadProjectConfig();
-  const persistedCredentials = loadPersistedCredentials();
+  const configDir = resolveConfigDir();
+  const defaultPersistedCredentials = loadPersistedCredentials(configDir);
   let resolvedConfig: { providerType: string; apiKey?: string; model?: string; baseUrl?: string } | null = null;
 
   try {
@@ -1700,8 +1700,12 @@ async function cmdWhoami(): Promise<void> {
   const provider =
     resolvedConfig?.providerType ??
     projectConfig?.provider ??
-    persistedCredentials?.provider ??
+    defaultPersistedCredentials?.provider ??
     "not configured";
+  const persistedCredentials =
+    provider !== "not configured"
+      ? loadPersistedCredentials(configDir, provider)
+      : defaultPersistedCredentials;
   const model =
     resolvedConfig?.model ??
     projectConfig?.model ??
@@ -1723,7 +1727,6 @@ async function cmdWhoami(): Promise<void> {
 
   // Also list all configured providers (AC-430)
   const { listConfiguredProviders } = await import("../config/credentials.js");
-  const configDir = (await import("../config/index.js")).resolveConfigDir();
   const configuredProviders = listConfiguredProviders(configDir);
 
   console.log(JSON.stringify({

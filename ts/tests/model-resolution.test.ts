@@ -230,6 +230,23 @@ describe("autoctx providers", () => {
     const anthropic = parsed.find((p) => p.id === "anthropic");
     expect(anthropic?.authenticated).toBe(true);
   });
+
+  it("marks providers authenticated when generic AUTOCONTEXT_* env vars are used", () => {
+    const { stdout, exitCode } = runCli(["providers"], {
+      cwd: dir,
+      env: {
+        AUTOCONTEXT_AGENT_PROVIDER: "openai",
+        AUTOCONTEXT_AGENT_API_KEY: "sk-generic-env",
+        AUTOCONTEXT_AGENT_DEFAULT_MODEL: "gpt-4o-mini",
+      },
+    });
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+    const openai = parsed.find((p) => p.id === "openai");
+    expect(openai?.authenticated).toBe(true);
+    expect(openai?.source).toBe("env");
+    expect(openai?.model).toBe("gpt-4o-mini");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -264,5 +281,19 @@ describe("autoctx models", () => {
     });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("autoctx login");
+  });
+
+  it("lists models for the generic AUTOCONTEXT_* authenticated provider", () => {
+    const { stdout, exitCode } = runCli(["models"], {
+      cwd: dir,
+      env: {
+        AUTOCONTEXT_AGENT_PROVIDER: "openai",
+        AUTOCONTEXT_AGENT_API_KEY: "sk-generic-env",
+      },
+    });
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+    expect(parsed.length).toBeGreaterThan(0);
+    expect(parsed.every((m) => m.provider === "openai")).toBe(true);
   });
 });

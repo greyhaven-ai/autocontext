@@ -415,6 +415,24 @@ describe("AC-407: credential management", () => {
     expect(runResult.stderr).not.toContain("API key required");
   });
 
+  it("login preserves command-based API key lookups instead of materializing them", () => {
+    const configDir = join(dir, "config");
+    const env = { AUTOCONTEXT_CONFIG_DIR: configDir };
+
+    const { exitCode } = runCli(
+      ["login", "--provider", "anthropic", "--key", "!echo sk-test-shell", "--config-dir", configDir],
+      { env },
+    );
+    expect(exitCode).toBe(0);
+
+    const store = JSON.parse(readFileSync(join(configDir, "credentials.json"), "utf-8"));
+    expect(store.providers.anthropic.apiKey).toBe("!echo sk-test-shell");
+
+    const runResult = runCli(["run", "--provider", "anthropic", "--scenario", "nonexistent_scenario_xyz"], { env });
+    expect(runResult.stderr).toContain("Unknown scenario: nonexistent_scenario_xyz");
+    expect(runResult.stderr).not.toContain("ANTHROPIC_API_KEY");
+  });
+
   it("login supports interactive prompts when flags are omitted", async () => {
     const configDir = join(dir, "config");
     const { exitCode, stderr } = await runPromptedCli(["login", "--config-dir", configDir], [
