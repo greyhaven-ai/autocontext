@@ -1,0 +1,32 @@
+{
+  "name": "@autocontext/pi",
+  "version": "0.1.0",
+  "description": "Official autocontext extension for Pi coding agent",
+  "type": "module",
+  "keywords": ["pi-package", "pi", "pi-extension", "autocontext", "autoctx"],
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "dependencies": {
+    "autoctx": "file:../ts"
+  },
+  "devDependencies": {
+    "@sinclair/typebox": "^0.34.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc"
+  }
+}
