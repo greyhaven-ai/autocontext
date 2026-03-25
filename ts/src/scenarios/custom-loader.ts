@@ -16,6 +16,12 @@ export interface CustomScenarioEntry {
   path: string;
 }
 
+export interface ResolvedCustomAgentTask {
+  name: string;
+  path: string;
+  spec: AgentTaskSpec;
+}
+
 export const CUSTOM_SCENARIO_REGISTRY = new Map<string, CustomScenarioEntry>();
 export const CUSTOM_AGENT_TASK_REGISTRY: Record<string, () => AgentTaskInterface> = {};
 
@@ -50,6 +56,14 @@ function normalizeAgentTaskSpec(spec: Record<string, unknown>): AgentTaskSpec {
     };
   }
   return parseRawSpec(spec);
+}
+
+export function renderAgentTaskPrompt(spec: AgentTaskSpec): string {
+  let prompt = spec.taskPrompt;
+  if (spec.sampleInput) {
+    prompt += `\n\n## Input Data\n${spec.sampleInput}`;
+  }
+  return prompt;
 }
 
 /**
@@ -125,6 +139,37 @@ export function loadCustomScenarios(customDir: string): Map<string, CustomScenar
  * Agent-task scenarios are tracked separately from the game-scenario registry because
  * they do not satisfy the ScenarioInterface contract used by the generation loop.
  */
+/**
+ * Convenience: scan knowledge/_custom_scenarios/ and register everything.
+ * Returns the number of custom scenarios discovered.
+ * This mirrors Python's _load_persisted_custom_scenarios() at import time.
+ */
+export function discoverAndRegisterCustomScenarios(
+  knowledgeRoot: string,
+  provider?: LLMProvider,
+): number {
+  const customDir = join(knowledgeRoot, "_custom_scenarios");
+  const loaded = loadCustomScenarios(customDir);
+  registerCustomScenarios(loaded, provider);
+  return loaded.size;
+}
+
+export function resolveCustomAgentTask(
+  knowledgeRoot: string,
+  name: string,
+): ResolvedCustomAgentTask | null {
+  const customDir = join(knowledgeRoot, "_custom_scenarios");
+  const entry = loadCustomScenarios(customDir).get(name);
+  if (!entry || entry.type !== "agent_task") {
+    return null;
+  }
+  return {
+    name,
+    path: entry.path,
+    spec: normalizeAgentTaskSpec(entry.spec),
+  };
+}
+
 export function registerCustomScenarios(
   loaded: Map<string, CustomScenarioEntry>,
   provider?: LLMProvider,

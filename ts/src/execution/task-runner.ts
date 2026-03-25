@@ -14,6 +14,7 @@ import type {
 import { ImprovementLoop } from "./improvement-loop.js";
 import { LLMJudge } from "../judge/index.js";
 import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
+import { renderAgentTaskPrompt, resolveCustomAgentTask } from "../scenarios/custom-loader.js";
 import {
   RlmTaskConfigSchema,
   type RlmSessionRecord,
@@ -22,9 +23,9 @@ import {
 import { runAgentTaskRlmSession } from "../rlm/index.js";
 
 export interface TaskConfig {
-  maxRounds: number;
-  qualityThreshold: number;
-  minRounds: number;
+  maxRounds?: number;
+  qualityThreshold?: number;
+  minRounds?: number;
   referenceContext?: string;
   requiredConcepts?: string[];
   calibrationExamples?: Array<Record<string, unknown>>;
@@ -62,13 +63,13 @@ function resolveRlmConfig(raw: Partial<RlmTaskConfig> | null | undefined): RlmTa
 }
 
 function parseTaskConfig(json: string | null): TaskConfig {
-  if (!json) return { maxRounds: 5, qualityThreshold: 0.9, minRounds: 1 };
+  if (!json) return {};
   const raw = JSON.parse(json);
   const d = TaskConfigSchema.parse(raw);
   return {
-    maxRounds: d.max_rounds ?? 5,
-    qualityThreshold: d.quality_threshold ?? 0.9,
-    minRounds: d.min_rounds ?? 1,
+    maxRounds: d.max_rounds,
+    qualityThreshold: d.quality_threshold,
+    minRounds: d.min_rounds,
     referenceContext: d.reference_context,
     requiredConcepts: d.required_concepts,
     calibrationExamples: d.calibration_examples,
@@ -280,6 +281,7 @@ export interface TaskRunnerOpts {
   store: SQLiteStore;
   provider: LLMProvider;
   model?: string;
+  knowledgeRoot?: string;
   pollInterval?: number;
   maxConsecutiveEmpty?: number;
   concurrency?: number;
@@ -289,6 +291,7 @@ export class TaskRunner {
   private store: SQLiteStore;
   private provider: LLMProvider;
   private model: string;
+  private knowledgeRoot?: string;
   private pollInterval: number;
   private maxConsecutiveEmpty: number;
   private concurrency: number;
@@ -299,6 +302,7 @@ export class TaskRunner {
     this.store = opts.store;
     this.provider = opts.provider;
     this.model = opts.model || opts.provider.defaultModel();
+    this.knowledgeRoot = opts.knowledgeRoot;
     this.pollInterval = opts.pollInterval ?? 60;
     this.maxConsecutiveEmpty = opts.maxConsecutiveEmpty ?? 0;
     this.concurrency = Math.max(1, opts.concurrency ?? 1);
@@ -338,37 +342,53 @@ export class TaskRunner {
   private async processTask(task: TaskQueueRow): Promise<void> {
     try {
       const config = parseTaskConfig(task.config_json);
+      const savedTask = this.knowledgeRoot
+        ? resolveCustomAgentTask(this.knowledgeRoot, task.spec_name)
+        : null;
+      const taskPrompt = config.taskPrompt
+        ?? (savedTask ? renderAgentTaskPrompt(savedTask.spec) : undefined)
+        ?? `Complete the task: ${task.spec_name}`;
+      const rubric = config.rubric
+        ?? savedTask?.spec.judgeRubric
+        ?? "Evaluate quality, accuracy, and completeness on a 0-1 scale.";
+      const referenceContext = config.referenceContext ?? savedTask?.spec.referenceContext ?? undefined;
+      const requiredConcepts = config.requiredConcepts ?? savedTask?.spec.requiredConcepts ?? undefined;
+      const calibrationExamples = config.calibrationExamples ?? savedTask?.spec.calibrationExamples ?? undefined;
+      const maxRounds = config.maxRounds ?? savedTask?.spec.maxRounds ?? 5;
+      const qualityThreshold = config.qualityThreshold ?? savedTask?.spec.qualityThreshold ?? 0.9;
+      const minRounds = config.minRounds ?? 1;
+      const revisionPrompt = config.revisionPrompt ?? savedTask?.spec.revisionPrompt ?? undefined;
 
       const agentTask = new SimpleAgentTask(
-        config.taskPrompt ?? `Complete the task: ${task.spec_name}`,
-        config.rubric ?? "Evaluate quality, accuracy, and completeness on a 0-1 scale.",
+        taskPrompt,
+        rubric,
         this.provider,
         this.model,
-        config.revisionPrompt,
+        revisionPrompt,
         config.rlm,
       );
 
       let initialOutput = config.initialOutput;
       if (!initialOutput) {
         initialOutput = await agentTask.generateOutput({
-          referenceContext: config.referenceContext,
-          requiredConcepts: config.requiredConcepts,
+          referenceContext,
+          requiredConcepts,
         });
       }
 
       const loop = new ImprovementLoop({
         task: agentTask,
-        maxRounds: config.maxRounds,
-        qualityThreshold: config.qualityThreshold,
-        minRounds: config.minRounds,
+        maxRounds,
+        qualityThreshold,
+        minRounds,
       });
 
       const result = await loop.run({
         initialOutput,
-        state: {},
-        referenceContext: config.referenceContext,
-        requiredConcepts: config.requiredConcepts,
-        calibrationExamples: config.calibrationExamples,
+        state: agentTask.initialState(),
+        referenceContext,
+        requiredConcepts,
+        calibrationExamples,
       });
 
       this.store.completeTask(

@@ -55,8 +55,10 @@ autoctx mcp-serve                     # MCP server on stdio
 
 # Evaluation
 autoctx judge -p <prompt> -o <output> -r <rubric>
+autoctx judge --scenario my_saved_task -o <output>
 autoctx improve -p <prompt> -o <output> -r <rubric> [-n rounds]
-autoctx repl -p <prompt> -r <rubric>
+autoctx improve --scenario my_saved_task [-o <output>]
+autoctx repl --scenario my_saved_task
 
 # Task queue
 autoctx queue -s <spec> [--priority N]
@@ -135,6 +137,8 @@ Credential resolution order is:
 `autoctx login` can prompt interactively for provider credentials. `autoctx login --provider ollama` validates that a local Ollama server is reachable before persisting the connection details, and `autoctx logout` clears the stored credentials.
 
 `autoctx replay` writes the selected generation and available generations to `stderr` before printing the replay JSON payload. `autoctx export-training-data` writes progress updates to `stderr` while keeping JSONL records on `stdout`.
+
+Saved custom agent-task scenarios under `knowledge/_custom_scenarios/` can be referenced by name in `judge`, `improve`, `repl`, and `queue`. That lets a saved scenario spec become directly usable from the TS CLI without retyping its prompt and rubric.
 
 ## MCP Tools (40+)
 

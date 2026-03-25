@@ -183,6 +183,51 @@ async function loadProjectDefaults() {
   return loadProjectConfig();
 }
 
+interface SavedAgentTaskScenario {
+  name: string;
+  taskPrompt: string;
+  rubric: string;
+  referenceContext?: string;
+  requiredConcepts?: string[];
+  calibrationExamples?: Array<Record<string, unknown>>;
+  revisionPrompt?: string;
+  maxRounds?: number;
+  qualityThreshold?: number;
+}
+
+function mergeUniqueStrings(
+  primary?: string[],
+  secondary?: string[],
+): string[] | undefined {
+  const merged = [...(primary ?? []), ...(secondary ?? [])]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return merged.length > 0 ? [...new Set(merged)] : undefined;
+}
+
+async function loadSavedAgentTaskScenario(name: string): Promise<SavedAgentTaskScenario | null> {
+  const { loadSettings } = await import("../config/index.js");
+  const { resolveCustomAgentTask, renderAgentTaskPrompt } = await import("../scenarios/custom-loader.js");
+
+  const settings = loadSettings();
+  const saved = resolveCustomAgentTask(resolve(settings.knowledgeRoot), name);
+  if (!saved) {
+    return null;
+  }
+
+  return {
+    name: saved.name,
+    taskPrompt: renderAgentTaskPrompt(saved.spec),
+    rubric: saved.spec.judgeRubric,
+    referenceContext: saved.spec.referenceContext ?? undefined,
+    requiredConcepts: saved.spec.requiredConcepts ?? undefined,
+    calibrationExamples: saved.spec.calibrationExamples ?? undefined,
+    revisionPrompt: saved.spec.revisionPrompt ?? undefined,
+    maxRounds: saved.spec.maxRounds,
+    qualityThreshold: saved.spec.qualityThreshold,
+  };
+}
+
 async function resolveScenarioOption(explicit?: string): Promise<string | undefined> {
   if (explicit?.trim()) {
     return explicit.trim();
@@ -506,6 +551,7 @@ async function cmdJudge(_dbPath: string): Promise<void> {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
+      scenario: { type: "string", short: "s" },
       prompt: { type: "string", short: "p" },
       output: { type: "string", short: "o" },
       rubric: { type: "string", short: "r" },
@@ -513,18 +559,32 @@ async function cmdJudge(_dbPath: string): Promise<void> {
     },
   });
 
-  if (values.help || !values.prompt || !values.output || !values.rubric) {
-    console.log("autoctx judge -p <task-prompt> -o <agent-output> -r <rubric>");
+  if (values.help || !values.output || (!values.scenario && (!values.prompt || !values.rubric))) {
+    console.log("autoctx judge (-s <saved-scenario> | -p <task-prompt>) -o <agent-output> [-r <rubric>]");
     process.exit(values.help ? 0 : 1);
   }
 
   const { provider, model } = await getProvider();
   const { LLMJudge } = await import("../judge/index.js");
+  const savedScenario = values.scenario ? await loadSavedAgentTaskScenario(values.scenario) : null;
+  if (values.scenario && !savedScenario) {
+    console.error(`Unknown saved custom scenario: ${values.scenario}`);
+    process.exit(1);
+  }
+  const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
+  const rubric = values.rubric ?? savedScenario?.rubric;
+  if (!taskPrompt || !rubric) {
+    console.error("Error: judge requires either --scenario <name> or both --prompt and --rubric.");
+    process.exit(1);
+  }
 
-  const judge = new LLMJudge({ provider, model, rubric: values.rubric });
+  const judge = new LLMJudge({ provider, model, rubric });
   const result = await judge.evaluate({
-    taskPrompt: values.prompt,
+    taskPrompt,
     agentOutput: values.output,
+    referenceContext: savedScenario?.referenceContext,
+    requiredConcepts: savedScenario?.requiredConcepts,
+    calibrationExamples: savedScenario?.calibrationExamples,
   });
 
   console.log(JSON.stringify({
@@ -538,12 +598,13 @@ async function cmdImprove(_dbPath: string): Promise<void> {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
+      scenario: { type: "string", short: "s" },
       prompt: { type: "string", short: "p" },
       output: { type: "string", short: "o" },
       rubric: { type: "string", short: "r" },
-      rounds: { type: "string", short: "n", default: "5" },
-      threshold: { type: "string", short: "t", default: "0.9" },
-      "min-rounds": { type: "string", default: "1" },
+      rounds: { type: "string", short: "n" },
+      threshold: { type: "string", short: "t" },
+      "min-rounds": { type: "string" },
       rlm: { type: "boolean" },
       "rlm-model": { type: "string" },
       "rlm-turns": { type: "string" },
@@ -557,9 +618,9 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     },
   });
 
-  if (values.help || !values.prompt || !values.rubric || (!values.output && !values.rlm)) {
+  if (values.help || (!values.scenario && (!values.prompt || !values.rubric)) || (!values.output && !values.rlm && !values.scenario)) {
     console.log(
-      "autoctx improve -p <task-prompt> [-o <initial-output>] -r <rubric> " +
+      "autoctx improve (-s <saved-scenario> | -p <task-prompt>) [-o <initial-output>] [-r <rubric>] " +
       "[-n rounds] [-t threshold] [--min-rounds N] [--rlm] [--rlm-turns N] [-v]",
     );
     process.exit(values.help ? 0 : 1);
@@ -568,13 +629,33 @@ async function cmdImprove(_dbPath: string): Promise<void> {
   const { provider, model } = await getProvider();
   const { SimpleAgentTask } = await import("../execution/task-runner.js");
   const { ImprovementLoop } = await import("../execution/improvement-loop.js");
+  const savedScenario = values.scenario ? await loadSavedAgentTaskScenario(values.scenario) : null;
+  if (values.scenario && !savedScenario) {
+    console.error(`Unknown saved custom scenario: ${values.scenario}`);
+    process.exit(1);
+  }
+  const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
+  const rubric = values.rubric ?? savedScenario?.rubric;
+  if (!taskPrompt || !rubric) {
+    console.error("Error: improve requires either --scenario <name> or both --prompt and --rubric.");
+    process.exit(1);
+  }
+  const maxRounds = values.rounds
+    ? parsePositiveInteger(values.rounds, "--rounds")
+    : savedScenario?.maxRounds ?? 5;
+  const qualityThreshold = values.threshold
+    ? parseFloat(values.threshold)
+    : savedScenario?.qualityThreshold ?? 0.9;
+  const minRounds = values["min-rounds"]
+    ? parsePositiveInteger(values["min-rounds"], "--min-rounds")
+    : 1;
 
   const task = new SimpleAgentTask(
-    values.prompt,
-    values.rubric,
+    taskPrompt,
+    rubric,
     provider,
     model,
-    undefined,
+    savedScenario?.revisionPrompt,
     {
       enabled: values.rlm ?? false,
       model: values["rlm-model"],
@@ -588,14 +669,23 @@ async function cmdImprove(_dbPath: string): Promise<void> {
   );
   const loop = new ImprovementLoop({
     task,
-    maxRounds: parseInt(values.rounds ?? "5", 10),
-    qualityThreshold: parseFloat(values.threshold ?? "0.9"),
-    minRounds: parseInt(values["min-rounds"] ?? "1", 10),
+    maxRounds,
+    qualityThreshold,
+    minRounds,
   });
 
   const startTime = performance.now();
-  const initialOutput = values.output ?? await task.generateOutput();
-  const result = await loop.run({ initialOutput, state: {} });
+  const initialOutput = values.output ?? await task.generateOutput({
+    referenceContext: savedScenario?.referenceContext,
+    requiredConcepts: savedScenario?.requiredConcepts,
+  });
+  const result = await loop.run({
+    initialOutput,
+    state: {},
+    referenceContext: savedScenario?.referenceContext,
+    requiredConcepts: savedScenario?.requiredConcepts,
+    calibrationExamples: savedScenario?.calibrationExamples,
+  });
   const durationMs = Math.round(performance.now() - startTime);
   const rlmSessions = task.getRlmSessions();
 
@@ -631,6 +721,7 @@ async function cmdRepl(_dbPath: string): Promise<void> {
   const { values } = parseArgs({
     args: process.argv.slice(3),
     options: {
+      scenario: { type: "string", short: "s" },
       prompt: { type: "string", short: "p" },
       rubric: { type: "string", short: "r" },
       output: { type: "string", short: "o" },
@@ -648,9 +739,9 @@ async function cmdRepl(_dbPath: string): Promise<void> {
     },
   });
 
-  if (values.help || !values.prompt || !values.rubric) {
+  if (values.help || (!values.scenario && (!values.prompt || !values.rubric))) {
     console.log(
-      "autoctx repl -p <task-prompt> -r <rubric> " +
+      "autoctx repl (-s <saved-scenario> | -p <task-prompt>) [-r <rubric>] " +
       "[--phase generate|revise] [-o <current-output>] [--reference-context TEXT] " +
       "[--required-concept C]... [-m model] [-n turns]",
     );
@@ -665,6 +756,21 @@ async function cmdRepl(_dbPath: string): Promise<void> {
 
   const { provider, model } = await getProvider();
   const { runAgentTaskRlmSession } = await import("../rlm/index.js");
+  const savedScenario = values.scenario ? await loadSavedAgentTaskScenario(values.scenario) : null;
+  if (values.scenario && !savedScenario) {
+    console.error(`Unknown saved custom scenario: ${values.scenario}`);
+    process.exit(1);
+  }
+  const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
+  const rubric = values.rubric ?? savedScenario?.rubric;
+  if (!taskPrompt || !rubric) {
+    console.error("Error: repl requires either --scenario <name> or both --prompt and --rubric.");
+    process.exit(1);
+  }
+  const requiredConcepts = mergeUniqueStrings(
+    savedScenario?.requiredConcepts,
+    values["required-concept"],
+  );
 
   const result = await runAgentTaskRlmSession({
     provider,
@@ -680,11 +786,11 @@ async function cmdRepl(_dbPath: string): Promise<void> {
       memoryLimitMb: parseInt(values["memory-mb"] ?? "64", 10),
     },
     phase,
-    taskPrompt: values.prompt,
-    rubric: values.rubric,
+    taskPrompt,
+    rubric,
     currentOutput: values.output,
-    referenceContext: values["reference-context"],
-    requiredConcepts: values["required-concept"],
+    referenceContext: values["reference-context"] ?? savedScenario?.referenceContext,
+    requiredConcepts,
   });
 
   console.log(JSON.stringify(result, null, 2));
@@ -721,14 +827,19 @@ async function cmdQueue(dbPath: string): Promise<void> {
 
   const { SQLiteStore } = await import("../storage/index.js");
   const { enqueueTask } = await import("../execution/task-runner.js");
+  const savedScenario = await loadSavedAgentTaskScenario(values.spec);
 
   const store = new SQLiteStore(dbPath);
   const migrationsDir = getMigrationsDir();
   store.migrate(migrationsDir);
 
   const id = enqueueTask(store, values.spec, {
-    taskPrompt: values.prompt,
-    rubric: values.rubric,
+    taskPrompt: values.prompt ?? savedScenario?.taskPrompt,
+    rubric: values.rubric ?? savedScenario?.rubric,
+    referenceContext: savedScenario?.referenceContext,
+    requiredConcepts: savedScenario?.requiredConcepts,
+    maxRounds: savedScenario?.maxRounds,
+    qualityThreshold: savedScenario?.qualityThreshold,
     priority: parseInt(values.priority!, 10),
     ...(values["min-rounds"] ? { minRounds: parseInt(values["min-rounds"], 10) } : {}),
     rlmEnabled: values.rlm,
