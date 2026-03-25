@@ -77,6 +77,25 @@ describe("run --json with deterministic provider", () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.synthetic).toBe(true);
   });
+
+  it("uses the fully resolved provider when generic env overrides project config", () => {
+    writeFileSync(join(dir, ".autoctx.json"), JSON.stringify({
+      default_scenario: "grid_ctf",
+      provider: "anthropic",
+      gens: 1,
+      runs_dir: "./runs",
+      knowledge_dir: "./knowledge",
+    }, null, 2), "utf-8");
+
+    const { stdout, exitCode } = runCli(["run", "--json"], {
+      cwd: dir,
+      env: { AUTOCONTEXT_PROVIDER: "Deterministic" },
+    });
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.provider).toBe("deterministic");
+    expect(parsed.synthetic).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -133,5 +152,13 @@ describe("benchmark --json with deterministic provider", () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.synthetic).toBe(true);
     expect(parsed.provider).toBe("deterministic");
+  });
+
+  it("normalizes mixed-case provider overrides before labeling results", () => {
+    const { stdout, exitCode } = runCli(["benchmark", "--provider", "Deterministic", "--runs", "1", "--gens", "1", "--json"], { cwd: dir });
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.provider).toBe("deterministic");
+    expect(parsed.synthetic).toBe(true);
   });
 });

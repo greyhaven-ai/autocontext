@@ -494,7 +494,7 @@ See also: list, replay, export, benchmark`);
     notifyOn: settings.notifyOn,
   });
 
-  const resolvedProvider = values.provider ?? settings.agentProvider;
+  const resolvedProvider = providerBundle.defaultConfig.providerType;
   const isSynthetic = resolvedProvider === "deterministic";
 
   if (isSynthetic && !values.json) {
@@ -1262,7 +1262,7 @@ See also: run, list`);
     store.close();
   }
 
-  const resolvedBenchProvider = values.provider ?? settings.agentProvider;
+  const resolvedBenchProvider = providerBundle.defaultConfig.providerType;
   const isBenchSynthetic = resolvedBenchProvider === "deterministic";
 
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
