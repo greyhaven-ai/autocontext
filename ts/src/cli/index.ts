@@ -494,10 +494,21 @@ See also: list, replay, export, benchmark`);
     notifyOn: settings.notifyOn,
   });
 
+  const resolvedProvider = values.provider ?? settings.agentProvider;
+  const isSynthetic = resolvedProvider === "deterministic";
+
+  if (isSynthetic && !values.json) {
+    console.error("Note: Running with deterministic provider — results are synthetic.");
+  }
+
   try {
     const result = await runner.run(runId, gens);
     if (values.json) {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({
+        ...result,
+        provider: resolvedProvider,
+        ...(isSynthetic ? { synthetic: true } : {}),
+      }, null, 2));
     } else {
       console.log(`Run ${result.runId}: ${result.generationsCompleted} generations, best score ${result.bestScore.toFixed(4)}, Elo ${result.currentElo.toFixed(1)}`);
     }
@@ -1251,11 +1262,25 @@ See also: run, list`);
     store.close();
   }
 
+  const resolvedBenchProvider = values.provider ?? settings.agentProvider;
+  const isBenchSynthetic = resolvedBenchProvider === "deterministic";
+
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-  const output = { scenario: scenarioName, runs: numRuns, generations: numGens, scores, meanBestScore: mean };
+  const output = {
+    scenario: scenarioName,
+    runs: numRuns,
+    generations: numGens,
+    scores,
+    meanBestScore: mean,
+    provider: resolvedBenchProvider,
+    ...(isBenchSynthetic ? { synthetic: true } : {}),
+  };
   if (values.json) {
     console.log(JSON.stringify(output, null, 2));
   } else {
+    if (isBenchSynthetic) {
+      console.error("Note: Running with deterministic provider — results are synthetic.");
+    }
     console.log(`Benchmark: ${scenarioName}, ${numRuns} runs x ${numGens} gens`);
     console.log(`Scores: ${scores.map(s => s.toFixed(4)).join(", ")}`);
     console.log(`Mean best score: ${mean.toFixed(4)}`);
