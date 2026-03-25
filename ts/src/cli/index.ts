@@ -38,6 +38,8 @@ Commands:
   login            Store provider credentials persistently
   whoami           Show current auth status and provider
   logout           Clear stored provider credentials
+  providers        List all known providers with auth status (JSON)
+  models           List available models for authenticated providers (JSON)
   tui              Start interactive TUI (WebSocket server + Ink UI)
   judge            One-shot evaluation of output against a rubric
   improve          Run multi-round improvement loop
@@ -95,6 +97,12 @@ async function main(): Promise<void> {
       break;
     case "logout":
       await cmdLogout();
+      break;
+    case "providers":
+      await cmdProviders();
+      break;
+    case "models":
+      await cmdModels();
       break;
     case "run":
       await cmdRun(await getDbPath());
@@ -1570,7 +1578,8 @@ async function cmdCapabilities(): Promise<void> {
     commands: [
       "init", "run", "list", "replay", "benchmark", "export",
       "export-training-data", "import-package", "new-scenario",
-      "capabilities", "login", "whoami", "logout", "tui", "judge", "improve",
+      "capabilities", "login", "whoami", "logout", "providers", "models",
+      "tui", "judge", "improve",
       "repl", "queue", "status", "serve", "mcp-serve", "version",
     ],
     scenarios: Object.keys(SCENARIO_REGISTRY).sort(),
@@ -1754,6 +1763,44 @@ async function cmdLogout(): Promise<void> {
 
   unlinkSync(credentialsPath);
   console.log(existing?.provider ? `Logged out from ${existing.provider}` : "Logged out.");
+}
+
+async function cmdProviders(): Promise<void> {
+  const { KNOWN_PROVIDERS, discoverAllProviders } = await import("../config/credentials.js");
+  const { resolveConfigDir } = await import("../config/index.js");
+  const configDir = resolveConfigDir();
+  const discovered = discoverAllProviders(configDir);
+  const discoveredMap = new Map(discovered.map((d) => [d.provider, d]));
+
+  const result = KNOWN_PROVIDERS.map((p) => {
+    const d = discoveredMap.get(p.id);
+    return {
+      id: p.id,
+      displayName: p.displayName,
+      requiresKey: p.requiresKey,
+      authenticated: d ? (d.hasApiKey || !p.requiresKey) : !p.requiresKey,
+      ...(d?.source ? { source: d.source } : {}),
+      ...(d?.model ? { model: d.model } : {}),
+      ...(d?.baseUrl ? { baseUrl: d.baseUrl } : {}),
+    };
+  });
+
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function cmdModels(): Promise<void> {
+  const { listAuthenticatedModels } = await import("../config/credentials.js");
+  const { resolveConfigDir } = await import("../config/index.js");
+  const configDir = resolveConfigDir();
+  const models = listAuthenticatedModels(configDir);
+
+  if (models.length === 0) {
+    console.log(JSON.stringify([]));
+    console.log("\nNo authenticated providers found. Run `autoctx login` to configure a provider.");
+    return;
+  }
+
+  console.log(JSON.stringify(models, null, 2));
 }
 
 main().catch((err) => {

@@ -564,7 +564,11 @@ export {
   discoverAllProviders,
   validateApiKey,
   getKnownProvider,
+  getModelsForProvider,
+  resolveModel,
+  listAuthenticatedModels,
   KNOWN_PROVIDERS,
+  PROVIDER_MODELS,
   CREDENTIALS_FILE as CREDENTIALS_STORE_FILE,
 } from "./credentials.js";
 export type {
@@ -572,6 +576,9 @@ export type {
   ProviderAuthStatus,
   DiscoveredProvider,
   KnownProvider,
+  KnownModel,
+  AuthenticatedModel,
+  ResolveModelOpts,
   ValidationResult as ApiKeyValidationResult,
 } from "./credentials.js";
 
