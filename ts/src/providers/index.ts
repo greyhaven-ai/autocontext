@@ -239,7 +239,7 @@ export function resolveProviderConfig(
   opts: ResolveProviderConfigOpts = {},
 ): ProviderConfig {
   const projectConfig = loadProjectConfig();
-  const persistedCredentials = loadPersistedCredentials();
+  const defaultPersistedCredentials = loadPersistedCredentials();
   const envProviderType =
     process.env.AUTOCONTEXT_AGENT_PROVIDER ??
     process.env.AUTOCONTEXT_PROVIDER;
@@ -253,8 +253,9 @@ export function resolveProviderConfig(
     envProviderType ??
     overrides.providerType ??
     projectConfig?.provider ??
-    persistedCredentials?.provider ??
+    defaultPersistedCredentials?.provider ??
     "anthropic";
+  const persistedCredentials = loadPersistedCredentials(undefined, providerType);
   // Agent-specific env vars (Python-compatible) with fallback to generic
   const model =
     (opts.preferModelOverride ? overrides.model : undefined) ??

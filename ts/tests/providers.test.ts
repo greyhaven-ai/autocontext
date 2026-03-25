@@ -370,6 +370,7 @@ describe("CLI provider routing", () => {
     delete process.env.AUTOCONTEXT_PROVIDER;
     delete process.env.AUTOCONTEXT_BASE_URL;
     delete process.env.AUTOCONTEXT_API_KEY;
+    delete process.env.AUTOCONTEXT_CONFIG_DIR;
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.AUTOCONTEXT_MODEL;
@@ -449,5 +450,36 @@ describe("CLI provider routing", () => {
 
     const config = resolveProviderConfig();
     expect(config.providerType).toBe("ollama");
+  });
+
+  it("should use stored credentials for the selected provider when multiple providers are configured", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { saveProviderCredentials } = await import("../src/config/credentials.js");
+    const { resolveProviderConfig } = await import("../src/providers/index.js");
+
+    const configDir = mkdtempSync(join(tmpdir(), "ac-provider-config-"));
+    process.env.AUTOCONTEXT_CONFIG_DIR = configDir;
+
+    try {
+      saveProviderCredentials(configDir, "anthropic", {
+        apiKey: "sk-ant-first",
+        model: "claude-sonnet-first",
+      });
+      saveProviderCredentials(configDir, "openai", {
+        apiKey: "sk-openai-second",
+        model: "gpt-4o-mini",
+        baseUrl: "https://api.openai.com/v1",
+      });
+
+      const config = resolveProviderConfig({ providerType: "openai" });
+      expect(config.providerType).toBe("openai");
+      expect(config.apiKey).toBe("sk-openai-second");
+      expect(config.model).toBe("gpt-4o-mini");
+      expect(config.baseUrl).toBe("https://api.openai.com/v1");
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
   });
 });

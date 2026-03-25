@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
+import { resolveApiKeyValue } from "./credentials.js";
 
 // ---------------------------------------------------------------------------
 // Presets (mirrors Python config/presets.py)
@@ -505,20 +506,70 @@ export function resolveConfigDir(explicit?: string): string {
   return explicit ?? process.env.AUTOCONTEXT_CONFIG_DIR ?? join(process.env.HOME ?? "~", ".config", "autoctx");
 }
 
-export function loadPersistedCredentials(configDir = resolveConfigDir()): StoredCredentials | null {
+function readStoredCredentialEntry(
+  providerName: string,
+  entry: Record<string, unknown>,
+): StoredCredentials {
+  const credentials: StoredCredentials = { provider: providerName };
+  if (typeof entry.apiKey === "string" && entry.apiKey.trim()) {
+    credentials.apiKey = resolveApiKeyValue(entry.apiKey.trim());
+  }
+  if (typeof entry.model === "string" && entry.model.trim()) {
+    credentials.model = entry.model.trim();
+  }
+  if (typeof entry.baseUrl === "string" && entry.baseUrl.trim()) {
+    credentials.baseUrl = entry.baseUrl.trim();
+  }
+  if (typeof entry.savedAt === "string" && entry.savedAt.trim()) {
+    credentials.savedAt = entry.savedAt.trim();
+  }
+  return credentials;
+}
+
+export function loadPersistedCredentials(
+  configDir = resolveConfigDir(),
+  provider?: string,
+): StoredCredentials | null {
   const credentialsPath = join(configDir, CREDENTIALS_FILE);
   if (!existsSync(credentialsPath)) {
     return null;
   }
 
   const raw = readJsonObject(credentialsPath, CREDENTIALS_FILE);
-  const credentials: StoredCredentials = {};
+  const requestedProvider = provider?.trim().toLowerCase();
 
+  // New multi-provider format (AC-430): { providers: { anthropic: { apiKey, ... } } }
+  if (isRecord(raw.providers)) {
+    const providers = raw.providers as Record<string, Record<string, unknown>>;
+    const names = Object.keys(providers);
+    if (names.length === 0) return null;
+
+    if (requestedProvider) {
+      const matchedName = names.find((name) => name.toLowerCase() === requestedProvider);
+      if (!matchedName) {
+        return null;
+      }
+      return readStoredCredentialEntry(matchedName, providers[matchedName]);
+    }
+
+    // Return the first provider as the "active" one for backward compat
+    const firstName = names[0];
+    return readStoredCredentialEntry(firstName, providers[firstName]);
+  }
+
+  // Legacy single-provider format
+  const credentials: StoredCredentials = {};
   if (typeof raw.provider === "string" && raw.provider.trim()) {
     credentials.provider = raw.provider.trim();
   }
+  if (requestedProvider && credentials.provider && credentials.provider.toLowerCase() !== requestedProvider) {
+    return null;
+  }
+  if (requestedProvider && !credentials.provider) {
+    credentials.provider = requestedProvider;
+  }
   if (typeof raw.apiKey === "string" && raw.apiKey.trim()) {
-    credentials.apiKey = raw.apiKey.trim();
+    credentials.apiKey = resolveApiKeyValue(raw.apiKey.trim());
   }
   if (typeof raw.model === "string" && raw.model.trim()) {
     credentials.model = raw.model.trim();
@@ -536,6 +587,47 @@ export function loadPersistedCredentials(configDir = resolveConfigDir()): Stored
 // ---------------------------------------------------------------------------
 // loadSettings — read from AUTOCONTEXT_* env vars + optional preset
 // ---------------------------------------------------------------------------
+
+// Re-export credential hardening module (AC-430)
+export {
+  resolveApiKeyValue,
+  saveProviderCredentials,
+  loadProviderCredentials,
+  removeProviderCredentials,
+  listConfiguredProviders,
+  discoverAllProviders,
+  validateApiKey,
+  getKnownProvider,
+  getModelsForProvider,
+  resolveModel,
+  listAuthenticatedModels,
+  KNOWN_PROVIDERS,
+  PROVIDER_MODELS,
+  CREDENTIALS_FILE as CREDENTIALS_STORE_FILE,
+} from "./credentials.js";
+export type {
+  ProviderCredentials,
+  ProviderAuthStatus,
+  DiscoveredProvider,
+  KnownProvider,
+  KnownModel,
+  AuthenticatedModel,
+  ResolveModelOpts,
+  ValidationResult as ApiKeyValidationResult,
+} from "./credentials.js";
+
+// OAuth (AC-430 Phase 4)
+export {
+  generatePKCE, generateState, buildAuthorizationUrl,
+  waitForCallback, isOAuthProvider,
+  saveOAuthTokens, loadOAuthTokens, isTokenExpired,
+  OAUTH_PROVIDERS,
+} from "./oauth.js";
+export type {
+  PKCEPair, OAuthFlow, OAuthProviderConfig,
+  CallbackResult, WaitForCallbackOpts,
+  OAuthTokens,
+} from "./oauth.js";
 
 export function loadSettings(): AppSettings {
   const presetName = process.env.AUTOCONTEXT_PRESET ?? "";
