@@ -40,8 +40,9 @@ LLM-based judging to score and improve agent outputs.
 ## Configuration
 
 Set these environment variables:
-- `ANTHROPIC_API_KEY` - Required for LLM-based judging
-- `AUTOCONTEXT_MODEL` - Model to use (default: claude-sonnet-4-20250514)
-- `AUTOCONTEXT_DB_PATH` - SQLite database path (default: ./autocontext.db)
+- `AUTOCONTEXT_AGENT_PROVIDER` or `AUTOCONTEXT_PROVIDER` - Provider type to use
+- `AUTOCONTEXT_AGENT_API_KEY` or `AUTOCONTEXT_API_KEY` - Provider API key when required
+- `AUTOCONTEXT_AGENT_DEFAULT_MODEL` or `AUTOCONTEXT_MODEL` - Model override
+- `AUTOCONTEXT_DB_PATH` - SQLite database path override (defaults to the autoctx project setting, typically `runs/autocontext.sqlite3`)
 
 Or create a `.autoctx.json` project config via `autoctx init`.

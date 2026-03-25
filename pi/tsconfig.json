@@ -13,6 +13,6 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"],
+  "include": ["src", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "tests"]
 }

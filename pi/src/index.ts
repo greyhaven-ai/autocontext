@@ -38,6 +38,16 @@ function ok(text: string, details?: Record<string, unknown>): ToolResult {
   return { content: [{ type: "text", text }], ...(details ? { details } : {}) };
 }
 
+function getStringParam(params: Record<string, unknown>, key: string): string | undefined {
+  const value = params[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function getNumberParam(params: Record<string, unknown>, key: string): number | undefined {
+  const value = params[key];
+  return typeof value === "number" ? value : undefined;
+}
+
 export default function autocontextExtension(pi: ExtensionAPI): void {
   // -----------------------------------------------------------------------
   // Tools
@@ -99,18 +109,16 @@ export default function autocontextExtension(pi: ExtensionAPI): void {
       try {
         const ac = await loadAutoctx();
         const provider = resolveProvider(ac);
-        const task = new ac.SimpleAgentTask({
-          taskPrompt: params.task_prompt as string,
-          judgeRubric: params.rubric as string,
-          outputFormat: "free_text",
-          judgeModel: provider.defaultModel(),
-          maxRounds: (params.max_rounds as number) ?? 3,
-          qualityThreshold: (params.quality_threshold as number) ?? 0.9,
-        });
+        const task = new ac.SimpleAgentTask(
+          params.task_prompt as string,
+          params.rubric as string,
+          provider,
+          provider.defaultModel(),
+        );
         const loop = new ac.ImprovementLoop({
           task,
-          maxRounds: (params.max_rounds as number) ?? 3,
-          qualityThreshold: (params.quality_threshold as number) ?? 0.9,
+          maxRounds: getNumberParam(params, "max_rounds") ?? 3,
+          qualityThreshold: getNumberParam(params, "quality_threshold") ?? 0.9,
         });
         const result = await loop.run({
           initialOutput: params.initial_output as string,
@@ -136,7 +144,8 @@ export default function autocontextExtension(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params) {
       try {
-        const store = resolveStore();
+        const ac = await loadAutoctx();
+        const store = resolveStore(ac);
         if (!store) return ok("No autocontext database found. Run `autoctx init` first.");
         const runs = store.listRuns();
         if (params.run_id) {
@@ -195,13 +204,13 @@ export default function autocontextExtension(pi: ExtensionAPI): void {
       onUpdate?.({ content: [{ type: "text", text: `Queueing task: ${params.spec_name}...` }] });
       try {
         const ac = await loadAutoctx();
-        const store = resolveStore();
+        const store = resolveStore(ac);
         if (!store) return ok("No autocontext database found. Run `autoctx init` first.");
-        const config: Record<string, unknown> = {};
-        if (params.task_prompt) config.taskPrompt = params.task_prompt;
-        if (params.rubric) config.rubric = params.rubric;
-        if (params.priority) config.priority = params.priority;
-        ac.enqueueTask(store, params.spec_name as string, config);
+        ac.enqueueTask(store, params.spec_name as string, {
+          taskPrompt: getStringParam(params, "task_prompt"),
+          rubric: getStringParam(params, "rubric"),
+          priority: getNumberParam(params, "priority"),
+        });
         return ok(`Task '${params.spec_name}' queued successfully.`);
       } catch (err) {
         return ok(`Queue error: ${(err as Error).message}`);
@@ -241,17 +250,34 @@ async function loadAutoctx(): Promise<AutoctxModule> {
 }
 
 function resolveProvider(ac: AutoctxModule) {
-  const apiKey = process.env.ANTHROPIC_API_KEY ?? process.env.AUTOCONTEXT_API_KEY ?? "";
-  const model = process.env.AUTOCONTEXT_MODEL ?? "claude-sonnet-4-20250514";
-  return ac.createAnthropicProvider({ apiKey, model });
+  const settings = typeof ac.loadSettings === "function" ? ac.loadSettings() : {};
+  const config = typeof ac.resolveProviderConfig === "function"
+    ? ac.resolveProviderConfig()
+    : {
+        providerType: "anthropic",
+        apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.AUTOCONTEXT_API_KEY,
+        model: process.env.AUTOCONTEXT_MODEL,
+      };
+
+  return ac.createProvider({
+    ...config,
+    piCommand: settings.piCommand,
+    piTimeout: settings.piTimeout,
+    piWorkspace: settings.piWorkspace,
+    piModel: settings.piModel,
+    piRpcEndpoint: settings.piRpcEndpoint,
+    piRpcApiKey: settings.piRpcApiKey,
+    piRpcSessionPersistence: settings.piRpcSessionPersistence,
+  });
 }
 
-function resolveStore() {
+function resolveStore(ac: AutoctxModule) {
   try {
-    const dbPath = process.env.AUTOCONTEXT_DB_PATH ?? "./autocontext.db";
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-    const { SQLiteStore } = require("autoctx") as { SQLiteStore: new (path: string) => unknown };
-    return new SQLiteStore(dbPath) as { listRuns: () => Array<{ id: string; status: string }> };
+    const settings = typeof ac.loadSettings === "function" ? ac.loadSettings() : {};
+    const dbPath = process.env.AUTOCONTEXT_DB_PATH ?? settings.dbPath ?? "runs/autocontext.sqlite3";
+    return new ac.SQLiteStore(dbPath) as {
+      listRuns: () => Array<{ id: string; status: string }>;
+    };
   } catch {
     return null;
   }
