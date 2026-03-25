@@ -1265,5 +1265,138 @@ def wait(
         raise typer.Exit(code=1)
 
 
+# ---------------------------------------------------------------------------
+# Backported from TS package (AC-382)
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def judge(
+    task_prompt: str = typer.Option(..., "--task-prompt", "-p", help="The task prompt"),
+    output: str = typer.Option(..., "--output", "-o", help="The agent output to evaluate"),
+    rubric: str = typer.Option(..., "--rubric", "-r", help="Evaluation rubric"),
+    provider: str = typer.Option("", "--provider", help="Provider override"),
+    model: str = typer.Option("", "--model", help="Model override"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
+    """One-shot evaluation of agent output against a rubric."""
+    from autocontext.execution.judge import LLMJudge
+
+    settings = load_settings()
+    if provider:
+        settings = settings.model_copy(update={"judge_provider": provider})
+    if model:
+        settings = settings.model_copy(update={"judge_model": model})
+
+    from autocontext.providers.registry import get_provider
+    judge_provider = get_provider(settings)
+    llm_judge = LLMJudge(
+        provider=judge_provider,
+        model=settings.judge_model,
+        rubric=rubric,
+    )
+    result = llm_judge.evaluate(task_prompt=task_prompt, agent_output=output)
+
+    if json_output:
+        _write_json_stdout({
+            "score": result.score,
+            "reasoning": result.reasoning,
+            "dimension_scores": result.dimension_scores,
+        })
+    else:
+        console.print(f"[bold]Score:[/bold] {result.score:.4f}")
+        console.print(f"[bold]Reasoning:[/bold] {result.reasoning}")
+
+
+@app.command()
+def improve(
+    task_prompt: str = typer.Option(..., "--task-prompt", "-p", help="The task prompt"),
+    rubric: str = typer.Option(..., "--rubric", "-r", help="Evaluation rubric"),
+    initial_output: str = typer.Option("", "--output", "-o", help="Starting output to improve"),
+    max_rounds: int = typer.Option(5, "--rounds", "-n", help="Maximum improvement rounds"),
+    threshold: float = typer.Option(0.9, "--threshold", "-t", help="Quality threshold to stop"),
+    provider_override: str = typer.Option("", "--provider", help="Provider override"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
+    """Run multi-round improvement loop on agent output.
+
+    Creates a simple agent task from the prompt and rubric, then runs
+    the improvement loop with judge-guided iteration.
+    """
+    from autocontext.execution.improvement_loop import ImprovementLoop
+    from autocontext.execution.judge import LLMJudge
+    from autocontext.providers.registry import get_provider as get_judge_provider
+    from autocontext.scenarios.agent_task import AgentTaskResult
+
+    settings = load_settings()
+    if provider_override:
+        settings = settings.model_copy(update={"judge_provider": provider_override})
+
+    judge_provider = get_judge_provider(settings)
+    judge = LLMJudge(provider=judge_provider, model=settings.judge_model, rubric=rubric)
+
+    # Inline task wrapping prompt + rubric
+    class _SimpleTask:
+        def get_task_prompt(self, state: dict | None = None) -> str:
+            return task_prompt
+
+        def get_rubric(self) -> str:
+            return rubric
+
+        def evaluate_output(self, output: str, state: dict | None = None, **kwargs: object) -> AgentTaskResult:
+            result = judge.evaluate(task_prompt=task_prompt, agent_output=output)
+            return AgentTaskResult(score=result.score, reasoning=result.reasoning, dimension_scores=result.dimension_scores)
+
+        def initial_state(self, seed: int | None = None) -> dict:
+            return {}
+
+        def describe_task(self) -> str:
+            return task_prompt
+
+    loop = ImprovementLoop(
+        task=_SimpleTask(),  # type: ignore[arg-type]
+        max_rounds=max_rounds,
+        quality_threshold=threshold,
+    )
+    result = loop.run(initial_output=initial_output or task_prompt, state={})
+
+    if json_output:
+        _write_json_stdout({
+            "best_score": result.best_score,
+            "best_round": result.best_round,
+            "total_rounds": result.total_rounds,
+            "met_threshold": result.met_threshold,
+            "best_output": result.best_output,
+        })
+    else:
+        console.print(f"[bold]Best score:[/bold] {result.best_score:.4f} (round {result.best_round})")
+        console.print(f"[bold]Rounds:[/bold] {result.total_rounds}")
+        console.print(f"[bold]Met threshold:[/bold] {result.met_threshold}")
+
+
+@app.command()
+def queue(
+    spec: str = typer.Option(..., "--spec", "-s", help="Task spec name"),
+    priority: int = typer.Option(0, "--priority", help="Task priority"),
+    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+) -> None:
+    """Add a task to the background runner queue."""
+    settings = load_settings()
+    store = _sqlite_from_settings(settings)
+    migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
+    if migrations_dir.exists():
+        store.migrate(migrations_dir)
+
+    import uuid
+
+    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    store.enqueue_task(task_id, spec, priority=priority)
+
+    if json_output:
+        _write_json_stdout({"task_id": task_id, "spec_name": spec, "status": "queued"})
+    else:
+        console.print(f"Queued task {task_id} for spec '{spec}' (priority {priority})")
+
+
 if __name__ == "__main__":
     app()
