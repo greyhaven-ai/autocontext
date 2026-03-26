@@ -7,6 +7,7 @@
  */
 
 import { MissionStore } from "./store.js";
+import { saveCheckpoint } from "./checkpoint.js";
 import type { Mission, MissionBudget, MissionStatus, MissionStep, MissionVerifier, VerifierResult } from "./types.js";
 
 export class MissionManager {
@@ -37,8 +38,20 @@ export class MissionManager {
     return this.store.getSteps(missionId);
   }
 
+  subgoals(missionId: string) {
+    return this.store.getSubgoals(missionId);
+  }
+
+  verifications(missionId: string) {
+    return this.store.getVerifications(missionId);
+  }
+
   setVerifier(missionId: string, verifier: MissionVerifier): void {
     this.verifiers.set(missionId, verifier);
+  }
+
+  hasVerifier(missionId: string): boolean {
+    return this.verifiers.has(missionId);
   }
 
   async verify(missionId: string): Promise<VerifierResult> {
@@ -96,6 +109,14 @@ export class MissionManager {
 
   updateStep(stepId: string, status: "completed" | "failed" | "blocked", result?: string): void {
     this.store.updateStepStatus(stepId, status, result);
+  }
+
+  updateSubgoalStatus(subgoalId: string, status: "pending" | "active" | "completed" | "failed" | "skipped"): void {
+    this.store.updateSubgoalStatus(subgoalId, status);
+  }
+
+  saveCheckpoint(missionId: string, checkpointDir: string): string {
+    return saveCheckpoint(this.store, missionId, checkpointDir);
   }
 
   close(): void {
