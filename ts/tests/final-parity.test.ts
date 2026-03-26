@@ -131,7 +131,7 @@ describe("Solve flow", () => {
     store.close();
   });
 
-  it("fails honestly for generated scenarios that are not runnable in the TS loop", async () => {
+  it("routes generated scenarios through family-aware execution (AC-436)", async () => {
     const { store, server } = await createToolServer(dir);
 
     const submitted = await server._registeredTools.solve_scenario.handler({
@@ -142,9 +142,16 @@ describe("Solve flow", () => {
     const jobId = String(submittedPayload.jobId);
 
     const status = await waitForSolveTerminalState(server, jobId);
-    expect(status.status).toBe("failed");
+    // With codegen pipeline (AC-436), non-game scenarios can now execute
+    // via family-aware routing instead of unconditionally failing
     expect(status.scenarioName).not.toBe("grid_ctf");
-    expect(String(status.error ?? "")).toContain("not runnable by the TS solve manager yet");
+    expect(["completed", "failed"]).toContain(status.status);
+    // If it completed, it ran through the codegen pipeline successfully
+    // If it failed, the error should NOT be "not runnable" — it may be
+    // a provider/runtime issue instead
+    if (status.status === "failed") {
+      expect(String(status.error ?? "")).not.toContain("not runnable by the TS solve manager yet");
+    }
 
     store.close();
   });

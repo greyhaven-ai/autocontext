@@ -123,3 +123,8 @@ export type {
   ArtifactEditingInterface,
   ScenarioFamilyName as FamilyName,
 } from "./family-interfaces.js";
+
+// Codegen pipeline (AC-436)
+export { generateScenarioSource, hasCodegen, ScenarioRuntime, CodegenUnsupportedFamilyError } from "./codegen/index.js";
+export type { ScenarioProxy, ScenarioRuntimeOpts, CodegenFn } from "./codegen/index.js";
+export { loadCustomScenario, readScenarioFamily } from "./codegen/loader.js";

@@ -8,12 +8,16 @@ import { join } from "node:path";
 import type { AgentTaskInterface, LLMProvider } from "../types/index.js";
 import { createAgentTask } from "./agent-task-factory.js";
 import { parseRawSpec, type AgentTaskSpec } from "./agent-task-spec.js";
+import { hasCodegen } from "./codegen/index.js";
+import { readScenarioFamily } from "./codegen/loader.js";
 
 export interface CustomScenarioEntry {
   name: string;
   type: string;
   spec: Record<string, unknown>;
   path: string;
+  /** Whether the scenario has a generated .js source that can be executed via ScenarioRuntime */
+  hasGeneratedSource?: boolean;
 }
 
 export interface ResolvedCustomAgentTask {
@@ -119,11 +123,14 @@ export function loadCustomScenarios(customDir: string): Map<string, CustomScenar
       const spec = scenarioType === "agent_task"
         ? normalizeAgentTaskSpec(rawSpec)
         : rawSpec;
+      const hasGenSource = existsSync(join(entryPath, "scenario.js"));
+      const family = readScenarioFamily(entryPath);
       loaded.set(name, {
         name,
         type: scenarioType,
         spec,
         path: entryPath,
+        hasGeneratedSource: hasGenSource && family != null && hasCodegen(family),
       });
     } catch {
       // Skip malformed specs
