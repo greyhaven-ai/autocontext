@@ -598,9 +598,40 @@ async function cmdJudge(_dbPath: string): Promise<void> {
       prompt: { type: "string", short: "p" },
       output: { type: "string", short: "o" },
       rubric: { type: "string", short: "r" },
+      "from-stdin": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
+
+  // AC-409: Agent-as-judge — accept pre-computed evaluation from stdin
+  if (values["from-stdin"]) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(chunk as Buffer);
+    }
+    const input = Buffer.concat(chunks).toString("utf-8").trim();
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(input) as Record<string, unknown>;
+    } catch {
+      console.error("Invalid JSON on stdin");
+      process.exit(1);
+    }
+    const score = parsed.score as number;
+    if (typeof score !== "number" || score < 0 || score > 1) {
+      console.error("Invalid score: must be a number between 0 and 1");
+      process.exit(1);
+    }
+    const reasoning = (parsed.reasoning as string) ?? "";
+    const dimensions = (parsed.dimensions ?? parsed.dimensionScores ?? {}) as Record<string, number>;
+    console.log(JSON.stringify({
+      score,
+      reasoning,
+      dimensionScores: dimensions,
+      source: "delegated",
+    }, null, 2));
+    process.exit(0);
+  }
 
   if (values.help || !values.output || (!values.scenario && (!values.prompt || !values.rubric))) {
     console.log(`autoctx judge — One-shot evaluation of output against a rubric
@@ -614,10 +645,12 @@ Options:
   -r, --rubric <text>    Evaluation rubric/criteria
 
 Provide either --scenario or both --prompt and --rubric.
+Use --from-stdin to accept a pre-computed evaluation (agent-as-judge pattern).
 
 Examples:
   autoctx judge -p "Summarize this doc" -o "The doc covers..." -r "Score clarity 0-1"
   autoctx judge -s my_saved_task -o "Agent response here"
+  echo '{"score":0.85,"reasoning":"Good"}' | autoctx judge --from-stdin
 
 See also: improve, queue, run`);
     process.exit(values.help ? 0 : 1);
