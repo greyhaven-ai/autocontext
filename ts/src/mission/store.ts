@@ -164,7 +164,9 @@ export class MissionStore {
 
   updateStepStatus(id: string, status: StepStatus, result?: string): void {
     const parsedStatus = StepStatusSchema.parse(status);
-    const completedAt = status === "completed" || status === "failed" ? new Date().toISOString() : null;
+    const completedAt = parsedStatus === "completed" || parsedStatus === "failed" || parsedStatus === "blocked" || parsedStatus === "skipped"
+      ? new Date().toISOString()
+      : null;
     this.db.prepare(
       "UPDATE mission_steps SET status = ?, result = COALESCE(?, result), completed_at = ? WHERE id = ?",
     ).run(parsedStatus, result ?? null, completedAt, id);

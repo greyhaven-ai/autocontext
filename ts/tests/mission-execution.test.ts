@@ -22,10 +22,11 @@ function makeTempDir(): string {
 // ---------------------------------------------------------------------------
 
 describe("Extended mission statuses", () => {
-  it("MissionStatusSchema includes blocked and budget_exhausted", async () => {
+  it("MissionStatusSchema includes blocked, budget_exhausted, and verifier_failed", async () => {
     const { MissionStatusSchema } = await import("../src/mission/types.js");
     expect(MissionStatusSchema.parse("blocked")).toBe("blocked");
     expect(MissionStatusSchema.parse("budget_exhausted")).toBe("budget_exhausted");
+    expect(MissionStatusSchema.parse("verifier_failed")).toBe("verifier_failed");
   });
 });
 
@@ -119,6 +120,29 @@ describe("runStep", () => {
 
     expect(result.blocked).toBe(true);
     expect(manager.get(mId)!.status).toBe("blocked");
+    const steps = manager.steps(mId);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].status).toBe("blocked");
+    expect(steps[0].result).toBe("Needs approval from code owner");
+    manager.close();
+  });
+
+  it("does not execute steps for paused missions", async () => {
+    const { MissionManager } = await import("../src/mission/manager.js");
+    const { runStep } = await import("../src/mission/executor.js");
+    const manager = new MissionManager(join(dir, "test.db"));
+
+    const mId = manager.create({ name: "Test", goal: "g" });
+    manager.pause(mId);
+
+    const result = await runStep(manager, mId, async () => ({
+      description: "Should never run",
+      status: "completed" as const,
+    }));
+
+    expect(result.stepRecorded).toBe(false);
+    expect(result.finalStatus).toBe("paused");
+    expect(manager.steps(mId)).toHaveLength(0);
     manager.close();
   });
 });
@@ -193,6 +217,56 @@ describe("runUntilDone", () => {
     expect(result.finalStatus).toBe("blocked");
     expect(result.stepsExecuted).toBe(2);
     manager.close();
+  });
+
+  it("does not execute canceled missions", async () => {
+    const { MissionManager } = await import("../src/mission/manager.js");
+    const { runUntilDone } = await import("../src/mission/executor.js");
+    const manager = new MissionManager(join(dir, "test.db"));
+
+    const mId = manager.create({ name: "Test", goal: "g" });
+    manager.cancel(mId);
+    let callCount = 0;
+
+    const result = await runUntilDone(manager, mId, async () => {
+      callCount++;
+      return { description: "Should never run", status: "completed" as const };
+    }, { maxIterations: 3 });
+
+    expect(callCount).toBe(0);
+    expect(result.finalStatus).toBe("canceled");
+    expect(result.stepsExecuted).toBe(0);
+    expect(manager.steps(mId)).toHaveLength(0);
+    manager.close();
+  });
+
+  it("returns verifier_failed when the verifier throws", async () => {
+    const { MissionManager } = await import("../src/mission/manager.js");
+    const { MissionStore } = await import("../src/mission/store.js");
+    const { runUntilDone } = await import("../src/mission/executor.js");
+    const dbPath = join(dir, "test.db");
+    const manager = new MissionManager(dbPath);
+
+    const mId = manager.create({ name: "Test", goal: "g" });
+    manager.setVerifier(mId, async () => {
+      throw new Error("Verifier transport failed");
+    });
+
+    const result = await runUntilDone(manager, mId, async () => ({
+      description: "work",
+      status: "completed" as const,
+    }), { maxIterations: 1 });
+
+    expect(result.finalStatus).toBe("verifier_failed");
+    expect(result.verifierPassed).toBe(false);
+    expect(manager.get(mId)!.status).toBe("verifier_failed");
+    manager.close();
+
+    const store = new MissionStore(dbPath);
+    const verifications = store.getVerifications(mId);
+    expect(verifications).toHaveLength(1);
+    expect(verifications[0].reason).toContain("Verifier error: Verifier transport failed");
+    store.close();
   });
 
   it("respects maxIterations safety limit", async () => {

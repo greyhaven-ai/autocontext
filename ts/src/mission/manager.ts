@@ -94,7 +94,7 @@ export class MissionManager {
     return this.store.getBudgetUsage(missionId);
   }
 
-  updateStep(stepId: string, status: "completed" | "failed", result?: string): void {
+  updateStep(stepId: string, status: "completed" | "failed" | "blocked", result?: string): void {
     this.store.updateStepStatus(stepId, status, result);
   }
 

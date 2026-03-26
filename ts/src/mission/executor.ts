@@ -18,6 +18,7 @@ export interface RunStepResult {
   stepRecorded: boolean;
   budgetExhausted: boolean;
   blocked: boolean;
+  finalStatus?: MissionStatus;
   error?: string;
 }
 
@@ -38,11 +39,26 @@ export async function runStep(
   missionId: string,
   executor: StepExecutor,
 ): Promise<RunStepResult> {
+  const mission = manager.get(missionId);
+  if (!mission) {
+    throw new Error(`Mission not found: ${missionId}`);
+  }
+
+  if (mission.status !== "active") {
+    return {
+      stepRecorded: false,
+      budgetExhausted: mission.status === "budget_exhausted",
+      blocked: mission.status === "blocked",
+      finalStatus: mission.status,
+      error: `Mission is ${mission.status}`,
+    };
+  }
+
   // Check budget before executing
   const budget = manager.budgetUsage(missionId);
   if (budget.exhausted) {
     manager.setStatus(missionId, "budget_exhausted");
-    return { stepRecorded: false, budgetExhausted: true, blocked: false };
+    return { stepRecorded: false, budgetExhausted: true, blocked: false, finalStatus: "budget_exhausted" };
   }
 
   try {
@@ -57,15 +73,22 @@ export async function runStep(
     }
 
     if (result.status === "blocked") {
+      manager.updateStep(stepId, "blocked", result.blockReason ?? result.description);
       manager.setStatus(missionId, "blocked");
-      return { stepRecorded: true, budgetExhausted: false, blocked: true };
+      return {
+        stepRecorded: true,
+        budgetExhausted: false,
+        blocked: true,
+        finalStatus: "blocked",
+        error: result.blockReason ?? result.description,
+      };
     }
 
     // Check budget after step (may have just hit the limit)
     const updatedBudget = manager.budgetUsage(missionId);
     if (updatedBudget.exhausted) {
       manager.setStatus(missionId, "budget_exhausted");
-      return { stepRecorded: true, budgetExhausted: true, blocked: false };
+      return { stepRecorded: true, budgetExhausted: true, blocked: false, finalStatus: "budget_exhausted" };
     }
 
     return { stepRecorded: true, budgetExhausted: false, blocked: false };
@@ -90,8 +113,28 @@ export async function runUntilDone(
   let stepsExecuted = 0;
 
   for (let i = 0; i < maxIterations; i++) {
+    const mission = manager.get(missionId);
+    if (!mission) {
+      throw new Error(`Mission not found: ${missionId}`);
+    }
+    if (mission.status !== "active") {
+      return {
+        finalStatus: mission.status,
+        stepsExecuted,
+        verifierPassed: false,
+      };
+    }
+
     const stepResult = await runStep(manager, missionId, executor);
     if (stepResult.stepRecorded) stepsExecuted++;
+
+    if (stepResult.finalStatus && stepResult.finalStatus !== "active") {
+      return {
+        finalStatus: stepResult.finalStatus,
+        stepsExecuted,
+        verifierPassed: false,
+      };
+    }
 
     if (stepResult.budgetExhausted) {
       return {
@@ -116,6 +159,14 @@ export async function runUntilDone(
         finalStatus: "completed",
         stepsExecuted,
         verifierPassed: true,
+      };
+    }
+    if (verifyResult.metadata?.verifierThrew === true) {
+      manager.setStatus(missionId, "verifier_failed");
+      return {
+        finalStatus: "verifier_failed",
+        stepsExecuted,
+        verifierPassed: false,
       };
     }
   }
