@@ -134,6 +134,17 @@ export const MonitorAlertMsgSchema = z.object({
   detail: z.record(z.unknown()),
 });
 
+// Mission progress (AC-414)
+export const MissionProgressMsgSchema = z.object({
+  type: z.literal("mission_progress"),
+  missionId: z.string(),
+  status: z.string(),
+  stepsCompleted: z.number(),
+  latestStep: z.string().optional(),
+  budgetUsed: z.number().optional(),
+  budgetMax: z.number().optional(),
+});
+
 // Auth status response (AC-408)
 export const AuthStatusMsgSchema = z.object({
   type: z.literal("auth_status"),
@@ -238,6 +249,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ScenarioReadyMsgSchema,
   ScenarioErrorMsgSchema,
   MonitorAlertMsgSchema,
+  MissionProgressMsgSchema,
   AuthStatusMsgSchema,
 ]);
 

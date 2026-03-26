@@ -28,3 +28,5 @@ export {
   SUPPORTED_PROOF_ASSISTANTS,
 } from "./proof.js";
 export type { ProofStatus, ProofAssistantId, ProofMissionSpec, ProofAssistantInfo } from "./proof.js";
+export { MissionEventEmitter } from "./events.js";
+export type { MissionCreatedEvent, MissionStepEvent, MissionStatusChangedEvent, MissionVerifiedEvent } from "./events.js";

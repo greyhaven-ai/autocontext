@@ -13,7 +13,8 @@
       th, td { padding: 6px 8px; border-bottom: 1px solid #1f2937; text-align: left; font-size: 13px; }
       pre { white-space: pre-wrap; background: #020617; border: 1px solid #1f2937; padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; }
       button, input { background: #1f2937; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 8px; }
-      .controls { margin-bottom: 10px; display: flex; gap: 8px; }
+      .controls { margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+      .muted { color: #94a3b8; font-size: 12px; }
       .hero { margin-bottom: 16px; }
       .ascii-banner { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 7.5px; line-height: 1.15; color: #67e8f9; white-space: pre; overflow-x: auto; margin: 0 0 4px 0; padding: 12px 0; letter-spacing: 0.5px; }
       .ascii-tagline { font-family: 'SF Mono', monospace; font-size: 11px; color: #475569; letter-spacing: 2px; margin: 0 0 16px 0; }
@@ -67,9 +68,48 @@ d8(  888   888   888    888 . 888   888 888   .o8 888   888  888   888    888 . 
     </div>
     <div class="row" style="margin-top:16px;">
       <div class="card">
+        <h2>Missions</h2>
+        <div class="controls">
+          <button id="refreshMissions">Refresh</button>
+          <input id="missionIdInput" placeholder="mission_id for detail / controls" />
+          <button id="loadMission">Load Mission</button>
+          <button id="runMission">Advance Once</button>
+          <button id="pauseMission">Pause</button>
+          <button id="resumeMission">Resume</button>
+          <button id="cancelMission">Cancel</button>
+        </div>
+        <p class="muted">Mission progress, budget, checkpoints, and operator controls.</p>
+        <table id="missionsTable">
+          <thead><tr><th>Mission ID</th><th>Name</th><th>Status</th><th>Updated</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Mission Detail</h2>
+        <pre id="missionOut">{}</pre>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px;">
+      <div class="card">
+        <h2>Subgoals</h2>
+        <pre id="subgoalsOut">[]</pre>
+      </div>
+      <div class="card">
+        <h2>Budget</h2>
+        <pre id="budgetOut">{}</pre>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px;">
+      <div class="card">
+        <h2>Mission Checkpoints</h2>
+        <pre id="artifactsOut">{}</pre>
+      </div>
+      <div class="card">
         <h2>Replay Viewer</h2>
         <pre id="replayOut">{}</pre>
       </div>
+    </div>
+    <div class="row" style="margin-top:16px;">
       <div class="card">
         <h2>Live Events</h2>
         <pre id="eventsOut"></pre>
@@ -77,10 +117,16 @@ d8(  888   888   888    888 . 888   888 888   .o8 888   888  888   888    888 . 
     </div>
     <script>
       const runsTableBody = document.querySelector("#runsTable tbody");
+      const missionsTableBody = document.querySelector("#missionsTable tbody");
       const statusOut = document.getElementById("statusOut");
+      const missionOut = document.getElementById("missionOut");
+      const subgoalsOut = document.getElementById("subgoalsOut");
+      const budgetOut = document.getElementById("budgetOut");
+      const artifactsOut = document.getElementById("artifactsOut");
       const replayOut = document.getElementById("replayOut");
       const eventsOut = document.getElementById("eventsOut");
       const runIdInput = document.getElementById("runIdInput");
+      const missionIdInput = document.getElementById("missionIdInput");
       const genInput = document.getElementById("genInput");
 
       function appendCell(row, value) {
@@ -121,11 +167,69 @@ d8(  888   888   888    888 . 888   888 888   .o8 888   888  888   888    888 . 
         replayOut.textContent = JSON.stringify(data, null, 2);
       }
 
+      async function refreshMissions() {
+        const res = await fetch("/api/missions");
+        const data = await res.json();
+        missionsTableBody.replaceChildren();
+        for (const row of data) {
+          const tr = document.createElement("tr");
+          appendCell(tr, row.id);
+          appendCell(tr, row.name);
+          appendCell(tr, row.status);
+          appendCell(tr, row.updatedAt || row.createdAt);
+          tr.addEventListener("click", () => {
+            missionIdInput.value = row.id;
+            void loadMission();
+          });
+          missionsTableBody.appendChild(tr);
+        }
+      }
+
+      async function loadMission() {
+        if (!missionIdInput.value) return;
+        const missionId = encodeURIComponent(missionIdInput.value);
+        const [missionRes, subgoalsRes, budgetRes, artifactsRes] = await Promise.all([
+          fetch(`/api/missions/${missionId}`),
+          fetch(`/api/missions/${missionId}/subgoals`),
+          fetch(`/api/missions/${missionId}/budget`),
+          fetch(`/api/missions/${missionId}/artifacts`),
+        ]);
+        missionOut.textContent = JSON.stringify(await missionRes.json(), null, 2);
+        subgoalsOut.textContent = JSON.stringify(await subgoalsRes.json(), null, 2);
+        budgetOut.textContent = JSON.stringify(await budgetRes.json(), null, 2);
+        artifactsOut.textContent = JSON.stringify(await artifactsRes.json(), null, 2);
+      }
+
+      async function missionAction(action, body) {
+        if (!missionIdInput.value) return;
+        const missionId = encodeURIComponent(missionIdInput.value);
+        const res = await fetch(`/api/missions/${missionId}/${action}`, {
+          method: "POST",
+          headers: body ? { "Content-Type": "application/json" } : {},
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json();
+        missionOut.textContent = JSON.stringify(data, null, 2);
+        await refreshMissions();
+        await loadMission();
+      }
+
       function connectWs() {
         const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/events`);
         ws.onmessage = (evt) => {
           eventsOut.textContent += evt.data + "\n";
           eventsOut.scrollTop = eventsOut.scrollHeight;
+          try {
+            const message = JSON.parse(evt.data);
+            if (message.channel === "mission") {
+              void refreshMissions();
+              if (missionIdInput.value && message.payload?.missionId === missionIdInput.value) {
+                void loadMission();
+              }
+            }
+          } catch {
+            // Ignore malformed log lines in the dashboard stream.
+          }
         };
         ws.onclose = () => setTimeout(connectWs, 1500);
       }
@@ -133,7 +237,14 @@ d8(  888   888   888    888 . 888   888 888   .o8 888   888  888   888    888 . 
       document.getElementById("refreshRuns").addEventListener("click", refreshRuns);
       document.getElementById("loadStatus").addEventListener("click", loadStatus);
       document.getElementById("loadReplay").addEventListener("click", loadReplay);
+      document.getElementById("refreshMissions").addEventListener("click", refreshMissions);
+      document.getElementById("loadMission").addEventListener("click", loadMission);
+      document.getElementById("runMission").addEventListener("click", () => missionAction("run", { maxIterations: 1 }));
+      document.getElementById("pauseMission").addEventListener("click", () => missionAction("pause"));
+      document.getElementById("resumeMission").addEventListener("click", () => missionAction("resume"));
+      document.getElementById("cancelMission").addEventListener("click", () => missionAction("cancel"));
       refreshRuns();
+      refreshMissions();
       connectWs();
     </script>
   </body>
