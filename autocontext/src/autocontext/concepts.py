@@ -16,7 +16,10 @@ _CONCEPT_MODEL: dict[str, Any] = {
         },
         {
             "name": "Task",
-            "description": "A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface.",
+            "description": (
+                "A user-authored unit of work or prompt-centric objective that "
+                "can be evaluated directly or embedded inside another surface."
+            ),
             "status": "partial",
         },
         {
@@ -53,7 +56,10 @@ _CONCEPT_MODEL: dict[str, Any] = {
         },
         {
             "name": "Knowledge",
-            "description": "Persisted learned state that should carry forward across runs, such as playbooks, hints, lessons, and analysis.",
+            "description": (
+                "Persisted learned state that should carry forward across runs, "
+                "such as playbooks, hints, lessons, and analysis."
+            ),
             "status": "implemented",
         },
         {
@@ -63,7 +69,10 @@ _CONCEPT_MODEL: dict[str, Any] = {
         },
         {
             "name": "Policy",
-            "description": "Structured rules that constrain or guide runtime behavior, such as escalation, hint volume, cost, conflict, or harness policies.",
+            "description": (
+                "Structured rules that constrain or guide runtime behavior, such "
+                "as escalation, hint volume, cost, conflict, or harness policies."
+            ),
             "status": "partial",
         },
     ],
@@ -90,7 +99,10 @@ _CONCEPT_MODEL: dict[str, Any] = {
             "surface": "solve",
             "canonical_concept": "Run",
             "category": "operation",
-            "notes": "Solve is a workflow that creates or selects a scenario/task, launches a run, and exports resulting knowledge.",
+            "notes": (
+                "Solve is a workflow that creates or selects a scenario/task, "
+                "launches a run, and exports resulting knowledge."
+            ),
         },
         {
             "surface": "sandbox",

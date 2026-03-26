@@ -7,8 +7,8 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from autocontext.config import AppSettings
 from autocontext.concepts import get_concept_model
+from autocontext.config import AppSettings
 from autocontext.execution.evaluator_guardrail import evaluate_evaluator_guardrail
 from autocontext.execution.harness_loader import HarnessLoader
 from autocontext.execution.objective_verification import run_objective_verification
