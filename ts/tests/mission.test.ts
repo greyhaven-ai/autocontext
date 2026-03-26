@@ -134,6 +134,18 @@ describe("MissionStore", () => {
     expect(steps[0].result).toBe("Done successfully");
   });
 
+  it("rejects step statuses outside the exported contract", () => {
+    const mId = store.createMission({ name: "Test", goal: "g" });
+    const sId = store.addStep(mId, { description: "Step 1" });
+
+    expect(() => {
+      (store.updateStepStatus as (id: string, status: string, result?: string) => void)(sId, "banana");
+    }).toThrow();
+
+    const steps = store.getSteps(mId);
+    expect(steps[0].status).toBe("completed");
+  });
+
   it("records verification results", () => {
     const mId = store.createMission({ name: "Test", goal: "g" });
     store.recordVerification(mId, { passed: false, reason: "Tests failing" });
@@ -237,6 +249,20 @@ describe("MissionManager", () => {
     expect(manager.get(id)!.status).toBe("active");
   });
 
+  it("resume clears terminal completion metadata", async () => {
+    const { MissionManager } = await import("../src/mission/manager.js");
+    const manager = new MissionManager(join(dir, "test.db"));
+
+    const id = manager.create({ name: "Test", goal: "g" });
+    manager.cancel(id);
+    expect(manager.get(id)!.completedAt).toBeDefined();
+
+    manager.resume(id);
+    const mission = manager.get(id)!;
+    expect(mission.status).toBe("active");
+    expect(mission.completedAt).toBeUndefined();
+  });
+
   it("cancel sets status to canceled", async () => {
     const { MissionManager } = await import("../src/mission/manager.js");
     const manager = new MissionManager(join(dir, "test.db"));
@@ -244,6 +270,31 @@ describe("MissionManager", () => {
     const id = manager.create({ name: "Test", goal: "g" });
     manager.cancel(id);
     expect(manager.get(id)!.status).toBe("canceled");
+  });
+
+  it("records verifier exceptions as failed verification attempts", async () => {
+    const { MissionManager } = await import("../src/mission/manager.js");
+    const { MissionStore } = await import("../src/mission/store.js");
+    const manager = new MissionManager(join(dir, "test.db"));
+
+    const id = manager.create({ name: "Test", goal: "g" });
+    manager.setVerifier(id, async () => {
+      throw new Error("Verifier transport failed");
+    });
+
+    const result = await manager.verify(id);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain("Verifier error: Verifier transport failed");
+    expect(result.metadata?.verifierThrew).toBe(true);
+    expect(manager.get(id)!.status).toBe("active");
+
+    manager.close();
+    const store = new MissionStore(join(dir, "test.db"));
+    const verifications = store.getVerifications(id);
+    expect(verifications).toHaveLength(1);
+    expect(verifications[0].passed).toBe(false);
+    expect(verifications[0].reason).toContain("Verifier error: Verifier transport failed");
+    store.close();
   });
 
   it("list returns missions with optional status filter", async () => {

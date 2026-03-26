@@ -7,7 +7,8 @@
 
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { Mission, MissionBudget, MissionStatus, MissionStep } from "./types.js";
+import { StepStatusSchema } from "./types.js";
+import type { Mission, MissionBudget, MissionStatus, MissionStep, StepStatus } from "./types.js";
 
 export class MissionStore {
   private db: Database.Database;
@@ -116,7 +117,7 @@ export class MissionStore {
       ? new Date().toISOString()
       : null;
     this.db.prepare(
-      "UPDATE missions SET status = ?, updated_at = datetime('now'), completed_at = COALESCE(?, completed_at) WHERE id = ?",
+      "UPDATE missions SET status = ?, updated_at = datetime('now'), completed_at = ? WHERE id = ?",
     ).run(status, completedAt, id);
   }
 
@@ -143,11 +144,12 @@ export class MissionStore {
     }));
   }
 
-  updateStepStatus(id: string, status: string, result?: string): void {
+  updateStepStatus(id: string, status: StepStatus, result?: string): void {
+    const parsedStatus = StepStatusSchema.parse(status);
     const completedAt = status === "completed" || status === "failed" ? new Date().toISOString() : null;
     this.db.prepare(
-      "UPDATE mission_steps SET status = ?, result = COALESCE(?, result), completed_at = COALESCE(?, completed_at) WHERE id = ?",
-    ).run(status, result ?? null, completedAt, id);
+      "UPDATE mission_steps SET status = ?, result = COALESCE(?, result), completed_at = ? WHERE id = ?",
+    ).run(parsedStatus, result ?? null, completedAt, id);
   }
 
   recordVerification(missionId: string, result: { passed: boolean; reason: string; suggestions?: string[]; metadata?: Record<string, unknown> }): void {

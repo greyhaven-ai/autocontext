@@ -49,14 +49,29 @@ export class MissionManager {
       return result;
     }
 
-    const result = await verifier(missionId);
-    this.store.recordVerification(missionId, result);
+    try {
+      const result = await verifier(missionId);
+      this.store.recordVerification(missionId, result);
 
-    if (result.passed) {
-      this.store.updateMissionStatus(missionId, "completed");
+      if (result.passed) {
+        this.store.updateMissionStatus(missionId, "completed");
+      }
+
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const result: VerifierResult = {
+        passed: false,
+        reason: `Verifier error: ${message}`,
+        suggestions: [],
+        metadata: {
+          verifierThrew: true,
+          errorName: error instanceof Error ? error.name : "Error",
+        },
+      };
+      this.store.recordVerification(missionId, result);
+      return result;
     }
-
-    return result;
   }
 
   pause(missionId: string): void {
