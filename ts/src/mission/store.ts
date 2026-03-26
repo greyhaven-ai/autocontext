@@ -7,8 +7,16 @@
 
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import { StepStatusSchema } from "./types.js";
-import type { Mission, MissionBudget, MissionStatus, MissionStep, StepStatus } from "./types.js";
+import { StepStatusSchema, SubgoalStatusSchema } from "./types.js";
+import type {
+  Mission,
+  MissionBudget,
+  MissionStatus,
+  MissionStep,
+  MissionSubgoal,
+  StepStatus,
+  SubgoalStatus,
+} from "./types.js";
 
 export class MissionStore {
   private db: Database.Database;
@@ -176,14 +184,23 @@ export class MissionStore {
     );
   }
 
-  getVerifications(missionId: string): Array<{ passed: boolean; reason: string; suggestions: string[]; createdAt: string }> {
+  getVerifications(missionId: string): Array<{
+    id: string;
+    passed: boolean;
+    reason: string;
+    suggestions: string[];
+    metadata: Record<string, unknown>;
+    createdAt: string;
+  }> {
     const rows = this.db.prepare(
       "SELECT * FROM mission_verifications WHERE mission_id = ? ORDER BY created_at",
     ).all(missionId) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
+      id: row.id as string,
       passed: (row.passed as number) === 1,
       reason: row.reason as string,
       suggestions: JSON.parse((row.suggestions as string) ?? "[]"),
+      metadata: JSON.parse((row.metadata as string) ?? "{}"),
       createdAt: row.created_at as string,
     }));
   }
@@ -200,7 +217,7 @@ export class MissionStore {
     return id;
   }
 
-  getSubgoals(missionId: string): Array<{ id: string; missionId: string; description: string; priority: number; status: string; createdAt: string; completedAt?: string }> {
+  getSubgoals(missionId: string): MissionSubgoal[] {
     const rows = this.db.prepare(
       "SELECT * FROM mission_subgoals WHERE mission_id = ? ORDER BY priority ASC, created_at ASC",
     ).all(missionId) as Array<Record<string, unknown>>;
@@ -209,17 +226,20 @@ export class MissionStore {
       missionId: row.mission_id as string,
       description: row.description as string,
       priority: row.priority as number,
-      status: (row.status as string) ?? "pending",
+      status: (row.status as SubgoalStatus) ?? "pending",
       createdAt: row.created_at as string,
       completedAt: (row.completed_at as string) ?? undefined,
     }));
   }
 
-  updateSubgoalStatus(id: string, status: string): void {
-    const completedAt = status === "completed" || status === "failed" ? new Date().toISOString() : null;
+  updateSubgoalStatus(id: string, status: SubgoalStatus): void {
+    const parsedStatus = SubgoalStatusSchema.parse(status);
+    const completedAt = parsedStatus === "completed" || parsedStatus === "failed" || parsedStatus === "skipped"
+      ? new Date().toISOString()
+      : null;
     this.db.prepare(
-      "UPDATE mission_subgoals SET status = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?",
-    ).run(status, completedAt, id);
+      "UPDATE mission_subgoals SET status = ?, completed_at = ? WHERE id = ?",
+    ).run(parsedStatus, completedAt, id);
   }
 
   // -------------------------------------------------------------------------

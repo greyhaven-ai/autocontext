@@ -81,6 +81,37 @@ describe("Subgoals", () => {
     store.close();
   });
 
+  it("rejects subgoal statuses outside the exported contract", async () => {
+    const { MissionStore } = await import("../src/mission/store.js");
+    const store = new MissionStore(join(dir, "test.db"));
+    const mId = store.createMission({ name: "Test", goal: "g" });
+    const sgId = store.addSubgoal(mId, { description: "Write tests", priority: 1 });
+
+    expect(() => {
+      (store.updateSubgoalStatus as (id: string, status: string) => void)(sgId, "banana");
+    }).toThrow();
+
+    const subgoals = store.getSubgoals(mId);
+    expect(subgoals[0].status).toBe("pending");
+    store.close();
+  });
+
+  it("reopening a terminal subgoal clears completedAt", async () => {
+    const { MissionStore } = await import("../src/mission/store.js");
+    const store = new MissionStore(join(dir, "test.db"));
+    const mId = store.createMission({ name: "Test", goal: "g" });
+    const sgId = store.addSubgoal(mId, { description: "Write tests", priority: 1 });
+
+    store.updateSubgoalStatus(sgId, "completed");
+    expect(store.getSubgoals(mId)[0].completedAt).toBeDefined();
+
+    store.updateSubgoalStatus(sgId, "active");
+    const subgoal = store.getSubgoals(mId)[0];
+    expect(subgoal.status).toBe("active");
+    expect(subgoal.completedAt).toBeUndefined();
+    store.close();
+  });
+
   it("subgoals are ordered by priority", async () => {
     const { MissionStore } = await import("../src/mission/store.js");
     const store = new MissionStore(join(dir, "test.db"));
@@ -151,6 +182,40 @@ describe("Mission checkpoints", () => {
     expect(store2.getSteps(restoredId).length).toBe(1);
     expect(store2.getSubgoals(restoredId).length).toBe(1);
     expect(store2.getVerifications(restoredId).length).toBe(1);
+    store2.close();
+  });
+
+  it("loadCheckpoint restores multiple verification rows without ID collisions", async () => {
+    const { MissionStore } = await import("../src/mission/store.js");
+    const { saveCheckpoint, loadCheckpoint } = await import("../src/mission/checkpoint.js");
+
+    const store1 = new MissionStore(join(dir, "source.db"));
+    const mId = store1.createMission({ name: "Durable", goal: "Survive restart" });
+    store1.recordVerification(mId, {
+      passed: false,
+      reason: "First verifier pass",
+      metadata: { attempt: 1 },
+    });
+    store1.recordVerification(mId, {
+      passed: false,
+      reason: "Second verifier pass",
+      metadata: { attempt: 2 },
+    });
+
+    const checkpointDir = join(dir, "checkpoints");
+    const path = saveCheckpoint(store1, mId, checkpointDir);
+    store1.close();
+
+    const store2 = new MissionStore(join(dir, "target.db"));
+    const restoredId = loadCheckpoint(store2, path);
+    const verifications = store2.getVerifications(restoredId);
+
+    expect(verifications).toHaveLength(2);
+    expect(verifications.map((v) => v.reason)).toEqual([
+      "First verifier pass",
+      "Second verifier pass",
+    ]);
+    expect(verifications[1].metadata).toEqual({ attempt: 2 });
     store2.close();
   });
 

@@ -7,6 +7,7 @@
  */
 
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { MissionStore } from "./store.js";
 
@@ -94,10 +95,13 @@ export function loadCheckpoint(store: MissionStore, checkpointPath: string): str
 
   // Restore verifications
   for (const v of raw.verifications) {
+    const verificationId = typeof v.id === "string" && v.id.length > 0
+      ? v.id
+      : `verify-restored-${randomUUID().slice(0, 8)}`;
     db.prepare(
       "INSERT INTO mission_verifications (id, mission_id, passed, reason, suggestions, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     ).run(
-      `verify-restored-${Date.now()}`, restoredId,
+      verificationId, restoredId,
       v.passed ? 1 : 0, v.reason,
       JSON.stringify(v.suggestions ?? []),
       JSON.stringify(v.metadata ?? {}),
