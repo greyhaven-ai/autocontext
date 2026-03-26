@@ -5,18 +5,20 @@
  * into its request handler with appropriate status codes.
  */
 
+import { buildMissionArtifactsPayload, buildMissionStatusPayload } from "../mission/control-plane.js";
 import type { MissionManager } from "../mission/manager.js";
 import type { Mission, MissionStep, MissionSubgoal, BudgetUsage } from "../mission/types.js";
 
 export interface MissionApiRoutes {
   listMissions(status?: string): Mission[];
-  getMission(id: string): (Mission & { stepsCount: number }) | null;
+  getMission(id: string): Record<string, unknown> | null;
   getMissionSteps(id: string): MissionStep[];
   getMissionSubgoals(id: string): MissionSubgoal[];
   getMissionBudget(id: string): BudgetUsage;
+  getMissionArtifacts(id: string): Record<string, unknown>;
 }
 
-export function buildMissionApiRoutes(manager: MissionManager): MissionApiRoutes {
+export function buildMissionApiRoutes(manager: MissionManager, runsRoot: string): MissionApiRoutes {
   return {
     listMissions(status?: string) {
       type StatusParam = Parameters<typeof manager.list>[0];
@@ -26,8 +28,7 @@ export function buildMissionApiRoutes(manager: MissionManager): MissionApiRoutes
     getMission(id: string) {
       const mission = manager.get(id);
       if (!mission) return null;
-      const steps = manager.steps(id);
-      return { ...mission, stepsCount: steps.length };
+      return buildMissionStatusPayload(manager, id);
     },
 
     getMissionSteps(id: string) {
@@ -40,6 +41,10 @@ export function buildMissionApiRoutes(manager: MissionManager): MissionApiRoutes
 
     getMissionBudget(id: string) {
       return manager.budgetUsage(id);
+    },
+
+    getMissionArtifacts(id: string) {
+      return buildMissionArtifactsPayload(manager, id, runsRoot);
     },
   };
 }

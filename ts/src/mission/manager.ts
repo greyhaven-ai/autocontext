@@ -8,18 +8,23 @@
 
 import { MissionStore } from "./store.js";
 import { saveCheckpoint } from "./checkpoint.js";
+import type { MissionEventEmitter } from "./events.js";
 import type { Mission, MissionBudget, MissionStatus, MissionStep, MissionSubgoal, MissionVerifier, VerifierResult } from "./types.js";
 
 export class MissionManager {
   private store: MissionStore;
   private verifiers: Map<string, MissionVerifier> = new Map();
+  private events?: MissionEventEmitter;
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, opts?: { events?: MissionEventEmitter }) {
     this.store = new MissionStore(dbPath);
+    this.events = opts?.events;
   }
 
   create(opts: { name: string; goal: string; budget?: MissionBudget; metadata?: Record<string, unknown> }): string {
-    return this.store.createMission(opts);
+    const id = this.store.createMission(opts);
+    this.events?.emitCreated(id, opts.name, opts.goal);
+    return id;
   }
 
   get(id: string): Mission | null {
@@ -31,7 +36,9 @@ export class MissionManager {
   }
 
   advance(missionId: string, description: string): string {
-    return this.store.addStep(missionId, { description });
+    const stepId = this.store.addStep(missionId, { description });
+    this.events?.emitStep(missionId, description, this.store.getSteps(missionId).length);
+    return stepId;
   }
 
   steps(missionId: string): MissionStep[] {
@@ -59,15 +66,17 @@ export class MissionManager {
     if (!verifier) {
       const result: VerifierResult = { passed: false, reason: "No verifier registered", suggestions: [], metadata: {} };
       this.store.recordVerification(missionId, result);
+      this.events?.emitVerified(missionId, result.passed, result.reason);
       return result;
     }
 
     try {
       const result = await verifier(missionId);
       this.store.recordVerification(missionId, result);
+      this.events?.emitVerified(missionId, result.passed, result.reason);
 
       if (result.passed) {
-        this.store.updateMissionStatus(missionId, "completed");
+        this.transitionMissionStatus(missionId, "completed");
       }
 
       return result;
@@ -83,24 +92,25 @@ export class MissionManager {
         },
       };
       this.store.recordVerification(missionId, result);
+      this.events?.emitVerified(missionId, result.passed, result.reason);
       return result;
     }
   }
 
   pause(missionId: string): void {
-    this.store.updateMissionStatus(missionId, "paused");
+    this.transitionMissionStatus(missionId, "paused");
   }
 
   resume(missionId: string): void {
-    this.store.updateMissionStatus(missionId, "active");
+    this.transitionMissionStatus(missionId, "active");
   }
 
   cancel(missionId: string): void {
-    this.store.updateMissionStatus(missionId, "canceled");
+    this.transitionMissionStatus(missionId, "canceled");
   }
 
   setStatus(missionId: string, status: MissionStatus): void {
-    this.store.updateMissionStatus(missionId, status);
+    this.transitionMissionStatus(missionId, status);
   }
 
   budgetUsage(missionId: string): { stepsUsed: number; maxSteps?: number; exhausted: boolean } {
@@ -117,6 +127,15 @@ export class MissionManager {
 
   saveCheckpoint(missionId: string, checkpointDir: string): string {
     return saveCheckpoint(this.store, missionId, checkpointDir);
+  }
+
+  private transitionMissionStatus(missionId: string, status: MissionStatus): void {
+    const mission = this.store.getMission(missionId);
+    const previousStatus = mission?.status;
+    this.store.updateMissionStatus(missionId, status);
+    if (previousStatus && previousStatus !== status) {
+      this.events?.emitStatusChange(missionId, previousStatus, status);
+    }
   }
 
   close(): void {

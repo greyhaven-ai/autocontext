@@ -7,8 +7,12 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
-import { fileURLToPath } from "node:url";
-import { parseClientMessage } from "./protocol.js";
+import { URL, fileURLToPath } from "node:url";
+import { MissionEventEmitter, type MissionCreatedEvent, type MissionStepEvent, type MissionStatusChangedEvent, type MissionVerifiedEvent } from "../mission/events.js";
+import { MissionManager } from "../mission/manager.js";
+import { buildMissionStatusPayload, requireMission, runMissionLoop, writeMissionCheckpoint } from "../mission/control-plane.js";
+import { buildMissionApiRoutes } from "./mission-api.js";
+import { MissionProgressMsgSchema, parseClientMessage } from "./protocol.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { RunManager } from "./run-manager.js";
 import type { RunManagerState } from "./run-manager.js";
@@ -38,6 +42,8 @@ export class PortInUseError extends Error {
 
 export class InteractiveServer {
   private readonly runManager: RunManager;
+  private readonly missionManager: MissionManager;
+  private readonly missionEvents: MissionEventEmitter;
   private readonly host: string;
   private readonly requestedPort: number;
   private readonly dashboardDirOverride?: string;
@@ -47,6 +53,10 @@ export class InteractiveServer {
 
   constructor(opts: InteractiveServerOpts) {
     this.runManager = opts.runManager;
+    this.missionEvents = new MissionEventEmitter();
+    this.missionManager = new MissionManager(this.runManager["opts"].dbPath, {
+      events: this.missionEvents,
+    });
     this.host = opts.host ?? "127.0.0.1";
     this.requestedPort = opts.port ?? 8000;
     this.dashboardDirOverride = opts.dashboardDirOverride;
@@ -66,7 +76,13 @@ export class InteractiveServer {
     }
 
     const httpServer = createServer((req, res) => {
-      this.handleHttpRequest(req, res);
+      void this.handleHttpRequest(req, res).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+        }
+        res.end(JSON.stringify({ error: message }, null, 2));
+      });
     });
 
     const wsServer = new WebSocketServer({ noServer: true });
@@ -112,13 +128,15 @@ export class InteractiveServer {
   // HTTP REST API (AC-364)
   // ---------------------------------------------------------------------------
 
-  private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
-    const url = req.url ?? "";
+  private async handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const url = requestUrl.pathname;
     const method = req.method ?? "GET";
+    const missionApi = buildMissionApiRoutes(this.missionManager, this.runManager["opts"].runsRoot);
 
     // CORS headers for dashboard
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (method === "OPTIONS") {
@@ -218,16 +236,133 @@ export class InteractiveServer {
       return;
     }
 
+    // GET /api/missions
+    if (method === "GET" && url === "/api/missions") {
+      json(200, missionApi.listMissions(requestUrl.searchParams.get("status") ?? undefined));
+      return;
+    }
+
+    // GET /api/missions/:id
+    const missionMatch = url.match(/^\/api\/missions\/([^/]+)$/);
+    if (method === "GET" && missionMatch) {
+      const [, missionId] = missionMatch;
+      const mission = missionApi.getMission(missionId!);
+      if (!mission) {
+        json(404, { error: `Mission '${missionId}' not found` });
+        return;
+      }
+      json(200, mission);
+      return;
+    }
+
+    // GET /api/missions/:id/steps
+    const missionStepsMatch = url.match(/^\/api\/missions\/([^/]+)\/steps$/);
+    if (method === "GET" && missionStepsMatch) {
+      const [, missionId] = missionStepsMatch;
+      if (!this.missionManager.get(missionId!)) {
+        json(404, { error: `Mission '${missionId}' not found` });
+        return;
+      }
+      json(200, missionApi.getMissionSteps(missionId!));
+      return;
+    }
+
+    // GET /api/missions/:id/subgoals
+    const missionSubgoalsMatch = url.match(/^\/api\/missions\/([^/]+)\/subgoals$/);
+    if (method === "GET" && missionSubgoalsMatch) {
+      const [, missionId] = missionSubgoalsMatch;
+      if (!this.missionManager.get(missionId!)) {
+        json(404, { error: `Mission '${missionId}' not found` });
+        return;
+      }
+      json(200, missionApi.getMissionSubgoals(missionId!));
+      return;
+    }
+
+    // GET /api/missions/:id/budget
+    const missionBudgetMatch = url.match(/^\/api\/missions\/([^/]+)\/budget$/);
+    if (method === "GET" && missionBudgetMatch) {
+      const [, missionId] = missionBudgetMatch;
+      if (!this.missionManager.get(missionId!)) {
+        json(404, { error: `Mission '${missionId}' not found` });
+        return;
+      }
+      json(200, missionApi.getMissionBudget(missionId!));
+      return;
+    }
+
+    // GET /api/missions/:id/artifacts
+    const missionArtifactsMatch = url.match(/^\/api\/missions\/([^/]+)\/artifacts$/);
+    if (method === "GET" && missionArtifactsMatch) {
+      const [, missionId] = missionArtifactsMatch;
+      if (!this.missionManager.get(missionId!)) {
+        json(404, { error: `Mission '${missionId}' not found` });
+        return;
+      }
+      json(200, missionApi.getMissionArtifacts(missionId!));
+      return;
+    }
+
+    // POST /api/missions/:id/(run|pause|resume|cancel)
+    const missionActionMatch = url.match(/^\/api\/missions\/([^/]+)\/(run|pause|resume|cancel)$/);
+    if (method === "POST" && missionActionMatch) {
+      const [, missionId, action] = missionActionMatch;
+      const mission = this.missionManager.get(missionId!);
+      if (!mission) {
+        json(404, { error: `Mission '${missionId}' not found` });
+        return;
+      }
+
+      if (action === "run") {
+        const body = await this.readJsonBody(req);
+        const maxIterations = typeof body.maxIterations === "number"
+          ? body.maxIterations
+          : Number.parseInt(String(body.maxIterations ?? "1"), 10);
+        const payload = await runMissionLoop(
+          this.missionManager,
+          missionId!,
+          this.runManager["opts"].runsRoot,
+          {
+            maxIterations: Number.isInteger(maxIterations) && maxIterations > 0 ? maxIterations : 1,
+            stepDescription: typeof body.stepDescription === "string" ? body.stepDescription : undefined,
+          },
+        );
+        json(200, payload);
+        return;
+      }
+
+      requireMission(this.missionManager, mission.id);
+      if (action === "pause") {
+        this.missionManager.pause(mission.id);
+      } else if (action === "resume") {
+        this.missionManager.resume(mission.id);
+      } else {
+        this.missionManager.cancel(mission.id);
+      }
+      const checkpointPath = writeMissionCheckpoint(
+        this.missionManager,
+        mission.id,
+        this.runManager["opts"].runsRoot,
+      );
+      json(200, {
+        ...buildMissionStatusPayload(this.missionManager, mission.id),
+        checkpointPath,
+      });
+      return;
+    }
+
     // 404 fallback — helpful message for dashboard URLs
     if (url === "/" || url.startsWith("/dashboard")) {
       json(404, {
         error: "Not found",
-        message: "Dashboard files not found. Use the API endpoints (/api/runs, /api/scenarios, /health) or connect via WebSocket (/ws/interactive).",
+        message: "Dashboard files not found. Use the API endpoints (/api/runs, /api/missions, /api/scenarios, /health) or connect via WebSocket (/ws/interactive, /ws/events).",
         api: {
           health: "/health",
           runs: "/api/runs",
+          missions: "/api/missions",
           scenarios: "/api/scenarios",
           websocket: "/ws/interactive",
+          events: "/ws/events",
         },
       });
       return;
@@ -301,6 +436,35 @@ export class InteractiveServer {
     }
   }
 
+  private async readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    if (chunks.length === 0) {
+      return {};
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf-8")) as Record<string, unknown>;
+  }
+
+  private buildMissionProgress(missionId: string, latestStep?: string): Extract<ServerMessage, { type: "mission_progress" }> | null {
+    const mission = this.missionManager.get(missionId);
+    if (!mission) {
+      return null;
+    }
+    const steps = this.missionManager.steps(missionId);
+    const budget = this.missionManager.budgetUsage(missionId);
+    return MissionProgressMsgSchema.parse({
+      type: "mission_progress",
+      missionId,
+      status: mission.status,
+      stepsCompleted: steps.length,
+      latestStep: latestStep ?? steps.at(-1)?.description,
+      budgetUsed: budget.stepsUsed,
+      budgetMax: budget.maxSteps,
+    });
+  }
+
   async stop(): Promise<void> {
     const wsServer = this.wsServer;
     const httpServer = this.httpServer;
@@ -332,6 +496,8 @@ export class InteractiveServer {
         });
       });
     }
+
+    this.missionManager.close();
   }
 
   private attachClient(ws: WebSocket): void {
@@ -345,6 +511,21 @@ export class InteractiveServer {
 
     this.runManager.subscribeEvents(eventCallback);
     this.runManager.subscribeState(stateCallback);
+
+    const sendMissionProgress = (missionId: string, latestStep?: string) => {
+      const progress = this.buildMissionProgress(missionId, latestStep);
+      if (progress) {
+        this.send(ws, progress);
+      }
+    };
+    const onMissionCreated = (event: MissionCreatedEvent) => sendMissionProgress(event.missionId);
+    const onMissionStep = (event: MissionStepEvent) => sendMissionProgress(event.missionId, event.description);
+    const onMissionStatusChanged = (event: MissionStatusChangedEvent) => sendMissionProgress(event.missionId);
+    const onMissionVerified = (event: MissionVerifiedEvent) => sendMissionProgress(event.missionId);
+    this.missionEvents.on("mission_created", onMissionCreated);
+    this.missionEvents.on("mission_step", onMissionStep);
+    this.missionEvents.on("mission_status_changed", onMissionStatusChanged);
+    this.missionEvents.on("mission_verified", onMissionVerified);
 
     this.send(ws, { type: "hello", protocol_version: 1 });
     this.send(ws, {
@@ -389,6 +570,10 @@ export class InteractiveServer {
     ws.on("close", () => {
       this.runManager.unsubscribeEvents(eventCallback);
       this.runManager.unsubscribeState(stateCallback);
+      this.missionEvents.off("mission_created", onMissionCreated);
+      this.missionEvents.off("mission_step", onMissionStep);
+      this.missionEvents.off("mission_status_changed", onMissionStatusChanged);
+      this.missionEvents.off("mission_verified", onMissionVerified);
     });
   }
 
@@ -408,8 +593,34 @@ export class InteractiveServer {
 
     this.runManager.subscribeEvents(eventCallback);
 
+    const sendMissionProgress = (missionId: string, latestStep?: string) => {
+      const progress = this.buildMissionProgress(missionId, latestStep);
+      if (!progress || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      ws.send(JSON.stringify({
+        channel: "mission",
+        event: "mission_progress",
+        payload: progress,
+        ts: new Date().toISOString(),
+        v: 1,
+      }));
+    };
+    const onMissionCreated = (event: MissionCreatedEvent) => sendMissionProgress(event.missionId);
+    const onMissionStep = (event: MissionStepEvent) => sendMissionProgress(event.missionId, event.description);
+    const onMissionStatusChanged = (event: MissionStatusChangedEvent) => sendMissionProgress(event.missionId);
+    const onMissionVerified = (event: MissionVerifiedEvent) => sendMissionProgress(event.missionId);
+    this.missionEvents.on("mission_created", onMissionCreated);
+    this.missionEvents.on("mission_step", onMissionStep);
+    this.missionEvents.on("mission_status_changed", onMissionStatusChanged);
+    this.missionEvents.on("mission_verified", onMissionVerified);
+
     ws.on("close", () => {
       this.runManager.unsubscribeEvents(eventCallback);
+      this.missionEvents.off("mission_created", onMissionCreated);
+      this.missionEvents.off("mission_step", onMissionStep);
+      this.missionEvents.off("mission_status_changed", onMissionStatusChanged);
+      this.missionEvents.off("mission_verified", onMissionVerified);
     });
   }
 
