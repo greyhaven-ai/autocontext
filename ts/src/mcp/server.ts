@@ -19,11 +19,14 @@ import { loadSettings } from "../config/index.js";
 import { SolveManager } from "../knowledge/solver.js";
 import { runAgentTaskRlmSession } from "../rlm/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
+import { registerMissionTools } from "./mission-tools.js";
 
 export interface MtsServerOpts {
   store: SQLiteStore;
   provider: LLMProvider;
   model?: string;
+  /** SQLite DB path for mission control helpers */
+  dbPath?: string;
   /** Directory for agent task spec JSON files */
   tasksDir?: string;
   /** Root directory for run artifacts */
@@ -999,6 +1002,11 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       return { content: [{ type: "text" as const, text: JSON.stringify(getCapabilities(), null, 2) }] };
     },
   );
+
+  registerMissionTools(server, {
+    dbPath: opts.dbPath ?? settings.dbPath,
+    runsRoot,
+  });
 
   return server;
 }

@@ -1,10 +1,12 @@
-/**
- * MCP tool definitions for mission control plane (AC-413).
- *
- * Exposes mission lifecycle operations as MCP-compatible tool schemas.
- * Actual execution is handled by MissionManager; these define the
- * contract that MCP servers wire up.
- */
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { MissionManager } from "../mission/manager.js";
+import {
+  buildMissionArtifactsPayload,
+  buildMissionResultPayload,
+  buildMissionStatusPayload,
+  writeMissionCheckpoint,
+} from "../mission/control-plane.js";
 
 export interface MissionToolDef {
   name: string;
@@ -32,7 +34,7 @@ export const MISSION_TOOLS: MissionToolDef[] = [
   },
   {
     name: "mission_status",
-    description: "Get the status and details of a mission",
+    description: "Get the current status and summary for a mission",
     schema: {
       type: "object",
       properties: {
@@ -42,13 +44,25 @@ export const MISSION_TOOLS: MissionToolDef[] = [
     },
   },
   {
-    name: "mission_list",
-    description: "List all missions, optionally filtered by status",
+    name: "mission_result",
+    description: "Get the full mission result payload, including steps and verifications",
     schema: {
       type: "object",
       properties: {
-        status: { type: "string", description: "Filter by status (active, paused, completed, etc.)" },
+        mission_id: { type: "string", description: "Mission ID" },
       },
+      required: ["mission_id"],
+    },
+  },
+  {
+    name: "mission_artifacts",
+    description: "Inspect durable checkpoint artifacts for a mission",
+    schema: {
+      type: "object",
+      properties: {
+        mission_id: { type: "string", description: "Mission ID" },
+      },
+      required: ["mission_id"],
     },
   },
   {
@@ -84,15 +98,138 @@ export const MISSION_TOOLS: MissionToolDef[] = [
       required: ["mission_id"],
     },
   },
-  {
-    name: "mission_steps",
-    description: "List steps taken in a mission",
-    schema: {
-      type: "object",
-      properties: {
-        mission_id: { type: "string", description: "Mission ID" },
-      },
-      required: ["mission_id"],
-    },
-  },
 ];
+
+function jsonContent(payload: unknown) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(payload, null, 2),
+      },
+    ],
+  };
+}
+
+export function registerMissionTools(
+  server: McpServer,
+  opts: { dbPath: string; runsRoot: string },
+): void {
+  const withManager = async <T>(fn: (manager: MissionManager) => Promise<T> | T): Promise<T> => {
+    const manager = new MissionManager(opts.dbPath);
+    try {
+      return await fn(manager);
+    } finally {
+      manager.close();
+    }
+  };
+
+  server.tool(
+    "create_mission",
+    "Create a new verifier-driven mission",
+    {
+      name: z.string(),
+      goal: z.string(),
+      max_steps: z.number().int().positive().optional(),
+    },
+    async (args) => withManager((manager) => {
+      const missionId = manager.create({
+        name: args.name,
+        goal: args.goal,
+        budget: args.max_steps ? { maxSteps: args.max_steps } : undefined,
+      });
+      const checkpointPath = writeMissionCheckpoint(manager, missionId, opts.runsRoot);
+      return jsonContent({
+        ...buildMissionStatusPayload(manager, missionId),
+        checkpointPath,
+      });
+    }),
+  );
+
+  server.tool(
+    "mission_status",
+    "Get the current status and summary for a mission",
+    { mission_id: z.string() },
+    async (args) => withManager((manager) => {
+      if (!manager.get(args.mission_id)) {
+        return jsonContent({ error: `Mission not found: ${args.mission_id}` });
+      }
+      return jsonContent(buildMissionStatusPayload(manager, args.mission_id));
+    }),
+  );
+
+  server.tool(
+    "mission_result",
+    "Get the full mission result payload, including steps and verifications",
+    { mission_id: z.string() },
+    async (args) => withManager((manager) => {
+      if (!manager.get(args.mission_id)) {
+        return jsonContent({ error: `Mission not found: ${args.mission_id}` });
+      }
+      return jsonContent(buildMissionResultPayload(manager, args.mission_id));
+    }),
+  );
+
+  server.tool(
+    "mission_artifacts",
+    "Inspect durable checkpoint artifacts for a mission",
+    { mission_id: z.string() },
+    async (args) => withManager((manager) => {
+      if (!manager.get(args.mission_id)) {
+        return jsonContent({ error: `Mission not found: ${args.mission_id}` });
+      }
+      return jsonContent(buildMissionArtifactsPayload(manager, args.mission_id, opts.runsRoot));
+    }),
+  );
+
+  server.tool(
+    "pause_mission",
+    "Pause an active mission",
+    { mission_id: z.string() },
+    async (args) => withManager((manager) => {
+      if (!manager.get(args.mission_id)) {
+        return jsonContent({ error: `Mission not found: ${args.mission_id}` });
+      }
+      manager.pause(args.mission_id);
+      const checkpointPath = writeMissionCheckpoint(manager, args.mission_id, opts.runsRoot);
+      return jsonContent({
+        ...buildMissionStatusPayload(manager, args.mission_id),
+        checkpointPath,
+      });
+    }),
+  );
+
+  server.tool(
+    "resume_mission",
+    "Resume a paused mission",
+    { mission_id: z.string() },
+    async (args) => withManager((manager) => {
+      if (!manager.get(args.mission_id)) {
+        return jsonContent({ error: `Mission not found: ${args.mission_id}` });
+      }
+      manager.resume(args.mission_id);
+      const checkpointPath = writeMissionCheckpoint(manager, args.mission_id, opts.runsRoot);
+      return jsonContent({
+        ...buildMissionStatusPayload(manager, args.mission_id),
+        checkpointPath,
+      });
+    }),
+  );
+
+  server.tool(
+    "cancel_mission",
+    "Cancel a mission",
+    { mission_id: z.string() },
+    async (args) => withManager((manager) => {
+      if (!manager.get(args.mission_id)) {
+        return jsonContent({ error: `Mission not found: ${args.mission_id}` });
+      }
+      manager.cancel(args.mission_id);
+      const checkpointPath = writeMissionCheckpoint(manager, args.mission_id, opts.runsRoot);
+      return jsonContent({
+        ...buildMissionStatusPayload(manager, args.mission_id),
+        checkpointPath,
+      });
+    }),
+  );
+}

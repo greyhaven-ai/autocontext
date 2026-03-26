@@ -29,7 +29,7 @@ npm run build
 
 ## CLI Commands
 
-The package ships a full `autoctx` CLI with 22 commands:
+The package ships a full `autoctx` CLI with commands including:
 
 ```bash
 # Project setup and discovery
@@ -55,6 +55,10 @@ autoctx new-scenario --description "Test summarization quality"
 autoctx tui [--port 8000]
 autoctx serve [--port 8000] [--json] # HTTP dashboard + API
 autoctx mcp-serve                     # MCP server on stdio
+autoctx mission create --name "Ship login" --goal "Implement OAuth"
+autoctx mission run --id <mission-id> --max-iterations 3
+autoctx mission status --id <mission-id>
+autoctx mission artifacts --id <mission-id>
 
 # Evaluation
 autoctx judge -p <prompt> -o <output> -r <rubric>
@@ -159,6 +163,7 @@ Saved custom agent-task scenarios under `knowledge/_custom_scenarios/` can be re
 | Solve | solve_scenario, solve_status, solve_result |
 | Sandbox | sandbox_create, sandbox_run, sandbox_status, sandbox_playbook, sandbox_list, sandbox_destroy |
 | Agent tasks | create_agent_task, list_agent_tasks, get_agent_task |
+| Missions | create_mission, mission_status, mission_result, mission_artifacts, pause_mission, resume_mission, cancel_mission |
 | Discovery | capabilities |
 
 ### Claude Code integration

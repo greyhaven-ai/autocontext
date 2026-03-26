@@ -1060,6 +1060,7 @@ See also: serve, judge, improve`);
     store,
     provider,
     model,
+    dbPath,
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
   });
@@ -1994,23 +1995,36 @@ async function cmdModels(): Promise<void> {
 async function cmdMission(dbPath: string): Promise<void> {
   const subcommand = process.argv[3];
   const { MissionManager } = await import("../mission/manager.js");
+  const {
+    buildMissionArtifactsPayload,
+    buildMissionStatusPayload,
+    requireMission,
+    runMissionLoop,
+    writeMissionCheckpoint,
+  } = await import("../mission/control-plane.js");
+  const { loadSettings } = await import("../config/index.js");
+  const settings = loadSettings();
+  const runsRoot = resolve(settings.runsRoot);
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     console.log(`autoctx mission — Manage verifier-driven missions
 
 Subcommands:
   create     Create a new mission
+  run        Advance a mission and write a checkpoint
   status     Show mission details
   list       List all missions
   pause      Pause an active mission
   resume     Resume a paused mission
   cancel     Cancel a mission
+  artifacts  Inspect saved mission checkpoints
 
 Examples:
   autoctx mission create --name "Ship login" --goal "Implement OAuth"
+  autoctx mission run --id mission-abc123 --max-iterations 3
   autoctx mission list --status active
   autoctx mission status --id mission-abc123
-  autoctx mission pause --id mission-abc123
+  autoctx mission artifacts --id mission-abc123
 
 See also: run, improve, judge`);
     process.exit(0);
@@ -2036,8 +2050,32 @@ See also: run, improve, judge`);
           ? { maxSteps: parseInt(values["max-steps"], 10) }
           : undefined;
         const id = manager.create({ name: values.name, goal: values.goal, budget });
-        const mission = manager.get(id);
-        console.log(JSON.stringify(mission, null, 2));
+        const checkpointPath = writeMissionCheckpoint(manager, id, runsRoot);
+        console.log(JSON.stringify({
+          ...buildMissionStatusPayload(manager, id),
+          checkpointPath,
+        }, null, 2));
+        break;
+      }
+      case "run": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: {
+            id: { type: "string" },
+            "max-iterations": { type: "string", default: "1" },
+            "step-description": { type: "string" },
+          },
+        });
+        if (!values.id) {
+          console.error("Usage: autoctx mission run --id <mission-id> [--max-iterations N] [--step-description <text>]");
+          process.exit(1);
+        }
+        requireMission(manager, values.id);
+        const payload = await runMissionLoop(manager, values.id, runsRoot, {
+          maxIterations: parseInt(values["max-iterations"] ?? "1", 10),
+          stepDescription: values["step-description"],
+        });
+        console.log(JSON.stringify(payload, null, 2));
         break;
       }
       case "status": {
@@ -2049,13 +2087,7 @@ See also: run, improve, judge`);
           console.error("Usage: autoctx mission status --id <mission-id>");
           process.exit(1);
         }
-        const mission = manager.get(values.id);
-        if (!mission) {
-          console.error(`Mission not found: ${values.id}`);
-          process.exit(1);
-        }
-        const steps = manager.steps(values.id);
-        console.log(JSON.stringify({ ...mission, stepsCount: steps.length }, null, 2));
+        console.log(JSON.stringify(buildMissionStatusPayload(manager, values.id), null, 2));
         break;
       }
       case "list": {
@@ -2068,14 +2100,31 @@ See also: run, improve, judge`);
         console.log(JSON.stringify(missions, null, 2));
         break;
       }
+      case "artifacts": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        if (!values.id) {
+          console.error("Usage: autoctx mission artifacts --id <mission-id>");
+          process.exit(1);
+        }
+        console.log(JSON.stringify(buildMissionArtifactsPayload(manager, values.id, runsRoot), null, 2));
+        break;
+      }
       case "pause": {
         const { values } = parseArgs({
           args: process.argv.slice(4),
           options: { id: { type: "string" } },
         });
         if (!values.id) { console.error("Usage: autoctx mission pause --id <mission-id>"); process.exit(1); }
+        requireMission(manager, values.id);
         manager.pause(values.id);
-        console.log(JSON.stringify({ id: values.id, status: "paused" }));
+        const checkpointPath = writeMissionCheckpoint(manager, values.id, runsRoot);
+        console.log(JSON.stringify({
+          ...buildMissionStatusPayload(manager, values.id),
+          checkpointPath,
+        }, null, 2));
         break;
       }
       case "resume": {
@@ -2084,8 +2133,13 @@ See also: run, improve, judge`);
           options: { id: { type: "string" } },
         });
         if (!values.id) { console.error("Usage: autoctx mission resume --id <mission-id>"); process.exit(1); }
+        requireMission(manager, values.id);
         manager.resume(values.id);
-        console.log(JSON.stringify({ id: values.id, status: "active" }));
+        const checkpointPath = writeMissionCheckpoint(manager, values.id, runsRoot);
+        console.log(JSON.stringify({
+          ...buildMissionStatusPayload(manager, values.id),
+          checkpointPath,
+        }, null, 2));
         break;
       }
       case "cancel": {
@@ -2094,8 +2148,13 @@ See also: run, improve, judge`);
           options: { id: { type: "string" } },
         });
         if (!values.id) { console.error("Usage: autoctx mission cancel --id <mission-id>"); process.exit(1); }
+        requireMission(manager, values.id);
         manager.cancel(values.id);
-        console.log(JSON.stringify({ id: values.id, status: "canceled" }));
+        const checkpointPath = writeMissionCheckpoint(manager, values.id, runsRoot);
+        console.log(JSON.stringify({
+          ...buildMissionStatusPayload(manager, values.id),
+          checkpointPath,
+        }, null, 2));
         break;
       }
       default:
