@@ -13,6 +13,7 @@ Full vertical-slice tests for both families:
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import Any
 
@@ -779,9 +780,8 @@ class TestCoordinationDesigner:
 
 
 class TestOperatorLoopCodegen:
-    def test_runtime_codegen_is_disabled(self) -> None:
+    def test_runtime_codegen_generates_loadable_source(self) -> None:
         from autocontext.scenarios.custom.operator_loop_codegen import (
-            OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
             generate_operator_loop_class,
         )
         from autocontext.scenarios.custom.operator_loop_spec import OperatorLoopSpec
@@ -801,9 +801,11 @@ class TestOperatorLoopCodegen:
                 ),
             ],
         )
-        with pytest.raises(NotImplementedError, match="intentionally not scaffolded"):
-            generate_operator_loop_class(spec, name="test_op")
-        assert "live-agent experiments" in OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED
+        source = generate_operator_loop_class(spec, name="test_op")
+        ast.parse(source)
+        assert "class TestOpOperatorLoop(OperatorLoopInterface):" in source
+        assert "def get_escalation_log(" in source
+        assert "def evaluate_judgment(" in source
 
 
 class TestCoordinationCodegen:
@@ -838,19 +840,49 @@ class TestCoordinationCodegen:
 
 
 class TestOperatorLoopCreator:
-    def test_create_is_disabled(self, tmp_path: Path) -> None:
-        from autocontext.scenarios.custom.operator_loop_codegen import (
-            OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
-        )
+    def test_create_persists_and_registers(self, tmp_path: Path) -> None:
+        import json
+
         from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
+        from autocontext.scenarios.custom.operator_loop_designer import (
+            OPERATOR_LOOP_SPEC_END,
+            OPERATOR_LOOP_SPEC_START,
+        )
+        from autocontext.scenarios.operator_loop import OperatorLoopInterface
 
         def fake_llm(system: str, user: str) -> str:
-            return "{}"
+            spec = {
+                "description": "test operator loop",
+                "environment_description": "support queue",
+                "initial_state_description": "tickets pending",
+                "escalation_policy": {"escalation_threshold": "high", "max_escalations": 3},
+                "success_criteria": ["good escalation judgment"],
+                "failure_modes": ["missed escalation"],
+                "max_steps": 8,
+                "actions": [
+                    {
+                        "name": "triage_ticket",
+                        "description": "triage the next ticket",
+                        "parameters": {},
+                        "preconditions": [],
+                        "effects": ["triaged"],
+                    }
+                ],
+            }
+            return (
+                f"{OPERATOR_LOOP_SPEC_START}\n"
+                f"{json.dumps(spec)}\n"
+                f"{OPERATOR_LOOP_SPEC_END}"
+            )
 
         creator = OperatorLoopCreator(fake_llm, tmp_path)
-        with pytest.raises(NotImplementedError, match="intentionally not scaffolded"):
-            creator.create("test", name="test_op_creator")
-        assert "datasets" in OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED
+        scenario = creator.create("test", name="test_op_creator")
+        assert isinstance(scenario, OperatorLoopInterface)
+
+        scenario_dir = tmp_path / "_custom_scenarios" / "test_op_creator"
+        assert (scenario_dir / "scenario.py").exists()
+        assert (scenario_dir / "spec.json").exists()
+        assert (scenario_dir / "scenario_type.txt").read_text().strip() == "operator_loop"
 
 
 class TestCoordinationCreator:
@@ -902,22 +934,54 @@ class TestCoordinationCreator:
 
 
 class TestAgentTaskCreatorRouting:
-    def test_rejects_operator_loop_runtime_scaffolding(self, tmp_path: Path) -> None:
+    def test_routes_to_operator_loop(self, tmp_path: Path) -> None:
+        import json
+
         from autocontext.scenarios.custom.agent_task_creator import AgentTaskCreator
-        from autocontext.scenarios.custom.operator_loop_codegen import (
-            OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
+        from autocontext.scenarios.custom.operator_loop_designer import (
+            OPERATOR_LOOP_SPEC_END,
+            OPERATOR_LOOP_SPEC_START,
         )
+        from autocontext.scenarios.operator_loop import OperatorLoopInterface
 
         def fake_llm(system: str, user: str) -> str:
-            return "{}"
+            spec = {
+                "description": "operator loop routing test",
+                "environment_description": "incident console",
+                "initial_state_description": "alerts firing",
+                "escalation_policy": {"escalation_threshold": "critical", "max_escalations": 2},
+                "success_criteria": ["escalate appropriately"],
+                "failure_modes": ["over-escalation"],
+                "max_steps": 6,
+                "actions": [
+                    {
+                        "name": "inspect_alert",
+                        "description": "inspect an alert",
+                        "parameters": {},
+                        "preconditions": [],
+                        "effects": ["inspected"],
+                    }
+                ],
+            }
+            return (
+                f"{OPERATOR_LOOP_SPEC_START}\n"
+                f"{json.dumps(spec)}\n"
+                f"{OPERATOR_LOOP_SPEC_END}"
+            )
 
         creator = AgentTaskCreator(fake_llm, tmp_path)
-        with pytest.raises(NotImplementedError, match="intentionally not scaffolded"):
-            creator.create(
-                "An operator-in-the-loop scenario where the agent must "
-                "decide when to escalate and when to request clarification"
-            )
-        assert "family metadata" in OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED
+        scenario = creator.create(
+            "An operator-in-the-loop scenario where the agent must "
+            "decide when to escalate and when to request clarification"
+        )
+        assert isinstance(scenario, OperatorLoopInterface)
+
+        scenario_dir = tmp_path / "_custom_scenarios" / creator.derive_name(
+            "An operator-in-the-loop scenario where the agent must "
+            "decide when to escalate and when to request clarification"
+        )
+        assert (scenario_dir / "scenario.py").exists()
+        assert (scenario_dir / "scenario_type.txt").read_text().strip() == "operator_loop"
 
     def test_routes_to_coordination(self, tmp_path: Path) -> None:
         import json

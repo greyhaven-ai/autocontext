@@ -36,9 +36,7 @@ from autocontext.scenarios.custom.investigation_creator import InvestigationCrea
 from autocontext.scenarios.custom.naming import STOP_WORDS as SHARED_STOP_WORDS
 from autocontext.scenarios.custom.naming import derive_name as shared_derive_name
 from autocontext.scenarios.custom.negotiation_creator import NegotiationCreator
-from autocontext.scenarios.custom.operator_loop_codegen import (
-    OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED,
-)
+from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
 from autocontext.scenarios.custom.schema_evolution_creator import SchemaEvolutionCreator
 from autocontext.scenarios.custom.simulation_creator import SimulationCreator
@@ -47,6 +45,7 @@ from autocontext.scenarios.custom.workflow_creator import WorkflowCreator
 from autocontext.scenarios.families import get_family_marker
 from autocontext.scenarios.investigation import InvestigationInterface
 from autocontext.scenarios.negotiation import NegotiationInterface
+from autocontext.scenarios.operator_loop import OperatorLoopInterface
 from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
 from autocontext.scenarios.tool_fragility import ToolFragilityInterface
 from autocontext.scenarios.workflow import WorkflowInterface
@@ -77,7 +76,7 @@ class AgentTaskCreator:
         AgentTaskInterface | ScenarioInterface | ArtifactEditingInterface
         | InvestigationInterface | WorkflowInterface
         | SchemaEvolutionInterface | ToolFragilityInterface
-        | NegotiationInterface | CoordinationInterface
+        | NegotiationInterface | OperatorLoopInterface | CoordinationInterface
     ):
         """Run the full pipeline: design → validate → codegen → validate → load → register.
 
@@ -109,8 +108,10 @@ class AgentTaskCreator:
             logger.info("routing description to negotiation creator")
             return NegotiationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
         if family.name == "operator_loop":
-            logger.info("operator-loop classification detected, but runtime scaffolding is disabled")
-            raise NotImplementedError(OPERATOR_LOOP_SCAFFOLDING_UNSUPPORTED)
+            logger.info("routing description to operator-loop creator")
+            return OperatorLoopCreator(self.llm_fn, self.knowledge_root).create(
+                description, name=name
+            )
         if family.name == "coordination":
             logger.info("routing description to coordination creator")
             return CoordinationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)

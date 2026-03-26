@@ -1020,14 +1020,20 @@ describe("AgentTaskCreator", () => {
     expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("negotiation"));
   });
 
-  it("rejects operator-loop descriptions for executable scaffolding", async () => {
+  it("routes operator-loop descriptions into an operator_loop scaffold (AC-432)", async () => {
     const provider = makeMockProvider(mockOperatorLoopResponse());
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-operator-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    await expect(
-      creator.create("Create an operator-in-the-loop scenario for support triage with escalation judgment"),
-    ).rejects.toThrow("intentionally not scaffolded");
+    const scenario = await creator.create("Create an operator-in-the-loop scenario for support triage with escalation judgment");
+    expect("family" in scenario && scenario.family).toBe("operator_loop");
+    expect("generatedSource" in scenario && typeof scenario.generatedSource).toBe("string");
+
+    const name = creator.deriveName("Create an operator-in-the-loop scenario for support triage with escalation judgment");
+    const scenarioDir = join(tmpDir, "_custom_scenarios", name);
+    expect(existsSync(join(scenarioDir, "scenario.js"))).toBe(true);
+    expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("operator_loop"));
   });
 
   it("routes coordination descriptions into a coordination scaffold", async () => {

@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Agent-task scaffolding and execution now use separate phased budgets.
 - Operator-loop scenarios remain available as typed family metadata, but executable operator-loop scaffolding has been removed so the harness no longer bakes in escalation-specific runtime behavior.
+- `operator_loop` explicitly unsupported with test coverage confirming clear error guidance in both Python and TypeScript (AC-432).
 - Public repo docs now include a docs landing page, package-selection guidance, an analytics/adoption guide, a release checklist, copy-paste integration examples for CLI, MCP, Python SDK, and TypeScript usage, plus README package/download signals.
 
 ### Fixed
