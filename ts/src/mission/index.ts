@@ -17,3 +17,5 @@ export { MissionStore } from "./store.js";
 export { MissionManager } from "./manager.js";
 export { saveCheckpoint, loadCheckpoint } from "./checkpoint.js";
 export type { MissionCheckpoint } from "./checkpoint.js";
+export { runStep, runUntilDone } from "./executor.js";
+export type { StepResult, RunStepResult, RunUntilDoneResult, StepExecutor } from "./executor.js";

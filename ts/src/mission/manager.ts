@@ -86,6 +86,18 @@ export class MissionManager {
     this.store.updateMissionStatus(missionId, "canceled");
   }
 
+  setStatus(missionId: string, status: MissionStatus): void {
+    this.store.updateMissionStatus(missionId, status);
+  }
+
+  budgetUsage(missionId: string): { stepsUsed: number; maxSteps?: number; exhausted: boolean } {
+    return this.store.getBudgetUsage(missionId);
+  }
+
+  updateStep(stepId: string, status: "completed" | "failed", result?: string): void {
+    this.store.updateStepStatus(stepId, status, result);
+  }
+
   close(): void {
     this.store.close();
   }

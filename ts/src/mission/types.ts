@@ -12,6 +12,8 @@ export const MissionStatusSchema = z.enum([
   "completed",
   "failed",
   "canceled",
+  "blocked",
+  "budget_exhausted",
 ]);
 
 export type MissionStatus = z.infer<typeof MissionStatusSchema>;
