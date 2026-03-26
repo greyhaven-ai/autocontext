@@ -9,7 +9,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { LLMProvider } from "../types/index.js";
-import { LLMJudge } from "../judge/index.js";
+import { DelegatedJudge, LLMJudge, SequentialDelegatedJudge } from "../judge/index.js";
+import type { DelegatedResult } from "../judge/index.js";
 import { ImprovementLoop } from "../execution/improvement-loop.js";
 import { enqueueTask } from "../execution/task-runner.js";
 import { SandboxManager } from "../execution/sandbox.js";
@@ -80,6 +81,11 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
   });
   const solveManager = new SolveManager({ provider, store, runsRoot, knowledgeRoot });
   const sandboxManager = new SandboxManager({ provider, store, runsRoot, knowledgeRoot });
+  const DelegatedResultArgSchema = z.object({
+    score: z.number().min(0).max(1),
+    reasoning: z.string(),
+    dimensionScores: z.record(z.number().min(0).max(1)).optional(),
+  });
 
   // -- evaluate_output --
   server.tool(
@@ -91,9 +97,12 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       rubric: z.string().describe("Evaluation rubric"),
       referenceContext: z.string().optional().describe("Authoritative reference for fact-checking"),
       requiredConcepts: z.array(z.string()).optional().describe("Concepts the output must address"),
+      delegatedResult: DelegatedResultArgSchema.optional().describe("Pre-computed evaluation from the calling agent"),
     },
     async (args) => {
-      const judge = new LLMJudge({ provider, model, rubric: args.rubric });
+      const judge = args.delegatedResult
+        ? new DelegatedJudge(args.delegatedResult, args.rubric)
+        : new LLMJudge({ provider, model, rubric: args.rubric });
       const result = await judge.evaluate({
         taskPrompt: args.taskPrompt,
         agentOutput: args.agentOutput,
@@ -131,6 +140,8 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       qualityThreshold: z.number().default(0.9).describe("Score threshold to stop"),
       referenceContext: z.string().optional(),
       requiredConcepts: z.array(z.string()).optional(),
+      delegatedResults: z.array(DelegatedResultArgSchema).optional()
+        .describe("Pre-computed per-round evaluations from the calling agent"),
       rlmEnabled: z.boolean().optional().describe("Use REPL-loop mode for generation and revisions"),
       rlmModel: z.string().optional().describe("Optional model override for REPL-loop mode"),
       rlmMaxTurns: z.number().int().positive().optional(),
@@ -141,6 +152,9 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       rlmMemoryLimitMb: z.number().int().positive().optional(),
     },
     async (args) => {
+      const delegatedJudge = args.delegatedResults?.length
+        ? new SequentialDelegatedJudge(args.delegatedResults as DelegatedResult[], args.rubric)
+        : undefined;
       const task = new SimpleAgentTask(
         args.taskPrompt,
         args.rubric,
@@ -157,6 +171,7 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
           codeTimeoutMs: args.rlmCodeTimeoutMs,
           memoryLimitMb: args.rlmMemoryLimitMb,
         },
+        delegatedJudge,
       );
       const initialOutput = args.initialOutput ?? await task.generateOutput({
         referenceContext: args.referenceContext,
@@ -279,6 +294,7 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       taskPrompt: z.string().optional(),
       rubric: z.string().optional(),
       initialOutput: z.string().optional(),
+      delegatedResults: z.array(DelegatedResultArgSchema).optional(),
       maxRounds: z.number().int().optional(),
       qualityThreshold: z.number().optional(),
       priority: z.number().int().default(0),
@@ -296,6 +312,7 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
         taskPrompt: args.taskPrompt,
         rubric: args.rubric,
         initialOutput: args.initialOutput,
+        delegatedResults: args.delegatedResults as DelegatedResult[] | undefined,
         maxRounds: args.maxRounds,
         qualityThreshold: args.qualityThreshold,
         priority: args.priority,

@@ -12,7 +12,8 @@ import type {
   ImprovementResult,
 } from "../types/index.js";
 import { ImprovementLoop } from "./improvement-loop.js";
-import { LLMJudge } from "../judge/index.js";
+import { LLMJudge, SequentialDelegatedJudge } from "../judge/index.js";
+import type { DelegatedResult, JudgeInterface } from "../judge/index.js";
 import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { renderAgentTaskPrompt, resolveCustomAgentTask } from "../scenarios/custom-loader.js";
@@ -34,8 +35,16 @@ export interface TaskConfig {
   rubric?: string;
   taskPrompt?: string;
   revisionPrompt?: string;
+  delegatedResults?: DelegatedResult[];
   rlm?: RlmTaskConfig;
 }
+
+const DelegatedResultSchema = z.object({
+  score: z.number().min(0).max(1),
+  reasoning: z.string(),
+  dimension_scores: z.record(z.number().min(0).max(1)).optional(),
+  dimensionScores: z.record(z.number().min(0).max(1)).optional(),
+}).passthrough();
 
 const TaskConfigSchema = z.object({
   max_rounds: z.number().int().positive().optional(),
@@ -48,6 +57,7 @@ const TaskConfigSchema = z.object({
   rubric: z.string().optional(),
   task_prompt: z.string().optional(),
   revision_prompt: z.string().optional(),
+  delegated_results: z.array(DelegatedResultSchema).optional(),
   rlm_enabled: z.boolean().optional(),
   rlm_model: z.string().optional(),
   rlm_max_turns: z.number().int().positive().optional(),
@@ -78,6 +88,11 @@ function parseTaskConfig(json: string | null): TaskConfig {
     rubric: d.rubric,
     taskPrompt: d.task_prompt,
     revisionPrompt: d.revision_prompt,
+    delegatedResults: d.delegated_results?.map((result) => ({
+      score: result.score,
+      reasoning: result.reasoning,
+      dimensionScores: result.dimension_scores ?? result.dimensionScores ?? {},
+    })),
     rlm: resolveRlmConfig({
       enabled: d.rlm_enabled ?? false,
       model: d.rlm_model,
@@ -126,6 +141,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
   private readonly rlmSessions: RlmSessionRecord[] = [];
   private lastReferenceContext?: string;
   private lastRequiredConcepts?: string[];
+  private readonly judgeOverride?: JudgeInterface;
 
   constructor(
     taskPrompt: string,
@@ -134,6 +150,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
     model?: string,
     revisionPrompt?: string,
     rlmConfig?: Partial<RlmTaskConfig> | null,
+    judgeOverride?: JudgeInterface,
   ) {
     this.taskPrompt = taskPrompt;
     this.rubric = rubric;
@@ -141,6 +158,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
     this.model = model || provider.defaultModel();
     this.revisionPrompt = revisionPrompt;
     this.rlmConfig = resolveRlmConfig(rlmConfig);
+    this.judgeOverride = judgeOverride;
     assertFamilyContract(this, "agent_task", "SimpleAgentTask");
   }
 
@@ -172,7 +190,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
   ): Promise<AgentTaskResult> {
     this.lastReferenceContext = opts?.referenceContext;
     this.lastRequiredConcepts = opts?.requiredConcepts;
-    const judge = new LLMJudge({
+    const judge = this.judgeOverride ?? new LLMJudge({
       provider: this.provider,
       model: this.model,
       rubric: this.rubric,
@@ -360,6 +378,9 @@ export class TaskRunner {
       const qualityThreshold = config.qualityThreshold ?? savedTask?.spec.qualityThreshold ?? 0.9;
       const minRounds = config.minRounds ?? 1;
       const revisionPrompt = config.revisionPrompt ?? savedTask?.spec.revisionPrompt ?? undefined;
+      const delegatedJudge = config.delegatedResults?.length
+        ? new SequentialDelegatedJudge(config.delegatedResults, rubric)
+        : undefined;
 
       const agentTask = new SimpleAgentTask(
         taskPrompt,
@@ -368,6 +389,7 @@ export class TaskRunner {
         this.model,
         revisionPrompt,
         config.rlm,
+        delegatedJudge,
       );
 
       let initialOutput = config.initialOutput;
@@ -420,6 +442,7 @@ export function enqueueTask(
     qualityThreshold?: number;
     minRounds?: number;
     initialOutput?: string;
+    delegatedResults?: DelegatedResult[];
     priority?: number;
     rlmEnabled?: boolean;
     rlmModel?: string;
@@ -441,6 +464,13 @@ export function enqueueTask(
   if (opts?.referenceContext) config.reference_context = opts.referenceContext;
   if (opts?.requiredConcepts) config.required_concepts = opts.requiredConcepts;
   if (opts?.initialOutput) config.initial_output = opts.initialOutput;
+  if (opts?.delegatedResults?.length) {
+    config.delegated_results = opts.delegatedResults.map((result) => ({
+      score: result.score,
+      reasoning: result.reasoning,
+      dimension_scores: result.dimensionScores ?? {},
+    }));
+  }
   if (opts?.rlmEnabled != null) config.rlm_enabled = opts.rlmEnabled;
   if (opts?.rlmModel) config.rlm_model = opts.rlmModel;
   if (opts?.rlmMaxTurns != null) config.rlm_max_turns = opts.rlmMaxTurns;

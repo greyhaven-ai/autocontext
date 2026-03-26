@@ -177,6 +177,42 @@ describe("TaskRunner", () => {
     expect(parsed.duration_ms).toBeGreaterThanOrEqual(0);
   });
 
+  it("processes delegated evaluations without requiring the provider to judge", async () => {
+    const store = createStore();
+    enqueueTask(store, "delegated-spec", {
+      taskPrompt: "Write a greeting",
+      rubric: "Be friendly",
+      initialOutput: "Hello there",
+      maxRounds: 1,
+      delegatedResults: [
+        {
+          score: 0.87,
+          reasoning: "Delegated externally",
+          dimensionScores: { friendliness: 0.87 },
+        },
+      ],
+    });
+
+    const failJudgeProvider: LLMProvider = {
+      name: "fail-judge",
+      defaultModel: () => "mock",
+      complete: async () => {
+        throw new Error("provider judging should not be called");
+      },
+    };
+
+    const runner = new TaskRunner({
+      store,
+      provider: failJudgeProvider,
+    });
+
+    const result = await runner.runOnce();
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("completed");
+    expect(result!.best_score).toBe(0.87);
+    expect(result!.best_output).toBe("Hello there");
+  });
+
   it("uses RLM to bootstrap initial output and persists session traces", async () => {
     const store = createStore();
     enqueueTask(store, "rlm-spec", {

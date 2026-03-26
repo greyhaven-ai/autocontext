@@ -47,7 +47,15 @@ export const JudgeResultSchema = z.object({
   reasoning: z.string(),
   dimensionScores: z.record(z.number().min(0).max(1)).default({}),
   rawResponses: z.array(z.string()).default([]),
-  parseMethod: z.enum(["raw_json", "code_block", "markers", "plaintext", "none"]).default("none"),
+  parseMethod: z.enum([
+    "raw_json",
+    "code_block",
+    "markers",
+    "plaintext",
+    "none",
+    "delegated",
+    "callback",
+  ]).default("none"),
   internalRetries: z.number().int().min(0).default(0),
   dimensionsWereGenerated: z.boolean().default(false),
 });
