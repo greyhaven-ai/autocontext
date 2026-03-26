@@ -10,8 +10,10 @@ import type { SQLiteStore } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
 import { generateScenarioSource, hasCodegen, CodegenUnsupportedFamilyError } from "../scenarios/codegen/index.js";
+import { executeGeneratedScenarioSource } from "../scenarios/codegen/executor.js";
 import { ArtifactStore } from "./artifact-store.js";
-import { exportStrategyPackage } from "./package.js";
+import { exportStrategyPackage, serializeSkillPackage } from "./package.js";
+import { SkillPackage } from "./skill-package.js";
 
 export interface SolveManagerOpts {
   provider: LLMProvider;
@@ -202,13 +204,56 @@ export class SolveManager {
 
     job.progress = result.totalRounds;
     job.status = "completed";
-    job.result = {
+    const bestRound = result.rounds.find((round) => round.roundNumber === result.bestRound);
+    const pkg = new SkillPackage({
       scenarioName: created.name,
-      family: "agent_task",
+      displayName: this.humanizeScenarioName(created.name),
+      description: String(created.spec.description ?? `Agent task: ${created.name}`),
+      playbook: [
+        "## Improvement Summary",
+        "",
+        `- Best round: ${result.bestRound}`,
+        `- Total rounds: ${result.totalRounds}`,
+        `- Termination reason: ${result.terminationReason}`,
+        `- Best score: ${result.bestScore.toFixed(4)}`,
+        "",
+        "## Best Output",
+        "",
+        result.bestOutput,
+      ].join("\n"),
+      lessons: this.buildAgentTaskLessons(result, bestRound?.reasoning ?? ""),
+      bestStrategy: {
+        family: "agent_task",
+        best_round: result.bestRound,
+        termination_reason: result.terminationReason,
+      },
       bestScore: result.bestScore,
-      finalOutput: result.bestOutput,
-      roundsCompleted: result.totalRounds,
-    };
+      bestElo: 1500,
+      hints: "",
+      metadata: {
+        family: "agent_task",
+        total_rounds: result.totalRounds,
+        termination_reason: result.terminationReason,
+        judge_failures: result.judgeFailures,
+      },
+      taskPrompt: created.spec.taskPrompt,
+      judgeRubric: created.spec.rubric,
+      exampleOutputs: [{
+        output: result.bestOutput,
+        score: result.bestScore,
+        reasoning: bestRound?.reasoning ?? "Best output from improvement loop.",
+      }],
+      outputFormat: String(created.spec.outputFormat ?? "free_text"),
+      referenceContext: typeof created.spec.referenceContext === "string"
+        ? created.spec.referenceContext
+        : null,
+      contextPreparation: typeof created.spec.contextPreparation === "string"
+        ? created.spec.contextPreparation
+        : null,
+      maxRounds: Number(created.spec.maxRounds ?? created.spec.max_rounds ?? job.generations),
+      qualityThreshold: Number(created.spec.qualityThreshold ?? created.spec.quality_threshold ?? 0.9),
+    });
+    job.result = serializeSkillPackage(pkg);
   }
 
   /**
@@ -232,50 +277,38 @@ export class SolveManager {
     writeFileSync(join(scenarioDir, "scenario.js"), source, "utf-8");
 
     job.status = "running";
+    const execution = await executeGeneratedScenarioSource({
+      source,
+      family,
+      name: created.name,
+      maxSteps: Number(created.spec.max_steps ?? created.spec.maxSteps ?? 20),
+    });
 
-    // Load and run via ScenarioRuntime
-    const { ScenarioRuntime } = await import("../scenarios/codegen/runtime.js");
-    const runtime = new ScenarioRuntime();
-    try {
-      const proxy = await runtime.loadScenario(source, family, created.name);
-
-      // Run a basic evaluation: initialize state, execute available actions, evaluate
-      let state = await proxy.call<Record<string, unknown>>("initialState", 42);
-      let steps = 0;
-      const maxSteps = Number(created.spec.max_steps ?? created.spec.maxSteps ?? 20);
-
-      while (steps < maxSteps) {
-        const terminal = await proxy.call<boolean>("isTerminal", state);
-        if (terminal) break;
-
-        const actions = await proxy.call<Array<{ name: string }>>("getAvailableActions", state);
-        if (!actions || actions.length === 0) break;
-
-        // Execute the first available action
-        const actionResult = await proxy.call<{ result: Record<string, unknown>; state: Record<string, unknown> }>(
-          "executeAction", state, { name: actions[0].name, parameters: {} },
-        );
-        state = actionResult.state;
-        steps++;
-      }
-
-      const result = await proxy.call<{ score: number; reasoning: string; dimensionScores: Record<string, number> }>(
-        "getResult", state, { records: [] },
-      );
-
-      job.progress = steps;
-      job.status = "completed";
-      job.result = {
-        scenarioName: created.name,
+    job.progress = execution.stepsExecuted;
+    job.status = "completed";
+    const pkg = new SkillPackage({
+      scenarioName: created.name,
+      displayName: this.humanizeScenarioName(created.name),
+      description: String(created.spec.description ?? `Generated ${family} scenario`),
+      playbook: this.buildGeneratedScenarioPlaybook(family, execution),
+      lessons: this.buildGeneratedScenarioLessons(execution),
+      bestStrategy: {
         family,
-        score: result.score,
-        reasoning: result.reasoning,
-        dimensionScores: result.dimensionScores,
-        stepsExecuted: steps,
-      };
-    } finally {
-      runtime.dispose();
-    }
+        action_trace: execution.records.map((record) => record.action.name),
+        steps_executed: execution.stepsExecuted,
+      },
+      bestScore: execution.score,
+      bestElo: 1500,
+      hints: "",
+      metadata: {
+        family,
+        generated_source: true,
+        steps_executed: execution.stepsExecuted,
+        dimension_scores: execution.dimensionScores,
+        reasoning: execution.reasoning,
+      },
+    });
+    job.result = serializeSkillPackage(pkg);
   }
 
   private persistScenarioScaffold(created: {
@@ -301,10 +334,9 @@ export class SolveManager {
       JSON.stringify(
         {
           name: created.name,
+          family,
           scenario_type: scenarioType,
-          description: created.spec.description,
-          taskPrompt: created.spec.taskPrompt,
-          rubric: created.spec.rubric,
+          ...created.spec,
         },
         null,
         2,
@@ -319,9 +351,30 @@ export class SolveManager {
           {
             task_prompt: created.spec.taskPrompt,
             judge_rubric: created.spec.rubric,
-            output_format: "free_text",
-            max_rounds: 1,
-            quality_threshold: 0.9,
+            output_format: String(created.spec.outputFormat ?? "free_text"),
+            max_rounds: Number(created.spec.maxRounds ?? created.spec.max_rounds ?? 1),
+            quality_threshold: Number(created.spec.qualityThreshold ?? created.spec.quality_threshold ?? 0.9),
+            ...(typeof created.spec.referenceContext === "string"
+              ? { reference_context: created.spec.referenceContext }
+              : {}),
+            ...(typeof created.spec.contextPreparation === "string"
+              ? { context_preparation: created.spec.contextPreparation }
+              : {}),
+            ...(typeof created.spec.revisionPrompt === "string"
+              ? { revision_prompt: created.spec.revisionPrompt }
+              : {}),
+            ...(typeof created.spec.sampleInput === "string"
+              ? { sample_input: created.spec.sampleInput }
+              : {}),
+            ...(Array.isArray(created.spec.requiredConcepts)
+              ? { required_concepts: created.spec.requiredConcepts }
+              : {}),
+            ...(Array.isArray(created.spec.referenceSources)
+              ? { reference_sources: created.spec.referenceSources }
+              : {}),
+            ...(Array.isArray(created.spec.requiredContextKeys)
+              ? { required_context_keys: created.spec.requiredContextKeys }
+              : {}),
           },
           null,
           2,
@@ -347,5 +400,72 @@ export class SolveManager {
       default:
         return "agent_task";
     }
+  }
+
+  private humanizeScenarioName(name: string): string {
+    return name.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  private buildAgentTaskLessons(result: {
+    bestScore: number;
+    totalRounds: number;
+    terminationReason: string;
+  }, bestReasoning: string): string[] {
+    const lessons = [
+      `The best output reached ${result.bestScore.toFixed(4)} quality after ${result.totalRounds} rounds.`,
+      `The loop stopped because '${result.terminationReason}'.`,
+    ];
+    if (bestReasoning.trim()) {
+      lessons.push(bestReasoning.trim());
+    }
+    return lessons;
+  }
+
+  private buildGeneratedScenarioPlaybook(
+    family: ScenarioFamilyName,
+    execution: {
+      score: number;
+      reasoning: string;
+      dimensionScores: Record<string, number>;
+      records: Array<{ action: { name: string } }>;
+      stepsExecuted: number;
+    },
+  ): string {
+    const dimensions = Object.entries(execution.dimensionScores)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, value]) => `- ${name}: ${value.toFixed(4)}`);
+    const actions = execution.records.map((record) => `- ${record.action.name}`);
+    return [
+      "## Generated Scenario Summary",
+      "",
+      `- Family: ${family}`,
+      `- Score: ${execution.score.toFixed(4)}`,
+      `- Steps executed: ${execution.stepsExecuted}`,
+      "",
+      "## Evaluation Reasoning",
+      "",
+      execution.reasoning,
+      "",
+      "## Dimension Scores",
+      "",
+      ...(dimensions.length > 0 ? dimensions : ["- No dimension scores recorded."]),
+      "",
+      "## Action Trace",
+      "",
+      ...(actions.length > 0 ? actions : ["- No executable actions were available."]),
+    ].join("\n");
+  }
+
+  private buildGeneratedScenarioLessons(execution: {
+    reasoning: string;
+    dimensionScores: Record<string, number>;
+  }): string[] {
+    const weakest = Object.entries(execution.dimensionScores)
+      .sort(([, left], [, right]) => left - right)[0];
+    const lessons = [execution.reasoning];
+    if (weakest) {
+      lessons.push(`The weakest dimension was '${weakest[0]}' at ${weakest[1].toFixed(4)}.`);
+    }
+    return lessons;
   }
 }

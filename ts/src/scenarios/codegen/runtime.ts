@@ -161,9 +161,9 @@ export class ScenarioRuntime {
     const validationCode = `
 ${source}
 
-const scenario = module.exports.scenario || module.exports;
+const exportedScenario = module.exports.scenario || module.exports;
 const missing = [];
-${requiredMethods.map((m) => `if (typeof scenario.${m} !== 'function') missing.push('${m}');`).join("\n")}
+${requiredMethods.map((m) => `if (typeof exportedScenario.${m} !== 'function') missing.push('${m}');`).join("\n")}
 module.exports = { valid: missing.length === 0, missing };
 `;
 
@@ -188,10 +188,10 @@ module.exports = { valid: missing.length === 0, missing };
       async call<T = unknown>(method: string, ...args: unknown[]): Promise<T> {
         const callCode = `
 ${source}
-const scenario = module.exports.scenario || module.exports;
+const exportedScenario = module.exports.scenario || module.exports;
 const args = ${JSON.stringify(args)};
-const result = scenario.${method}(...args);
-module.exports = { result: result instanceof Promise ? await result : result };
+const result = exportedScenario.${method}(...args);
+module.exports = { result };
 `;
         const callResult = await runtime.run<{ result: T }>(callCode);
         if (callResult.code !== 0) {

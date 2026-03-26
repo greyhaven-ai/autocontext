@@ -32,8 +32,14 @@ export async function loadCustomScenario(
 
   const source = readFileSync(sourcePath, "utf-8");
   const runtime = new ScenarioRuntime(runtimeOpts);
+  const proxy = await runtime.loadScenario(source, family, name);
 
-  return runtime.loadScenario(source, family, name);
+  return {
+    ...proxy,
+    dispose() {
+      runtime.dispose();
+    },
+  };
 }
 
 /**

@@ -283,8 +283,15 @@ export function exportStrategyPackage(opts: {
     },
   });
 
+  return serializeSkillPackage(pkg, PACKAGE_FORMAT_VERSION);
+}
+
+export function serializeSkillPackage(
+  pkg: SkillPackage,
+  formatVersion = PACKAGE_FORMAT_VERSION,
+): Record<string, unknown> {
   return {
-    format_version: PACKAGE_FORMAT_VERSION,
+    format_version: formatVersion,
     ...pkg.toDict(),
     skill_markdown: pkg.toSkillMarkdown(),
   };

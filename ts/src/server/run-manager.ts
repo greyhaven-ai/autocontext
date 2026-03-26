@@ -24,6 +24,8 @@ import {
   registerCustomScenarios,
 } from "../scenarios/index.js";
 import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
+import { executeGeneratedScenarioEntry } from "../scenarios/codegen/executor.js";
+import { readScenarioFamily } from "../scenarios/codegen/loader.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import { SQLiteStore } from "../storage/index.js";
 import { loadSettings } from "../config/index.js";
@@ -234,56 +236,12 @@ export class RunManager {
     }
 
     const ScenarioClass = SCENARIO_REGISTRY[scenario];
-    if (!ScenarioClass) {
-      const customScenario = this.customScenarios.get(scenario);
-      if (customScenario) {
-        throw new Error(
-          `Scenario '${scenario}' is a saved custom ${customScenario.type} scenario. ` +
-          "It is discoverable in the TS control plane, but /run currently supports only built-in game scenarios.",
-        );
-      }
+    const customScenario = this.customScenarios.get(scenario);
+    if (!ScenarioClass && !customScenario) {
       throw new Error(`Unknown scenario: ${scenario}. Available: ${this.listScenarios().join(", ")}`);
     }
 
     const id = runId ?? `tui_${Date.now().toString(16).slice(-8)}`;
-    const settings = loadSettings();
-    const providerBundle = this.resolveProviderBundle(settings);
-    const scenarioInstance = new ScenarioClass();
-    assertFamilyContract(scenarioInstance, "game", `scenario '${scenario}'`);
-
-    const store = new SQLiteStore(this.opts.dbPath);
-    store.migrate(this.opts.migrationsDir);
-
-    const runner = new GenerationRunner({
-      provider: providerBundle.defaultProvider,
-      roleProviders: providerBundle.roleProviders,
-      roleModels: providerBundle.roleModels,
-      scenario: scenarioInstance,
-      store,
-      runsRoot: this.opts.runsRoot,
-      knowledgeRoot: this.opts.knowledgeRoot,
-      matchesPerGeneration: settings.matchesPerGeneration,
-      maxRetries: settings.maxRetries,
-      minDelta: settings.backpressureMinDelta,
-      playbookMaxVersions: settings.playbookMaxVersions,
-      contextBudgetTokens: settings.contextBudgetTokens,
-      curatorEnabled: settings.curatorEnabled,
-      curatorConsolidateEveryNGens: settings.curatorConsolidateEveryNGens,
-      skillMaxLessons: settings.skillMaxLessons,
-      deadEndTrackingEnabled: settings.deadEndTrackingEnabled,
-      deadEndMaxEntries: settings.deadEndMaxEntries,
-      stagnationResetEnabled: settings.stagnationResetEnabled,
-      stagnationRollbackThreshold: settings.stagnationRollbackThreshold,
-      stagnationPlateauWindow: settings.stagnationPlateauWindow,
-      stagnationPlateauEpsilon: settings.stagnationPlateauEpsilon,
-      stagnationDistillTopLessons: settings.stagnationDistillTopLessons,
-      explorationMode: settings.explorationMode,
-      notifyWebhookUrl: settings.notifyWebhookUrl,
-      notifyOn: settings.notifyOn,
-      controller: this.controller,
-      events: this.events,
-    });
-
     this._active = true;
     this.updateState({
       active: true,
@@ -293,9 +251,82 @@ export class RunManager {
       generation: null,
       phase: "queued",
     });
-    this._runPromise = runner
-      .run(id, generations)
-      .then(() => {})
+
+    if (ScenarioClass) {
+      const settings = loadSettings();
+      const providerBundle = this.resolveProviderBundle(settings);
+      const scenarioInstance = new ScenarioClass();
+      assertFamilyContract(scenarioInstance, "game", `scenario '${scenario}'`);
+
+      const store = new SQLiteStore(this.opts.dbPath);
+      store.migrate(this.opts.migrationsDir);
+
+      const runner = new GenerationRunner({
+        provider: providerBundle.defaultProvider,
+        roleProviders: providerBundle.roleProviders,
+        roleModels: providerBundle.roleModels,
+        scenario: scenarioInstance,
+        store,
+        runsRoot: this.opts.runsRoot,
+        knowledgeRoot: this.opts.knowledgeRoot,
+        matchesPerGeneration: settings.matchesPerGeneration,
+        maxRetries: settings.maxRetries,
+        minDelta: settings.backpressureMinDelta,
+        playbookMaxVersions: settings.playbookMaxVersions,
+        contextBudgetTokens: settings.contextBudgetTokens,
+        curatorEnabled: settings.curatorEnabled,
+        curatorConsolidateEveryNGens: settings.curatorConsolidateEveryNGens,
+        skillMaxLessons: settings.skillMaxLessons,
+        deadEndTrackingEnabled: settings.deadEndTrackingEnabled,
+        deadEndMaxEntries: settings.deadEndMaxEntries,
+        stagnationResetEnabled: settings.stagnationResetEnabled,
+        stagnationRollbackThreshold: settings.stagnationRollbackThreshold,
+        stagnationPlateauWindow: settings.stagnationPlateauWindow,
+        stagnationPlateauEpsilon: settings.stagnationPlateauEpsilon,
+        stagnationDistillTopLessons: settings.stagnationDistillTopLessons,
+        explorationMode: settings.explorationMode,
+        notifyWebhookUrl: settings.notifyWebhookUrl,
+        notifyOn: settings.notifyOn,
+        controller: this.controller,
+        events: this.events,
+      });
+
+      this._runPromise = runner
+        .run(id, generations)
+        .then(() => {})
+        .catch((err) => {
+          this.events.emit("run_failed", {
+            run_id: id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        })
+        .finally(() => {
+          this._active = false;
+          this.updateState({
+            active: false,
+            paused: this.controller.isPaused(),
+            generation: null,
+            phase: null,
+          });
+          store.close();
+        });
+      return id;
+    }
+
+    const family = customScenario ? readScenarioFamily(customScenario.path) : null;
+    if (
+      !customScenario
+      || !customScenario.hasGeneratedSource
+      || !family
+      || family === "agent_task"
+    ) {
+      throw new Error(
+        `Scenario '${scenario}' is a saved custom ${customScenario?.type ?? "unknown"} scenario. ` +
+        "It is discoverable in the TS control plane, but /run currently supports only built-in game scenarios and generated non-agent-task scenarios.",
+      );
+    }
+
+    this._runPromise = this.runGeneratedCustomScenario(id, scenario, customScenario, family, generations)
       .catch((err) => {
         this.events.emit("run_failed", {
           run_id: id,
@@ -310,7 +341,6 @@ export class RunManager {
           generation: null,
           phase: null,
         });
-        store.close();
       });
 
     return id;
@@ -467,7 +497,69 @@ export class RunManager {
     const description = typeof entry.spec.description === "string"
       ? entry.spec.description
       : `Custom ${entry.type} scenario`;
+    if (entry.hasGeneratedSource) {
+      return `${description} (generated custom scenario; runnable via /run)`;
+    }
     return `${description} (saved custom scenario; not runnable via /run yet)`;
+  }
+
+  private async runGeneratedCustomScenario(
+    runId: string,
+    scenarioName: string,
+    entry: CustomScenarioEntry,
+    family: ScenarioFamilyName,
+    generations: number,
+  ): Promise<void> {
+    const customDir = join(this.opts.knowledgeRoot, "_custom_scenarios");
+    const maxSteps = typeof entry.spec.max_steps === "number"
+      ? entry.spec.max_steps
+      : typeof entry.spec.maxSteps === "number"
+        ? entry.spec.maxSteps
+        : undefined;
+
+    this.events.emit("run_started", {
+      run_id: runId,
+      scenario: scenarioName,
+      target_generations: generations,
+      family,
+      generated_custom: true,
+    });
+
+    let bestScoreOverall = 0;
+    for (let generation = 1; generation <= generations; generation++) {
+      await this.controller.waitIfPaused();
+      this.events.emit("generation_started", { run_id: runId, generation });
+
+      const result = await executeGeneratedScenarioEntry({
+        customDir,
+        name: scenarioName,
+        family,
+        seed: generation,
+        ...(typeof maxSteps === "number" ? { maxSteps } : {}),
+      });
+
+      bestScoreOverall = Math.max(bestScoreOverall, result.score);
+      this.events.emit("generation_completed", {
+        run_id: runId,
+        generation,
+        mean_score: result.score,
+        best_score: result.score,
+        elo: 1000,
+        gate_decision: "advance",
+        family,
+        steps_executed: result.stepsExecuted,
+        reasoning: result.reasoning,
+      });
+    }
+
+    this.events.emit("run_completed", {
+      run_id: runId,
+      completed_generations: generations,
+      best_score: bestScoreOverall,
+      elo: 1000,
+      family,
+      generated_custom: true,
+    });
   }
 
   private buildScenarioPreview(draft: PendingScenarioDraft): ScenarioPreviewInfo {

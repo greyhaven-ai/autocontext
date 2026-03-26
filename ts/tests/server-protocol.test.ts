@@ -16,6 +16,20 @@ function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-server-"));
 }
 
+async function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs = 5000,
+  intervalMs = 25,
+): Promise<void> {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 interface BufferedSocket {
   send: (payload: Record<string, unknown>) => void;
   waitFor: (predicate: (msg: Record<string, unknown>) => boolean, timeoutMs?: number) => Promise<Record<string, unknown>>;
@@ -231,6 +245,85 @@ describe("RunManager", () => {
     const info = mgr.getEnvironmentInfo();
     expect(info.scenarios.some((scenario) => scenario.name === "saved_task")).toBe(true);
     await expect(mgr.startRun("saved_task", 1)).rejects.toThrow(/only built-in game scenarios/i);
+  });
+
+  it("startRun executes saved generated custom scenarios after discovery", async () => {
+    const { generateSimulationSource } = await import("../src/scenarios/codegen/simulation-codegen.js");
+
+    const spec = {
+      description: "Deploy a small service",
+      environment_description: "Test environment",
+      initial_state_description: "Nothing deployed",
+      success_criteria: ["service deployed"],
+      failure_modes: ["timeout"],
+      max_steps: 5,
+      actions: [
+        {
+          name: "provision",
+          description: "Provision infrastructure",
+          parameters: {},
+          preconditions: [],
+          effects: ["infra_ready"],
+        },
+        {
+          name: "deploy",
+          description: "Deploy the service",
+          parameters: {},
+          preconditions: ["provision"],
+          effects: ["service_ready"],
+        },
+      ],
+    };
+
+    const customDir = join(dir, "knowledge", "_custom_scenarios", "saved_sim");
+    mkdirSync(customDir, { recursive: true });
+    writeFileSync(join(customDir, "scenario_type.txt"), "simulation", "utf-8");
+    writeFileSync(
+      join(customDir, "spec.json"),
+      JSON.stringify({
+        name: "saved_sim",
+        family: "simulation",
+        scenario_type: "simulation",
+        ...spec,
+      }),
+      "utf-8",
+    );
+    writeFileSync(
+      join(customDir, "scenario.js"),
+      generateSimulationSource(spec, "saved_sim"),
+      "utf-8",
+    );
+
+    const { RunManager } = await import("../src/server/run-manager.js");
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+    });
+    const info = mgr.getEnvironmentInfo();
+    const savedScenario = info.scenarios.find((scenario) => scenario.name === "saved_sim");
+    expect(savedScenario).toBeDefined();
+    expect(savedScenario?.description).toContain("runnable via /run");
+
+    const seenEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    mgr.subscribeEvents((event, payload) => {
+      seenEvents.push({ event, payload });
+    });
+
+    const runId = await mgr.startRun("saved_sim", 1);
+    expect(runId).toBeTypeOf("string");
+
+    await waitForCondition(() => seenEvents.some((entry) => (
+      entry.event === "run_completed" || entry.event === "run_failed"
+    )));
+
+    const completed = seenEvents.find((entry) => entry.event === "run_completed");
+    const failed = seenEvents.find((entry) => entry.event === "run_failed");
+    expect(failed).toBeUndefined();
+    expect(completed?.payload.run_id).toBe(runId);
+    expect(completed?.payload.best_score).toBe(1);
+    expect(mgr.getState().active).toBe(false);
   });
 
   it("startRun returns runId and marks active", async () => {
