@@ -8,7 +8,7 @@
 
 import { MissionStore } from "./store.js";
 import { saveCheckpoint } from "./checkpoint.js";
-import type { Mission, MissionBudget, MissionStatus, MissionStep, MissionVerifier, VerifierResult } from "./types.js";
+import type { Mission, MissionBudget, MissionStatus, MissionStep, MissionSubgoal, MissionVerifier, VerifierResult } from "./types.js";
 
 export class MissionManager {
   private store: MissionStore;
@@ -38,7 +38,7 @@ export class MissionManager {
     return this.store.getSteps(missionId);
   }
 
-  subgoals(missionId: string) {
+  subgoals(missionId: string): MissionSubgoal[] {
     return this.store.getSubgoals(missionId);
   }
 
