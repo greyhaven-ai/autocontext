@@ -7,8 +7,16 @@
 
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import { StepStatusSchema } from "./types.js";
-import type { Mission, MissionBudget, MissionStatus, MissionStep, StepStatus } from "./types.js";
+import { StepStatusSchema, SubgoalStatusSchema } from "./types.js";
+import type {
+  Mission,
+  MissionBudget,
+  MissionStatus,
+  MissionStep,
+  MissionSubgoal,
+  StepStatus,
+  SubgoalStatus,
+} from "./types.js";
 
 export class MissionStore {
   private db: Database.Database;
@@ -52,6 +60,16 @@ export class MissionStore {
         suggestions TEXT DEFAULT '[]',
         metadata TEXT DEFAULT '{}',
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS mission_subgoals (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL REFERENCES missions(id),
+        description TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        completed_at TEXT
       );
     `);
   }
@@ -166,16 +184,84 @@ export class MissionStore {
     );
   }
 
-  getVerifications(missionId: string): Array<{ passed: boolean; reason: string; suggestions: string[]; createdAt: string }> {
+  getVerifications(missionId: string): Array<{
+    id: string;
+    passed: boolean;
+    reason: string;
+    suggestions: string[];
+    metadata: Record<string, unknown>;
+    createdAt: string;
+  }> {
     const rows = this.db.prepare(
       "SELECT * FROM mission_verifications WHERE mission_id = ? ORDER BY created_at",
     ).all(missionId) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
+      id: row.id as string,
       passed: (row.passed as number) === 1,
       reason: row.reason as string,
       suggestions: JSON.parse((row.suggestions as string) ?? "[]"),
+      metadata: JSON.parse((row.metadata as string) ?? "{}"),
       createdAt: row.created_at as string,
     }));
+  }
+
+  // -------------------------------------------------------------------------
+  // Subgoals (AC-411)
+  // -------------------------------------------------------------------------
+
+  addSubgoal(missionId: string, opts: { description: string; priority?: number }): string {
+    const id = `subgoal-${randomUUID().slice(0, 8)}`;
+    this.db.prepare(
+      "INSERT INTO mission_subgoals (id, mission_id, description, priority) VALUES (?, ?, ?, ?)",
+    ).run(id, missionId, opts.description, opts.priority ?? 1);
+    return id;
+  }
+
+  getSubgoals(missionId: string): MissionSubgoal[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM mission_subgoals WHERE mission_id = ? ORDER BY priority ASC, created_at ASC",
+    ).all(missionId) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: row.id as string,
+      missionId: row.mission_id as string,
+      description: row.description as string,
+      priority: row.priority as number,
+      status: (row.status as SubgoalStatus) ?? "pending",
+      createdAt: row.created_at as string,
+      completedAt: (row.completed_at as string) ?? undefined,
+    }));
+  }
+
+  updateSubgoalStatus(id: string, status: SubgoalStatus): void {
+    const parsedStatus = SubgoalStatusSchema.parse(status);
+    const completedAt = parsedStatus === "completed" || parsedStatus === "failed" || parsedStatus === "skipped"
+      ? new Date().toISOString()
+      : null;
+    this.db.prepare(
+      "UPDATE mission_subgoals SET status = ?, completed_at = ? WHERE id = ?",
+    ).run(parsedStatus, completedAt, id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Budget usage (AC-411)
+  // -------------------------------------------------------------------------
+
+  getBudgetUsage(missionId: string): { stepsUsed: number; maxSteps?: number; maxCostUsd?: number; exhausted: boolean } {
+    const mission = this.getMission(missionId);
+    const stepsUsed = (this.db.prepare(
+      "SELECT COUNT(*) as count FROM mission_steps WHERE mission_id = ?",
+    ).get(missionId) as { count: number }).count;
+
+    const maxSteps = mission?.budget?.maxSteps;
+    const maxCostUsd = mission?.budget?.maxCostUsd;
+    const exhausted = maxSteps !== undefined ? stepsUsed >= maxSteps : false;
+
+    return {
+      stepsUsed,
+      ...(maxSteps !== undefined ? { maxSteps } : {}),
+      ...(maxCostUsd !== undefined ? { maxCostUsd } : {}),
+      exhausted,
+    };
   }
 
   close(): void {

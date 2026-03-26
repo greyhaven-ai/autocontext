@@ -70,3 +70,55 @@ export const VerifierResultSchema = z.object({
 export type VerifierResult = z.infer<typeof VerifierResultSchema>;
 
 export type MissionVerifier = (missionId: string) => Promise<VerifierResult>;
+
+// ---------------------------------------------------------------------------
+// MissionSpec — declarative mission definition (AC-411)
+// ---------------------------------------------------------------------------
+
+export const SubgoalSpecSchema = z.object({
+  description: z.string(),
+  priority: z.number().int().min(1).default(1),
+});
+
+export type SubgoalSpec = z.infer<typeof SubgoalSpecSchema>;
+
+export const MissionSpecSchema = z.object({
+  name: z.string(),
+  goal: z.string(),
+  verifierType: z.string().optional(),
+  budget: MissionBudgetSchema.optional(),
+  subgoals: z.array(SubgoalSpecSchema).optional(),
+  metadata: z.record(z.unknown()).default({}),
+});
+
+export type MissionSpec = z.infer<typeof MissionSpecSchema>;
+
+// ---------------------------------------------------------------------------
+// Subgoal runtime type
+// ---------------------------------------------------------------------------
+
+export const SubgoalStatusSchema = z.enum(["pending", "active", "completed", "failed", "skipped"]);
+export type SubgoalStatus = z.infer<typeof SubgoalStatusSchema>;
+
+export const MissionSubgoalSchema = z.object({
+  id: z.string(),
+  missionId: z.string(),
+  description: z.string(),
+  priority: z.number().int(),
+  status: SubgoalStatusSchema,
+  createdAt: z.string(),
+  completedAt: z.string().optional(),
+});
+
+export type MissionSubgoal = z.infer<typeof MissionSubgoalSchema>;
+
+// ---------------------------------------------------------------------------
+// Budget usage
+// ---------------------------------------------------------------------------
+
+export interface BudgetUsage {
+  stepsUsed: number;
+  maxSteps?: number;
+  maxCostUsd?: number;
+  exhausted: boolean;
+}
