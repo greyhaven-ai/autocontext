@@ -16,6 +16,9 @@
 npm install autoctx
 ```
 
+Important: use `autoctx`, not `autocontext`.
+`autocontext` on npm is a different package and not this project.
+
 From source:
 
 ```bash

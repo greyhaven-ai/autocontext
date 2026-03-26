@@ -106,6 +106,9 @@ The repo publishes two installable packages with different scopes:
 - Python package: `pip install autoctx`
 - TypeScript package: `npm install autoctx`
 
+Important: the npm package for this project is `autoctx`.
+`autocontext` on npm is a different package.
+
 The Python package exposes the full `autoctx` control-plane CLI (`run`, `serve`, `mcp-serve`, `train`, `new-scenario`, `export`, `wait`, and more). The TypeScript package exposes a narrower `autoctx` CLI focused on evaluation, improvement loops, queueing, and MCP serving for Node runtimes.
 
 ## Which Package Should You Use?

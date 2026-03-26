@@ -3,8 +3,8 @@
  *
  * - package.json has both `autoctx` and `autocontext` bin entries
  * - `autocontext` shim prints a naming callout then delegates
- * - Main help includes naming clarification
- * - Version output includes the correct package name
+ * - Shim resolves the right real CLI path in both source and built layouts
+ * - Main help and docs include naming clarification
  */
 
 import { describe, it, expect } from "vitest";
@@ -49,10 +49,20 @@ describe("package.json bin entries", () => {
 // ---------------------------------------------------------------------------
 
 describe("autocontext redirect shim", () => {
+  it("resolves the source CLI path when run from TypeScript source", async () => {
+    const { resolveRealCliPath } = await import("../src/cli/autocontext-shim.ts");
+    expect(resolveRealCliPath("/tmp/pkg/src/cli/autocontext-shim.ts")).toBe("/tmp/pkg/src/cli/index.ts");
+  });
+
+  it("resolves the built CLI path when run from the published dist layout", async () => {
+    const { resolveRealCliPath } = await import("../src/cli/autocontext-shim.ts");
+    expect(resolveRealCliPath("/tmp/pkg/dist/cli/autocontext-shim.js")).toBe("/tmp/pkg/dist/cli/index.js");
+  });
+
   it("prints naming callout to stderr", () => {
     const { stderr } = run(SHIM, ["--help"]);
     expect(stderr).toContain("autoctx");
-    expect(stderr.toLowerCase()).toContain("correct");
+    expect(stderr).toContain("different package");
   });
 
   it("forwards to the real CLI and produces output", () => {
@@ -81,5 +91,11 @@ describe("Main help naming clarification", () => {
     const { stdout } = run(CLI, ["--help"]);
     expect(stdout).toContain("npm");
     expect(stdout).toContain("autoctx");
+  });
+
+  it("ts README warns that autocontext on npm is a different package", () => {
+    const readme = readFileSync(join(import.meta.dirname, "..", "README.md"), "utf-8");
+    expect(readme).toContain("use `autoctx`, not `autocontext`");
+    expect(readme).toContain("different package");
   });
 });
