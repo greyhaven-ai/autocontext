@@ -107,6 +107,9 @@ async function main(): Promise<void> {
     case "models":
       await cmdModels();
       break;
+    case "mission":
+      await cmdMission(await getDbPath());
+      break;
     case "run":
       await cmdRun(await getDbPath());
       break;
@@ -1739,7 +1742,7 @@ async function cmdCapabilities(): Promise<void> {
       "init", "run", "list", "replay", "benchmark", "export",
       "export-training-data", "import-package", "new-scenario",
       "capabilities", "login", "whoami", "logout", "providers", "models",
-      "tui", "judge", "improve",
+      "mission", "tui", "judge", "improve",
       "repl", "queue", "status", "serve", "mcp-serve", "version",
     ],
     scenarios: Object.keys(SCENARIO_REGISTRY).sort(),
@@ -1982,6 +1985,126 @@ async function cmdModels(): Promise<void> {
   }
 
   console.log(JSON.stringify(models, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Mission CLI (AC-413)
+// ---------------------------------------------------------------------------
+
+async function cmdMission(dbPath: string): Promise<void> {
+  const subcommand = process.argv[3];
+  const { MissionManager } = await import("../mission/manager.js");
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    console.log(`autoctx mission — Manage verifier-driven missions
+
+Subcommands:
+  create     Create a new mission
+  status     Show mission details
+  list       List all missions
+  pause      Pause an active mission
+  resume     Resume a paused mission
+  cancel     Cancel a mission
+
+Examples:
+  autoctx mission create --name "Ship login" --goal "Implement OAuth"
+  autoctx mission list --status active
+  autoctx mission status --id mission-abc123
+  autoctx mission pause --id mission-abc123
+
+See also: run, improve, judge`);
+    process.exit(0);
+  }
+
+  const manager = new MissionManager(dbPath);
+  try {
+    switch (subcommand) {
+      case "create": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: {
+            name: { type: "string" },
+            goal: { type: "string" },
+            "max-steps": { type: "string" },
+          },
+        });
+        if (!values.name || !values.goal) {
+          console.error("Usage: autoctx mission create --name <name> --goal <goal> [--max-steps N]");
+          process.exit(1);
+        }
+        const budget = values["max-steps"]
+          ? { maxSteps: parseInt(values["max-steps"], 10) }
+          : undefined;
+        const id = manager.create({ name: values.name, goal: values.goal, budget });
+        const mission = manager.get(id);
+        console.log(JSON.stringify(mission, null, 2));
+        break;
+      }
+      case "status": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        if (!values.id) {
+          console.error("Usage: autoctx mission status --id <mission-id>");
+          process.exit(1);
+        }
+        const mission = manager.get(values.id);
+        if (!mission) {
+          console.error(`Mission not found: ${values.id}`);
+          process.exit(1);
+        }
+        const steps = manager.steps(values.id);
+        console.log(JSON.stringify({ ...mission, stepsCount: steps.length }, null, 2));
+        break;
+      }
+      case "list": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { status: { type: "string" } },
+        });
+        type MissionStatusParam = Parameters<typeof manager.list>[0];
+        const missions = manager.list(values.status as MissionStatusParam);
+        console.log(JSON.stringify(missions, null, 2));
+        break;
+      }
+      case "pause": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        if (!values.id) { console.error("Usage: autoctx mission pause --id <mission-id>"); process.exit(1); }
+        manager.pause(values.id);
+        console.log(JSON.stringify({ id: values.id, status: "paused" }));
+        break;
+      }
+      case "resume": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        if (!values.id) { console.error("Usage: autoctx mission resume --id <mission-id>"); process.exit(1); }
+        manager.resume(values.id);
+        console.log(JSON.stringify({ id: values.id, status: "active" }));
+        break;
+      }
+      case "cancel": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        if (!values.id) { console.error("Usage: autoctx mission cancel --id <mission-id>"); process.exit(1); }
+        manager.cancel(values.id);
+        console.log(JSON.stringify({ id: values.id, status: "canceled" }));
+        break;
+      }
+      default:
+        console.error(`Unknown mission subcommand: ${subcommand}. Run 'autoctx mission --help'.`);
+        process.exit(1);
+    }
+  } finally {
+    manager.close();
+  }
 }
 
 main().catch((err) => {
