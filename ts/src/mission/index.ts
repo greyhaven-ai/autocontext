@@ -30,6 +30,9 @@ export {
 export type { ProofStatus, ProofAssistantId, ProofMissionSpec, ProofAssistantInfo } from "./proof.js";
 export { MissionEventEmitter } from "./events.js";
 export type { MissionCreatedEvent, MissionStepEvent, MissionStatusChangedEvent, MissionVerifiedEvent } from "./events.js";
+// Campaign abstraction (AC-428)
+export { CampaignManager } from "./campaign.js";
+export type { Campaign, CampaignStatus, CampaignBudget, CampaignMissionEntry, CampaignProgress, CampaignBudgetUsage } from "./campaign.js";
 // Adaptive mission execution (AC-435)
 export { MissionPlanner } from "./planner.js";
 export type { PlanResult, StepPlan, SubgoalPlan, PlanNextStepOpts } from "./planner.js";

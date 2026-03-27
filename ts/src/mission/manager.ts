@@ -117,6 +117,10 @@ export class MissionManager {
     return this.store.getBudgetUsage(missionId);
   }
 
+  getDbPath(): string {
+    return this.store.getDbPath();
+  }
+
   updateStep(stepId: string, status: "completed" | "failed" | "blocked", result?: string): void {
     this.store.updateStepStatus(stepId, status, result);
   }

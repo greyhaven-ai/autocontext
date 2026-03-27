@@ -20,8 +20,10 @@ import type {
 
 export class MissionStore {
   private db: Database.Database;
+  private dbPath: string;
 
   constructor(dbPath: string) {
+    this.dbPath = dbPath;
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
@@ -264,6 +266,10 @@ export class MissionStore {
       ...(maxCostUsd !== undefined ? { maxCostUsd } : {}),
       exhausted,
     };
+  }
+
+  getDbPath(): string {
+    return this.dbPath;
   }
 
   close(): void {
