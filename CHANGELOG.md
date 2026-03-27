@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
+- First-class `simulate` command for plain-language multi-variable simulation, sweeps, and analysis (AC-446).
 - Campaign abstraction for coordinating multiple missions under long-term goals (AC-428).
 - Scenario parity matrix documenting Python/TypeScript surface coverage, creation flows, runtime support, and explicit limitations (AC-431).
 

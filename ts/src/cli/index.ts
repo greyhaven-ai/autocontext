@@ -47,6 +47,7 @@ Commands:
   queue            Add a task to the background runner queue
   status           Show queue status
   serve            Start HTTP dashboard + API server [--json]
+  simulate         Run a plain-language simulation with sweeps and analysis
   mcp-serve        Start MCP server on stdio
   version          Show version
 
@@ -157,6 +158,9 @@ async function main(): Promise<void> {
       break;
     case "mcp-serve":
       await cmdMcpServe(await getDbPath());
+      break;
+    case "simulate":
+      await cmdSimulate();
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -2384,6 +2388,96 @@ See also: run, improve, judge`);
     }
   } finally {
     manager.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// simulate command (AC-446)
+// ---------------------------------------------------------------------------
+
+async function cmdSimulate(): Promise<void> {
+  const { parseArgs } = await import("node:util");
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      description: { type: "string", short: "d" },
+      variables: { type: "string" },
+      sweep: { type: "string" },
+      runs: { type: "string" },
+      "max-steps": { type: "string" },
+      "save-as": { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log(`autoctx simulate — run a plain-language simulation
+
+Usage: autoctx simulate --description "..." [options]
+
+Options:
+  -d, --description <text>   Plain-language description of what to simulate (required)
+  --variables <key=val,...>   Variable overrides (e.g., threshold=0.7,budget=100)
+  --sweep <key=min:max:step>  Parameter sweep (e.g., threshold=0.4:0.9:0.1)
+  --runs <N>                  Number of runs (default: 1, or determined by sweep)
+  --max-steps <N>             Maximum steps per run (default: 20)
+  --save-as <name>            Name for the saved simulation
+  --json                      Output as JSON
+  -h, --help                  Show this help
+
+Examples:
+  autoctx simulate -d "simulate deploying a web service with rollback"
+  autoctx simulate -d "simulate a pricing war" --variables max_steps=12
+  autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1
+  autoctx simulate -d "simulate pipeline failure modes" --runs 10 --json`);
+    process.exit(0);
+  }
+
+  if (!values.description) {
+    console.error("Error: --description is required. Run 'autoctx simulate --help' for usage.");
+    process.exit(1);
+  }
+
+  const { SimulationEngine, parseVariableOverrides, parseSweepSpec } = await import("../simulation/engine.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { resolve } = await import("node:path");
+
+  const { provider } = await getProvider();
+
+  const settings = loadSettings();
+  const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
+
+  const result = await engine.run({
+    description: values.description,
+    variables: values.variables ? parseVariableOverrides(values.variables) : undefined,
+    sweep: values.sweep ? parseSweepSpec(values.sweep) : undefined,
+    runs: values.runs ? parseInt(values.runs, 10) : undefined,
+    maxSteps: values["max-steps"] ? parseInt(values["max-steps"], 10) : undefined,
+    saveAs: values["save-as"],
+  });
+
+  if (values.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    if (result.status === "failed") {
+      console.error(`Simulation failed: ${result.error}`);
+      process.exit(1);
+    }
+    console.log(`Simulation: ${result.name} (family: ${result.family})`);
+    console.log(`Score: ${result.summary.score}`);
+    console.log(`Reasoning: ${result.summary.reasoning}`);
+    if (result.sweep) {
+      console.log(`Sweep: ${result.sweep.runs} runs across ${result.sweep.dimensions.length} dimension(s)`);
+    }
+    if (result.summary.mostSensitiveVariables?.length) {
+      console.log(`Most sensitive: ${result.summary.mostSensitiveVariables.join(", ")}`);
+    }
+    console.log(`\nAssumptions:`);
+    for (const a of result.assumptions) console.log(`  - ${a}`);
+    console.log(`\nWarnings:`);
+    for (const w of result.warnings) console.log(`  ⚠ ${w}`);
+    console.log(`\nArtifacts: ${result.artifacts.scenarioDir}`);
   }
 }
 

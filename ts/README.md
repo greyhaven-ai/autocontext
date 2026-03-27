@@ -58,6 +58,8 @@ autoctx new-scenario --template prompt-optimization --name my-task
 autoctx tui [--port 8000]
 autoctx serve [--port 8000] [--json] # HTTP dashboard + API
 autoctx mcp-serve                     # MCP server on stdio
+autoctx simulate -d "simulate deploying a web service with rollback"
+autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1
 autoctx mission create --name "Ship login" --goal "Implement OAuth"
 autoctx mission create --type code --name "Fix login" --goal "Tests pass" --repo-path . --test-command "npm test"
 autoctx mission run --id <mission-id> --max-iterations 3
@@ -112,6 +114,8 @@ AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario grid_ctf --json
 ```
 
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
+
+`autoctx simulate` requires a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
 
 Key environment variables:
 
