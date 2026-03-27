@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - Scenario parity matrix documenting Python/TypeScript surface coverage, creation flows, runtime support, and explicit limitations (AC-431).
 
 ### Fixed
-- TS `detectScenarioFamily` now delegates to the full weighted classifier instead of naive keyword matching — all 11 families reachable through CLI (AC-437).
+- TS `detectScenarioFamily` now delegates to the full weighted classifier instead of naive keyword matching, so all custom-scenario-supported families are reachable through CLI without auto-routing into unsupported custom game creation (AC-437).
 
 ### Changed
 - Agent-task scaffolding and execution now use separate phased budgets.

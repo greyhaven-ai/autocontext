@@ -35,14 +35,19 @@ export function deriveScenarioName(description: string): string {
  * Detect the most likely scenario family from a description.
  *
  * Delegates to the full `classifyScenarioFamily` weighted classifier
- * and returns just the family name. All 11 families are reachable.
+ * and returns just the family name for the custom-scenario creation path.
+ *
+ * `game` is intentionally excluded here because free-form game creation is not
+ * a supported custom-scenario surface yet; letting NL creation auto-route into
+ * `game` turns ordinary CLI requests into dead-end failures downstream.
  *
  * @see classifyScenarioFamily for the full classification with confidence scores
  */
 export function detectScenarioFamily(description: string): ScenarioFamilyName {
   if (!description.trim()) return "agent_task";
   try {
-    return routeToFamily(classifyScenarioFamily(description), 0.15);
+    const family = routeToFamily(classifyScenarioFamily(description), 0.15);
+    return family === "game" ? "agent_task" : family;
   } catch {
     // LowConfidenceError — fall back to agent_task
     return "agent_task";

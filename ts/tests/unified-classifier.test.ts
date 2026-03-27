@@ -1,9 +1,10 @@
 /**
- * AC-437: Verify unified family classifier — all 11 families reachable
- * through every entry point.
+ * AC-437: Verify unified family classifier for the plain-language
+ * custom-scenario creation path.
  *
- * RED phase: These tests define the desired behavior. Some will fail
- * because detectScenarioFamily has empty signals for 5 families.
+ * `detectScenarioFamily()` should use the weighted classifier so all
+ * custom-scenario-supported families are reachable, while still avoiding
+ * unsupported auto-routing into the `game` family.
  */
 
 import { describe, it, expect } from "vitest";
@@ -39,13 +40,11 @@ describe("classifyScenarioFamily (sophisticated)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// detectScenarioFamily should match classifyScenarioFamily for ALL families
+// detectScenarioFamily should match classifyScenarioFamily for all
+// custom-scenario-supported families
 // ---------------------------------------------------------------------------
 
-describe("detectScenarioFamily must route all 11 families (AC-437)", () => {
-  // These are the 5 families that currently have empty signal arrays
-  // in detectScenarioFamily. These tests SHOULD FAIL until the fix.
-
+describe("detectScenarioFamily routes all custom-scenario families (AC-437)", () => {
   it("routes artifact_editing descriptions correctly", () => {
     const family = detectScenarioFamily(
       "Edit a YAML config file to add new service endpoints and validate the schema",
@@ -106,10 +105,17 @@ describe("detectScenarioFamily must route all 11 families (AC-437)", () => {
     const family = detectScenarioFamily("Write a summary of the quarterly earnings report");
     expect(family).toBe("agent_task");
   });
+
+  it("does not auto-route unsupported custom game creation into game", () => {
+    const family = detectScenarioFamily(
+      "Create a two-player board game with scoring and turns",
+    );
+    expect(family).toBe("agent_task");
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Consistency: both classifiers agree
+// Consistency: supported families agree with the weighted classifier
 // ---------------------------------------------------------------------------
 
 describe("classifier consistency (AC-437 + AC-444)", () => {
@@ -133,4 +139,12 @@ describe("classifier consistency (AC-437 + AC-444)", () => {
       expect(naive).toBe(sophisticated);
     });
   }
+
+  it("intentionally diverges for game because game is not a supported custom-scenario target", () => {
+    const desc = "Create a two-player board game with scoring and turns";
+    const sophisticated = routeToFamily(classifyScenarioFamily(desc), 0.1);
+    const detected = detectScenarioFamily(desc);
+    expect(sophisticated).toBe("game");
+    expect(detected).toBe("agent_task");
+  });
 });
