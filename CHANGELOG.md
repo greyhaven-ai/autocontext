@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
 - Scenario parity matrix documenting Python/TypeScript surface coverage, creation flows, runtime support, and explicit limitations (AC-431).
 
+### Fixed
+- TS `detectScenarioFamily` now delegates to the full weighted classifier instead of naive keyword matching — all 11 families reachable through CLI (AC-437).
+
 ### Changed
 - Agent-task scaffolding and execution now use separate phased budgets.
 - Operator-loop scenarios remain available as typed family metadata, but executable operator-loop scaffolding has been removed so the harness no longer bakes in escalation-specific runtime behavior.

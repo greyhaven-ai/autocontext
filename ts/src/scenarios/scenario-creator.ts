@@ -4,6 +4,7 @@
  */
 
 import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
+import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
 import type { LLMProvider } from "../types/index.js";
 
 export interface CreatedScenarioResult {
@@ -31,27 +32,21 @@ export function deriveScenarioName(description: string): string {
 }
 
 /**
- * Detect likely family from description keywords.
+ * Detect the most likely scenario family from a description.
+ *
+ * Delegates to the full `classifyScenarioFamily` weighted classifier
+ * and returns just the family name. All 11 families are reachable.
+ *
+ * @see classifyScenarioFamily for the full classification with confidence scores
  */
 export function detectScenarioFamily(description: string): ScenarioFamilyName {
-  const lower = description.toLowerCase();
-  const signals: Record<Exclude<ScenarioFamilyName, "game">, string[]> = {
-    simulation: ["deploy", "pipeline", "orchestrat", "workflow", "incident", "state machine", "mock api"],
-    investigation: ["investigat", "debug", "root cause", "diagnos"],
-    workflow: ["step by step", "process", "checklist"],
-    negotiation: ["negotiat", "bargain", "trade"],
-    agent_task: [],
-    artifact_editing: [],
-    schema_evolution: [],
-    tool_fragility: [],
-    operator_loop: [],
-    coordination: [],
-  };
-
-  for (const [family, keywords] of Object.entries(signals)) {
-    if (keywords.some((k) => lower.includes(k))) return family as ScenarioFamilyName;
+  if (!description.trim()) return "agent_task";
+  try {
+    return routeToFamily(classifyScenarioFamily(description), 0.15);
+  } catch {
+    // LowConfidenceError — fall back to agent_task
+    return "agent_task";
   }
-  return "agent_task";
 }
 
 export function isScenarioFamilyName(value: string): value is ScenarioFamilyName {
