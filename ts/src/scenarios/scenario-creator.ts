@@ -5,6 +5,7 @@
 
 import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
 import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
+import { healSpec } from "./spec-auto-heal.js";
 import type { LLMProvider } from "../types/index.js";
 
 export interface CreatedScenarioResult {
@@ -134,6 +135,10 @@ export async function createScenarioFromDescription(
   return {
     name,
     family,
-    spec: specFields as CreatedScenarioResult["spec"],
+    spec: healSpec(
+      specFields as Record<string, unknown>,
+      family,
+      description,
+    ) as CreatedScenarioResult["spec"],
   };
 }

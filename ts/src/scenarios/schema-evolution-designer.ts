@@ -1,5 +1,6 @@
 import type { SchemaEvolutionSpec } from "./schema-evolution-spec.js";
 import { parseRawSchemaEvolutionSpec } from "./schema-evolution-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const SCHEMA_EVOLUTION_SPEC_START = "<!-- SCHEMA_EVOLUTION_SPEC_START -->";
 export const SCHEMA_EVOLUTION_SPEC_END = "<!-- SCHEMA_EVOLUTION_SPEC_END -->";
@@ -105,7 +106,9 @@ export function parseSchemaEvolutionSpec(text: string): SchemaEvolutionSpec {
     throw new Error("response does not contain SCHEMA_EVOLUTION_SPEC delimiters");
   }
   const raw = text.slice(startIdx + SCHEMA_EVOLUTION_SPEC_START.length, endIdx).trim();
-  return parseRawSchemaEvolutionSpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawSchemaEvolutionSpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "schema_evolution"),
+  );
 }
 
 export async function designSchemaEvolution(

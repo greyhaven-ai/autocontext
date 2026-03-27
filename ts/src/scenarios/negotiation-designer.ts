@@ -1,5 +1,6 @@
 import type { NegotiationSpec } from "./negotiation-spec.js";
 import { parseRawNegotiationSpec } from "./negotiation-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const NEGOTIATION_SPEC_START = "<!-- NEGOTIATION_SPEC_START -->";
 export const NEGOTIATION_SPEC_END = "<!-- NEGOTIATION_SPEC_END -->";
@@ -96,7 +97,9 @@ export function parseNegotiationSpec(text: string): NegotiationSpec {
     throw new Error("response does not contain NEGOTIATION_SPEC delimiters");
   }
   const raw = text.slice(startIdx + NEGOTIATION_SPEC_START.length, endIdx).trim();
-  return parseRawNegotiationSpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawNegotiationSpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "negotiation"),
+  );
 }
 
 export async function designNegotiation(

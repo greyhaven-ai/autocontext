@@ -1,5 +1,6 @@
 import type { InvestigationSpec } from "./investigation-spec.js";
 import { parseRawInvestigationSpec } from "./investigation-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const INVESTIGATION_SPEC_START = "<!-- INVESTIGATION_SPEC_START -->";
 export const INVESTIGATION_SPEC_END = "<!-- INVESTIGATION_SPEC_END -->";
@@ -91,7 +92,9 @@ export function parseInvestigationSpec(text: string): InvestigationSpec {
     throw new Error("response does not contain INVESTIGATION_SPEC delimiters");
   }
   const raw = text.slice(startIdx + INVESTIGATION_SPEC_START.length, endIdx).trim();
-  return parseRawInvestigationSpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawInvestigationSpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "investigation"),
+  );
 }
 
 export async function designInvestigation(

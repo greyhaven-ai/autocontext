@@ -128,3 +128,13 @@ export type {
 export { generateScenarioSource, hasCodegen, ScenarioRuntime, CodegenUnsupportedFamilyError } from "./codegen/index.js";
 export type { ScenarioProxy, ScenarioRuntimeOpts, CodegenFn } from "./codegen/index.js";
 export { loadCustomScenario, readScenarioFamily } from "./codegen/loader.js";
+
+// Spec auto-heal (AC-440)
+export {
+  needsSampleInput,
+  generateSyntheticSampleInput,
+  healAgentTaskSpec,
+  healSpec,
+  coerceSpecTypes,
+  inferMissingFields,
+} from "./spec-auto-heal.js";

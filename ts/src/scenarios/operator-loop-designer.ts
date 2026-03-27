@@ -1,5 +1,6 @@
 import type { OperatorLoopSpec } from "./operator-loop-spec.js";
 import { parseRawOperatorLoopSpec } from "./operator-loop-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const OPERATOR_LOOP_SPEC_START = "<!-- OPERATOR_LOOP_SPEC_START -->";
 export const OPERATOR_LOOP_SPEC_END = "<!-- OPERATOR_LOOP_SPEC_END -->";
@@ -46,7 +47,9 @@ export function parseOperatorLoopSpec(text: string): OperatorLoopSpec {
     throw new Error("response does not contain OPERATOR_LOOP_SPEC delimiters");
   }
   const raw = text.slice(startIdx + OPERATOR_LOOP_SPEC_START.length, endIdx).trim();
-  return parseRawOperatorLoopSpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawOperatorLoopSpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "operator_loop"),
+  );
 }
 
 export async function designOperatorLoop(

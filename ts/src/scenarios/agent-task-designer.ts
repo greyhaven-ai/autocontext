@@ -5,6 +5,7 @@
 
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { parseRawSpec } from "./agent-task-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const SPEC_START = "<!-- AGENT_TASK_SPEC_START -->";
 export const SPEC_END = "<!-- AGENT_TASK_SPEC_END -->";
@@ -112,7 +113,7 @@ export function parseAgentTaskSpec(text: string): AgentTaskSpec {
     throw new Error("response does not contain AGENT_TASK_SPEC delimiters");
   }
   const raw = text.slice(startIdx + SPEC_START.length, endIdx).trim();
-  const data = JSON.parse(raw) as Record<string, unknown>;
+  const data = healSpec(JSON.parse(raw) as Record<string, unknown>, "agent_task");
   return parseRawSpec(data);
 }
 

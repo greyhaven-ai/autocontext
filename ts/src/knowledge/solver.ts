@@ -8,9 +8,11 @@ import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
 import type { SQLiteStore } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
+import { AgentTaskSpecSchema, type AgentTaskSpec } from "../scenarios/agent-task-spec.js";
 import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
 import { generateScenarioSource, hasCodegen, CodegenUnsupportedFamilyError } from "../scenarios/codegen/index.js";
 import { executeGeneratedScenarioSource } from "../scenarios/codegen/executor.js";
+import { healSpec } from "../scenarios/spec-auto-heal.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { exportStrategyPackage, serializeSkillPackage } from "./package.js";
 import { SkillPackage } from "./skill-package.js";
@@ -32,6 +34,79 @@ export interface SolveJob {
   progress?: number;
   result?: Record<string, unknown>;
   error?: string;
+}
+
+function readString(spec: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = spec[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function readStringArray(spec: Record<string, unknown>, ...keys: string[]): string[] | null {
+  for (const key of keys) {
+    const value = spec[key];
+    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function readRecordArray(
+  spec: Record<string, unknown>,
+  ...keys: string[]
+): Array<Record<string, unknown>> | null {
+  for (const key of keys) {
+    const value = spec[key];
+    if (Array.isArray(value) && value.every((entry) => entry != null && typeof entry === "object")) {
+      return value as Array<Record<string, unknown>>;
+    }
+  }
+  return null;
+}
+
+function readNumber(spec: Record<string, unknown>, fallback: number, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = spec[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return fallback;
+}
+
+export function buildAgentTaskSolveSpec(
+  rawSpec: Record<string, unknown>,
+  fallbackRounds: number,
+): AgentTaskSpec {
+  const outputFormat = readString(rawSpec, "outputFormat", "output_format");
+  return AgentTaskSpecSchema.parse({
+    taskPrompt: readString(rawSpec, "taskPrompt", "task_prompt") ?? "",
+    judgeRubric: readString(rawSpec, "judgeRubric", "judge_rubric", "rubric") ?? "Evaluate the response.",
+    outputFormat: outputFormat === "json_schema" || outputFormat === "code" ? outputFormat : "free_text",
+    judgeModel: readString(rawSpec, "judgeModel", "judge_model") ?? "",
+    difficultyTiers: readRecordArray(rawSpec, "difficultyTiers", "difficulty_tiers"),
+    referenceContext: readString(rawSpec, "referenceContext", "reference_context"),
+    referenceSources: readStringArray(rawSpec, "referenceSources", "reference_sources"),
+    requiredConcepts: readStringArray(rawSpec, "requiredConcepts", "required_concepts"),
+    calibrationExamples: readRecordArray(rawSpec, "calibrationExamples", "calibration_examples"),
+    contextPreparation: readString(rawSpec, "contextPreparation", "context_preparation"),
+    requiredContextKeys: readStringArray(rawSpec, "requiredContextKeys", "required_context_keys"),
+    maxRounds: readNumber(rawSpec, fallbackRounds, "maxRounds", "max_rounds"),
+    qualityThreshold: readNumber(rawSpec, 0.9, "qualityThreshold", "quality_threshold"),
+    revisionPrompt: readString(rawSpec, "revisionPrompt", "revision_prompt"),
+    sampleInput: readString(rawSpec, "sampleInput", "sample_input"),
+  });
 }
 
 export class SolveManager {
@@ -93,29 +168,34 @@ export class SolveManager {
     try {
       const { createScenarioFromDescription } = await import("../scenarios/scenario-creator.js");
       const created = await createScenarioFromDescription(job.description, this.provider);
-      job.scenarioName = created.name;
-      job.family = created.family;
       const family = this.coerceFamily(created.family);
+      const prepared = {
+        ...created,
+        family,
+        spec: healSpec(created.spec as Record<string, unknown>, family, job.description) as typeof created.spec,
+      };
+      job.scenarioName = prepared.name;
+      job.family = prepared.family;
 
       // Check if this matches a built-in game scenario first (AC-436)
       const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
-      if (created.name in SCENARIO_REGISTRY) {
-        await this.runGameScenario(job, created.name);
+      if (prepared.name in SCENARIO_REGISTRY) {
+        await this.runGameScenario(job, prepared.name);
       } else if (family === "game") {
         // Family is "game" but not in the built-in registry — persist and fail
-        this.persistScenarioScaffold(created);
+        this.persistScenarioScaffold(prepared);
         throw new Error(
-          `Game scenario '${created.name}' not found in SCENARIO_REGISTRY. ` +
+          `Game scenario '${prepared.name}' not found in SCENARIO_REGISTRY. ` +
           `Built-in game scenarios: ${Object.keys(SCENARIO_REGISTRY).join(", ")}`,
         );
       } else if (family === "agent_task") {
-        this.persistScenarioScaffold(created);
-        await this.runAgentTaskScenario(job, created);
+        this.persistScenarioScaffold(prepared);
+        await this.runAgentTaskScenario(job, prepared);
       } else if (hasCodegen(family)) {
-        this.persistScenarioScaffold(created);
-        await this.runCodegenScenario(job, created, family);
+        this.persistScenarioScaffold(prepared);
+        await this.runCodegenScenario(job, prepared, family);
       } else {
-        this.persistScenarioScaffold(created);
+        this.persistScenarioScaffold(prepared);
         throw new CodegenUnsupportedFamilyError(family);
       }
     } catch (err) {
@@ -166,40 +246,45 @@ export class SolveManager {
    */
   private async runAgentTaskScenario(
     job: SolveJob,
-    created: { name: string; spec: { taskPrompt: string; rubric: string; [key: string]: unknown } },
+    created: { name: string; spec: Record<string, unknown> },
   ): Promise<void> {
     job.status = "running";
     const { ImprovementLoop } = await import("../execution/improvement-loop.js");
     const { createAgentTask } = await import("../scenarios/agent-task-factory.js");
+    const spec = buildAgentTaskSolveSpec(created.spec, job.generations);
 
     const task = createAgentTask({
-      spec: {
-        taskPrompt: created.spec.taskPrompt,
-        judgeRubric: created.spec.rubric,
-        outputFormat: "free_text",
-        judgeModel: "",
-        maxRounds: Number(created.spec.maxRounds ?? created.spec.max_rounds ?? job.generations),
-        qualityThreshold: Number(created.spec.qualityThreshold ?? created.spec.quality_threshold ?? 0.9),
-      },
+      spec,
       name: created.name,
       provider: this.provider,
     });
 
     const loop = new ImprovementLoop({
       task,
-      maxRounds: Number(created.spec.maxRounds ?? created.spec.max_rounds ?? job.generations),
-      qualityThreshold: Number(created.spec.qualityThreshold ?? created.spec.quality_threshold ?? 0.9),
+      maxRounds: spec.maxRounds,
+      qualityThreshold: spec.qualityThreshold,
     });
 
-    const initialState = task.initialState();
+    const initialState = task.prepareContext
+      ? await task.prepareContext(task.initialState())
+      : task.initialState();
+    const contextErrors = task.validateContext
+      ? task.validateContext(initialState)
+      : [];
+    if (contextErrors.length > 0) {
+      throw new Error(`agent_task context preparation failed: ${contextErrors.join("; ")}`);
+    }
     const initialOutput = await this.provider.complete({
       systemPrompt: "You are a helpful assistant.",
-      userPrompt: created.spec.taskPrompt,
+      userPrompt: task.getTaskPrompt(initialState),
     });
 
     const result = await loop.run({
       initialOutput: initialOutput.text,
       state: initialState,
+      referenceContext: spec.referenceContext ?? undefined,
+      requiredConcepts: spec.requiredConcepts ?? undefined,
+      calibrationExamples: spec.calibrationExamples ?? undefined,
     });
 
     job.progress = result.totalRounds;
@@ -236,22 +321,18 @@ export class SolveManager {
         termination_reason: result.terminationReason,
         judge_failures: result.judgeFailures,
       },
-      taskPrompt: created.spec.taskPrompt,
-      judgeRubric: created.spec.rubric,
+      taskPrompt: spec.taskPrompt,
+      judgeRubric: spec.judgeRubric,
       exampleOutputs: [{
         output: result.bestOutput,
         score: result.bestScore,
         reasoning: bestRound?.reasoning ?? "Best output from improvement loop.",
       }],
-      outputFormat: String(created.spec.outputFormat ?? "free_text"),
-      referenceContext: typeof created.spec.referenceContext === "string"
-        ? created.spec.referenceContext
-        : null,
-      contextPreparation: typeof created.spec.contextPreparation === "string"
-        ? created.spec.contextPreparation
-        : null,
-      maxRounds: Number(created.spec.maxRounds ?? created.spec.max_rounds ?? job.generations),
-      qualityThreshold: Number(created.spec.qualityThreshold ?? created.spec.quality_threshold ?? 0.9),
+      outputFormat: spec.outputFormat,
+      referenceContext: spec.referenceContext ?? null,
+      contextPreparation: spec.contextPreparation ?? null,
+      maxRounds: spec.maxRounds,
+      qualityThreshold: spec.qualityThreshold,
     });
     job.result = serializeSkillPackage(pkg);
   }
@@ -345,35 +426,36 @@ export class SolveManager {
     );
 
     if (family === "agent_task") {
+      const agentTaskSpec = buildAgentTaskSolveSpec(created.spec as Record<string, unknown>, 1);
       writeFileSync(
         join(scenarioDir, "agent_task_spec.json"),
         JSON.stringify(
           {
-            task_prompt: created.spec.taskPrompt,
-            judge_rubric: created.spec.rubric,
-            output_format: String(created.spec.outputFormat ?? "free_text"),
-            max_rounds: Number(created.spec.maxRounds ?? created.spec.max_rounds ?? 1),
-            quality_threshold: Number(created.spec.qualityThreshold ?? created.spec.quality_threshold ?? 0.9),
-            ...(typeof created.spec.referenceContext === "string"
-              ? { reference_context: created.spec.referenceContext }
+            task_prompt: agentTaskSpec.taskPrompt,
+            judge_rubric: agentTaskSpec.judgeRubric,
+            output_format: agentTaskSpec.outputFormat,
+            max_rounds: agentTaskSpec.maxRounds,
+            quality_threshold: agentTaskSpec.qualityThreshold,
+            ...(typeof agentTaskSpec.referenceContext === "string"
+              ? { reference_context: agentTaskSpec.referenceContext }
               : {}),
-            ...(typeof created.spec.contextPreparation === "string"
-              ? { context_preparation: created.spec.contextPreparation }
+            ...(typeof agentTaskSpec.contextPreparation === "string"
+              ? { context_preparation: agentTaskSpec.contextPreparation }
               : {}),
-            ...(typeof created.spec.revisionPrompt === "string"
-              ? { revision_prompt: created.spec.revisionPrompt }
+            ...(typeof agentTaskSpec.revisionPrompt === "string"
+              ? { revision_prompt: agentTaskSpec.revisionPrompt }
               : {}),
-            ...(typeof created.spec.sampleInput === "string"
-              ? { sample_input: created.spec.sampleInput }
+            ...(typeof agentTaskSpec.sampleInput === "string"
+              ? { sample_input: agentTaskSpec.sampleInput }
               : {}),
-            ...(Array.isArray(created.spec.requiredConcepts)
-              ? { required_concepts: created.spec.requiredConcepts }
+            ...(Array.isArray(agentTaskSpec.requiredConcepts)
+              ? { required_concepts: agentTaskSpec.requiredConcepts }
               : {}),
-            ...(Array.isArray(created.spec.referenceSources)
-              ? { reference_sources: created.spec.referenceSources }
+            ...(Array.isArray(agentTaskSpec.referenceSources)
+              ? { reference_sources: agentTaskSpec.referenceSources }
               : {}),
-            ...(Array.isArray(created.spec.requiredContextKeys)
-              ? { required_context_keys: created.spec.requiredContextKeys }
+            ...(Array.isArray(agentTaskSpec.requiredContextKeys)
+              ? { required_context_keys: agentTaskSpec.requiredContextKeys }
               : {}),
           },
           null,

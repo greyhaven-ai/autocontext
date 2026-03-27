@@ -1,5 +1,6 @@
 import type { WorkflowSpec } from "./workflow-spec.js";
 import { parseRawWorkflowSpec } from "./workflow-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const WORKFLOW_SPEC_START = "<!-- WORKFLOW_SPEC_START -->";
 export const WORKFLOW_SPEC_END = "<!-- WORKFLOW_SPEC_END -->";
@@ -117,7 +118,9 @@ export function parseWorkflowSpec(text: string): WorkflowSpec {
     throw new Error("response does not contain WORKFLOW_SPEC delimiters");
   }
   const raw = text.slice(startIdx + WORKFLOW_SPEC_START.length, endIdx).trim();
-  return parseRawWorkflowSpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawWorkflowSpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "workflow"),
+  );
 }
 
 export async function designWorkflow(

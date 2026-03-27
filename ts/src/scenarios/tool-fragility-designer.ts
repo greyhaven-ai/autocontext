@@ -1,5 +1,6 @@
 import type { ToolFragilitySpec } from "./tool-fragility-spec.js";
 import { parseRawToolFragilitySpec } from "./tool-fragility-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const TOOL_FRAGILITY_SPEC_START = "<!-- TOOL_FRAGILITY_SPEC_START -->";
 export const TOOL_FRAGILITY_SPEC_END = "<!-- TOOL_FRAGILITY_SPEC_END -->";
@@ -88,7 +89,9 @@ export function parseToolFragilitySpec(text: string): ToolFragilitySpec {
     throw new Error("response does not contain TOOL_FRAGILITY_SPEC delimiters");
   }
   const raw = text.slice(startIdx + TOOL_FRAGILITY_SPEC_START.length, endIdx).trim();
-  return parseRawToolFragilitySpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawToolFragilitySpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "tool_fragility"),
+  );
 }
 
 export async function designToolFragility(

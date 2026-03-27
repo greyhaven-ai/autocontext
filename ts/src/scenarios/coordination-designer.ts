@@ -1,5 +1,6 @@
 import type { CoordinationSpec } from "./coordination-spec.js";
 import { parseRawCoordinationSpec } from "./coordination-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const COORDINATION_SPEC_START = "<!-- COORDINATION_SPEC_START -->";
 export const COORDINATION_SPEC_END = "<!-- COORDINATION_SPEC_END -->";
@@ -85,7 +86,9 @@ export function parseCoordinationSpec(text: string): CoordinationSpec {
     throw new Error("response does not contain COORDINATION_SPEC delimiters");
   }
   const raw = text.slice(startIdx + COORDINATION_SPEC_START.length, endIdx).trim();
-  return parseRawCoordinationSpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawCoordinationSpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "coordination"),
+  );
 }
 
 export async function designCoordination(

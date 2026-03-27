@@ -1,5 +1,6 @@
 import type { ArtifactEditingSpec } from "./artifact-editing-spec.js";
 import { parseRawArtifactEditingSpec } from "./artifact-editing-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export const ARTIFACT_SPEC_START = "<!-- ARTIFACT_EDITING_SPEC_START -->";
 export const ARTIFACT_SPEC_END = "<!-- ARTIFACT_EDITING_SPEC_END -->";
@@ -63,7 +64,9 @@ export function parseArtifactEditingSpec(text: string): ArtifactEditingSpec {
     throw new Error("response does not contain ARTIFACT_EDITING_SPEC delimiters");
   }
   const raw = text.slice(startIdx + ARTIFACT_SPEC_START.length, endIdx).trim();
-  return parseRawArtifactEditingSpec(JSON.parse(raw) as Record<string, unknown>);
+  return parseRawArtifactEditingSpec(
+    healSpec(JSON.parse(raw) as Record<string, unknown>, "artifact_editing"),
+  );
 }
 
 export async function designArtifactEditing(
