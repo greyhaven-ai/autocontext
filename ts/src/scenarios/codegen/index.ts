@@ -10,6 +10,7 @@ export type { ScenarioProxy, ScenarioRuntimeOpts } from "./runtime.js";
 
 import type { ScenarioFamilyName } from "../families.js";
 import { CodegenUnsupportedFamilyError } from "./runtime.js";
+import { healSpec } from "../spec-auto-heal.js";
 
 import { generateSimulationSource } from "./simulation-codegen.js";
 import { generateAgentTaskSource } from "./agent-task-codegen.js";
@@ -20,6 +21,7 @@ import { generateNegotiationSource } from "./negotiation-codegen.js";
 import { generateSchemaEvolutionSource } from "./schema-evolution-codegen.js";
 import { generateToolFragilitySource } from "./tool-fragility-codegen.js";
 import { generateCoordinationSource } from "./coordination-codegen.js";
+import { generateOperatorLoopSource } from "./operator-loop-codegen.js";
 
 export type CodegenFn = (spec: Record<string, unknown>, name: string) => string;
 
@@ -33,6 +35,7 @@ const CODEGEN_REGISTRY: Partial<Record<ScenarioFamilyName, CodegenFn>> = {
   schema_evolution: generateSchemaEvolutionSource,
   tool_fragility: generateToolFragilitySource,
   coordination: generateCoordinationSource,
+  operator_loop: generateOperatorLoopSource,
 };
 
 /**
@@ -42,14 +45,14 @@ const CODEGEN_REGISTRY: Partial<Record<ScenarioFamilyName, CodegenFn>> = {
  * @param spec - The family-specific spec (already validated)
  * @param name - The scenario name
  * @returns Generated JavaScript source string
- * @throws CodegenUnsupportedFamilyError for game, operator_loop, or unknown families
+ * @throws CodegenUnsupportedFamilyError for game or unknown families
  */
 export function generateScenarioSource(
   family: ScenarioFamilyName,
   spec: Record<string, unknown>,
   name: string,
 ): string {
-  if (family === "game" || family === "operator_loop") {
+  if (family === "game") {
     throw new CodegenUnsupportedFamilyError(family);
   }
 
@@ -58,7 +61,10 @@ export function generateScenarioSource(
     throw new CodegenUnsupportedFamilyError(family);
   }
 
-  return codegen(spec, name);
+  // Auto-heal spec before codegen (AC-440)
+  const healedSpec = healSpec(spec, family);
+
+  return codegen(healedSpec, name);
 }
 
 /**

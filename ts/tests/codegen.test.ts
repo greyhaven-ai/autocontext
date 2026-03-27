@@ -33,17 +33,26 @@ describe("codegen registry", () => {
     }
   });
 
-  it("does not have codegen for game or operator_loop", () => {
+  it("does not have codegen for game", () => {
     expect(hasCodegen("game")).toBe(false);
-    expect(hasCodegen("operator_loop")).toBe(false);
+  });
+
+  it("has codegen for operator_loop (AC-432)", () => {
+    expect(hasCodegen("operator_loop")).toBe(true);
   });
 
   it("throws CodegenUnsupportedFamilyError for game", () => {
     expect(() => generateScenarioSource("game", {}, "test")).toThrow(CodegenUnsupportedFamilyError);
   });
 
-  it("throws CodegenUnsupportedFamilyError for operator_loop", () => {
-    expect(() => generateScenarioSource("operator_loop", {}, "test")).toThrow(CodegenUnsupportedFamilyError);
+  it("generates source for operator_loop (AC-432)", () => {
+    const source = generateScenarioSource("operator_loop", {
+      description: "test escalation",
+      escalation_policy: { escalation_threshold: "high", max_escalations: 3 },
+      actions: [{ name: "act", description: "d", parameters: {}, preconditions: [], effects: [] }],
+    }, "test_op");
+    expect(source).toContain("evaluateJudgment");
+    expect(source).toContain("module.exports");
   });
 
   it("routes to correct codegen function", () => {
