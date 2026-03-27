@@ -22,6 +22,7 @@ import {
   IntentValidator,
   loadCustomScenarios,
   registerCustomScenarios,
+  reviseSpec,
 } from "../scenarios/index.js";
 import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
 import { executeGeneratedScenarioEntry } from "../scenarios/codegen/executor.js";
@@ -77,6 +78,16 @@ interface PendingScenarioDraft {
   detectedFamily: string;
   preview: CreatedScenarioResult;
   validation: IntentValidationResult;
+}
+
+function readStringValue(spec: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = spec[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 export class RunManager {
@@ -372,13 +383,42 @@ export class RunManager {
     if (!this.pendingScenario) {
       throw new Error("No scenario preview is pending. Create a scenario first.");
     }
-    const revisedDescription = [
-      this.pendingScenario.description,
-      "",
-      "Revision guidance:",
+    const provider = this.buildProvider();
+    const revision = await reviseSpec({
+      currentSpec: this.pendingScenario.preview.spec,
       feedback,
-    ].join("\n");
-    return this.createScenario(revisedDescription);
+      family: this.pendingScenario.preview.family,
+      provider,
+    });
+    if (!revision.changesApplied) {
+      throw new Error(revision.error ?? "Scenario revision failed.");
+    }
+
+    const revisedPreview: CreatedScenarioResult = {
+      ...this.pendingScenario.preview,
+      spec: {
+        ...revision.revised,
+        taskPrompt: readStringValue(revision.revised, "taskPrompt", "task_prompt")
+          ?? this.pendingScenario.preview.spec.taskPrompt,
+        rubric: readStringValue(revision.revised, "rubric", "judgeRubric", "judge_rubric")
+          ?? this.pendingScenario.preview.spec.rubric,
+        description: readStringValue(revision.revised, "description")
+          ?? this.pendingScenario.preview.spec.description,
+      },
+    };
+    const validation = new IntentValidator().validate(this.pendingScenario.description, {
+      name: revisedPreview.name,
+      taskPrompt: revisedPreview.spec.taskPrompt,
+      rubric: revisedPreview.spec.rubric,
+      description: revisedPreview.spec.description,
+    });
+    const draft: PendingScenarioDraft = {
+      ...this.pendingScenario,
+      preview: revisedPreview,
+      validation,
+    };
+    this.pendingScenario = draft;
+    return this.buildScenarioPreview(draft);
   }
 
   cancelScenario(): void {

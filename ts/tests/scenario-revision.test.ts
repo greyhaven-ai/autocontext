@@ -5,7 +5,11 @@
  * and produces an updated spec via the LLM designer.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import {
   buildRevisionPrompt,
   reviseSpec,
@@ -13,6 +17,24 @@ import {
   type RevisionResult,
 } from "../src/scenarios/scenario-revision.js";
 import type { AgentTaskSpec } from "../src/scenarios/agent-task-spec.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const tempDirs: string[] = [];
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ac-scenario-revision-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop()!;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Revision prompt building
@@ -125,7 +147,7 @@ describe("reviseSpec", () => {
           description: "Better simulation",
           environment_description: "Updated env",
           initial_state_description: "New initial state",
-          success_criteria: ["all steps done"],
+          success_criteria: ["all steps done", "dependency chain holds"],
           failure_modes: ["timeout"],
           max_steps: 20,
           actions: [
@@ -149,6 +171,98 @@ describe("reviseSpec", () => {
 
     expect(result.revised.description).toContain("Better simulation");
     expect(result.changesApplied).toBe(true);
+    expect(result.revised.maxSteps).toBe(20);
+  });
+
+  it("returns the original spec when the revised family spec is still invalid", async () => {
+    const mockProvider = {
+      complete: async () => ({
+        text: JSON.stringify({
+          actions: [
+            { name: "only_one", description: "Only step", parameters: {}, preconditions: [], effects: [] },
+          ],
+          max_steps: "twenty",
+        }),
+      }),
+      defaultModel: () => "test-model",
+    };
+
+    const original = {
+      description: "Old sim",
+      environment_description: "Env",
+      initial_state_description: "State",
+      success_criteria: ["all steps done", "rollback possible"],
+      failure_modes: [],
+      max_steps: 10,
+      actions: [
+        { name: "step1", description: "First step", parameters: {}, preconditions: [], effects: [] },
+        { name: "step2", description: "Second step", parameters: {}, preconditions: ["step1"], effects: [] },
+      ],
+    };
+
+    const result = await reviseSpec({
+      currentSpec: original,
+      feedback: "Make it stricter",
+      family: "simulation",
+      provider: mockProvider as never,
+    });
+
+    expect(result.changesApplied).toBe(false);
+    expect(result.revised).toEqual(original);
+    expect(result.error).toContain("maxSteps");
+  });
+});
+
+describe("RunManager scenario revision flow", () => {
+  it("revises the pending spec instead of recreating from the description", async () => {
+    const { RunManager } = await import("../src/server/run-manager.js");
+    const dir = makeTempDir();
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+    }) as any;
+
+    let sawRevisionPrompt = false;
+    mgr.buildProvider = () => ({
+      complete: async (opts: { systemPrompt: string; userPrompt: string }) => {
+        if (opts.systemPrompt.includes("Revise the agent_task spec")) {
+          sawRevisionPrompt = opts.userPrompt.includes("\"taskPrompt\": \"Summarize incident reports with a triage focus.\"");
+          return {
+            text: JSON.stringify({
+              description: "Summarize incident reports with severity and owner assignment.",
+              taskPrompt: "Summarize incident reports with severity and owner assignment.",
+              rubric: "Evaluate triage completeness, owner assignment, and clarity.",
+            }),
+          };
+        }
+        return {
+          text: JSON.stringify({
+            name: "incident_triage",
+            family: "agent_task",
+            description: "Summarize incident reports with a triage focus.",
+            taskPrompt: "Summarize incident reports with a triage focus.",
+            rubric: "Evaluate triage completeness and clarity.",
+          }),
+        };
+      },
+      defaultModel: () => "test-model",
+      name: "mock-provider",
+    });
+
+    await mgr.createScenario("Create a scenario about incident report triage.");
+    const revised = await mgr.reviseScenario("Also require severity and owner assignment.");
+
+    expect(sawRevisionPrompt).toBe(true);
+    expect(revised.description).toContain("severity and owner assignment");
+
+    const ready = await mgr.confirmScenario();
+    const savedSpec = JSON.parse(
+      readFileSync(join(dir, "knowledge", "_custom_scenarios", ready.name, "spec.json"), "utf-8"),
+    ) as Record<string, unknown>;
+    expect(savedSpec.taskPrompt).toBe("Summarize incident reports with severity and owner assignment.");
   });
 });
 
