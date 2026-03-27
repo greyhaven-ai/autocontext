@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - TS `detectScenarioFamily` now delegates to the full weighted classifier instead of naive keyword matching, so all custom-scenario-supported families are reachable through CLI without auto-routing into unsupported custom game creation (AC-437).
 - TS spec auto-heal: codegen failures from malformed specs now trigger automatic recovery (missing sampleInput, type coercion, field inference) instead of hard stops (AC-440).
+- TS scenario revision flow: users can refine created scenarios with feedback instead of starting over (AC-441).
 
 ### Changed
 - Agent-task scaffolding and execution now use separate phased budgets.

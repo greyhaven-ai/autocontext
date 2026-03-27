@@ -443,6 +443,36 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     },
   );
 
+  // -- revise_scenario (AC-441) --
+  server.tool(
+    "revise_scenario",
+    "Revise a scenario spec based on user feedback. Takes the current spec and feedback, returns an updated spec via LLM.",
+    {
+      currentSpec: z.record(z.unknown()).describe("The current scenario spec to revise"),
+      feedback: z.string().describe("User feedback describing what to change"),
+      family: z.string().default("agent_task").describe("Scenario family (agent_task, simulation, etc.)"),
+    },
+    async (args) => {
+      const { reviseSpec } = await import("../scenarios/scenario-revision.js");
+      const result = await reviseSpec({
+        currentSpec: args.currentSpec,
+        feedback: args.feedback,
+        family: args.family,
+        provider,
+      });
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            changesApplied: result.changesApplied,
+            revised: result.revised,
+            error: result.error ?? null,
+          }, null, 2),
+        }],
+      };
+    },
+  );
+
   // -- list_runs (AC-312) --
   server.tool(
     "list_runs",

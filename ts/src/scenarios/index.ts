@@ -138,3 +138,11 @@ export {
   coerceSpecTypes,
   inferMissingFields,
 } from "./spec-auto-heal.js";
+
+// Scenario revision (AC-441)
+export {
+  buildRevisionPrompt,
+  reviseSpec,
+  reviseAgentTaskOutput,
+} from "./scenario-revision.js";
+export type { RevisionResult, JudgeResult, RevisionPromptOpts, ReviseSpecOpts, OutputRevisionOpts } from "./scenario-revision.js";
