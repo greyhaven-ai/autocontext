@@ -150,3 +150,7 @@ export type { RevisionResult, JudgeResult, RevisionPromptOpts, ReviseSpecOpts, O
 // Scenario templates (AC-443)
 export { TemplateLoader } from "./templates/index.js";
 export type { TemplateSpec, RubricDimension } from "./templates/index.js";
+
+// Scenario materialization (AC-433)
+export { materializeScenario } from "./materialize.js";
+export type { MaterializeOpts, MaterializeResult } from "./materialize.js";
