@@ -206,6 +206,14 @@ def evaluate_advancement(
                 )
         else:
             risk_flags.append("resolved truth present without prior truth baseline")
+            return AdvancementRationale(
+                decision="retry" if retry_count < max_retries else "rollback",
+                reason="Resolved truth score is present but no prior truth baseline exists to bind advancement",
+                component_scores=components,
+                binding_checks=binding_checks,
+                proxy_signals=proxy_signals,
+                risk_flags=risk_flags,
+            )
     else:
         if metrics.search_proxy_score is not None:
             components["search_proxy_score"] = metrics.search_proxy_score

@@ -209,6 +209,7 @@ class TestEvaluateAdvancement:
         rationale = evaluate_advancement(metrics, min_delta=0.005)
         assert "resolved_truth_score" in rationale.binding_checks
         assert "resolved truth present without prior truth baseline" in rationale.risk_flags
+        assert rationale.decision in ("retry", "rollback")
 
     def test_rationale_has_component_scores(self) -> None:
         from autocontext.harness.pipeline.advancement import (

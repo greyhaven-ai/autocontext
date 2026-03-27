@@ -221,7 +221,7 @@ class TestResolveGateDecision:
             use_rapid=False,
             custom_metrics={"resolved_truth_score": 0.55},
         )
-        assert result.decision == "advance"
+        assert result.decision in ("retry", "rollback")
         rationale = result.metadata["advancement_rationale"]
         assert "resolved truth present without prior truth baseline" in rationale["risk_flags"]
 

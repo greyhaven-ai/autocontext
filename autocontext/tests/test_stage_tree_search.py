@@ -215,6 +215,49 @@ class TestTreeSearchStage:
         assert "tournament_completed" in event_names
         assert "gate_decided" in event_names
 
+    def test_tree_search_gate_uses_advancement_contract_metadata(self) -> None:
+        """Tree search should emit advancement metadata from the canonical contract."""
+        settings = _make_settings()
+        ctx = _make_ctx(settings=settings)
+        orch = _make_orchestrator(settings)
+        supervisor = _make_inline_supervisor()
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+        artifacts.persist_tools.return_value = []
+        artifacts.generation_dir.return_value = MagicMock()
+
+        stage_tree_search(
+            ctx, orchestrator=orch, supervisor=supervisor,
+            artifacts=artifacts, sqlite=sqlite, events=events,
+        )
+
+        gate_payloads = [call.args[1] for call in events.emit.call_args_list if call.args[0] == "gate_decided"]
+        assert len(gate_payloads) == 1
+        assert "advancement_rationale" in gate_payloads[0]
+        assert "threshold" in gate_payloads[0]
+
+    def test_tree_search_truth_metrics_can_block_advancement(self) -> None:
+        """Tree-search final selection should honor scenario truth metrics."""
+        settings = _make_settings(max_retries=0)
+        scenario = _FakeScenario()
+        scenario.custom_backpressure = MagicMock(return_value={"resolved_truth_score": 0.1})  # type: ignore[method-assign]
+        ctx = _make_ctx(settings=settings, scenario=scenario)
+        orch = _make_orchestrator(settings)
+        supervisor = _make_inline_supervisor()
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = MagicMock()
+        artifacts.persist_tools.return_value = []
+        artifacts.generation_dir.return_value = MagicMock()
+
+        result = stage_tree_search(
+            ctx, orchestrator=orch, supervisor=supervisor,
+            artifacts=artifacts, sqlite=sqlite, events=events,
+        )
+
+        assert result.gate_decision == "rollback"
+
     def test_persists_agent_outputs_to_sqlite(self) -> None:
         """Agent outputs are persisted via sqlite."""
         settings = _make_settings()

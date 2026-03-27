@@ -10,13 +10,14 @@ from autocontext.agents.architect import parse_architect_harness_specs, parse_ar
 from autocontext.agents.coach import parse_coach_sections
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.types import AgentOutputs
+from autocontext.backpressure import BackpressureGate, TrendAwareGate
 from autocontext.harness.evaluation.runner import EvaluationRunner
 from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
-from autocontext.knowledge.rapid_gate import rapid_gate
 from autocontext.loop.hypothesis_tree import HypothesisTree
 from autocontext.loop.refinement_prompt import build_refinement_prompt
 from autocontext.loop.stage_types import GenerationContext
+from autocontext.loop.tournament_helpers import resolve_gate_decision
 
 if TYPE_CHECKING:
     from autocontext.agents.orchestrator import AgentOrchestrator
@@ -28,6 +29,16 @@ LOGGER = logging.getLogger(__name__)
 
 # Max seed hypotheses to generate at the start of tree search
 _MAX_INITIAL_SEEDS = 3
+
+
+def _build_tree_gate(settings: Any) -> BackpressureGate | TrendAwareGate:
+    if settings.backpressure_mode == "trend":
+        return TrendAwareGate(
+            min_delta=settings.backpressure_min_delta,
+            plateau_window=settings.backpressure_plateau_window,
+            plateau_relaxation_factor=settings.backpressure_plateau_relaxation,
+        )
+    return BackpressureGate(min_delta=settings.backpressure_min_delta)
 
 
 def stage_tree_search(
@@ -185,8 +196,23 @@ def stage_tree_search(
         on_result=_on_match,
     )
 
-    # ── Phase 4: Gate decision (rapid-style: advance or rollback) ────
-    gate_result = rapid_gate(final_tournament.best_score, ctx.previous_best)
+    # ── Phase 4: Gate decision via the canonical advancement contract ─
+    best_eval = max(final_tournament.results, key=lambda r: r.score)
+    best_exec = best_eval.metadata["execution_output"]
+    custom_metrics = scenario.custom_backpressure(best_exec.result)
+    gate_result = resolve_gate_decision(
+        tournament_best_score=final_tournament.best_score,
+        tournament_mean_score=final_tournament.mean_score,
+        tournament_results=final_tournament.results,
+        previous_best=ctx.previous_best,
+        gate=_build_tree_gate(settings),
+        score_history=ctx.score_history,
+        gate_decision_history=ctx.gate_decision_history,
+        retry_count=settings.max_retries,
+        max_retries=settings.max_retries,
+        use_rapid=False,
+        custom_metrics=custom_metrics,
+    )
     gate_decision = gate_result.decision
     gate_delta = round(final_tournament.best_score - ctx.previous_best, 6)
 
@@ -198,12 +224,15 @@ def stage_tree_search(
         "wins": final_tournament.wins,
         "losses": final_tournament.losses,
     })
-    events.emit("gate_decided", {
+    gate_event = {
         "run_id": ctx.run_id,
         "generation": ctx.generation,
         "decision": gate_decision,
         "delta": gate_delta,
-    })
+    }
+    if gate_result.metadata:
+        gate_event.update(gate_result.metadata)
+    events.emit("gate_decided", gate_event)
 
     # ── Phase 5: Run analyst / coach / architect ─────────────────────
     def _notify(role: str, status: str) -> None:
@@ -309,7 +338,6 @@ def stage_tree_search(
         ctx.tuning_proposal = parse_tuning_proposal(architect_exec.content)
 
     # ── Replay narrative from best match ─────────────────────────────
-    best_eval = max(final_tournament.results, key=lambda r: r.score)
     best_exec_output = best_eval.metadata["execution_output"]
     replay_narrative = scenario.replay_to_narrative(best_exec_output.result.replay)
     gen_dir = artifacts.generation_dir(ctx.run_id, ctx.generation)

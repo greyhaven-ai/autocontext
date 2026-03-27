@@ -338,6 +338,48 @@ class TestRapidGateInTournament:
         # Standard gate should have been called
         gate.evaluate.assert_called_once()
 
+    def test_standard_gate_receives_custom_backpressure_metrics(self) -> None:
+        """Simple mode should still pass scenario metrics into the advancement contract."""
+        from autocontext.backpressure import BackpressureGate
+        from autocontext.loop.stages import stage_tournament
+
+        settings = _make_settings(
+            exploration_mode="linear",
+            matches_per_generation=1,
+            max_retries=0,
+        )
+        ctx = _make_ctx(settings=settings)
+        ctx.outputs = MagicMock()
+        ctx.current_strategy = {"move": "north"}
+        ctx.scenario.custom_backpressure.return_value = {
+            "resolved_truth_score": 0.2,
+        }
+
+        supervisor = MagicMock()
+        gate = BackpressureGate(min_delta=0.005)
+        events = MagicMock()
+        sqlite = MagicMock()
+        artifacts = _make_artifacts()
+        artifacts.generation_dir.return_value = MagicMock()
+
+        mock_tournament = _make_mock_tournament()
+
+        with patch("autocontext.loop.stages.EvaluationRunner") as MockRunner, \
+             patch("autocontext.loop.stages.ScenarioEvaluator"):
+            MockRunner.return_value.run.return_value = mock_tournament
+
+            result = stage_tournament(
+                ctx,
+                supervisor=supervisor,
+                gate=gate,
+                events=events,
+                sqlite=sqlite,
+                artifacts=artifacts,
+            )
+
+        ctx.scenario.custom_backpressure.assert_called_once()
+        assert result.gate_decision == "rollback"
+
 
 # ===========================================================================
 # #173 - Auto-transition from rapid to linear

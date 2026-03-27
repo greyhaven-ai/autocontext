@@ -593,7 +593,7 @@ def stage_tournament(
             continue
 
         custom_metrics = None
-        if isinstance(gate, TrendAwareGate):
+        if gate is not None:
             best_eval = max(tournament.results, key=lambda r: r.score)
             best_exec = best_eval.metadata["execution_output"]
             custom_metrics = scenario.custom_backpressure(best_exec.result)
