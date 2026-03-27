@@ -125,8 +125,8 @@ export type {
 } from "./family-interfaces.js";
 
 // Codegen pipeline (AC-436)
-export { generateScenarioSource, hasCodegen, ScenarioRuntime, CodegenUnsupportedFamilyError } from "./codegen/index.js";
-export type { ScenarioProxy, ScenarioRuntimeOpts, CodegenFn } from "./codegen/index.js";
+export { generateScenarioSource, generateAndValidateScenarioSource, hasCodegen, ScenarioRuntime, CodegenUnsupportedFamilyError, validateGeneratedScenario } from "./codegen/index.js";
+export type { ScenarioProxy, ScenarioRuntimeOpts, CodegenFn, ExecutionValidationResult } from "./codegen/index.js";
 export { loadCustomScenario, readScenarioFamily } from "./codegen/loader.js";
 
 // Spec auto-heal (AC-440)

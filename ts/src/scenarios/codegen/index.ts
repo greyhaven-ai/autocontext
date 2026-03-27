@@ -7,10 +7,13 @@
 
 export { ScenarioRuntime, CodegenUnsupportedFamilyError } from "./runtime.js";
 export type { ScenarioProxy, ScenarioRuntimeOpts } from "./runtime.js";
+export { validateGeneratedScenario } from "./execution-validator.js";
+export type { ExecutionValidationResult } from "./execution-validator.js";
 
 import type { ScenarioFamilyName } from "../families.js";
 import { CodegenUnsupportedFamilyError } from "./runtime.js";
 import { healSpec } from "../spec-auto-heal.js";
+import { validateGeneratedScenario, type ExecutionValidationResult } from "./execution-validator.js";
 
 import { generateSimulationSource } from "./simulation-codegen.js";
 import { generateAgentTaskSource } from "./agent-task-codegen.js";
@@ -72,4 +75,30 @@ export function generateScenarioSource(
  */
 export function hasCodegen(family: string): boolean {
   return family in CODEGEN_REGISTRY;
+}
+
+/**
+ * Generate executable JS source AND validate it by execution (AC-442).
+ *
+ * Calls generateScenarioSource then validateGeneratedScenario.
+ * Throws if the generated code fails execution validation.
+ *
+ * @returns The validated source string
+ */
+export async function generateAndValidateScenarioSource(
+  family: ScenarioFamilyName,
+  spec: Record<string, unknown>,
+  name: string,
+): Promise<{ source: string; validation: ExecutionValidationResult }> {
+  const source = generateScenarioSource(family, spec, name);
+  const validation = await validateGeneratedScenario(source, family, name);
+
+  if (!validation.valid) {
+    throw new Error(
+      `Generated ${family} scenario '${name}' failed execution validation:\n` +
+      validation.errors.map((e) => `  - ${e}`).join("\n"),
+    );
+  }
+
+  return { source, validation };
 }

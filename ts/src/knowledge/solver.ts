@@ -10,7 +10,11 @@ import type { SQLiteStore } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { AgentTaskSpecSchema, type AgentTaskSpec } from "../scenarios/agent-task-spec.js";
 import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
-import { generateScenarioSource, hasCodegen, CodegenUnsupportedFamilyError } from "../scenarios/codegen/index.js";
+import {
+  generateAndValidateScenarioSource,
+  hasCodegen,
+  CodegenUnsupportedFamilyError,
+} from "../scenarios/codegen/index.js";
 import { executeGeneratedScenarioSource } from "../scenarios/codegen/executor.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
 import { ArtifactStore } from "./artifact-store.js";
@@ -347,8 +351,13 @@ export class SolveManager {
     created: { name: string; family: string; spec: Record<string, unknown> },
     family: ScenarioFamilyName,
   ): Promise<void> {
-    // Generate executable JS source from spec
-    const source = generateScenarioSource(family, created.spec, created.name);
+    // Generate executable JS source from spec and fail fast if it does not
+    // survive a real method-execution sanity pass.
+    const { source, validation } = await generateAndValidateScenarioSource(
+      family,
+      created.spec,
+      created.name,
+    );
 
     // Persist the generated source
     const scenarioDir = join(this.knowledgeRoot, "_custom_scenarios", created.name);
@@ -384,6 +393,10 @@ export class SolveManager {
       metadata: {
         family,
         generated_source: true,
+        execution_validation: {
+          duration_ms: validation.durationMs,
+          executed_methods: validation.executedMethods,
+        },
         steps_executed: execution.stepsExecuted,
         dimension_scores: execution.dimensionScores,
         reasoning: execution.reasoning,
