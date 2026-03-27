@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - TS spec auto-heal: codegen failures from malformed specs now trigger automatic recovery (missing sampleInput, type coercion, field inference) instead of hard stops (AC-440).
 - TS scenario revision flow: users can refine created scenarios with feedback instead of starting over (AC-441).
 - TS deep execution validation: generated scenario code is now executed and verified before registration, catching logic errors not visible to AST checks (AC-442).
+- TS scenario templates: 3 pre-built templates (content-generation, prompt-optimization, rag-accuracy) for scaffolding without LLM calls (AC-443).
 
 ### Changed
 - Agent-task scaffolding and execution now use separate phased budgets.

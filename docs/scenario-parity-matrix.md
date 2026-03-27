@@ -96,6 +96,7 @@ How a user goes from a text description to a runnable scenario.
 
 | Path | Command | What it does | Families supported |
 |------|---------|-------------|-------------------|
+| **Template scaffolding** | `autoctx new-scenario --template <t> --name <n>` | Scaffolds from built-in templates (`content-generation`, `prompt-optimization`, `rag-accuracy`) into `knowledge/_custom_scenarios/` | `agent_task` only |
 | **NL creation** | `autoctx new-scenario --description "..."` | NL → lightweight `createScenarioFromDescription()` → produces `name`, `family`, `taskPrompt`, `rubric` | All families (spec only) |
 | **From spec** | `autoctx new-scenario --from-spec <file>` | Validates and echoes spec | All families |
 | **Solve on demand** | Via `SolveManager` (CLI `solve` not yet a subcommand, but accessible via MCP/server) | NL → `createScenarioFromDescription()` → check `SCENARIO_REGISTRY` → run `GenerationRunner` if found | **Only `game` family** |

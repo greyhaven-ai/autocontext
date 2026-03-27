@@ -146,3 +146,7 @@ export {
   reviseAgentTaskOutput,
 } from "./scenario-revision.js";
 export type { RevisionResult, JudgeResult, RevisionPromptOpts, ReviseSpecOpts, OutputRevisionOpts } from "./scenario-revision.js";
+
+// Scenario templates (AC-443)
+export { TemplateLoader } from "./templates/index.js";
+export type { TemplateSpec, RubricDimension } from "./templates/index.js";
