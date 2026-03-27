@@ -52,6 +52,7 @@ autoctx export --scenario grid_ctf --output pkg.json
 autoctx export-training-data --run-id <id> --output data.jsonl
 autoctx import-package --file pkg.json
 autoctx new-scenario --description "Test summarization quality"
+autoctx new-scenario --template prompt-optimization --name my-task
 
 # Interactive
 autoctx tui [--port 8000]

@@ -1,0 +1,17 @@
+{
+  "name": "prompt-optimization",
+  "description": "Optimize a system prompt for a given task. The agent iteratively refines a system prompt to maximize output quality as measured by clarity, specificity, constraint coverage, output format compliance, and edge-case handling.",
+  "taskPrompt": "You are optimizing a system prompt for a given task.\n\nTask: Summarize technical documents into executive-friendly bullet points.\n\nInitial system prompt: \"Summarize the following document.\"\n\nProduce an improved system prompt that is clear, specific, includes output format constraints, handles edge cases, and maximizes the quality of the generated summaries.",
+  "judgeRubric": "Evaluate the optimized system prompt on these dimensions:\n1. Clarity (0.0-1.0): Is the prompt unambiguous and easy to follow?\n2. Specificity (0.0-1.0): Does the prompt provide concrete instructions rather than vague directives?\n3. Constraint coverage (0.0-1.0): Does the prompt specify output format, length limits, tone, and audience?\n4. Output format compliance (0.0-1.0): Does the prompt define a clear output structure?\n5. Edge-case handling (0.0-1.0): Does the prompt address what to do with ambiguous, missing, or conflicting information?\n\nOverall score is a weighted average: clarity 0.2, specificity 0.25, constraint_coverage 0.25, format_compliance 0.15, edge_case_handling 0.15.",
+  "outputFormat": "free_text",
+  "maxRounds": 3,
+  "qualityThreshold": 0.85,
+  "revisionPrompt": "Review the judge feedback and improve your system prompt. Focus on the lowest-scoring dimensions. Make the prompt more specific and add explicit handling for edge cases.",
+  "rubricDimensions": [
+    { "name": "clarity", "description": "Is the prompt unambiguous and easy to follow?", "weight": 0.2 },
+    { "name": "specificity", "description": "Does the prompt provide concrete instructions?", "weight": 0.25 },
+    { "name": "constraint_coverage", "description": "Does the prompt specify output format, length, tone, audience?", "weight": 0.25 },
+    { "name": "format_compliance", "description": "Does the prompt define a clear output structure?", "weight": 0.15 },
+    { "name": "edge_case_handling", "description": "Does the prompt address ambiguous or missing information?", "weight": 0.15 }
+  ]
+}
