@@ -121,6 +121,10 @@ export class MissionManager {
     this.store.updateStepStatus(stepId, status, result);
   }
 
+  addSubgoal(missionId: string, opts: { description: string; priority?: number }): string {
+    return this.store.addSubgoal(missionId, opts);
+  }
+
   updateSubgoalStatus(subgoalId: string, status: "pending" | "active" | "completed" | "failed" | "skipped"): void {
     this.store.updateSubgoalStatus(subgoalId, status);
   }

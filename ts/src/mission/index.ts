@@ -30,3 +30,8 @@ export {
 export type { ProofStatus, ProofAssistantId, ProofMissionSpec, ProofAssistantInfo } from "./proof.js";
 export { MissionEventEmitter } from "./events.js";
 export type { MissionCreatedEvent, MissionStepEvent, MissionStatusChangedEvent, MissionVerifiedEvent } from "./events.js";
+// Adaptive mission execution (AC-435)
+export { MissionPlanner } from "./planner.js";
+export type { PlanResult, StepPlan, SubgoalPlan, PlanNextStepOpts } from "./planner.js";
+export { adaptiveRunMissionLoop } from "./adaptive-executor.js";
+export type { AdaptiveRunOpts, AdaptiveRunResult } from "./adaptive-executor.js";
