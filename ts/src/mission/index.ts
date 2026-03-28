@@ -33,6 +33,9 @@ export type { MissionCreatedEvent, MissionStepEvent, MissionStatusChangedEvent, 
 // Campaign abstraction (AC-428)
 export { CampaignManager } from "./campaign.js";
 export type { Campaign, CampaignStatus, CampaignBudget, CampaignMissionEntry, CampaignProgress, CampaignBudgetUsage } from "./campaign.js";
+// Mission-simulation bridge (AC-455)
+export { SimulationAwarePlanner } from "./simulation-bridge.js";
+export type { SimulationStepPlan } from "./simulation-bridge.js";
 // Adaptive mission execution (AC-435)
 export { MissionPlanner } from "./planner.js";
 export type { PlanResult, StepPlan, SubgoalPlan, PlanNextStepOpts } from "./planner.js";
