@@ -2410,6 +2410,8 @@ async function cmdSimulate(): Promise<void> {
     options: {
       description: { type: "string", short: "d" },
       replay: { type: "string" },
+      "compare-left": { type: "string" },
+      "compare-right": { type: "string" },
       variables: { type: "string" },
       sweep: { type: "string" },
       runs: { type: "string" },
@@ -2426,10 +2428,13 @@ async function cmdSimulate(): Promise<void> {
 Usage:
   autoctx simulate --description "..." [options]
   autoctx simulate --replay <id> [--variables ...] [--max-steps N]
+  autoctx simulate --compare-left <id> --compare-right <id>
 
 Options:
   -d, --description <text>   Plain-language description of what to simulate
   --replay <id>              Replay a previously saved simulation
+  --compare-left <id>        Left simulation for comparison
+  --compare-right <id>       Right simulation for comparison
   --variables <key=val,...>   Variable overrides (e.g., threshold=0.7,budget=100)
   --sweep <key=min:max:step>  Parameter sweep (e.g., threshold=0.4:0.9:0.1)
   --runs <N>                  Number of runs (default: 1, or determined by sweep)
@@ -2442,12 +2447,13 @@ Examples:
   autoctx simulate -d "simulate deploying a web service with rollback"
   autoctx simulate -d "simulate a pricing war" --variables max_steps=12
   autoctx simulate --replay deploy_sim
-  autoctx simulate --replay deploy_sim --variables threshold=0.9 --json`);
+  autoctx simulate --replay deploy_sim --variables threshold=0.9 --json
+  autoctx simulate --compare-left sim_a --compare-right sim_b --json`);
     process.exit(0);
   }
 
-  if (!values.description && !values.replay) {
-    console.error("Error: --description or --replay is required. Run 'autoctx simulate --help' for usage.");
+  if (!values.description && !values.replay && !values["compare-left"]) {
+    console.error("Error: --description, --replay, or --compare-left/--compare-right is required. Run 'autoctx simulate --help' for usage.");
     process.exit(1);
   }
 
@@ -2455,6 +2461,30 @@ Examples:
   const { loadSettings } = await import("../config/index.js");
   const { resolve } = await import("node:path");
   const settings = loadSettings();
+
+  // Compare mode (AC-451)
+  if (values["compare-left"] && values["compare-right"]) {
+    const noopProvider = { name: "local-compare" } as unknown as import("../types/index.js").LLMProvider;
+    const compareEngine = new SimulationEngine(noopProvider, resolve(settings.knowledgeRoot));
+    const result = await compareEngine.compare({
+      left: values["compare-left"],
+      right: values["compare-right"],
+    });
+    if (values.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else if (result.status === "failed") {
+      console.error(`Compare failed: ${result.error}`);
+      process.exit(1);
+    } else {
+      console.log(`Compare: ${result.left.name} vs ${result.right.name}`);
+      console.log(`Score: ${result.left.score.toFixed(2)} → ${result.right.score.toFixed(2)} (delta: ${result.scoreDelta.toFixed(4)})`);
+      if (result.likelyDrivers.length > 0) {
+        console.log(`Likely drivers: ${result.likelyDrivers.join(", ")}`);
+      }
+      console.log(result.summary);
+    }
+    return;
+  }
 
   // Replay mode (AC-450)
   if (values.replay) {
