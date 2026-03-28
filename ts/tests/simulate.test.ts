@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -333,6 +333,50 @@ describe("simulate CLI integration", () => {
 
       expect(result.status).toBe(1);
       expect(result.stderr).toMatch(/API key required|ANTHROPIC_API_KEY/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails clearly when --preset is provided without --preset-file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-446-cli-"));
+    try {
+      const result = spawnSync("npx", ["tsx", CLI, "simulate", "-d", "simulate a deployment", "--preset", "aggressive"], {
+        cwd: dir,
+        encoding: "utf-8",
+        env: buildEnv(),
+        timeout: 15000,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/--preset and --preset-file must be provided together/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails clearly when a requested preset is missing before provider resolution", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-446-cli-"));
+    try {
+      const presetFile = join(dir, "presets.json");
+      writeFileSync(presetFile, JSON.stringify({
+        conservative: { threshold: 0.8, budget: 100 },
+      }), "utf-8");
+
+      const result = spawnSync(
+        "npx",
+        ["tsx", CLI, "simulate", "-d", "simulate a deployment", "--preset", "aggressive", "--preset-file", presetFile],
+        {
+          cwd: dir,
+          encoding: "utf-8",
+          env: buildEnv(),
+          timeout: 15000,
+        },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/preset 'aggressive' was not found/);
+      expect(result.stderr).not.toMatch(/API key required|ANTHROPIC_API_KEY/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

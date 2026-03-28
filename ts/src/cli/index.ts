@@ -2414,6 +2414,9 @@ async function cmdSimulate(): Promise<void> {
       "compare-right": { type: "string" },
       export: { type: "string" },
       format: { type: "string" },
+      "sweep-file": { type: "string" },
+      preset: { type: "string" },
+      "preset-file": { type: "string" },
       variables: { type: "string" },
       sweep: { type: "string" },
       runs: { type: "string" },
@@ -2439,6 +2442,9 @@ Options:
   --compare-right <id>       Right simulation for comparison
   --export <id>              Export a saved simulation as a portable package
   --format <fmt>             Export format: json (default), markdown, csv
+  --sweep-file <path>        Load sweep config from JSON file
+  --preset <name>            Apply a named variable preset
+  --preset-file <path>       JSON file with named presets
   --variables <key=val,...>   Variable overrides (e.g., threshold=0.7,budget=100)
   --sweep <key=min:max:step>  Parameter sweep (e.g., threshold=0.4:0.9:0.1)
   --runs <N>                  Number of runs (default: 1, or determined by sweep)
@@ -2546,12 +2552,42 @@ Examples:
     return;
   }
 
+  // Build sweep from --sweep or --sweep-file (AC-454)
+  let sweep = values.sweep ? parseSweepSpec(values.sweep) : undefined;
+  if (!sweep && values["sweep-file"]) {
+    const { loadSweepFile } = await import("../simulation/sweep-dsl.js");
+    sweep = loadSweepFile(values["sweep-file"]);
+  }
+
+  // Build variables from --variables and/or --preset (AC-454)
+  const hasPreset = typeof values.preset === "string" && values.preset.length > 0;
+  const hasPresetFile = typeof values["preset-file"] === "string" && values["preset-file"].length > 0;
+  if (hasPreset !== hasPresetFile) {
+    console.error("Error: --preset and --preset-file must be provided together. Run 'autoctx simulate --help' for usage.");
+    process.exit(1);
+  }
+
+  let variables = values.variables ? parseVariableOverrides(values.variables) : undefined;
+  if (values.preset && values["preset-file"]) {
+    const { readFileSync: readFile } = await import("node:fs");
+    const { parsePreset } = await import("../simulation/sweep-dsl.js");
+    const presetVars = parsePreset(values.preset, readFile(values["preset-file"], "utf-8"));
+    if (!presetVars) {
+      console.error(
+        `Error: preset '${values.preset}' was not found or '${values["preset-file"]}' is not valid preset JSON.`,
+      );
+      process.exit(1);
+    }
+    variables = { ...presetVars, ...(variables ?? {}) };
+  }
+
   const { provider } = await getProvider();
   const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
+
   const result = await engine.run({
     description: values.description!,
-    variables: values.variables ? parseVariableOverrides(values.variables) : undefined,
-    sweep: values.sweep ? parseSweepSpec(values.sweep) : undefined,
+    variables,
+    sweep,
     runs: values.runs ? parseInt(values.runs, 10) : undefined,
     maxSteps: values["max-steps"] ? parseInt(values["max-steps"], 10) : undefined,
     saveAs: values["save-as"],

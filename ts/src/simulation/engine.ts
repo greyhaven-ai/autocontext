@@ -32,10 +32,9 @@ export interface SimulationRequest {
   saveAs?: string;
 }
 
-export interface SweepDimension {
-  name: string;
-  values: number[];
-}
+// SweepDimension is now defined in sweep-dsl.ts (AC-454)
+import type { SweepDimension } from "./sweep-dsl.js";
+export type { SweepDimension } from "./sweep-dsl.js";
 
 export interface SweepResult {
   dimensions: SweepDimension[];
@@ -157,27 +156,16 @@ export function parseVariableOverrides(input: string): Record<string, unknown> {
 }
 
 /**
- * Parse sweep spec from CLI flag: "key=min:max:step,key2=min:max:step"
+ * Parse sweep spec from CLI flag.
+ *
+ * Delegates to the rich sweep DSL (AC-454) which supports:
+ * - Linear: key=min:max:step
+ * - Logarithmic: key=log:min:max:steps
+ * - Categorical: key=val1,val2,val3
+ *
+ * @see sweep-dsl.ts for full documentation
  */
-export function parseSweepSpec(input: string): SweepDimension[] {
-  if (!input.trim()) return [];
-  const dims: SweepDimension[] = [];
-  for (const pair of input.split(",")) {
-    const [name, range] = pair.split("=");
-    if (!name?.trim() || !range) continue;
-    const [minStr, maxStr, stepStr] = range.split(":");
-    const min = Number(minStr);
-    const max = Number(maxStr);
-    const step = Number(stepStr);
-    if (isNaN(min) || isNaN(max) || isNaN(step) || step <= 0) continue;
-    const values: number[] = [];
-    for (let v = min; v <= max + step / 2; v += step) {
-      values.push(Math.round(v * 10000) / 10000);
-    }
-    dims.push({ name: name.trim(), values });
-  }
-  return dims;
-}
+export { parseSweepSpec } from "./sweep-dsl.js";
 
 // ---------------------------------------------------------------------------
 // Engine
