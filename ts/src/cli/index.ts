@@ -2552,9 +2552,6 @@ Examples:
     return;
   }
 
-  const { provider } = await getProvider();
-  const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
-
   // Build sweep from --sweep or --sweep-file (AC-454)
   let sweep = values.sweep ? parseSweepSpec(values.sweep) : undefined;
   if (!sweep && values["sweep-file"]) {
@@ -2563,15 +2560,29 @@ Examples:
   }
 
   // Build variables from --variables and/or --preset (AC-454)
+  const hasPreset = typeof values.preset === "string" && values.preset.length > 0;
+  const hasPresetFile = typeof values["preset-file"] === "string" && values["preset-file"].length > 0;
+  if (hasPreset !== hasPresetFile) {
+    console.error("Error: --preset and --preset-file must be provided together. Run 'autoctx simulate --help' for usage.");
+    process.exit(1);
+  }
+
   let variables = values.variables ? parseVariableOverrides(values.variables) : undefined;
   if (values.preset && values["preset-file"]) {
     const { readFileSync: readFile } = await import("node:fs");
     const { parsePreset } = await import("../simulation/sweep-dsl.js");
     const presetVars = parsePreset(values.preset, readFile(values["preset-file"], "utf-8"));
-    if (presetVars) {
-      variables = { ...presetVars, ...(variables ?? {}) };
+    if (!presetVars) {
+      console.error(
+        `Error: preset '${values.preset}' was not found or '${values["preset-file"]}' is not valid preset JSON.`,
+      );
+      process.exit(1);
     }
+    variables = { ...presetVars, ...(variables ?? {}) };
   }
+
+  const { provider } = await getProvider();
+  const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
 
   const result = await engine.run({
     description: values.description!,

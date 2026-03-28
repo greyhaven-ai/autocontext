@@ -22,6 +22,26 @@ export interface SweepDimension {
   scale: SweepScale;
 }
 
+function parseScalarValue(value: string | number): number | string {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+
+  return trimmed;
+}
+
 // ---------------------------------------------------------------------------
 // CLI parser: parseSweepSpec
 // ---------------------------------------------------------------------------
@@ -85,23 +105,29 @@ export function parseSweepSpec(input: string): SweepDimension[] {
  */
 function splitDimensions(input: string): string[] {
   const dims: string[] = [];
-  let current = "";
+  const segments = input
+    .split(";")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
 
-  const parts = input.split(",");
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i].trim();
-    // Does this part look like the start of a new dimension? (has key=...)
-    if (current && /^[a-zA-Z_][a-zA-Z0-9_]*=/.test(part)) {
-      dims.push(current);
-      current = part;
-    } else if (!current) {
-      current = part;
-    } else {
-      // Continuation of categorical values
-      current += "," + part;
+  for (const segment of segments) {
+    let current = "";
+    const parts = segment.split(",");
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i].trim();
+      // Does this part look like the start of a new dimension? (has key=...)
+      if (current && /^[a-zA-Z_][a-zA-Z0-9_]*=/.test(part)) {
+        dims.push(current);
+        current = part;
+      } else if (!current) {
+        current = part;
+      } else {
+        // Continuation of categorical values
+        current += "," + part;
+      }
     }
+    if (current) dims.push(current);
   }
-  if (current) dims.push(current);
 
   return dims;
 }
@@ -141,7 +167,11 @@ function parseLogRange(name: string, valuePart: string): SweepDimension | null {
 }
 
 function parseCategorical(name: string, valuePart: string): SweepDimension {
-  const values = valuePart.split(",").map((v) => v.trim()).filter(Boolean);
+  const values = valuePart
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map(parseScalarValue);
   return { name, values, scale: "categorical" };
 }
 
@@ -185,18 +215,43 @@ export function loadSweepFile(filePath: string): SweepDimension[] {
 
   return config.dimensions.map((dim) => {
     if (dim.values && Array.isArray(dim.values)) {
-      return { name: dim.name, values: dim.values, scale: "categorical" as SweepScale };
+      if (dim.values.length === 0) {
+        throw new Error(`Sweep dimension '${dim.name}' must define at least one categorical value`);
+      }
+      return {
+        name: dim.name,
+        values: dim.values.map(parseScalarValue),
+        scale: "categorical" as SweepScale,
+      };
     }
-    if (dim.scale === "log" && dim.min != null && dim.max != null && dim.steps) {
+    if (dim.scale === "log" || dim.steps != null) {
+      if (dim.scale !== "log" || dim.min == null || dim.max == null || dim.steps == null) {
+        throw new Error(
+          `Invalid log sweep dimension '${dim.name}': expected { min, max, steps, scale: "log" }`,
+        );
+      }
       const result = parseLogRange(dim.name, `log:${dim.min}:${dim.max}:${dim.steps}`);
-      if (result) return result;
+      if (!result) {
+        throw new Error(`Invalid log sweep dimension '${dim.name}'`);
+      }
+      return result;
     }
-    if (dim.min != null && dim.max != null && dim.step) {
+    if (dim.min != null || dim.max != null || dim.step != null) {
+      if (dim.min == null || dim.max == null || dim.step == null) {
+        throw new Error(
+          `Invalid linear sweep dimension '${dim.name}': expected { min, max, step }`,
+        );
+      }
       const result = parseLinearRange(dim.name, `${dim.min}:${dim.max}:${dim.step}`);
-      if (result) return result;
+      if (!result) {
+        throw new Error(`Invalid linear sweep dimension '${dim.name}'`);
+      }
+      return result;
     }
-    // Fallback: single value
-    return { name: dim.name, values: [dim.min ?? 0], scale: "linear" as SweepScale };
+
+    throw new Error(
+      `Invalid sweep dimension '${dim.name}': expected a values array, a linear range, or a log range`,
+    );
   });
 }
 
@@ -215,7 +270,11 @@ export function parsePreset(
 ): Record<string, unknown> | null {
   try {
     const presets = JSON.parse(presetsJson) as Record<string, Record<string, unknown>>;
-    return presets[presetName] ?? null;
+    const preset = presets[presetName];
+    if (!preset || typeof preset !== "object" || Array.isArray(preset)) {
+      return null;
+    }
+    return preset;
   } catch {
     return null;
   }

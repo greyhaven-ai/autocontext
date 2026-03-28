@@ -45,6 +45,13 @@ describe("categorical sweeps", () => {
     expect(dims.length).toBe(1);
     expect(dims[0].values).toEqual(["production"]);
   });
+
+  it("preserves numeric categorical values as numbers", () => {
+    const dims = parseSweepSpec("threshold=0.1,0.5,0.9");
+    expect(dims).toHaveLength(1);
+    expect(dims[0].values).toEqual([0.1, 0.5, 0.9]);
+    expect(typeof dims[0].values[0]).toBe("number");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -92,6 +99,14 @@ describe("linear sweeps (regression)", () => {
   it("parses multiple dimensions", () => {
     const dims = parseSweepSpec("threshold=0.4:0.9:0.1,budget=50:200:50");
     expect(dims.length).toBe(2);
+  });
+
+  it("supports semicolons as explicit dimension separators", () => {
+    const dims = parseSweepSpec("threshold=0.4:0.9:0.1;mode=fast,slow");
+    expect(dims.length).toBe(2);
+    expect(dims[0]).toMatchObject({ name: "threshold", scale: "linear" });
+    expect(dims[1]).toMatchObject({ name: "mode", scale: "categorical" });
+    expect(dims[1].values).toEqual(["fast", "slow"]);
   });
 
   it("returns empty for empty string", () => {
@@ -143,6 +158,32 @@ describe("loadSweepFile", () => {
 
   it("throws for nonexistent file", () => {
     expect(() => loadSweepFile("/nonexistent/sweep.json")).toThrow();
+  });
+
+  it("throws for malformed linear dimensions instead of collapsing to a one-point sweep", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "sweep-dsl-"));
+    const config = {
+      dimensions: [
+        { name: "threshold", min: 0.3, max: 0.9 },
+      ],
+    };
+    const filePath = join(tmpDir, "bad-linear.json");
+    writeFileSync(filePath, JSON.stringify(config), "utf-8");
+
+    expect(() => loadSweepFile(filePath)).toThrow(/Invalid linear sweep dimension/);
+  });
+
+  it("throws for malformed log dimensions instead of silently degrading", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "sweep-dsl-"));
+    const config = {
+      dimensions: [
+        { name: "lr", min: 0.001, max: 1.0, scale: "log" },
+      ],
+    };
+    const filePath = join(tmpDir, "bad-log.json");
+    writeFileSync(filePath, JSON.stringify(config), "utf-8");
+
+    expect(() => loadSweepFile(filePath)).toThrow(/Invalid log sweep dimension/);
   });
 });
 
