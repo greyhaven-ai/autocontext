@@ -5,7 +5,7 @@
  * Each format includes spec, variables, results, assumptions, and warnings.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { SimulationResult } from "./engine.js";
 
@@ -29,28 +29,36 @@ export interface SimulationExportResult {
   error?: string;
 }
 
+interface ResolvedSimulationArtifact {
+  scenarioDir: string;
+  reportPath: string;
+  report: SimulationResult;
+}
+
 // ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 
 export function exportSimulation(opts: SimulationExportOpts): SimulationExportResult {
-  const format = opts.format ?? "json";
-  const simDir = join(opts.knowledgeRoot, "_simulations", opts.id);
-  const reportPath = join(simDir, "report.json");
+  const format = normalizeExportFormat(opts.format);
+  if (!format) {
+    return {
+      status: "failed",
+      format: "json",
+      error: `Unsupported export format '${String(opts.format)}'. Use json, markdown, or csv.`,
+    };
+  }
 
-  if (!existsSync(reportPath)) {
+  const resolved = resolveSimulationArtifact(opts.knowledgeRoot, opts.id);
+  if (!resolved) {
+    const simDir = join(opts.knowledgeRoot, "_simulations", opts.id);
     return { status: "failed", format, error: `Simulation '${opts.id}' not found at ${simDir}` };
   }
 
-  let report: SimulationResult;
-  try {
-    report = JSON.parse(readFileSync(reportPath, "utf-8")) as SimulationResult;
-  } catch {
-    return { status: "failed", format, error: `Failed to parse report at ${reportPath}` };
-  }
+  const { scenarioDir, report } = resolved;
 
   // Load spec if available
-  const specPath = join(simDir, "spec.json");
+  const specPath = join(scenarioDir, "spec.json");
   let spec: Record<string, unknown> = {};
   if (existsSync(specPath)) {
     try {
@@ -58,7 +66,7 @@ export function exportSimulation(opts: SimulationExportOpts): SimulationExportRe
     } catch { /* use empty */ }
   }
 
-  const outputDir = opts.outputDir ?? join(simDir, "exports");
+  const outputDir = opts.outputDir ?? join(scenarioDir, "exports");
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 
   switch (format) {
@@ -80,7 +88,9 @@ function exportJSON(
   spec: Record<string, unknown>,
   outputDir: string,
 ): SimulationExportResult {
+  const stem = exportFileStem(report);
   const pkg = {
+    id: report.id,
     name: report.name,
     family: report.family,
     description: report.description,
@@ -95,12 +105,16 @@ function exportJSON(
       mostSensitiveVariables: report.summary.mostSensitiveVariables,
     },
     sweep: report.sweep ?? null,
+    execution: report.execution ?? null,
     assumptions: report.assumptions ?? [],
     warnings: report.warnings ?? [],
+    replayOf: report.replayOf ?? null,
+    originalScore: report.originalScore ?? null,
+    scoreDelta: report.scoreDelta ?? null,
     exportedAt: new Date().toISOString(),
   };
 
-  const outputPath = join(outputDir, `${report.name}_export.json`);
+  const outputPath = join(outputDir, `${stem}_export.json`);
   writeFileSync(outputPath, JSON.stringify(pkg, null, 2), "utf-8");
   return { status: "completed", format: "json", outputPath };
 }
@@ -114,6 +128,7 @@ function exportMarkdown(
   spec: Record<string, unknown>,
   outputDir: string,
 ): SimulationExportResult {
+  const stem = exportFileStem(report);
   const lines: string[] = [];
 
   lines.push(`# Simulation Report: ${report.name}`);
@@ -121,6 +136,9 @@ function exportMarkdown(
   lines.push(`**Family:** ${report.family}`);
   lines.push(`**Status:** ${report.status}`);
   lines.push(`**Description:** ${report.description}`);
+  if (report.replayOf) {
+    lines.push(`**Replay Of:** ${report.replayOf}`);
+  }
   lines.push("");
 
   // Score
@@ -175,6 +193,12 @@ function exportMarkdown(
     lines.push(`**Dimensions:** ${report.sweep.dimensions.length}`);
     lines.push(`**Total runs:** ${report.sweep.runs}`);
     lines.push("");
+    lines.push("| Variables | Score |");
+    lines.push("|-----------|-------|");
+    for (const run of report.sweep.results) {
+      lines.push(`| ${JSON.stringify(run.variables)} | ${run.score.toFixed(4)} |`);
+    }
+    lines.push("");
   }
 
   // Assumptions
@@ -196,7 +220,7 @@ function exportMarkdown(
   lines.push("---");
   lines.push(`*Exported at ${new Date().toISOString()}*`);
 
-  const outputPath = join(outputDir, `${report.name}_report.md`);
+  const outputPath = join(outputDir, `${stem}_report.md`);
   writeFileSync(outputPath, lines.join("\n"), "utf-8");
   return { status: "completed", format: "markdown", outputPath };
 }
@@ -206,8 +230,9 @@ function exportMarkdown(
 // ---------------------------------------------------------------------------
 
 function exportCSV(report: SimulationResult, outputDir: string): SimulationExportResult {
-  const dims = Object.keys(report.summary.dimensionScores ?? {});
-  const varKeys = Object.keys(report.variables ?? {});
+  const stem = exportFileStem(report);
+  const dims = collectDimensionKeys(report);
+  const varKeys = collectVariableKeys(report);
 
   // Build header
   const headers = [...varKeys, "score", ...dims.map((d) => `dim_${d}`)];
@@ -218,22 +243,97 @@ function exportCSV(report: SimulationResult, outputDir: string): SimulationExpor
     // Sweep: one row per sweep run
     for (const run of report.sweep.results) {
       const row: string[] = [];
-      for (const key of varKeys) row.push(String(run.variables?.[key] ?? ""));
+      for (const key of varKeys) {
+        row.push(stringifyCsvValue(run.variables?.[key] ?? report.variables?.[key] ?? ""));
+      }
       row.push(String(run.score));
-      for (const dim of dims) row.push(String(run.dimensionScores?.[dim] ?? ""));
+      for (const dim of dims) row.push(stringifyCsvValue(run.dimensionScores?.[dim] ?? ""));
       rows.push(row);
     }
   } else {
     // Single run: one data row
     const row: string[] = [];
-    for (const key of varKeys) row.push(String((report.variables ?? {})[key] ?? ""));
+    for (const key of varKeys) row.push(stringifyCsvValue((report.variables ?? {})[key] ?? ""));
     row.push(String(report.summary.score));
-    for (const dim of dims) row.push(String((report.summary.dimensionScores ?? {})[dim] ?? ""));
+    for (const dim of dims) row.push(stringifyCsvValue((report.summary.dimensionScores ?? {})[dim] ?? ""));
     rows.push(row);
   }
 
   const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-  const outputPath = join(outputDir, `${report.name}_data.csv`);
+  const outputPath = join(outputDir, `${stem}_data.csv`);
   writeFileSync(outputPath, csv, "utf-8");
   return { status: "completed", format: "csv", outputPath };
+}
+
+function normalizeExportFormat(format?: ExportFormat | string): ExportFormat | null {
+  if (!format) return "json";
+  if (format === "json" || format === "markdown" || format === "csv") {
+    return format;
+  }
+  return null;
+}
+
+function resolveSimulationArtifact(knowledgeRoot: string, id: string): ResolvedSimulationArtifact | null {
+  const simulationsRoot = join(knowledgeRoot, "_simulations");
+  const baseReportPath = join(simulationsRoot, id, "report.json");
+  if (existsSync(baseReportPath)) {
+    try {
+      const report = JSON.parse(readFileSync(baseReportPath, "utf-8")) as SimulationResult;
+      return {
+        scenarioDir: join(simulationsRoot, id),
+        reportPath: baseReportPath,
+        report,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  if (!existsSync(simulationsRoot)) return null;
+
+  for (const entry of readdirSync(simulationsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
+    const replayReportPath = join(simulationsRoot, entry.name, `replay_${id}.json`);
+    if (!existsSync(replayReportPath)) continue;
+    try {
+      const report = JSON.parse(readFileSync(replayReportPath, "utf-8")) as SimulationResult;
+      return {
+        scenarioDir: join(simulationsRoot, entry.name),
+        reportPath: replayReportPath,
+        report,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function exportFileStem(report: SimulationResult): string {
+  return report.id && report.id !== report.name ? report.id : report.name;
+}
+
+function collectDimensionKeys(report: SimulationResult): string[] {
+  const keys = new Set(Object.keys(report.summary.dimensionScores ?? {}));
+  for (const run of report.sweep?.results ?? []) {
+    for (const key of Object.keys(run.dimensionScores ?? {})) keys.add(key);
+  }
+  return [...keys];
+}
+
+function collectVariableKeys(report: SimulationResult): string[] {
+  const keys = new Set(Object.keys(report.variables ?? {}));
+  for (const run of report.sweep?.results ?? []) {
+    for (const key of Object.keys(run.variables ?? {})) keys.add(key);
+  }
+  return [...keys];
+}
+
+function stringifyCsvValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
 }

@@ -2460,18 +2460,14 @@ Examples:
 
   const hasCompareLeft = typeof values["compare-left"] === "string" && values["compare-left"].length > 0;
   const hasCompareRight = typeof values["compare-right"] === "string" && values["compare-right"].length > 0;
+  const hasExport = typeof values.export === "string" && values.export.length > 0;
   if (hasCompareLeft !== hasCompareRight) {
     console.error("Error: --compare-left and --compare-right must be provided together. Run 'autoctx simulate --help' for usage.");
     process.exit(1);
   }
 
-  if (!values.description && !values.replay && !hasCompareLeft && !values.export) {
+  if (!values.description && !values.replay && !hasCompareLeft && !hasExport) {
     console.error("Error: --description, --replay, --compare-left/--compare-right, or --export is required. Run 'autoctx simulate --help' for usage.");
-    process.exit(1);
-  }
-
-  if ((values["compare-left"] && !values["compare-right"]) || (!values["compare-left"] && values["compare-right"])) {
-    console.error("Error: --compare-left and --compare-right must be provided together. Run 'autoctx simulate --help' for usage.");
     process.exit(1);
   }
 
@@ -2483,6 +2479,10 @@ Examples:
   // Export mode (AC-452)
   if (values.export) {
     const { exportSimulation } = await import("../simulation/export.js");
+    if (values.format && !["json", "markdown", "csv"].includes(values.format)) {
+      console.error(`Export failed: Unsupported export format '${values.format}'. Use json, markdown, or csv.`);
+      process.exit(1);
+    }
     const format = (values.format ?? "json") as "json" | "markdown" | "csv";
     const result = exportSimulation({
       id: values.export,
