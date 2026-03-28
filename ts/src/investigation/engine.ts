@@ -29,6 +29,13 @@ export interface InvestigationRequest {
   strictEvidence?: boolean;
 }
 
+interface CollectedEvidenceItem {
+  id: string;
+  content: string;
+  isRedHerring: boolean;
+  relevance: number;
+}
+
 export interface Hypothesis {
   id: string;
   statement: string;
@@ -112,17 +119,25 @@ export class InvestigationEngine {
       const execution = await this.executeInvestigation(source, name, request.maxSteps);
 
       // Step 5: Generate hypotheses via LLM
-      const hypothesisData = await this.generateHypotheses(request.description, execution);
+      const hypothesisData = await this.generateHypotheses(
+        request.description,
+        execution,
+        request.maxHypotheses,
+      );
 
       // Step 6: Build evidence from execution + spec
-      const evidence = this.buildEvidence(healedSpec, execution);
+      const evidence = this.buildEvidence(execution);
 
       // Step 7: Evaluate hypotheses against evidence
-      const hypotheses = this.evaluateHypotheses(hypothesisData, evidence);
+      const { evidence: annotatedEvidence, hypotheses } = this.evaluateHypotheses(
+        hypothesisData,
+        evidence,
+        healedSpec,
+      );
 
       // Step 8: Build conclusion
-      const conclusion = this.buildConclusion(hypotheses, evidence);
-      const unknowns = this.identifyUnknowns(hypotheses, evidence);
+      const conclusion = this.buildConclusion(hypotheses, annotatedEvidence);
+      const unknowns = this.identifyUnknowns(hypotheses, annotatedEvidence);
       const nextSteps = this.recommendNextSteps(hypotheses, unknowns);
 
       // Step 9: Save report
@@ -134,7 +149,7 @@ export class InvestigationEngine {
         description: request.description,
         question: String(hypothesisData.question ?? `What caused: ${request.description}`),
         hypotheses,
-        evidence,
+        evidence: annotatedEvidence,
         conclusion,
         unknowns,
         recommendedNextSteps: nextSteps,
@@ -175,28 +190,17 @@ Output ONLY the JSON object, no markdown fences.`,
       userPrompt: `Investigation: ${description}`,
     });
 
-    return this.parseJSON(result.text) ?? {
-      description,
-      environment_description: "System under investigation",
-      initial_state_description: "Anomaly detected",
-      evidence_pool_description: "Available system data",
-      diagnosis_target: description,
-      success_criteria: ["identify root cause"],
-      failure_modes: ["inconclusive"],
-      max_steps: 8,
-      actions: [
-        { name: "gather_evidence", description: "Collect evidence", parameters: {}, preconditions: [], effects: ["evidence_gathered"] },
-      ],
-      evidence_pool: [
-        { id: "initial_observation", content: description, isRedHerring: false, relevance: 0.5 },
-      ],
-      correct_diagnosis: "unknown",
-    };
+    const parsed = this.parseJSON(result.text);
+    if (!parsed) {
+      throw new Error("Investigation spec generation did not return valid JSON");
+    }
+    return parsed;
   }
 
   private async generateHypotheses(
     description: string,
-    execution: { stepsExecuted: number; collectedEvidence: string[] },
+    execution: { stepsExecuted: number; collectedEvidence: CollectedEvidenceItem[] },
+    maxHypotheses?: number,
   ): Promise<{ hypotheses: Array<{ statement: string; confidence: number }>; question: string }> {
     try {
       const result = await this.provider.complete({
@@ -208,32 +212,37 @@ Output ONLY the JSON object, no markdown fences.`,
   ]
 }
 Output ONLY the JSON object.`,
-        userPrompt: `Investigation: ${description}\nEvidence collected: ${execution.collectedEvidence.join(", ") || "none yet"}\nSteps taken: ${execution.stepsExecuted}`,
+        userPrompt: `Investigation: ${description}\nEvidence collected: ${
+          execution.collectedEvidence.map((item) => item.content).join(", ") || "none yet"
+        }\nSteps taken: ${execution.stepsExecuted}\nMaximum hypotheses: ${maxHypotheses ?? 5}`,
       });
 
       const parsed = this.parseJSON(result.text);
       if (parsed?.hypotheses && Array.isArray(parsed.hypotheses)) {
+        const parsedHypotheses = (parsed.hypotheses as Array<Record<string, unknown>>)
+          .filter((h) => typeof h.statement === "string")
+          .map((h) => ({
+            statement: String(h.statement),
+            confidence: typeof h.confidence === "number" ? Math.min(1, Math.max(0, h.confidence)) : 0.5,
+          }));
+        const limit = this.normalizePositiveInteger(maxHypotheses);
         return {
           question: String(parsed.question ?? description),
-          hypotheses: (parsed.hypotheses as Array<Record<string, unknown>>)
-            .filter((h) => typeof h.statement === "string")
-            .map((h) => ({
-              statement: String(h.statement),
-              confidence: typeof h.confidence === "number" ? Math.min(1, Math.max(0, h.confidence)) : 0.5,
-            })),
+          hypotheses: typeof limit === "number" ? parsedHypotheses.slice(0, limit) : parsedHypotheses,
         };
       }
     } catch { /* fallback */ }
 
     return {
       question: description,
-      hypotheses: [{ statement: `Investigate: ${description}`, confidence: 0.5 }],
+      hypotheses: [{ statement: `Investigate: ${description}`, confidence: 0.5 }]
+        .slice(0, this.normalizePositiveInteger(maxHypotheses) ?? 1),
     };
   }
 
   private async executeInvestigation(
     source: string, name: string, maxSteps?: number,
-  ): Promise<{ stepsExecuted: number; collectedEvidence: string[]; finalState: Record<string, unknown> }> {
+  ): Promise<{ stepsExecuted: number; collectedEvidence: CollectedEvidenceItem[]; finalState: Record<string, unknown> }> {
     const moduleObj = { exports: {} as Record<string, unknown> };
     const fn = new Function("module", "exports", source);
     fn(moduleObj, moduleObj.exports);
@@ -255,27 +264,34 @@ Output ONLY the JSON object.`,
       steps++;
     }
 
-    const collectedEvidence = ((state.collectedEvidence ?? []) as Array<{ id?: string; content?: string }>)
-      .map((e) => e.content ?? e.id ?? "unknown");
+    const collectedEvidence = ((state.collectedEvidence ?? []) as Array<Record<string, unknown>>)
+      .map((e, index) => ({
+        id: typeof e.id === "string" ? e.id : `collected_${index}`,
+        content:
+          typeof e.content === "string"
+            ? e.content
+            : typeof e.summary === "string"
+              ? e.summary
+              : typeof e.id === "string"
+                ? e.id
+                : "unknown",
+        isRedHerring: !!e.isRedHerring,
+        relevance: typeof e.relevance === "number" ? e.relevance : 0,
+      }));
 
     return { stepsExecuted: steps, collectedEvidence, finalState: state };
   }
 
   private buildEvidence(
-    spec: Record<string, unknown>,
-    execution: { collectedEvidence: string[] },
+    execution: { collectedEvidence: CollectedEvidenceItem[] },
   ): Evidence[] {
-    const pool = (spec.evidence_pool ?? spec.evidencePool ?? []) as Array<{
-      id: string; content: string; isRedHerring?: boolean; relevance: number;
-    }>;
-
-    return pool.map((e, i) => ({
+    return execution.collectedEvidence.map((e, i) => ({
       id: e.id ?? `e${i}`,
       kind: e.isRedHerring ? "red_herring" : "observation",
-      source: "scenario evidence pool",
+      source: "scenario execution",
       summary: e.content,
-      supports: e.isRedHerring ? [] : ["h0"],
-      contradicts: e.isRedHerring ? ["h0"] : [],
+      supports: [],
+      contradicts: [],
       isRedHerring: !!e.isRedHerring,
     }));
   }
@@ -283,21 +299,49 @@ Output ONLY the JSON object.`,
   private evaluateHypotheses(
     hypothesisData: { hypotheses: Array<{ statement: string; confidence: number }> },
     evidence: Evidence[],
-  ): Hypothesis[] {
-    return hypothesisData.hypotheses.map((h, i) => {
+    spec: Record<string, unknown>,
+  ): { evidence: Evidence[]; hypotheses: Hypothesis[] } {
+    const annotatedEvidence = evidence.map((item) => ({
+      ...item,
+      supports: [...item.supports],
+      contradicts: [...item.contradicts],
+    }));
+    const correctDiagnosis = this.normalizeText(
+      String(spec.correct_diagnosis ?? spec.correctDiagnosis ?? spec.diagnosis_target ?? spec.diagnosisTarget ?? ""),
+    );
+
+    const hypotheses = hypothesisData.hypotheses.map((h, i) => {
       const id = `h${i}`;
-      const supporting = evidence.filter((e) => e.supports.includes(id) && !e.isRedHerring);
-      const contradicting = evidence.filter((e) => e.contradicts.includes(id));
+      const matchesCorrectDiagnosis =
+        correctDiagnosis.length > 0 && this.similarityScore(h.statement, correctDiagnosis) >= 0.34;
+      let supporting = 0;
+      let contradicting = 0;
+
+      for (const item of annotatedEvidence) {
+        const overlap = this.similarityScore(h.statement, item.summary);
+        const related = overlap >= 0.34;
+        if (item.isRedHerring) {
+          if (related) {
+            item.contradicts.push(id);
+            contradicting += overlap;
+          }
+        } else if (related || matchesCorrectDiagnosis) {
+          item.supports.push(id);
+          supporting += Math.max(overlap, matchesCorrectDiagnosis ? 0.5 : 0);
+        }
+      }
 
       let status: Hypothesis["status"] = "unresolved";
-      if (supporting.length > contradicting.length && h.confidence >= 0.5) {
+      if (supporting > contradicting && supporting > 0) {
         status = "supported";
-      } else if (contradicting.length > supporting.length) {
+      } else if (contradicting > supporting && contradicting > 0) {
         status = "contradicted";
       }
 
       return { id, statement: h.statement, status, confidence: h.confidence };
     });
+
+    return { evidence: annotatedEvidence, hypotheses };
   }
 
   private buildConclusion(hypotheses: Hypothesis[], evidence: Evidence[]): Conclusion {
@@ -389,5 +433,42 @@ Output ONLY the JSON object.`,
       try { return JSON.parse(trimmed.slice(start, end + 1)); } catch { /* continue */ }
     }
     return null;
+  }
+
+  private normalizePositiveInteger(value: number | undefined): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return undefined;
+    }
+    const rounded = Math.floor(value);
+    return rounded > 0 ? rounded : undefined;
+  }
+
+  private normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private tokenize(text: string): string[] {
+    const stopwords = new Set([
+      "a", "an", "and", "the", "to", "of", "for", "in", "on", "at",
+      "by", "with", "after", "before", "from", "our", "your", "their",
+      "is", "was", "were", "be", "this", "that",
+    ]);
+    return this.normalizeText(text)
+      .split(" ")
+      .filter((token) => token.length > 1 && !stopwords.has(token));
+  }
+
+  private similarityScore(left: string, right: string): number {
+    const leftTokens = new Set(this.tokenize(left));
+    const rightTokens = new Set(this.tokenize(right));
+    if (leftTokens.size === 0 || rightTokens.size === 0) {
+      return 0;
+    }
+    const matches = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+    return matches / Math.max(leftTokens.size, rightTokens.size);
   }
 }

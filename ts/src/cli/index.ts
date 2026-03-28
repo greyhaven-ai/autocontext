@@ -2532,14 +2532,7 @@ Examples:
   const { loadSettings } = await import("../config/index.js");
   const { resolve } = await import("node:path");
 
-  let provider;
-  try {
-    const result = await getProvider();
-    provider = result.provider;
-  } catch {
-    const { DeterministicProvider } = await import("../providers/deterministic.js");
-    provider = new DeterministicProvider();
-  }
+  const { provider } = await getProvider();
 
   const settings = loadSettings();
   const engine = new InvestigationEngine(provider, resolve(settings.knowledgeRoot));

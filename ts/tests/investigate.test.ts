@@ -11,12 +11,26 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import {
   InvestigationEngine,
-  type InvestigationRequest,
   type InvestigationResult,
 } from "../src/investigation/engine.js";
 import type { LLMProvider } from "../src/types/index.js";
+
+const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
+const SANITIZED_KEYS = [
+  "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AUTOCONTEXT_API_KEY",
+  "AUTOCONTEXT_AGENT_API_KEY", "AUTOCONTEXT_PROVIDER", "AUTOCONTEXT_AGENT_PROVIDER",
+  "AUTOCONTEXT_DB_PATH", "AUTOCONTEXT_RUNS_ROOT", "AUTOCONTEXT_KNOWLEDGE_ROOT",
+  "AUTOCONTEXT_CONFIG_DIR", "AUTOCONTEXT_AGENT_DEFAULT_MODEL", "AUTOCONTEXT_MODEL",
+];
+
+function buildEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
+  for (const key of SANITIZED_KEYS) delete env[key];
+  return { ...env, ...overrides };
+}
 
 // ---------------------------------------------------------------------------
 // Mock provider
@@ -126,6 +140,95 @@ describe("InvestigationEngine — single investigation", () => {
     }
   });
 
+  it("reports only evidence that was actually collected during execution", async () => {
+    const engine = new InvestigationEngine(
+      mockProvider([
+        JSON.stringify({
+          description: "Investigate database outage",
+          environment_description: "Production environment",
+          initial_state_description: "API errors increasing",
+          evidence_pool_description: "Database and cache signals",
+          diagnosis_target: "database saturation",
+          success_criteria: ["identify root cause", "gather supporting evidence"],
+          failure_modes: ["follow a red herring"],
+          max_steps: 2,
+          actions: [
+            { name: "inspect_db", description: "Inspect database signals", parameters: {}, preconditions: [], effects: ["db_checked"] },
+            { name: "inspect_cache", description: "Inspect cache signals", parameters: {}, preconditions: [], effects: ["cache_checked"] },
+          ],
+          evidence_pool: [
+            { id: "db_issue", content: "Database saturation detected", isRedHerring: false, relevance: 0.9 },
+            { id: "cache_warning", content: "Cache warning on unrelated node", isRedHerring: true, relevance: 0.2 },
+          ],
+          correct_diagnosis: "database saturation",
+        }),
+        JSON.stringify({
+          question: "What caused the outage?",
+          hypotheses: [{ statement: "Database saturation caused the outage", confidence: 0.8 }],
+        }),
+      ]),
+      tmpDir,
+    );
+
+    const result = await engine.run({
+      description: "Investigate database outage",
+      maxSteps: 1,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]?.summary).toContain("Database saturation");
+    expect(result.evidence.some((item) => item.summary.includes("Cache warning"))).toBe(false);
+  });
+
+  it("evaluates multiple hypotheses independently against collected evidence", async () => {
+    const engine = new InvestigationEngine(
+      mockProvider([
+        JSON.stringify({
+          description: "Investigate database outage",
+          environment_description: "Production environment",
+          initial_state_description: "API errors increasing",
+          evidence_pool_description: "Database and cache signals",
+          diagnosis_target: "database saturation",
+          success_criteria: ["identify root cause", "gather supporting evidence"],
+          failure_modes: ["follow a red herring"],
+          max_steps: 2,
+          actions: [
+            { name: "inspect_db", description: "Inspect database signals", parameters: {}, preconditions: [], effects: ["db_checked"] },
+            { name: "inspect_cache", description: "Inspect cache signals", parameters: {}, preconditions: [], effects: ["cache_checked"] },
+          ],
+          evidence_pool: [
+            { id: "db_issue", content: "Database saturation detected", isRedHerring: false, relevance: 0.9 },
+            { id: "cache_warning", content: "Cache warning on unrelated node", isRedHerring: true, relevance: 0.2 },
+          ],
+          correct_diagnosis: "database saturation",
+        }),
+        JSON.stringify({
+          question: "What caused the outage?",
+          hypotheses: [
+            { statement: "Database saturation caused the outage", confidence: 0.8 },
+            { statement: "Cache warning on unrelated node caused the outage", confidence: 0.7 },
+            { statement: "Traffic spike caused the outage", confidence: 0.4 },
+          ],
+        }),
+      ]),
+      tmpDir,
+    );
+
+    const result = await engine.run({
+      description: "Investigate database outage",
+      maxSteps: 2,
+      maxHypotheses: 2,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.hypotheses).toHaveLength(2);
+    expect(result.hypotheses[0]?.status).toBe("supported");
+    expect(result.hypotheses[1]?.status).toBe("contradicted");
+    expect(result.evidence.find((item) => item.summary.includes("Database saturation"))?.supports).toContain("h0");
+    expect(result.evidence.find((item) => item.summary.includes("Cache warning"))?.contradicts).toContain("h1");
+  });
+
   it("produces a conclusion with confidence and limitations", async () => {
     const engine = new InvestigationEngine(mockProvider(), tmpDir);
 
@@ -191,6 +294,48 @@ describe("InvestigationEngine — options", () => {
     expect(result.name).toBe("checkout_rca");
     expect(result.artifacts.investigationDir).toContain("checkout_rca");
   });
+
+  it("respects maxHypotheses", async () => {
+    const engine = new InvestigationEngine(
+      mockProvider([
+        JSON.stringify({
+          description: "Investigate anomaly",
+          environment_description: "Production environment",
+          initial_state_description: "Anomaly detected",
+          evidence_pool_description: "System logs and metrics",
+          diagnosis_target: "root cause of anomaly",
+          success_criteria: ["identify root cause", "gather supporting evidence"],
+          failure_modes: ["inconclusive", "false attribution"],
+          max_steps: 2,
+          actions: [
+            { name: "check_logs", description: "Check system logs", parameters: {}, preconditions: [], effects: ["logs_checked"] },
+            { name: "review_changes", description: "Review recent changes", parameters: {}, preconditions: [], effects: ["changes_reviewed"] },
+          ],
+          evidence_pool: [
+            { id: "log_error", content: "Error spike at 14:23", isRedHerring: false, relevance: 0.9 },
+          ],
+          correct_diagnosis: "config change caused error spike",
+        }),
+        JSON.stringify({
+          question: "What caused the error spike?",
+          hypotheses: [
+            { statement: "Config change caused the error spike", confidence: 0.7 },
+            { statement: "Infrastructure degradation", confidence: 0.2 },
+            { statement: "Traffic spike overloaded the system", confidence: 0.1 },
+          ],
+        }),
+      ]),
+      tmpDir,
+    );
+
+    const result = await engine.run({
+      description: "Investigate anomaly",
+      maxHypotheses: 1,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.hypotheses).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -223,4 +368,23 @@ describe("InvestigationResult contract", () => {
     expect(Array.isArray(result.unknowns)).toBe(true);
     expect(typeof result.conclusion).toBe("object");
   });
+});
+
+describe("investigate CLI integration", () => {
+  it("fails clearly when no provider is configured", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-447-cli-"));
+    try {
+      const result = spawnSync("npx", ["tsx", CLI, "investigate", "-d", "investigate a deployment regression"], {
+        cwd: dir,
+        encoding: "utf-8",
+        env: buildEnv(),
+        timeout: 15000,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/API key required|ANTHROPIC_API_KEY/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 15000);
 });
