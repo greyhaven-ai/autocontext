@@ -48,6 +48,7 @@ Commands:
   status           Show queue status
   serve            Start HTTP dashboard + API server [--json]
   simulate         Run a plain-language simulation with sweeps and analysis
+  investigate      Run a plain-language investigation with evidence and hypotheses
   mcp-serve        Start MCP server on stdio
   version          Show version
 
@@ -161,6 +162,9 @@ async function main(): Promise<void> {
       break;
     case "simulate":
       await cmdSimulate();
+      break;
+    case "investigate":
+      await cmdInvestigate();
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -2478,6 +2482,93 @@ Examples:
     console.log(`\nWarnings:`);
     for (const w of result.warnings) console.log(`  ⚠ ${w}`);
     console.log(`\nArtifacts: ${result.artifacts.scenarioDir}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// investigate command (AC-447)
+// ---------------------------------------------------------------------------
+
+async function cmdInvestigate(): Promise<void> {
+  const { parseArgs } = await import("node:util");
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      description: { type: "string", short: "d" },
+      "max-steps": { type: "string" },
+      hypotheses: { type: "string" },
+      "save-as": { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log(`autoctx investigate — run a plain-language investigation
+
+Usage: autoctx investigate --description "..." [options]
+
+Options:
+  -d, --description <text>   Plain-language problem to investigate (required)
+  --max-steps <N>            Maximum investigation steps (default: 8)
+  --hypotheses <N>           Maximum hypotheses to generate (default: 5)
+  --save-as <name>           Name for the saved investigation
+  --json                     Output as JSON
+  -h, --help                 Show this help
+
+Examples:
+  autoctx investigate -d "why did conversion drop after Tuesday's release"
+  autoctx investigate -d "intermittent CI failures" --max-steps 12 --json
+  autoctx investigate -d "model benchmark improved but real performance fell" --save-as benchmark_rca`);
+    process.exit(0);
+  }
+
+  if (!values.description) {
+    console.error("Error: --description is required. Run 'autoctx investigate --help' for usage.");
+    process.exit(1);
+  }
+
+  const { InvestigationEngine } = await import("../investigation/engine.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { resolve } = await import("node:path");
+
+  const { provider } = await getProvider();
+
+  const settings = loadSettings();
+  const engine = new InvestigationEngine(provider, resolve(settings.knowledgeRoot));
+
+  const result = await engine.run({
+    description: values.description,
+    maxSteps: values["max-steps"] ? parseInt(values["max-steps"], 10) : undefined,
+    maxHypotheses: values.hypotheses ? parseInt(values.hypotheses, 10) : undefined,
+    saveAs: values["save-as"],
+  });
+
+  if (values.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    if (result.status === "failed") {
+      console.error(`Investigation failed: ${result.error}`);
+      process.exit(1);
+    }
+    console.log(`Investigation: ${result.name}`);
+    console.log(`Question: ${result.question}`);
+    console.log(`\nHypotheses:`);
+    for (const h of result.hypotheses) {
+      const icon = h.status === "supported" ? "✓" : h.status === "contradicted" ? "✗" : "?";
+      console.log(`  ${icon} ${h.statement} (confidence: ${h.confidence.toFixed(2)}, ${h.status})`);
+    }
+    console.log(`\nConclusion: ${result.conclusion.bestExplanation}`);
+    console.log(`Confidence: ${result.conclusion.confidence.toFixed(2)}`);
+    if (result.unknowns.length > 0) {
+      console.log(`\nUnknowns:`);
+      for (const u of result.unknowns) console.log(`  - ${u}`);
+    }
+    if (result.recommendedNextSteps.length > 0) {
+      console.log(`\nNext steps:`);
+      for (const s of result.recommendedNextSteps) console.log(`  → ${s}`);
+    }
+    console.log(`\nArtifacts: ${result.artifacts.investigationDir}`);
   }
 }
 
