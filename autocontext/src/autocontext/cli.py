@@ -1057,6 +1057,149 @@ def export_cmd(
 
 
 @app.command()
+def simulate(
+    description: str = typer.Option("", "--description", "-d", help="Plain-language description of what to simulate"),
+    variables: str = typer.Option("", "--variables", help="Variable overrides (key=val,key2=val2)"),
+    sweep: str = typer.Option("", "--sweep", help="Sweep spec (key=min:max:step)"),
+    replay_id: str = typer.Option("", "--replay", help="Replay a saved simulation by name"),
+    compare_left: str = typer.Option("", "--compare-left", help="Left simulation for comparison"),
+    compare_right: str = typer.Option("", "--compare-right", help="Right simulation for comparison"),
+    export_id: str = typer.Option("", "--export", help="Export a saved simulation"),
+    export_format: str = typer.Option("json", "--format", help="Export format: json, markdown, csv"),
+    runs: int = typer.Option(1, "--runs", min=1, help="Number of runs"),
+    max_steps: int = typer.Option(0, "--max-steps", help="Max steps per run (0 = auto)"),
+    save_as: str = typer.Option("", "--save-as", help="Name for saved simulation"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Run a plain-language simulation with sweeps and analysis."""
+    from autocontext.simulation.engine import SimulationEngine
+
+    settings = load_settings()
+
+    if bool(compare_left) != bool(compare_right):
+        console.print("[red]--compare-left and --compare-right must be provided together[/red]")
+        raise typer.Exit(code=1)
+
+    # Parse variables
+    parsed_vars: dict[str, object] = {}
+    if variables:
+        for pair in variables.split(","):
+            parts = pair.split("=", 1)
+            if len(parts) == 2:
+                key, val = parts[0].strip(), parts[1].strip()
+                try:
+                    parsed_vars[key] = float(val) if "." in val else int(val)
+                except ValueError:
+                    parsed_vars[key] = val
+
+    # Parse sweep
+    parsed_sweep: list[dict[str, object]] | None = None
+    if sweep:
+        parsed_sweep = []
+        for pair in sweep.split(","):
+            parts = pair.split("=", 1)
+            if len(parts) == 2:
+                name, range_str = parts[0].strip(), parts[1].strip()
+                range_parts = range_str.split(":")
+                if len(range_parts) == 3:
+                    mn, mx, st = float(range_parts[0]), float(range_parts[1]), float(range_parts[2])
+                    vals = []
+                    v = mn
+                    while v <= mx + st / 2:
+                        vals.append(round(v, 4))
+                        v += st
+                    parsed_sweep.append({"name": name, "values": vals})
+
+    def _llm_fn(system: str, user: str) -> str:
+        from autocontext.providers.registry import get_provider
+        provider = get_provider(settings)
+        model = settings.model_architect or provider.default_model()
+        result = provider.complete(system, user, model=model)
+        return result.text
+
+    engine = SimulationEngine(llm_fn=_llm_fn, knowledge_root=settings.knowledge_root)
+
+    # Export mode
+    if export_id:
+        from autocontext.simulation.export import export_simulation
+        result = export_simulation(id=export_id, knowledge_root=settings.knowledge_root, format=export_format)
+        if json_output:
+            _write_json_stdout(result)
+        elif result["status"] == "failed":
+            console.print(f"[red]Export failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
+        else:
+            console.print(f"[green]Exported:[/green] {result['output_path']}")
+        return
+
+    # Compare mode
+    if compare_left and compare_right:
+        result = engine.compare(left=compare_left, right=compare_right)
+        if json_output:
+            _write_json_stdout(result)
+        elif result["status"] == "failed":
+            console.print(f"[red]Compare failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
+        else:
+            console.print(f"Compare: {result['summary']}")
+        return
+
+    # Replay mode
+    if replay_id:
+        result = engine.replay(
+            id=replay_id,
+            variables=parsed_vars if parsed_vars else None,
+            max_steps=max_steps if max_steps > 0 else None,
+        )
+        if json_output:
+            _write_json_stdout(result)
+        elif result["status"] == "failed":
+            console.print(f"[red]Replay failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
+        else:
+            console.print(
+                f"Replay: {result['name']} "
+                f"(original: {result.get('original_score', 0):.2f}, "
+                f"replay: {result['summary']['score']:.2f}, "
+                f"delta: {result.get('score_delta', 0):.4f})"
+            )
+        return
+
+    # Run mode
+    if not description:
+        console.print("[red]--description, --replay, --compare-left/--compare-right, or --export is required[/red]")
+        raise typer.Exit(code=1)
+
+    result = engine.run(
+        description=description,
+        variables=parsed_vars if parsed_vars else None,
+        sweep=parsed_sweep,
+        runs=runs,
+        max_steps=max_steps if max_steps > 0 else None,
+        save_as=save_as if save_as else None,
+    )
+
+    if json_output:
+        _write_json_stdout(result)
+    elif result["status"] == "failed":
+        console.print(f"[red]Simulation failed:[/red] {result.get('error')}")
+        raise typer.Exit(code=1)
+    else:
+        console.print(f"[bold]Simulation:[/bold] {result['name']} (family: {result['family']})")
+        console.print(f"Score: {result['summary']['score']:.4f}")
+        console.print(f"Reasoning: {result['summary']['reasoning']}")
+        if result.get("sweep"):
+            console.print(f"Sweep: {result['sweep']['runs']} runs")
+        console.print("\n[dim]Assumptions:[/dim]")
+        for a in result.get("assumptions", []):
+            console.print(f"  - {a}")
+        console.print("\n[dim]Warnings:[/dim]")
+        for w in result.get("warnings", []):
+            console.print(f"  ⚠ {w}")
+        console.print(f"\nArtifacts: {result['artifacts']['scenario_dir']}")
+
+
+@app.command()
 def solve(
     description: str = typer.Option(..., "--description", help="Natural-language scenario/problem description"),
     gens: int = typer.Option(5, "--gens", min=1, max=50, help="Generations to run for the solve"),
