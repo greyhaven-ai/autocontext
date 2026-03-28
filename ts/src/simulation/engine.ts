@@ -9,7 +9,7 @@
  * and the codegen/materialization pipeline.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
@@ -73,6 +73,21 @@ export interface SimulationResult {
   };
   warnings: string[];
   error?: string;
+  /** Present on replay results — the id of the original simulation */
+  replayOf?: string;
+  /** Present on replay results — the original simulation's score */
+  originalScore?: number;
+  /** Present on replay results — delta between replay and original score */
+  scoreDelta?: number;
+}
+
+export interface ReplayRequest {
+  /** ID (name) of the saved simulation to replay */
+  id: string;
+  /** Optional variable overrides for the replay */
+  variables?: Record<string, unknown>;
+  /** Optional max steps override */
+  maxSteps?: number;
 }
 
 interface BuiltSimulationVariant {
@@ -214,6 +229,92 @@ export class SimulationEngine {
         artifacts: { scenarioDir: "" },
         warnings: [],
         error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  /**
+   * Replay a previously saved simulation (AC-450).
+   *
+   * Loads the saved spec + generated code from artifacts, re-executes
+   * with the same (or optionally modified) parameters, and returns
+   * a result with comparison data against the original.
+   */
+  async replay(request: ReplayRequest): Promise<SimulationResult> {
+    const id = generateId();
+    const name = request.id;
+    const scenarioDir = join(this.knowledgeRoot, "_simulations", name);
+
+    // Load saved report
+    const reportPath = join(scenarioDir, "report.json");
+    if (!existsSync(reportPath)) {
+      return {
+        id, name, family: "simulation", status: "failed",
+        description: "", assumptions: [], variables: {},
+        summary: { score: 0, reasoning: "", dimensionScores: {} },
+        artifacts: { scenarioDir: "" }, warnings: [],
+        error: `Simulation '${name}' not found at ${scenarioDir}`,
+      };
+    }
+
+    const originalReport = JSON.parse(readFileSync(reportPath, "utf-8")) as SimulationResult;
+    const originalScore = originalReport.summary?.score ?? 0;
+
+    // Load saved scenario source
+    const sourcePath = join(scenarioDir, "scenario.js");
+    if (!existsSync(sourcePath)) {
+      return {
+        id, name, family: originalReport.family ?? "simulation", status: "failed",
+        description: originalReport.description ?? "", assumptions: [], variables: {},
+        summary: { score: 0, reasoning: "", dimensionScores: {} },
+        artifacts: { scenarioDir }, warnings: [],
+        error: `Scenario source not found at ${sourcePath}`,
+      };
+    }
+
+    const source = readFileSync(sourcePath, "utf-8");
+    const family = (originalReport.family ?? "simulation") as ScenarioFamilyName;
+
+    // Merge variables: original + overrides
+    const variables = {
+      ...(originalReport.variables ?? {}),
+      ...(request.variables ?? {}),
+    };
+
+    try {
+      // Re-execute
+      const runs = 1;
+      const results = await this.executeRuns(source, family, name, runs, request.maxSteps);
+      const summary = this.aggregateRuns(results);
+
+      const replayReportPath = join(scenarioDir, `replay_${id}.json`);
+      const result: SimulationResult = {
+        id, name, family,
+        status: "completed",
+        description: originalReport.description ?? "",
+        assumptions: originalReport.assumptions ?? [],
+        variables,
+        summary,
+        artifacts: { scenarioDir, reportPath: replayReportPath },
+        warnings: [
+          ...(originalReport.warnings ?? []),
+          "This is a replay of a previously saved simulation.",
+        ],
+        replayOf: name,
+        originalScore,
+        scoreDelta: Math.round((summary.score - originalScore) * 10000) / 10000,
+      };
+
+      writeFileSync(replayReportPath, JSON.stringify(result, null, 2), "utf-8");
+      return result;
+    } catch (err) {
+      return {
+        id, name, family, status: "failed",
+        description: originalReport.description ?? "", assumptions: [], variables,
+        summary: { score: 0, reasoning: "", dimensionScores: {} },
+        artifacts: { scenarioDir }, warnings: [],
+        error: err instanceof Error ? err.message : String(err),
+        replayOf: name,
       };
     }
   }

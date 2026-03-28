@@ -2409,6 +2409,7 @@ async function cmdSimulate(): Promise<void> {
     args: process.argv.slice(3),
     options: {
       description: { type: "string", short: "d" },
+      replay: { type: "string" },
       variables: { type: "string" },
       sweep: { type: "string" },
       runs: { type: "string" },
@@ -2422,10 +2423,13 @@ async function cmdSimulate(): Promise<void> {
   if (values.help) {
     console.log(`autoctx simulate — run a plain-language simulation
 
-Usage: autoctx simulate --description "..." [options]
+Usage:
+  autoctx simulate --description "..." [options]
+  autoctx simulate --replay <id> [--variables ...] [--max-steps N]
 
 Options:
-  -d, --description <text>   Plain-language description of what to simulate (required)
+  -d, --description <text>   Plain-language description of what to simulate
+  --replay <id>              Replay a previously saved simulation
   --variables <key=val,...>   Variable overrides (e.g., threshold=0.7,budget=100)
   --sweep <key=min:max:step>  Parameter sweep (e.g., threshold=0.4:0.9:0.1)
   --runs <N>                  Number of runs (default: 1, or determined by sweep)
@@ -2437,13 +2441,13 @@ Options:
 Examples:
   autoctx simulate -d "simulate deploying a web service with rollback"
   autoctx simulate -d "simulate a pricing war" --variables max_steps=12
-  autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1
-  autoctx simulate -d "simulate pipeline failure modes" --runs 10 --json`);
+  autoctx simulate --replay deploy_sim
+  autoctx simulate --replay deploy_sim --variables threshold=0.9 --json`);
     process.exit(0);
   }
 
-  if (!values.description) {
-    console.error("Error: --description is required. Run 'autoctx simulate --help' for usage.");
+  if (!values.description && !values.replay) {
+    console.error("Error: --description or --replay is required. Run 'autoctx simulate --help' for usage.");
     process.exit(1);
   }
 
@@ -2456,8 +2460,27 @@ Examples:
   const settings = loadSettings();
   const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
 
+  // Replay mode (AC-450)
+  if (values.replay) {
+    const result = await engine.replay({
+      id: values.replay,
+      variables: values.variables ? parseVariableOverrides(values.variables) : undefined,
+      maxSteps: values["max-steps"] ? parseInt(values["max-steps"], 10) : undefined,
+    });
+    if (values.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else if (result.status === "failed") {
+      console.error(`Replay failed: ${result.error}`);
+      process.exit(1);
+    } else {
+      console.log(`Replay: ${result.name} (original score: ${result.originalScore?.toFixed(2)}, replay score: ${result.summary.score.toFixed(2)}, delta: ${result.scoreDelta?.toFixed(4)})`);
+      console.log(`Artifacts: ${result.artifacts.scenarioDir}`);
+    }
+    return;
+  }
+
   const result = await engine.run({
-    description: values.description,
+    description: values.description!,
     variables: values.variables ? parseVariableOverrides(values.variables) : undefined,
     sweep: values.sweep ? parseSweepSpec(values.sweep) : undefined,
     runs: values.runs ? parseInt(values.runs, 10) : undefined,
