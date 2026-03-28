@@ -115,6 +115,21 @@ class TestSimulationEngine:
         assert result["summary"]["best_case"] is not None
         assert result["summary"]["worst_case"] is not None
 
+    def test_sweep_cells_change_execution_when_variables_change_runtime(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        result = engine.run(
+            description="Sweep runtime test",
+            sweep=[{"name": "max_steps", "values": [1, 2]}],
+        )
+
+        assert result["status"] == "completed"
+        scores = [row["score"] for row in result["sweep"]["results"]]
+        reasons = [row["reasoning"] for row in result["sweep"]["results"]]
+        assert len(set(scores)) > 1
+        assert len(set(reasons)) > 1
+
 
 # ---------------------------------------------------------------------------
 # Replay
@@ -151,6 +166,22 @@ class TestSimulateReplay:
         result = engine.replay(id="nonexistent")
         assert result["status"] == "failed"
         assert "not found" in result["error"]
+
+    def test_replay_override_variables_change_execution(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        original = engine.run(
+            description="Replay override test",
+            save_as="override_test",
+            variables={"max_steps": 10},
+        )
+        replay = engine.replay(id="override_test", variables={"max_steps": 1})
+
+        assert replay["status"] == "completed"
+        assert replay["variables"]["max_steps"] == 1
+        assert replay["summary"]["score"] != original["summary"]["score"]
+        assert replay["summary"]["reasoning"] != original["summary"]["reasoning"]
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +249,47 @@ class TestSimulateExport:
         content = Path(result["output_path"]).read_text()
         assert "# Simulation Report" in content
         assert "Assumptions" in content
+
+    def test_export_replay_id(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+        from autocontext.simulation.export import export_simulation
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        engine.run(description="Replay export test", save_as="replay_export")
+        replay = engine.replay(id="replay_export")
+
+        result = export_simulation(id=replay["id"], knowledge_root=tmp_knowledge, format="json")
+        assert result["status"] == "completed"
+        pkg = json.loads(Path(result["output_path"]).read_text())
+        assert pkg["id"] == replay["id"]
+        assert pkg["replay_of"] == "replay_export"
+
+    def test_export_csv(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+        from autocontext.simulation.export import export_simulation
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        engine.run(
+            description="CSV export test",
+            save_as="csv_test",
+            sweep=[{"name": "max_steps", "values": [1, 2]}],
+        )
+
+        result = export_simulation(id="csv_test", knowledge_root=tmp_knowledge, format="csv")
+        assert result["status"] == "completed"
+        assert result["format"] == "csv"
+        content = Path(result["output_path"]).read_text()
+        header = content.splitlines()[0]
+        assert "max_steps" in header
+        assert "score" in header
+
+    def test_export_invalid_format_fails_cleanly(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+        from autocontext.simulation.export import export_simulation
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        engine.run(description="Bad format test", save_as="bad_fmt")
+
+        result = export_simulation(id="bad_fmt", knowledge_root=tmp_knowledge, format="yaml")
+        assert result["status"] == "failed"
+        assert "Unsupported export format" in result["error"]

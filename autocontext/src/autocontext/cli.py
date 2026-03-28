@@ -1065,7 +1065,7 @@ def simulate(
     compare_left: str = typer.Option("", "--compare-left", help="Left simulation for comparison"),
     compare_right: str = typer.Option("", "--compare-right", help="Right simulation for comparison"),
     export_id: str = typer.Option("", "--export", help="Export a saved simulation"),
-    export_format: str = typer.Option("json", "--format", help="Export format: json, markdown"),
+    export_format: str = typer.Option("json", "--format", help="Export format: json, markdown, csv"),
     runs: int = typer.Option(1, "--runs", min=1, help="Number of runs"),
     max_steps: int = typer.Option(0, "--max-steps", help="Max steps per run (0 = auto)"),
     save_as: str = typer.Option("", "--save-as", help="Name for saved simulation"),
@@ -1075,6 +1075,10 @@ def simulate(
     from autocontext.simulation.engine import SimulationEngine
 
     settings = load_settings()
+
+    if bool(compare_left) != bool(compare_right):
+        console.print("[red]--compare-left and --compare-right must be provided together[/red]")
+        raise typer.Exit(code=1)
 
     # Parse variables
     parsed_vars: dict[str, object] = {}
@@ -1123,6 +1127,7 @@ def simulate(
             _write_json_stdout(result)
         elif result["status"] == "failed":
             console.print(f"[red]Export failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
         else:
             console.print(f"[green]Exported:[/green] {result['output_path']}")
         return
@@ -1134,6 +1139,7 @@ def simulate(
             _write_json_stdout(result)
         elif result["status"] == "failed":
             console.print(f"[red]Compare failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
         else:
             console.print(f"Compare: {result['summary']}")
         return
@@ -1149,6 +1155,7 @@ def simulate(
             _write_json_stdout(result)
         elif result["status"] == "failed":
             console.print(f"[red]Replay failed:[/red] {result.get('error')}")
+            raise typer.Exit(code=1)
         else:
             console.print(
                 f"Replay: {result['name']} "

@@ -12,6 +12,7 @@ import re
 import sys
 import uuid
 from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -48,18 +49,27 @@ class SimulationEngine:
     ) -> dict[str, Any]:
         sim_id = _generate_id()
         name = save_as or _derive_name(description)
+        resolved_variables = variables or {}
 
         try:
             family = self._infer_family(description)
-            spec = self._build_spec(description, family)
-            if variables:
-                spec.update(variables)
+            spec = self._apply_variables(self._build_spec(description, family), resolved_variables)
 
             source = self._generate_source(spec, name, family)
             scenario_dir = self._persist(name, family, spec, source)
 
             if sweep:
-                sweep_result = self._execute_sweep(source, name, sweep, max_steps)
+                sweep_result = self._execute_sweep(
+                    description,
+                    family,
+                    name,
+                    spec,
+                    sweep,
+                    max_steps,
+                    scenario_dir,
+                    resolved_variables,
+                    runs,
+                )
                 summary = self._aggregate_sweep(sweep_result)
             else:
                 results = [self._execute_single(source, name, seed, max_steps) for seed in range(runs)]
@@ -76,9 +86,14 @@ class SimulationEngine:
                 "status": "completed",
                 "description": description,
                 "assumptions": assumptions,
-                "variables": variables or {},
+                "variables": resolved_variables,
                 "sweep": sweep_result,
                 "summary": summary,
+                "execution": {
+                    "runs": max(1, runs),
+                    "max_steps": max_steps,
+                    "sweep": sweep or [],
+                },
                 "artifacts": {
                     "scenario_dir": str(scenario_dir),
                     "report_path": str(scenario_dir / "report.json"),
@@ -110,31 +125,55 @@ class SimulationEngine:
         variables: dict[str, Any] | None = None,
         max_steps: int | None = None,
     ) -> dict[str, Any]:
-        sim_dir = self.knowledge_root / "_simulations" / id
-        report_path = sim_dir / "report.json"
-        if not report_path.exists():
+        resolved = self._resolve_report(id)
+        if resolved is None:
             return {"status": "failed", "error": f"Simulation '{id}' not found", "name": id}
 
-        original = json.loads(report_path.read_text(encoding="utf-8"))
+        original, sim_dir = resolved
         original_score = original.get("summary", {}).get("score", 0)
-
-        source_path = sim_dir / "scenario.py"
-        if not source_path.exists():
-            return {"status": "failed", "error": f"Source not found for '{id}'", "name": id}
-
-        source = source_path.read_text(encoding="utf-8")
         merged_vars = {**(original.get("variables") or {}), **(variables or {})}
-        result = self._execute_single(source, id, 42, max_steps)
+        family = original.get("family", "simulation")
+        spec = self._load_spec(sim_dir)
+        if spec is None:
+            return {"status": "failed", "error": f"Spec not found for '{id}'", "name": id}
+
+        execution = self._resolve_execution_config(original)
+        replay_max_steps = max_steps if max_steps is not None else execution["max_steps"]
+        runs = execution["runs"]
+
+        if original.get("sweep"):
+            sweep_result = self._replay_sweep(
+                original=original,
+                scenario_dir=sim_dir,
+                family=family,
+                base_name=original.get("name", id),
+                base_spec=spec,
+                overrides=variables or {},
+                max_steps=replay_max_steps,
+                runs=runs,
+            )
+            result = self._aggregate_sweep(sweep_result)
+        else:
+            source = self._load_source(sim_dir, spec, original.get("name", id), family, merged_vars)
+            reruns = [self._execute_single(source, id, seed, replay_max_steps) for seed in range(runs)]
+            result = self._aggregate_runs(reruns)
+            sweep_result = None
 
         replay_report = {
             **original,
             "id": _generate_id(),
             "summary": result,
             "variables": merged_vars,
+            "sweep": sweep_result,
             "replay_of": id,
             "original_score": original_score,
             "score_delta": round(result["score"] - original_score, 4),
             "status": "completed",
+            "execution": {
+                "runs": runs,
+                "max_steps": replay_max_steps,
+                "sweep": execution["sweep"],
+            },
         }
 
         replay_path = sim_dir / f"replay_{replay_report['id']}.json"
@@ -157,12 +196,21 @@ class SimulationEngine:
             missing = left if not left_report else right
             return {"status": "failed", "error": f"Simulation '{missing}' not found"}
 
+        if left_report.get("family") != right_report.get("family"):
+            return {
+                "status": "failed",
+                "error": (
+                    "Cannot compare simulations across different families "
+                    f"({left_report.get('family')} vs {right_report.get('family')})"
+                ),
+            }
+
         left_score = left_report.get("summary", {}).get("score", 0)
         right_score = right_report.get("summary", {}).get("score", 0)
         score_delta = round(right_score - left_score, 4)
 
-        left_vars = left_report.get("variables", {})
-        right_vars = right_report.get("variables", {})
+        left_vars = self._collect_compare_variables(left_report)
+        right_vars = self._collect_compare_variables(right_report)
         all_keys = set(list(left_vars.keys()) + list(right_vars.keys()))
         variable_deltas: dict[str, Any] = {}
         for key in all_keys:
@@ -178,7 +226,11 @@ class SimulationEngine:
             lv, rv = left_dims.get(key, 0), right_dims.get(key, 0)
             dimension_deltas[key] = {"left": lv, "right": rv, "delta": round(rv - lv, 4)}
 
-        likely_drivers = [k for k, v in variable_deltas.items() if v.get("delta") and abs(v["delta"]) > 0]
+        likely_drivers = [
+            key
+            for key, value in variable_deltas.items()
+            if not self._values_equal(value.get("left"), value.get("right"))
+        ]
         likely_drivers += [k for k, v in dimension_deltas.items() if abs(v["delta"]) > 0.05 and k not in likely_drivers]
 
         direction = "improved" if score_delta > 0 else "regressed" if score_delta < 0 else "unchanged"
@@ -221,17 +273,21 @@ class SimulationEngine:
             trimmed = text.strip()
             start = trimmed.index("{")
             end = trimmed.rindex("}") + 1
-            return json.loads(trimmed[start:end])
+            parsed = json.loads(trimmed[start:end])
+            if isinstance(parsed, dict):
+                return parsed
         except (ValueError, json.JSONDecodeError):
-            return {
-                "description": description,
-                "environment_description": "Simulated environment",
-                "initial_state_description": "Initial state",
-                "success_criteria": ["achieve objective"],
-                "failure_modes": ["timeout"],
-                "max_steps": 10,
-                "actions": [{"name": "act", "description": "Take action", "parameters": {}, "preconditions": [], "effects": []}],
-            }
+            pass
+
+        return {
+            "description": description,
+            "environment_description": "Simulated environment",
+            "initial_state_description": "Initial state",
+            "success_criteria": ["achieve objective"],
+            "failure_modes": ["timeout"],
+            "max_steps": 10,
+            "actions": [{"name": "act", "description": "Take action", "parameters": {}, "preconditions": [], "effects": []}],
+        }
 
     def _generate_source(self, spec: dict[str, Any], name: str, family: str) -> str:
         if family == "operator_loop":
@@ -263,8 +319,15 @@ class SimulationEngine:
             )
             return generate_simulation_class(sim_spec, name)
 
-    def _persist(self, name: str, family: str, spec: dict[str, Any], source: str) -> Path:
-        sim_dir = self.knowledge_root / "_simulations" / name
+    def _persist(
+        self,
+        name: str,
+        family: str,
+        spec: dict[str, Any],
+        source: str,
+        scenario_dir: Path | None = None,
+    ) -> Path:
+        sim_dir = scenario_dir or self.knowledge_root / "_simulations" / name
         sim_dir.mkdir(parents=True, exist_ok=True)
         (sim_dir / "spec.json").write_text(json.dumps({"name": name, "family": family, **spec}, indent=2), encoding="utf-8")
         (sim_dir / "scenario.py").write_text(source, encoding="utf-8")
@@ -343,14 +406,30 @@ class SimulationEngine:
         }
 
     def _execute_sweep(
-        self, source: str, name: str, sweep: list[dict[str, Any]], max_steps: int | None,
+        self,
+        description: str,
+        family: str,
+        name: str,
+        base_spec: dict[str, Any],
+        sweep: list[dict[str, Any]],
+        max_steps: int | None,
+        scenario_dir: Path,
+        base_variables: dict[str, Any],
+        runs: int,
     ) -> dict[str, Any]:
         combos = self._cartesian(sweep)
         results = []
         for i, variables in enumerate(combos):
-            r = self._execute_single(source, name, i, max_steps)
-            results.append({"variables": variables, **r})
-        return {"dimensions": sweep, "runs": len(results), "results": results}
+            merged_variables = {**base_variables, **variables}
+            variant_name = f"{name}__sweep_{i + 1}"
+            variant_spec = self._apply_variables(base_spec, merged_variables)
+            source = self._generate_source(variant_spec, variant_name, family)
+            variant_dir = scenario_dir / "sweep" / str(i + 1)
+            self._persist(variant_name, family, variant_spec, source, variant_dir)
+            reruns = [self._execute_single(source, variant_name, seed, max_steps) for seed in range(max(1, runs))]
+            aggregate = self._aggregate_runs(reruns)
+            results.append({"variables": merged_variables, **aggregate})
+        return {"dimensions": sweep, "runs": len(results) * max(1, runs), "results": results}
 
     def _aggregate_runs(self, results: list[dict[str, Any]]) -> dict[str, Any]:
         if not results:
@@ -402,10 +481,149 @@ class SimulationEngine:
         ]
 
     def _load_report(self, name: str) -> dict[str, Any] | None:
-        path = self.knowledge_root / "_simulations" / name / "report.json"
-        if not path.exists():
+        resolved = self._resolve_report(name)
+        if resolved is None:
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        report, _scenario_dir = resolved
+        return report
+
+    def _resolve_report(self, name: str) -> tuple[dict[str, Any], Path] | None:
+        simulations_root = self.knowledge_root / "_simulations"
+        report_path = simulations_root / name / "report.json"
+        if report_path.exists():
+            return json.loads(report_path.read_text(encoding="utf-8")), report_path.parent
+
+        if not simulations_root.exists():
+            return None
+
+        for scenario_dir in simulations_root.iterdir():
+            if not scenario_dir.is_dir() or scenario_dir.name.startswith("_"):
+                continue
+            replay_path = scenario_dir / f"replay_{name}.json"
+            if replay_path.exists():
+                return json.loads(replay_path.read_text(encoding="utf-8")), scenario_dir
+
+        return None
+
+    def _load_spec(self, scenario_dir: Path) -> dict[str, Any] | None:
+        spec_path = scenario_dir / "spec.json"
+        if not spec_path.exists():
+            return None
+        payload = json.loads(spec_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        payload.pop("name", None)
+        payload.pop("family", None)
+        return payload
+
+    def _load_source(
+        self,
+        scenario_dir: Path,
+        spec: dict[str, Any],
+        name: str,
+        family: str,
+        variables: dict[str, Any],
+    ) -> str:
+        source_path = scenario_dir / "scenario.py"
+        if not variables and source_path.exists():
+            return source_path.read_text(encoding="utf-8")
+
+        updated_spec = self._apply_variables(spec, variables)
+        return self._generate_source(updated_spec, name, family)
+
+    def _apply_variables(self, spec: dict[str, Any], variables: dict[str, Any] | None) -> dict[str, Any]:
+        updated = deepcopy(spec)
+        if not variables:
+            return updated
+
+        simulation_variables = dict(updated.get("simulation_variables", {}))
+        for key, value in variables.items():
+            if key in {"max_steps", "maxSteps"} and isinstance(value, (int, float)):
+                updated["max_steps"] = int(value)
+            else:
+                simulation_variables[key] = value
+
+        if simulation_variables:
+            updated["simulation_variables"] = simulation_variables
+        return updated
+
+    def _resolve_execution_config(self, report: dict[str, Any]) -> dict[str, Any]:
+        execution = report.get("execution") or {}
+        if execution:
+            return {
+                "runs": max(1, int(execution.get("runs", 1))),
+                "max_steps": execution.get("max_steps"),
+                "sweep": execution.get("sweep") or [],
+            }
+
+        sweep = report.get("sweep")
+        if sweep and sweep.get("results"):
+            result_count = max(1, len(sweep.get("results", [])))
+            runs = max(1, round(float(sweep.get("runs", result_count)) / result_count))
+            return {
+                "runs": runs,
+                "max_steps": None,
+                "sweep": sweep.get("dimensions") or [],
+            }
+
+        return {"runs": 1, "max_steps": None, "sweep": []}
+
+    def _replay_sweep(
+        self,
+        *,
+        original: dict[str, Any],
+        scenario_dir: Path,
+        family: str,
+        base_name: str,
+        base_spec: dict[str, Any],
+        overrides: dict[str, Any],
+        max_steps: int | None,
+        runs: int,
+    ) -> dict[str, Any]:
+        original_sweep = original.get("sweep") or {}
+        original_results = original_sweep.get("results") or []
+        results = []
+
+        for i, cell in enumerate(original_results):
+            cell_variables = {**(cell.get("variables") or {}), **overrides}
+            variant_name = f"{base_name}__sweep_{i + 1}"
+            variant_spec = self._apply_variables(base_spec, cell_variables)
+            source = self._generate_source(variant_spec, variant_name, family)
+            variant_dir = scenario_dir / "sweep" / str(i + 1)
+            self._persist(variant_name, family, variant_spec, source, variant_dir)
+            reruns = [self._execute_single(source, variant_name, seed, max_steps) for seed in range(max(1, runs))]
+            aggregate = self._aggregate_runs(reruns)
+            results.append({"variables": cell_variables, **aggregate})
+
+        return {
+            "dimensions": original_sweep.get("dimensions") or [],
+            "runs": len(results) * max(1, runs),
+            "results": results,
+        }
+
+    def _collect_compare_variables(self, report: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(report.get("variables") or {})
+        sweep = report.get("sweep") or {}
+        results = sweep.get("results") or []
+        if not results:
+            return merged
+
+        value_sets: dict[str, list[Any]] = {}
+        for result in results:
+            for key, value in (result.get("variables") or {}).items():
+                entries = value_sets.setdefault(key, [])
+                if not any(self._values_equal(existing, value) for existing in entries):
+                    entries.append(value)
+
+        for key, values in value_sets.items():
+            if key in merged and len(values) == 1 and self._values_equal(merged[key], values[0]):
+                continue
+            merged[key] = values[0] if len(values) == 1 else values
+
+        return merged
+
+    def _values_equal(self, left: Any, right: Any) -> bool:
+        return json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
 
     def _cartesian(self, dimensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not dimensions:
