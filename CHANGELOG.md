@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
+- `simulate export` — portable simulation result packages in JSON, Markdown, and CSV formats (AC-452).
 - `simulate compare` — structured diff between simulation runs with variable and dimension deltas (AC-451).
 - `simulate replay` — re-execute saved simulations with optional variable overrides and comparison data (AC-450).
 - First-class `analyze` command for comparing runs, missions, simulations, and generated artifacts (AC-448).
