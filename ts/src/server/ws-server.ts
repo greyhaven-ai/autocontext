@@ -4,7 +4,7 @@
 
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, extname, join, normalize } from "node:path";
+import { dirname, join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
 import { URL, fileURLToPath } from "node:url";
@@ -24,7 +24,6 @@ export interface InteractiveServerOpts {
   runManager: RunManager;
   port?: number;
   host?: string;
-  dashboardDirOverride?: string;
 }
 
 export class PortInUseError extends Error {
@@ -46,7 +45,7 @@ export class InteractiveServer {
   private readonly missionEvents: MissionEventEmitter;
   private readonly host: string;
   private readonly requestedPort: number;
-  private readonly dashboardDirOverride?: string;
+  // Dashboard removed (AC-467) — server is API-only
   private httpServer: HttpServer | null = null;
   private wsServer: WebSocketServer | null = null;
   private boundPort = 0;
@@ -59,7 +58,7 @@ export class InteractiveServer {
     });
     this.host = opts.host ?? "127.0.0.1";
     this.requestedPort = opts.port ?? 8000;
-    this.dashboardDirOverride = opts.dashboardDirOverride;
+    // Dashboard removed (AC-467)
   }
 
   get port(): number {
@@ -150,16 +149,27 @@ export class InteractiveServer {
       res.end(JSON.stringify(body, null, 2));
     };
 
-    if (method === "GET") {
-      const served = this.tryServeDashboard(url, res);
-      if (served) {
-        return;
-      }
+    // Root endpoint — API info (AC-467: dashboard removed, server is API-only)
+    if (url === "/" || url === "/dashboard" || url.startsWith("/dashboard/")) {
+      json(200, {
+        service: "autocontext",
+        version: "0.2.4",
+        endpoints: {
+          health: "/health",
+          runs: "/api/runs",
+          scenarios: "/api/scenarios",
+          knowledge: "/api/knowledge/playbook/:scenario",
+          missions: "/api/missions",
+          websocket: "/ws/interactive",
+          events: "/ws/events",
+        },
+      });
+      return;
     }
 
     // Health
     if (url === "/health") {
-      json(200, { ok: true });
+      json(200, { status: "ok" });
       return;
     }
 
@@ -357,79 +367,8 @@ export class InteractiveServer {
       return;
     }
 
-    // 404 fallback — helpful message for dashboard URLs
-    if (url === "/" || url.startsWith("/dashboard")) {
-      json(404, {
-        error: "Not found",
-        message: "Dashboard files not found. Use the API endpoints (/api/runs, /api/missions, /api/scenarios, /health) or connect via WebSocket (/ws/interactive, /ws/events).",
-        api: {
-          health: "/health",
-          runs: "/api/runs",
-          missions: "/api/missions",
-          scenarios: "/api/scenarios",
-          websocket: "/ws/interactive",
-          events: "/ws/events",
-        },
-      });
-      return;
-    }
+    // 404 fallback
     json(404, { error: "Not found" });
-  }
-
-  private tryServeDashboard(url: string, res: ServerResponse): boolean {
-    const dashboardDir = this.dashboardDir();
-    if (!existsSync(dashboardDir)) {
-      return false;
-    }
-
-    const sendFile = (path: string): boolean => {
-      if (!existsSync(path)) {
-        return false;
-      }
-      const ext = extname(path).toLowerCase();
-      const contentType = ({
-        ".html": "text/html; charset=utf-8",
-        ".css": "text/css; charset=utf-8",
-        ".js": "application/javascript; charset=utf-8",
-        ".json": "application/json; charset=utf-8",
-        ".svg": "image/svg+xml",
-      } as Record<string, string>)[ext] ?? "application/octet-stream";
-      res.writeHead(200, { "Content-Type": contentType });
-      res.end(readFileSync(path));
-      return true;
-    };
-
-    if (url === "/" || url === "/dashboard" || url === "/dashboard/" || url === "/dashboard/index.html") {
-      return sendFile(join(dashboardDir, "index.html"));
-    }
-
-    if (!url.startsWith("/dashboard/")) {
-      return false;
-    }
-
-    const relativePath = normalize(url.slice("/dashboard/".length)).replace(/^(\.\.(\/|\\|$))+/, "");
-    if (!relativePath || relativePath.startsWith("..")) {
-      return false;
-    }
-    return sendFile(join(dashboardDir, relativePath));
-  }
-
-  private dashboardDir(): string {
-    if (this.dashboardDirOverride !== undefined) {
-      return this.dashboardDirOverride;
-    }
-
-    // Look for dashboard relative to the package root (works in both
-    // monorepo dev and published npm package)
-    const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-    const candidates = [
-      join(packageRoot, "dashboard"),                    // ts/dashboard/ (bundled in npm)
-      join(packageRoot, "..", "autocontext", "dashboard"), // monorepo fallback
-    ];
-    for (const dir of candidates) {
-      if (existsSync(dir)) return dir;
-    }
-    return candidates[0]; // default to package-local path (will fail gracefully)
   }
 
   private withStore(fn: (store: SQLiteStore) => void): void {

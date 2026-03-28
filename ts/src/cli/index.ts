@@ -8,7 +8,7 @@
  *   autoctx repl      — run a direct REPL-loop session
  *   autoctx queue     — add task to background queue
  *   autoctx status    — check queue status
- *   autoctx serve     — start HTTP dashboard + API server
+ *   autoctx serve     — start HTTP API server
  *   autoctx mcp-serve — start MCP server on stdio
  */
 
@@ -46,7 +46,7 @@ Commands:
   repl             Run a direct REPL-loop session
   queue            Add a task to the background runner queue
   status           Show queue status
-  serve            Start HTTP dashboard + API server [--json]
+  serve            Start HTTP API server [--json]
   simulate         Run a plain-language simulation with sweeps and analysis
   investigate      Run a plain-language investigation with evidence and hypotheses
   analyze          Analyze and compare runs, simulations, investigations, and missions
@@ -1014,7 +1014,7 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
 
   if (values.help) {
     console.log("autoctx serve [--port 8000] [--host 127.0.0.1] [--json]");
-    console.log("Starts the HTTP dashboard + API server (matches Python 'autoctx serve').");
+    console.log("Starts the HTTP API server (matches Python 'autoctx serve').");
     console.log("With --json, prints a machine-parseable JSON line on startup.");
     process.exit(0);
   }

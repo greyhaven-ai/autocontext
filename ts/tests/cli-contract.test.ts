@@ -32,11 +32,10 @@ describe("serve / mcp-serve contract alignment", () => {
     expect(stdout).toContain("mcp-serve");
   });
 
-  it("help lists serve as HTTP dashboard (matching Python)", () => {
+  it("help lists serve as HTTP API server (AC-467: dashboard removed)", () => {
     const { stdout } = runCli(["--help"]);
-    // serve should appear and NOT be described as MCP
     const serveLines = stdout.split("\n").filter((l) => l.includes("serve") && !l.includes("mcp-serve"));
-    expect(serveLines.some((l) => l.includes("dashboard") || l.includes("HTTP") || l.includes("API"))).toBe(true);
+    expect(serveLines.some((l) => l.includes("HTTP") || l.includes("API") || l.includes("server"))).toBe(true);
   });
 
   it("mcp-serve --help shows MCP stdio description", () => {
@@ -45,10 +44,10 @@ describe("serve / mcp-serve contract alignment", () => {
     expect(stdout).toContain("MCP");
   });
 
-  it("serve --help shows HTTP/dashboard description", () => {
+  it("serve --help shows HTTP API description (AC-467: no dashboard)", () => {
     const { stdout, exitCode } = runCli(["serve", "--help"]);
     expect(exitCode).toBe(0);
-    expect(stdout.toLowerCase()).toMatch(/http|dashboard|api|port/);
+    expect(stdout.toLowerCase()).toMatch(/http|api|port/);
   });
 });
 

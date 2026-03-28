@@ -4,8 +4,6 @@ import dataclasses
 import json
 import logging
 import os
-import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -371,7 +369,7 @@ def run(
 
         interactive_app = create_app(controller=controller, events=runner.events)
         console.print(f"[green]Interactive server started on port {port}[/green]")
-        console.print(f"[dim]Connect TUI: cd tui && bun run start -- --url ws://localhost:{port}/ws/interactive[/dim]")
+        console.print(f"[dim]API: http://localhost:{port}/api/runs | WS: ws://localhost:{port}/ws/interactive[/dim]")
         uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
     else:
         try:
@@ -558,7 +556,7 @@ def serve(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port"),
 ) -> None:
-    """Serve dashboard API and websocket stream."""
+    """Serve HTTP API and WebSocket stream."""
 
     uvicorn.run("autocontext.server.app:app", host=host, port=port, reload=False)
 
@@ -646,39 +644,14 @@ def tui(
 
     interactive_app = create_app(controller=controller, events=events, run_manager=run_manager)
 
-    # Locate the TUI directory
-    tui_dir = Path(__file__).resolve().parents[3] / "tui"
-    bun_path = shutil.which("bun")
-    has_tui = tui_dir.exists() and (tui_dir / "package.json").exists() and bun_path is not None
-
-    if has_tui and bun_path is not None:
-        # Start Ink TUI as a child process inheriting the TTY
-        ws_url = f"ws://localhost:{port}/ws/interactive"
-        tui_proc = subprocess.Popen(
-            [bun_path, "run", "start", "--", "--url", ws_url],
-            cwd=str(tui_dir),
-            stdin=None,
-            stdout=None,
-            stderr=None,
-            env={**os.environ},
-        )
-        console.print(f"[green]TUI started (PID {tui_proc.pid})[/green]")
-    else:
-        tui_proc = None
-        if not tui_dir.exists():
-            console.print("[yellow]TUI directory not found. Starting server only.[/yellow]")
-        elif not bun_path:
-            console.print("[yellow]bun not found. Starting server only.[/yellow]")
-        console.print(f"[dim]Connect manually: cd tui && bun run start -- --url ws://localhost:{port}/ws/interactive[/dim]")
-
+    # AC-467: standalone tui/ removed — server is API-only.
+    # Interactive TUI is available via the TS package: autoctx tui
     console.print(f"[green]Interactive server on port {port}[/green]")
-    console.print("[dim]Use /run <scenario> <gens> in the TUI to start a run[/dim]")
+    console.print("[dim]API: http://localhost:{port}/api/runs[/dim]")
+    console.print("[dim]WebSocket: ws://localhost:{port}/ws/interactive[/dim]")
+    console.print("[dim]For interactive TUI, use the TypeScript package: npx autoctx tui[/dim]")
 
-    try:
-        uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
-    finally:
-        if tui_proc and tui_proc.poll() is None:
-            tui_proc.terminate()
+    uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")
 
 
 @app.command("ab-test")

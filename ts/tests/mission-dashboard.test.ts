@@ -298,12 +298,10 @@ describe("Mission dashboard integration", () => {
     expect(((artifacts.body as Record<string, unknown>).checkpoints as unknown[]).length).toBeGreaterThan(0);
   });
 
-  it("streams mission progress and serves mission dashboard controls", async () => {
-    const html = await fetchText(`${baseUrl}/`);
-    expect(html.status).toBe(200);
-    expect(html.body).toContain("Missions");
-    expect(html.body).toContain("Advance Once");
-    expect(html.body).toContain("Mission Checkpoints");
+  it("streams mission progress via WebSocket (AC-467: dashboard removed, API-only)", async () => {
+    const apiInfo = await fetchJson(`${baseUrl}/`);
+    expect(apiInfo.status).toBe(200);
+    expect((apiInfo.body as Record<string, unknown>).service).toBe("autocontext");
 
     const { WebSocket } = await import("ws");
     const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/events";

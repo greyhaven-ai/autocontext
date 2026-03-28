@@ -120,14 +120,14 @@ describe("HTTP API — health", () => {
   it("GET /health returns ok", async () => {
     const { status, body } = await fetchJson(`${baseUrl}/health`);
     expect(status).toBe(200);
-    expect((body as Record<string, unknown>).ok).toBe(true);
+    expect((body as Record<string, unknown>).status).toBe("ok");
   });
 
-  it("GET / serves the dashboard HTML", async () => {
-    const { status, body } = await fetchText(`${baseUrl}/`);
+  it("GET / returns API info JSON (AC-467: dashboard removed)", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/`);
     expect(status).toBe(200);
-    expect(body).toContain("<title>autocontext Dashboard</title>");
-    expect(body).toContain("Live Events");
+    expect((body as Record<string, unknown>).service).toBe("autocontext");
+    expect((body as Record<string, unknown>).endpoints).toBeDefined();
   });
 });
 
