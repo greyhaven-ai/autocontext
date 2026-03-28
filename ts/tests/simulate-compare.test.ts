@@ -3,14 +3,18 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import {
   SimulationEngine,
+  type SimulationResult,
   type SimulationCompareResult,
 } from "../src/simulation/engine.js";
 import type { LLMProvider } from "../src/types/index.js";
+
+const CLI = join(process.cwd(), "src/cli/index.ts");
 
 function mockProvider(): LLMProvider {
   const spec = JSON.stringify({
@@ -39,6 +43,26 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });
+
+function buildEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    OPENAI_API_KEY: "",
+    ANTHROPIC_API_KEY: "",
+    XAI_API_KEY: "",
+    ...overrides,
+  };
+}
+
+function writeSimulationFixture(
+  knowledgeRoot: string,
+  name: string,
+  report: SimulationResult,
+): void {
+  const scenarioDir = join(knowledgeRoot, "_simulations", name);
+  mkdirSync(scenarioDir, { recursive: true });
+  writeFileSync(join(scenarioDir, "report.json"), JSON.stringify(report, null, 2), "utf-8");
+}
 
 // ---------------------------------------------------------------------------
 // Simulation compare
@@ -131,6 +155,48 @@ describe("simulate compare", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("not found");
   });
+
+  it("fails when comparing simulations from different families", async () => {
+    const engine = new SimulationEngine(mockProvider(), tmpDir);
+
+    const leftDir = join(tmpDir, "_simulations", "left_sim");
+    const rightDir = join(tmpDir, "_simulations", "right_sim");
+    mkdirSync(leftDir, { recursive: true });
+    mkdirSync(rightDir, { recursive: true });
+
+    const leftReport: SimulationResult = {
+      id: "sim_left",
+      name: "left_sim",
+      family: "simulation",
+      status: "completed",
+      description: "left",
+      assumptions: [],
+      variables: { threshold: 0.5 },
+      summary: { score: 0.4, reasoning: "left", dimensionScores: { completion: 0.4 } },
+      artifacts: { scenarioDir: leftDir, reportPath: join(leftDir, "report.json") },
+      warnings: [],
+    };
+    const rightReport: SimulationResult = {
+      id: "sim_right",
+      name: "right_sim",
+      family: "coordination",
+      status: "completed",
+      description: "right",
+      assumptions: [],
+      variables: { threshold: 0.9 },
+      summary: { score: 0.8, reasoning: "right", dimensionScores: { coordination: 0.8 } },
+      artifacts: { scenarioDir: rightDir, reportPath: join(rightDir, "report.json") },
+      warnings: [],
+    };
+
+    writeFileSync(join(leftDir, "report.json"), JSON.stringify(leftReport, null, 2), "utf-8");
+    writeFileSync(join(rightDir, "report.json"), JSON.stringify(rightReport, null, 2), "utf-8");
+
+    const result = await engine.compare({ left: "left_sim", right: "right_sim" });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("different families");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -154,5 +220,24 @@ describe("SimulationCompareResult shape", () => {
     expect(result).toHaveProperty("dimensionDeltas");
     expect(result).toHaveProperty("likelyDrivers");
     expect(result).toHaveProperty("summary");
+  });
+});
+
+describe("simulate compare CLI integration", () => {
+  it("fails clearly when compare flags are only partially specified", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ac-451-cli-"));
+    try {
+      const result = spawnSync("npx", ["tsx", CLI, "simulate", "--compare-left", "sim_a"], {
+        cwd,
+        encoding: "utf-8",
+        env: buildEnv(),
+        timeout: 15000,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("--compare-left and --compare-right must be provided together");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

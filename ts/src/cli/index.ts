@@ -2452,7 +2452,14 @@ Examples:
     process.exit(0);
   }
 
-  if (!values.description && !values.replay && !values["compare-left"]) {
+  const hasCompareLeft = typeof values["compare-left"] === "string" && values["compare-left"].length > 0;
+  const hasCompareRight = typeof values["compare-right"] === "string" && values["compare-right"].length > 0;
+  if (hasCompareLeft !== hasCompareRight) {
+    console.error("Error: --compare-left and --compare-right must be provided together. Run 'autoctx simulate --help' for usage.");
+    process.exit(1);
+  }
+
+  if (!values.description && !values.replay && !hasCompareLeft) {
     console.error("Error: --description, --replay, or --compare-left/--compare-right is required. Run 'autoctx simulate --help' for usage.");
     process.exit(1);
   }
@@ -2463,12 +2470,12 @@ Examples:
   const settings = loadSettings();
 
   // Compare mode (AC-451)
-  if (values["compare-left"] && values["compare-right"]) {
+  if (hasCompareLeft && hasCompareRight) {
     const noopProvider = { name: "local-compare" } as unknown as import("../types/index.js").LLMProvider;
     const compareEngine = new SimulationEngine(noopProvider, resolve(settings.knowledgeRoot));
     const result = await compareEngine.compare({
-      left: values["compare-left"],
-      right: values["compare-right"],
+      left: values["compare-left"]!,
+      right: values["compare-right"]!,
     });
     if (values.json) {
       console.log(JSON.stringify(result, null, 2));

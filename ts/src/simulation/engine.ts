@@ -409,6 +409,28 @@ export class SimulationEngine {
       };
     }
 
+    if (leftReport.family !== rightReport.family) {
+      return {
+        status: "failed",
+        left: {
+          name: request.left,
+          score: leftReport.summary?.score ?? 0,
+          variables: (leftReport.variables ?? {}) as Record<string, unknown>,
+        },
+        right: {
+          name: request.right,
+          score: rightReport.summary?.score ?? 0,
+          variables: (rightReport.variables ?? {}) as Record<string, unknown>,
+        },
+        scoreDelta: 0,
+        variableDeltas: {},
+        dimensionDeltas: {},
+        likelyDrivers: [],
+        summary: "",
+        error: `Cannot compare simulations across different families (${leftReport.family} vs ${rightReport.family})`,
+      };
+    }
+
     const leftScore = leftReport.summary?.score ?? 0;
     const rightScore = rightReport.summary?.score ?? 0;
     const scoreDelta = Math.round((rightScore - leftScore) * 10000) / 10000;
