@@ -9,7 +9,7 @@
  * and the codegen/materialization pipeline.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
@@ -99,6 +99,30 @@ export interface ReplayRequest {
   variables?: Record<string, unknown>;
   /** Optional max steps override */
   maxSteps?: number;
+}
+
+export interface CompareRequest {
+  left: string;
+  right: string;
+}
+
+export interface VariableDelta {
+  left: unknown;
+  right: unknown;
+  delta?: number;
+}
+
+export interface SimulationCompareResult {
+  status: "completed" | "failed";
+  left: { name: string; score: number; variables: Record<string, unknown> };
+  right: { name: string; score: number; variables: Record<string, unknown> };
+  scoreDelta: number;
+  variableDeltas: Record<string, VariableDelta>;
+  dimensionDeltas: Record<string, { left: number; right: number; delta: number }>;
+  likelyDrivers: string[];
+  summary: string;
+  reportPath?: string;
+  error?: string;
 }
 
 interface BuiltSimulationVariant {
@@ -360,6 +384,182 @@ export class SimulationEngine {
   }
 
   // -------------------------------------------------------------------------
+  /**
+   * Compare two saved simulations (AC-451).
+   *
+   * Loads both reports, computes score/variable/dimension deltas,
+   * and identifies likely drivers of outcome differences.
+   */
+  async compare(request: CompareRequest): Promise<SimulationCompareResult> {
+    const leftReport = this.loadReport(request.left);
+    const rightReport = this.loadReport(request.right);
+
+    if (!leftReport || !rightReport) {
+      const missing = !leftReport ? request.left : request.right;
+      return {
+        status: "failed",
+        left: { name: request.left, score: 0, variables: {} },
+        right: { name: request.right, score: 0, variables: {} },
+        scoreDelta: 0,
+        variableDeltas: {},
+        dimensionDeltas: {},
+        likelyDrivers: [],
+        summary: "",
+        error: `Simulation '${missing}' not found`,
+      };
+    }
+
+    if (leftReport.family !== rightReport.family) {
+      return {
+        status: "failed",
+        left: {
+          name: request.left,
+          score: leftReport.summary?.score ?? 0,
+          variables: (leftReport.variables ?? {}) as Record<string, unknown>,
+        },
+        right: {
+          name: request.right,
+          score: rightReport.summary?.score ?? 0,
+          variables: (rightReport.variables ?? {}) as Record<string, unknown>,
+        },
+        scoreDelta: 0,
+        variableDeltas: {},
+        dimensionDeltas: {},
+        likelyDrivers: [],
+        summary: "",
+        error: `Cannot compare simulations across different families (${leftReport.family} vs ${rightReport.family})`,
+      };
+    }
+
+    const leftScore = leftReport.summary?.score ?? 0;
+    const rightScore = rightReport.summary?.score ?? 0;
+    const scoreDelta = Math.round((rightScore - leftScore) * 10000) / 10000;
+
+    // Variable deltas
+    const leftVars = this.collectCompareVariables(leftReport);
+    const rightVars = this.collectCompareVariables(rightReport);
+    const allVarKeys = new Set([...Object.keys(leftVars), ...Object.keys(rightVars)]);
+    const variableDeltas: Record<string, VariableDelta> = {};
+    for (const key of allVarKeys) {
+      const lv = leftVars[key];
+      const rv = rightVars[key];
+      const delta = typeof lv === "number" && typeof rv === "number"
+        ? Math.round((rv - lv) * 10000) / 10000
+        : undefined;
+      variableDeltas[key] = { left: lv, right: rv, delta };
+    }
+
+    // Dimension deltas
+    const leftDims = (leftReport.summary?.dimensionScores ?? {}) as Record<string, number>;
+    const rightDims = (rightReport.summary?.dimensionScores ?? {}) as Record<string, number>;
+    const allDimKeys = new Set([...Object.keys(leftDims), ...Object.keys(rightDims)]);
+    const dimensionDeltas: Record<string, { left: number; right: number; delta: number }> = {};
+    for (const key of allDimKeys) {
+      const lv = leftDims[key] ?? 0;
+      const rv = rightDims[key] ?? 0;
+      dimensionDeltas[key] = { left: lv, right: rv, delta: Math.round((rv - lv) * 10000) / 10000 };
+    }
+
+    // Likely drivers: variables that changed AND where dimensions shifted
+    const likelyDrivers: string[] = [];
+    for (const [key, vd] of Object.entries(variableDeltas)) {
+      if (!this.valuesEqual(vd.left, vd.right)) {
+        likelyDrivers.push(key);
+      }
+    }
+    // Also add dimensions with large changes
+    for (const [key, dd] of Object.entries(dimensionDeltas)) {
+      if (Math.abs(dd.delta) > 0.05 && !likelyDrivers.includes(key)) {
+        likelyDrivers.push(key);
+      }
+    }
+
+    // Summary
+    const direction = scoreDelta > 0 ? "improved" : scoreDelta < 0 ? "regressed" : "unchanged";
+    const summary = `Score ${direction} by ${Math.abs(scoreDelta).toFixed(4)} ` +
+      `(${leftScore.toFixed(2)} → ${rightScore.toFixed(2)}). ` +
+      `${Object.keys(variableDeltas).length} variable(s) compared, ` +
+      `${likelyDrivers.length} likely driver(s).`;
+
+    // Persist report
+    const reportsDir = join(this.knowledgeRoot, "_simulations", "_comparisons");
+    if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
+    const reportPath = join(reportsDir, `${request.left}_vs_${request.right}.json`);
+    const result: SimulationCompareResult = {
+      status: "completed",
+      left: { name: request.left, score: leftScore, variables: leftVars as Record<string, unknown> },
+      right: { name: request.right, score: rightScore, variables: rightVars as Record<string, unknown> },
+      scoreDelta,
+      variableDeltas,
+      dimensionDeltas,
+      likelyDrivers,
+      summary,
+      reportPath,
+    };
+    writeFileSync(reportPath, JSON.stringify(result, null, 2), "utf-8");
+
+    return result;
+  }
+
+  private loadReport(name: string): SimulationResult | null {
+    const simulationsRoot = join(this.knowledgeRoot, "_simulations");
+    const baseReportPath = join(simulationsRoot, name, "report.json");
+    if (existsSync(baseReportPath)) {
+      try {
+        return JSON.parse(readFileSync(baseReportPath, "utf-8")) as SimulationResult;
+      } catch {
+        return null;
+      }
+    }
+
+    if (!existsSync(simulationsRoot)) return null;
+
+    for (const entry of readdirSync(simulationsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
+      const replayReportPath = join(simulationsRoot, entry.name, `replay_${name}.json`);
+      if (!existsSync(replayReportPath)) continue;
+      try {
+        return JSON.parse(readFileSync(replayReportPath, "utf-8")) as SimulationResult;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  private collectCompareVariables(report: SimulationResult): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...(report.variables ?? {}) };
+
+    if (!report.sweep?.results?.length) {
+      return merged;
+    }
+
+    const valueSets = new Map<string, unknown[]>();
+    for (const result of report.sweep.results) {
+      for (const [key, value] of Object.entries(result.variables ?? {})) {
+        const existing = valueSets.get(key) ?? [];
+        if (!existing.some((entry) => this.valuesEqual(entry, value))) {
+          existing.push(value);
+          valueSets.set(key, existing);
+        }
+      }
+    }
+
+    for (const [key, values] of valueSets.entries()) {
+      if (key in merged && values.length === 1 && this.valuesEqual(merged[key], values[0])) {
+        continue;
+      }
+      merged[key] = values.length === 1 ? values[0] : values;
+    }
+
+    return merged;
+  }
+
+  private valuesEqual(left: unknown, right: unknown): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
   // Internals
   // -------------------------------------------------------------------------
 
