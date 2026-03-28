@@ -49,6 +49,7 @@ Commands:
   serve            Start HTTP dashboard + API server [--json]
   simulate         Run a plain-language simulation with sweeps and analysis
   investigate      Run a plain-language investigation with evidence and hypotheses
+  analyze          Analyze and compare runs, simulations, investigations, and missions
   mcp-serve        Start MCP server on stdio
   version          Show version
 
@@ -165,6 +166,9 @@ async function main(): Promise<void> {
       break;
     case "investigate":
       await cmdInvestigate();
+      break;
+    case "analyze":
+      await cmdAnalyze();
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -2569,6 +2573,102 @@ Examples:
       for (const s of result.recommendedNextSteps) console.log(`  → ${s}`);
     }
     console.log(`\nArtifacts: ${result.artifacts.investigationDir}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// analyze command (AC-448)
+// ---------------------------------------------------------------------------
+
+async function cmdAnalyze(): Promise<void> {
+  const { parseArgs } = await import("node:util");
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      id: { type: "string" },
+      type: { type: "string" },
+      left: { type: "string" },
+      right: { type: "string" },
+      focus: { type: "string" },
+      "save-report": { type: "boolean" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log(`autoctx analyze — analyze and compare artifacts
+
+Usage:
+  autoctx analyze --id <artifact-id> --type <run|simulation|investigation|mission>
+  autoctx analyze --left <id> --right <id> --type <type>
+
+Options:
+  --id <id>            Artifact to analyze (single mode)
+  --left <id>          Left artifact for comparison
+  --right <id>         Right artifact for comparison
+  --type <type>        Artifact type: run, simulation, investigation, mission
+  --focus <area>       Focus area: regression, sensitivity, attribution
+  --json               Output as JSON
+  -h, --help           Show this help
+
+Examples:
+  autoctx analyze --id deploy_sim --type simulation --json
+  autoctx analyze --left sim_a --right sim_b --type simulation
+  autoctx analyze --id checkout_rca --type investigation`);
+    process.exit(0);
+  }
+
+  const { AnalysisEngine } = await import("../analysis/engine.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { resolve } = await import("node:path");
+
+  const settings = loadSettings();
+  const engine = new AnalysisEngine({
+    knowledgeRoot: resolve(settings.knowledgeRoot),
+    runsRoot: resolve(settings.runsRoot),
+    dbPath: resolve(settings.dbPath),
+  });
+  const type = (values.type ?? "simulation") as "run" | "simulation" | "investigation" | "mission";
+
+  let result;
+  if (values.left && values.right) {
+    result = engine.compare({
+      left: { id: values.left, type },
+      right: { id: values.right, type },
+      focus: values.focus,
+    });
+  } else if (values.id) {
+    result = engine.analyze({ id: values.id, type, focus: values.focus });
+  } else {
+    console.error("Error: --id or --left/--right required. Run 'autoctx analyze --help'.");
+    process.exit(1);
+  }
+
+  if (values.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`Analysis: ${result.summary.headline}`);
+    console.log(`Confidence: ${result.summary.confidence.toFixed(2)}`);
+    if (result.findings.length > 0) {
+      console.log(`\nFindings:`);
+      for (const f of result.findings) {
+        const icon = f.kind === "improvement" ? "↑" : f.kind === "regression" ? "↓" : f.kind === "conclusion" ? "→" : "•";
+        console.log(`  ${icon} [${f.kind}] ${f.statement}`);
+      }
+    }
+    if (result.regressions.length > 0) {
+      console.log(`\nRegressions:`);
+      for (const r of result.regressions) console.log(`  ↓ ${r}`);
+    }
+    if (result.attribution) {
+      console.log(`\nAttribution:`);
+      for (const f of result.attribution.topFactors) console.log(`  ${f.name}: ${f.weight.toFixed(2)}`);
+    }
+    if (result.limitations.length > 0) {
+      console.log(`\nLimitations:`);
+      for (const l of result.limitations) console.log(`  ⚠ ${l}`);
+    }
   }
 }
 
