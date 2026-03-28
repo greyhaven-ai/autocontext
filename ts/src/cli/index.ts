@@ -2454,14 +2454,12 @@ Examples:
   const { SimulationEngine, parseVariableOverrides, parseSweepSpec } = await import("../simulation/engine.js");
   const { loadSettings } = await import("../config/index.js");
   const { resolve } = await import("node:path");
-
-  const { provider } = await getProvider();
-
   const settings = loadSettings();
-  const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
 
   // Replay mode (AC-450)
   if (values.replay) {
+    const replayProvider = { name: "local-replay" } as unknown as import("../types/index.js").LLMProvider;
+    const engine = new SimulationEngine(replayProvider, resolve(settings.knowledgeRoot));
     const result = await engine.replay({
       id: values.replay,
       variables: values.variables ? parseVariableOverrides(values.variables) : undefined,
@@ -2479,6 +2477,8 @@ Examples:
     return;
   }
 
+  const { provider } = await getProvider();
+  const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
   const result = await engine.run({
     description: values.description!,
     variables: values.variables ? parseVariableOverrides(values.variables) : undefined,
