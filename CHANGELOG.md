@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
 - Richer sweep DSL: categorical sweeps, logarithmic scales, sweep file loading, and named presets (AC-454).
+- Python parity for simulate: SimulationEngine with run, replay, compare, export — matching TS surface (AC-453).
 - `simulate export` — portable simulation result packages in JSON, Markdown, and CSV formats (AC-452).
 - `simulate compare` — structured diff between simulation runs with variable and dimension deltas (AC-451).
 - `simulate replay` — re-execute saved simulations with optional variable overrides and comparison data (AC-450).
