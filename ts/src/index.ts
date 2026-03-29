@@ -198,6 +198,34 @@ export {
 } from "./loop/index.js";
 export type { HypothesisNode, EventCallback, GateDecision, GenerationRunnerOpts, RunResult } from "./loop/index.js";
 
+// Analytics / Traces
+export { ActorRef, TraceEvent, RunTrace } from "./analytics/index.js";
+export type { TraceEventInit } from "./analytics/index.js";
+export {
+  SCHEMA_VERSION,
+  ToolCallSchema,
+  TraceMessageSchema,
+  TraceOutcomeSchema,
+  PublicTraceSchema,
+  RedactionPolicySchema,
+  ProvenanceManifestSchema,
+  SubmissionAttestationSchema,
+  validatePublicTrace,
+  createProvenanceManifest,
+  createSubmissionAttestation,
+  exportToPublicTrace,
+} from "./traces/public-schema.js";
+export type {
+  ToolCall,
+  TraceMessage,
+  TraceOutcome,
+  PublicTrace,
+  RedactionPolicy,
+  ProvenanceManifest,
+  SubmissionAttestation,
+  ValidationResult as PublicTraceValidationResult,
+} from "./traces/public-schema.js";
+
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
 export type { MtsServerOpts } from "./mcp/server.js";

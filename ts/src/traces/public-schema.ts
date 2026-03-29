@@ -15,6 +15,7 @@ import { z } from "zod";
 import type { RunTrace } from "../analytics/run-trace.js";
 
 export const SCHEMA_VERSION = "1.0.0";
+const SchemaVersionSchema = z.literal(SCHEMA_VERSION);
 
 // ---------------------------------------------------------------------------
 // Tool call
@@ -61,7 +62,7 @@ export type TraceOutcome = z.infer<typeof TraceOutcomeSchema>;
 // ---------------------------------------------------------------------------
 
 export const PublicTraceSchema = z.object({
-  schemaVersion: z.string().min(1),
+  schemaVersion: SchemaVersionSchema,
   traceId: z.string().min(1),
   sessionId: z.string().optional(),
   sourceHarness: z.string().min(1),
@@ -100,7 +101,7 @@ export type RedactionPolicy = z.infer<typeof RedactionPolicySchema>;
 // ---------------------------------------------------------------------------
 
 export const ProvenanceManifestSchema = z.object({
-  schemaVersion: z.string().min(1),
+  schemaVersion: SchemaVersionSchema,
   sourceHarness: z.string().min(1),
   sourceVersion: z.string().optional(),
   collectionMethod: z.string().min(1),
@@ -119,6 +120,7 @@ export type ProvenanceManifest = z.infer<typeof ProvenanceManifestSchema>;
 // ---------------------------------------------------------------------------
 
 export const SubmissionAttestationSchema = z.object({
+  schemaVersion: SchemaVersionSchema,
   submitterId: z.string().min(1),
   consentGiven: z.boolean(),
   dataOrigin: z.string().min(1),
@@ -187,6 +189,7 @@ export function createSubmissionAttestation(opts: {
   notes?: string;
 }): SubmissionAttestation {
   return {
+    schemaVersion: SCHEMA_VERSION,
     submitterId: opts.submitterId,
     consentGiven: opts.consentGiven,
     dataOrigin: opts.dataOrigin,

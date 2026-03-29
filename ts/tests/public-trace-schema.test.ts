@@ -8,9 +8,12 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  ActorRef,
   PublicTraceSchema,
   ProvenanceManifestSchema,
+  RunTrace,
   SubmissionAttestationSchema,
+  TraceEvent,
   validatePublicTrace,
   createProvenanceManifest,
   createSubmissionAttestation,
@@ -19,7 +22,7 @@ import {
   type ProvenanceManifest,
   type SubmissionAttestation,
   SCHEMA_VERSION,
-} from "../src/traces/public-schema.js";
+} from "../src/index.js";
 
 // ---------------------------------------------------------------------------
 // Schema version
@@ -82,6 +85,12 @@ describe("PublicTraceSchema", () => {
 
   it("requires schemaVersion", () => {
     const bad = { ...validTrace, schemaVersion: undefined };
+    const result = validatePublicTrace(bad as unknown as PublicTrace);
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects mismatched schemaVersion", () => {
+    const bad = { ...validTrace, schemaVersion: "0.0.1" };
     const result = validatePublicTrace(bad as unknown as PublicTrace);
     expect(result.valid).toBe(false);
   });
@@ -160,6 +169,18 @@ describe("ProvenanceManifest", () => {
     expect(manifest.redactionPolicy?.applied).toBe(true);
     expect(manifest.redactionPolicy?.methods).toContain("regex_pattern");
   });
+
+  it("rejects mismatched schemaVersion", () => {
+    const bad = {
+      schemaVersion: "0.0.1",
+      sourceHarness: "test",
+      collectionMethod: "manual",
+      license: "MIT",
+      traceCount: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+    expect(() => ProvenanceManifestSchema.parse(bad)).toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -176,6 +197,7 @@ describe("SubmissionAttestation", () => {
       allowTraining: true,
     });
 
+    expect(attestation.schemaVersion).toBe(SCHEMA_VERSION);
     expect(attestation.consentGiven).toBe(true);
     expect(attestation.allowTraining).toBe(true);
     expect(attestation.attestedAt).toBeTruthy();
@@ -192,6 +214,18 @@ describe("SubmissionAttestation", () => {
 
     expect(noConsent.consentGiven).toBe(false);
   });
+
+  it("requires schemaVersion on attestation payloads", () => {
+    const bad = {
+      submitterId: "u1",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
+      attestedAt: "2026-01-01T00:00:00Z",
+    };
+    expect(() => SubmissionAttestationSchema.parse(bad)).toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -200,7 +234,6 @@ describe("SubmissionAttestation", () => {
 
 describe("exportToPublicTrace", () => {
   it("converts an internal RunTrace to public schema", async () => {
-    const { RunTrace, TraceEvent, ActorRef } = await import("../src/analytics/run-trace.js");
     const trace = new RunTrace("run_001", "grid_ctf");
     trace.addEvent(new TraceEvent({
       eventType: "generation_started",
@@ -225,6 +258,17 @@ describe("exportToPublicTrace", () => {
 
     const result = validatePublicTrace(publicTrace);
     expect(result.valid).toBe(true);
+  });
+});
+
+describe("package entrypoint exports", () => {
+  it("exposes the public trace surface through src/index", () => {
+    expect(PublicTraceSchema).toBeDefined();
+    expect(ProvenanceManifestSchema).toBeDefined();
+    expect(SubmissionAttestationSchema).toBeDefined();
+    expect(RunTrace).toBeDefined();
+    expect(TraceEvent).toBeDefined();
+    expect(ActorRef).toBeDefined();
   });
 });
 
@@ -259,6 +303,7 @@ describe("Zod schema parsing", () => {
 
   it("SubmissionAttestationSchema parses valid data", () => {
     const data = {
+      schemaVersion: SCHEMA_VERSION,
       submitterId: "u1",
       consentGiven: true,
       dataOrigin: "own_work",
