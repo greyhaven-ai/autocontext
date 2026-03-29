@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
+- Open public trace schema v1.0.0: versioned interchange format for coding agent traces with provenance, attestation, and redaction metadata (AC-462).
 - Mission-simulation integration: missions can invoke simulations as planning tools before committing to actions (AC-455).
 - Consolidated TUI: removed web dashboards and standalone tui/ package — server is API-only, single Ink TUI (AC-467).
 - Richer sweep DSL: categorical sweeps, logarithmic scales, sweep file loading, and named presets (AC-454).
