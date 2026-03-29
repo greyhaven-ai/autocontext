@@ -57,6 +57,8 @@ export interface ExportResult {
   traceId: string;
   outputPath?: string;
   redactionSummary: RedactionSummary;
+  /** Files that couldn't be read during export (AC-468 fix 4) */
+  warnings: string[];
   error?: string;
 }
 
@@ -91,6 +93,7 @@ export class TraceExportWorkflow {
         status: "blocked",
         traceId,
         redactionSummary: emptyRedactionSummary(),
+        warnings: [],
         error: "Trace export requires explicit consent from the submitter.",
       };
     }
@@ -100,6 +103,7 @@ export class TraceExportWorkflow {
         status: "blocked",
         traceId,
         redactionSummary: emptyRedactionSummary(),
+        warnings: [],
         error: "Trace export requires redistribution rights for public sharing.",
       };
     }
@@ -109,6 +113,7 @@ export class TraceExportWorkflow {
       return {
         status: "failed", traceId,
         redactionSummary: emptyRedactionSummary(),
+        warnings: [],
         error: `Run '${request.runId}' not found at ${runDir}`,
       };
     }
@@ -156,7 +161,7 @@ export class TraceExportWorkflow {
 
     // Step 3: If blocked, abort
     if (blocked) {
-      return { status: "blocked", traceId, redactionSummary };
+      return { status: "blocked", traceId, redactionSummary, warnings: [] };
     }
 
     // Step 4: Build public trace
@@ -177,7 +182,7 @@ export class TraceExportWorkflow {
     const validation = validatePublicTrace(trace);
     if (!validation.valid) {
       return {
-        status: "failed", traceId, redactionSummary,
+        status: "failed", traceId, redactionSummary, warnings: [],
         error: `Trace validation failed: ${validation.errors.join("; ")}`,
       };
     }
@@ -213,7 +218,7 @@ export class TraceExportWorkflow {
     const outputPath = join(this.outputDir, `${traceId}.json`);
     writeFileSync(outputPath, JSON.stringify(pkg, null, 2), "utf-8");
 
-    return { status: "completed", traceId, outputPath, redactionSummary };
+    return { status: "completed", traceId, outputPath, redactionSummary, warnings: [] };
   }
 
   // -------------------------------------------------------------------------
