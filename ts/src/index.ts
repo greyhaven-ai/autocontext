@@ -220,7 +220,7 @@ export type {
   TraceMessage,
   TraceOutcome,
   PublicTrace,
-  RedactionPolicy,
+  RedactionPolicy as TraceRedactionPolicy,
   ProvenanceManifest,
   SubmissionAttestation,
   ValidationResult as PublicTraceValidationResult,
