@@ -38,7 +38,7 @@ export type ToolCall = z.infer<typeof ToolCallSchema>;
 export const TraceMessageSchema = z.object({
   role: z.enum(["user", "assistant", "system", "tool"]),
   content: z.string(),
-  timestamp: z.string(),
+  timestamp: z.string().datetime({ message: "timestamp must be ISO 8601 format" }),
   toolCalls: z.array(ToolCallSchema).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -66,7 +66,7 @@ export const PublicTraceSchema = z.object({
   traceId: z.string().min(1),
   sessionId: z.string().optional(),
   sourceHarness: z.string().min(1),
-  collectedAt: z.string(),
+  collectedAt: z.string().datetime({ message: "collectedAt must be ISO 8601 format" }),
   messages: z.array(TraceMessageSchema).min(1),
   outcome: TraceOutcomeSchema.optional(),
   metadata: z.record(z.unknown()).optional(),
@@ -107,7 +107,7 @@ export const ProvenanceManifestSchema = z.object({
   collectionMethod: z.string().min(1),
   license: z.string().min(1),
   traceCount: z.number().int().nonnegative(),
-  createdAt: z.string(),
+  createdAt: z.string().datetime({ message: "createdAt must be ISO 8601 format" }),
   redactionPolicy: RedactionPolicySchema.optional(),
   datasetLineage: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),
@@ -126,7 +126,7 @@ export const SubmissionAttestationSchema = z.object({
   dataOrigin: z.string().min(1),
   allowRedistribution: z.boolean(),
   allowTraining: z.boolean(),
-  attestedAt: z.string(),
+  attestedAt: z.string().datetime({ message: "attestedAt must be ISO 8601 format" }),
   notes: z.string().optional(),
 });
 
@@ -221,13 +221,29 @@ export function exportToPublicTrace(
 ): PublicTrace {
   const messages: TraceMessage[] = [];
 
+  // Explicit role mapping (AC-468 fix 3)
+  const SYSTEM_EVENTS = new Set([
+    "generation_started", "generation_completed",
+    "tournament_started", "tournament_completed",
+    "gate_decided", "run_started", "run_completed",
+  ]);
+  const AGENT_ROLES = new Set([
+    "competitor", "analyst", "coach", "architect", "curator", "translator",
+  ]);
+
   for (const event of trace.events) {
-    const role: TraceMessage["role"] =
-      event.eventType.includes("competitor") || event.eventType.includes("role_completed")
-        ? "assistant"
-        : event.eventType.includes("user") || event.eventType.includes("generation_started")
-          ? "system"
-          : "assistant";
+    const actorRole = event.actor.actorName || event.actor.actorId;
+    let role: TraceMessage["role"];
+
+    if (SYSTEM_EVENTS.has(event.eventType)) {
+      role = "system";
+    } else if (AGENT_ROLES.has(actorRole) || event.eventType === "role_completed") {
+      role = "assistant";
+    } else if (event.eventType.includes("user") || actorRole === "user") {
+      role = "user";
+    } else {
+      role = "system";
+    }
 
     messages.push({
       role,
@@ -235,6 +251,7 @@ export function exportToPublicTrace(
       timestamp: event.timestamp,
       metadata: {
         eventType: event.eventType,
+        internalRole: actorRole,
         actor: event.actor.toDict(),
         ...event.payload,
       },

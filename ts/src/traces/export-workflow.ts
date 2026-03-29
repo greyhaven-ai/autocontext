@@ -57,6 +57,8 @@ export interface ExportResult {
   traceId: string;
   outputPath?: string;
   redactionSummary: RedactionSummary;
+  /** Files that couldn't be read during export (AC-468 fix 4) */
+  warnings: string[];
   error?: string;
 }
 
@@ -85,12 +87,14 @@ export class TraceExportWorkflow {
 
   async export(request: ExportRequest): Promise<ExportResult> {
     const traceId = `trace_${request.runId}_${Date.now().toString(36)}`;
+    const warnings: string[] = [];
 
     if (!request.consentGiven) {
       return {
         status: "blocked",
         traceId,
         redactionSummary: emptyRedactionSummary(),
+        warnings,
         error: "Trace export requires explicit consent from the submitter.",
       };
     }
@@ -100,6 +104,7 @@ export class TraceExportWorkflow {
         status: "blocked",
         traceId,
         redactionSummary: emptyRedactionSummary(),
+        warnings,
         error: "Trace export requires redistribution rights for public sharing.",
       };
     }
@@ -109,11 +114,13 @@ export class TraceExportWorkflow {
       return {
         status: "failed", traceId,
         redactionSummary: emptyRedactionSummary(),
+        warnings,
         error: `Run '${request.runId}' not found at ${runDir}`,
       };
     }
 
-    const messages = this.loadRunMessages(runDir, request.scenario);
+    const { messages, warnings: loadWarnings } = this.loadRunMessages(runDir, request.scenario);
+    warnings.push(...loadWarnings);
 
     // Step 2: Run redaction on all message content
     let blocked = false;
@@ -156,7 +163,7 @@ export class TraceExportWorkflow {
 
     // Step 3: If blocked, abort
     if (blocked) {
-      return { status: "blocked", traceId, redactionSummary };
+      return { status: "blocked", traceId, redactionSummary, warnings };
     }
 
     // Step 4: Build public trace
@@ -177,7 +184,7 @@ export class TraceExportWorkflow {
     const validation = validatePublicTrace(trace);
     if (!validation.valid) {
       return {
-        status: "failed", traceId, redactionSummary,
+        status: "failed", traceId, redactionSummary, warnings,
         error: `Trace validation failed: ${validation.errors.join("; ")}`,
       };
     }
@@ -213,15 +220,19 @@ export class TraceExportWorkflow {
     const outputPath = join(this.outputDir, `${traceId}.json`);
     writeFileSync(outputPath, JSON.stringify(pkg, null, 2), "utf-8");
 
-    return { status: "completed", traceId, outputPath, redactionSummary };
+    return { status: "completed", traceId, outputPath, redactionSummary, warnings };
   }
 
   // -------------------------------------------------------------------------
   // Load run artifacts into messages
   // -------------------------------------------------------------------------
 
-  private loadRunMessages(runDir: string, scenario: string): TraceMessage[] {
+  private loadRunMessages(runDir: string, scenario: string): {
+    messages: TraceMessage[];
+    warnings: string[];
+  } {
     const messages: TraceMessage[] = [];
+    const warnings: string[] = [];
     const timestamp = new Date().toISOString();
 
     // Load run metadata if available
@@ -234,18 +245,29 @@ export class TraceExportWorkflow {
           content: `Run ${meta.run_id} for scenario ${meta.scenario}`,
           timestamp: meta.created_at ?? timestamp,
         });
-      } catch { /* skip */ }
+      } catch (error) {
+        warnings.push(
+          `Failed to parse ${metaPath}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
     // Load generation artifacts
     const genDir = join(runDir, "generations");
-    if (!existsSync(genDir)) return messages;
+    if (!existsSync(genDir)) return { messages, warnings };
 
     let genEntries: string[];
     try {
       genEntries = readdirSync(genDir).sort();
-    } catch {
-      return messages;
+    } catch (error) {
+      warnings.push(
+        `Failed to list generation artifacts in ${genDir}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return { messages, warnings };
     }
 
     for (const gen of genEntries) {
@@ -266,12 +288,18 @@ export class TraceExportWorkflow {
             if (content.trim()) {
               messages.push({ role, content, timestamp });
             }
-          } catch { /* skip */ }
+          } catch (error) {
+            warnings.push(
+              `Failed to read ${filePath}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
         }
       }
     }
 
-    return messages;
+    return { messages, warnings };
   }
 }
 

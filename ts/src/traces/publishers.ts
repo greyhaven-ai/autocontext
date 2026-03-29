@@ -209,7 +209,7 @@ export class HuggingFacePublisher {
   async publish(artifact: TraceArtifact, opts?: PublishOpts): Promise<PublishResult> {
     const datasetRow = toPublishedDatasetRow(artifact);
     const content = JSON.stringify(datasetRow);
-    const filename = `${artifact.trace.traceId}.jsonl`;
+    const filename = `${artifact.trace.traceId}.json`;
 
     const payload = {
       repoId: this.repoId,

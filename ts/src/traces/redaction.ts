@@ -126,6 +126,17 @@ const BUILTIN_PATTERNS: PatternDef[] = [
     confidence: 0.8,
   },
 
+  // Additional API keys (AC-468)
+  { pattern: /xox[bpsa]-[a-zA-Z0-9-]{10,}/g, category: "api_key", label: "Slack token", confidence: 0.95 },
+  { pattern: /[sr]k_live_[a-zA-Z0-9]{20,}/g, category: "api_key", label: "Stripe key", confidence: 0.95 },
+  { pattern: /pk_live_[a-zA-Z0-9]{20,}/g, category: "api_key", label: "Stripe publishable key", confidence: 0.9 },
+  { pattern: /rk_live_[a-zA-Z0-9]{20,}/g, category: "api_key", label: "Stripe restricted key", confidence: 0.95 },
+  { pattern: /npm_[a-zA-Z0-9]{20,}/g, category: "api_key", label: "npm token", confidence: 0.95 },
+  { pattern: /pypi-AgEI[a-zA-Z0-9_-]{20,}/g, category: "api_key", label: "PyPI token", confidence: 0.95 },
+  { pattern: /SG\.[a-zA-Z0-9_-]{20,}/g, category: "api_key", label: "SendGrid key", confidence: 0.9 },
+  { pattern: /-----BEGIN[A-Z ]*PRIVATE KEY-----/g, category: "credential", label: "SSH/TLS private key", confidence: 0.99 },
+  { pattern: /\b[a-f0-9]{40,}\b/g, category: "credential", label: "Generic hex token", confidence: 0.6 },
+
   // PII
   {
     pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
