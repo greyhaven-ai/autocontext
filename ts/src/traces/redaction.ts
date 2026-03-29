@@ -75,28 +75,99 @@ interface ScanOptions {
 
 const BUILTIN_PATTERNS: PatternDef[] = [
   // API keys
-  { pattern: /sk-ant-[a-zA-Z0-9_-]{10,}/g, category: "api_key", label: "Anthropic API key", confidence: 0.95 },
-  { pattern: /sk-[a-zA-Z0-9]{20,}/g, category: "api_key", label: "OpenAI API key", confidence: 0.9 },
-  { pattern: /AKIA[0-9A-Z]{16}/g, category: "api_key", label: "AWS Access Key", confidence: 0.95 },
-  { pattern: /ghp_[a-zA-Z0-9]{36,}/g, category: "api_key", label: "GitHub PAT", confidence: 0.95 },
-  { pattern: /glpat-[a-zA-Z0-9_-]{20,}/g, category: "api_key", label: "GitLab PAT", confidence: 0.95 },
-  { pattern: /lin_api_[a-zA-Z0-9]{20,}/g, category: "api_key", label: "Linear API key", confidence: 0.95 },
+  {
+    pattern: /sk-ant-[a-zA-Z0-9_-]{10,}/g,
+    category: "api_key",
+    label: "Anthropic API key",
+    confidence: 0.95,
+  },
+  {
+    pattern: /sk-[a-zA-Z0-9]{20,}/g,
+    category: "api_key",
+    label: "OpenAI API key",
+    confidence: 0.9,
+  },
+  {
+    pattern: /AKIA[0-9A-Z]{16}/g,
+    category: "api_key",
+    label: "AWS Access Key",
+    confidence: 0.95,
+  },
+  {
+    pattern: /ghp_[a-zA-Z0-9]{36,}/g,
+    category: "api_key",
+    label: "GitHub PAT",
+    confidence: 0.95,
+  },
+  {
+    pattern: /glpat-[a-zA-Z0-9_-]{20,}/g,
+    category: "api_key",
+    label: "GitLab PAT",
+    confidence: 0.95,
+  },
+  {
+    pattern: /lin_api_[a-zA-Z0-9]{20,}/g,
+    category: "api_key",
+    label: "Linear API key",
+    confidence: 0.95,
+  },
 
   // Credentials
-  { pattern: /Bearer\s+eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, category: "credential", label: "JWT Bearer token", confidence: 0.9 },
-  { pattern: /(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\s*[=:]\s*["']?[^\s"']{8,}["']?/gi, category: "credential", label: "Secret assignment", confidence: 0.8 },
+  {
+    pattern: /Bearer\s+eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g,
+    category: "credential",
+    label: "JWT Bearer token",
+    confidence: 0.9,
+  },
+  {
+    pattern: /(?:PASSWORD|SECRET|TOKEN|API_KEY|PRIVATE_KEY)\s*[=:]\s*["']?[^\s"']{8,}["']?/gi,
+    category: "credential",
+    label: "Secret assignment",
+    confidence: 0.8,
+  },
 
   // PII
-  { pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, category: "email", label: "Email address", confidence: 0.9 },
-  { pattern: /\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, category: "phone", label: "Phone number", confidence: 0.7 },
-  { pattern: /\b(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, category: "ip_address", label: "IP address", confidence: 0.8 },
+  {
+    pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+    category: "email",
+    label: "Email address",
+    confidence: 0.9,
+  },
+  {
+    pattern: /\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+    category: "phone",
+    label: "Phone number",
+    confidence: 0.7,
+  },
+  {
+    pattern:
+      /\b(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g,
+    category: "ip_address",
+    label: "IP address",
+    confidence: 0.8,
+  },
 
   // Paths (home directories — not /usr/bin or /tmp)
-  { pattern: /\/(?:Users|home)\/[a-zA-Z0-9._-]+\/[^\s"'`]+/g, category: "file_path", label: "Home directory path", confidence: 0.8 },
-  { pattern: /[A-Z]:\\Users\\[a-zA-Z0-9._-]+\\[^\s"'`]+/g, category: "file_path", label: "Windows user path", confidence: 0.8 },
+  {
+    pattern: /\/(?:Users|home)\/[a-zA-Z0-9._-]+\/[^\s"'`]+/g,
+    category: "file_path",
+    label: "Home directory path",
+    confidence: 0.8,
+  },
+  {
+    pattern: /[A-Z]:\\Users\\[a-zA-Z0-9._-]+\\[^\s"'`]+/g,
+    category: "file_path",
+    label: "Windows user path",
+    confidence: 0.8,
+  },
 
   // Internal URLs
-  { pattern: /https?:\/\/(?:internal|corp|private|staging|dev)\.[a-zA-Z0-9.-]+[^\s)"]*/g, category: "internal_url", label: "Internal URL", confidence: 0.85 },
+  {
+    pattern: /https?:\/\/(?:internal|corp|private|staging|dev)\.[a-zA-Z0-9.-]+[^\s)"]*/g,
+    category: "internal_url",
+    label: "Internal URL",
+    confidence: 0.85,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -159,11 +230,12 @@ export class SensitiveDataDetector {
     });
 
     const result: Detection[] = [];
-    for (const d of sorted) {
-      if (!result.some((existing) => overlaps(existing, d))) {
-        result.push(d);
+    for (const detection of sorted) {
+      if (!result.some((existing) => overlaps(existing, detection))) {
+        result.push(detection);
       }
     }
+
     return result.sort((a, b) => a.start - b.start || b.confidence - a.confidence);
   }
 }
@@ -255,21 +327,22 @@ export function applyRedactionPolicy(
 
   // Determine action for each detection
   const toRedact: Detection[] = [];
-  for (const d of detections) {
-    const action = policy.actionFor(d.category);
+  for (const detection of detections) {
+    const action = policy.actionFor(detection.category);
     switch (action) {
       case "block":
         blocked = true;
-        blockReasons.push(`Blocked: ${d.label} (${d.category}) at position ${d.start}`);
+        blockReasons.push(
+          `Blocked: ${detection.label} (${detection.category}) at position ${detection.start}`,
+        );
         break;
       case "redact":
-        toRedact.push(d);
+        toRedact.push(detection);
         break;
       case "require-manual-approval":
         requiresManualReview = true;
         break;
       case "warn":
-        // Logged but not acted on
         break;
     }
   }
@@ -277,22 +350,23 @@ export function applyRedactionPolicy(
   // Apply redactions in reverse order to preserve positions
   let redactedText = text;
   const sortedRedactions = [...toRedact].sort((a, b) => b.start - a.start);
-  for (const d of sortedRedactions) {
-    const replacement = `[REDACTED:${d.category}]`;
-    redactedText = redactedText.slice(0, d.start) + replacement + redactedText.slice(d.end);
+  for (const detection of sortedRedactions) {
+    const replacement = `[REDACTED:${detection.category}]`;
+    redactedText =
+      redactedText.slice(0, detection.start) + replacement + redactedText.slice(detection.end);
     redactions.push({
-      category: d.category,
-      original: d.matched,
+      category: detection.category,
+      original: detection.matched,
       replacement,
-      start: d.start,
-      end: d.end,
+      start: detection.start,
+      end: detection.end,
     });
   }
 
   return {
     redactedText,
     detections,
-    redactions: redactions.reverse(), // restore original order
+    redactions: redactions.reverse(),
     blocked,
     blockReasons,
     requiresManualReview,
