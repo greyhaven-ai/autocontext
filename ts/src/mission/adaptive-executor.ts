@@ -15,7 +15,8 @@
 import type { LLMProvider } from "../types/index.js";
 import type { MissionManager } from "./manager.js";
 import type { MissionStatus, VerifierResult } from "./types.js";
-import { MissionPlanner, type SubgoalPlan } from "./planner.js";
+import { type SubgoalPlan } from "./planner.js";
+import { SimulationAwarePlanner, type SimulationStepPlan } from "./simulation-bridge.js";
 import { rehydrateMissionVerifier } from "./verifiers.js";
 
 export interface AdaptiveRunOpts {
@@ -45,7 +46,7 @@ export async function adaptiveRunMissionLoop(
   manager: MissionManager,
   missionId: string,
   provider: LLMProvider,
-  _runsRoot: string,
+  knowledgeRoot: string,
   opts?: AdaptiveRunOpts,
 ): Promise<AdaptiveRunResult> {
   const mission = manager.get(missionId);
@@ -61,7 +62,7 @@ export async function adaptiveRunMissionLoop(
   }
 
   const maxIterations = opts?.maxIterations ?? 10;
-  const planner = new MissionPlanner(provider);
+  const planner = new SimulationAwarePlanner(provider, knowledgeRoot);
 
   // Ensure verifier is registered
   if (!manager.hasVerifier(missionId)) {
@@ -112,14 +113,14 @@ export async function adaptiveRunMissionLoop(
       : undefined;
 
     // Plan next step
-    const stepPlan = i === 0 && opts?.stepDescription?.trim()
+    const stepPlan: SimulationStepPlan = i === 0 && opts?.stepDescription?.trim()
       ? {
           description: opts.stepDescription.trim(),
           reasoning: "Operator-provided step override",
           shouldRevise: false,
           ...(remainingSubgoals.length === 1 ? { targetSubgoal: remainingSubgoals[0] } : {}),
         }
-      : await planner.planNextStep({
+      : await planner.planAndSimulate({
           goal: mission.goal,
           completedSteps,
           remainingSubgoals,
@@ -129,6 +130,25 @@ export async function adaptiveRunMissionLoop(
     // Apply plan revision if needed
     if (stepPlan.shouldRevise && stepPlan.revisedSubgoals?.length) {
       replacePendingSubgoals(manager, missionId, stepPlan.revisedSubgoals);
+    }
+
+    if (stepPlan.simulateFirst?.description) {
+      const simulationStepId = manager.advance(
+        missionId,
+        `Simulate: ${stepPlan.simulateFirst.description}`,
+      );
+      manager.updateStep(
+        simulationStepId,
+        stepPlan.simulationResult?.status === "failed" ? "failed" : "completed",
+        describeSimulationStep(stepPlan),
+      );
+      stepsExecuted++;
+
+      const postSimulationBudget = manager.budgetUsage(missionId);
+      if (postSimulationBudget.exhausted) {
+        manager.setStatus(missionId, "budget_exhausted");
+        break;
+      }
     }
 
     // Execute the step (record it)
@@ -204,4 +224,27 @@ function buildSubgoalVerifier(manager: MissionManager, missionId: string): () =>
       metadata: {},
     };
   };
+}
+
+function describeSimulationStep(stepPlan: SimulationStepPlan): string {
+  if (!stepPlan.simulateFirst?.description) {
+    return "Simulation requested";
+  }
+
+  if (!stepPlan.simulationResult) {
+    return JSON.stringify({
+      description: stepPlan.simulateFirst.description,
+      status: "failed",
+      error: "Simulation did not complete",
+    });
+  }
+
+  return JSON.stringify({
+    id: stepPlan.simulationResult.id,
+    name: stepPlan.simulationResult.name,
+    status: stepPlan.simulationResult.status,
+    description: stepPlan.simulateFirst.description,
+    score: stepPlan.simulationResult.summary.score,
+    reportPath: stepPlan.simulationResult.artifacts.reportPath ?? null,
+  });
 }

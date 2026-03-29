@@ -41,6 +41,7 @@ Output a JSON object:
   "nextStep": "What to do next",
   "reasoning": "Why this is the right next step",
   "shouldRevise": false,
+  "targetSubgoal": "Exact string from Remaining Subgoals",
   "simulateFirst": {
     "description": "Plain-language description of what to simulate",
     "variables": {"optional": "variable overrides"}
@@ -48,15 +49,15 @@ Output a JSON object:
 }
 
 If no simulation is needed, omit "simulateFirst" entirely.
+If the next step advances an existing remaining subgoal, set targetSubgoal to the exact subgoal text from Remaining Subgoals.
+If you are revising the plan instead of completing a current subgoal, omit targetSubgoal.
 Output ONLY the JSON object.`;
 
 export class SimulationAwarePlanner extends MissionPlanner {
   private simEngine: SimulationEngine;
-  private knowledgeRoot: string;
 
   constructor(provider: LLMProvider, knowledgeRoot: string) {
     super(provider);
-    this.knowledgeRoot = knowledgeRoot;
     this.simEngine = new SimulationEngine(provider, knowledgeRoot);
   }
 
@@ -83,6 +84,15 @@ export class SimulationAwarePlanner extends MissionPlanner {
         reasoning: typeof parsed.reasoning === "string" ? String(parsed.reasoning) : "Continuing mission",
         shouldRevise: parsed.shouldRevise === true,
       };
+
+      if (
+        typeof parsed.targetSubgoal === "string"
+        && opts.remainingSubgoals.includes(parsed.targetSubgoal)
+      ) {
+        plan.targetSubgoal = parsed.targetSubgoal;
+      } else if (!plan.shouldRevise && opts.remainingSubgoals.length === 1) {
+        plan.targetSubgoal = opts.remainingSubgoals[0];
+      }
 
       if (parsed.simulateFirst && typeof parsed.simulateFirst === "object") {
         const simReq = parsed.simulateFirst as Record<string, unknown>;
@@ -179,6 +189,7 @@ export class SimulationAwarePlanner extends MissionPlanner {
       description: next ? `Work on: ${next}` : `Continue: ${opts.goal}`,
       reasoning: "Fallback: could not plan step via LLM",
       shouldRevise: false,
+      ...(next ? { targetSubgoal: next } : {}),
     };
   }
 }

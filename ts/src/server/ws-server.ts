@@ -326,6 +326,7 @@ export class InteractiveServer {
           this.missionManager,
           missionId!,
           this.runManager["opts"].runsRoot,
+          this.runManager["opts"].knowledgeRoot,
           {
             maxIterations: Number.isInteger(maxIterations) && maxIterations > 0 ? maxIterations : 1,
             stepDescription: typeof body.stepDescription === "string" ? body.stepDescription : undefined,

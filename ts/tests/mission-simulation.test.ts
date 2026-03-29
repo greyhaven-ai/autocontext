@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../src/mission/simulation-bridge.js";
 import { MissionManager } from "../src/mission/manager.js";
 import { adaptiveRunMissionLoop } from "../src/mission/adaptive-executor.js";
+import { runMissionLoop } from "../src/mission/control-plane.js";
 import type { LLMProvider } from "../src/types/index.js";
 
 function mockProvider(responses?: string[]): LLMProvider {
@@ -84,6 +85,47 @@ describe("SimulationAwarePlanner", () => {
     expect(step.simulateFirst!.description).toContain("deployment");
   });
 
+  it("preserves targetSubgoal semantics from MissionPlanner", async () => {
+    const explicitProvider = mockProvider([
+      JSON.stringify({
+        nextStep: "Simulate deployment scenarios",
+        reasoning: "Need to compare rollback strategies",
+        shouldRevise: false,
+        targetSubgoal: "Evaluate deployment strategies",
+        simulateFirst: {
+          description: "Simulate deployment with and without rollback",
+        },
+      }),
+    ]);
+
+    const explicitPlanner = new SimulationAwarePlanner(explicitProvider, tmpDir);
+    const explicit = await explicitPlanner.planNextStep({
+      goal: "Ship deployment pipeline",
+      completedSteps: [],
+      remainingSubgoals: ["Evaluate deployment strategies"],
+    });
+    expect(explicit.targetSubgoal).toBe("Evaluate deployment strategies");
+
+    const fallbackProvider = mockProvider([
+      JSON.stringify({
+        nextStep: "Run a simulation before deciding",
+        reasoning: "Only one subgoal remains",
+        shouldRevise: false,
+        simulateFirst: {
+          description: "Simulate the remaining approach",
+        },
+      }),
+    ]);
+
+    const fallbackPlanner = new SimulationAwarePlanner(fallbackProvider, tmpDir);
+    const fallback = await fallbackPlanner.planNextStep({
+      goal: "Finish rollout",
+      completedSteps: [],
+      remainingSubgoals: ["Choose final rollout strategy"],
+    });
+    expect(fallback.targetSubgoal).toBe("Choose final rollout strategy");
+  });
+
   it("runs the requested simulation and includes results in step", async () => {
     const simSpec = JSON.stringify({
       description: "Test sim",
@@ -143,7 +185,7 @@ describe("SimulationAwarePlanner", () => {
 // ---------------------------------------------------------------------------
 
 describe("simulation budget tracking", () => {
-  it("simulation steps count toward mission budget", async () => {
+  it("live mission run uses the simulation-aware planner and records simulation work separately", async () => {
     const simSpec = JSON.stringify({
       description: "Budget sim",
       environment_description: "Env",
@@ -156,36 +198,46 @@ describe("simulation budget tracking", () => {
       ],
     });
     const stepWithSim = JSON.stringify({
-      nextStep: "Simulate",
-      reasoning: "Need data",
+      nextStep: "Choose the strongest pricing option",
+      reasoning: "Need data before committing",
       shouldRevise: false,
+      targetSubgoal: "Choose optimal pricing",
       simulateFirst: { description: "Run a sim" },
     });
 
     const provider = mockProvider([
-      JSON.stringify({ subgoals: [{ description: "Plan", priority: 1 }] }),
+      JSON.stringify({ subgoals: [{ description: "Choose optimal pricing", priority: 1 }] }),
       stepWithSim,
       simSpec,
     ]);
 
     const manager = new MissionManager(dbPath);
     const missionId = manager.create({
-      name: "Budget test",
-      goal: "Test budget tracking with simulation",
+      name: "Simulation integration test",
+      goal: "Pick the best pricing strategy",
       budget: { maxSteps: 10 },
     });
 
-    manager.setVerifier(missionId, async () => ({
-      passed: true, reason: "Done", suggestions: [], metadata: {},
-    }));
-
-    const result = await adaptiveRunMissionLoop(manager, missionId, provider, tmpDir, {
-      maxIterations: 3,
+    const result = await runMissionLoop(manager, missionId, tmpDir, tmpDir, {
+      maxIterations: 1,
+      provider,
     });
 
-    // The mission should have recorded simulation as a step
     const steps = manager.steps(missionId);
-    expect(steps.some((s) => s.description.toLowerCase().includes("simulat"))).toBe(true);
+    expect(result.finalStatus).toBe("completed");
+    expect(result.stepsExecuted).toBe(2);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]!.description).toContain("Simulate:");
+    expect(steps[1]!.description).toContain("Choose the strongest pricing option");
+
+    const simulationStepResult = JSON.parse(steps[0]!.result ?? "{}") as Record<string, unknown>;
+    expect(simulationStepResult.status).toBe("completed");
+    expect(typeof simulationStepResult.reportPath).toBe("string");
+
+    const simulationsRoot = join(tmpDir, "_simulations");
+    expect(existsSync(simulationsRoot)).toBe(true);
+    expect(readdirSync(simulationsRoot).length).toBeGreaterThan(0);
+    expect(manager.budgetUsage(missionId).stepsUsed).toBe(2);
 
     manager.close();
   });

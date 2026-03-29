@@ -2303,7 +2303,7 @@ See also: run, improve, judge`);
           const { createProvider, resolveProviderConfig } = await import("../providers/index.js");
           provider = createProvider(resolveProviderConfig());
         }
-        const payload = await runMissionLoop(manager, values.id, runsRoot, {
+        const payload = await runMissionLoop(manager, values.id, runsRoot, resolve(settings.knowledgeRoot), {
           maxIterations: parseInt(values["max-iterations"] ?? "1", 10),
           stepDescription: values["step-description"],
           provider,
