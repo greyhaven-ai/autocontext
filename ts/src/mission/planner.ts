@@ -111,7 +111,7 @@ function parseJSON(text: string): Record<string, unknown> | null {
 }
 
 export class MissionPlanner {
-  private provider: LLMProvider;
+  protected provider: LLMProvider;
 
   constructor(provider: LLMProvider) {
     this.provider = provider;

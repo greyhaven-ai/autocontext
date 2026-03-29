@@ -127,6 +127,7 @@ export async function runMissionLoop(
   manager: MissionManager,
   missionId: string,
   runsRoot: string,
+  knowledgeRoot: string,
   opts?: { maxIterations?: number; stepDescription?: string; provider?: LLMProvider },
 ): Promise<Record<string, unknown>> {
   const mission = requireMission(manager, missionId);
@@ -146,7 +147,7 @@ export async function runMissionLoop(
         manager,
         missionId,
         opts.provider,
-        runsRoot,
+        knowledgeRoot,
         {
           maxIterations,
           stepDescription: opts.stepDescription,

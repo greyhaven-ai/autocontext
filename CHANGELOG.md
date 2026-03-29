@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
+- Mission-simulation integration: missions can invoke simulations as planning tools before committing to actions (AC-455).
 - Richer sweep DSL: categorical sweeps, logarithmic scales, sweep file loading, and named presets (AC-454).
 - Python parity for simulate: SimulationEngine with run, replay, compare, export — matching TS surface (AC-453).
 - `simulate export` — portable simulation result packages in JSON, Markdown, and CSV formats (AC-452).
