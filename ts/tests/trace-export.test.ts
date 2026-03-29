@@ -14,7 +14,8 @@ import {
   TraceExportWorkflow,
   type ExportRequest,
   type ExportResult,
-} from "../src/traces/export-workflow.js";
+} from "../src/index.js";
+import * as pkg from "../src/index.js";
 
 let tmpDir: string;
 
@@ -62,6 +63,10 @@ describe("TraceExportWorkflow", () => {
       scenario: "grid_ctf",
       submitterId: "user_test",
       license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
     });
 
     expect(result.status).toBe("completed");
@@ -82,6 +87,10 @@ describe("TraceExportWorkflow", () => {
       scenario: "grid_ctf",
       submitterId: "user_test",
       license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: false,
     });
 
     const pkg = JSON.parse(readFileSync(result.outputPath!, "utf-8"));
@@ -92,6 +101,8 @@ describe("TraceExportWorkflow", () => {
     expect(pkg.manifest.license).toBe("CC-BY-4.0");
     expect(pkg.attestation).toBeDefined();
     expect(pkg.attestation.consentGiven).toBe(true);
+    expect(pkg.attestation.allowRedistribution).toBe(true);
+    expect(pkg.attestation.allowTraining).toBe(false);
   });
 
   it("redacts sensitive data from trace messages", async () => {
@@ -111,6 +122,10 @@ describe("TraceExportWorkflow", () => {
       scenario: "grid_ctf",
       submitterId: "user_test",
       license: "CC0-1.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
     });
 
     const pkg = JSON.parse(readFileSync(result.outputPath!, "utf-8"));
@@ -133,6 +148,10 @@ describe("TraceExportWorkflow", () => {
       scenario: "grid_ctf",
       submitterId: "user_test",
       license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
     });
 
     expect(result.redactionSummary).toBeDefined();
@@ -152,6 +171,10 @@ describe("TraceExportWorkflow", () => {
       scenario: "grid_ctf",
       submitterId: "user_test",
       license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
     });
 
     expect(result.status).toBe("failed");
@@ -175,10 +198,91 @@ describe("TraceExportWorkflow", () => {
       scenario: "grid_ctf",
       submitterId: "user_test",
       license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
     });
 
     expect(result.status).toBe("blocked");
     expect(result.redactionSummary.blocked).toBe(true);
+  });
+
+  it("blocks export when consent is not given", async () => {
+    seedRun("run_no_consent", "grid_ctf");
+
+    const workflow = new TraceExportWorkflow({
+      runsRoot: join(tmpDir, "runs"),
+      outputDir: join(tmpDir, "exports"),
+    });
+
+    const result = await workflow.export({
+      runId: "run_no_consent",
+      scenario: "grid_ctf",
+      submitterId: "user_test",
+      license: "CC-BY-4.0",
+      consentGiven: false,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.error).toContain("explicit consent");
+  });
+
+  it("blocks export when redistribution rights are absent", async () => {
+    seedRun("run_no_redistribution", "grid_ctf");
+
+    const workflow = new TraceExportWorkflow({
+      runsRoot: join(tmpDir, "runs"),
+      outputDir: join(tmpDir, "exports"),
+    });
+
+    const result = await workflow.export({
+      runId: "run_no_redistribution",
+      scenario: "grid_ctf",
+      submitterId: "user_test",
+      license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "third_party_authorized",
+      allowRedistribution: false,
+      allowTraining: false,
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.error).toContain("redistribution rights");
+  });
+
+  it("blocks overlapping secrets according to the strongest policy action", async () => {
+    seedRun("run_overlap", "grid_ctf");
+    const genDir = join(tmpDir, "runs", "run_overlap", "generations", "gen_1");
+    writeFileSync(
+      join(genDir, "competitor_output.md"),
+      "API_KEY=sk-ant-api03-abc123def456ghi789",
+      "utf-8",
+    );
+
+    const workflow = new TraceExportWorkflow({
+      runsRoot: join(tmpDir, "runs"),
+      outputDir: join(tmpDir, "exports"),
+      policyOverrides: { api_key: "block", credential: "warn" },
+    });
+
+    const result = await workflow.export({
+      runId: "run_overlap",
+      scenario: "grid_ctf",
+      submitterId: "user_test",
+      license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.redactionSummary.blocked).toBe(true);
+    expect(result.redactionSummary.categoryCounts.api_key).toBe(1);
   });
 });
 
@@ -200,11 +304,21 @@ describe("ExportResult shape", () => {
       scenario: "grid_ctf",
       submitterId: "user_test",
       license: "CC-BY-4.0",
+      consentGiven: true,
+      dataOrigin: "own_work",
+      allowRedistribution: true,
+      allowTraining: true,
     });
 
     expect(result).toHaveProperty("status");
     expect(result).toHaveProperty("outputPath");
     expect(result).toHaveProperty("redactionSummary");
     expect(result).toHaveProperty("traceId");
+  });
+});
+
+describe("package entrypoint exports", () => {
+  it("exposes the trace export workflow through src/index", () => {
+    expect(pkg.TraceExportWorkflow).toBeDefined();
   });
 });

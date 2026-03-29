@@ -226,7 +226,7 @@ export type {
   ValidationResult as PublicTraceValidationResult,
 } from "./traces/public-schema.js";
 
-// Trace redaction
+// Trace redaction / export workflow
 export { SensitiveDataDetector, RedactionPolicy, applyRedactionPolicy } from "./traces/redaction.js";
 export type {
   DetectionCategory,
@@ -236,6 +236,13 @@ export type {
   RedactionResult,
   CustomPattern,
 } from "./traces/redaction.js";
+export { TraceExportWorkflow } from "./traces/export-workflow.js";
+export type {
+  ExportRequest,
+  RedactionSummary as TraceExportRedactionSummary,
+  ExportResult as TraceExportResult,
+  TraceExportWorkflowOpts,
+} from "./traces/export-workflow.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";

@@ -235,7 +235,6 @@ export class SensitiveDataDetector {
         result.push(detection);
       }
     }
-
     return result.sort((a, b) => a.start - b.start || b.confidence - a.confidence);
   }
 }

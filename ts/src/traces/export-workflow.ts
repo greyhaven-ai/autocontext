@@ -37,6 +37,10 @@ export interface ExportRequest {
   scenario: string;
   submitterId: string;
   license: string;
+  consentGiven: boolean;
+  dataOrigin: string;
+  allowRedistribution: boolean;
+  allowTraining: boolean;
   consentNotes?: string;
 }
 
@@ -81,6 +85,24 @@ export class TraceExportWorkflow {
 
   async export(request: ExportRequest): Promise<ExportResult> {
     const traceId = `trace_${request.runId}_${Date.now().toString(36)}`;
+
+    if (!request.consentGiven) {
+      return {
+        status: "blocked",
+        traceId,
+        redactionSummary: emptyRedactionSummary(),
+        error: "Trace export requires explicit consent from the submitter.",
+      };
+    }
+
+    if (!request.allowRedistribution) {
+      return {
+        status: "blocked",
+        traceId,
+        redactionSummary: emptyRedactionSummary(),
+        error: "Trace export requires redistribution rights for public sharing.",
+      };
+    }
 
     // Step 1: Load run artifacts
     const runDir = join(this.runsRoot, request.runId);
@@ -176,10 +198,10 @@ export class TraceExportWorkflow {
 
     const attestation = createSubmissionAttestation({
       submitterId: request.submitterId,
-      consentGiven: true,
-      dataOrigin: "own_work",
-      allowRedistribution: true,
-      allowTraining: true,
+      consentGiven: request.consentGiven,
+      dataOrigin: request.dataOrigin,
+      allowRedistribution: request.allowRedistribution,
+      allowTraining: request.allowTraining,
       notes: request.consentNotes,
     });
 
