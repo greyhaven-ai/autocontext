@@ -7,16 +7,15 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import {
   DatasetDiscovery,
   DatasetAdapter,
-  type DiscoveredDataset,
   type AdaptedDataset,
-  type DiscoveryManifest,
-} from "../src/traces/dataset-discovery.js";
+} from "../src/index.js";
+import * as pkg from "../src/index.js";
 
 let tmpDir: string;
 
@@ -106,6 +105,7 @@ describe("DatasetDiscovery", () => {
     expect(formats.has("jsonl")).toBe(true);
     expect(formats.has("json")).toBe(true);
     expect(formats.has("csv")).toBe(true);
+    expect(formats.has("markdown")).toBe(true);
   });
 
   it("does not discover non-data files", () => {
@@ -125,6 +125,30 @@ describe("DatasetDiscovery", () => {
     const discovery = new DatasetDiscovery();
     const results = discovery.scan(tmpDir);
     expect(results.length).toBe(0);
+  });
+
+  it("ignores manifest entries that resolve outside the repo root", () => {
+    const outsideDir = mkdtempSync(join(tmpdir(), "ac-461-outside-"));
+    try {
+      const outsideFile = join(outsideDir, "secret.json");
+      writeFileSync(outsideFile, JSON.stringify([{ input: "leak", output: "nope" }]), "utf-8");
+      writeFileSync(
+        join(tmpDir, ".autoctx-data.json"),
+        JSON.stringify({
+          datasets: [
+            { path: relative(tmpDir, outsideFile), format: "json", scenario: "leak" },
+          ],
+        }),
+        "utf-8",
+      );
+
+      const discovery = new DatasetDiscovery();
+      const results = discovery.scan(tmpDir);
+
+      expect(results).toHaveLength(0);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -180,6 +204,22 @@ describe("DatasetAdapter", () => {
     expect(result.records[0].conversations).toBeDefined();
   });
 
+  it("adapts markdown task examples to ShareGPT", () => {
+    seedRepoTree();
+    const adapter = new DatasetAdapter();
+    const result = adapter.adapt({
+      absolutePath: join(tmpDir, "examples", "task.md"),
+      relativePath: "examples/task.md",
+      format: "markdown",
+      source: "conventional_dir",
+    });
+
+    expect(result.status).toBe("adapted");
+    expect(result.records.length).toBe(1);
+    expect(result.records[0].conversations[0].value).toContain("Long document");
+    expect(result.records[0].conversations[1].value).toContain("Short summary");
+  });
+
   it("preserves provenance in adapted records", () => {
     seedRepoTree();
     const adapter = new DatasetAdapter();
@@ -231,5 +271,12 @@ describe("discover + adapt pipeline", () => {
     expect(adapted.length).toBeGreaterThanOrEqual(3); // JSONL, JSON, CSV
     const totalRecords = adapted.reduce((sum, a) => sum + a.records.length, 0);
     expect(totalRecords).toBeGreaterThanOrEqual(6);
+  });
+});
+
+describe("package entrypoint exports", () => {
+  it("exposes dataset discovery through src/index", () => {
+    expect(pkg.DatasetDiscovery).toBe(DatasetDiscovery);
+    expect(pkg.DatasetAdapter).toBe(DatasetAdapter);
   });
 });

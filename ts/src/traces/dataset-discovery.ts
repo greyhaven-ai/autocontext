@@ -11,7 +11,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, extname } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,24 +58,26 @@ export interface DiscoveryManifest {
 // ---------------------------------------------------------------------------
 
 const CONVENTIONAL_DIRS = ["data", "fixtures", "benchmarks", "examples", "training_data", "datasets"];
-const DATA_EXTENSIONS = new Set([".jsonl", ".json", ".csv"]);
+const DATA_EXTENSIONS = new Set([".jsonl", ".json", ".csv", ".md"]);
 const IGNORE_FILES = new Set(["package.json", "tsconfig.json", "package-lock.json", ".autoctx-data.json"]);
 
 export class DatasetDiscovery {
   scan(repoRoot: string): DiscoveredDataset[] {
+    const resolvedRoot = resolve(repoRoot);
     const results: DiscoveredDataset[] = [];
 
     // 1. Check manifest
-    const manifestPath = join(repoRoot, ".autoctx-data.json");
+    const manifestPath = join(resolvedRoot, ".autoctx-data.json");
     if (existsSync(manifestPath)) {
       try {
         const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as DiscoveryManifest;
         for (const entry of manifest.datasets ?? []) {
-          const absPath = join(repoRoot, entry.path);
+          const absPath = this.resolveRepoLocalPath(resolvedRoot, entry.path);
+          if (!absPath) continue;
           if (existsSync(absPath)) {
             results.push({
               absolutePath: absPath,
-              relativePath: entry.path,
+              relativePath: relative(resolvedRoot, absPath),
               format: this.detectFormat(entry.path, entry.format),
               source: "manifest",
               scenario: entry.scenario,
@@ -88,16 +90,25 @@ export class DatasetDiscovery {
     // 2. Scan conventional directories
     const manifestPaths = new Set(results.map((r) => r.absolutePath));
     for (const dir of CONVENTIONAL_DIRS) {
-      const dirPath = join(repoRoot, dir);
+      const dirPath = join(resolvedRoot, dir);
       if (!existsSync(dirPath)) continue;
       try {
         if (!statSync(dirPath).isDirectory()) continue;
       } catch { continue; }
 
-      this.scanDirectory(dirPath, repoRoot, results, manifestPaths);
+      this.scanDirectory(dirPath, resolvedRoot, results, manifestPaths);
     }
 
     return results;
+  }
+
+  private resolveRepoLocalPath(repoRoot: string, candidatePath: string): string | null {
+    const absolutePath = resolve(repoRoot, candidatePath);
+    const repoRelative = relative(repoRoot, absolutePath);
+    if (repoRelative === "" || (!repoRelative.startsWith("..") && !isAbsolute(repoRelative))) {
+      return absolutePath;
+    }
+    return null;
   }
 
   private scanDirectory(
@@ -182,6 +193,8 @@ export class DatasetAdapter {
           return { status: "adapted", records: this.adaptJSON(dataset.absolutePath), provenance };
         case "csv":
           return { status: "adapted", records: this.adaptCSV(dataset.absolutePath), provenance };
+        case "markdown":
+          return { status: "adapted", records: this.adaptMarkdown(dataset.absolutePath), provenance };
         default:
           return { status: "failed", records: [], provenance, error: `Unsupported format: ${dataset.format}` };
       }
@@ -253,6 +266,36 @@ export class DatasetAdapter {
     return records;
   }
 
+  private adaptMarkdown(path: string): ShareGPTRecord[] {
+    const content = readFileSync(path, "utf-8");
+    const sections = this.parseMarkdownSections(content);
+    const prompt = this.findMarkdownSection(sections, [
+      "input",
+      "prompt",
+      "question",
+      "task",
+      "instruction",
+    ]);
+    const response = this.findMarkdownSection(sections, [
+      "expected output",
+      "output",
+      "response",
+      "answer",
+      "solution",
+    ]);
+
+    if (!prompt || !response) {
+      return [];
+    }
+
+    return [{
+      conversations: [
+        { from: "human", value: prompt },
+        { from: "gpt", value: response },
+      ],
+    }];
+  }
+
   private ioPairToShareGPT(item: Record<string, unknown>): ShareGPTRecord {
     const prompt = String(item.input ?? item.prompt ?? item.question ?? "");
     const response = String(item.output ?? item.response ?? item.answer ?? "");
@@ -281,5 +324,59 @@ export class DatasetAdapter {
     }
     values.push(current);
     return values;
+  }
+
+  private parseMarkdownSections(content: string): Map<string, string> {
+    const sections = new Map<string, string>();
+    const lines = content.split(/\r?\n/);
+    let currentHeading: string | null = null;
+    let buffer: string[] = [];
+
+    const flush = () => {
+      if (!currentHeading) return;
+      const sectionBody = buffer.join("\n").trim();
+      if (sectionBody) {
+        sections.set(currentHeading, sectionBody);
+      }
+    };
+
+    for (const line of lines) {
+      const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+      if (match) {
+        flush();
+        currentHeading = this.normalizeHeading(match[2]);
+        buffer = [];
+        continue;
+      }
+      if (currentHeading) {
+        buffer.push(line);
+      }
+    }
+    flush();
+
+    return sections;
+  }
+
+  private findMarkdownSection(sections: Map<string, string>, candidates: string[]): string | undefined {
+    for (const candidate of candidates) {
+      const normalizedCandidate = this.normalizeHeading(candidate);
+      for (const [heading, body] of sections.entries()) {
+        if (
+          heading === normalizedCandidate
+          || heading.includes(normalizedCandidate)
+          || normalizedCandidate.includes(heading)
+        ) {
+          return body;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private normalizeHeading(heading: string): string {
+    return heading
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
   }
 }

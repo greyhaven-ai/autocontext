@@ -264,6 +264,14 @@ export type {
   DataPlaneBuildResult,
   DataPlaneStatus,
 } from "./traces/data-plane.js";
+export { DatasetDiscovery, DatasetAdapter } from "./traces/dataset-discovery.js";
+export type {
+  DiscoveredDataset,
+  ShareGPTRecord,
+  DatasetProvenance,
+  AdaptedDataset,
+  DiscoveryManifest,
+} from "./traces/dataset-discovery.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
