@@ -6,7 +6,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 
 - **Scenario execution**: run generation loops with tournament scoring and Elo progression
 - **Knowledge system**: versioned playbooks, score trajectories, session reports, dead-end tracking
-- **Interactive server**: HTTP dashboard + API, WebSocket control plane, TUI
+- **Interactive server**: HTTP API, WebSocket control plane, bundled Ink TUI
 - **MCP control plane**: 40+ tools covering scenarios, runs, knowledge, evaluation, feedback, solve, sandbox, and export
 - **Provider routing**: Anthropic, OpenAI-compatible, Ollama, vLLM, Hermes, Pi, Pi-RPC, deterministic
 - **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
@@ -56,7 +56,7 @@ autoctx new-scenario --template prompt-optimization --name my-task
 
 # Interactive
 autoctx tui [--port 8000]
-autoctx serve [--port 8000] [--json] # HTTP dashboard + API
+autoctx serve [--port 8000] [--json] # HTTP API
 autoctx mcp-serve                     # MCP server on stdio
 autoctx simulate -d "simulate deploying a web service with rollback"
 autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1

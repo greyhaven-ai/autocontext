@@ -36,7 +36,7 @@ Strategies are then evaluated through scenario execution, staged validation, and
 
 ## Choose An Entry Point
 
-- Want the full control plane, dashboard, scenario runner, and training loop? Start with the Python package in `autocontext/`.
+- Want the full control plane, API server, scenario runner, and training loop? Start with the Python package in `autocontext/`.
 - Want a lighter Node/TypeScript toolkit for judging outputs, running improvement loops, queueing work, or exposing MCP tools? Start with `ts/`.
 - Want to wire another agent into autocontext? Start with the CLI-first guide in `autocontext/docs/agent-integration.md`.
 - Want to contribute or point a coding agent at the repo? Read `CONTRIBUTING.md` and `AGENTS.md`.
@@ -59,7 +59,7 @@ Strategies are then evaluated through scenario execution, staged validation, and
 - Frontier-to-local distillation with MLX on Apple Silicon
 - Runtime routing across Anthropic, OpenAI-compatible backends, Ollama, vLLM, MLX, and Pi-based runtimes
 - OpenClaw-facing APIs and agent integration surfaces
-- CLI, API server, dashboard, and TypeScript/TUI surfaces for operators and external agents
+- CLI, API server, and TypeScript terminal UI surfaces for operators and external agents
 
 ## Quick Start From Source
 
@@ -88,14 +88,14 @@ AUTOCONTEXT_ANTHROPIC_API_KEY=your-key \
 uv run autoctx run --scenario grid_ctf --gens 3
 ```
 
-Start the API server and dashboard:
+Start the API server:
 
 ```bash
 cd autocontext
 uv run autoctx serve --host 127.0.0.1 --port 8000
 ```
 
-Then open `http://127.0.0.1:8000`.
+Then inspect `http://127.0.0.1:8000/` for the API index, or use `npx autoctx tui` for the interactive terminal UI.
 
 Use the repo-level `.env.example` as the reference for available `AUTOCONTEXT_*` settings.
 
@@ -115,7 +115,7 @@ The Python package exposes the full `autoctx` control-plane CLI (`run`, `serve`,
 
 | If you want to... | Start here | Why |
 |---|---|---|
-| Run the full multi-generation control plane | [autocontext/README.md](autocontext/README.md) | Python has the dashboard, API server, training loop, scenario scaffolding, export/import, and full CLI surface. |
+| Run the full multi-generation control plane | [autocontext/README.md](autocontext/README.md) | Python has the API server, training loop, scenario scaffolding, export/import, and full CLI surface. |
 | Embed judging or improvement loops in a Node app | [ts/README.md](ts/README.md) | The TypeScript package is smaller and focused on judge-based workflows, queueing, and MCP serving. |
 | Point an external agent at autocontext | [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md) | It documents the CLI-first contract, JSON output, MCP usage, and SDK options. |
 | Grab copy-paste integration snippets | [examples/README.md](examples/README.md) | The examples cover Python CLI, Claude Code MCP, Python SDK, and TypeScript library usage. |
@@ -138,9 +138,8 @@ MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenCl
 
 ## Repository Layout
 
-- `autocontext/`: Python package, CLI, API server, dashboard, training loop
+- `autocontext/`: Python package, CLI, API server, and training loop
 - `ts/`: published TypeScript package, CLI, and MCP-compatible tooling
-- `tui/`: interactive terminal UI
 - `docs/`: docs landing page and maintainer checklists
 - `examples/`: copy-paste integration snippets for package users and external agents
 - `infra/`: Docker, Fly.io, and bootstrap scripts

@@ -1,6 +1,6 @@
 # Canonical Concept Model
 
-This document is the working source of truth for AC-429: aligning the product vocabulary across Python, TypeScript, CLI, MCP, dashboard, docs, and storage.
+This document is the working source of truth for AC-429: aligning the product vocabulary across Python, TypeScript, CLI, MCP, API/TUI surfaces, docs, and storage.
 
 It does two jobs:
 
@@ -25,9 +25,9 @@ These are the nouns we should prefer in docs, APIs, and product copy when descri
 
 | Concept | Definition | Current status |
 | --- | --- | --- |
-| `Scenario` | A reusable environment, simulation, or evaluation context with stable rules and scoring. | Implemented across Python, TypeScript, CLI, MCP, dashboard, and docs. |
+| `Scenario` | A reusable environment, simulation, or evaluation context with stable rules and scoring. | Implemented across Python, TypeScript, CLI, MCP, API/TUI surfaces, and docs. |
 | `Task` | A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface. | Implemented, but overloaded. |
-| `Mission` | A long-running goal advanced step by step until a verifier says it is complete. | Implemented in TypeScript CLI/MCP/dashboard surfaces. |
+| `Mission` | A long-running goal advanced step by step until a verifier says it is complete. | Implemented in TypeScript CLI/MCP/API/TUI surfaces. |
 | `Campaign` | A planned grouping of missions, runs, and/or scenarios used to coordinate broader work over time. | Reserved concept. Not implemented yet. |
 
 ### Runtime concepts
@@ -86,7 +86,7 @@ These are the execution nouns we should use when describing how the system actua
 ### Phase 2: Add shared metadata to machine-readable surfaces
 
 - Expose the concept model in capability-discovery outputs for CLI and MCP.
-- Let dashboard and external-agent surfaces point back to the same canonical names.
+- Let API, TUI, and external-agent surfaces point back to the same canonical names.
 - Prefer one shared metadata shape over hand-maintained prose in each surface.
 
 ### Phase 3: Normalize the highest-friction names

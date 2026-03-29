@@ -1,1 +1,1 @@
-"""autocontext server package for dashboard and stream APIs."""
+"""autocontext server package for HTTP and stream APIs."""

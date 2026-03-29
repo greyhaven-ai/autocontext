@@ -628,7 +628,7 @@ def ecosystem(
 def tui(
     port: int = typer.Option(8000, "--port", help="Server port"),
 ) -> None:
-    """Launch interactive TUI (starts server + Ink terminal UI)."""
+    """Start the interactive API/WebSocket server for a separate terminal UI client."""
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -647,8 +647,8 @@ def tui(
     # AC-467: standalone tui/ removed — server is API-only.
     # Interactive TUI is available via the TS package: autoctx tui
     console.print(f"[green]Interactive server on port {port}[/green]")
-    console.print("[dim]API: http://localhost:{port}/api/runs[/dim]")
-    console.print("[dim]WebSocket: ws://localhost:{port}/ws/interactive[/dim]")
+    console.print(f"[dim]API: http://localhost:{port}/api/runs[/dim]")
+    console.print(f"[dim]WebSocket: ws://localhost:{port}/ws/interactive[/dim]")
     console.print("[dim]For interactive TUI, use the TypeScript package: npx autoctx tui[/dim]")
 
     uvicorn.run(interactive_app, host="127.0.0.1", port=int(port), log_level="info")

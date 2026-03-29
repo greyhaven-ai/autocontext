@@ -1,4 +1,4 @@
-"""Tests for protocol parity between server (Python) and TUI (TypeScript).
+"""Tests for protocol parity between server (Python) and TypeScript consumers.
 
 AC-142: Ensure the TUI protocol.ts is generated/validated from the server
 protocol.py JSON Schema, so protocol drift is caught automatically.
@@ -16,13 +16,13 @@ from autocontext.server.protocol import export_json_schema
 
 
 def _repo_root() -> Path:
-    """Walk up from this file to find the repo root (contains tui/)."""
+    """Walk up from this file to find the repo root."""
     current = Path(__file__).resolve().parent
     for _ in range(5):
-        if (current / "tui").exists():
+        if (current / "autocontext").exists() and (current / "ts").exists():
             return current
         current = current.parent
-    pytest.skip("Could not locate repo root with tui/ directory")
+    pytest.skip("Could not locate repo root")
     raise RuntimeError("unreachable")  # pragma: no cover
 
 

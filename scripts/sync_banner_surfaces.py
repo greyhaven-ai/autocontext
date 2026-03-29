@@ -29,7 +29,6 @@ WHATS_NEW_BLOCK_END = _banner.WHATS_NEW_BLOCK_END
 WHATS_NEW_BLOCK_START = _banner.WHATS_NEW_BLOCK_START
 get_banner_svg_path = _banner.get_banner_svg_path
 render_banner_svg = _banner.render_banner_svg
-render_dashboard_banner_block = _banner.render_dashboard_banner_block
 render_readme_banner_block = _banner.render_readme_banner_block
 render_readme_whats_new_block = _banner.render_readme_whats_new_block
 
@@ -67,14 +66,6 @@ def main() -> int:
     )
     write_if_changed(readme, readme_text)
 
-    dashboard = REPO_ROOT / "autocontext" / "dashboard" / "index.html"
-    dashboard_text = replace_block(
-        dashboard.read_text(encoding="utf-8"),
-        SYNC_BLOCK_START,
-        SYNC_BLOCK_END,
-        render_dashboard_banner_block(),
-    )
-    write_if_changed(dashboard, dashboard_text)
     write_if_changed(get_banner_svg_path(), render_banner_svg())
     return 0
 

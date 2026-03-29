@@ -45,19 +45,18 @@ npm run lint
 npm test
 ```
 
-TUI:
+TUI-related TypeScript work:
 
 ```bash
-cd tui
+cd ts
 npm install
 npm test
 ```
 
 ## Repo Map
 
-- `autocontext/`: Python package, CLI, API server, dashboard, and tests
-- `ts/`: published TypeScript package, Node CLI, and MCP server
-- `tui/`: Ink-based terminal UI
+- `autocontext/`: Python package, CLI, API server, and tests
+- `ts/`: published TypeScript package, Node CLI, MCP server, and bundled Ink terminal UI
 - `scripts/`: repo maintenance and protocol generation helpers
 
 ## Development Notes

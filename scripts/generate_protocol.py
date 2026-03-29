@@ -4,7 +4,7 @@
 This script:
 1. Exports the JSON Schema from autocontext.server.protocol (the single source of truth)
 2. Writes protocol/autocontext-protocol.json (committed, for cross-language validation)
-3. Generates tui/src/protocol.generated.ts (Zod schemas derived from the JSON Schema)
+3. Generates ts/src/tui/protocol.generated.ts (Zod schemas derived from the JSON Schema)
 
 Usage:
     python scripts/generate_protocol.py          # Generate all artifacts
@@ -245,7 +245,7 @@ def _topo_sort_shared(names: list[str], defs: dict[str, Any]) -> list[str]:
 
 
 def generate_typescript(schema: dict[str, Any]) -> str:
-    """Generate TUI protocol TypeScript (Zod schemas) from the JSON Schema."""
+    """Generate TypeScript protocol schemas (Zod) from the JSON Schema."""
     lines: list[str] = [
         "// AUTO-GENERATED from autocontext/src/autocontext/server/protocol.py",
         "// Do not edit manually. Run: python scripts/generate_protocol.py",
@@ -322,7 +322,7 @@ def generate_typescript(schema: dict[str, Any]) -> str:
 def check_parity(schema: dict[str, Any]) -> bool:
     """Check that committed artifacts match the live schema. Returns True if in sync."""
     json_path = REPO_ROOT / "protocol" / "autocontext-protocol.json"
-    ts_path = REPO_ROOT / "tui" / "src" / "protocol.generated.ts"
+    ts_path = REPO_ROOT / "ts" / "src" / "tui" / "protocol.generated.ts"
 
     ok = True
 
@@ -370,7 +370,7 @@ def main() -> None:
     print(f"Wrote {json_path}")
 
     # Write generated TypeScript
-    ts_path = REPO_ROOT / "tui" / "src" / "protocol.generated.ts"
+    ts_path = REPO_ROOT / "ts" / "src" / "tui" / "protocol.generated.ts"
     ts_content = generate_typescript(schema)
     ts_path.write_text(ts_content, encoding="utf-8")
     print(f"Wrote {ts_path}")

@@ -4,7 +4,7 @@ autocontext is a control plane for improving agent behavior over repeated runs. 
 
 ## Working Directory
 
-Run the commands in this README from the `autocontext/` directory. The Python package, CLI entrypoint, tests, migrations, and dashboard assets all live here.
+Run the commands in this README from the `autocontext/` directory. The Python package, CLI entrypoint, tests, and migrations all live here.
 
 ## What It Does
 
@@ -70,13 +70,13 @@ AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
 uv run autoctx run --scenario grid_ctf --gens 3
 ```
 
-Start the API server and dashboard:
+Start the API server:
 
 ```bash
 uv run autoctx serve --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000` after the server starts.
+Inspect `http://127.0.0.1:8000/` for the API index after the server starts. For an interactive terminal UI, use the TypeScript package: `npx autoctx tui`.
 
 Start the MCP server:
 
@@ -160,11 +160,9 @@ See the repo-level [.env.example](../.env.example) for a working starting point.
 autocontext/
   src/autocontext/   Python package
   tests/             Pytest suite
-  dashboard/         Static dashboard assets
   docs/              Package-specific documentation
   migrations/        SQLite migrations
 ts/                  TypeScript package
-tui/                 Interactive terminal UI
 infra/               Docker, Fly.io, bootstrap scripts
 ```
 

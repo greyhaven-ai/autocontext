@@ -6,14 +6,14 @@ Use this file as the first pointer for coding agents and automation that need to
 
 - Full autocontext control plane: `autocontext/`
 - Node/TypeScript toolkit and CLI: `ts/`
-- Interactive terminal UI: `tui/`
+- Interactive terminal UI: `ts/src/tui/`
 - External agent usage guide: `autocontext/docs/agent-integration.md`
 
 ## Working Directories
 
 - Run Python commands from `autocontext/`.
 - Run Node/TypeScript commands from `ts/`.
-- Run TUI commands from `tui/`.
+- Run TUI-related commands from `ts/`.
 
 Most repo-level commands in the READMEs assume one of those package directories as the current working directory.
 

@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from autocontext.config import load_settings
@@ -52,12 +50,6 @@ from autocontext.server.run_manager import RunManager
 from autocontext.storage import SQLiteStore
 
 LOGGER = logging.getLogger(__name__)
-
-
-def _dashboard_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "dashboard"
-
-
 def _build_scenario_creator(app_settings: object) -> object | None:
     try:
         from autocontext.agents.llm_client import build_client_from_settings
@@ -108,7 +100,7 @@ def create_app(
     run_manager: RunManager | None = None,
 ) -> FastAPI:
     """Factory that creates the FastAPI app, optionally wired to a LoopController."""
-    application = FastAPI(title="autocontext Dashboard API", version="0.1.0")
+    application = FastAPI(title="autocontext API", version="0.1.0")
     application.include_router(cockpit_router)
     application.include_router(hub_router)
     application.include_router(knowledge_router)
@@ -406,16 +398,28 @@ def create_app(
             clear_engine()
             LOGGER.info("Monitor engine stopped")
 
-    dashboard = _dashboard_dir()
-    if dashboard.exists():
-        application.mount("/dashboard", StaticFiles(directory=dashboard, html=True), name="dashboard")
+    def _api_info() -> dict[str, Any]:
+        return {
+            "service": "autocontext",
+            "version": "0.2.4",
+            "endpoints": {
+                "health": "/health",
+                "runs": "/api/runs",
+                "scenarios": "/api/scenarios",
+                "knowledge": "/api/knowledge/playbook/{scenario}",
+                "websocket": "/ws/interactive",
+                "events": "/ws/events",
+            },
+        }
 
-        @application.get("/")
-        def root() -> FileResponse:
-            index = dashboard / "index.html"
-            if not index.exists():
-                raise HTTPException(status_code=404, detail="dashboard/index.html not found")
-            return FileResponse(index)
+    @application.get("/")
+    def root() -> dict[str, Any]:
+        return _api_info()
+
+    @application.get("/dashboard")
+    @application.get("/dashboard/{path:path}")
+    def dashboard_placeholder(path: str = "") -> dict[str, Any]:
+        return _api_info()
 
     return application
 
