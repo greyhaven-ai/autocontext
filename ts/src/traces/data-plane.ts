@@ -1,13 +1,15 @@
 /**
  * Trace-to-disposable-model data plane (AC-466).
  *
- * Orchestrates the pipeline from raw traces → curated dataset → training inputs.
+ * Basic dataset curation with score filtering, held-out splits, and consent.
  *
- * DatasetCurator: filters, scores, splits held-out, enforces consent.
- * DataPlane: ingest → curate → output ShareGPT JSONL + manifest.
+ * NOTE: For production use, prefer DistillationPipeline (AC-458) which
+ * extends this with gate filtering, top-quartile selection, family
+ * filtering, failure-example policy, and richer manifests.
  *
- * This is the program-level orchestrator that ties AC-462 (schema),
- * AC-464 (redaction), AC-463 (export), AC-465 (publishing) together
+ * This module provides the foundational DatasetCurator and DataPlane
+ * orchestrator. DistillationPipeline in distillation-pipeline.ts is
+ * the full-featured version for real distillation workflows.
  * into a single dataset construction pipeline.
  */
 

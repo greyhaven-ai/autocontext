@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
+- Curated distillation dataset pipeline: gate filtering, top-quartile, family filtering, failure-example policy, rich manifest (AC-458).
 - Repo-local dataset discovery and schema adaptation: scan repo trees, convert JSONL/JSON/CSV to ShareGPT training format with provenance (AC-461).
 - Trace pipeline audit fixes: expanded redaction patterns, ISO 8601 timestamps, explicit role mapping, export warnings, HF format fix (AC-468).
 - Privacy-aware trace export workflow: select runs → redact → validate → package with manifest and attestation (AC-463).
