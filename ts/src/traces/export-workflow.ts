@@ -103,7 +103,6 @@ export class TraceExportWorkflow {
         error: "Trace export requires redistribution rights for public sharing.",
       };
     }
-
     // Step 1: Load run artifacts
     const runDir = join(this.runsRoot, request.runId);
     if (!existsSync(runDir)) {

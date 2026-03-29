@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
 - Privacy-aware trace export workflow: select runs → redact → validate → package with manifest and attestation (AC-463).
 - Publishing connectors: local JSONL, GitHub Gist, and Hugging Face dataset publishers with trace ingestion and deduplication (AC-465).
+- Trace-to-model data plane: DatasetCurator + DataPlane orchestrator for curated training datasets with provenance and held-out splits (AC-466).
 - Open public trace schema v1.0.0: versioned interchange format for coding agent traces with provenance, attestation, and redaction metadata (AC-462).
 - Sensitive-data detection and redaction pipeline: secrets, PII, paths, custom patterns with policy-backed actions (AC-464).
 - Mission-simulation integration: missions can invoke simulations as planning tools before committing to actions (AC-455).

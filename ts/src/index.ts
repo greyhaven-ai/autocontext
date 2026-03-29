@@ -255,6 +255,15 @@ export type {
   PublishOpts,
   IngestResult,
 } from "./traces/publishers.js";
+export { DataPlane, DatasetCurator } from "./traces/data-plane.js";
+export type {
+  TraceEntry,
+  CurationPolicy,
+  CuratedDataset,
+  DataPlaneConfig,
+  DataPlaneBuildResult,
+  DataPlaneStatus,
+} from "./traces/data-plane.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
