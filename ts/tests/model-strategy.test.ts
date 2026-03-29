@@ -8,13 +8,12 @@
 import { describe, it, expect } from "vitest";
 import {
   ModelStrategySelector,
-  type TrainingMode,
-  type ModelStrategy,
   type DistillationConfig,
   type DistilledArtifactMetadata,
   TRAINING_MODES,
   DEFAULT_RECOMMENDATIONS,
-} from "../src/training/model-strategy.js";
+} from "../src/index.js";
+import * as pkg from "../src/index.js";
 
 // ---------------------------------------------------------------------------
 // Training modes
@@ -102,6 +101,8 @@ describe("ModelStrategySelector", () => {
     });
 
     expect(strategy.trainingMode).toBe("adapter_finetune");
+    expect(strategy.baseModel).toBe("Qwen/Qwen3-0.6B");
+    expect(strategy.adapterType).toBe("lora");
   });
 
   it("respects explicit base model override", () => {
@@ -112,6 +113,18 @@ describe("ModelStrategySelector", () => {
     });
 
     expect(strategy.baseModel).toBe("meta-llama/Llama-3.2-1B");
+  });
+
+  it("provides a valid base model when overriding to full_finetune from a from_scratch family", () => {
+    const strategy = selector.select({
+      family: "game",
+      datasetSize: 100,
+      trainingModeOverride: "full_finetune",
+    });
+
+    expect(strategy.trainingMode).toBe("full_finetune");
+    expect(strategy.baseModel).toBe("Qwen/Qwen3-0.6B");
+    expect(strategy.adapterType).toBeUndefined();
   });
 });
 
@@ -178,5 +191,13 @@ describe("DistilledArtifactMetadata", () => {
 
     expect(meta.baseModel).toBeUndefined();
     expect(meta.adapterType).toBeUndefined();
+  });
+});
+
+describe("package entrypoint exports", () => {
+  it("exposes the model strategy surface through src/index", () => {
+    expect(pkg.ModelStrategySelector).toBe(ModelStrategySelector);
+    expect(pkg.TRAINING_MODES).toBe(TRAINING_MODES);
+    expect(pkg.DEFAULT_RECOMMENDATIONS).toBe(DEFAULT_RECOMMENDATIONS);
   });
 });

@@ -78,6 +78,9 @@ interface FamilyRecommendation {
   reasoning: string;
 }
 
+const DEFAULT_BASE_MODEL = "Qwen/Qwen3-0.6B";
+const DEFAULT_ADAPTER_TYPE: AdapterType = "lora";
+
 export const DEFAULT_RECOMMENDATIONS: Record<string, FamilyRecommendation> = {
   game: {
     trainingMode: "from_scratch",
@@ -85,61 +88,61 @@ export const DEFAULT_RECOMMENDATIONS: Record<string, FamilyRecommendation> = {
   },
   agent_task: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Agent tasks require language understanding — adapter fine-tuning on a pretrained base captures instruction-following cheaply.",
   },
   simulation: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Simulation scenarios benefit from pretrained reasoning but have structured action spaces suitable for lightweight adapters.",
   },
   investigation: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Investigation requires evidence reasoning — a pretrained base with adapter captures diagnostic patterns efficiently.",
   },
   workflow: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Workflow scenarios need sequential reasoning — adapter on a pretrained base is the best cost/quality tradeoff.",
   },
   negotiation: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Negotiation requires opponent modeling and language — adapter on a pretrained base captures strategic reasoning.",
   },
   artifact_editing: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Artifact editing requires code/config understanding — adapter fine-tuning on a code-aware base is most effective.",
   },
   schema_evolution: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Schema evolution needs data-structure reasoning — lightweight adapter captures migration patterns.",
   },
   tool_fragility: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Tool fragility requires API contract understanding — adapter on a pretrained base is efficient.",
   },
   operator_loop: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Operator-loop scenarios need judgment — language model base with adapter captures escalation patterns.",
   },
   coordination: {
     trainingMode: "adapter_finetune",
-    baseModel: "Qwen/Qwen3-0.6B",
+    baseModel: DEFAULT_BASE_MODEL,
     adapterType: "lora",
     reasoning: "Coordination requires multi-context reasoning — adapter on a pretrained base captures handoff patterns.",
   },
@@ -165,8 +168,8 @@ export class ModelStrategySelector {
     if (!rec) {
       return {
         trainingMode: "adapter_finetune",
-        baseModel: "Qwen/Qwen3-0.6B",
-        adapterType: "lora",
+        baseModel: DEFAULT_BASE_MODEL,
+        adapterType: DEFAULT_ADAPTER_TYPE,
         reasoning: `No specific recommendation for family '${input.family}' — defaulting to adapter fine-tune.`,
       };
     }
@@ -198,8 +201,8 @@ export class ModelStrategySelector {
     // Language-heavy tasks on small dataset → still use adapter (don't downgrade to from_scratch)
     if (complexity === "language_heavy" && mode === "from_scratch") {
       mode = "adapter_finetune";
-      baseModel = baseModel ?? "Qwen/Qwen3-0.6B";
-      adapterType = "lora";
+      baseModel = baseModel ?? DEFAULT_BASE_MODEL;
+      adapterType = DEFAULT_ADAPTER_TYPE;
       reasoning = `Language-heavy task — pretrained base with adapter captures linguistic patterns even with small dataset.`;
     }
 
@@ -209,18 +212,23 @@ export class ModelStrategySelector {
   private applyOverrides(input: SelectionInput): ModelStrategy {
     const rec = DEFAULT_RECOMMENDATIONS[input.family] ?? {
       trainingMode: "adapter_finetune" as TrainingMode,
-      baseModel: "Qwen/Qwen3-0.6B",
-      adapterType: "lora" as AdapterType,
+      baseModel: DEFAULT_BASE_MODEL,
+      adapterType: DEFAULT_ADAPTER_TYPE,
       reasoning: "Default with overrides",
     };
 
     const mode = input.trainingModeOverride ?? rec.trainingMode;
-    const baseModel = input.baseModelOverride ?? rec.baseModel;
+    const baseModel = mode === "from_scratch"
+      ? undefined
+      : (input.baseModelOverride ?? rec.baseModel ?? DEFAULT_BASE_MODEL);
+    const adapterType = mode === "adapter_finetune"
+      ? (rec.adapterType ?? DEFAULT_ADAPTER_TYPE)
+      : undefined;
 
     return {
       trainingMode: mode,
-      baseModel: mode === "from_scratch" ? undefined : baseModel,
-      adapterType: mode === "adapter_finetune" ? (rec.adapterType ?? "lora") : undefined,
+      baseModel,
+      adapterType,
       reasoning: `Operator override: mode=${mode}${input.baseModelOverride ? `, base=${input.baseModelOverride}` : ""}.`,
     };
   }
