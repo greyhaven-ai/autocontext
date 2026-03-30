@@ -169,3 +169,22 @@ MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenCl
 [![PyPI downloads](https://img.shields.io/pypi/dm/autoctx?logo=pypi&label=PyPI%20downloads)](https://pypi.org/project/autoctx/)
 
 [![Star History Chart](https://api.star-history.com/svg?repos=greyhaven-ai/autocontext&type=Date)](https://www.star-history.com/#greyhaven-ai/autocontext&Date)
+
+
+## Installation
+
+```bash
+# Installation instructions
+```
+
+
+## Usage
+
+```python
+# Usage examples
+```
+
+
+## Contributing
+
+Contributions are welcome!
