@@ -10,6 +10,8 @@ autocontext is a system for running scenarios, tasks, and missions, analyzing wh
 
 The North Star is to move from one-off frontier-model exploration toward workflows that become more reliable, more auditable, and cheaper to run over time.
 
+The intended use is mostly hands-off: point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
+
 ## North Star
 
 Most agent systems still start every run cold. They do not reliably preserve what worked, separate signal from noise, or turn repeated success into a reusable asset.
@@ -24,6 +26,7 @@ autocontext is built to close that loop:
 
 ## How People Use It
 
+- hand the harness a real task, let it iterate mostly hands-off, and review the resulting traces, datasets, playbooks, artifacts, and optional distilled model
 - improve agent behavior across repeated runs instead of prompting from scratch every time
 - model and test environments through reusable scenarios
 - run plain-language simulations with sweeps, replay, compare, and export
@@ -31,7 +34,7 @@ autocontext is built to close that loop:
 - operate verifier-driven missions for longer-running goals
 - analyze runs, replays, and artifacts to understand regressions and stable wins
 - export knowledge, artifacts, and training data for downstream systems
-- expose the system over CLI, MCP, API, and dashboard surfaces for external agents and operator tooling
+- expose the system over CLI, MCP, API, and TUI/operator surfaces for external agents and operator tooling
 
 ## How It Works
 
@@ -96,13 +99,12 @@ uv venv
 source .venv/bin/activate
 uv sync --group dev
 
-AUTOCONTEXT_AGENT_PROVIDER=deterministic uv run autoctx run \
-  --scenario grid_ctf \
-  --gens 3 \
-  --run-id quickstart
+AUTOCONTEXT_AGENT_PROVIDER=deterministic uv run autoctx solve \
+  --description "improve customer-support replies for billing disputes" \
+  --gens 3
 ```
 
-That creates a local run, writes artifacts under `runs/` and `knowledge/`, and works without external API keys.
+That hands the harness a real task, materializes the working scenario, runs the loop, and writes traces and artifacts under `runs/` and `knowledge/`. It also works without external API keys.
 
 Run with Anthropic:
 
@@ -110,7 +112,7 @@ Run with Anthropic:
 cd autocontext
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
 AUTOCONTEXT_ANTHROPIC_API_KEY=your-key \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
 Start the API server:
@@ -149,11 +151,12 @@ The Python package exposes the full `autoctx` control-plane CLI for scenario exe
 
 ## Common Workflows
 
-- Run and improve a reusable scenario: `uv run autoctx run --scenario grid_ctf --gens 3`
+- Hand the harness a task in plain language: `uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3`
+- Run and improve a saved scenario: `uv run autoctx run --scenario support_triage --gens 3`
 - Inspect or replay outputs: `uv run autoctx list`, `uv run autoctx status <run_id>`
 - Scaffold a custom scenario: `uv run autoctx new-scenario --template prompt-optimization --name my-task`
-- Export training data: `uv run autoctx export-training-data --scenario grid_ctf --all-runs --output training/grid_ctf.jsonl`
-- Train a local model: `uv run autoctx train --scenario grid_ctf --data training/grid_ctf.jsonl --time-budget 300`
+- Export training data: `uv run autoctx export-training-data --scenario support_triage --all-runs --output training/support_triage.jsonl`
+- Train a local model: `uv run autoctx train --scenario support_triage --data training/support_triage.jsonl --time-budget 300`
 - Start operator surfaces: `uv run autoctx serve --host 127.0.0.1 --port 8000`, `uv run autoctx mcp-serve`
 - Wait on a monitor condition: `uv run autoctx wait <condition_id> --json`
 
