@@ -14,7 +14,7 @@ from autocontext.config.settings import AppSettings
 from autocontext.knowledge.export import SkillPackage, export_skill_package
 from autocontext.mcp.tools import MtsToolContext
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -98,7 +98,7 @@ class SolveManager:
             job.status = "completed"
 
         except Exception as exc:
-            LOGGER.exception("Solve job %s failed", job.job_id)
+            logger.exception("Solve job %s failed", job.job_id)
             job.status = "failed"
             job.error = str(exc)
 
@@ -117,7 +117,7 @@ class SolveManager:
                 knowledge_root=self._settings.knowledge_root,
             )
         except Exception:
-            LOGGER.warning("failed to build ScenarioCreator for solve job", exc_info=True)
+            logger.warning("failed to build ScenarioCreator for solve job", exc_info=True)
             return None
 
     def get_status(self, job_id: str) -> dict[str, Any]:

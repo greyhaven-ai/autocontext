@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import ArtifactStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def stage_preflight(
@@ -82,7 +82,7 @@ def stage_preflight(
     harness_dir.mkdir(parents=True, exist_ok=True)
     harness_path.write_text(result.harness_source, encoding="utf-8")
 
-    LOGGER.info(
+    logger.info(
         "preflight synthesis %s: accuracy=%.2f, iterations=%d",
         "converged" if result.converged else "incomplete",
         result.accuracy,

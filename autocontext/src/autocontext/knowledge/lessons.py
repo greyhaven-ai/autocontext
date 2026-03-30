@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _UNSET_GEN = -999_999
 
@@ -120,7 +120,7 @@ class LessonStore:
             if not isinstance(data, list):
                 return []
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
-            LOGGER.debug("unable to read structured lessons for %s from %s", scenario, path)
+            logger.debug("unable to read structured lessons for %s from %s", scenario, path)
             return []
         return [Lesson.from_dict(entry) for entry in data]
 

@@ -12,7 +12,7 @@ from autocontext.loop.generation_runner import GenerationRunner, RunSummary
 from autocontext.storage import ArtifactStore, SQLiteStore
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -146,7 +146,7 @@ class EcosystemRunner:
                 runner = GenerationRunner(phase_settings)
                 runner.migrate(migrations_dir)
 
-                LOGGER.info(
+                logger.info(
                     "ecosystem cycle=%d phase=%d provider=%s rlm=%s gens=%d run_id=%s",
                     cycle, phase_idx, phase.provider, phase.rlm_enabled, phase.generations, run_id,
                 )
@@ -182,7 +182,7 @@ class EcosystemRunner:
                             },
                             channel="ecosystem",
                         )
-                        LOGGER.warning(
+                        logger.warning(
                             "ecosystem convergence lock: playbook oscillating for %d cycles",
                             self.base_settings.ecosystem_oscillation_window,
                         )

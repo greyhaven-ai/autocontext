@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from autocontext.execution.supervisor import ExecutionSupervisor
     from autocontext.loop.events import EventStreamEmitter
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def stage_probe(
@@ -94,14 +94,14 @@ def stage_probe(
             state = ctx.scenario.initial_state(seed=ctx.settings.seed_base + ctx.generation)
             valid, reason = ctx.scenario.validate_actions(state, "challenger", revised)
             if not valid:
-                LOGGER.warning("probe refinement produced invalid strategy: %s", reason)
+                logger.warning("probe refinement produced invalid strategy: %s", reason)
                 raise ValueError(reason)
 
         ctx.current_strategy = revised
         ctx.probe_refinement_applied = True
-        LOGGER.info("probe refinement applied (probe_score=%.4f)", probe_result.best_score)
+        logger.info("probe refinement applied (probe_score=%.4f)", probe_result.best_score)
     except Exception:
-        LOGGER.warning("probe refinement failed, keeping original strategy", exc_info=True)
+        logger.warning("probe refinement failed, keeping original strategy", exc_info=True)
 
     events.emit("probe_completed", {
         "run_id": ctx.run_id,

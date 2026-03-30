@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
     from autocontext.storage import ArtifactStore, SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def stage_consultation(
@@ -85,7 +85,7 @@ def stage_consultation(
     try:
         result = runner.consult(request)
     except Exception:
-        LOGGER.warning("consultation call failed", exc_info=True)
+        logger.warning("consultation call failed", exc_info=True)
         return ctx
 
     # Persist

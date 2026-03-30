@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from autocontext.notifications.base import Notifier
     from autocontext.storage.sqlite_store import SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class MonitorEngine:
@@ -92,7 +92,7 @@ class MonitorEngine:
             try:
                 self._check_heartbeat()
             except Exception:
-                LOGGER.debug("heartbeat check error", exc_info=True)
+                logger.debug("heartbeat check error", exc_info=True)
 
     def _check_heartbeat(self) -> None:
         """Evaluate all active heartbeat_lost conditions."""
@@ -160,7 +160,7 @@ class MonitorEngine:
         try:
             self._sqlite.insert_monitor_alert(alert)
         except Exception:
-            LOGGER.warning("failed to persist monitor alert %s", alert.id, exc_info=True)
+            logger.warning("failed to persist monitor alert %s", alert.id, exc_info=True)
         if alert.condition_type == ConditionType.HEARTBEAT_LOST:
             self._heartbeat_fired_conditions.add(alert.condition_id)
 
@@ -179,7 +179,7 @@ class MonitorEngine:
                     },
                 )
             except Exception:
-                LOGGER.debug("failed to emit monitor_alert event", exc_info=True)
+                logger.debug("failed to emit monitor_alert event", exc_info=True)
 
         # Notify
         if self._notifier is not None:
@@ -194,7 +194,7 @@ class MonitorEngine:
                 )
                 self._notifier.notify(event)
             except Exception:
-                LOGGER.debug("notifier error for monitor alert", exc_info=True)
+                logger.debug("notifier error for monitor alert", exc_info=True)
 
         # Unblock waiters for this condition
         with self._waiters_lock:

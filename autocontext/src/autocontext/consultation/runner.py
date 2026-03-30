@@ -7,7 +7,7 @@ import re
 from autocontext.consultation.types import ConsultationRequest, ConsultationResult
 from autocontext.providers.base import CompletionResult, LLMProvider
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ConsultationRunner:

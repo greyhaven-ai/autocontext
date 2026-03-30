@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from autocontext.storage.artifacts import ArtifactStore
     from autocontext.storage.sqlite_store import SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 PACKAGE_FORMAT_VERSION = 1
 
@@ -204,7 +204,7 @@ def read_package_metadata(artifacts: ArtifactStore, scenario_name: str) -> dict[
     try:
         raw = read_json(path)
     except (OSError, json.JSONDecodeError):
-        LOGGER.warning("failed to read package metadata for %s", scenario_name)
+        logger.warning("failed to read package metadata for %s", scenario_name)
         return {}
     return raw if isinstance(raw, dict) else {}
 

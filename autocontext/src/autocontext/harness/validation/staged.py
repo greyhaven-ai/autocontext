@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class StageStatus(StrEnum):
@@ -125,7 +125,7 @@ class ValidationPipeline:
             results.append(result)
 
             if result.status is StageStatus.FAILED:
-                LOGGER.debug(
+                logger.debug(
                     "Validation stopped at stage %d (%s): %s",
                     stage.order, stage.name, result.error,
                 )

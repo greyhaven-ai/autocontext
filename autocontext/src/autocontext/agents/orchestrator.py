@@ -31,7 +31,7 @@ from autocontext.prompts.templates import PromptBundle
 if TYPE_CHECKING:
     from autocontext.agents.role_router import ProviderConfig
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _ARCHITECT_CADENCE_SKIP = "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
 
@@ -179,7 +179,7 @@ def _apply_role_overrides(orch: AgentOrchestrator, settings: AppSettings) -> Non
         runtime = SubagentRuntime(client=client)
         runner = getattr(orch, runner_map[role])
         runner.runtime = runtime
-        LOGGER.info("role '%s' using per-role provider: %s", role, provider_type)
+        logger.info("role '%s' using per-role provider: %s", role, provider_type)
 
 
 class AgentOrchestrator:
@@ -890,7 +890,7 @@ class AgentOrchestrator:
                     run_id, generation_index, "competitor_rlm_trials", summary,
                 )
             except Exception:
-                LOGGER.debug("failed to store RLM trial summary", exc_info=True)
+                logger.debug("failed to store RLM trial summary", exc_info=True)
 
         raw_text = competitor_exec.content
         return raw_text, competitor_exec

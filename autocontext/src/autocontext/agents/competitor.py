@@ -5,7 +5,7 @@ import logging
 from autocontext.agents.subagent_runtime import SubagentRuntime, SubagentTask
 from autocontext.agents.types import RoleExecution
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class CompetitorRunner:

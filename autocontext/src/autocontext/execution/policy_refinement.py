@@ -18,7 +18,7 @@ from autocontext.execution.policy_executor import PolicyExecutor, PolicyMatchRes
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.base import ScenarioInterface
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,7 +201,7 @@ class PolicyRefinementLoop:
         converged = False
 
         for i in range(1, self._max_iterations + 1):
-            LOGGER.info("policy refinement iteration %d/%d", i, self._max_iterations)
+            logger.info("policy refinement iteration %d/%d", i, self._max_iterations)
 
             # Evaluate current policy (zero LLM calls)
             match_results, heuristic = self._evaluate_policy(current_policy, i)
@@ -224,7 +224,7 @@ class PolicyRefinementLoop:
             iteration_log.append(iteration_entry)
             heuristic_history.append(heuristic)
 
-            LOGGER.info(
+            logger.info(
                 "iteration %d: heuristic=%.4f, illegal=%s, scores=%s",
                 i, heuristic, had_illegal,
                 [f"{r.score:.4f}" for r in match_results],
@@ -237,13 +237,13 @@ class PolicyRefinementLoop:
 
             # Early stop: perfect heuristic
             if heuristic >= 1.0:
-                LOGGER.info("perfect heuristic reached at iteration %d", i)
+                logger.info("perfect heuristic reached at iteration %d", i)
                 converged = True
                 break
 
             # Convergence check
             if self._check_convergence(heuristic_history):
-                LOGGER.info("convergence detected at iteration %d", i)
+                logger.info("convergence detected at iteration %d", i)
                 converged = True
                 break
 

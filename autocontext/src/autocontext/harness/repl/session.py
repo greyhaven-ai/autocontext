@@ -14,7 +14,7 @@ from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import RoleExecution, RoleUsage
 from autocontext.harness.repl.types import ExecutionRecord, ReplCommand, ReplWorkerProtocol
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _CODE_PATTERN = re.compile(r"<code>(.*?)</code>", re.DOTALL)
 
@@ -146,7 +146,7 @@ class RlmSession:
                     self._on_turn(turn, self._max_turns, result.answer.get("ready", False))
 
                 if result.answer.get("ready"):
-                    LOGGER.debug("RLM %s finished on turn %d", self._role, turn)
+                    logger.debug("RLM %s finished on turn %d", self._role, turn)
                     break
             else:
                 # Model didn't emit code — nudge it
@@ -157,7 +157,7 @@ class RlmSession:
                 })
         else:
             status = "truncated"
-            LOGGER.warning("RLM %s hit max_turns=%d without finalizing", self._role, self._max_turns)
+            logger.warning("RLM %s hit max_turns=%d without finalizing", self._role, self._max_turns)
 
         answer = self._worker.namespace.get("answer", {"content": "", "ready": False})
         content = answer.get("content", "")

@@ -14,7 +14,7 @@ from typing import Any
 
 from autocontext.scenarios.base import ScenarioInterface
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +130,7 @@ class SampleStateGenerator:
         try:
             state = self._scenario.initial_state(seed=seed)
         except Exception:
-            LOGGER.debug("initial_state failed for seed %d", seed, exc_info=True)
+            logger.debug("initial_state failed for seed %d", seed, exc_info=True)
             return []
 
         states: list[dict[str, Any]] = [dict(state)]
@@ -142,12 +142,12 @@ class SampleStateGenerator:
 
             actions = self._random_actions(state, rng)
             if actions is None:
-                LOGGER.debug("no valid actions generated during simulation for seed %d", seed)
+                logger.debug("no valid actions generated during simulation for seed %d", seed)
                 break
             try:
                 state = self._scenario.step(state, actions)
             except Exception:
-                LOGGER.debug("step failed during simulation", exc_info=True)
+                logger.debug("step failed during simulation", exc_info=True)
                 break
 
             states.append(dict(state))
@@ -195,6 +195,6 @@ class SampleStateGenerator:
         try:
             valid, _ = self._scenario.validate_actions(state, "generator", actions)
         except Exception:
-            LOGGER.debug("validate_actions failed during sampling", exc_info=True)
+            logger.debug("validate_actions failed during sampling", exc_info=True)
             return False
         return valid

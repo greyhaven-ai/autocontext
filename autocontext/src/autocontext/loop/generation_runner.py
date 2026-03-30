@@ -59,7 +59,7 @@ from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.families import detect_family
 from autocontext.storage import ArtifactStore, SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _current_release_version() -> str:
@@ -157,7 +157,7 @@ class GenerationRunner:
             except RuntimeError as exc:
                 if not settings.ssh_allow_fallback:
                     raise
-                LOGGER.warning("SSH executor preflight failed; falling back to local executor: %s", exc)
+                logger.warning("SSH executor preflight failed; falling back to local executor: %s", exc)
                 self.executor = ExecutionSupervisor(executor=LocalExecutor())
             else:
                 self.executor = ExecutionSupervisor(
@@ -991,7 +991,7 @@ class GenerationRunner:
                     retry_count=retry_counts[generation_index] + 1,
                 )
             self.sqlite.mark_run_failed(run_id)
-            LOGGER.warning(
+            logger.warning(
                 "recovered stale running generations for run %s: %s",
                 run_id,
                 ", ".join(str(gen) for gen in running_generations),
@@ -1004,7 +1004,7 @@ class GenerationRunner:
         target_generations = self._int_value(run_row.get("target_generations"), 0)
         if target_generations > 0 and completed_generations >= target_generations:
             self.sqlite.mark_run_completed(run_id)
-            LOGGER.info(
+            logger.info(
                 "marking run %s completed during recovery (%d/%d generations already completed)",
                 run_id,
                 completed_generations,
@@ -1013,7 +1013,7 @@ class GenerationRunner:
             return
 
         self.sqlite.mark_run_failed(run_id)
-        LOGGER.warning(
+        logger.warning(
             "marking run %s failed during recovery; run was still 'running' without an active generation",
             run_id,
         )
@@ -1108,7 +1108,7 @@ class GenerationRunner:
                         scenario_name, best_snapshot["run_id"]
                     )
                     if restored:
-                        LOGGER.info(
+                        logger.info(
                             "restored knowledge from run %s (score=%.4f) for scenario %s",
                             best_snapshot["run_id"],
                             best_snapshot["best_score"],
@@ -1122,7 +1122,7 @@ class GenerationRunner:
         ):
             existing_harness = self.artifacts.list_harness(scenario_name)
             if existing_harness:
-                LOGGER.info(
+                logger.info(
                     "inheriting %d harness file(s) for scenario %s: %s",
                     len(existing_harness), scenario_name, ", ".join(existing_harness),
                 )
@@ -1138,13 +1138,13 @@ class GenerationRunner:
                 if existing_generation is not None:
                     status = str(existing_generation.get("status") or "")
                     if status == "completed":
-                        LOGGER.info(
+                        logger.info(
                             "generation %s already completed for run %s, skipping for idempotency",
                             generation,
                             active_run_id,
                         )
                         continue
-                    LOGGER.warning(
+                    logger.warning(
                         "generation %s for run %s exists with status '%s'; rerunning generation",
                         generation,
                         active_run_id,
@@ -1268,7 +1268,7 @@ class GenerationRunner:
                     try:
                         gen_row = self.sqlite.get_generation(active_run_id, generation)
                         if gen_row and gen_row.get("status") == "running":
-                            LOGGER.warning(
+                            logger.warning(
                                 "generation %d for run %s still in 'running' state after pipeline exit; marking as stalled",
                                 generation, active_run_id,
                             )
@@ -1294,7 +1294,7 @@ class GenerationRunner:
                 if run_row is not None and str(run_row.get("status") or "") == "running":
                     self._recover_stale_run_state(active_run_id)
             except Exception:
-                LOGGER.warning("failed to recover stale run state for %s", active_run_id, exc_info=True)
+                logger.warning("failed to recover stale run state for %s", active_run_id, exc_info=True)
             raise
         finally:
             self.artifacts.shutdown_writer()
@@ -1305,23 +1305,23 @@ class GenerationRunner:
             try:
                 self._generate_session_report(active_run_id, scenario_name, duration)
             except Exception:
-                LOGGER.warning("failed to generate session report for run %s", active_run_id, exc_info=True)
+                logger.warning("failed to generate session report for run %s", active_run_id, exc_info=True)
         try:
             self._generate_progress_report(active_run_id, scenario_name)
         except Exception:
-            LOGGER.warning("failed to generate progress report for run %s", active_run_id, exc_info=True)
+            logger.warning("failed to generate progress report for run %s", active_run_id, exc_info=True)
         try:
             self._generate_aggregate_analytics(active_run_id, scenario_name, scenario)
         except Exception:
-            LOGGER.warning("failed to generate aggregate analytics for run %s", active_run_id, exc_info=True)
+            logger.warning("failed to generate aggregate analytics for run %s", active_run_id, exc_info=True)
         try:
             self._generate_run_trace_artifacts(active_run_id, scenario_name, scenario)
         except Exception:
-            LOGGER.warning("failed to generate run trace artifacts for run %s", active_run_id, exc_info=True)
+            logger.warning("failed to generate run trace artifacts for run %s", active_run_id, exc_info=True)
         try:
             self._generate_trace_grounded_reports(active_run_id, scenario_name)
         except Exception:
-            LOGGER.warning("failed to generate trace-grounded reports for run %s", active_run_id, exc_info=True)
+            logger.warning("failed to generate trace-grounded reports for run %s", active_run_id, exc_info=True)
 
         # Snapshot knowledge for cross-run inheritance
         if self.settings.cross_run_inheritance and not self.settings.ablation_no_feedback:

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # Patterns for cleaning noisy lesson bullets
 _ROLLBACK_RE = re.compile(r"^-\s*Generation\s+\d+\s+ROLLBACK\b", re.IGNORECASE)

@@ -10,7 +10,7 @@ from autocontext.execution.bias_probes import BiasReport, run_position_bias_prob
 from autocontext.execution.judge import DisagreementMetrics, JudgeResult
 from autocontext.providers.base import LLMProvider
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _BIAS_PROBE_SYSTEM_PROMPT = (
     "You are an impartial judge comparing two candidate outputs. "
@@ -92,7 +92,7 @@ def evaluate_evaluator_guardrail(
                     f"(magnitude={position_probe.magnitude:.4f})"
                 )
         except Exception as exc:
-            LOGGER.warning("judge bias probe failed: %s", exc)
+            logger.warning("judge bias probe failed: %s", exc)
             report = BiasReport(probes_run=1, probes_failed=1)
             bias_payload = report.to_dict()
             metadata["bias_probe_error"] = str(exc)

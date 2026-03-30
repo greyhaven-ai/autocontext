@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import ArtifactStore, SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # Max seed hypotheses to generate at the start of tree search
 _MAX_INITIAL_SEEDS = 3
@@ -75,7 +75,7 @@ def stage_tree_search(
                 ctx.tool_context, settings.code_strategies_enabled,
             )
         except Exception:
-            LOGGER.debug("seed %d generation failed", seed_idx, exc_info=True)
+            logger.debug("seed %d generation failed", seed_idx, exc_info=True)
             continue
 
         if not _validate_strategy(strategy, scenario, settings.seed_base + ctx.generation + seed_idx):
@@ -94,7 +94,7 @@ def stage_tree_search(
 
     # Fallback: if no seeds survived, run one more attempt with the base prompt
     if tree.size() == 0:
-        LOGGER.warning("all seed hypotheses failed; falling back to single attempt")
+        logger.warning("all seed hypotheses failed; falling back to single attempt")
         raw_text, competitor_exec = orchestrator.competitor.run(
             ctx.prompts.competitor, tool_context=ctx.tool_context,
         )
@@ -140,7 +140,7 @@ def stage_tree_search(
                 ctx.tool_context, settings.code_strategies_enabled,
             )
         except Exception:
-            LOGGER.debug("refinement round %d failed", round_idx, exc_info=True)
+            logger.debug("refinement round %d failed", round_idx, exc_info=True)
             continue
 
         if not _validate_strategy(refined_strategy, scenario, settings.seed_base + ctx.generation):

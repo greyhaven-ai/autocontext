@@ -16,7 +16,7 @@ from typing import Any
 
 from autocontext.scenarios.base import ScenarioInterface
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
 
@@ -160,7 +160,7 @@ class ActionFilterHarness:
                     if isinstance(result, list):
                         return result
                 except Exception:
-                    LOGGER.warning("harness enumerate_legal_actions failed", exc_info=True)
+                    logger.warning("harness enumerate_legal_actions failed", exc_info=True)
         return None
 
     @staticmethod

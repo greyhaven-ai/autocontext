@@ -92,7 +92,7 @@ if TYPE_CHECKING:
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import ArtifactStore, SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _NOTEBOOK_CONTEXT_PROVIDER = NotebookContextProvider()
 
@@ -357,7 +357,7 @@ def _load_recent_numeric_strategies(
     try:
         history = sqlite.get_strategy_score_history(run_id)
     except Exception:
-        LOGGER.debug("failed to load strategy history for novelty", exc_info=True)
+        logger.debug("failed to load strategy history for novelty", exc_info=True)
         return []
 
     recent: list[dict[str, Any]] = []
@@ -570,7 +570,7 @@ def _select_exploration_strategy(
                 temperature=branch_temperature,
             )
         except Exception:
-            LOGGER.debug("failed to generate %s exploration branch", branch.branch_type, exc_info=True)
+            logger.debug("failed to generate %s exploration branch", branch.branch_type, exc_info=True)
             continue
 
         serialized = json.dumps(strategy, sort_keys=True)
@@ -663,7 +663,7 @@ def _load_previous_best_dimensions(
     try:
         rows = sqlite.get_generation_trajectory(run_id)
     except Exception:
-        LOGGER.debug("failed to load previous dimension summary", exc_info=True)
+        logger.debug("failed to load previous dimension summary", exc_info=True)
         return {}
     if not isinstance(rows, list) or not rows:
         return {}
@@ -972,7 +972,7 @@ def stage_policy_refinement(
             "total_matches_run": result.total_matches_run,
         })
     except Exception:
-        LOGGER.warning("policy refinement failed, using original strategy", exc_info=True)
+        logger.warning("policy refinement failed, using original strategy", exc_info=True)
         events.emit("policy_refinement_failed", {
             "run_id": ctx.run_id,
             "generation": ctx.generation,
@@ -1023,7 +1023,7 @@ def _revise_strategy_for_validity_failure(
             revised_strategy, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
         return revised_strategy
     except Exception:
-        LOGGER.debug("validity retry competitor re-invocation failed", exc_info=True)
+        logger.debug("validity retry competitor re-invocation failed", exc_info=True)
         return None
 
 
@@ -1225,7 +1225,7 @@ def _collect_hint_feedback(
             role="competitor",
         )
     except Exception:
-        LOGGER.debug("competitor hint feedback collection failed", exc_info=True)
+        logger.debug("competitor hint feedback collection failed", exc_info=True)
         return None
 
     exec_result = RoleExecution(
@@ -1438,7 +1438,7 @@ def stage_knowledge_setup(
                 tuning_config = TuningConfig.from_json(raw_tuning)
                 _apply_tuning_to_settings(ctx, tuning_config.parameters)
             except (json.JSONDecodeError, ValueError):
-                LOGGER.warning("Failed to parse tuning.json for %s", ctx.scenario_name)
+                logger.warning("Failed to parse tuning.json for %s", ctx.scenario_name)
 
     # #166 - Apply protocol tuning overrides when protocol_enabled
     if ctx.settings.protocol_enabled:
@@ -1957,7 +1957,7 @@ def stage_tournament(
                             json.dumps(revised_strategy, sort_keys=True),
                         )
                 except Exception:
-                    LOGGER.debug("retry-learning competitor re-invocation failed", exc_info=True)
+                    logger.debug("retry-learning competitor re-invocation failed", exc_info=True)
             time.sleep(settings.retry_backoff_seconds * attempt)
             continue
 

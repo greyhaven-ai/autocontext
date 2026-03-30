@@ -23,7 +23,7 @@ from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.util.json_io import read_json, write_json
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 EMPTY_PLAYBOOK_SENTINEL = "No playbook yet. Start from scenario rules and observation."
 
@@ -253,7 +253,7 @@ class ArtifactStore:
             try:
                 raw = read_json(hint_state)
             except json.JSONDecodeError:
-                LOGGER.warning("failed to parse hint state %s", hint_state, exc_info=True)
+                logger.warning("failed to parse hint state %s", hint_state, exc_info=True)
             else:
                 if isinstance(raw, dict):
                     return HintManager.from_dict(raw, policy_override=effective_policy)
@@ -351,7 +351,7 @@ class ArtifactStore:
             try:
                 raw = read_json(path)
             except json.JSONDecodeError:
-                LOGGER.warning("failed to parse analyst rating %s", path, exc_info=True)
+                logger.warning("failed to parse analyst rating %s", path, exc_info=True)
                 continue
             if isinstance(raw, dict):
                 return AnalystRating.from_dict(raw)
@@ -387,7 +387,7 @@ class ArtifactStore:
             try:
                 raw = read_json(path)
             except json.JSONDecodeError:
-                LOGGER.warning("failed to parse hint feedback %s", path, exc_info=True)
+                logger.warning("failed to parse hint feedback %s", path, exc_info=True)
                 continue
             if isinstance(raw, dict):
                 return HintFeedback.from_dict(raw)
@@ -429,7 +429,7 @@ class ArtifactStore:
             try:
                 raw = read_json(path)
             except json.JSONDecodeError:
-                LOGGER.warning("failed to parse credit assignment %s", path, exc_info=True)
+                logger.warning("failed to parse credit assignment %s", path, exc_info=True)
                 continue
             if isinstance(raw, dict):
                 return CreditAssignmentRecord.from_dict(raw)
@@ -446,7 +446,7 @@ class ArtifactStore:
                 try:
                     raw = read_json(path)
                 except json.JSONDecodeError:
-                    LOGGER.warning("failed to parse credit assignment %s", path, exc_info=True)
+                    logger.warning("failed to parse credit assignment %s", path, exc_info=True)
                     continue
                 if isinstance(raw, dict):
                     records.append(CreditAssignmentRecord.from_dict(raw))
@@ -522,13 +522,13 @@ class ArtifactStore:
             try:
                 name = name_validator(raw_name) if name_validator is not None else raw_name
             except ValueError:
-                LOGGER.warning("skipping %s '%s': invalid name", kind, raw_name)
+                logger.warning("skipping %s '%s': invalid name", kind, raw_name)
                 continue
 
             try:
                 ast.parse(code)
             except SyntaxError:
-                LOGGER.warning("skipping %s '%s': syntax error in generated code", kind, name)
+                logger.warning("skipping %s '%s': syntax error in generated code", kind, name)
                 continue
 
             target = directory / f"{name}.py"
@@ -612,7 +612,7 @@ class ArtifactStore:
         try:
             raw = read_json(path)
         except json.JSONDecodeError:
-            LOGGER.warning("failed to parse tool usage state %s", path, exc_info=True)
+            logger.warning("failed to parse tool usage state %s", path, exc_info=True)
             return ToolUsageTracker(known_tools=known_tools)
         if not isinstance(raw, dict):
             return ToolUsageTracker(known_tools=known_tools)

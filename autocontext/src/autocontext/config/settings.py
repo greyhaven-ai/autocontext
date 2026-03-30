@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from autocontext.config.presets import apply_preset
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class HarnessMode(StrEnum):
@@ -589,13 +589,13 @@ def validate_harness_mode(settings: AppSettings) -> AppSettings:
     """Validate harness_mode against dependent settings, falling back to NONE if invalid."""
     mode = settings.harness_mode
     if mode in (HarnessMode.FILTER, HarnessMode.VERIFY) and not settings.harness_validators_enabled:
-        LOGGER.warning(
+        logger.warning(
             "harness_mode=%s requires harness_validators_enabled=true; falling back to 'none'",
             mode.value,
         )
         settings = settings.model_copy(update={"harness_mode": HarnessMode.NONE})
     if mode == HarnessMode.POLICY and not settings.code_strategies_enabled:
-        LOGGER.warning(
+        logger.warning(
             "harness_mode=policy implies code_strategies_enabled=true; enabling it",
         )
         settings = settings.model_copy(update={"code_strategies_enabled": True})

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 RLM_SCAFFOLDING_PREAMBLE = """\
 <RLM_SCAFFOLDING>
@@ -317,7 +317,7 @@ def _insert_rlm_constraint(base: str, constraint: str) -> str:
     marker = "## Important rules"
     idx = base.find(marker)
     if idx == -1:
-        LOGGER.warning("RLM constraint marker '## Important rules' not found; appending to end")
+        logger.warning("RLM constraint marker '## Important rules' not found; appending to end")
         return base + constraint
     return base[:idx] + constraint.lstrip("\n") + "\n" + base[idx:]
 

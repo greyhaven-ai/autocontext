@@ -19,7 +19,7 @@ from typing import Any
 
 from autocontext.execution.ast_safety import check_ast_safety
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 _SAFE_BUILTINS = {
     k: __builtins__[k] if isinstance(__builtins__, dict) else getattr(__builtins__, k)  # type: ignore[index]
@@ -109,13 +109,13 @@ class HarnessLoader:
             try:
                 ast.parse(source)
             except SyntaxError:
-                LOGGER.warning("skipping harness '%s': syntax error", name)
+                logger.warning("skipping harness '%s': syntax error", name)
                 continue
 
             # AST safety check — reject dangerous patterns
             violations = check_ast_safety(source)
             if violations:
-                LOGGER.warning(
+                logger.warning(
                     "skipping harness '%s': AST safety violations: %s",
                     name, "; ".join(violations),
                 )
@@ -129,10 +129,10 @@ class HarnessLoader:
 
                 _run_with_timeout(_run_exec, self._timeout_seconds)
             except _HarnessTimeout:
-                LOGGER.warning("skipping harness '%s': timed out (%.1fs)", name, self._timeout_seconds)
+                logger.warning("skipping harness '%s': timed out (%.1fs)", name, self._timeout_seconds)
                 continue
             except Exception:
-                LOGGER.warning("skipping harness '%s': execution error", name, exc_info=True)
+                logger.warning("skipping harness '%s': execution error", name, exc_info=True)
                 continue
 
             # Extract known callables

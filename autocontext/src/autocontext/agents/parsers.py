@@ -8,7 +8,7 @@ from autocontext.agents.architect import parse_architect_tool_specs
 from autocontext.agents.coach import parse_coach_sections
 from autocontext.agents.contracts import AnalystOutput, ArchitectOutput, CoachOutput, CompetitorOutput
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _extract_section_bullets(markdown: str, heading: str) -> list[str]:
@@ -62,7 +62,7 @@ def parse_analyst_output(raw_markdown: str) -> AnalystOutput:
             parse_success=True,
         )
     except Exception:
-        LOGGER.warning("failed to parse analyst output", exc_info=True)
+        logger.warning("failed to parse analyst output", exc_info=True)
         return AnalystOutput(raw_markdown=raw_markdown, parse_success=False)
 
 
@@ -78,7 +78,7 @@ def parse_coach_output(raw_markdown: str) -> CoachOutput:
             parse_success=True,
         )
     except Exception:
-        LOGGER.warning("failed to parse coach output", exc_info=True)
+        logger.warning("failed to parse coach output", exc_info=True)
         return CoachOutput(raw_markdown=raw_markdown, parse_success=False)
 
 
@@ -92,5 +92,5 @@ def parse_architect_output(raw_markdown: str) -> ArchitectOutput:
             parse_success=True,
         )
     except Exception:
-        LOGGER.warning("failed to parse architect output", exc_info=True)
+        logger.warning("failed to parse architect output", exc_info=True)
         return ArchitectOutput(raw_markdown=raw_markdown, parse_success=False)

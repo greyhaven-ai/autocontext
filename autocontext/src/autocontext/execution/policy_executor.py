@@ -22,7 +22,7 @@ from autocontext.execution.ast_safety import check_ast_safety
 from autocontext.execution.harness_loader import _SAFE_BUILTINS
 from autocontext.scenarios.base import ScenarioInterface
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # Modules that policies are allowed to use (pre-injected into namespace).
 _ALLOWED_MODULES: dict[str, Any] = {

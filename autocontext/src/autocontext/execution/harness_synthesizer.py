@@ -16,7 +16,7 @@ from autocontext.execution.sample_states import SampleState
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.base import ScenarioInterface
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +114,7 @@ class HarnessSynthesizer:
                 required_functions=target_functions,
             )
 
-            LOGGER.info(
+            logger.info(
                 "synthesis iteration %d: accuracy=%.2f (%d/%d passed)",
                 iteration, report.accuracy, report.passed, report.total_tests,
             )
@@ -225,7 +225,7 @@ class HarnessSynthesizer:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "synthesized_harness.py"
         output_path.write_text(source, encoding="utf-8")
-        LOGGER.info("wrote synthesized harness to %s", output_path)
+        logger.info("wrote synthesized harness to %s", output_path)
 
 
 def _extract_python_code(text: str) -> str | None:

@@ -85,20 +85,7 @@ def mcnemar_test(
 
 
 def _binomial_p_value(successes: int, n: int) -> float:
-    """Two-sided binomial test p-value.
-
-    Uses scipy.stats.binomtest if available, otherwise falls back to a
-    simple combinatorial calculation.
-    """
-    try:
-        from scipy.stats import binomtest  # type: ignore[import-not-found,import-untyped]
-
-        result = binomtest(successes, n, 0.5, alternative="two-sided")
-        return float(result.pvalue)
-    except ImportError:
-        pass
-
-    # Fallback: exact binomial two-sided p-value
+    """Two-sided binomial test p-value (pure-Python, no scipy needed)."""
     return _exact_binomial_two_sided(successes, n)
 
 

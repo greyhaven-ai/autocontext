@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def stage_staged_validation(
@@ -92,11 +92,11 @@ def stage_staged_validation(
             ],
         )
     except Exception:
-        LOGGER.warning("failed to persist staged validation results", exc_info=True)
+        logger.warning("failed to persist staged validation results", exc_info=True)
 
     # On failure, set gate_decision to trigger retry
     if not all_passed:
-        LOGGER.info(
+        logger.info(
             "staged validation failed at stage '%s' for generation %d",
             failed_stage, ctx.generation,
         )

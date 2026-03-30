@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import ArtifactStore, SQLiteStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 _PHASE_SCAFFOLDING = "scaffolding"
 _PHASE_EXECUTION = "execution"
 
@@ -387,7 +387,7 @@ class GenerationPipeline:
                         for role_exec in ctx.outputs.role_executions:
                             self._meta_optimizer.record_llm_call(role_exec.role, role_exec.usage, ctx.generation)
                     except Exception:
-                        LOGGER.debug("meta_optimizer.record_llm_call failed", exc_info=True)
+                        logger.debug("meta_optimizer.record_llm_call failed", exc_info=True)
                 ctx.cost_control_metadata = _build_cost_control_metadata(ctx, self._meta_optimizer)
                 cost_throttled = bool(ctx.cost_control_metadata.get("throttled"))
                 if cost_throttled:
@@ -635,7 +635,7 @@ class GenerationPipeline:
                     ctx.gate_decision, ctx.gate_delta, ctx.generation,
                 )
             except Exception:
-                LOGGER.debug("meta_optimizer.record_gate_decision failed", exc_info=True)
+                logger.debug("meta_optimizer.record_gate_decision failed", exc_info=True)
 
         # Stage 3c: Optional provider consultation after stalls/uncertainty
         if not bool(ctx.cost_control_metadata.get("throttled")):
@@ -702,7 +702,7 @@ class GenerationPipeline:
                     score_delta=ctx.gate_delta,
                 )
             except Exception:
-                LOGGER.debug("meta_optimizer.record_generation failed", exc_info=True)
+                logger.debug("meta_optimizer.record_generation failed", exc_info=True)
 
         _finalize_phased_execution(ctx, phase_results, phase_plan)
 

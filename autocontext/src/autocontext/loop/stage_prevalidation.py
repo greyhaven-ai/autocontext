@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import ArtifactStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def stage_prevalidation(
@@ -54,7 +54,7 @@ def stage_prevalidation(
                 "generation": ctx.generation,
                 "errors": harness_result.errors,
             })
-            LOGGER.warning(
+            logger.warning(
                 "harness validation failed for generation %d: %s",
                 ctx.generation, harness_result.errors,
             )
@@ -77,7 +77,7 @@ def stage_prevalidation(
                         revised, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
                     ctx.current_strategy = revised
                 except Exception:
-                    LOGGER.warning("harness revision failed", exc_info=True)
+                    logger.warning("harness revision failed", exc_info=True)
                     break
                 harness_result = harness_loader.validate_strategy(ctx.current_strategy, ctx.scenario)
                 if harness_result.passed:
@@ -147,7 +147,7 @@ def stage_prevalidation(
                             revised, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
                         ctx.current_strategy = revised
                     except Exception:
-                        LOGGER.warning("regression fixture revision failed, keeping current strategy", exc_info=True)
+                        logger.warning("regression fixture revision failed, keeping current strategy", exc_info=True)
                 elif ctx.settings.dead_end_tracking_enabled and artifacts is not None:
                     reason = (
                         "Regression fixtures failed after "
@@ -208,10 +208,10 @@ def stage_prevalidation(
                     revised, _ = agents.translator.translate(raw_text, ctx.strategy_interface)
                 ctx.current_strategy = revised
             except Exception:
-                LOGGER.warning("prevalidation revision failed, keeping current strategy", exc_info=True)
+                logger.warning("prevalidation revision failed, keeping current strategy", exc_info=True)
 
     # All retries exhausted -- fall through to tournament with last strategy
-    LOGGER.warning(
+    logger.warning(
         "prevalidation exhausted %d retries, proceeding with last strategy",
         ctx.settings.prevalidation_max_retries,
     )

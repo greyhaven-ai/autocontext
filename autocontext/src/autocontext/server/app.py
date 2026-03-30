@@ -49,7 +49,7 @@ from autocontext.server.run_manager import RunManager
 from autocontext.storage import SQLiteStore
 from autocontext.util.json_io import read_json
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 def _build_scenario_creator(app_settings: object) -> object | None:
     try:
         from autocontext.agents.llm_client import build_client_from_settings
@@ -62,7 +62,7 @@ def _build_scenario_creator(app_settings: object) -> object | None:
         knowledge_root = getattr(app_settings, "knowledge_root", Path("knowledge"))
         return ScenarioCreator(runtime=runtime, model=model, knowledge_root=knowledge_root)
     except Exception:
-        LOGGER.warning("failed to initialize ScenarioCreator", exc_info=True)
+        logger.warning("failed to initialize ScenarioCreator", exc_info=True)
         return None
 
 
@@ -131,9 +131,9 @@ def create_app(
             )
             monitor_engine.start()
             set_engine(monitor_engine)
-            LOGGER.info("Monitor engine started")
+            logger.info("Monitor engine started")
         except Exception:
-            LOGGER.warning("failed to initialize MonitorEngine", exc_info=True)
+            logger.warning("failed to initialize MonitorEngine", exc_info=True)
     application.state.monitor_engine = monitor_engine
 
     def _read_replay_file(run_id: str, generation: int) -> Path:
@@ -316,7 +316,7 @@ def create_app(
                                 pending_spec["current"] = spec
                                 await websocket.send_json(_build_scenario_preview_msg(spec).model_dump())
                             except Exception as exc:
-                                LOGGER.warning("scenario generation failed", exc_info=True)
+                                logger.warning("scenario generation failed", exc_info=True)
                                 await websocket.send_json(
                                     ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
                                 )
@@ -348,7 +348,7 @@ def create_app(
                                     env_info = run_manager.get_environment_info()
                                     await websocket.send_json(_build_environments_msg(env_info).model_dump())
                             except Exception as exc:
-                                LOGGER.warning("scenario build/validate failed", exc_info=True)
+                                logger.warning("scenario build/validate failed", exc_info=True)
                                 await websocket.send_json(
                                     ScenarioErrorMsg(message=str(exc), stage="validation").model_dump()
                                 )
@@ -374,7 +374,7 @@ def create_app(
                                 pending_spec["current"] = revised
                                 await websocket.send_json(_build_scenario_preview_msg(revised).model_dump())
                             except Exception as exc:
-                                LOGGER.warning("scenario revision failed", exc_info=True)
+                                logger.warning("scenario revision failed", exc_info=True)
                                 await websocket.send_json(
                                     ScenarioErrorMsg(message=str(exc), stage="generation").model_dump()
                                 )
@@ -396,7 +396,7 @@ def create_app(
 
             monitor_engine.stop()
             clear_engine()
-            LOGGER.info("Monitor engine stopped")
+            logger.info("Monitor engine stopped")
 
     def _api_info() -> dict[str, Any]:
         return {

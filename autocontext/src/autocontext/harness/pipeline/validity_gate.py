@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from autocontext.execution.harness_loader import HarnessLoader
     from autocontext.scenarios.base import ScenarioInterface
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)

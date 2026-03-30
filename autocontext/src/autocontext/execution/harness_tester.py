@@ -19,7 +19,7 @@ from autocontext.execution.ast_safety import check_ast_safety
 from autocontext.execution.harness_loader import _SAFE_BUILTINS, _exec_harness_source
 from autocontext.execution.sample_states import SampleState
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)

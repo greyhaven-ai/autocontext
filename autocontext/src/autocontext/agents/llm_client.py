@@ -16,7 +16,7 @@ from autocontext.providers.base import ProviderError
 from autocontext.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
 from autocontext.providers.retry import _is_transient
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class AnthropicClient(LanguageModelClient):
@@ -47,14 +47,14 @@ class AnthropicClient(LanguageModelClient):
                 is_transient = _is_transient(exc)
                 if attempt == self.max_retries or not is_transient:
                     if not is_transient:
-                        LOGGER.warning(
+                        logger.warning(
                             "non-transient Anthropic error (attempt %d), not retrying: %s",
                             attempt + 1,
                             exc,
                         )
                     break
 
-                LOGGER.warning(
+                logger.warning(
                     "transient Anthropic error (attempt %d/%d), retrying in %.1fs: %s",
                     attempt + 1,
                     1 + self.max_retries,

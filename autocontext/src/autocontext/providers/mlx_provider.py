@@ -12,7 +12,7 @@ from typing import Any
 
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _resolve_weights_path(model_dir: Path) -> Path:

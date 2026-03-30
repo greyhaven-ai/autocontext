@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 MUTATION_TYPES = frozenset({
     "schema_change",

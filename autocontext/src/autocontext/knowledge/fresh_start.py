@@ -6,7 +6,7 @@ from typing import Any
 
 from autocontext.storage.artifacts import ArtifactStore
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def execute_fresh_start(
@@ -56,5 +56,5 @@ def execute_fresh_start(
         "Focus on the retained lessons above and try novel parameter ranges."
     )
 
-    LOGGER.info("fresh start executed for scenario %s", scenario_name)
+    logger.info("fresh start executed for scenario %s", scenario_name)
     return hint

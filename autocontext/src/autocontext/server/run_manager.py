@@ -11,7 +11,7 @@ from autocontext.loop.events import EventStreamEmitter
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class RunManager:
@@ -89,9 +89,9 @@ class RunManager:
         def _target() -> None:
             try:
                 summary = runner.run(scenario_name=scenario, generations=generations, run_id=actual_run_id)
-                LOGGER.info("Run %s completed: best_score=%.4f", summary.run_id, summary.best_score)
+                logger.info("Run %s completed: best_score=%.4f", summary.run_id, summary.best_score)
             except Exception:
-                LOGGER.exception("Run %s failed", actual_run_id)
+                logger.exception("Run %s failed", actual_run_id)
             finally:
                 self._active = False
 

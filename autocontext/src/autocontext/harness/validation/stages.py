@@ -24,7 +24,7 @@ from autocontext.harness.validation.staged import (
     ValidationStage,
 )
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 DEFAULT_STAGE_TIMEOUT_SECONDS = 5.0
 
 
