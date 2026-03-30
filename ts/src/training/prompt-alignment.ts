@@ -45,6 +45,40 @@ export interface ShareGPTExample {
   metadata?: Record<string, unknown>;
 }
 
+type PromptContextLike = Record<string, unknown>;
+
+function readString(ctx: PromptContextLike, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = ctx[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function formatTrajectory(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (!Array.isArray(value)) {
+    return "";
+  }
+  const lines = value
+    .map((entry, idx) => {
+      if (!entry || typeof entry !== "object") {
+        return "";
+      }
+      const row = entry as Record<string, unknown>;
+      const generation = typeof row.generation_index === "number" ? row.generation_index : idx + 1;
+      const score = typeof row.best_score === "number" ? row.best_score.toFixed(4) : "unknown";
+      const gate = typeof row.gate_decision === "string" ? row.gate_decision : "unknown";
+      return `Generation ${generation}: score=${score}, gate=${gate}`;
+    })
+    .filter(Boolean);
+  return lines.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Section detection
 // ---------------------------------------------------------------------------
@@ -167,26 +201,47 @@ export class TrainingPromptAdapter {
   }): PromptPair {
     const ctx = record.context;
     const systemParts: string[] = [];
+    const scenarioRules = readString(ctx, "scenarioRules", "scenario_rules");
+    const strategyInterface = readString(ctx, "strategyInterface", "strategy_interface");
+    const evaluationCriteria = readString(ctx, "evaluationCriteria", "evaluation_criteria");
+    const trajectory = formatTrajectory(ctx.trajectory);
+    const playbook = readString(ctx, "playbook");
+    const lessons = readString(ctx, "lessons", "operationalLessons", "operational_lessons");
+    const tools = readString(ctx, "tools", "availableTools", "available_tools");
+    const hints = readString(ctx, "hints", "competitorHints", "competitor_hints");
+    const analysis = readString(ctx, "analysis", "previousAnalysis", "previous_analysis");
 
-    if (ctx.scenarioRules) {
-      systemParts.push(`## Scenario Rules\n${String(ctx.scenarioRules)}`);
+    if (scenarioRules) {
+      systemParts.push(`## Scenario Rules\n${scenarioRules}`);
     }
-    if (ctx.strategyInterface) {
-      systemParts.push(`## Strategy Interface\n${String(ctx.strategyInterface)}`);
+    if (strategyInterface) {
+      systemParts.push(`## Strategy Interface\n${strategyInterface}`);
     }
-    if (ctx.evaluationCriteria) {
-      systemParts.push(`## Evaluation Criteria\n${String(ctx.evaluationCriteria)}`);
+    if (evaluationCriteria) {
+      systemParts.push(`## Evaluation Criteria\n${evaluationCriteria}`);
     }
-    if (ctx.playbook) {
-      systemParts.push(`## Current Playbook\n${String(ctx.playbook)}`);
+    if (trajectory) {
+      systemParts.push(trajectory);
     }
-    if (ctx.trajectory) {
-      systemParts.push(`## Score Trajectory\n${String(ctx.trajectory)}`);
+    if (playbook) {
+      systemParts.push(`## Current Playbook\n\n${playbook}`);
+    }
+    if (lessons) {
+      systemParts.push(`## Operational Lessons\n\n${lessons}`);
+    }
+    if (tools) {
+      systemParts.push(`## Available Tools\n\n${tools}`);
+    }
+    if (hints) {
+      systemParts.push(`## Competitor Hints\n\n${hints}`);
+    }
+    if (analysis) {
+      systemParts.push(`## Previous Analysis\n\n${analysis}`);
     }
 
     return {
       system: systemParts.join("\n\n"),
-      user: `Produce a strategy for scenario: ${record.scenario}`,
+      user: "Produce a JSON strategy that maximizes the evaluation criteria.",
       expectedOutput: record.strategy,
     };
   }

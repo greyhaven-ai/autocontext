@@ -9,6 +9,8 @@
 
 import { extractDelimitedSection } from "../agents/roles.js";
 import type { ArtifactStore } from "../knowledge/artifact-store.js";
+import { resolveCustomAgentTask } from "../scenarios/custom-loader.js";
+import { AGENT_TASK_REGISTRY, SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import type { SQLiteStore } from "../storage/index.js";
 
 /**
@@ -84,6 +86,45 @@ function buildTrajectorySnippet(
     }));
 }
 
+function resolvePromptContext(
+  artifacts: ArtifactStore,
+  scenarioName: string,
+): Record<string, unknown> {
+  const gameFactory = SCENARIO_REGISTRY[scenarioName];
+  if (gameFactory) {
+    const scenario = new gameFactory();
+    return {
+      scenarioRules: scenario.describeRules(),
+      strategyInterface: scenario.describeStrategyInterface(),
+      evaluationCriteria: scenario.describeEvaluationCriteria(),
+    };
+  }
+
+  const builtinTaskFactory = AGENT_TASK_REGISTRY[scenarioName];
+  if (builtinTaskFactory) {
+    const task = new builtinTaskFactory();
+    return {
+      scenarioRules: task.describeTask(),
+      strategyInterface: "Respond with output matching the task requirements.",
+      evaluationCriteria: task.getRubric(),
+    };
+  }
+
+  const customTask = resolveCustomAgentTask(artifacts.knowledgeRoot, scenarioName);
+  if (customTask) {
+    const outputFormat = customTask.spec.outputFormat === "json_schema"
+      ? "Respond with JSON output matching the task requirements."
+      : `Respond with ${customTask.spec.outputFormat} output matching the task requirements.`;
+    return {
+      scenarioRules: customTask.spec.taskPrompt,
+      strategyInterface: outputFormat,
+      evaluationCriteria: customTask.spec.judgeRubric,
+    };
+  }
+
+  return {};
+}
+
 export function exportTrainingData(
   store: SQLiteStore,
   artifacts: ArtifactStore,
@@ -126,6 +167,7 @@ export function exportTrainingData(
 
     const playbook = artifacts.readPlaybook(run.scenario);
     const hints = extractHints(playbook);
+    const promptContext = resolvePromptContext(artifacts, run.scenario);
     const generations = store.getGenerations(run.run_id);
 
     for (const gen of generations) {
@@ -143,6 +185,7 @@ export function exportTrainingData(
         score: gen.best_score,
         gate_decision: gen.gate_decision,
         context: {
+          ...promptContext,
           playbook,
           hints,
           trajectory: buildTrajectorySnippet(generations, gen.generation_index),

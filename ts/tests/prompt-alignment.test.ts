@@ -11,15 +11,22 @@ import {
   RuntimePromptAdapter,
   TrainingPromptAdapter,
   validatePromptAlignment,
-  type PromptShape,
   type AlignmentReport,
-} from "../src/training/prompt-alignment.js";
+  buildPromptBundle,
+} from "../src/index.js";
 
 // ---------------------------------------------------------------------------
 // PromptContract
 // ---------------------------------------------------------------------------
 
 describe("PromptContract", () => {
+  it("is exported through the package entrypoint", () => {
+    expect(typeof PromptContract).toBe("function");
+    expect(typeof RuntimePromptAdapter).toBe("function");
+    expect(typeof TrainingPromptAdapter).toBe("function");
+    expect(typeof validatePromptAlignment).toBe("function");
+  });
+
   it("defines the canonical prompt shape for local models", () => {
     const contract = new PromptContract();
     const shape = contract.shape();
@@ -100,8 +107,48 @@ describe("TrainingPromptAdapter", () => {
 
     expect(result.system).toContain("Capture the flag");
     expect(result.system).toContain("Evaluation");
-    expect(result.user).toBeTruthy();
+    expect(result.user).toBe("Produce a JSON strategy that maximizes the evaluation criteria.");
     expect(result.expectedOutput).toBe('{"move": "north"}');
+  });
+
+  it("matches the real runtime bundle contract for a game scenario", () => {
+    const training = new TrainingPromptAdapter().fromTrainingRecord({
+      scenario: "grid_ctf",
+      strategy: '{"aggression": 0.7}',
+      score: 0.85,
+      context: {
+        scenarioRules: "Capture the flag",
+        strategyInterface: "Return JSON with aggression/defense/path_bias",
+        evaluationCriteria: "Maximize captures",
+        playbook: "Pressure the center lane.",
+        hints: "Watch the defender count.",
+        trajectory: [
+          { generation_index: 1, best_score: 0.65, gate_decision: "advance" },
+          { generation_index: 2, best_score: 0.78, gate_decision: "advance" },
+        ],
+      },
+    });
+    const runtime = new RuntimePromptAdapter().fromBundle(buildPromptBundle({
+      scenarioRules: "Capture the flag",
+      strategyInterface: "Return JSON with aggression/defense/path_bias",
+      evaluationCriteria: "Maximize captures",
+      playbook: "Pressure the center lane.",
+      trajectory: "Generation 1: score=0.6500, gate=advance\nGeneration 2: score=0.7800, gate=advance",
+      lessons: "",
+      tools: "",
+      hints: "Watch the defender count.",
+      analysis: "",
+    }));
+
+    const report = validatePromptAlignment({
+      trainingPrompt: training,
+      runtimePrompt: runtime,
+    });
+
+    expect(training.user).toBe(runtime.user);
+    expect(training.system).toContain("Generation 1: score=0.6500, gate=advance");
+    expect(report.aligned).toBe(true);
+    expect(report.mismatches).toHaveLength(0);
   });
 
   it("generates a training example in contract format", () => {
