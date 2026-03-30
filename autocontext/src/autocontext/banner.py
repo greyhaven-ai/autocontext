@@ -14,7 +14,7 @@ from html import escape as html_escape
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-TAGLINE = "closed-loop control plane for agent improvement"
+TAGLINE = "turn repeated agent work into validated, reusable execution"
 SYNC_BLOCK_START = "<!-- autocontext-readme-hero:start -->"
 SYNC_BLOCK_END = "<!-- autocontext-readme-hero:end -->"
 WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
@@ -65,7 +65,7 @@ def render_banner_svg() -> str:
     padding_y = 30
     char_width = 12
     max_chars = max(len(line) for line in lines)
-    width = padding_x * 2 + max_chars * char_width
+    width = max(padding_x * 2 + max_chars * char_width, 1480)
     height = padding_y * 2 + len(lines) * line_height
 
     text_nodes = []
@@ -141,7 +141,7 @@ def render_readme_banner_block() -> str:
     return (
         f"{SYNC_BLOCK_START}\n"
         '<p align="center">\n'
-        '  <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" />\n'
+        '  <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" style="max-width: 100%; height: auto;" />\n'
         "</p>\n\n"
         f'<p align="center"><strong>{TAGLINE}</strong></p>\n'
         f"{SYNC_BLOCK_END}"

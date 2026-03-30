@@ -12,6 +12,16 @@ The North Star is to move from one-off frontier-model exploration toward workflo
 
 The intended use is mostly hands-off: point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
 
+<!-- autocontext-whats-new:start -->
+## What's New
+
+- GEPA-inspired ASI/Pareto optimizer wired into improvement loop
+- Component sensitivity profiling and credit assignment
+- Pluggable scoring backends with Elo and Glicko support
+- Novelty exploration and multi-basin playbook branching
+- Cost-aware loop control and long-run presets
+<!-- autocontext-whats-new:end -->
+
 ## North Star
 
 Most agent systems still start every run cold. They do not reliably preserve what worked, separate signal from noise, or turn repeated success into a reusable asset.
