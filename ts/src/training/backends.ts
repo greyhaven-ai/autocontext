@@ -10,7 +10,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { TrainingMode } from "./model-strategy.js";
+import { ModelStrategySelector, type TrainingMode } from "./model-strategy.js";
 
 // ---------------------------------------------------------------------------
 // Backend interface
@@ -169,18 +169,53 @@ function generateArtifactId(): string {
 }
 
 /**
+ * Hook for real training execution. Implementations call PyTorch,
+ * MLX, or other frameworks. Returns training metrics.
+ */
+export type TrainingExecutor = (config: TrainingConfig, checkpointDir: string) => Promise<{
+  success: boolean;
+  metrics?: Record<string, number>;
+  error?: string;
+}>;
+
+/**
+ * Default executor: validates dataset and writes checkpoint metadata.
+ * Real backends should replace this with actual training logic.
+ */
+const defaultExecutor: TrainingExecutor = async (config, checkpointDir) => {
+  writeFileSync(
+    join(checkpointDir, "checkpoint_info.json"),
+    JSON.stringify({
+      backend: config.backend,
+      trainingMode: config.trainingMode,
+      baseModel: config.baseModel,
+      status: "trained",
+      note: "Default executor — replace with real PyTorch/MLX training for production use",
+      timestamp: new Date().toISOString(),
+    }, null, 2),
+    "utf-8",
+  );
+  return { success: true, metrics: { epochs: config.maxEpochs ?? 3 } };
+};
+
+/**
  * TrainingRunner orchestrates training across backends.
  *
- * For the MVP, this performs simulated training (dataset validation +
- * checkpoint creation + artifact publishing) since actual PyTorch/MLX
- * training requires their respective runtimes. The artifact pipeline
- * is real — the training loop is the integration point for backends.
+ * Accepts a TrainingExecutor for the actual training logic.
+ * The default executor validates the dataset and creates checkpoint
+ * metadata. For real training, inject a PyTorch or MLX executor.
  */
 export class TrainingRunner {
   private registry: BackendRegistry;
+  private executor: TrainingExecutor;
 
-  constructor(registry?: BackendRegistry) {
-    this.registry = registry ?? defaultBackendRegistry();
+  constructor(opts?: { registry?: BackendRegistry; executor?: TrainingExecutor }) {
+    this.registry = opts?.registry ?? defaultBackendRegistry();
+    this.executor = opts?.executor ?? defaultExecutor;
+  }
+
+  usesSyntheticExecutor(): boolean {
+    return this.executor === defaultExecutor;
   }
 
   async train(config: TrainingConfig): Promise<TrainingResult> {
@@ -225,6 +260,41 @@ export class TrainingRunner {
         heldOutSize = heldOutContent.trim().split("\n").filter(Boolean).length;
       }
 
+      const selector = new ModelStrategySelector();
+      const strategy = selector.select({
+        family: config.family,
+        datasetSize,
+        trainingModeOverride: config.trainingMode,
+        baseModelOverride: config.baseModel,
+      });
+      const resolvedConfig: TrainingConfig = {
+        ...config,
+        trainingMode: strategy.trainingMode,
+        baseModel: strategy.baseModel,
+        adapterType: config.adapterType ?? strategy.adapterType,
+      };
+
+      if (resolvedConfig.trainingMode !== "from_scratch" && !resolvedConfig.baseModel) {
+        return {
+          status: "failed",
+          backend: config.backend,
+          durationMs: performance.now() - start,
+          error: `Training mode '${resolvedConfig.trainingMode}' requires a base model`,
+        };
+      }
+
+      if (resolvedConfig.baseModel) {
+        const validation = selector.validateBaseModel(resolvedConfig.baseModel, config.backend);
+        if (!validation.valid) {
+          return {
+            status: "failed",
+            backend: config.backend,
+            durationMs: performance.now() - start,
+            error: validation.warnings.join("; "),
+          };
+        }
+      }
+
       // Create checkpoint directory
       const checkpointDir = join(
         config.outputDir,
@@ -234,18 +304,18 @@ export class TrainingRunner {
 
       // Write training manifest
       const manifest = {
-        scenario: config.scenario,
-        family: config.family,
-        backend: config.backend,
-        trainingMode: config.trainingMode,
-        baseModel: config.baseModel ?? null,
-        adapterType: config.adapterType ?? null,
+        scenario: resolvedConfig.scenario,
+        family: resolvedConfig.family,
+        backend: resolvedConfig.backend,
+        trainingMode: resolvedConfig.trainingMode,
+        baseModel: resolvedConfig.baseModel ?? null,
+        adapterType: resolvedConfig.adapterType ?? null,
         datasetPath: config.datasetPath,
         datasetSize,
         heldOutSize,
-        maxEpochs: config.maxEpochs ?? 3,
-        batchSize: config.batchSize ?? 4,
-        learningRate: config.learningRate ?? 5e-5,
+        maxEpochs: resolvedConfig.maxEpochs ?? 3,
+        batchSize: resolvedConfig.batchSize ?? 4,
+        learningRate: resolvedConfig.learningRate ?? 5e-5,
         startedAt: new Date().toISOString(),
       };
       writeFileSync(
@@ -254,19 +324,17 @@ export class TrainingRunner {
         "utf-8",
       );
 
-      // Simulate training: write a checkpoint marker
-      // In production, this is where PyTorch/MLX training loop runs
-      writeFileSync(
-        join(checkpointDir, "checkpoint_info.json"),
-        JSON.stringify({
+      // Execute training via the injected executor
+      const execResult = await this.executor(resolvedConfig, checkpointDir);
+      if (!execResult.success) {
+        return {
+          status: "failed",
           backend: config.backend,
-          trainingMode: config.trainingMode,
-          baseModel: config.baseModel,
-          status: "trained",
-          timestamp: new Date().toISOString(),
-        }, null, 2),
-        "utf-8",
-      );
+          checkpointDir,
+          durationMs: performance.now() - start,
+          error: execResult.error ?? "Training executor returned failure",
+        };
+      }
 
       // Publish artifact
       const artifact: PublishedArtifact = {
@@ -274,13 +342,14 @@ export class TrainingRunner {
         scenario: config.scenario,
         family: config.family,
         backend: config.backend,
-        trainingMode: config.trainingMode,
-        baseModel: config.baseModel,
-        adapterType: config.adapterType,
+        trainingMode: resolvedConfig.trainingMode,
+        baseModel: resolvedConfig.baseModel,
+        adapterType: resolvedConfig.adapterType,
         checkpointDir,
         datasetSize,
         heldOutSize,
         trainedAt: new Date().toISOString(),
+        metrics: execResult.metrics,
       };
 
       writeFileSync(

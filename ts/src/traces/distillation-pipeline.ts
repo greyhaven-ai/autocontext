@@ -59,6 +59,8 @@ export interface DistillationResult {
   evalOnlyTraces: number;
   contrastiveTraces: number;
   outputDir: string;
+  /** Files that couldn't be parsed during loading */
+  warnings: string[];
   error?: string;
 }
 
@@ -112,8 +114,11 @@ export class DistillationPipeline {
   }
 
   build(): DistillationResult {
+    const warnings: string[] = [];
     try {
-      const entries = this.loadEntries();
+      const loaded = this.loadEntries();
+      warnings.push(...loaded.warnings);
+      const entries = loaded.entries;
       const { included, excluded, evalOnly, contrastive } = this.applyPolicy(entries);
       const { train, heldOut } = this.splitHeldOut(included);
 
@@ -170,6 +175,7 @@ export class DistillationPipeline {
         evalOnlyTraces: evalOnly.length,
         contrastiveTraces: contrastive.length,
         outputDir: this.config.outputDir,
+        warnings,
       };
     } catch (err) {
       return {
@@ -178,6 +184,7 @@ export class DistillationPipeline {
         trainSize: 0, heldOutSize: 0, evalOnlyTraces: 0, contrastiveTraces: 0,
         outputDir: this.config.outputDir,
         error: err instanceof Error ? err.message : String(err),
+        warnings,
       };
     }
   }
@@ -273,13 +280,19 @@ export class DistillationPipeline {
   // I/O
   // -------------------------------------------------------------------------
 
-  private loadEntries(): TraceEntry[] {
-    if (!existsSync(this.config.traceDir)) return [];
+  private loadEntries(): { entries: TraceEntry[]; warnings: string[] } {
+    if (!existsSync(this.config.traceDir)) {
+      return { entries: [], warnings: [] };
+    }
     const entries: TraceEntry[] = [];
+    const warnings: string[] = [];
     let files: string[];
     try {
       files = readdirSync(this.config.traceDir).filter((f) => f.endsWith(".json")).sort();
-    } catch { return []; }
+    } catch (err) {
+      warnings.push(`Could not read trace directory '${this.config.traceDir}': ${err instanceof Error ? err.message : String(err)}`);
+      return { entries, warnings };
+    }
 
     for (const file of files) {
       try {
@@ -287,10 +300,14 @@ export class DistillationPipeline {
         const parsed = JSON.parse(raw) as TraceEntry;
         if (parsed.trace?.traceId && parsed.manifest && parsed.attestation) {
           entries.push(parsed);
+        } else {
+          warnings.push(`${file}: missing trace, manifest, or attestation`);
         }
-      } catch { /* skip malformed */ }
+      } catch (err) {
+        warnings.push(`${file}: ${err instanceof Error ? err.message : "parse error"}`);
+      }
     }
-    return entries;
+    return { entries, warnings };
   }
 
   private writeJSONL(

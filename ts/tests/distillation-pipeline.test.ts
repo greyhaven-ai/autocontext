@@ -247,6 +247,25 @@ describe("distillation manifest", () => {
   });
 });
 
+describe("warning reporting", () => {
+  it("surfaces malformed trace files as warnings instead of silently swallowing them", () => {
+    const traceDir = join(tmpDir, "traces");
+    mkdirSync(traceDir, { recursive: true });
+    seedTraces(traceDir, [{ id: "t1", score: 0.9 }]);
+    writeFileSync(join(traceDir, "broken.json"), "{not valid json", "utf-8");
+
+    const pipeline = new DistillationPipeline({
+      traceDir,
+      outputDir: join(tmpDir, "out"),
+    });
+    const result = pipeline.build();
+
+    expect(result.status).toBe("completed");
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0]).toContain("broken.json");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Result shape
 // ---------------------------------------------------------------------------

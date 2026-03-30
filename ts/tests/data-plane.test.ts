@@ -354,3 +354,42 @@ describe("DataPlane", () => {
     expect(second.duplicatesSkipped).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Integration: traces → curation → output → verify
+// ---------------------------------------------------------------------------
+
+describe("end-to-end integration", () => {
+  it("traces flow through curation to training-ready output", async () => {
+    const traceDir = join(tmpDir, "integration");
+    seedTraces(traceDir, 6, [0.3, 0.5, 0.6, 0.8, 0.9, 0.95]);
+
+    const plane = new DataPlane({
+      traceDir,
+      outputDir: join(tmpDir, "dataset"),
+      curationPolicy: { minScore: 0.7, heldOutRatio: 0.33 },
+    });
+    const buildResult = await plane.build();
+    expect(buildResult.status).toBe("completed");
+    expect(buildResult.includedTraces).toBe(3);
+    expect(buildResult.trainSize).toBe(2);
+    expect(buildResult.heldOutSize).toBe(1);
+
+    const trainContent = readFileSync(join(tmpDir, "dataset", "train.jsonl"), "utf-8");
+    const trainLines = trainContent.trim().split("\n");
+    expect(trainLines.length).toBe(2);
+    for (const line of trainLines) {
+      const record = JSON.parse(line);
+      expect(record.conversations).toBeDefined();
+      expect(record.conversations[0].from).toBe("human");
+    }
+
+    const manifest = JSON.parse(readFileSync(join(tmpDir, "dataset", "manifest.json"), "utf-8"));
+    expect(manifest.curationPolicy.minScore).toBe(0.7);
+    expect(manifest.sources["autocontext"]).toBe(3);
+
+    const status = plane.status();
+    expect(status.built).toBe(true);
+    expect(status.trainSize).toBe(2);
+  });
+});

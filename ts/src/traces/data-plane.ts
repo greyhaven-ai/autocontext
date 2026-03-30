@@ -1,6 +1,12 @@
 /**
  * Trace-to-disposable-model data plane (AC-466).
  *
+ * Basic dataset curation with score filtering, held-out splits, and consent.
+ *
+ * NOTE: For production use, prefer DistillationPipeline (AC-458) which
+ * extends this with gate filtering, top-quartile selection, family
+ * filtering, failure-example policy, and richer manifests.
+ *
  * Orchestrates the pipeline from raw traces → curated dataset → training inputs.
  *
  * DatasetCurator: filters, scores, splits held-out, enforces consent.

@@ -240,14 +240,13 @@ const run = await runner.run("my-run", 3);
 
 These workflows require infrastructure not available in the npm package:
 
-- `train` — Requires MLX/CUDA training backends
 - `ecosystem` — Multi-provider cycling
 - `ab-test` — Requires ecosystem runner
 - `resume` / `wait` — Run recovery infrastructure
 - `trigger-distillation` — Training pipeline
 - Monitor conditions — Monitoring engine
 
-Use the Python package (`pip install autocontext`) for these workflows.
+`train` is exposed in the TS CLI as a validation + executor-hook surface, but the npm package does not bundle a real MLX/CUDA trainer. For end-to-end local training, use the Python package (`pip install autocontext`) or inject a real `TrainingRunner` executor from code.
 
 ## Development
 

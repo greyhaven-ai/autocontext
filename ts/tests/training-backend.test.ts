@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -22,6 +23,7 @@ import {
 import * as pkg from "../src/index.js";
 
 let tmpDir: string;
+const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "ac-460-test-"));
@@ -45,6 +47,20 @@ class StubBackend extends TrainingBackend {
   defaultCheckpointDir(scenario: string): string {
     return join("models", scenario, this.name);
   }
+}
+
+function runCli(args: string[]): { stdout: string; stderr: string; exitCode: number } {
+  const result = spawnSync("npx", ["tsx", CLI, ...args], {
+    encoding: "utf8",
+    timeout: 10000,
+    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+  });
+
+  return {
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    exitCode: result.status ?? 1,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +136,7 @@ describe("TrainingRunner", () => {
   it("creates a training run with config and backend", async () => {
     const registry = new BackendRegistry();
     registry.register(new StubBackend("stub", true));
-    const runner = new TrainingRunner(registry);
+    const runner = new TrainingRunner({ registry });
     const config: TrainingConfig = {
       scenario: "grid_ctf",
       family: "game",
@@ -143,14 +159,14 @@ describe("TrainingRunner", () => {
 
   it("publishes artifact with backend metadata", async () => {
     const registry = new BackendRegistry();
-    registry.register(new StubBackend("stub", true));
-    const runner = new TrainingRunner(registry);
+    registry.register(new StubBackend("cuda", true));
+    const runner = new TrainingRunner({ registry });
     const config: TrainingConfig = {
       scenario: "code_review",
       family: "agent_task",
       datasetPath: join(tmpDir, "train.jsonl"),
       outputDir: join(tmpDir, "output"),
-      backend: "stub",
+      backend: "cuda",
       trainingMode: "adapter_finetune",
       baseModel: "Qwen/Qwen3-0.6B",
     };
@@ -161,7 +177,7 @@ describe("TrainingRunner", () => {
     const artifact = result.artifact!;
 
     expect(artifact).toBeDefined();
-    expect(artifact.backend).toBe("stub");
+    expect(artifact.backend).toBe("cuda");
     expect(artifact.trainingMode).toBe("adapter_finetune");
     expect(artifact.baseModel).toBe("Qwen/Qwen3-0.6B");
     expect(artifact.scenario).toBe("code_review");
@@ -173,7 +189,7 @@ describe("TrainingRunner", () => {
   it("handles training failure gracefully", async () => {
     const registry = new BackendRegistry();
     registry.register(new StubBackend("stub", true));
-    const runner = new TrainingRunner(registry);
+    const runner = new TrainingRunner({ registry });
     const config: TrainingConfig = {
       scenario: "test",
       family: "game",
@@ -191,7 +207,7 @@ describe("TrainingRunner", () => {
   it("saves training manifest alongside checkpoint", async () => {
     const registry = new BackendRegistry();
     registry.register(new StubBackend("stub", true));
-    const runner = new TrainingRunner(registry);
+    const runner = new TrainingRunner({ registry });
     const config: TrainingConfig = {
       scenario: "test_manifest",
       family: "simulation",
@@ -215,7 +231,7 @@ describe("TrainingRunner", () => {
   });
 
   it("fails when the requested backend is unknown", async () => {
-    const runner = new TrainingRunner(new BackendRegistry());
+    const runner = new TrainingRunner({ registry: new BackendRegistry() });
     const config: TrainingConfig = {
       scenario: "unknown_backend",
       family: "game",
@@ -235,7 +251,7 @@ describe("TrainingRunner", () => {
   it("fails when the requested backend is unavailable", async () => {
     const registry = new BackendRegistry();
     registry.register(new StubBackend("stub", false));
-    const runner = new TrainingRunner(registry);
+    const runner = new TrainingRunner({ registry });
     const config: TrainingConfig = {
       scenario: "unavailable_backend",
       family: "game",
@@ -251,6 +267,77 @@ describe("TrainingRunner", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("not available");
   });
+
+  it("delegates execution to an injected real executor hook", async () => {
+    const registry = new BackendRegistry();
+    registry.register(new StubBackend("cuda", true));
+    let executorCalls = 0;
+    const runner = new TrainingRunner({
+      registry,
+      executor: async (config, checkpointDir) => {
+        executorCalls += 1;
+        expect(config.backend).toBe("cuda");
+        expect(checkpointDir).toContain(join("models", "executor_hook", "cuda"));
+        return { success: true, metrics: { loss: 0.12 } };
+      },
+    });
+    const config: TrainingConfig = {
+      scenario: "executor_hook",
+      family: "agent_task",
+      datasetPath: join(tmpDir, "train.jsonl"),
+      outputDir: join(tmpDir, "output"),
+      backend: "cuda",
+      trainingMode: "adapter_finetune",
+    };
+
+    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+
+    const result = await runner.train(config);
+    expect(result.status).toBe("completed");
+    expect(executorCalls).toBe(1);
+    expect(result.artifact?.metrics?.loss).toBe(0.12);
+  });
+
+  it("derives a default base model for non-from-scratch strategies", async () => {
+    const registry = new BackendRegistry();
+    registry.register(new StubBackend("cuda", true));
+    const runner = new TrainingRunner({ registry });
+    const config: TrainingConfig = {
+      scenario: "default_base_model",
+      family: "agent_task",
+      datasetPath: join(tmpDir, "train.jsonl"),
+      outputDir: join(tmpDir, "output"),
+      backend: "cuda",
+      trainingMode: "adapter_finetune",
+    };
+
+    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+
+    const result = await runner.train(config);
+    expect(result.status).toBe("completed");
+    expect(result.artifact?.baseModel).toBe("Qwen/Qwen3-0.6B");
+  });
+
+  it("fails when the selected base model is unknown", async () => {
+    const registry = new BackendRegistry();
+    registry.register(new StubBackend("cuda", true));
+    const runner = new TrainingRunner({ registry });
+    const config: TrainingConfig = {
+      scenario: "invalid_base_model",
+      family: "agent_task",
+      datasetPath: join(tmpDir, "train.jsonl"),
+      outputDir: join(tmpDir, "output"),
+      backend: "cuda",
+      trainingMode: "adapter_finetune",
+      baseModel: "unknown/model",
+    };
+
+    writeFileSync(config.datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+
+    const result = await runner.train(config);
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("known model registry");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -261,7 +348,7 @@ describe("TrainingResult shape", () => {
   it("has all required fields", async () => {
     const registry = new BackendRegistry();
     registry.register(new StubBackend("stub", true));
-    const runner = new TrainingRunner(registry);
+    const runner = new TrainingRunner({ registry });
     writeFileSync(join(tmpDir, "train.jsonl"), '{"conversations":[]}\n', "utf-8");
 
     const result: TrainingResult = await runner.train({
@@ -289,5 +376,25 @@ describe("public package surface", () => {
     expect(pkg.BackendRegistry).toBeDefined();
     expect(pkg.defaultBackendRegistry).toBeDefined();
     expect(pkg.TrainingRunner).toBeDefined();
+  });
+});
+
+describe("train CLI", () => {
+  it("fails clearly when only the synthetic default executor is available", () => {
+    const datasetPath = join(tmpDir, "train.jsonl");
+    writeFileSync(datasetPath, '{"conversations":[{"from":"human","value":"hi"}]}\n', "utf-8");
+
+    const result = runCli([
+      "train",
+      "--scenario",
+      "cli_train",
+      "--dataset",
+      datasetPath,
+      "--backend",
+      "cuda",
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(`${result.stdout}\n${result.stderr}`).toContain("no real training executor is configured");
   });
 });
