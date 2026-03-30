@@ -18,6 +18,26 @@ from autocontext.runtimes.base import AgentOutput, AgentRuntime
 
 logger = logging.getLogger(__name__)
 
+_VALID_HERMES_PROVIDERS = frozenset({
+    "auto",
+    "openrouter",
+    "nous",
+    "openai-codex",
+    "copilot-acp",
+    "copilot",
+    "anthropic",
+    "huggingface",
+    "zai",
+    "kimi-coding",
+    "minimax",
+    "minimax-cn",
+    "kilocode",
+})
+_PROVIDER_ALIASES = {
+    "codex": "openai-codex",
+}
+_LEGACY_CUSTOM_ENDPOINT_PROVIDERS = frozenset({"main", "custom"})
+
 
 @dataclass(slots=True)
 class HermesCLIConfig:
@@ -87,6 +107,16 @@ class HermesCLIRuntime(AgentRuntime):
             full_prompt = f"{system}\n\n{revision_prompt}"
         return self._invoke(full_prompt)
 
+    def _normalized_provider(self) -> str:
+        provider = self._config.provider.strip().lower()
+        return _PROVIDER_ALIASES.get(provider, provider)
+
+    def _uses_custom_endpoint(self) -> bool:
+        provider = self._normalized_provider()
+        return bool(self._config.base_url) or provider in _LEGACY_CUSTOM_ENDPOINT_PROVIDERS or (
+            not provider and bool(self._config.api_key)
+        )
+
     def _build_args(self, prompt: str) -> list[str]:
         hermes = self._hermes_path or self._config.hermes_command
         args = [hermes, "chat", "--query", prompt]
@@ -94,18 +124,9 @@ class HermesCLIRuntime(AgentRuntime):
         if self._config.model:
             args.extend(["--model", self._config.model])
 
-        if self._config.provider:
-            # Only pass --provider for known Hermes v0.5.0+ provider names.
-            # Custom endpoints are configured via OPENAI_BASE_URL env var,
-            # not --provider main (which was removed in Hermes v0.5.0).
-            _VALID_HERMES_PROVIDERS = {
-                "auto", "openrouter", "nous", "openai-codex", "copilot-acp",
-                "copilot", "anthropic", "huggingface", "zai", "kimi-coding",
-                "minimax", "minimax-cn", "kilocode",
-            }
-            if self._config.provider in _VALID_HERMES_PROVIDERS:
-                args.extend(["--provider", self._config.provider])
-            # else: skip --provider, let Hermes auto-detect from env vars
+        provider = self._normalized_provider()
+        if provider and not self._uses_custom_endpoint() and provider in _VALID_HERMES_PROVIDERS:
+            args.extend(["--provider", provider])
 
         if self._config.toolsets:
             args.extend(["--toolsets", self._config.toolsets])
@@ -124,11 +145,11 @@ class HermesCLIRuntime(AgentRuntime):
 
     def _build_env(self) -> dict[str, str]:
         env = os.environ.copy()
-        # Only set custom endpoint env vars when no explicit provider is
-        # specified. Hermes v0.5.0+ auto-detects custom endpoints from
-        # OPENAI_BASE_URL. When a named provider (anthropic, etc.) is used,
-        # custom endpoint env vars should not leak in.
-        use_custom_endpoint = not self._config.provider
+        # Hermes treats custom OpenAI-compatible endpoints as a first-class
+        # routing path. When base_url is present, it takes precedence over
+        # any provider setting, and legacy "main" configs should continue
+        # to work without passing a removed --provider main flag.
+        use_custom_endpoint = self._uses_custom_endpoint()
         if use_custom_endpoint and self._config.base_url:
             env["OPENAI_BASE_URL"] = self._config.base_url
         if use_custom_endpoint and self._config.api_key:

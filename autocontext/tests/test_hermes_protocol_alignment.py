@@ -75,6 +75,16 @@ class TestHermesCLIFlags:
         assert "--provider" in args
         assert "anthropic" in args
 
+    def test_codex_provider_alias(self) -> None:
+        """Legacy codex alias should map to Hermes's openai-codex provider flag."""
+        from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
+
+        config = HermesCLIConfig(provider="codex")
+        runtime = HermesCLIRuntime(config)
+        args = runtime._build_args("test")
+        assert "--provider" in args
+        assert "openai-codex" in args
+
     def test_no_flags_when_defaults(self) -> None:
         """Default config should not add optional flags."""
         from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
@@ -150,7 +160,7 @@ class TestHermesOverrideSemantics:
         assert env.get("OPENAI_BASE_URL") == "http://custom:8080/v1"
 
     def test_explicit_provider_suppresses_custom_endpoint_env(self) -> None:
-        """Explicit non-main providers should not inherit custom endpoint env vars."""
+        """base_url should override an explicit provider for custom endpoints."""
         from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
 
         config = HermesCLIConfig(
@@ -161,10 +171,9 @@ class TestHermesOverrideSemantics:
         runtime = HermesCLIRuntime(config)
         args = runtime._build_args("test")
         env = runtime._build_env()
-        assert "--provider" in args
-        assert "anthropic" in args
-        assert "OPENAI_BASE_URL" not in env
-        assert "OPENAI_API_KEY" not in env
+        assert "--provider" not in args
+        assert env["OPENAI_BASE_URL"] == "http://custom:8080/v1"
+        assert env["OPENAI_API_KEY"] == "token"
 
     def test_no_provider_keeps_custom_endpoint_env(self) -> None:
         """No explicit provider + custom endpoint → env vars set for auto-detect."""
@@ -181,3 +190,51 @@ class TestHermesOverrideSemantics:
         assert "--provider" not in args
         assert env.get("OPENAI_BASE_URL") == "http://custom:8080/v1"
         assert env.get("OPENAI_API_KEY") == "token"
+
+    def test_explicit_auto_provider_keeps_custom_endpoint_env(self) -> None:
+        """base_url should also override an explicit auto provider."""
+        from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
+
+        config = HermesCLIConfig(
+            provider="auto",
+            base_url="http://custom:8080/v1",
+            api_key="token",
+        )
+        runtime = HermesCLIRuntime(config)
+        args = runtime._build_args("test")
+        env = runtime._build_env()
+        assert "--provider" not in args
+        assert env["OPENAI_BASE_URL"] == "http://custom:8080/v1"
+        assert env["OPENAI_API_KEY"] == "token"
+
+    def test_legacy_main_provider_keeps_custom_endpoint_env(self) -> None:
+        """Legacy provider main should keep working for custom endpoints."""
+        from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
+
+        config = HermesCLIConfig(
+            provider="main",
+            base_url="http://custom:8080/v1",
+            api_key="token",
+        )
+        runtime = HermesCLIRuntime(config)
+        args = runtime._build_args("test")
+        env = runtime._build_env()
+        assert "--provider" not in args
+        assert env["OPENAI_BASE_URL"] == "http://custom:8080/v1"
+        assert env["OPENAI_API_KEY"] == "token"
+
+    def test_legacy_openai_provider_with_custom_endpoint_uses_env(self) -> None:
+        """Legacy provider strings should not black-hole a custom endpoint."""
+        from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime
+
+        config = HermesCLIConfig(
+            provider="openai",
+            base_url="http://custom:8080/v1",
+            api_key="token",
+        )
+        runtime = HermesCLIRuntime(config)
+        args = runtime._build_args("test")
+        env = runtime._build_env()
+        assert "--provider" not in args
+        assert env["OPENAI_BASE_URL"] == "http://custom:8080/v1"
+        assert env["OPENAI_API_KEY"] == "token"

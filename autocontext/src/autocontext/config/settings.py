@@ -527,7 +527,14 @@ class AppSettings(BaseModel):
     hermes_skills: str = Field(default="", description="Hermes skill to preload (e.g. github-pr-workflow)")
     hermes_worktree: bool = Field(default=False, description="Run Hermes in isolated git worktree")
     hermes_quiet: bool = Field(default=False, description="Suppress Hermes UI chrome")
-    hermes_provider: str = Field(default="", description="Force specific Hermes provider (anthropic, openai, etc.)")
+    hermes_provider: str = Field(
+        default="",
+        description=(
+            "Hermes CLI provider override "
+            "(e.g. auto, openrouter, nous, openai-codex, anthropic); "
+            "ignored when hermes_base_url is set"
+        ),
+    )
     # OpenAI-compatible agent provider (AC-222)
     agent_base_url: str = Field(default="", description="Base URL for OpenAI-compatible agent provider")
     agent_api_key: str = Field(default="", description="API key for OpenAI-compatible agent provider")
