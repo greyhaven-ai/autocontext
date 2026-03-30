@@ -280,17 +280,6 @@ export type {
   DistillationResult,
   DistillationPipelineConfig,
 } from "./traces/distillation-pipeline.js";
-export { ModelStrategySelector, TRAINING_MODES, DEFAULT_RECOMMENDATIONS } from "./training/model-strategy.js";
-export type {
-  TrainingMode,
-  AdapterType,
-  TaskComplexity,
-  BudgetTier,
-  ModelStrategy,
-  SelectionInput,
-  DistillationConfig,
-  DistilledArtifactMetadata,
-} from "./training/model-strategy.js";
 
 // Training
 export {

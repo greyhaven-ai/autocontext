@@ -200,13 +200,8 @@ export class ModelStrategySelector {
     // Language-heavy tasks on small dataset → still use adapter (don't downgrade to from_scratch)
     if (complexity === "language_heavy" && mode === "from_scratch") {
       mode = "adapter_finetune";
-<<<<<<< HEAD
       baseModel = baseModel ?? DEFAULT_BASE_MODEL;
       adapterType = DEFAULT_ADAPTER_TYPE;
-=======
-      baseModel = baseModel ?? "Qwen/Qwen3-0.6B";
-      adapterType = "lora";
->>>>>>> 4b78211 (feat(ts): CUDA training backend — real training and serving path (AC-460))
       reasoning = `Language-heavy task — pretrained base with adapter captures linguistic patterns even with small dataset.`;
     }
 
@@ -216,18 +211,12 @@ export class ModelStrategySelector {
   private applyOverrides(input: SelectionInput): ModelStrategy {
     const rec = DEFAULT_RECOMMENDATIONS[input.family] ?? {
       trainingMode: "adapter_finetune" as TrainingMode,
-<<<<<<< HEAD
       baseModel: DEFAULT_BASE_MODEL,
       adapterType: DEFAULT_ADAPTER_TYPE,
-=======
-      baseModel: "Qwen/Qwen3-0.6B",
-      adapterType: "lora" as AdapterType,
->>>>>>> 4b78211 (feat(ts): CUDA training backend — real training and serving path (AC-460))
       reasoning: "Default with overrides",
     };
 
     const mode = input.trainingModeOverride ?? rec.trainingMode;
-<<<<<<< HEAD
     const baseModel = mode === "from_scratch"
       ? undefined
       : (input.baseModelOverride ?? rec.baseModel ?? DEFAULT_BASE_MODEL);
@@ -239,14 +228,6 @@ export class ModelStrategySelector {
       trainingMode: mode,
       baseModel,
       adapterType,
-=======
-    const baseModel = input.baseModelOverride ?? rec.baseModel;
-
-    return {
-      trainingMode: mode,
-      baseModel: mode === "from_scratch" ? undefined : baseModel,
-      adapterType: mode === "adapter_finetune" ? (rec.adapterType ?? "lora") : undefined,
->>>>>>> 4b78211 (feat(ts): CUDA training backend — real training and serving path (AC-460))
       reasoning: `Operator override: mode=${mode}${input.baseModelOverride ? `, base=${input.baseModelOverride}` : ""}.`,
     };
   }
