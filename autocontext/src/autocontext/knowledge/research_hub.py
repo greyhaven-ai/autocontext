@@ -27,6 +27,7 @@ from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.families import detect_family
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
+from autocontext.util.json_io import read_json, write_json
 
 
 def _uid() -> str:
@@ -649,7 +650,7 @@ class HubStore:
         package_dir = self._package_dir(package.package_id)
         package_dir.mkdir(parents=True, exist_ok=True)
         payload_path = self._shared_package_path(package.package_id)
-        payload_path.write_text(json.dumps(package.to_dict(), indent=2), encoding="utf-8")
+        write_json(payload_path, package.to_dict())
 
         strategy_package_path = ""
         if strategy_package is not None:
@@ -683,7 +684,7 @@ class HubStore:
         path = self.artifacts.knowledge_root / str(row["payload_path"])
         if not path.exists():
             return None
-        return SharedPackage.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return SharedPackage.from_dict(read_json(path))
 
     def list_packages(self) -> list[SharedPackage]:
         packages: list[SharedPackage] = []
@@ -691,7 +692,7 @@ class HubStore:
             path = self.artifacts.knowledge_root / str(row["payload_path"])
             if not path.exists():
                 continue
-            packages.append(SharedPackage.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            packages.append(SharedPackage.from_dict(read_json(path)))
         return packages
 
     def load_strategy_package(self, package_id: str) -> StrategyPackage | None:
@@ -816,7 +817,7 @@ class HubStore:
     def persist_result(self, result: ResearchResult) -> Path:
         path = self._result_path(result.result_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, result.to_dict())
         self.sqlite.save_hub_result_record(
             result_id=result.result_id,
             scenario_name=result.scenario_name,
@@ -839,7 +840,7 @@ class HubStore:
         path = self.artifacts.knowledge_root / str(row["payload_path"])
         if not path.exists():
             return None
-        return ResearchResult.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return ResearchResult.from_dict(read_json(path))
 
     def list_results(self) -> list[ResearchResult]:
         results: list[ResearchResult] = []
@@ -847,7 +848,7 @@ class HubStore:
             path = self.artifacts.knowledge_root / str(row["payload_path"])
             if not path.exists():
                 continue
-            results.append(ResearchResult.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            results.append(ResearchResult.from_dict(read_json(path)))
         return results
 
     def materialize_result_for_run(
@@ -902,7 +903,7 @@ class HubStore:
         promotions_dir = self._hub_root / "promotions"
         promotions_dir.mkdir(parents=True, exist_ok=True)
         path = promotions_dir / f"{event.event_id}.json"
-        path.write_text(json.dumps(event.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, event.to_dict())
         return path
 
     def load_promotion(self, event_id: str) -> PromotionEvent | None:

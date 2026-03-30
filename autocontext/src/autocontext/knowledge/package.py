@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import BaseModel, Field, model_validator
 
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
+from autocontext.util.json_io import read_json
 
 if TYPE_CHECKING:
     from autocontext.knowledge.export import SkillPackage
@@ -140,7 +141,7 @@ class StrategyPackage(BaseModel):
     @classmethod
     def from_file(cls, path: Path) -> StrategyPackage:
         """Load and validate from a JSON file."""
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return cls.from_dict(data)
 
     def to_json(self, indent: int = 2) -> str:
@@ -201,7 +202,7 @@ def read_package_metadata(artifacts: ArtifactStore, scenario_name: str) -> dict[
     if not path.exists():
         return {}
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = read_json(path)
     except (OSError, json.JSONDecodeError):
         LOGGER.warning("failed to read package metadata for %s", scenario_name)
         return {}

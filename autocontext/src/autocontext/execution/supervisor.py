@@ -23,7 +23,7 @@ class ExecutionOutput:
 class ExecutionSupervisor:
     """Data-plane boundary enforcing a stable input/output contract."""
 
-    def __init__(self, executor: ExecutionEngine | None = None):
+    def __init__(self, executor: ExecutionEngine | None = None) -> None:
         self.executor = executor or LocalExecutor()
 
     def run(self, scenario: ScenarioInterface, payload: ExecutionInput) -> ExecutionOutput:

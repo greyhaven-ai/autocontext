@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from autocontext.harness.core.types import RoleExecution, RoleUsage
+
+#: A simple LLM function: (system_prompt, user_prompt) -> response text.
+LlmFn = Callable[[str, str], str]
 
 if TYPE_CHECKING:
     from autocontext.agents.contracts import AnalystOutput, ArchitectOutput, CoachOutput, CompetitorOutput
@@ -27,4 +31,4 @@ class AgentOutputs:
     architect_output: ArchitectOutput | None = None
 
 
-__all__ = ["RoleUsage", "RoleExecution", "AgentOutputs"]
+__all__ = ["LlmFn", "RoleUsage", "RoleExecution", "AgentOutputs"]

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class TrustTier(enum.StrEnum):
+class TrustTier(StrEnum):
     PROBATION = "probation"  # advance_rate < 0.3 or insufficient data
     ESTABLISHED = "established"  # advance_rate 0.3-0.6
     TRUSTED = "trusted"  # advance_rate 0.6-0.8

@@ -6,6 +6,7 @@ from typing import Any
 from autocontext.rlm.types import RlmContext
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
+from autocontext.util.json_io import read_json
 
 
 class ContextLoader:
@@ -121,7 +122,7 @@ class ContextLoader:
                 continue
             for rfile in sorted(replay_dir.glob("*.json")):
                 try:
-                    replays.append(json.loads(rfile.read_text(encoding="utf-8")))
+                    replays.append(read_json(rfile))
                 except (json.JSONDecodeError, OSError):
                     continue
         return replays
@@ -133,7 +134,7 @@ class ContextLoader:
             if not mpath.exists():
                 continue
             try:
-                metrics.append(json.loads(mpath.read_text(encoding="utf-8")))
+                metrics.append(read_json(mpath))
             except (json.JSONDecodeError, OSError):
                 continue
         return metrics

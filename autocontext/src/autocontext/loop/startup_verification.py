@@ -16,6 +16,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from autocontext.util.json_io import read_json
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +58,7 @@ def verify_startup(
     progress_path = knowledge_dir / "progress.json"
     if progress_path.exists():
         try:
-            data = json.loads(progress_path.read_text(encoding="utf-8"))
+            data = read_json(progress_path)
             if not isinstance(data, dict):
                 report.warnings.append("progress.json is not a JSON object")
         except (json.JSONDecodeError, ValueError) as exc:

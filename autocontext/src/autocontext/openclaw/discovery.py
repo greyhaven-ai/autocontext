@@ -7,7 +7,6 @@ and client-friendly summaries for ClawHub UX.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +15,7 @@ from pydantic import BaseModel, Field
 from autocontext.concepts import get_concept_model
 from autocontext.scenarios.families import detect_family
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
+from autocontext.util.json_io import read_json
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
@@ -107,7 +107,7 @@ def _count_artifacts_by_type(knowledge_root: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     for path in artifacts_dir.glob("*.json"):
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             atype = data.get("artifact_type", "")
             if atype:
                 counts[atype] = counts.get(atype, 0) + 1
@@ -124,7 +124,7 @@ def _has_policy_artifact(knowledge_root: Path, scenario_name: str) -> bool:
 
     for path in artifacts_dir.glob("*.json"):
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             if data.get("artifact_type") == "policy" and data.get("scenario") == scenario_name:
                 return True
         except Exception:
@@ -247,7 +247,7 @@ def scenario_artifact_lookup(ctx: MtsToolContext, scenario_name: str) -> list[Ar
     results: list[ArtifactSummary] = []
     for path in sorted(artifacts_dir.glob("*.json")):
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
         except Exception:
             continue
         if data.get("scenario") != scenario_name:

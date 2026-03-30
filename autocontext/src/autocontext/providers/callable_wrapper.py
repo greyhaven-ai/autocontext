@@ -1,13 +1,12 @@
 """Wrapper that adapts a bare callable to the LLMProvider interface.
 
 This provides backward compatibility for existing code that passes
-``llm_fn: Callable[[str, str], str]`` to LLMJudge.
+``llm_fn: LlmFn`` to LLMJudge.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
+from autocontext.agents.types import LlmFn
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
 
 
@@ -20,7 +19,7 @@ class CallableProvider(LLMProvider):
 
     def __init__(
         self,
-        llm_fn: Callable[[str, str], str],
+        llm_fn: LlmFn,
         model_name: str = "unknown",
     ) -> None:
         self._fn = llm_fn

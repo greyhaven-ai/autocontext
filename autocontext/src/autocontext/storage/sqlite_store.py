@@ -4,15 +4,16 @@ import json
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from autocontext.monitor.types import MonitorAlert, MonitorCondition
 
 SQLITE_BUSY_TIMEOUT_MS = 5_000
 AgentOutputBatch = tuple[str, str]
 AgentRoleMetricBatch = tuple[str, str, int, int, int, str, str]
-
-
 class SQLiteStore:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -754,9 +755,7 @@ class SQLiteStore:
         scheduled_at: str | None = None,
     ) -> None:
         """Add a task to the queue."""
-        import json as _json
-
-        config_json = _json.dumps(config) if config else None
+        config_json = json.dumps(config) if config else None
         with self.connect() as conn:
             conn.execute(
                 """
@@ -993,8 +992,6 @@ class SQLiteStore:
         follow_ups: list[str] | None = None,
     ) -> None:
         """Insert or update a session notebook."""
-        import json as _json
-
         existing = self.get_notebook(session_id)
         merged_current_objective = current_objective if current_objective is not None else (
             str(existing["current_objective"]) if existing is not None else ""
@@ -1021,10 +1018,10 @@ class SQLiteStore:
             list(existing["follow_ups"]) if existing is not None else []
         )
 
-        hypotheses_json = _json.dumps(merged_hypotheses)
-        questions_json = _json.dumps(merged_questions)
-        observations_json = _json.dumps(merged_observations)
-        follow_ups_json = _json.dumps(merged_follow_ups)
+        hypotheses_json = json.dumps(merged_hypotheses)
+        questions_json = json.dumps(merged_questions)
+        observations_json = json.dumps(merged_observations)
+        follow_ups_json = json.dumps(merged_follow_ups)
 
         with self.connect() as conn:
             conn.execute(
@@ -1440,10 +1437,8 @@ class SQLiteStore:
 
     # ---- Monitor Conditions + Alerts (AC-209) ----
 
-    def insert_monitor_condition(self, condition: object) -> str:
+    def insert_monitor_condition(self, condition: MonitorCondition) -> str:
         """Persist a MonitorCondition. Returns the condition id."""
-        import json as _json
-
         with self.connect() as conn:
             conn.execute(
                 """
@@ -1451,15 +1446,15 @@ class SQLiteStore:
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    condition.id,  # type: ignore[attr-defined]
-                    condition.name,  # type: ignore[attr-defined]
-                    str(condition.condition_type),  # type: ignore[attr-defined]
-                    _json.dumps(condition.params),  # type: ignore[attr-defined]
-                    condition.scope,  # type: ignore[attr-defined]
-                    1 if condition.active else 0,  # type: ignore[attr-defined]
+                    condition.id,
+                    condition.name,
+                    str(condition.condition_type),
+                    json.dumps(condition.params),
+                    condition.scope,
+                    1 if condition.active else 0,
                 ),
             )
-            return str(condition.id)  # type: ignore[attr-defined]
+            return str(condition.id)
 
     def list_monitor_conditions(
         self,
@@ -1468,8 +1463,6 @@ class SQLiteStore:
         scope: str | None = None,
     ) -> list[dict[str, Any]]:
         """List monitor conditions with optional filters. Returns parsed params."""
-        import json as _json
-
         query = "SELECT * FROM monitor_conditions WHERE 1=1"
         params: list[Any] = []
         if active_only:
@@ -1484,7 +1477,7 @@ class SQLiteStore:
             for row in rows:
                 d = dict(row)
                 raw_params = d.pop("params_json", "{}")
-                d["params"] = _json.loads(raw_params) if isinstance(raw_params, str) else {}
+                d["params"] = json.loads(raw_params) if isinstance(raw_params, str) else {}
                 results.append(d)
             return results
 
@@ -1508,8 +1501,6 @@ class SQLiteStore:
 
     def get_monitor_condition(self, condition_id: str) -> dict[str, Any] | None:
         """Get a single monitor condition by id. Returns parsed params."""
-        import json as _json
-
         with self.connect() as conn:
             row = conn.execute(
                 "SELECT * FROM monitor_conditions WHERE id = ?",
@@ -1519,7 +1510,7 @@ class SQLiteStore:
                 return None
             d = dict(row)
             raw_params = d.pop("params_json", "{}")
-            d["params"] = _json.loads(raw_params) if isinstance(raw_params, str) else {}
+            d["params"] = json.loads(raw_params) if isinstance(raw_params, str) else {}
             return d
 
     def deactivate_monitor_condition(self, condition_id: str) -> bool:
@@ -1532,10 +1523,8 @@ class SQLiteStore:
             row = conn.execute("SELECT changes()").fetchone()
             return bool(row[0] > 0) if row else False
 
-    def insert_monitor_alert(self, alert: object) -> str:
+    def insert_monitor_alert(self, alert: MonitorAlert) -> str:
         """Persist a MonitorAlert. Returns the alert id."""
-        import json as _json
-
         with self.connect() as conn:
             conn.execute(
                 """
@@ -1544,17 +1533,17 @@ class SQLiteStore:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    alert.id,  # type: ignore[attr-defined]
-                    alert.condition_id,  # type: ignore[attr-defined]
-                    alert.condition_name,  # type: ignore[attr-defined]
-                    str(alert.condition_type),  # type: ignore[attr-defined]
-                    alert.scope,  # type: ignore[attr-defined]
-                    alert.detail,  # type: ignore[attr-defined]
-                    _json.dumps(alert.payload),  # type: ignore[attr-defined]
-                    alert.fired_at,  # type: ignore[attr-defined]
+                    alert.id,
+                    alert.condition_id,
+                    alert.condition_name,
+                    str(alert.condition_type),
+                    alert.scope,
+                    alert.detail,
+                    json.dumps(alert.payload),
+                    alert.fired_at,
                 ),
             )
-            return str(alert.id)  # type: ignore[attr-defined]
+            return str(alert.id)
 
     def list_monitor_alerts(
         self,
@@ -1565,8 +1554,6 @@ class SQLiteStore:
         since: str | None = None,
     ) -> list[dict[str, Any]]:
         """List monitor alerts with optional filters. Returns parsed payload."""
-        import json as _json
-
         query = "SELECT * FROM monitor_alerts WHERE 1=1"
         params: list[Any] = []
         if condition_id is not None:
@@ -1586,7 +1573,7 @@ class SQLiteStore:
             for row in rows:
                 d = dict(row)
                 raw_payload = d.pop("payload_json", "{}")
-                d["payload"] = _json.loads(raw_payload) if isinstance(raw_payload, str) else {}
+                d["payload"] = json.loads(raw_payload) if isinstance(raw_payload, str) else {}
                 results.append(d)
             return results
 

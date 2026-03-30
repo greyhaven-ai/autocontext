@@ -8,7 +8,6 @@ jumps, and emits structured warnings when thresholds are crossed.
 
 from __future__ import annotations
 
-import json
 import statistics
 import uuid
 from dataclasses import dataclass, field
@@ -17,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.analytics.facets import RunFacet
+from autocontext.util.json_io import read_json, write_json
 
 # Score at or above this is considered "near-perfect"
 _PERFECT_THRESHOLD = 0.95
@@ -425,38 +425,38 @@ class DriftStore:
 
     def persist_snapshot(self, snapshot: RubricSnapshot) -> Path:
         path = self._snapshots_dir / f"{snapshot.snapshot_id}.json"
-        path.write_text(json.dumps(snapshot.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, snapshot.to_dict())
         return path
 
     def load_snapshot(self, snapshot_id: str) -> RubricSnapshot | None:
         path = self._snapshots_dir / f"{snapshot_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return RubricSnapshot.from_dict(data)
 
     def list_snapshots(self) -> list[RubricSnapshot]:
         results: list[RubricSnapshot] = []
         for path in sorted(self._snapshots_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(RubricSnapshot.from_dict(data))
         return results
 
     def persist_warning(self, warning: DriftWarning) -> Path:
         path = self._warnings_dir / f"{warning.warning_id}.json"
-        path.write_text(json.dumps(warning.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, warning.to_dict())
         return path
 
     def load_warning(self, warning_id: str) -> DriftWarning | None:
         path = self._warnings_dir / f"{warning_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return DriftWarning.from_dict(data)
 
     def list_warnings(self) -> list[DriftWarning]:
         results: list[DriftWarning] = []
         for path in sorted(self._warnings_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(DriftWarning.from_dict(data))
         return results

@@ -6,10 +6,10 @@ supporting dedup via has_issue_for_cluster.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from autocontext.analytics.issue_generator import IssueCandidate, ProbeCandidate
+from autocontext.util.json_io import read_json, write_json
 
 
 class IssueStore:
@@ -23,39 +23,39 @@ class IssueStore:
 
     def persist_issue(self, candidate: IssueCandidate) -> Path:
         path = self._issues_dir / f"{candidate.candidate_id}.json"
-        path.write_text(json.dumps(candidate.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, candidate.to_dict())
         return path
 
     def persist_probe(self, probe: ProbeCandidate) -> Path:
         path = self._probes_dir / f"{probe.candidate_id}.json"
-        path.write_text(json.dumps(probe.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, probe.to_dict())
         return path
 
     def load_issue(self, candidate_id: str) -> IssueCandidate | None:
         path = self._issues_dir / f"{candidate_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return IssueCandidate.from_dict(data)
 
     def load_probe(self, candidate_id: str) -> ProbeCandidate | None:
         path = self._probes_dir / f"{candidate_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return ProbeCandidate.from_dict(data)
 
     def list_issues(self) -> list[IssueCandidate]:
         results: list[IssueCandidate] = []
         for path in sorted(self._issues_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(IssueCandidate.from_dict(data))
         return results
 
     def list_probes(self) -> list[ProbeCandidate]:
         results: list[ProbeCandidate] = []
         for path in sorted(self._probes_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(ProbeCandidate.from_dict(data))
         return results
 

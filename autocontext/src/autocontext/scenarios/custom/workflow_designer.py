@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
 from autocontext.scenarios.custom.workflow_spec import (
     WorkflowSpec,
@@ -148,7 +148,7 @@ def parse_workflow_spec(text: str) -> WorkflowSpec:
     )
 
 
-def design_workflow(description: str, llm_fn: Callable[[str, str], str]) -> WorkflowSpec:
+def design_workflow(description: str, llm_fn: LlmFn) -> WorkflowSpec:
     return parse_workflow_spec(
         llm_fn(WORKFLOW_DESIGNER_SYSTEM, f"User description:\n{description}")
     )

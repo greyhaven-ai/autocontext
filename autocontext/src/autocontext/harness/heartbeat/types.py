@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class AgentStatus(enum.StrEnum):
+class AgentStatus(StrEnum):
     ACTIVE = "active"
     IDLE = "idle"
     STALLED = "stalled"
@@ -16,7 +16,7 @@ class AgentStatus(enum.StrEnum):
     TERMINATED = "terminated"
 
 
-class EscalationLevel(enum.StrEnum):
+class EscalationLevel(StrEnum):
     WARN = "warn"
     PAUSE = "pause"
     RESTART = "restart"

@@ -13,7 +13,7 @@ class PrimeIntellectExecutor:
         client: PrimeIntellectClient,
         max_retries: int = 2,
         backoff_seconds: float = 0.75,
-    ):
+    ) -> None:
         self.client = client
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds

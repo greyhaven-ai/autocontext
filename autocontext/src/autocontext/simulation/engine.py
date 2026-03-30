@@ -11,10 +11,12 @@ import json
 import re
 import sys
 import uuid
-from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+
+from autocontext.agents.types import LlmFn
+from autocontext.util.json_io import read_json, write_json
 
 
 def _generate_id() -> str:
@@ -29,7 +31,7 @@ def _derive_name(description: str) -> str:
 class SimulationEngine:
     """Plain-language simulation engine with sweep/replay/compare."""
 
-    def __init__(self, llm_fn: Callable[[str, str], str], knowledge_root: Path) -> None:
+    def __init__(self, llm_fn: LlmFn, knowledge_root: Path) -> None:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
 
@@ -100,7 +102,7 @@ class SimulationEngine:
                 },
                 "warnings": warnings,
             }
-            (scenario_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+            write_json(scenario_dir / "report.json", report)
             return report
 
         except Exception as exc:
@@ -177,7 +179,7 @@ class SimulationEngine:
         }
 
         replay_path = sim_dir / f"replay_{replay_report['id']}.json"
-        replay_path.write_text(json.dumps(replay_report, indent=2), encoding="utf-8")
+        write_json(replay_path, replay_report)
         replay_report["artifacts"] = {
             "scenario_dir": str(sim_dir),
             "report_path": str(replay_path),
@@ -329,7 +331,7 @@ class SimulationEngine:
     ) -> Path:
         sim_dir = scenario_dir or self.knowledge_root / "_simulations" / name
         sim_dir.mkdir(parents=True, exist_ok=True)
-        (sim_dir / "spec.json").write_text(json.dumps({"name": name, "family": family, **spec}, indent=2), encoding="utf-8")
+        write_json(sim_dir / "spec.json", {"name": name, "family": family, **spec})
         (sim_dir / "scenario.py").write_text(source, encoding="utf-8")
         from autocontext.scenarios.families import get_family_marker
         (sim_dir / "scenario_type.txt").write_text(get_family_marker(family), encoding="utf-8")
@@ -491,7 +493,7 @@ class SimulationEngine:
         simulations_root = self.knowledge_root / "_simulations"
         report_path = simulations_root / name / "report.json"
         if report_path.exists():
-            return json.loads(report_path.read_text(encoding="utf-8")), report_path.parent
+            return read_json(report_path), report_path.parent
 
         if not simulations_root.exists():
             return None
@@ -501,7 +503,7 @@ class SimulationEngine:
                 continue
             replay_path = scenario_dir / f"replay_{name}.json"
             if replay_path.exists():
-                return json.loads(replay_path.read_text(encoding="utf-8")), scenario_dir
+                return read_json(replay_path), scenario_dir
 
         return None
 
@@ -509,7 +511,7 @@ class SimulationEngine:
         spec_path = scenario_dir / "spec.json"
         if not spec_path.exists():
             return None
-        payload = json.loads(spec_path.read_text(encoding="utf-8"))
+        payload = read_json(spec_path)
         if not isinstance(payload, dict):
             return None
         payload.pop("name", None)

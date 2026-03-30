@@ -7,7 +7,6 @@ scores, contradictory rubric satisfaction) are prioritized for review.
 
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -15,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.analytics.facets import RunFacet
+from autocontext.util.json_io import read_json, write_json
 
 # Score threshold for "near-perfect"
 _PERFECT_THRESHOLD = 0.95
@@ -260,38 +260,38 @@ class CalibrationStore:
 
     def persist_round(self, rnd: CalibrationRound) -> Path:
         path = self._rounds_dir / f"{rnd.round_id}.json"
-        path.write_text(json.dumps(rnd.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, rnd.to_dict())
         return path
 
     def load_round(self, round_id: str) -> CalibrationRound | None:
         path = self._rounds_dir / f"{round_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return CalibrationRound.from_dict(data)
 
     def list_rounds(self) -> list[CalibrationRound]:
         results: list[CalibrationRound] = []
         for path in sorted(self._rounds_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(CalibrationRound.from_dict(data))
         return results
 
     def persist_outcome(self, outcome: CalibrationOutcome) -> Path:
         path = self._outcomes_dir / f"{outcome.outcome_id}.json"
-        path.write_text(json.dumps(outcome.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, outcome.to_dict())
         return path
 
     def load_outcome(self, outcome_id: str) -> CalibrationOutcome | None:
         path = self._outcomes_dir / f"{outcome_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return CalibrationOutcome.from_dict(data)
 
     def list_outcomes(self) -> list[CalibrationOutcome]:
         results: list[CalibrationOutcome] = []
         for path in sorted(self._outcomes_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(CalibrationOutcome.from_dict(data))
         return results

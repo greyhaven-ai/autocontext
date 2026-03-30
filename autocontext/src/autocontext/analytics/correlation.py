@@ -8,7 +8,6 @@ and probe generation.
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -18,6 +17,7 @@ from typing import Any
 
 from autocontext.analytics.clustering import FacetCluster
 from autocontext.analytics.facets import RunFacet
+from autocontext.util.json_io import read_json, write_json
 
 
 @dataclass(slots=True)
@@ -300,19 +300,19 @@ class CorrelationStore:
 
     def persist(self, result: CorrelationResult) -> Path:
         path = self._dir / f"{result.correlation_id}.json"
-        path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, result.to_dict())
         return path
 
     def load(self, correlation_id: str) -> CorrelationResult | None:
         path = self._dir / f"{correlation_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return CorrelationResult.from_dict(data)
 
     def list_results(self) -> list[CorrelationResult]:
         results: list[CorrelationResult] = []
         for path in sorted(self._dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(CorrelationResult.from_dict(data))
         return results

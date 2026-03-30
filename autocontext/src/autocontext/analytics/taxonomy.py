@@ -6,7 +6,6 @@ patterns are discovered by the clustering engine.
 
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.analytics.clustering import FacetCluster
+from autocontext.util.json_io import read_json, write_json
 
 
 @dataclass(slots=True)
@@ -173,13 +173,13 @@ class FacetTaxonomy:
     def save(self, path: Path) -> None:
         """Persist the taxonomy to a JSON file."""
         data = [e.to_dict() for e in self._entries]
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_json(path, data)
 
     @classmethod
     def load(cls, path: Path) -> FacetTaxonomy:
         """Load a taxonomy from a JSON file."""
         taxonomy = cls()
         if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             taxonomy._entries = [TaxonomyEntry.from_dict(d) for d in data]
         return taxonomy

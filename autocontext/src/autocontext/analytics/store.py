@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.analytics.facets import RunFacet
+from autocontext.util.json_io import read_json
 
 _FACETS_DIR = "facets"
 
@@ -36,14 +37,14 @@ class FacetStore:
         path = self.root / f"{run_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return RunFacet.from_dict(data)
 
     def list_facets(self, scenario: str | None = None) -> list[RunFacet]:
         """List all persisted facets, optionally filtered by scenario."""
         facets: list[RunFacet] = []
         for path in sorted(self.root.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             facet = RunFacet.from_dict(data)
             if scenario is not None and facet.scenario != scenario:
                 continue

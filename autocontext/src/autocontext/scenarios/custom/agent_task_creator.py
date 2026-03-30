@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import logging
 import sys
-from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
 from autocontext.scenarios.base import ScenarioInterface
@@ -49,6 +48,7 @@ from autocontext.scenarios.operator_loop import OperatorLoopInterface
 from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
 from autocontext.scenarios.tool_fragility import ToolFragilityInterface
 from autocontext.scenarios.workflow import WorkflowInterface
+from autocontext.util.json_io import write_json
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class AgentTaskCreator:
 
     def __init__(
         self,
-        llm_fn: Callable[[str, str], str],
+        llm_fn: LlmFn,
         knowledge_root: Path,
     ) -> None:
         self.llm_fn = llm_fn
@@ -189,7 +189,7 @@ class AgentTaskCreator:
             spec_data["revision_prompt"] = spec.revision_prompt
         if spec.sample_input is not None:
             spec_data["sample_input"] = spec.sample_input
-        spec_file.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
+        write_json(spec_file, spec_data)
 
         # Mark as agent_task type
         type_file = scenario_dir / "scenario_type.txt"

@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from autocontext.util.json_io import read_json, write_json
+
 
 @dataclass(slots=True)
 class WorldEntity:
@@ -595,19 +597,19 @@ class WorldStateStore:
 
     def persist(self, state: WorldState) -> Path:
         path = self._dir / f"{state.state_id}.json"
-        path.write_text(json.dumps(state.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, state.to_dict())
         return path
 
     def load(self, state_id: str) -> WorldState | None:
         path = self._dir / f"{state_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return WorldState.from_dict(data)
 
     def list_states(self) -> list[WorldState]:
         results: list[WorldState] = []
         for path in sorted(self._dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(WorldState.from_dict(data))
         return results

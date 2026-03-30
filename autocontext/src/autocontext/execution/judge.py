@@ -4,10 +4,10 @@ import json
 import logging
 import math
 import re
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
+from autocontext.agents.types import LlmFn
 from autocontext.execution.rubric_coherence import check_rubric_coherence
 from autocontext.providers.base import LLMProvider
 from autocontext.providers.callable_wrapper import CallableProvider
@@ -89,14 +89,14 @@ class LLMJudge:
     """LLM-based judge for evaluating agent task outputs.
 
     Accepts either a ``provider: LLMProvider`` or a legacy
-    ``llm_fn: Callable[[str, str], str]`` for backward compatibility.
+    ``llm_fn: LlmFn`` for backward compatibility.
     """
 
     def __init__(
         self,
         model: str,
         rubric: str,
-        llm_fn: Callable[[str, str], str] | None = None,
+        llm_fn: LlmFn | None = None,
         provider: LLMProvider | None = None,
         samples: int = 1,
         temperature: float = 0.0,

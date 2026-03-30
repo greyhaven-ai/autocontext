@@ -1,11 +1,11 @@
 """Metrics collector — ingests per-generation role observations."""
 from __future__ import annotations
 
-import json
 import threading
 from pathlib import Path
 
 from autocontext.harness.meta.types import RoleMetric
+from autocontext.util.json_io import read_json, write_json
 
 
 class MetricsCollector:
@@ -64,12 +64,12 @@ class MetricsCollector:
                 }
                 for m in self._observations
             ]
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_json(path, data)
 
     @classmethod
     def load(cls, path: Path) -> MetricsCollector:
         collector = cls()
         if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             collector._observations = [RoleMetric(**d) for d in data]
         return collector

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from autocontext.util.json_io import read_json, write_json
+
 
 def export_simulation(
     id: str,
@@ -27,7 +29,7 @@ def export_simulation(
 
     report, sim_dir = resolved
     spec_path = sim_dir / "spec.json"
-    spec = json.loads(spec_path.read_text(encoding="utf-8")) if spec_path.exists() else {}
+    spec = read_json(spec_path) if spec_path.exists() else {}
 
     output_dir = sim_dir / "exports"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -43,7 +45,7 @@ def _resolve_simulation_artifact(knowledge_root: Path, simulation_id: str) -> tu
     simulations_root = knowledge_root / "_simulations"
     report_path = simulations_root / simulation_id / "report.json"
     if report_path.exists():
-        return json.loads(report_path.read_text(encoding="utf-8")), report_path.parent
+        return read_json(report_path), report_path.parent
 
     if not simulations_root.exists():
         return None
@@ -53,7 +55,7 @@ def _resolve_simulation_artifact(knowledge_root: Path, simulation_id: str) -> tu
             continue
         replay_path = sim_dir / f"replay_{simulation_id}.json"
         if replay_path.exists():
-            return json.loads(replay_path.read_text(encoding="utf-8")), sim_dir
+            return read_json(replay_path), sim_dir
 
     return None
 
@@ -106,7 +108,7 @@ def _export_json(report: dict[str, Any], spec: dict[str, Any], output_dir: Path)
         "score_delta": report.get("score_delta"),
     }
     path = output_dir / f"{_export_stem(report)}_export.json"
-    path.write_text(json.dumps(pkg, indent=2), encoding="utf-8")
+    write_json(path, pkg)
     return {"status": "completed", "format": "json", "output_path": str(path)}
 
 

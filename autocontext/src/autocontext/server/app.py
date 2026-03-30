@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -48,6 +47,7 @@ from autocontext.server.protocol import (
 )
 from autocontext.server.run_manager import RunManager
 from autocontext.storage import SQLiteStore
+from autocontext.util.json_io import read_json
 
 LOGGER = logging.getLogger(__name__)
 def _build_scenario_creator(app_settings: object) -> object | None:
@@ -169,7 +169,7 @@ def create_app(
     @application.get("/api/runs/{run_id}/replay/{generation}")
     def replay(run_id: str, generation: int) -> dict[str, object]:
         replay_path = _read_replay_file(run_id, generation)
-        payload = json.loads(replay_path.read_text(encoding="utf-8"))
+        payload = read_json(replay_path)
         if not isinstance(payload, dict):
             raise HTTPException(status_code=500, detail="replay payload is not a JSON object")
         return payload

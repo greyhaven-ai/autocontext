@@ -16,7 +16,6 @@ Key types:
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -25,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.analytics.run_trace import RunTrace, TraceEvent
+from autocontext.util.json_io import read_json, write_json
 
 
 @dataclass(slots=True)
@@ -607,20 +607,20 @@ class ReportStore:
 
     def persist_writeup(self, writeup: TraceWriteup) -> Path:
         path = self._writeups_dir / f"{writeup.writeup_id}.json"
-        path.write_text(json.dumps(writeup.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, writeup.to_dict())
         return path
 
     def load_writeup(self, writeup_id: str) -> TraceWriteup | None:
         path = self._writeups_dir / f"{writeup_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return TraceWriteup.from_dict(data)
 
     def list_writeups(self) -> list[TraceWriteup]:
         results: list[TraceWriteup] = []
         for path in sorted(self._writeups_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(TraceWriteup.from_dict(data))
         return results
 
@@ -632,20 +632,20 @@ class ReportStore:
 
     def persist_weakness_report(self, report: WeaknessReport) -> Path:
         path = self._weakness_dir / f"{report.report_id}.json"
-        path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, report.to_dict())
         return path
 
     def load_weakness_report(self, report_id: str) -> WeaknessReport | None:
         path = self._weakness_dir / f"{report_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return WeaknessReport.from_dict(data)
 
     def list_weakness_reports(self) -> list[WeaknessReport]:
         results: list[WeaknessReport] = []
         for path in sorted(self._weakness_dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             results.append(WeaknessReport.from_dict(data))
         return results
 

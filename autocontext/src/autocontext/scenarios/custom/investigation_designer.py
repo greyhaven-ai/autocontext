@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.investigation_spec import InvestigationSpec
 from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
 
@@ -113,7 +113,7 @@ def parse_investigation_spec(text: str) -> InvestigationSpec:
     )
 
 
-def design_investigation(description: str, llm_fn: Callable[[str, str], str]) -> InvestigationSpec:
+def design_investigation(description: str, llm_fn: LlmFn) -> InvestigationSpec:
     return parse_investigation_spec(
         llm_fn(INVESTIGATION_DESIGNER_SYSTEM, f"User description:\n{description}")
     )

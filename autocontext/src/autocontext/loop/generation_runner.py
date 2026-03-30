@@ -39,11 +39,12 @@ from autocontext.analytics.store import FacetStore
 from autocontext.analytics.taxonomy import FacetTaxonomy
 from autocontext.analytics.timeline_inspector import StateInspector, TimelineBuilder
 from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
-from autocontext.backpressure import BackpressureGate, TrendAwareGate
 from autocontext.config import AppSettings
 from autocontext.execution import ExecutionSupervisor
 from autocontext.execution.executors import LocalExecutor, PrimeIntellectExecutor
 from autocontext.harness.meta_optimizer import MetaOptimizer
+from autocontext.harness.pipeline.gate import BackpressureGate
+from autocontext.harness.pipeline.trend_gate import TrendAwareGate
 from autocontext.harness.scoring.backends import get_backend
 from autocontext.integrations.primeintellect import PrimeIntellectClient
 from autocontext.knowledge.mutation_log import MutationEntry
@@ -79,7 +80,7 @@ class RunSummary:
 
 
 class GenerationRunner:
-    def __init__(self, settings: AppSettings):
+    def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
         self.sqlite = SQLiteStore(settings.db_path)
         self.trajectory_builder = ScoreTrajectoryBuilder(self.sqlite)

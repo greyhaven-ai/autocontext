@@ -99,7 +99,7 @@ _CURATOR_ANALYST_RATING_CONSTRAINT = (
 
 
 class KnowledgeCurator:
-    def __init__(self, runtime: SubagentRuntime, model: str):
+    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
         self.runtime = runtime
         self.model = model
 

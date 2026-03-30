@@ -27,6 +27,7 @@ from autocontext.execution.objective_verification import (
     ObjectiveVerificationConfig,
     OracleResult,
 )
+from autocontext.util.json_io import read_json
 
 
 @dataclass(slots=True)
@@ -138,13 +139,13 @@ class DatasetRegistry:
             path = self._version_path(dataset_id, version)
             if not path.exists():
                 return None
-            return VerificationDataset.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            return VerificationDataset.from_dict(read_json(path))
 
         dataset_dir = self._dataset_dir(dataset_id)
         if not dataset_dir.exists():
             return None
         snapshots = [
-            VerificationDataset.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            VerificationDataset.from_dict(read_json(path))
             for path in sorted(dataset_dir.glob("*.json"))
         ]
         if not snapshots:
@@ -163,7 +164,7 @@ class DatasetRegistry:
             return []
         versions: list[str] = []
         for path in sorted(dataset_dir.glob("*.json")):
-            dataset = VerificationDataset.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            dataset = VerificationDataset.from_dict(read_json(path))
             versions.append(dataset.provenance.version)
         return versions
 

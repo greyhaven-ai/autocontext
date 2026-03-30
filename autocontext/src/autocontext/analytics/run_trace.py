@@ -15,10 +15,11 @@ Key types:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from autocontext.util.json_io import read_json, write_json
 
 
 @dataclass(slots=True)
@@ -238,14 +239,14 @@ class TraceStore:
 
     def persist(self, trace: RunTrace) -> Path:
         path = self._dir / f"{trace.trace_id}.json"
-        path.write_text(json.dumps(trace.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, trace.to_dict())
         return path
 
     def load(self, trace_id: str) -> RunTrace | None:
         path = self._dir / f"{trace_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return RunTrace.from_dict(data)
 
     def list_traces(
@@ -255,7 +256,7 @@ class TraceStore:
     ) -> list[RunTrace]:
         results: list[RunTrace] = []
         for path in sorted(self._dir.glob("*.json")):
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             trace = RunTrace.from_dict(data)
             if run_id is not None and trace.run_id != run_id:
                 continue

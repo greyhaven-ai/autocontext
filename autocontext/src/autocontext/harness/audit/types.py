@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class AuditCategory(enum.StrEnum):
+class AuditCategory(StrEnum):
     LLM_CALL = "llm_call"
     GATE_DECISION = "gate_decision"
     COST_EVENT = "cost_event"

@@ -23,7 +23,7 @@ def parse_coach_sections(content: str) -> tuple[str, str, str]:
 
 
 class CoachRunner:
-    def __init__(self, runtime: SubagentRuntime, model: str):
+    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
         self.runtime = runtime
         self.model = model
 

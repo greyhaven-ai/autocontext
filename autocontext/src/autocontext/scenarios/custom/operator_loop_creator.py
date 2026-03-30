@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.custom.family_pipeline import (
     validate_for_family,
@@ -34,7 +34,7 @@ def validate_operator_loop_spec(spec: OperatorLoopSpec) -> list[str]:
 
 
 class OperatorLoopCreator:
-    def __init__(self, llm_fn: Callable[[str, str], str], knowledge_root: Path) -> None:
+    def __init__(self, llm_fn: LlmFn, knowledge_root: Path) -> None:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
 

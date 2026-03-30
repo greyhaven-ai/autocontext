@@ -33,6 +33,7 @@ from autocontext.scenarios.capabilities import (
     get_strategy_interface_safe,
 )
 from autocontext.storage import ArtifactStore, SQLiteStore
+from autocontext.util.json_io import read_json, write_json
 
 if TYPE_CHECKING:
     from autocontext.openclaw.distill import DistillJob
@@ -195,7 +196,6 @@ def run_status(ctx: MtsToolContext, run_id: str) -> list[dict[str, object]]:
 
 def run_replay(ctx: MtsToolContext, run_id: str, generation: int) -> dict[str, object]:
     """Read replay JSON for a specific generation."""
-    import json
 
     replay_dir = ctx.settings.runs_root / run_id / "generations" / f"gen_{generation}" / "replays"
     if not replay_dir.exists():
@@ -203,7 +203,7 @@ def run_replay(ctx: MtsToolContext, run_id: str, generation: int) -> dict[str, o
     replay_files = sorted(replay_dir.glob("*.json"))
     if not replay_files:
         return {"error": f"no replay files under {replay_dir}"}
-    return json.loads(replay_files[0].read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    return read_json(replay_files[0])  # type: ignore[no-any-return]
 
 
 # -- Knowledge API --
@@ -414,7 +414,6 @@ def create_agent_task(
     objective_verification: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Create and register an agent task spec for evaluation."""
-    import json
 
     if err := _validate_task_name(name):
         return {"error": err}
@@ -437,14 +436,13 @@ def create_agent_task(
     spec_dir = ctx.settings.knowledge_root / "_agent_tasks"
     spec_dir.mkdir(parents=True, exist_ok=True)
     spec_path = spec_dir / f"{name}.json"
-    spec_path.write_text(json.dumps(spec_data, indent=2), encoding="utf-8")
+    write_json(spec_path, spec_data)
 
     return {"name": name, "status": "created", "path": str(spec_path)}
 
 
 def list_agent_tasks(ctx: MtsToolContext) -> list[dict[str, object]]:
     """List all saved agent task specs."""
-    import json
 
     spec_dir = ctx.settings.knowledge_root / "_agent_tasks"
     if not spec_dir.exists():
@@ -453,7 +451,7 @@ def list_agent_tasks(ctx: MtsToolContext) -> list[dict[str, object]]:
     tasks = []
     for spec_path in sorted(spec_dir.glob("*.json")):
         try:
-            data = json.loads(spec_path.read_text(encoding="utf-8"))
+            data = read_json(spec_path)
             tasks.append({
                 "name": data.get("name", spec_path.stem),
                 "task_prompt_preview": data.get("task_prompt", "")[:200],
@@ -470,7 +468,6 @@ def list_agent_tasks(ctx: MtsToolContext) -> list[dict[str, object]]:
 
 def get_agent_task(ctx: MtsToolContext, name: str) -> dict[str, object]:
     """Get full agent task spec by name."""
-    import json
 
     if err := _validate_task_name(name):
         return {"error": err}
@@ -478,7 +475,7 @@ def get_agent_task(ctx: MtsToolContext, name: str) -> dict[str, object]:
     spec_path = ctx.settings.knowledge_root / "_agent_tasks" / f"{name}.json"
     if not spec_path.exists():
         return {"error": f"Agent task '{name}' not found"}
-    data: dict[str, object] = json.loads(spec_path.read_text(encoding="utf-8"))
+    data: dict[str, object] = read_json(spec_path)
     return data
 
 
@@ -500,7 +497,6 @@ def evaluate_output(
     output: str,
 ) -> dict[str, object]:
     """One-shot evaluation of an output against a saved agent task spec."""
-    import json
 
     if err := _validate_task_name(task_name):
         return {"error": err}
@@ -509,7 +505,7 @@ def evaluate_output(
     if not spec_path.exists():
         return {"error": f"Agent task '{task_name}' not found"}
 
-    data = json.loads(spec_path.read_text(encoding="utf-8"))
+    data = read_json(spec_path)
 
     from autocontext.execution.judge import LLMJudge
     from autocontext.providers.registry import get_provider
@@ -600,7 +596,6 @@ def generate_output(
     This gives agents a starting point that can be fed into evaluate_output
     or run_improvement_loop.
     """
-    import json
 
     if err := _validate_task_name(task_name):
         return {"error": err}
@@ -609,7 +604,7 @@ def generate_output(
     if not spec_path.exists():
         return {"error": f"Agent task '{task_name}' not found"}
 
-    data = json.loads(spec_path.read_text(encoding="utf-8"))
+    data = read_json(spec_path)
 
     from autocontext.providers.registry import get_provider
 
@@ -636,7 +631,6 @@ def queue_improvement_run(
     priority: int = 0,
 ) -> dict[str, object]:
     """Add a task to the runner queue for background processing."""
-    import json
 
     if err := _validate_task_name(task_name):
         return {"error": err}
@@ -645,7 +639,7 @@ def queue_improvement_run(
     if not spec_path.exists():
         return {"error": f"Agent task '{task_name}' not found"}
 
-    data = json.loads(spec_path.read_text(encoding="utf-8"))
+    data = read_json(spec_path)
 
     from autocontext.execution.task_runner import enqueue_task
 
@@ -784,7 +778,6 @@ def export_agent_task_skill(
     Assembles results from completed task queue runs into a portable
     skill package that any agent can use.
     """
-    import json
 
     if err := _validate_task_name(task_name):
         return {"error": err}
@@ -793,7 +786,7 @@ def export_agent_task_skill(
     if not spec_path.exists():
         return {"error": f"Agent task '{task_name}' not found"}
 
-    data = json.loads(spec_path.read_text(encoding="utf-8"))
+    data = read_json(spec_path)
 
     # Gather completed runs for this task
     completed = ctx.sqlite.list_tasks(spec_name=task_name, status="completed")
@@ -937,7 +930,7 @@ def _sync_published_harness_artifacts(ctx: MtsToolContext, scenario_name: str) -
     synced: list[str] = []
     for artifact_path in sorted(artifacts_dir.glob("*.json")):
         try:
-            artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+            artifact_data = read_json(artifact_path)
         except json.JSONDecodeError:
             continue
         if artifact_data.get("artifact_type") != "harness" or artifact_data.get("scenario") != scenario_name:
@@ -1013,14 +1006,13 @@ def fetch_artifact(
     artifact_id: str,
 ) -> dict[str, object]:
     """Fetch a published artifact by its ID."""
-    import json as _json
 
     artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
     artifact_path = artifacts_dir / f"{artifact_id}.json"
     if not artifact_path.exists():
         return {"error": f"Artifact '{artifact_id}' not found"}
 
-    data: dict[str, object] = _json.loads(artifact_path.read_text(encoding="utf-8"))
+    data: dict[str, object] = read_json(artifact_path)
     return data
 
 
@@ -1030,7 +1022,6 @@ def list_artifacts(
     artifact_type: str | None = None,
 ) -> list[dict[str, object]]:
     """List published artifacts, optionally filtered by scenario or type."""
-    import json as _json
 
     artifacts_dir = ctx.settings.knowledge_root / "_openclaw_artifacts"
     if not artifacts_dir.exists():
@@ -1039,7 +1030,7 @@ def list_artifacts(
     results: list[dict[str, object]] = []
     for path in sorted(artifacts_dir.glob("*.json")):
         try:
-            data: dict[str, object] = _json.loads(path.read_text(encoding="utf-8"))
+            data: dict[str, object] = read_json(path)
         except Exception:
             continue
         if scenario and data.get("scenario") != scenario:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from autocontext.harness.audit.writer import AppendOnlyAuditWriter
 from autocontext.harness.meta.profiler import PerformanceProfiler
 from autocontext.harness.trust.policy import TrustPolicy
 from autocontext.harness.trust.types import TrustBudget, TrustScore
+from autocontext.util.json_io import read_json, write_json
 
 
 class TrustTracker:
@@ -77,13 +77,13 @@ class TrustTracker:
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             data = {role: score.to_dict() for role, score in self._scores.items()}
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_json(path, data)
 
     def load(self, path: Path) -> None:
         """Restore trust scores from a JSON file."""
         if not path.exists():
             return
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = read_json(path)
         with self._lock:
             self._scores = {role: TrustScore.from_dict(d) for role, d in raw.items()}
 

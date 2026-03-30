@@ -11,11 +11,12 @@ Key types:
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from autocontext.util.json_io import read_json, write_json
 
 
 @dataclass(slots=True)
@@ -135,7 +136,7 @@ class FixtureStore:
 
     def persist(self, fixture: RegressionFixture) -> Path:
         path = self._dir / f"{fixture.fixture_id}.json"
-        path.write_text(json.dumps(fixture.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, fixture.to_dict())
         return path
 
     def replace_for_scenario(
@@ -156,12 +157,12 @@ class FixtureStore:
         path = self._dir / f"{fixture_id}.json"
         if not path.exists():
             return None
-        return RegressionFixture.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return RegressionFixture.from_dict(read_json(path))
 
     def list_for_scenario(self, scenario: str) -> list[RegressionFixture]:
         results: list[RegressionFixture] = []
         for path in sorted(self._dir.glob("*.json")):
-            fix = RegressionFixture.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            fix = RegressionFixture.from_dict(read_json(path))
             if fix.scenario == scenario:
                 results.append(fix)
         return results

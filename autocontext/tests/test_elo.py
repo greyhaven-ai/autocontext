@@ -1,4 +1,4 @@
-from autocontext.execution.elo import expected_score, update_elo
+from autocontext.harness.scoring.elo import expected_score, update_elo
 
 
 def test_elo_update_rewards_win() -> None:

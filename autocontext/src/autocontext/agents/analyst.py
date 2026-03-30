@@ -5,7 +5,7 @@ from autocontext.agents.types import RoleExecution
 
 
 class AnalystRunner:
-    def __init__(self, runtime: SubagentRuntime, model: str):
+    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
         self.runtime = runtime
         self.model = model
 

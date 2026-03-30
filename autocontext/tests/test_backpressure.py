@@ -1,4 +1,4 @@
-from autocontext.backpressure import BackpressureGate
+from autocontext.harness.pipeline.gate import BackpressureGate
 
 
 def test_backpressure_is_deterministic() -> None:

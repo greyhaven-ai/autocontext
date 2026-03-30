@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
 from autocontext.scenarios.custom.tool_fragility_spec import (
     ToolContractSpecModel,
@@ -117,7 +117,7 @@ def parse_tool_fragility_spec(text: str) -> ToolFragilitySpec:
     )
 
 
-def design_tool_fragility(description: str, llm_fn: Callable[[str, str], str]) -> ToolFragilitySpec:
+def design_tool_fragility(description: str, llm_fn: LlmFn) -> ToolFragilitySpec:
     return parse_tool_fragility_spec(
         llm_fn(TOOL_FRAGILITY_DESIGNER_SYSTEM, f"User description:\n{description}")
     )

@@ -21,6 +21,7 @@ from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
 from autocontext.storage.buffered_writer import BufferedWriter
+from autocontext.util.json_io import read_json, write_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class ArtifactStore:
         claude_skills_path: Path,
         max_playbook_versions: int = 5,
         enable_buffered_writes: bool = False,
-    ):
+    ) -> None:
         self.runs_root = runs_root
         self.knowledge_root = knowledge_root
         self.skills_root = skills_root
@@ -103,7 +104,7 @@ class ArtifactStore:
 
     def write_json(self, path: Path, payload: dict[str, object]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        write_json(path, payload)
 
     def write_markdown(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,7 +251,7 @@ class ArtifactStore:
         hint_state = self._hint_state_path(scenario_name)
         if hint_state.exists():
             try:
-                raw = json.loads(hint_state.read_text(encoding="utf-8"))
+                raw = read_json(hint_state)
             except json.JSONDecodeError:
                 LOGGER.warning("failed to parse hint state %s", hint_state, exc_info=True)
             else:
@@ -312,7 +313,7 @@ class ArtifactStore:
         path = self.knowledge_root / scenario_name / "progress.json"
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        return read_json(path)  # type: ignore[no-any-return]
 
     def read_latest_advance_analysis(self, scenario_name: str, current_gen: int) -> str:
         """Read the most recent analysis from a generation before current_gen."""
@@ -348,7 +349,7 @@ class ArtifactStore:
             if num >= current_gen:
                 continue
             try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw = read_json(path)
             except json.JSONDecodeError:
                 LOGGER.warning("failed to parse analyst rating %s", path, exc_info=True)
                 continue
@@ -384,7 +385,7 @@ class ArtifactStore:
             if num >= current_gen:
                 continue
             try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw = read_json(path)
             except json.JSONDecodeError:
                 LOGGER.warning("failed to parse hint feedback %s", path, exc_info=True)
                 continue
@@ -426,7 +427,7 @@ class ArtifactStore:
             if num >= current_gen:
                 continue
             try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw = read_json(path)
             except json.JSONDecodeError:
                 LOGGER.warning("failed to parse credit assignment %s", path, exc_info=True)
                 continue
@@ -443,7 +444,7 @@ class ArtifactStore:
         for run_dir in sorted(path for path in root.iterdir() if path.is_dir()):
             for path in sorted(run_dir.glob("gen_*.json")):
                 try:
-                    raw = json.loads(path.read_text(encoding="utf-8"))
+                    raw = read_json(path)
                 except json.JSONDecodeError:
                     LOGGER.warning("failed to parse credit assignment %s", path, exc_info=True)
                     continue
@@ -609,7 +610,7 @@ class ArtifactStore:
         if not path.exists():
             return ToolUsageTracker(known_tools=known_tools)
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw = read_json(path)
         except json.JSONDecodeError:
             LOGGER.warning("failed to parse tool usage state %s", path, exc_info=True)
             return ToolUsageTracker(known_tools=known_tools)
@@ -860,7 +861,7 @@ class ArtifactStore:
         if hint_state_snapshot.exists():
             self.write_json(
                 self._hint_state_path(scenario_name),
-                json.loads(hint_state_snapshot.read_text(encoding="utf-8")),
+                read_json(hint_state_snapshot),
             )
             restored = True
 
@@ -978,7 +979,7 @@ class ArtifactStore:
         path = self._progress_report_dir(scenario_name) / f"{run_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return RunProgressReport.from_dict(data)
 
     def read_latest_progress_reports(
@@ -993,7 +994,7 @@ class ArtifactStore:
         files = sorted(pr_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         reports: list[object] = []
         for path in files[:max_reports]:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             reports.append(RunProgressReport.from_dict(data))
         return reports
 
@@ -1027,7 +1028,7 @@ class ArtifactStore:
         path = self._weakness_dir(scenario_name) / f"{run_id}.json"
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path)
         return self._deserialize_weakness_report(data)
 
     def read_latest_weakness_reports(
@@ -1040,7 +1041,7 @@ class ArtifactStore:
         files = sorted(wr_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         reports: list[object] = []
         for path in files[:max_reports]:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path)
             reports.append(self._deserialize_weakness_report(data))
         return reports
 
@@ -1101,7 +1102,7 @@ class ArtifactStore:
         path = self._harness_version_path(scenario_name)
         if not path.exists():
             return {}
-        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        return read_json(path)  # type: ignore[no-any-return]
 
     def _update_harness_version(
         self, scenario_name: str, name: str, version: int, generation: int,
@@ -1110,7 +1111,7 @@ class ArtifactStore:
         versions[name] = {"version": version, "generation": generation}
         path = self._harness_version_path(scenario_name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(versions, indent=2, sort_keys=True), encoding="utf-8")
+        write_json(path, versions)
 
     def write_harness_versioned(
         self, scenario_name: str, name: str, source: str, generation: int,
@@ -1160,13 +1161,13 @@ class ArtifactStore:
         path = self.runs_root / "sessions" / session_id / "notebook.json"
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        return read_json(path)  # type: ignore[no-any-return]
 
     def write_notebook(self, session_id: str, notebook: dict[str, object]) -> None:
         """Write notebook JSON to runs/sessions/<session_id>/notebook.json."""
         path = self.runs_root / "sessions" / session_id / "notebook.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(notebook, indent=2), encoding="utf-8")
+        write_json(path, notebook)
         scenario_name = str(notebook.get("scenario_name", "")).strip()
         if scenario_name:
             self._append_mutation(
@@ -1216,4 +1217,4 @@ class ArtifactStore:
         session_path = self.generation_dir(run_id, generation) / f"{prefix}_session.json"
         if not session_path.exists():
             return None
-        return json.loads(session_path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+        return read_json(session_path)  # type: ignore[no-any-return]

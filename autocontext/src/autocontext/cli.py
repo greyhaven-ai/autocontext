@@ -26,6 +26,7 @@ from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.storage import ArtifactStore, SQLiteStore
+from autocontext.util.json_io import read_json, write_json
 
 if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
@@ -443,7 +444,7 @@ def replay(run_id: str = typer.Argument(...), generation: int = typer.Option(1, 
     replay_files = sorted(replay_dir.glob("*.json"))
     if not replay_files:
         raise typer.BadParameter(f"no replay files found under {replay_dir}")
-    payload = json.loads(replay_files[0].read_text(encoding="utf-8"))
+    payload = read_json(replay_files[0])
     console.print_json(json.dumps(payload))
 
 
@@ -1212,7 +1213,7 @@ def solve(
     if output:
         output_file = Path(output)
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(json.dumps(job.result.to_dict(), indent=2), encoding="utf-8")
+        write_json(output_file, job.result.to_dict())
         output_path = str(output_file)
 
     summary = SolveRunSummary(

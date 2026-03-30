@@ -23,7 +23,6 @@ from autocontext.analytics.credit_assignment import (
     compute_change_vector,
     format_attribution_for_agent,
 )
-from autocontext.backpressure.trend_gate import TrendAwareGate
 from autocontext.harness.core.types import RoleExecution, RoleUsage
 from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.failure_report import FailureReport
@@ -37,6 +36,7 @@ from autocontext.harness.evaluation.self_play import (
 from autocontext.harness.evaluation.types import EvaluationLimits as HarnessLimits
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
 from autocontext.harness.pipeline.holdout import HoldoutPolicy, HoldoutResult, HoldoutVerifier
+from autocontext.harness.pipeline.trend_gate import TrendAwareGate
 from autocontext.harness.pipeline.validity_gate import ValidityGate
 from autocontext.knowledge.dead_end_manager import DeadEndEntry, consolidate_dead_ends
 from autocontext.knowledge.evidence_freshness import (
@@ -86,8 +86,8 @@ if TYPE_CHECKING:
     from autocontext.agents.orchestrator import AgentOrchestrator
     from autocontext.agents.skeptic import SkepticAgent
     from autocontext.agents.types import AgentOutputs
-    from autocontext.backpressure import BackpressureGate
     from autocontext.execution.supervisor import ExecutionSupervisor
+    from autocontext.harness.pipeline.gate import BackpressureGate
     from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import ArtifactStore, SQLiteStore

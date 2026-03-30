@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.artifact_editing_spec import (
     ArtifactEditingSpec,
     ArtifactSpecModel,
@@ -78,6 +78,6 @@ def parse_artifact_editing_spec(text: str) -> ArtifactEditingSpec:
     )
 
 
-def design_artifact_editing(description: str, llm_fn: Callable[[str, str], str]) -> ArtifactEditingSpec:
+def design_artifact_editing(description: str, llm_fn: LlmFn) -> ArtifactEditingSpec:
     response = llm_fn(ARTIFACT_EDITING_DESIGNER_SYSTEM, f"User description:\n{description}")
     return parse_artifact_editing_spec(response)

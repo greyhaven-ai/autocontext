@@ -9,7 +9,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class CompetitorRunner:
-    def __init__(self, runtime: SubagentRuntime, model: str):
+    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
         self.runtime = runtime
         self.model = model
 

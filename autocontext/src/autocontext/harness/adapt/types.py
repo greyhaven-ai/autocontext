@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class AdaptationStatus(enum.StrEnum):
+class AdaptationStatus(StrEnum):
     APPLIED = "applied"
     SKIPPED_LOW_CONFIDENCE = "skipped_low_confidence"
     SKIPPED_MAX_CHANGES = "skipped_max_changes"

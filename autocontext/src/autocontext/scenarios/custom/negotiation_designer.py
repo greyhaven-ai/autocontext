@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.negotiation_spec import NegotiationSpec
 from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
 
@@ -121,7 +121,7 @@ def parse_negotiation_spec(text: str) -> NegotiationSpec:
 
 
 def design_negotiation(
-    description: str, llm_fn: Callable[[str, str], str]
+    description: str, llm_fn: LlmFn
 ) -> NegotiationSpec:
     return parse_negotiation_spec(
         llm_fn(NEGOTIATION_DESIGNER_SYSTEM, f"User description:\n{description}")

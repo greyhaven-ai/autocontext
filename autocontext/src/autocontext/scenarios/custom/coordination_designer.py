@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.coordination_spec import CoordinationSpec
 from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
 
@@ -102,7 +102,7 @@ def parse_coordination_spec(text: str) -> CoordinationSpec:
 
 
 def design_coordination(
-    description: str, llm_fn: Callable[[str, str], str]
+    description: str, llm_fn: LlmFn
 ) -> CoordinationSpec:
     return parse_coordination_spec(
         llm_fn(COORDINATION_DESIGNER_SYSTEM, f"User description:\n{description}")

@@ -38,11 +38,11 @@ from autocontext.loop.startup_verification import verify_startup
 if TYPE_CHECKING:
     from autocontext.agents.curator import KnowledgeCurator
     from autocontext.agents.orchestrator import AgentOrchestrator
-    from autocontext.backpressure import BackpressureGate
-    from autocontext.backpressure.trend_gate import TrendAwareGate
     from autocontext.execution.supervisor import ExecutionSupervisor
     from autocontext.harness.core.controller import LoopController
     from autocontext.harness.meta_optimizer import MetaOptimizer
+    from autocontext.harness.pipeline.gate import BackpressureGate
+    from autocontext.harness.pipeline.trend_gate import TrendAwareGate
     from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
     from autocontext.loop.events import EventStreamEmitter
     from autocontext.storage import ArtifactStore, SQLiteStore

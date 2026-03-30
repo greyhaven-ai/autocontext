@@ -121,7 +121,7 @@ def parse_architect_harness_specs(content: str) -> list[dict[str, Any]]:
 
 
 class ArchitectRunner:
-    def __init__(self, runtime: SubagentRuntime, model: str):
+    def __init__(self, runtime: SubagentRuntime, model: str) -> None:
         self.runtime = runtime
         self.model = model
 

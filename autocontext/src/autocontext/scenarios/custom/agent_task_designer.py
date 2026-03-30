@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
 SPEC_START = "<!-- AGENT_TASK_SPEC_START -->"
@@ -138,7 +138,7 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
     )
 
 
-def design_agent_task(description: str, llm_fn: Callable[[str, str], str]) -> AgentTaskSpec:
+def design_agent_task(description: str, llm_fn: LlmFn) -> AgentTaskSpec:
     """Design an agent task spec from a natural language description.
 
     Args:

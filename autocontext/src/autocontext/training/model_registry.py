@@ -16,10 +16,11 @@ Key types:
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from autocontext.util.json_io import read_json, write_json
 
 _VALID_STATES = frozenset({"candidate", "active", "disabled", "deprecated"})
 
@@ -164,18 +165,18 @@ class ModelRegistry:
 
     def register(self, record: DistilledModelRecord) -> Path:
         path = self._dir / f"{record.artifact_id}.json"
-        path.write_text(json.dumps(record.to_dict(), indent=2), encoding="utf-8")
+        write_json(path, record.to_dict())
         return path
 
     def load(self, artifact_id: str) -> DistilledModelRecord | None:
         path = self._dir / f"{artifact_id}.json"
         if not path.exists():
             return None
-        return DistilledModelRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return DistilledModelRecord.from_dict(read_json(path))
 
     def list_all(self) -> list[DistilledModelRecord]:
         return [
-            DistilledModelRecord.from_dict(json.loads(p.read_text(encoding="utf-8")))
+            DistilledModelRecord.from_dict(read_json(p))
             for p in sorted(self._dir.glob("*.json"))
         ]
 

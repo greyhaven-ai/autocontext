@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel, SimulationSpec
 
 SIM_SPEC_START = "<!-- SIMULATION_SPEC_START -->"
@@ -96,5 +96,5 @@ def parse_simulation_spec(text: str) -> SimulationSpec:
     )
 
 
-def design_simulation(description: str, llm_fn: Callable[[str, str], str]) -> SimulationSpec:
+def design_simulation(description: str, llm_fn: LlmFn) -> SimulationSpec:
     return parse_simulation_spec(llm_fn(SIMULATION_DESIGNER_SYSTEM, f"User description:\n{description}"))

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.custom.schema_evolution_spec import (
     SchemaEvolutionMutationModel,
     SchemaEvolutionSpec,
@@ -137,7 +137,7 @@ def parse_schema_evolution_spec(text: str) -> SchemaEvolutionSpec:
     )
 
 
-def design_schema_evolution(description: str, llm_fn: Callable[[str, str], str]) -> SchemaEvolutionSpec:
+def design_schema_evolution(description: str, llm_fn: LlmFn) -> SchemaEvolutionSpec:
     return parse_schema_evolution_spec(
         llm_fn(SCHEMA_EVOLUTION_DESIGNER_SYSTEM, f"User description:\n{description}")
     )

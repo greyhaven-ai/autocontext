@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.coordination import CoordinationInterface
 from autocontext.scenarios.custom.coordination_codegen import (
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class CoordinationCreator:
-    def __init__(self, llm_fn: Callable[[str, str], str], knowledge_root: Path) -> None:
+    def __init__(self, llm_fn: LlmFn, knowledge_root: Path) -> None:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
 
