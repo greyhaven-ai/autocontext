@@ -1,6 +1,6 @@
 # autocontext
 
-autocontext is a control plane for improving agent behavior over repeated runs. It combines multi-agent candidate generation, staged validation, scenario execution, knowledge accumulation, optional local distillation, and OpenClaw-facing APIs.
+autocontext is the Python control-plane package for running scenarios, carrying forward validated knowledge, exporting artifacts, and distilling stable behavior into cheaper runtimes over time.
 
 ## Working Directory
 
@@ -15,14 +15,14 @@ Run the commands in this README from the `autocontext/` directory. The Python pa
 - Exports training data and runs autoresearch-style local training loops
 - Exposes evaluation, validation, artifact, and discovery operations over MCP and HTTP
 
-## 0.3.0 Surface Summary
+## Surface Summary
 
-The Python package is the full control-plane surface in this repo. In 0.3.0 it includes:
+The Python package is the full control-plane surface in this repo. It currently includes:
 
 - generation-loop execution via `autoctx run`
 - plain-language simulation via `autoctx simulate`
 - local training workflows via `autoctx export-training-data` and `autoctx train`
-- scenario creation/materialization via `autoctx new-scenario`
+- scenario creation and materialization via `autoctx new-scenario`
 - HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`
 
 Some newer operator-facing surfaces are currently TypeScript-first:
