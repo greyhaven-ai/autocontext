@@ -249,6 +249,7 @@ def _validate_against_regression_fixtures(
         try:
             result = evaluator.evaluate(ctx.current_strategy, fixture.seed, limits)
         except Exception as exc:
+            logger.debug("loop.stage_prevalidation: caught Exception", exc_info=True)
             errors.append(
                 f"{fixture.fixture_id}: regression fixture '{fixture.description}' raised {exc}"
             )

@@ -70,6 +70,7 @@ class ValidityGate:
                 if not harness_result.passed:
                     harness_errors.extend(harness_result.errors)
             except Exception as exc:
+                logger.debug("harness.pipeline.validity_gate: caught Exception", exc_info=True)
                 harness_errors.append(f"harness error: {exc}")
 
         # --- Scenario validation ---
@@ -81,6 +82,7 @@ class ValidityGate:
             if not valid and reason:
                 scenario_errors.append(reason)
         except Exception as exc:
+            logger.debug("harness.pipeline.validity_gate: caught Exception", exc_info=True)
             scenario_errors.append(f"scenario error: {exc}")
 
         all_errors = harness_errors + scenario_errors

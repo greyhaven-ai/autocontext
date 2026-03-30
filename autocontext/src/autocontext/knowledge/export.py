@@ -222,7 +222,7 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
             max_rounds = getattr(scenario, "_max_rounds", None)
             quality_threshold_val = getattr(scenario, "_quality_threshold", None)
         except Exception:
-            pass
+            logger.debug("knowledge.export: suppressed Exception", exc_info=True)
 
     # Collect harness files if present
     harness: dict[str, str] = {}

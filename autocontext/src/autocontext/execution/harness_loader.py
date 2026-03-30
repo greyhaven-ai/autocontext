@@ -172,6 +172,7 @@ class HarnessLoader:
             except _HarnessTimeout:
                 all_errors.append(f"[{name}] validator timed out ({self._timeout_seconds:.1f}s)")
             except Exception as exc:
+                logger.debug("execution.harness_loader: caught Exception", exc_info=True)
                 all_errors.append(f"[{name}] validator raised exception: {exc}")
 
         return HarnessValidationResult(

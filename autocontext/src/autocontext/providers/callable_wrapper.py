@@ -6,8 +6,12 @@ This provides backward compatibility for existing code that passes
 
 from __future__ import annotations
 
+import logging
+
 from autocontext.agents.types import LlmFn
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+
+logger = logging.getLogger(__name__)
 
 
 class CallableProvider(LLMProvider):
@@ -36,6 +40,7 @@ class CallableProvider(LLMProvider):
         try:
             text = self._fn(system_prompt, user_prompt)
         except Exception as exc:
+            logger.debug("providers.callable_wrapper: caught Exception", exc_info=True)
             raise ProviderError(f"Callable provider error: {exc}") from exc
 
         return CompletionResult(text=text, model=model or self._model_name)

@@ -14,10 +14,13 @@ Key types:
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 OPENCLAW_COMPATIBILITY_VERSION = "1.0"
 
@@ -271,6 +274,7 @@ class HTTPOpenClawAdapter(OpenClawAdapter):
                 headers=self.headers,
             )
         except Exception as exc:
+            logger.debug("openclaw.adapters: caught Exception", exc_info=True)
             return OpenClawResponse(output="", metadata={"error": str(exc)})
 
         data = resp.json()

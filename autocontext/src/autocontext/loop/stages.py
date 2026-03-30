@@ -795,6 +795,7 @@ def _build_replay_envelope_payload(execution_output: Any) -> dict[str, object]:
     try:
         payload = model_dump()
     except Exception:
+        logger.debug("loop.stages: caught Exception", exc_info=True)
         return {}
     if not isinstance(payload, dict):
         return {}
@@ -1781,6 +1782,7 @@ def stage_tournament(
                 on_result=_on_result,
             )
         except Exception:
+            logger.debug("loop.stages: caught Exception", exc_info=True)
             attempt += 1
             if attempt > settings.max_retries:
                 raise

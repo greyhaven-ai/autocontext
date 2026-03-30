@@ -187,6 +187,7 @@ class DeterministicStage(ValidationStage):
                     error_code="timeout",
                 )
             except Exception as exc:
+                logger.debug("harness.validation.stages: caught Exception", exc_info=True)
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
                     duration_ms=_elapsed(t0),
@@ -208,6 +209,7 @@ class DeterministicStage(ValidationStage):
                     error_code="timeout",
                 )
             except Exception as exc:
+                logger.debug("harness.validation.stages: caught Exception", exc_info=True)
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
                     duration_ms=_elapsed(t0),
@@ -283,6 +285,7 @@ class EdgeCaseStage(ValidationStage):
                     error_code="timeout",
                 )
             except Exception as exc:
+                logger.debug("harness.validation.stages: caught Exception", exc_info=True)
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
                     duration_ms=_elapsed(t0),
@@ -305,6 +308,7 @@ class EdgeCaseStage(ValidationStage):
                         error_code="timeout",
                     )
                 except Exception as exc:
+                    logger.debug("harness.validation.stages: caught Exception", exc_info=True)
                     return StageResult(
                         stage=self.order, name=self.name, status=StageStatus.FAILED,
                         duration_ms=_elapsed(t0),
@@ -372,6 +376,7 @@ class EvaluationReadyStage(ValidationStage):
                     error_code="timeout",
                 )
             except Exception as exc:
+                logger.debug("harness.validation.stages: caught Exception", exc_info=True)
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
                     duration_ms=_elapsed(t0),
@@ -399,6 +404,7 @@ class EvaluationReadyStage(ValidationStage):
                     error_code="timeout",
                 )
             except Exception as exc:
+                logger.debug("harness.validation.stages: caught Exception", exc_info=True)
                 return StageResult(
                     stage=self.order, name=self.name, status=StageStatus.FAILED,
                     duration_ms=_elapsed(t0),

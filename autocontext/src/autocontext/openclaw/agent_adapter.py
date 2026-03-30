@@ -8,6 +8,7 @@ Provides:
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -17,6 +18,8 @@ from typing import Any, Protocol, cast, runtime_checkable
 
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleExecution, RoleUsage
+
+logger = logging.getLogger(__name__)
 
 
 class OpenClawAdapterError(Exception):
@@ -214,6 +217,7 @@ class OpenClawClient(LanguageModelClient):
                     temperature=temperature,
                 )
             except Exception as exc:
+                logger.debug("openclaw.agent_adapter: caught Exception", exc_info=True)
                 last_error = exc
                 if attempt < attempts - 1:
                     delay = self.retry_base_delay * (2 ** attempt)
@@ -248,6 +252,7 @@ class OpenClawClient(LanguageModelClient):
                     tools=None,
                 )
             except Exception as exc:  # pragma: no cover - surfaced via queue
+                logger.debug("openclaw.agent_adapter: caught Exception", exc_info=True)
                 result_queue.put(("error", exc))
                 return
             result_queue.put(("result", result))

@@ -143,6 +143,7 @@ class PolicyExecutor:
         except SyntaxError as exc:
             return None, [f"syntax error: {exc}"]
         except Exception as exc:
+            logger.debug("execution.policy_executor: caught Exception", exc_info=True)
             return None, [f"policy definition error: {exc}"]
 
         choose_action = namespace.get("choose_action")
@@ -179,6 +180,7 @@ class PolicyExecutor:
                 except _PolicyTimeout:
                     raise
                 except Exception as exc:
+                    logger.debug("execution.policy_executor: caught Exception", exc_info=True)
                     return PolicyMatchResult(
                         score=0.0,
                         normalized_score=0.0,
@@ -217,6 +219,7 @@ class PolicyExecutor:
         except _PolicyTimeout:
             raise
         except Exception as exc:
+            logger.debug("execution.policy_executor: caught Exception", exc_info=True)
             return PolicyMatchResult(
                 score=0.0,
                 normalized_score=0.0,

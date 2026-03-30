@@ -203,6 +203,6 @@ class HermesCLIRuntime(AgentRuntime):
                 if text:
                     return AgentOutput(text=str(text), metadata={"raw_json": parsed})
         except (json.JSONDecodeError, TypeError):
-            pass
+            logger.debug("runtimes.hermes_cli: suppressed json.JSONDecodeError), TypeError", exc_info=True)
 
         return AgentOutput(text=stripped)

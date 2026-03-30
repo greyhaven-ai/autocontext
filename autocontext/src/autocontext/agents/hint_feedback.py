@@ -14,9 +14,12 @@ Key types:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -118,7 +121,7 @@ def parse_hint_feedback(raw_text: str, generation: int) -> HintFeedback:
                 generation=generation,
             )
     except (json.JSONDecodeError, TypeError):
-        pass
+        logger.debug("agents.hint_feedback: suppressed json.JSONDecodeError), TypeError", exc_info=True)
 
     return HintFeedback(helpful=[], misleading=[], missing=[], generation=generation)
 

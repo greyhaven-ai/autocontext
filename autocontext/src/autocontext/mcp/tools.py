@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -34,6 +35,8 @@ from autocontext.scenarios.capabilities import (
 )
 from autocontext.storage import ArtifactStore, SQLiteStore
 from autocontext.util.json_io import read_json, write_json
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.openclaw.distill import DistillJob
@@ -462,6 +465,7 @@ def list_agent_tasks(ctx: MtsToolContext) -> list[dict[str, object]]:
                 "has_objective_verification": bool(data.get("objective_verification")),
             })
         except Exception:
+            logger.debug("mcp.tools: caught Exception", exc_info=True)
             continue
     return tasks
 
@@ -991,6 +995,7 @@ def publish_artifact(
     try:
         artifact_id, artifact_path = _validate_and_persist_artifact(ctx, artifact_data, str(artifact_type))
     except Exception as exc:
+        logger.debug("mcp.tools: caught Exception", exc_info=True)
         return {"error": f"Invalid artifact data: {exc}"}
 
     return {
@@ -1032,6 +1037,7 @@ def list_artifacts(
         try:
             data: dict[str, object] = read_json(path)
         except Exception:
+            logger.debug("mcp.tools: caught Exception", exc_info=True)
             continue
         if scenario and data.get("scenario") != scenario:
             continue
@@ -1181,6 +1187,7 @@ def _sync_distill_job(
     try:
         update = sidecar.poll(job.job_id)
     except Exception:
+        logger.debug("mcp.tools: caught Exception", exc_info=True)
         return job
     status = update.get("status")
     if status not in ("pending", "running", "completed", "failed"):
@@ -1222,6 +1229,7 @@ def import_package(
     try:
         pkg = StrategyPackage.from_dict(package_data)
     except Exception as exc:
+        logger.debug("mcp.tools: caught Exception", exc_info=True)
         return {"error": f"Invalid package data: {exc}"}
     try:
         policy = ConflictPolicy(conflict_policy)

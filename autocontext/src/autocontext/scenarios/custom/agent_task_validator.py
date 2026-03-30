@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import logging
 import re
 import sys
 import tempfile
@@ -9,6 +10,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+
+logger = logging.getLogger(__name__)
 
 _VALID_OUTPUT_FORMATS = {"free_text", "json_schema", "code"}
 
@@ -364,6 +367,7 @@ def validate_execution(source: str) -> list[str]:
             sys.modules[mod_name] = mod
             spec.loader.exec_module(mod)  # type: ignore[union-attr]
         except Exception as exc:
+            logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"import failed: {exc}")
             return errors
         finally:
@@ -390,6 +394,7 @@ def validate_execution(source: str) -> list[str]:
         try:
             instance = found_cls()
         except Exception as exc:
+            logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"instantiation failed: {exc}")
             return errors
 
@@ -398,6 +403,7 @@ def validate_execution(source: str) -> list[str]:
             if not prompt:
                 errors.append("get_task_prompt() returned empty string")
         except Exception as exc:
+            logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"get_task_prompt() raised: {exc}")
 
         try:
@@ -405,6 +411,7 @@ def validate_execution(source: str) -> list[str]:
             if not rubric:
                 errors.append("get_rubric() returned empty string")
         except Exception as exc:
+            logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"get_rubric() raised: {exc}")
 
         # Validate prepare_context and validate_context if present
@@ -416,6 +423,7 @@ def validate_execution(source: str) -> list[str]:
                 errors.append("prepare_context() must return a dict")
                 prepared = {}
         except Exception as exc:
+            logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"prepare_context() raised: {exc}")
 
         try:
@@ -423,6 +431,7 @@ def validate_execution(source: str) -> list[str]:
             if not isinstance(ctx_errors, list):
                 errors.append("validate_context() must return a list")
         except Exception as exc:
+            logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"validate_context() raised: {exc}")
 
         try:
@@ -445,6 +454,7 @@ def validate_execution(source: str) -> list[str]:
                 if not hasattr(eval_result, "score"):
                     errors.append("evaluate_output() did not return an AgentTaskResult-like object")
         except Exception as exc:
+            logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"evaluate_output() raised: {exc}")
 
     return errors

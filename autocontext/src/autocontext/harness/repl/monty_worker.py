@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import math
 import re
 import statistics
@@ -12,6 +13,8 @@ from typing import Any
 
 from autocontext.harness.repl.types import ReplCommand, ReplResult
 from autocontext.harness.repl.worker import _chunk_by_headers, _chunk_by_size, _grep, _peek
+
+logger = logging.getLogger(__name__)
 
 
 def _create_repl_monty(code: str, inputs: list[str], external_functions: list[str]) -> Any:
@@ -280,6 +283,7 @@ class MontyReplWorker:
                 progress = progress.resume(return_value=return_value)
 
         except Exception as exc:
+            logger.debug("harness.repl.monty_worker: caught Exception", exc_info=True)
             return ReplResult(
                 stdout="\n".join(stdout_lines),
                 error=str(exc),

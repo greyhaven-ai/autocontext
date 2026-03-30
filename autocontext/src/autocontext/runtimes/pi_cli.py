@@ -161,7 +161,7 @@ class PiCLIRuntime(AgentRuntime):
                     },
                 )
             except (json.JSONDecodeError, TypeError):
-                pass
+                logger.debug("runtimes.pi_cli: suppressed json.JSONDecodeError), TypeError", exc_info=True)
 
         # Raw text fallback
         return AgentOutput(

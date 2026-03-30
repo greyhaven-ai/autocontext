@@ -580,6 +580,7 @@ def build_client_from_settings(
                     manual_override=settings.pi_model or None,
                 )
             except Exception:
+                logger.debug("agents.llm_client: caught Exception", exc_info=True)
                 handoff = None
             if handoff is not None:
                 resolved_model = handoff.checkpoint_path

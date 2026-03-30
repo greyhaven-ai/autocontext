@@ -124,6 +124,7 @@ class HarnessTester:
         try:
             _exec_harness_source(harness_source, namespace)
         except Exception as exc:
+            logger.debug("execution.harness_tester: caught Exception", exc_info=True)
             elapsed_ms = (time.monotonic() - t0) * 1000
             failures = self._make_blanket_failures(
                 sample_states, "load", f"harness load error: {exc}",
@@ -196,6 +197,7 @@ class HarnessTester:
                 ))
                 continue
             except Exception as exc:
+                logger.debug("execution.harness_tester: caught Exception", exc_info=True)
                 sample = futures[future]
                 all_failures.append(HarnessTestFailure(
                     state=sample.state,
@@ -338,6 +340,7 @@ def _test_single_state(
                     state_description=sample.description,
                 )
         except Exception as exc:
+            logger.debug("execution.harness_tester: caught Exception", exc_info=True)
             return HarnessTestFailure(
                 state=state,
                 function_name="enumerate_legal_actions",
@@ -351,6 +354,7 @@ def _test_single_state(
         try:
             fn_enumerate(state)
         except Exception as exc:
+            logger.debug("execution.harness_tester: caught Exception", exc_info=True)
             return HarnessTestFailure(
                 state=state,
                 function_name="enumerate_legal_actions",
@@ -375,6 +379,7 @@ def _test_single_state(
                         state_description=sample.description,
                     )
             except Exception as exc:
+                logger.debug("execution.harness_tester: caught Exception", exc_info=True)
                 return HarnessTestFailure(
                     state=state,
                     function_name="is_legal_action",
@@ -420,6 +425,7 @@ def _test_single_state(
                     state_description=sample.description,
                 )
         except Exception as exc:
+            logger.debug("execution.harness_tester: caught Exception", exc_info=True)
             return HarnessTestFailure(
                 state=state,
                 function_name="validate_strategy",

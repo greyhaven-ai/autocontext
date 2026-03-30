@@ -72,7 +72,7 @@ class MonitorEngine:
             try:
                 self._emitter.unsubscribe(self._on_event)
             except ValueError:
-                pass  # already unsubscribed
+                logger.debug("monitor.engine: suppressed ValueError", exc_info=True)
         if self._heartbeat_thread is not None:
             self._heartbeat_thread.join(timeout=3.0)
             self._heartbeat_thread = None

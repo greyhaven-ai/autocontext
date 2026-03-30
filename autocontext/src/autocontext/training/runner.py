@@ -9,6 +9,7 @@ Orchestrates the autoresearch-style experiment loop:
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -27,6 +28,8 @@ from autocontext.training.model_registry import (
     TrainingCompletionOutput,
     publish_training_output,
 )
+
+logger = logging.getLogger(__name__)
 
 CONVERGENCE_NUDGE_THRESHOLD = 10
 _TEMPLATE_DIR = Path(__file__).parent / "autoresearch"
@@ -452,6 +455,7 @@ class TrainingRunner:
         try:
             client = self._build_agent_client()
         except Exception:
+            logger.debug("training.runner: caught Exception", exc_info=True)
             return self.build_training_result(results)
 
         experiment_index = 1
@@ -517,6 +521,7 @@ class TrainingRunner:
             family = detect_family(scenario_cls())
             return family.name if family is not None else ""
         except Exception:
+            logger.debug("training.runner: caught Exception", exc_info=True)
             return ""
 
     def _data_stats(self) -> dict[str, float | str]:
@@ -525,7 +530,7 @@ class TrainingRunner:
             line_count = sum(1 for _ in self.config.data_path.open(encoding="utf-8"))
             stats["records"] = float(line_count)
         except OSError:
-            pass
+            logger.debug("training.runner: suppressed OSError", exc_info=True)
         return stats
 
     def _checkpoint_dir(self, experiment_index: int) -> Path:

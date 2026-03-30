@@ -281,6 +281,7 @@ class AgentOrchestrator:
                     fallback_model="",
                 )
             except Exception:
+                logger.debug("agents.orchestrator: caught Exception", exc_info=True)
                 return []
             if decision.fallback_used or decision.provider_type != "mlx":
                 return []

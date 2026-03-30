@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import re
 import sys
 import uuid
@@ -17,6 +18,8 @@ from typing import Any
 
 from autocontext.agents.types import LlmFn
 from autocontext.util.json_io import read_json, write_json
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_id() -> str:
@@ -106,6 +109,7 @@ class SimulationEngine:
             return report
 
         except Exception as exc:
+            logger.debug("simulation.engine: caught Exception", exc_info=True)
             return {
                 "id": sim_id, "name": name, "family": "simulation",
                 "status": "failed", "description": description,
@@ -279,7 +283,7 @@ class SimulationEngine:
             if isinstance(parsed, dict):
                 return parsed
         except (ValueError, json.JSONDecodeError):
-            pass
+            logger.debug("simulation.engine: suppressed ValueError, json.JSONDecodeError)", exc_info=True)
 
         return {
             "description": description,

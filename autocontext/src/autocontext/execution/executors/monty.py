@@ -1,11 +1,14 @@
 """MontyExecutor — sandboxed execution via pydantic-monty interpreter."""
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Mapping
 from typing import Any
 
 from autocontext.scenarios.base import ExecutionLimits, ReplayEnvelope, Result, ScenarioInterface
+
+logger = logging.getLogger(__name__)
 
 
 def _create_monty(code: str, inputs: list[str], external_functions: list[str]) -> Any:
@@ -202,6 +205,7 @@ class MontyExecutor:
         except ImportError:
             raise
         except Exception as exc:
+            logger.debug("execution.executors.monty: caught Exception", exc_info=True)
             raise RuntimeError(f"Failed to create Monty interpreter for code strategy: {exc}") from exc
 
         dispatch = self._build_code_dispatch(scenario, seed)
@@ -228,6 +232,7 @@ class MontyExecutor:
         except (TimeoutError, ValueError):
             raise
         except Exception as exc:
+            logger.debug("execution.executors.monty: caught Exception", exc_info=True)
             return Result(
                 score=0.0,
                 winner="incumbent",
@@ -276,6 +281,7 @@ class MontyExecutor:
         except ImportError:
             raise  # Let import errors propagate with the helpful message
         except Exception as exc:
+            logger.debug("execution.executors.monty: caught Exception", exc_info=True)
             raise RuntimeError(f"Failed to create Monty interpreter: {exc}") from exc
 
         dispatch = self._build_dispatch(scenario, strategy, seed)
@@ -304,6 +310,7 @@ class MontyExecutor:
         except (TimeoutError, ValueError):
             raise  # Let our own errors propagate
         except Exception as exc:
+            logger.debug("execution.executors.monty: caught Exception", exc_info=True)
             raise RuntimeError(
                 f"Monty sandbox execution failed for scenario '{scenario.name}': {exc}"
             ) from exc

@@ -16,12 +16,15 @@ Key types:
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from queue import Empty, Queue
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -197,6 +200,7 @@ class PhasedRunner:
             try:
                 result_queue.put(("completed", fn()))
             except Exception as exc:  # pragma: no cover - exercised via queue consumer
+                logger.debug("execution.phased_execution: caught Exception", exc_info=True)
                 result_queue.put(("failed", exc))
 
         worker = threading.Thread(

@@ -181,6 +181,7 @@ class MLXProvider(LLMProvider):
         except ProviderError:
             raise
         except Exception as exc:
+            logger.debug("providers.mlx_provider: caught Exception", exc_info=True)
             raise ProviderError(f"MLX generation error: {exc}") from exc
 
         return CompletionResult(

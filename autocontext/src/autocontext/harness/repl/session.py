@@ -48,6 +48,7 @@ def make_llm_batch(
                 try:
                     results.append(f.result().text)
                 except Exception as exc:  # noqa: BLE001
+                    logger.debug("harness.repl.session: caught Exception", exc_info=True)
                     results.append(f"[llm_batch error: {exc}]")
             return results
 

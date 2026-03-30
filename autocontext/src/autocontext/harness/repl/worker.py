@@ -5,12 +5,15 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
+import logging
 import signal
 import sys
 import threading
 from typing import Any
 
 from autocontext.harness.repl.types import ReplCommand, ReplResult
+
+logger = logging.getLogger(__name__)
 
 _SAFE_MODULES = {
     "json": __import__("json"),
@@ -206,6 +209,7 @@ class ReplWorker:
                         if value is not None:
                             result_repr = repr(value)
             except Exception:  # noqa: BLE001
+                logger.debug("harness.repl.worker: caught Exception", exc_info=True)
                 import traceback
 
                 error = traceback.format_exc()
@@ -248,6 +252,7 @@ class ReplWorker:
             try:
                 result[0] = fn()
             except BaseException as e:  # noqa: BLE001
+                logger.debug("harness.repl.worker: caught BaseException", exc_info=True)
                 exc_holder[0] = e
 
         t = threading.Thread(target=_target, daemon=True)

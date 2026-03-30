@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 EventCallback = Callable[[str, dict[str, object]], None]
 
@@ -46,4 +49,7 @@ class EventStreamEmitter:
             try:
                 cb(event, payload)
             except Exception:
-                pass  # subscriber errors must never crash the loop
+                try:
+                    logger.debug("harness.core.events: suppressed Exception", exc_info=True)
+                except Exception:
+                    pass

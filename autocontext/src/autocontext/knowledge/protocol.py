@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 
 from autocontext.config.tuning_bounds import protocol_bounds
+
+logger = logging.getLogger(__name__)
 
 # Protocol-tier bounds: wider ranges for deliberate experimental exploration.
 # Derived from the canonical definition in config/tuning_bounds.py.
@@ -82,7 +85,7 @@ def parse_research_protocol(markdown: str) -> ResearchProtocol:
             raw = json.loads(tuning_match.group(1))
             protocol.tuning_overrides = validate_tuning_overrides(raw)
         except (json.JSONDecodeError, ValueError):
-            pass  # Leave empty on parse error
+            logger.debug("knowledge.protocol: suppressed json.JSONDecodeError), ValueError", exc_info=True)
 
     return protocol
 

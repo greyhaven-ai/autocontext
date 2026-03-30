@@ -6,10 +6,13 @@ server that implements the OpenAI chat completions API.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
+
+logger = logging.getLogger(__name__)
 
 try:
     import openai  # type: ignore[import-not-found]
@@ -75,6 +78,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 ],
             )
         except Exception as exc:
+            logger.debug("providers.openai_compat: caught Exception", exc_info=True)
             raise ProviderError(f"OpenAI-compatible API error: {exc}") from exc
 
         choice = response.choices[0] if response.choices else None

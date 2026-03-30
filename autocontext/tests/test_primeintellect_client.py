@@ -111,3 +111,15 @@ def test_execute_strategy_raises_when_fallback_disabled(monkeypatch: pytest.Monk
             max_memory_mb=512,
             network_access=False,
         )
+
+
+def test_build_eval_command_does_not_reference_undefined_logging() -> None:
+    client = PrimeIntellectClient(api_key="test-key")
+
+    command = client._build_eval_command(
+        scenario_name="grid_ctf",
+        strategy={"aggression": 0.6, "defense": 0.4, "path_bias": 0.5},
+        seed=123,
+    )
+
+    assert "logging.getLogger" not in command

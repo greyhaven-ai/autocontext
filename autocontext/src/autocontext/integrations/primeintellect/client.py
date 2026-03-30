@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from prime_sandboxes import AsyncSandboxClient, CreateSandboxRequest
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -30,6 +33,7 @@ class PrimeIntellectClient:
             asyncio.run(self._probe())
             return {"environment": environment_name, "status": "ready"}
         except Exception as exc:
+            logger.debug("integrations.primeintellect.client: caught Exception", exc_info=True)
             return self.unavailable_state(environment_name, str(exc))
 
     def execute_strategy(
@@ -58,6 +62,7 @@ class PrimeIntellectClient:
                     )
                 )
             except Exception:
+                logger.debug("integrations.primeintellect.client: caught Exception", exc_info=True)
                 attempt += 1
                 if not self.allow_fallback:
                     raise
@@ -117,7 +122,7 @@ class PrimeIntellectClient:
                 try:
                     await client.delete(sandbox_id)
                 except Exception:
-                    pass
+                    logger.debug("integrations.primeintellect.client: suppressed Exception", exc_info=True)
 
     def fallback_local_response(self, scenario_name: str, seed: int) -> dict[str, Any]:
         """Explicitly return a failure shape for caller-side recovery paths."""

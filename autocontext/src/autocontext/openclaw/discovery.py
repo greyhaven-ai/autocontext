@@ -7,6 +7,7 @@ and client-friendly summaries for ClawHub UX.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,8 @@ from autocontext.concepts import get_concept_model
 from autocontext.scenarios.families import detect_family
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 from autocontext.util.json_io import read_json
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
@@ -94,7 +97,7 @@ def _get_scenario_best_metrics(ctx: MtsToolContext, scenario_name: str) -> tuple
                 float(best_elo) if best_elo is not None else None,
             )
     except Exception:
-        pass
+        logger.debug("openclaw.discovery: suppressed Exception", exc_info=True)
     return (None, None)
 
 
@@ -112,6 +115,7 @@ def _count_artifacts_by_type(knowledge_root: Path) -> dict[str, int]:
             if atype:
                 counts[atype] = counts.get(atype, 0) + 1
         except Exception:
+            logger.debug("openclaw.discovery: caught Exception", exc_info=True)
             continue
     return counts
 
@@ -128,6 +132,7 @@ def _has_policy_artifact(knowledge_root: Path, scenario_name: str) -> bool:
             if data.get("artifact_type") == "policy" and data.get("scenario") == scenario_name:
                 return True
         except Exception:
+            logger.debug("openclaw.discovery: caught Exception", exc_info=True)
             continue
     return False
 
@@ -158,7 +163,7 @@ def discover_scenario_capabilities(ctx: MtsToolContext, scenario_name: str) -> S
         playbook = ctx.artifacts.read_playbook(scenario_name)
         has_playbook = bool(playbook and playbook.strip() and playbook != EMPTY_PLAYBOOK_SENTINEL)
     except Exception:
-        pass
+        logger.debug("openclaw.discovery: suppressed Exception", exc_info=True)
 
     # Check harness files
     has_harness = False
@@ -170,7 +175,7 @@ def discover_scenario_capabilities(ctx: MtsToolContext, scenario_name: str) -> S
             harness_count = len(harness_files)
             has_harness = harness_count > 0
     except Exception:
-        pass
+        logger.debug("openclaw.discovery: suppressed Exception", exc_info=True)
 
     # Check policy artifacts
     has_policy = _has_policy_artifact(ctx.settings.knowledge_root, scenario_name)
@@ -225,6 +230,7 @@ def advertise_capabilities(ctx: MtsToolContext) -> CapabilityAdvertisement:
             caps = discover_scenario_capabilities(ctx, scenario_name)
             scenario_capabilities[scenario_name] = caps
         except Exception:
+            logger.debug("openclaw.discovery: caught Exception", exc_info=True)
             continue
 
     artifact_counts = _count_artifacts_by_type(ctx.settings.knowledge_root)
@@ -249,6 +255,7 @@ def scenario_artifact_lookup(ctx: MtsToolContext, scenario_name: str) -> list[Ar
         try:
             data = read_json(path)
         except Exception:
+            logger.debug("openclaw.discovery: caught Exception", exc_info=True)
             continue
         if data.get("scenario") != scenario_name:
             continue

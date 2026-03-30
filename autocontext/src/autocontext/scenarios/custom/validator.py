@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import ast
+import logging
 from typing import TYPE_CHECKING
 
 from autocontext.scenarios.custom.spec import ScenarioSpec
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.scenarios.base import ScenarioInterface
@@ -99,6 +102,7 @@ def validate_by_execution(scenario_class: type[ScenarioInterface], spec: Scenari
         try:
             state = scenario.initial_state(seed=seed)
         except Exception as exc:
+            logger.debug("scenarios.custom.validator: caught Exception", exc_info=True)
             errors.append(f"initial_state(seed={seed}) raised: {exc}")
             continue
 
@@ -111,6 +115,7 @@ def validate_by_execution(scenario_class: type[ScenarioInterface], spec: Scenari
             if not obs.narrative:
                 errors.append(f"seed={seed}: observation narrative is empty")
         except Exception as exc:
+            logger.debug("scenarios.custom.validator: caught Exception", exc_info=True)
             errors.append(f"seed={seed}: get_observation raised: {exc}")
 
         try:
@@ -119,12 +124,14 @@ def validate_by_execution(scenario_class: type[ScenarioInterface], spec: Scenari
                 errors.append(f"seed={seed}: default strategy failed validation: {reason}")
                 continue
         except Exception as exc:
+            logger.debug("scenarios.custom.validator: caught Exception", exc_info=True)
             errors.append(f"seed={seed}: validate_actions raised: {exc}")
             continue
 
         try:
             next_state = scenario.step(state, default_strategy)
         except Exception as exc:
+            logger.debug("scenarios.custom.validator: caught Exception", exc_info=True)
             errors.append(f"seed={seed}: step raised: {exc}")
             continue
 
@@ -137,6 +144,7 @@ def validate_by_execution(scenario_class: type[ScenarioInterface], spec: Scenari
             if result.score < 0.0 or result.score > 1.0:
                 errors.append(f"seed={seed}: score {result.score} out of [0,1] range")
         except Exception as exc:
+            logger.debug("scenarios.custom.validator: caught Exception", exc_info=True)
             errors.append(f"seed={seed}: get_result raised: {exc}")
 
     return errors

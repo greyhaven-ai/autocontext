@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+import logging
 import os
 import shlex
 import subprocess
@@ -21,6 +22,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
@@ -163,6 +166,7 @@ class DistillJobManager:
         try:
             return DistillJob.model_validate_json(path.read_text(encoding="utf-8"))
         except Exception:
+            logger.debug("openclaw.distill: caught Exception", exc_info=True)
             return None
 
     def create_job(
@@ -195,6 +199,7 @@ class DistillJobManager:
                 if scenario is None or job.scenario == scenario:
                     jobs.append(job)
             except Exception:
+                logger.debug("openclaw.distill: caught Exception", exc_info=True)
                 continue
         return jobs
 

@@ -23,4 +23,7 @@ class StdoutNotifier(Notifier):
             else:
                 print(f"[autocontext] {msg}")
         except Exception:
-            pass  # Fire and forget
+            try:
+                logger.debug("notifications.stdout: suppressed Exception", exc_info=True)
+            except Exception:
+                pass

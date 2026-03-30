@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, cast
 
 from autocontext.agents.coach import parse_coach_sections
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_tool_names(architect_content: str) -> list[str]:
@@ -15,7 +18,7 @@ def _extract_tool_names(architect_content: str) -> list[str]:
         if isinstance(specs, list):
             return [s["name"] for s in specs if isinstance(s, dict) and "name" in s]
     except (json.JSONDecodeError, TypeError, KeyError):
-        pass
+        logger.debug("server.changelog: suppressed json.JSONDecodeError), TypeError, KeyError", exc_info=True)
     return []
 
 

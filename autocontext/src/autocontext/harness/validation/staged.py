@@ -112,6 +112,7 @@ class ValidationPipeline:
             try:
                 result = stage.run(candidate, scenario)
             except Exception as exc:
+                logger.debug("harness.validation.staged: caught Exception", exc_info=True)
                 duration_ms = (time.monotonic() - t0) * 1000
                 result = StageResult(
                     stage=stage.order,

@@ -11,9 +11,12 @@ Track 2: Consolidated analyst+coach output model and benchmark harness
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Track 1: Deterministic strategy extraction
@@ -55,7 +58,7 @@ def _try_parse_object(text: str) -> dict[str, Any] | None:
         if isinstance(parsed, dict):
             return parsed
     except (json.JSONDecodeError, ValueError):
-        pass
+        logger.debug("agents.translator_simplification: suppressed json.JSONDecodeError), ValueError", exc_info=True)
     return None
 
 

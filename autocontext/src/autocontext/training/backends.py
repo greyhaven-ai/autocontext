@@ -14,10 +14,13 @@ Key types:
 
 from __future__ import annotations
 
+import logging
 import platform
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class TrainingBackend(ABC):
@@ -64,6 +67,7 @@ class MLXBackend(TrainingBackend):
 
             return importlib.util.find_spec("mlx") is not None
         except Exception:
+            logger.debug("training.backends: caught Exception", exc_info=True)
             return False
 
     def default_checkpoint_dir(self, scenario: str) -> Path:
@@ -93,6 +97,7 @@ class CUDABackend(TrainingBackend):
             cuda_module = getattr(torch_module, "cuda", None)
             return bool(cuda_module is not None and cuda_module.is_available())
         except Exception:
+            logger.debug("training.backends: caught Exception", exc_info=True)
             return False
 
     def default_checkpoint_dir(self, scenario: str) -> Path:

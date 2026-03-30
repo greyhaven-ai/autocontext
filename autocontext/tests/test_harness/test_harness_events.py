@@ -81,6 +81,32 @@ def test_subscriber_error_does_not_crash(tmp_path: Path) -> None:
     assert path.exists()
 
 
+def test_subscriber_error_keeps_fanout_when_debug_logging_breaks(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = tmp_path / "events.ndjson"
+    emitter = EventStreamEmitter(path)
+    received: list[tuple[str, dict[str, object]]] = []
+
+    def bad_callback(event: str, payload: dict[str, object]) -> None:
+        raise RuntimeError("boom")
+
+    def good_callback(event: str, payload: dict[str, object]) -> None:
+        received.append((event, payload))
+
+    def broken_debug(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("logger failed")
+
+    monkeypatch.setattr("autocontext.harness.core.events.logger.debug", broken_debug)
+    emitter.subscribe(bad_callback)
+    emitter.subscribe(good_callback)
+
+    emitter.emit("test", {"x": 1})
+
+    assert path.exists()
+    assert received == [("test", {"x": 1})]
+
+
 def test_unsubscribe_removes_callback(tmp_path: Path) -> None:
     path = tmp_path / "events.ndjson"
     emitter = EventStreamEmitter(path)

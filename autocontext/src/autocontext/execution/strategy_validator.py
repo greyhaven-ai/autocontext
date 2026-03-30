@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import traceback
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
@@ -44,6 +47,7 @@ class StrategyValidator:
         try:
             result = self.scenario.execute_match(strategy, seed=0)
         except Exception:
+            logger.debug("execution.strategy_validator: caught Exception", exc_info=True)
             tb = traceback.format_exc()
             return ValidationResult(passed=False, errors=[tb])
 

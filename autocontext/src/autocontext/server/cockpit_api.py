@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,8 @@ from autocontext.server.changelog import build_changelog
 from autocontext.server.writeup import generate_writeup
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
+
+logger = logging.getLogger(__name__)
 
 cockpit_router = APIRouter(prefix="/api/cockpit", tags=["cockpit"])
 _NOTEBOOK_CONTEXT_PROVIDER = NotebookContextProvider()
@@ -540,6 +543,7 @@ def request_consultation(run_id: str, body: ConsultationRequestBody, request: Re
     try:
         result = runner.consult(cons_request)
     except Exception as exc:
+        logger.debug("server.cockpit_api: caught Exception", exc_info=True)
         raise HTTPException(status_code=502, detail=f"Consultation call failed: {exc}") from exc
 
     # Persist

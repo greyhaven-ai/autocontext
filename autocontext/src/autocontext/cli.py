@@ -28,6 +28,8 @@ from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.storage import ArtifactStore, SQLiteStore
 from autocontext.util.json_io import read_json, write_json
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
     from autocontext.training.runner import TrainingConfig, TrainingResult
@@ -248,6 +250,7 @@ def _run_agent_task(
     try:
         result = loop.run(initial_output=initial_output, state=state)
     except Exception:
+        logger.debug("cli: caught Exception", exc_info=True)
         sqlite.upsert_generation(
             active_run_id,
             1,
@@ -328,6 +331,7 @@ def run(
                 console.print("[yellow]Run interrupted.[/yellow]")
             raise typer.Exit(code=1) from None
         except Exception as exc:
+            logger.debug("cli: caught Exception", exc_info=True)
             if json_output:
                 _write_json_stderr(str(exc))
             else:
@@ -382,6 +386,7 @@ def run(
                 console.print("[yellow]Run interrupted.[/yellow]")
             raise typer.Exit(code=1) from None
         except Exception as exc:
+            logger.debug("cli: caught Exception", exc_info=True)
             if json_output:
                 _write_json_stderr(str(exc))
             else:
@@ -424,6 +429,7 @@ def resume(
             console.print("[yellow]Resume interrupted.[/yellow]")
         raise typer.Exit(code=1) from None
     except Exception as exc:
+        logger.debug("cli: caught Exception", exc_info=True)
         if json_output:
             _write_json_stderr(str(exc))
         else:
@@ -792,6 +798,7 @@ def train(
             console.print("\n[yellow]Training interrupted.[/yellow]")
         raise typer.Exit(code=1) from None
     except Exception as exc:
+        logger.debug("cli: caught Exception", exc_info=True)
         if json_output:
             _write_json_stderr(str(exc))
         else:
@@ -947,6 +954,7 @@ def new_scenario(
     try:
         loader.scaffold(template_name=template, target_dir=target_dir, overrides=overrides or None)
     except Exception as e:
+        logger.debug("cli: caught Exception", exc_info=True)
         console.print(f"[red]Failed to scaffold scenario: {e}[/red]")
         raise typer.Exit(code=1) from None
 
@@ -1195,6 +1203,7 @@ def solve(
             console.print("[red]Solve interrupted[/red]")
         raise typer.Exit(code=1) from None
     except Exception as exc:
+        logger.debug("cli: caught Exception", exc_info=True)
         if json_output:
             _write_json_stderr(str(exc))
         else:
@@ -1270,6 +1279,7 @@ def import_package_cmd(
     try:
         pkg = StrategyPackage.from_file(pkg_path)
     except Exception as exc:
+        logger.debug("cli: caught Exception", exc_info=True)
         if json_output:
             _write_json_stderr(f"Invalid package file: {exc}")
         else:

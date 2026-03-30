@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import sys
 import time
@@ -16,6 +17,8 @@ from typing import Any
 
 from autocontext.training import HAS_MLX
 from autocontext.training.autoresearch.prepare import BASE_VOCAB_SIZE, save_tokenizer_json, total_vocab_size
+
+logger = logging.getLogger(__name__)
 
 if HAS_MLX:
     import mlx.core as mx  # type: ignore[import-not-found]
@@ -347,6 +350,7 @@ def _peak_memory_mb() -> float:
             return float(usage) / (1024.0 * 1024.0)
         return float(usage) / 1024.0
     except Exception:
+        logger.debug("training.autoresearch.train: caught Exception", exc_info=True)
         return 0.0
 
 
@@ -524,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
             assess_samples=args.assess_samples,
         )
     except Exception as exc:
+        logger.debug("training.autoresearch.train: caught Exception", exc_info=True)
         print(f"Training failed: {exc}", file=sys.stderr)
         return 1
 

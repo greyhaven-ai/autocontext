@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException
@@ -13,6 +14,8 @@ from autocontext.knowledge.export import export_skill_package, list_solved_scena
 from autocontext.knowledge.search import search_strategies
 from autocontext.knowledge.solver import SolveManager
 from autocontext.mcp.tools import MtsToolContext
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -85,6 +88,7 @@ def import_package(body: ImportRequest) -> dict[str, Any]:
     try:
         pkg = StrategyPackage.from_dict(body.package)
     except Exception as exc:
+        logger.debug("server.knowledge_api: caught Exception", exc_info=True)
         raise HTTPException(status_code=422, detail=f"Invalid package: {exc}") from exc
     policy = ConflictPolicy(body.conflict_policy)
     ctx = _get_ctx()

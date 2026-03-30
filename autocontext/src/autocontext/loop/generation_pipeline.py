@@ -474,6 +474,7 @@ class GenerationPipeline:
                         sqlite=self._sqlite,
                     )
             except Exception as exc:
+                logger.debug("loop.generation_pipeline: caught Exception", exc_info=True)
                 if scaffolding_budget is not None:
                     failed_scaffolding_result = _build_phase_result(
                         budget=scaffolding_budget,
@@ -594,6 +595,7 @@ class GenerationPipeline:
                         agents=self._orchestrator,
                     )
                 except Exception as exc:
+                    logger.debug("loop.generation_pipeline: caught Exception", exc_info=True)
                     if execution_phase_budget is not None:
                         execution_result = _build_phase_result(
                             budget=execution_phase_budget,

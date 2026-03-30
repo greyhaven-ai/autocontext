@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+import logging
 import os
 import shlex
 import time
@@ -17,6 +18,8 @@ from typing import TYPE_CHECKING, cast
 
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
@@ -274,6 +277,7 @@ def create_role_client(
                     manual_override=settings.pi_model or None,
                 )
             except Exception:
+                logger.debug("agents.provider_bridge: caught Exception", exc_info=True)
                 handoff = None
             if handoff is not None:
                 resolved_model = handoff.checkpoint_path

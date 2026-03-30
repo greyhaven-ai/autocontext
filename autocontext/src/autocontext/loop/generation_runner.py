@@ -200,6 +200,7 @@ class GenerationRunner:
             else:
                 return f"Unknown agent role: {role}"
         except Exception as exc:
+            logger.debug("loop.generation_runner: caught Exception", exc_info=True)
             return f"Error chatting with {role}: {exc}"
 
     def _count_dead_ends(self, scenario_name: str) -> int:
@@ -1234,6 +1235,7 @@ class GenerationRunner:
                     coach_competitor_hints = ctx.coach_competitor_hints
                     completed += 1
                 except Exception as exc:
+                    logger.debug("loop.generation_runner: caught Exception", exc_info=True)
                     self.artifacts.mutation_log.append(
                         scenario_name,
                         MutationEntry(
@@ -1279,7 +1281,7 @@ class GenerationRunner:
                                 gate_decision="stalled",
                             )
                     except Exception:
-                        pass  # Safety net must never crash the outer handler
+                        logger.debug("loop.generation_runner: suppressed Exception", exc_info=True)
             self.sqlite.mark_run_completed(active_run_id)
             if completed > 0:
                 self.artifacts.mutation_log.create_checkpoint(

@@ -61,6 +61,21 @@ class TestStdoutNotifier:
         # Should not raise
         n.notify(e)
 
+    def test_logger_mode_still_swallows_errors_when_debug_logging_breaks(self, monkeypatch):
+        n = StdoutNotifier(use_logger=True)
+        e = NotificationEvent(type=EventType.COMPLETION, task_name="test", score=0.80)
+
+        def bad_info(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        def bad_debug(*args, **kwargs):
+            raise RuntimeError("debug boom")
+
+        monkeypatch.setattr("autocontext.notifications.stdout.logger.info", bad_info)
+        monkeypatch.setattr("autocontext.notifications.stdout.logger.debug", bad_debug)
+
+        n.notify(e)
+
 
 # ---------------------------------------------------------------------------
 # CallbackNotifier

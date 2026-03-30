@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
 from autocontext.training import HAS_MLX
+
+logger = logging.getLogger(__name__)
 
 if HAS_MLX:
     import mlx.core as mx  # type: ignore[import-not-found]
@@ -339,7 +342,7 @@ if HAS_MLX:
                         )
                         scores.append(result.score)
             except Exception:
-                pass
+                logger.debug("training.autoresearch.prepare: suppressed Exception", exc_info=True)
 
         avg_score = sum(scores) / len(scores) if scores else 0.0
         valid_rate = valid_count / n_samples if n_samples > 0 else 0.0
