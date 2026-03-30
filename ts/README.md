@@ -2,6 +2,8 @@
 
 `autoctx` is the Node/TypeScript package for autocontext. It provides the operator-facing CLI, simulation, investigation, analysis, mission, and trace surfaces for Node environments:
 
+The intended use is to point the harness at a real task, simulation, investigation, or mission, let it produce a rich execution history, and then use the returned traces, reports, datasets, packages, and artifacts to improve or operationalize that workflow.
+
 Need the canonical product/runtime vocabulary first? Start with [docs/concept-model.md](../docs/concept-model.md).
 
 - **Scenario execution**: run generation loops with tournament scoring and Elo progression
@@ -49,17 +51,17 @@ autoctx providers
 autoctx models
 
 # Scenario execution
-autoctx run --scenario grid_ctf --gens 3 --json
+autoctx run --scenario support_triage --gens 3 --json
 autoctx list --json
 autoctx replay --run-id <id> --generation 1
-autoctx benchmark --scenario grid_ctf --runs 5
+autoctx benchmark --scenario support_triage --runs 5
 
 # Package management
-autoctx export --scenario grid_ctf --output pkg.json
+autoctx export --scenario support_triage --output pkg.json
 autoctx export-training-data --run-id <id> --output data.jsonl
 autoctx import-package --file pkg.json
 autoctx new-scenario --description "Test summarization quality"
-autoctx new-scenario --template prompt-optimization --name my-task
+autoctx new-scenario --template prompt-optimization --name support_triage
 
 # Interactive, simulations, and missions
 autoctx tui [--port 8000]
@@ -75,7 +77,7 @@ autoctx mission create --type code --name "Fix login" --goal "Tests pass" --repo
 autoctx mission run --id <mission-id> --max-iterations 3
 autoctx mission status --id <mission-id>
 autoctx mission artifacts --id <mission-id>
-autoctx train --scenario grid_ctf --dataset data.jsonl --backend cuda
+autoctx train --scenario support_triage --dataset data.jsonl --backend cuda
 
 # Evaluation
 autoctx judge -p <prompt> -o <output> -r <rubric>
@@ -95,33 +97,33 @@ Configure the agent provider via environment variables:
 
 ```bash
 # Anthropic (default)
-ANTHROPIC_API_KEY=sk-ant-... autoctx run --scenario grid_ctf --json
+ANTHROPIC_API_KEY=sk-ant-... autoctx run --scenario support_triage --json
 
 # OpenAI-compatible
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_API_KEY=sk-... \
 AUTOCONTEXT_AGENT_BASE_URL=https://api.openai.com/v1 \
-autoctx run --scenario grid_ctf --json
+autoctx run --scenario support_triage --json
 
 # Ollama (local)
-AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run --scenario grid_ctf --json
+AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run --scenario support_triage --json
 
 # Hermes (via OpenAI-compatible gateway)
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
-autoctx run --scenario grid_ctf --json
+autoctx run --scenario support_triage --json
 
 # Hermes shortcut provider (same gateway path, Hermes defaults)
 AUTOCONTEXT_AGENT_PROVIDER=hermes \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
-autoctx run --scenario grid_ctf --json
+autoctx run --scenario support_triage --json
 
 # Pi CLI
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario grid_ctf --json
+AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario support_triage --json
 
 # Deterministic (CI/testing)
-AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario grid_ctf --json
+AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario support_triage --json
 ```
 
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
@@ -211,15 +213,7 @@ import {
   LLMJudge,
   ImprovementLoop,
   SimpleAgentTask,
-  GenerationRunner,
-  GridCtfScenario,
-  SQLiteStore,
 } from "autoctx";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-
-const require = createRequire(import.meta.url);
-const autoctxRoot = dirname(require.resolve("autoctx/package.json"));
 
 // One-shot evaluation
 const provider = createProvider({ providerType: "anthropic", apiKey: "sk-ant-..." });
@@ -230,21 +224,9 @@ const result = await judge.evaluate({
 });
 
 // Multi-round improvement
-const task = new SimpleAgentTask("Explain binary search.", "Score clarity.", provider);
+const task = new SimpleAgentTask("Draft a support reply for a billing dispute.", "Score accuracy, policy compliance, and tone.", provider);
 const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
-const improved = await loop.run({ initialOutput: "Binary search is fast.", state: {} });
-
-// Generation loop
-const store = new SQLiteStore("autocontext.db");
-store.migrate(join(autoctxRoot, "migrations"));
-const runner = new GenerationRunner({
-  provider,
-  scenario: new GridCtfScenario(),
-  store,
-  runsRoot: "runs",
-  knowledgeRoot: "knowledge",
-});
-const run = await runner.run("my-run", 3);
+const improved = await loop.run({ initialOutput: "We can help with that billing issue.", state: {} });
 ```
 
 ## TS / Python Scope

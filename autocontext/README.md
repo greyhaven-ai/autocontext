@@ -2,6 +2,8 @@
 
 autocontext is the Python control-plane package for running scenarios, carrying forward validated knowledge, exporting artifacts, and distilling stable behavior into cheaper runtimes over time.
 
+The intended use is to hand the harness a real task in plain language, let it solve or simulate the problem mostly hands-off, and then inspect the resulting traces, reports, playbooks, datasets, and optional distilled model.
+
 ## Working Directory
 
 Run the commands in this README from the `autocontext/` directory. The Python package, CLI entrypoint, tests, and migrations all live here.
@@ -50,7 +52,7 @@ Run a deterministic local scenario:
 
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=deterministic \
-uv run autoctx run --scenario grid_ctf --gens 3 --run-id quickstart
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
 Run with Anthropic:
@@ -58,7 +60,7 @@ Run with Anthropic:
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
 AUTOCONTEXT_ANTHROPIC_API_KEY=... \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
 Run with Pi CLI (local Pi agent runtime):
@@ -66,7 +68,7 @@ Run with Pi CLI (local Pi agent runtime):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
 Run with Pi RPC (remote Pi agent via HTTP):
@@ -74,7 +76,7 @@ Run with Pi RPC (remote Pi agent via HTTP):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
 AUTOCONTEXT_PI_RPC_ENDPOINT=http://localhost:3284 \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
 Run with Hermes (via OpenAI-compatible gateway):
@@ -84,7 +86,7 @@ AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_AGENT_API_KEY=no-key \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
 Start the API server:
@@ -105,16 +107,17 @@ uv run autoctx mcp-serve
 ## Main CLI Commands
 
 ```bash
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
 uv run autoctx replay <run_id> --generation 1
-uv run autoctx benchmark --scenario grid_ctf --runs 5
-uv run autoctx new-scenario --template prompt-optimization --name my-task
-uv run autoctx export-training-data --scenario grid_ctf --all-runs --output training/grid_ctf.jsonl
-uv run autoctx train --scenario grid_ctf --data training/grid_ctf.jsonl --time-budget 300
+uv run autoctx run --scenario support_triage --gens 3
+uv run autoctx benchmark --scenario support_triage --runs 5
+uv run autoctx new-scenario --template prompt-optimization --name support_triage
+uv run autoctx export-training-data --scenario support_triage --all-runs --output training/support_triage.jsonl
+uv run autoctx train --scenario support_triage --data training/support_triage.jsonl --time-budget 300
 uv run autoctx serve --host 127.0.0.1 --port 8000
 uv run autoctx mcp-serve
 uv run autoctx wait <condition_id> --json
@@ -124,10 +127,10 @@ Useful variants:
 
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic AUTOCONTEXT_ANTHROPIC_API_KEY=... \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 
 AUTOCONTEXT_AGENT_PROVIDER=deterministic AUTOCONTEXT_RLM_ENABLED=true \
-uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
 ## Training Workflow
@@ -136,9 +139,9 @@ Export JSONL training data from completed runs:
 
 ```bash
 uv run autoctx export-training-data \
-  --scenario grid_ctf \
+  --scenario support_triage \
   --all-runs \
-  --output training/grid_ctf.jsonl
+  --output training/support_triage.jsonl
 ```
 
 Launch the autoresearch-style training loop:
@@ -146,8 +149,8 @@ Launch the autoresearch-style training loop:
 ```bash
 uv sync --group dev --extra mlx
 uv run autoctx train \
-  --scenario grid_ctf \
-  --data training/grid_ctf.jsonl \
+  --scenario support_triage \
+  --data training/support_triage.jsonl \
   --time-budget 300
 ```
 
