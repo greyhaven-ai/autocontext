@@ -1,16 +1,21 @@
 # autoctx — autocontext TypeScript Package
 
-`autoctx` is the Node/TypeScript package for autocontext. It provides the same major operator workflows as the Python package:
+`autoctx` is the Node/TypeScript package for autocontext. It provides the operator-facing CLI, simulation, investigation, analysis, mission, and trace surfaces for Node environments:
 
 Need the canonical product/runtime vocabulary first? Start with [docs/concept-model.md](../docs/concept-model.md).
 
 - **Scenario execution**: run generation loops with tournament scoring and Elo progression
+- **Simulation surface**: plain-language simulations with sweeps, replay, compare, and export
+- **Investigation surface**: evidence-driven diagnosis with hypotheses and confidence scoring
+- **Analysis surface**: interpret and compare runs, simulations, investigations, and missions
+- **Mission surface**: adaptive execution, mission artifacts, and campaign coordination
 - **Knowledge system**: versioned playbooks, score trajectories, session reports, dead-end tracking
 - **Interactive server**: HTTP API, WebSocket control plane, bundled Ink TUI
 - **MCP control plane**: 40+ tools covering scenarios, runs, knowledge, evaluation, feedback, solve, sandbox, and export
 - **Provider routing**: Anthropic, OpenAI-compatible, Ollama, vLLM, Hermes, Pi, Pi-RPC, deterministic
 - **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
 - **Package management**: strategy package export/import, training data export
+- **Training hook surface**: dataset validation and executor-backed `train` entry point
 
 ## Install
 
@@ -40,6 +45,8 @@ autoctx capabilities
 autoctx login
 autoctx whoami
 autoctx logout
+autoctx providers
+autoctx models
 
 # Scenario execution
 autoctx run --scenario grid_ctf --gens 3 --json
@@ -54,17 +61,21 @@ autoctx import-package --file pkg.json
 autoctx new-scenario --description "Test summarization quality"
 autoctx new-scenario --template prompt-optimization --name my-task
 
-# Interactive
+# Interactive, simulations, and missions
 autoctx tui [--port 8000]
 autoctx serve [--port 8000] [--json] # HTTP API
 autoctx mcp-serve                     # MCP server on stdio
 autoctx simulate -d "simulate deploying a web service with rollback"
 autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1
+autoctx investigate -d "why did conversion drop after Tuesday's release"
+autoctx analyze --id deploy_sim --type simulation
+autoctx analyze --left sim_a --right sim_b --type simulation
 autoctx mission create --name "Ship login" --goal "Implement OAuth"
 autoctx mission create --type code --name "Fix login" --goal "Tests pass" --repo-path . --test-command "npm test"
 autoctx mission run --id <mission-id> --max-iterations 3
 autoctx mission status --id <mission-id>
 autoctx mission artifacts --id <mission-id>
+autoctx train --scenario grid_ctf --dataset data.jsonl --backend cuda
 
 # Evaluation
 autoctx judge -p <prompt> -o <output> -r <rubric>
@@ -115,7 +126,7 @@ AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario grid_ctf --json
 
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
 
-`autoctx simulate` requires a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
+`autoctx simulate` and `autoctx investigate` require a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
 
 Key environment variables:
 
@@ -236,6 +247,18 @@ const runner = new GenerationRunner({
 const run = await runner.run("my-run", 3);
 ```
 
+## TS / Python Scope
+
+The TypeScript package now includes the operator-facing 0.3.0 surfaces:
+
+- `simulate`
+- `investigate`
+- `analyze`
+- `mission`
+- `train` (executor-backed hook surface)
+
+For end-to-end local MLX/CUDA training, the Python package is still the canonical out-of-the-box runtime.
+
 ## Python-Only Commands
 
 These workflows require infrastructure not available in the npm package:
@@ -246,7 +269,7 @@ These workflows require infrastructure not available in the npm package:
 - `trigger-distillation` — Training pipeline
 - Monitor conditions — Monitoring engine
 
-`train` is exposed in the TS CLI as a validation + executor-hook surface, but the npm package does not bundle a real MLX/CUDA trainer. For end-to-end local training, use the Python package (`pip install autocontext`) or inject a real `TrainingRunner` executor from code.
+`train` is exposed in the TS CLI as a validation + executor-hook surface, but the npm package does not bundle a real MLX/CUDA trainer. For end-to-end local training, use the Python package (`pip install autoctx`) or inject a real `TrainingRunner` executor from code.
 
 ## Development
 

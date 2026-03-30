@@ -32,6 +32,23 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 
 - [Scenario parity matrix — Python & TypeScript](scenario-parity-matrix.md)
 
+## Execution Surfaces (0.3.0)
+
+- **`simulate`** — modeled-world exploration with sweeps, replay, compare, export
+- **`investigate`** — evidence-driven diagnosis with hypotheses and confidence
+- **`analyze`** — interpret and compare outputs from all surfaces
+- **`mission`** — real-world goal execution with adaptive planning and campaigns
+- **`train`** — distill curated datasets into scenario-local models
+
+## Trace Pipeline (0.3.0)
+
+- Public trace schema v1.0.0 for cross-harness interchange
+- Privacy-aware export with sensitive-data redaction (21 patterns)
+- Publishing to local JSONL, GitHub Gist, Hugging Face (ShareGPT format)
+- Dataset curation with gate filtering, top-quartile selection, held-out splits
+- Model selection strategy (from-scratch / LoRA / full fine-tune)
+- Training backends (MLX / CUDA) with promotion lifecycle
+
 ## Maintainer Docs
 
 - [Analytics and adoption guide](analytics.md)

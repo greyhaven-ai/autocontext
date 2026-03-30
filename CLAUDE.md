@@ -35,10 +35,25 @@ autocontext/                  # Python package root (pyproject.toml lives here)
   knowledge/                  # Runtime-generated: per-scenario playbooks, analysis, tools, hints, snapshots
   skills/                     # Runtime-generated: operational skill notes per scenario
   runs/                       # Runtime-generated: SQLite DB, event stream, generation artifacts
-ts/                           # TypeScript port of autocontext modules
-  src/                        # Source code (types, judge, storage, execution, runtimes, scenarios, knowledge, mcp, cli)
-  tests/                      # Vitest tests (119 tests)
+ts/                           # TypeScript package (autoctx on npm)
+  src/                        # Source code
+    scenarios/                # Scenario families, codegen, templates, materialization
+      codegen/                # V8 isolate code generation for all 11 families (AC-436)
+      templates/              # Pre-built scenario templates (AC-443)
+    simulation/               # SimulationEngine: run, replay, compare, export, sweep DSL (AC-446)
+    investigation/            # InvestigationEngine: evidence-driven diagnosis (AC-447)
+    analysis/                 # AnalysisEngine: interpret and compare artifacts (AC-448)
+    mission/                  # MissionManager, planner, adaptive executor, campaigns (AC-410, AC-435, AC-428)
+    traces/                   # Public trace schema, redaction, export, publishers, data plane (AC-462–466)
+    training/                 # Model strategy, backends (MLX/CUDA), prompt alignment, promotion (AC-456–460)
+    mcp/                      # MCP server with tool implementations
+    cli/                      # CLI entry point with all commands
+  tests/                      # Vitest tests (1600+ tests)
   migrations/                 # Shared SQLite migration SQL (cross-compatible with Python)
+pi/                           # Pi coding agent extension (@autocontext/pi)
+  src/                        # Extension with 5 tools (judge, improve, status, scenarios, queue)
+  skills/                     # Autocontext skill for Pi
+  prompts/                    # Prompt templates for Pi
 infra/                        # Docker, Fly.io config, bootstrap script
 scripts/                      # Top-level convenience scripts (demo.sh)
 .claude/                      # Claude context, implementation plans, synced skill symlinks
@@ -193,26 +208,47 @@ All config via `AUTOCONTEXT_*` env vars, loaded in `config/settings.py` as Pydan
 
 GitHub Actions (`.github/workflows/ci.yml`) runs: ruff check, mypy, pytest, deterministic smoke runs for both scenarios (`grid_ctf` 3 gens, `othello` 1 gen), and dashboard API health check. A separate `primeintellect-live` job runs when secrets are available. Monty-specific tests (`test_monty_*.py`) are skipped in CI when pydantic-monty is not installed (`pytest.mark.skipif`).
 
-## TypeScript Port (`ts/`)
+## TypeScript Package (`ts/`)
 
-A TypeScript port of autocontext modules under `ts/`, published as `autoctx`. ESM-only, strict TypeScript, Node.js >=18.
+Published as `autoctx` on npm. ESM-only, strict TypeScript, Node.js >=18.
 
 ```bash
 cd ts
 npm install
 npm run lint          # tsc --noEmit
-npm test              # vitest run (119 tests)
+npm test              # vitest run (1600+ tests)
 npm run build         # tsc (outputs to dist/)
 
-# CLI (after build, or via npx tsx src/cli/index.ts)
+# Core commands
+autoctx run --scenario grid_ctf --gens 3
 autoctx judge -p <task-prompt> -o <agent-output> -r <rubric>
-autoctx improve -p <task-prompt> -o <initial-output> -r <rubric> [-n rounds] [-t threshold]
-autoctx queue -s <spec-name> [-p prompt] [-r rubric] [--priority N]
-autoctx status
-autoctx serve             # start MCP server on stdio
-autoctx version
+autoctx improve -p <task-prompt> -o <initial-output> -r <rubric>
+
+# Execution surfaces
+autoctx simulate -d "simulate a deployment pipeline with rollback"
+autoctx simulate --replay <id> --variables threshold=0.9
+autoctx simulate --compare-left sim_a --compare-right sim_b
+autoctx investigate -d "why did conversion drop after the release"
+autoctx analyze --id <artifact-id> --type simulation
+autoctx analyze --left <id> --right <id> --type simulation
+
+# Missions
+autoctx mission create --name "Ship OAuth" --goal "Implement login"
+autoctx mission run --id <mission-id>
+
+# Training
+autoctx train --scenario grid_ctf --dataset train.jsonl --backend cuda
+
+# Scenario management
+autoctx new-scenario --description "test error handling in APIs"
+autoctx new-scenario --template content-generation --name my_task
+
+# Infrastructure
+autoctx serve              # HTTP API server (REST + WebSocket)
+autoctx tui                # Interactive terminal UI
+autoctx mcp-serve          # MCP server on stdio
 ```
 
-Environment variables: `ANTHROPIC_API_KEY` (required for judge/improve/serve), `AUTOCONTEXT_MODEL` (default `claude-sonnet-4-20250514`), `AUTOCONTEXT_DB_PATH` (default `./autocontext.db`).
+Environment variables: `ANTHROPIC_API_KEY` (required for LLM features), `AUTOCONTEXT_MODEL` (default `claude-sonnet-4-20250514`), `AUTOCONTEXT_DB_PATH` (default `./autocontext.db`).
 
-Mirrors the Python architecture: types (Zod), judge, SQLite store (better-sqlite3), improvement loop, task runner, agent runtimes (DirectAPI + ClaudeCLI), MCP server (5 tools), CLI, agent task pipeline, and skill export. Migrations in `ts/migrations/` are cross-compatible with Python.
+Mirrors and extends the Python architecture. Migrations in `ts/migrations/` are cross-compatible with Python.

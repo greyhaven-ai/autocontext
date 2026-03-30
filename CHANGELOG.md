@@ -4,48 +4,70 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-29
+
+### New Commands
+
+- **`autoctx simulate`** — plain-language multi-variable simulation with sweeps, replay, compare, and export (AC-446, AC-450, AC-451, AC-452, AC-454)
+- **`autoctx investigate`** — evidence-driven diagnosis with hypotheses, confidence scoring, and unknowns (AC-447)
+- **`autoctx analyze`** — interpret and compare runs, simulations, investigations, and missions (AC-448)
+- **`autoctx train`** — train distilled models from curated datasets with backend selection (AC-460)
+- **Python `autoctx simulate`** — full parity with TS surface: run, replay, compare, export (AC-453)
+
+### Scenarios
+
+- All 11 scenario families now fully executable in TypeScript (was 2/11) via secure-exec V8 isolate codegen (AC-436)
+- `operator_loop` is now a fully runnable family in both packages (AC-432)
+- Unified family classifier — all families reachable through CLI (AC-437)
+- Spec auto-heal: codegen failures trigger automatic recovery (AC-440)
+- Scenario revision flow: refine created scenarios with feedback (AC-441)
+- Deep execution validation: generated code executed and verified before registration (AC-442)
+- 3 scenario templates: content-generation, prompt-optimization, rag-accuracy (AC-443)
+- `new-scenario` CLI materializes runnable artifacts to disk (AC-433)
+- Scenario parity matrix documenting Python/TypeScript surface coverage (AC-431)
+
+### Missions & Campaigns
+
+- Adaptive mission execution: LLM-driven goal decomposition and step planning replaces generic bookkeeping (AC-435)
+- Campaign abstraction: coordinate multiple missions under long-term goals with budget tracking and dependencies (AC-428)
+- Mission-simulation integration: missions invoke simulations as planning tools (AC-455)
+
+### Trace Pipeline
+
+- Open public trace schema v1.0.0: versioned interchange format for coding agent traces (AC-462)
+- Sensitive-data detection and redaction: 21 built-in patterns with policy-backed actions (AC-464, AC-468)
+- Privacy-aware trace export workflow: redact → validate → manifest → attestation (AC-463)
+- Publishing connectors: local JSONL, GitHub Gist, and Hugging Face (ShareGPT format) (AC-465)
+- Trace-to-model data plane: DatasetCurator + DataPlane orchestrator (AC-466)
+- Repo-local dataset discovery: scan repo trees, convert JSONL/JSON/CSV to ShareGPT (AC-461)
+- Curated distillation dataset pipeline: gate filtering, top-quartile, family filtering, failure-example policy (AC-458)
+
+### Training & Distillation
+
+- Base model selection: maps scenario families to training modes (from-scratch, LoRA, full fine-tune) (AC-459)
+- Training backend abstraction: MLX + CUDA with injectable TrainingExecutor hook (AC-460)
+- Prompt alignment: training ↔ runtime contract ensures distilled models match runtime invocation (AC-457)
+- Candidate-shadow-active promotion lifecycle with configurable quantitative gates and rollback (AC-456)
+
+### Infrastructure
+
+- Consolidated operator UI: the Python `serve` / `tui` surfaces are API/WebSocket-first, while interactive terminal UI remains available through the TypeScript client surfaces (AC-467)
+- Richer sweep DSL: categorical sweeps, logarithmic scales, sweep file loading, named presets (AC-454)
+
+### Fixed
+
+- Trace pipeline audit: expanded redaction patterns (21, was 12), ISO 8601 timestamp validation, explicit role mapping, export warnings, HF format fix (AC-468)
+- Distillation audit: training executor hook, base model validation, CSV parser edge cases, silent catches → warnings, integration test (AC-468)
+
+## [0.2.4] - 2026-03-26
+
 ### Added
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
-- Distillation audit fixes: training executor hook, base model validation, CSV parser edge cases, silent catch → warnings, `autoctx train` CLI, integration test (AC-468).
-- Prompt alignment: training ↔ runtime contract ensures distilled models are trained on the same prompt surface they encounter at runtime (AC-457).
-- Candidate-shadow-active promotion lifecycle: staged deployment with quantitative gates, rollback, and provenance (AC-456).
-- Base model selection and adapter strategy: maps scenario families to training modes (from-scratch, LoRA, full fine-tune) with explicit recommendations (AC-459).
-- Training backend abstraction with CUDA and MLX: backend registry, training runner, artifact publishing with backend metadata (AC-460).
-- Curated distillation dataset pipeline: gate filtering, top-quartile, family filtering, failure-example policy, rich manifest (AC-458).
-- Repo-local dataset discovery and schema adaptation: scan repo trees, convert JSONL/JSON/CSV to ShareGPT training format with provenance (AC-461).
-- Trace pipeline audit fixes: expanded redaction patterns, ISO 8601 timestamps, explicit role mapping, export warnings, HF format fix (AC-468).
-- Privacy-aware trace export workflow: select runs → redact → validate → package with manifest and attestation (AC-463).
-- Publishing connectors: local JSONL, GitHub Gist, and Hugging Face dataset publishers with trace ingestion and deduplication (AC-465).
-- Trace-to-model data plane: DatasetCurator + DataPlane orchestrator for curated training datasets with provenance and held-out splits (AC-466).
-- Open public trace schema v1.0.0: versioned interchange format for coding agent traces with provenance, attestation, and redaction metadata (AC-462).
-- Sensitive-data detection and redaction pipeline: secrets, PII, paths, custom patterns with policy-backed actions (AC-464).
-- Mission-simulation integration: missions can invoke simulations as planning tools before committing to actions (AC-455).
-- Consolidated TUI: removed web dashboards and standalone tui/ package — server is API-only, single Ink TUI (AC-467).
-- Richer sweep DSL: categorical sweeps, logarithmic scales, sweep file loading, and named presets (AC-454).
-- Python parity for simulate: SimulationEngine with run, replay, compare, export — matching TS surface (AC-453).
-- `simulate export` — portable simulation result packages in JSON, Markdown, and CSV formats (AC-452).
-- `simulate compare` — structured diff between simulation runs with variable and dimension deltas (AC-451).
-- `simulate replay` — re-execute saved simulations with optional variable overrides and comparison data (AC-450).
-- First-class `analyze` command for comparing runs, missions, simulations, and generated artifacts (AC-448).
-- First-class `investigate` command for plain-language diagnosis, evidence gathering, and root-cause analysis (AC-447).
-- First-class `simulate` command for plain-language multi-variable simulation, sweeps, and analysis (AC-446).
-- Campaign abstraction for coordinating multiple missions under long-term goals (AC-428).
-- Scenario parity matrix documenting Python/TypeScript surface coverage, creation flows, runtime support, and explicit limitations (AC-431).
-
-### Fixed
-- TS `detectScenarioFamily` now delegates to the full weighted classifier instead of naive keyword matching, so all custom-scenario-supported families are reachable through CLI without auto-routing into unsupported custom game creation (AC-437).
-- TS `new-scenario` CLI now materializes runnable artifacts to disk instead of only echoing specs (AC-433).
-- TS adaptive mission execution: missions now decompose plain-language goals into subgoals and plan steps via LLM instead of generic bookkeeping (AC-435).
-- TS spec auto-heal: codegen failures from malformed specs now trigger automatic recovery (missing sampleInput, type coercion, field inference) instead of hard stops (AC-440).
-- TS scenario revision flow: users can refine created scenarios with feedback instead of starting over (AC-441).
-- TS deep execution validation: generated scenario code is now executed and verified before registration, catching logic errors not visible to AST checks (AC-442).
-- TS scenario templates: 3 pre-built templates (content-generation, prompt-optimization, rag-accuracy) for scaffolding without LLM calls (AC-443).
 
 ### Changed
 - Agent-task scaffolding and execution now use separate phased budgets.
 - Operator-loop scenarios remain available as typed family metadata, but executable operator-loop scaffolding has been removed so the harness no longer bakes in escalation-specific runtime behavior.
-- `operator_loop` explicitly unsupported with test coverage confirming clear error guidance in both Python and TypeScript (AC-432).
 - Public repo docs now include a docs landing page, package-selection guidance, an analytics/adoption guide, a release checklist, copy-paste integration examples for CLI, MCP, Python SDK, and TypeScript usage, plus README package/download signals.
 
 ### Fixed
@@ -54,29 +76,12 @@ All notable changes to this project will be documented in this file.
 ## [0.2.0] - 2026-03-15
 
 ### Added
-- Typed scenario-family architecture with registry-driven creation, routing, validation, and persistence.
-- New scenario families across Python and TypeScript:
-  `simulation`, `artifact_editing`, `investigation`, `workflow`,
-  `schema_evolution`, `tool_fragility`, `negotiation`,
-  `operator_loop`, and `coordination`.
-- Aggregate run analytics with structured facets, signal clustering, release/runtime correlation, and thresholded issue/probe generation.
-- Rubric-drift monitoring and human calibration queue generation.
-- Canonical run-event traces, causal inspection artifacts, and timeline/state inspection.
-- Trace-grounded writeups and weakness reports backed by structured event evidence.
-
-### Changed
-- Natural-language scenario creation now routes through scenario-family inference instead of defaulting to generic agent-task scaffolds.
-- Family-specific generator and validator pipelines are now the live creation path in both Python and TypeScript.
-- Public cockpit writeups and run-completion weakness reporting now prefer trace-grounded artifacts when available.
-- Release automation now supports trusted publishing to both PyPI and npm.
-
-### Fixed
-- Generated agent-task evaluation now uses configured runtime providers and provider-neutral model fallback behavior.
-- Scenario intent validation now blocks obvious family/output mismatches before scaffolding.
-- Aggregate issue/probe dedup now keys on correlated evidence scope instead of signal type alone.
-- Timeline and reporting consumers now honor canonical `causal_edges` instead of relying only on inline cause IDs.
-
-## [0.1.2] - 2026-03-15
-
-### Added
-- Initial trusted publishing flow for PyPI and npm.
+- Initial public release with Python and TypeScript packages.
+- Generation loop with Elo-based progression gating.
+- Agent roles: competitor, analyst, coach, architect, curator.
+- Pluggable scenarios: grid_ctf, othello, custom creation pipeline.
+- LLM judge with multi-sample evaluation.
+- Task runner daemon with improvement loops.
+- MCP server with tool implementations.
+- FastAPI dashboard with WebSocket events.
+- CLI via Typer (Python) and parseArgs (TypeScript).
