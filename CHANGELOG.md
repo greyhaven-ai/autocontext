@@ -2,8 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
 ## [0.3.0] - 2026-03-29
 
 ### New Commands
@@ -62,26 +60,30 @@ All notable changes to this project will be documented in this file.
 ## [0.2.4] - 2026-03-26
 
 ### Added
+
 - Session notebook context now flows into runtime prompts and cockpit views for active runs.
 - World-state abstractions now support stateful scenario families and workflow-style scenarios.
 
 ### Changed
+
 - Agent-task scaffolding and execution now use separate phased budgets.
 - Operator-loop scenarios remain available as typed family metadata, but executable operator-loop scaffolding has been removed so the harness no longer bakes in escalation-specific runtime behavior.
-- Public repo docs now include a docs landing page, package-selection guidance, an analytics/adoption guide, a release checklist, copy-paste integration examples for CLI, MCP, Python SDK, and TypeScript usage, plus README package/download signals.
+- Public repo docs now include a docs landing page, package-selection guidance, an analytics/adoption guide, a release checklist, and copy-paste integration examples for CLI, MCP, Python SDK, and TypeScript usage.
 
 ### Fixed
+
 - Python package fallback version metadata now matches the published `0.2.0` package version.
 
 ## [0.2.0] - 2026-03-15
 
 ### Added
+
 - Initial public release with Python and TypeScript packages.
 - Generation loop with Elo-based progression gating.
-- Agent roles: competitor, analyst, coach, architect, curator.
-- Pluggable scenarios: grid_ctf, othello, custom creation pipeline.
+- Agent roles: competitor, analyst, coach, architect, and curator.
+- Pluggable scenarios including `grid_ctf`, `othello`, and the custom creation pipeline.
 - LLM judge with multi-sample evaluation.
 - Task runner daemon with improvement loops.
 - MCP server with tool implementations.
 - FastAPI dashboard with WebSocket events.
-- CLI via Typer (Python) and parseArgs (TypeScript).
+- CLI via Typer (Python) and `parseArgs` (TypeScript).
