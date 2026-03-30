@@ -83,6 +83,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ANN204"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["ANN204"]
+
 [tool.mypy]
 python_version = "3.11"
 disallow_untyped_defs = true

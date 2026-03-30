@@ -451,7 +451,7 @@ class TestTreeSearchPipelineIntegration:
         trajectory.build_trajectory.return_value = ""
         trajectory.build_strategy_registry.return_value = ""
 
-        from autocontext.harness.pipeline.gate import BackpressureGate
+        from autocontext.backpressure import BackpressureGate
 
         gate = BackpressureGate(min_delta=0.0)
 

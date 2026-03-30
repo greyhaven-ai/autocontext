@@ -12,8 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from autocontext.harness.pipeline.gate import BackpressureGate
-from autocontext.harness.pipeline.trend_gate import TrendAwareGate
+from autocontext.backpressure import BackpressureGate, TrendAwareGate
 from autocontext.config import AppSettings
 from autocontext.loop import GenerationRunner
 
