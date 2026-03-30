@@ -62,7 +62,7 @@ describe("exportTrainingData helper", () => {
     store.close();
   });
 
-  it("exports Python-compatible context with playbook, hints, and trajectory", async () => {
+  it("exports Python-compatible context with prompt contract fields, playbook, hints, and trajectory", async () => {
     const { exportTrainingData } = await import("../src/training/export.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
     const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
@@ -107,7 +107,13 @@ describe("exportTrainingData helper", () => {
     expect(rec.score).toBeCloseTo(0.80);
     expect(rec.gate_decision).toBe("advance");
     expect(rec.strategy).toBe('{"aggression": 0.7}');
-    expect(rec.context).toEqual({
+    expect(rec.context).toMatchObject({
+      scenarioRules:
+        "20x20 capture-the-flag map with fog of war and three unit archetypes (Scout, Soldier, Commander). Preserve at least one defender near base.",
+      strategyInterface:
+        "Return JSON object with keys `aggression`, `defense`, and `path_bias`, all floats in [0,1]. Constraint: aggression + defense <= 1.4.",
+      evaluationCriteria:
+        "Primary objective is capture progress. Secondary objectives are defender survivability and resource efficiency.",
       playbook: `${playbook}\n`,
       hints: "Keep pressure on the flag carrier.",
       trajectory: [
@@ -115,6 +121,60 @@ describe("exportTrainingData helper", () => {
         { generation_index: 2, best_score: 0.80, gate_decision: "advance" },
       ],
     });
+    store.close();
+  });
+
+  it("exports records that align with the runtime prompt contract", async () => {
+    const { exportTrainingData } = await import("../src/training/export.js");
+    const {
+      buildPromptBundle,
+      RuntimePromptAdapter,
+      TrainingPromptAdapter,
+      validatePromptAlignment,
+    } = await import("../src/index.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+    const { ArtifactStore } = await import("../src/knowledge/artifact-store.js");
+    const store = new SQLiteStore(join(dir, "test.db"));
+    store.migrate(join(__dirname, "..", "migrations"));
+    const artifacts = new ArtifactStore({
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+    });
+    artifacts.writePlaybook("grid_ctf", "# Strategy\n");
+    store.createRun("run-1", "grid_ctf", 1, "local");
+    store.upsertGeneration("run-1", 1, {
+      meanScore: 0.65, bestScore: 0.70, elo: 1050,
+      wins: 3, losses: 2, gateDecision: "advance", status: "completed",
+    });
+    store.appendAgentOutput("run-1", 1, "competitor", '{"aggression": 0.6}');
+
+    const records = exportTrainingData(store, artifacts, { runId: "run-1" });
+    const record = records[0];
+    if (!record || "seed" in record) {
+      throw new Error("Expected a strategy-level training record");
+    }
+
+    const trainingPrompt = new TrainingPromptAdapter().fromTrainingRecord({
+      scenario: record.scenario,
+      strategy: record.strategy,
+      score: record.score,
+      context: record.context,
+    });
+    const runtimePrompt = new RuntimePromptAdapter().fromBundle(buildPromptBundle({
+      scenarioRules: String(record.context.scenarioRules ?? ""),
+      strategyInterface: String(record.context.strategyInterface ?? ""),
+      evaluationCriteria: String(record.context.evaluationCriteria ?? ""),
+      playbook: String(record.context.playbook ?? ""),
+      trajectory: "Generation 1: score=0.7000, gate=advance",
+      lessons: "",
+      tools: "",
+      hints: String(record.context.hints ?? ""),
+      analysis: "",
+    }));
+    const report = validatePromptAlignment({ trainingPrompt, runtimePrompt });
+
+    expect(report.aligned).toBe(true);
+    expect(report.mismatches).toHaveLength(0);
     store.close();
   });
 

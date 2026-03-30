@@ -310,6 +310,19 @@ export type {
   TrainingResult,
   PublishedArtifact,
 } from "./training/backends.js";
+export {
+  PromptContract,
+  RuntimePromptAdapter,
+  TrainingPromptAdapter,
+  validatePromptAlignment,
+} from "./training/prompt-alignment.js";
+export type {
+  PromptShape,
+  PromptPair,
+  ValidationResult as PromptValidationResult,
+  AlignmentReport,
+  ShareGPTExample,
+} from "./training/prompt-alignment.js";
 
 // MCP
 export { createMcpServer, startServer } from "./mcp/server.js";
