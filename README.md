@@ -109,7 +109,7 @@ The repo publishes two installable packages with different scopes:
 Important: the npm package for this project is `autoctx`.
 `autocontext` on npm is a different package.
 
-The Python package exposes the full `autoctx` control-plane CLI (`run`, `serve`, `mcp-serve`, `train`, `new-scenario`, `export`, `wait`, and more). The TypeScript package exposes a narrower `autoctx` CLI focused on evaluation, improvement loops, queueing, and MCP serving for Node runtimes.
+The Python package exposes the full `autoctx` control-plane CLI (`run`, `simulate`, `serve`, `mcp-serve`, `train`, `new-scenario`, `export`, `wait`, and more). The TypeScript package exposes the operator-facing CLI for simulations, investigations, analysis, missions, terminal UI, and MCP/Node workflows.
 
 ## Which Package Should You Use?
 
@@ -119,7 +119,7 @@ The Python package exposes the full `autoctx` control-plane CLI (`run`, `serve`,
 | Embed judging or improvement loops in a Node app | [ts/README.md](ts/README.md) | The TypeScript package is smaller and focused on judge-based workflows, queueing, and MCP serving. |
 | Point an external agent at autocontext | [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md) | It documents the CLI-first contract, JSON output, MCP usage, and SDK options. |
 | Grab copy-paste integration snippets | [examples/README.md](examples/README.md) | The examples cover Python CLI, Claude Code MCP, Python SDK, and TypeScript library usage. |
-| Catch up on recent repo evolution | [CHANGELOG.md](CHANGELOG.md) | It summarizes the `v0.2.0` release and current unreleased work. |
+| Catch up on recent repo evolution | [CHANGELOG.md](CHANGELOG.md) | It summarizes the `v0.3.0` release and current unreleased work. |
 
 ## Common Workflows
 

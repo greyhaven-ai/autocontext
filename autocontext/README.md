@@ -9,10 +9,27 @@ Run the commands in this README from the `autocontext/` directory. The Python pa
 ## What It Does
 
 - Runs iterative generation loops against game scenarios and agent-task scenarios
+- Adds a first-class `simulate` surface for modeled-world exploration, replay, compare, and export
 - Persists playbooks, hints, tools, reports, and snapshots across runs
 - Supports staged validation, harness synthesis, and harness-aware routing
 - Exports training data and runs autoresearch-style local training loops
 - Exposes evaluation, validation, artifact, and discovery operations over MCP and HTTP
+
+## 0.3.0 Surface Summary
+
+The Python package is the full control-plane surface in this repo. In 0.3.0 it includes:
+
+- generation-loop execution via `autoctx run`
+- plain-language simulation via `autoctx simulate`
+- local training workflows via `autoctx export-training-data` and `autoctx train`
+- scenario creation/materialization via `autoctx new-scenario`
+- HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`
+
+Some newer operator-facing surfaces are currently TypeScript-first:
+
+- `autoctx investigate`
+- `autoctx analyze`
+- the interactive terminal UI via `npx autoctx tui`
 
 ## Quick Start
 
@@ -89,11 +106,15 @@ uv run autoctx mcp-serve
 
 ```bash
 uv run autoctx run --scenario grid_ctf --gens 3
+uv run autoctx simulate --description "simulate deploying a web service with rollback"
+uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
 uv run autoctx replay <run_id> --generation 1
 uv run autoctx benchmark --scenario grid_ctf --runs 5
 uv run autoctx new-scenario --template prompt-optimization --name my-task
+uv run autoctx export-training-data --scenario grid_ctf --all-runs --output training/grid_ctf.jsonl
+uv run autoctx train --scenario grid_ctf --data training/grid_ctf.jsonl --time-budget 300
 uv run autoctx serve --host 127.0.0.1 --port 8000
 uv run autoctx mcp-serve
 uv run autoctx wait <condition_id> --json
@@ -196,6 +217,7 @@ autocontext exposes:
 - [Agent integration guide](docs/agent-integration.md) — CLI-first integration for external agents, MCP fallback, JSON output reference
 - [Sandbox modes](docs/sandbox.md)
 - [MLX host training](docs/mlx-training.md)
+- [TypeScript package guide](../ts/README.md) — `investigate`, `analyze`, and interactive TUI surfaces
 - [Demo data notes](demo_data/README.md)
 - [Copy-paste examples](../examples/README.md)
 - [Change history](../CHANGELOG.md)
