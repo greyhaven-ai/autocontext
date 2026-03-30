@@ -42,6 +42,8 @@ export interface AdaptedDataset {
   status: "adapted" | "failed";
   records: ShareGPTRecord[];
   provenance: DatasetProvenance;
+  /** Lines/entries that couldn't be parsed */
+  warnings: string[];
   error?: string;
 }
 
@@ -182,31 +184,40 @@ export class DatasetAdapter {
     };
 
     if (!existsSync(dataset.absolutePath)) {
-      return { status: "failed", records: [], provenance, error: `File not found: ${dataset.absolutePath}` };
+      return { status: "failed", records: [], provenance, warnings: [], error: `File not found: ${dataset.absolutePath}` };
     }
 
     try {
+      let records: ShareGPTRecord[];
+      const warnings: string[] = [];
       switch (dataset.format) {
         case "jsonl":
-          return { status: "adapted", records: this.adaptJSONL(dataset.absolutePath), provenance };
+          records = this.adaptJSONL(dataset.absolutePath, warnings);
+          break;
         case "json":
-          return { status: "adapted", records: this.adaptJSON(dataset.absolutePath), provenance };
+          records = this.adaptJSON(dataset.absolutePath);
+          break;
         case "csv":
-          return { status: "adapted", records: this.adaptCSV(dataset.absolutePath), provenance };
+          records = this.adaptCSV(dataset.absolutePath);
+          break;
         case "markdown":
-          return { status: "adapted", records: this.adaptMarkdown(dataset.absolutePath), provenance };
+          records = this.adaptMarkdown(dataset.absolutePath);
+          break;
         default:
-          return { status: "failed", records: [], provenance, error: `Unsupported format: ${dataset.format}` };
+          return { status: "failed", records: [], provenance, warnings: [], error: `Unsupported format: ${dataset.format}` };
       }
+      return { status: "adapted", records, provenance, warnings };
     } catch (err) {
-      return { status: "failed", records: [], provenance, error: err instanceof Error ? err.message : String(err) };
+      return { status: "failed", records: [], provenance, warnings: [], error: err instanceof Error ? err.message : String(err) };
     }
   }
 
-  private adaptJSONL(path: string): ShareGPTRecord[] {
+  private adaptJSONL(path: string, warnings: string[] = []): ShareGPTRecord[] {
     const content = readFileSync(path, "utf-8");
     const records: ShareGPTRecord[] = [];
-    for (const line of content.trim().split("\n")) {
+    const lines = content.trim().split("\n");
+    for (let idx = 0; idx < lines.length; idx++) {
+      const line = lines[idx];
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line) as Record<string, unknown>;
@@ -216,7 +227,9 @@ export class DatasetAdapter {
         } else if (parsed.input && parsed.output) {
           records.push(this.ioPairToShareGPT(parsed));
         }
-      } catch { /* skip malformed lines */ }
+      } catch (err) {
+        warnings.push(`Line ${idx + 1}: ${err instanceof Error ? err.message : "parse error"}`);
+      }
     }
     return records;
   }
@@ -312,8 +325,16 @@ export class DatasetAdapter {
     const values: string[] = [];
     let current = "";
     let inQuotes = false;
-    for (const char of line) {
+    let i = 0;
+    while (i < line.length) {
+      const char = line[i];
       if (char === '"') {
+        if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+          // Escaped quote: "" → literal "
+          current += '"';
+          i += 2;
+          continue;
+        }
         inQuotes = !inQuotes;
       } else if (char === "," && !inQuotes) {
         values.push(current);
@@ -321,6 +342,7 @@ export class DatasetAdapter {
       } else {
         current += char;
       }
+      i++;
     }
     values.push(current);
     return values;

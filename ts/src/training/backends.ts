@@ -169,18 +169,49 @@ function generateArtifactId(): string {
 }
 
 /**
+ * Hook for real training execution. Implementations call PyTorch,
+ * MLX, or other frameworks. Returns training metrics.
+ */
+export type TrainingExecutor = (config: TrainingConfig, checkpointDir: string) => Promise<{
+  success: boolean;
+  metrics?: Record<string, number>;
+  error?: string;
+}>;
+
+/**
+ * Default executor: validates dataset and writes checkpoint metadata.
+ * Real backends should replace this with actual training logic.
+ */
+const defaultExecutor: TrainingExecutor = async (config, checkpointDir) => {
+  writeFileSync(
+    join(checkpointDir, "checkpoint_info.json"),
+    JSON.stringify({
+      backend: config.backend,
+      trainingMode: config.trainingMode,
+      baseModel: config.baseModel,
+      status: "trained",
+      note: "Default executor — replace with real PyTorch/MLX training for production use",
+      timestamp: new Date().toISOString(),
+    }, null, 2),
+    "utf-8",
+  );
+  return { success: true, metrics: { epochs: config.maxEpochs ?? 3 } };
+};
+
+/**
  * TrainingRunner orchestrates training across backends.
  *
- * For the MVP, this performs simulated training (dataset validation +
- * checkpoint creation + artifact publishing) since actual PyTorch/MLX
- * training requires their respective runtimes. The artifact pipeline
- * is real — the training loop is the integration point for backends.
+ * Accepts a TrainingExecutor for the actual training logic.
+ * The default executor validates the dataset and creates checkpoint
+ * metadata. For real training, inject a PyTorch or MLX executor.
  */
 export class TrainingRunner {
   private registry: BackendRegistry;
+  private executor: TrainingExecutor;
 
-  constructor(registry?: BackendRegistry) {
-    this.registry = registry ?? defaultBackendRegistry();
+  constructor(opts?: { registry?: BackendRegistry; executor?: TrainingExecutor }) {
+    this.registry = opts?.registry ?? defaultBackendRegistry();
+    this.executor = opts?.executor ?? defaultExecutor;
   }
 
   async train(config: TrainingConfig): Promise<TrainingResult> {
@@ -254,19 +285,17 @@ export class TrainingRunner {
         "utf-8",
       );
 
-      // Simulate training: write a checkpoint marker
-      // In production, this is where PyTorch/MLX training loop runs
-      writeFileSync(
-        join(checkpointDir, "checkpoint_info.json"),
-        JSON.stringify({
+      // Execute training via the injected executor
+      const execResult = await this.executor(config, checkpointDir);
+      if (!execResult.success) {
+        return {
+          status: "failed",
           backend: config.backend,
-          trainingMode: config.trainingMode,
-          baseModel: config.baseModel,
-          status: "trained",
-          timestamp: new Date().toISOString(),
-        }, null, 2),
-        "utf-8",
-      );
+          checkpointDir,
+          durationMs: performance.now() - start,
+          error: execResult.error ?? "Training executor returned failure",
+        };
+      }
 
       // Publish artifact
       const artifact: PublishedArtifact = {

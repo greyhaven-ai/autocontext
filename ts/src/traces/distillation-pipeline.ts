@@ -59,6 +59,8 @@ export interface DistillationResult {
   evalOnlyTraces: number;
   contrastiveTraces: number;
   outputDir: string;
+  /** Files that couldn't be parsed during loading */
+  warnings: string[];
   error?: string;
 }
 
@@ -169,7 +171,7 @@ export class DistillationPipeline {
         heldOutSize: heldOut.length,
         evalOnlyTraces: evalOnly.length,
         contrastiveTraces: contrastive.length,
-        outputDir: this.config.outputDir,
+        outputDir: this.config.outputDir, warnings: [],
       };
     } catch (err) {
       return {
@@ -178,6 +180,7 @@ export class DistillationPipeline {
         trainSize: 0, heldOutSize: 0, evalOnlyTraces: 0, contrastiveTraces: 0,
         outputDir: this.config.outputDir,
         error: err instanceof Error ? err.message : String(err),
+        warnings: [],
       };
     }
   }

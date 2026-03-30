@@ -155,7 +155,30 @@ export const DEFAULT_RECOMMENDATIONS: Record<string, FamilyRecommendation> = {
 const SMALL_DATASET = 500;
 const LARGE_DATASET = 20_000;
 
+/**
+ * Known base models with metadata for validation.
+ */
+export const KNOWN_BASE_MODELS: Record<string, { parameterCount: number; supportedBackends: string[] }> = {
+  "Qwen/Qwen3-0.6B": { parameterCount: 600_000_000, supportedBackends: ["cuda", "mlx"] },
+  "meta-llama/Llama-3.2-1B": { parameterCount: 1_000_000_000, supportedBackends: ["cuda"] },
+  "microsoft/phi-4-mini": { parameterCount: 3_800_000_000, supportedBackends: ["cuda"] },
+};
+
 export class ModelStrategySelector {
+  /**
+   * Validate that a base model is known and compatible with the backend.
+   */
+  validateBaseModel(modelId: string, backend?: string): { valid: boolean; warnings: string[] } {
+    const warnings: string[] = [];
+    const known = KNOWN_BASE_MODELS[modelId];
+    if (!known) {
+      warnings.push(`Base model '${modelId}' is not in the known model registry — verify it exists and is downloadable`);
+    } else if (backend && !known.supportedBackends.includes(backend)) {
+      warnings.push(`Base model '${modelId}' may not be compatible with backend '${backend}'`);
+    }
+    return { valid: warnings.length === 0, warnings };
+  }
+
   select(input: SelectionInput): ModelStrategy {
     // Explicit overrides take priority
     if (input.trainingModeOverride || input.baseModelOverride) {

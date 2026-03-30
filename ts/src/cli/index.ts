@@ -47,6 +47,7 @@ Commands:
   queue            Add a task to the background runner queue
   status           Show queue status
   serve            Start HTTP API server [--json]
+  train            Train a distilled model from curated dataset
   simulate         Run a plain-language simulation with sweeps and analysis
   investigate      Run a plain-language investigation with evidence and hypotheses
   analyze          Analyze and compare runs, simulations, investigations, and missions
@@ -160,6 +161,9 @@ async function main(): Promise<void> {
       break;
     case "mcp-serve":
       await cmdMcpServe(await getDbPath());
+      break;
+    case "train":
+      await cmdTrain();
       break;
     case "simulate":
       await cmdSimulate();
@@ -2797,6 +2801,82 @@ Examples:
       console.log(`\nLimitations:`);
       for (const l of result.limitations) console.log(`  ⚠ ${l}`);
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// train command (AC-460 audit fix)
+// ---------------------------------------------------------------------------
+
+async function cmdTrain(): Promise<void> {
+  const { parseArgs } = await import("node:util");
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      scenario: { type: "string", short: "s" },
+      family: { type: "string" },
+      dataset: { type: "string", short: "d" },
+      "held-out": { type: "string" },
+      backend: { type: "string", default: "cuda" },
+      mode: { type: "string", default: "from_scratch" },
+      "base-model": { type: "string" },
+      output: { type: "string", short: "o" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  if (values.help) {
+    console.log(`autoctx train — train a distilled model from curated dataset
+
+Usage: autoctx train --scenario <name> --dataset <path> [options]
+
+Options:
+  -s, --scenario <name>    Scenario name (required)
+  --family <name>          Scenario family (default: agent_task)
+  -d, --dataset <path>     Training dataset JSONL path (required)
+  --held-out <path>        Held-out evaluation JSONL path
+  --backend <name>         Training backend: cuda, mlx (default: cuda)
+  --mode <mode>            from_scratch, adapter_finetune, full_finetune
+  --base-model <id>        Base model for adapter/full fine-tune
+  -o, --output <dir>       Output directory
+  --json                   Output as JSON
+  -h, --help               Show this help`);
+    process.exit(0);
+  }
+
+  if (!values.scenario || !values.dataset) {
+    console.error("Error: --scenario and --dataset are required. Run 'autoctx train --help'.");
+    process.exit(1);
+  }
+
+  const { TrainingRunner } = await import("../training/backends.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { resolve } = await import("node:path");
+  const settings = loadSettings();
+
+  const runner = new TrainingRunner();
+  const result = await runner.train({
+    scenario: values.scenario,
+    family: values.family ?? "agent_task",
+    datasetPath: resolve(values.dataset),
+    heldOutPath: values["held-out"] ? resolve(values["held-out"]) : undefined,
+    outputDir: values.output ? resolve(values.output) : resolve(settings.runsRoot),
+    backend: values.backend ?? "cuda",
+    trainingMode: (values.mode ?? "from_scratch") as "from_scratch" | "adapter_finetune" | "full_finetune",
+    baseModel: values["base-model"],
+  });
+
+  if (values.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else if (result.status === "failed") {
+    console.error(`Training failed: ${result.error}`);
+    process.exit(1);
+  } else {
+    console.log(`Training completed: ${result.artifact?.artifactId}`);
+    console.log(`  Backend: ${result.backend}`);
+    console.log(`  Checkpoint: ${result.checkpointDir}`);
+    console.log(`  Duration: ${(result.durationMs / 1000).toFixed(1)}s`);
   }
 }
 
