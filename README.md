@@ -1,30 +1,53 @@
 <!-- autocontext-readme-hero:start -->
 <p align="center">
-  <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" />
+  <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" style="max-width: 100%; height: auto;" />
 </p>
 
-<p align="center"><strong>closed-loop control plane for agent improvement</strong></p>
+<p align="center"><strong>turn repeated agent work into validated, reusable execution</strong></p>
 <!-- autocontext-readme-hero:end -->
 
-autocontext is a closed-loop control plane for improving agent behavior over repeated runs.
+autocontext is a system for running scenarios, tasks, and missions, analyzing what happened, and carrying forward the knowledge that actually improved outcomes.
 
-It executes tasks, evaluates outcomes, updates persistent knowledge, and can distill successful behavior into cheaper local runtimes. The goal is to move from frontier-model exploration toward validated, reusable, lower-cost execution.
+The North Star is to move from one-off frontier-model exploration toward workflows that become more reliable, more auditable, and cheaper to run over time.
 
-## Why It Exists
+## North Star
 
-Most agent systems start every run cold. They do not reliably carry forward what worked, what failed, and what should change next.
+Most agent systems still start every run cold. They do not reliably preserve what worked, separate signal from noise, or turn repeated success into a reusable asset.
 
-autocontext adds that missing feedback loop:
+autocontext is built to close that loop:
 
-- run the task
-- analyze what happened
-- persist validated lessons
-- use those lessons in the next run
-- optionally train and route to local models when the task is stable enough
+- run a scenario, task, or mission
+- evaluate what actually happened
+- persist validated knowledge and artifacts
+- replay, analyze, or compare results
+- distill stable behavior into cheaper local runtimes when it is ready
+
+## How People Use It
+
+- improve agent behavior across repeated runs instead of prompting from scratch every time
+- model and test environments through reusable scenarios
+- run plain-language simulations with sweeps, replay, compare, and export
+- run evidence-driven investigations and analyze the resulting artifacts
+- operate verifier-driven missions for longer-running goals
+- analyze runs, replays, and artifacts to understand regressions and stable wins
+- export knowledge, artifacts, and training data for downstream systems
+- expose the system over CLI, MCP, API, and dashboard surfaces for external agents and operator tooling
 
 ## How It Works
 
-Each generation runs through a structured multi-agent loop:
+The product model centers on a few stable ideas:
+
+- `Scenario`: a reusable environment or evaluation context with stable rules and scoring
+- `Task`: a prompt-centric unit of work that can be evaluated directly or embedded elsewhere
+- `Mission`: a long-running goal advanced step by step until a verifier says it is done
+- `Campaign`: a planned grouping of missions, runs, and supporting context; part of the North Star model, but still a reserved concept rather than a first-class shipped surface
+- `Run`: a concrete execution instance of a scenario or task
+- `Verifier`: the runtime check that decides whether a mission, step, or output is acceptable
+- `Knowledge`: validated lessons that should carry forward across runs
+- `Artifact`: persisted outputs such as replays, checkpoints, reports, packages, and exports
+- `Budget` and `Policy`: the constraints and rules that shape how runs and missions are allowed to proceed
+
+Inside a run, autocontext uses a structured multi-agent loop:
 
 - `competitor` proposes a strategy or artifact for the task
 - `analyst` explains what happened and why
@@ -34,32 +57,34 @@ Each generation runs through a structured multi-agent loop:
 
 Strategies are then evaluated through scenario execution, staged validation, and gating. Weak changes are rolled back. Successful changes accumulate into reusable knowledge.
 
+## Which Surface Fits Which Job
+
+- Reach for `run` when you want to improve behavior inside a reusable scenario or task across generations.
+- Reach for `simulate` when you want to model a system, explore parameter sweeps, or compare replayable outcomes.
+- Reach for `investigate` when you want evidence-driven diagnosis with hypotheses and confidence scoring.
+- Reach for `analyze` when you want to inspect or compare runs, simulations, investigations, or missions after the fact.
+- Reach for `mission` when you want a verifier-driven goal advanced step by step with checkpoints and explicit completion criteria.
+- Reach for `train` when you have stable exported data and want to distill behavior into a cheaper local runtime.
+- Reach for `replay`, reports, and exported artifacts when you need to inspect what happened before deciding what knowledge should persist.
+- Treat `campaign` as part of the intended product model above missions and runs, but not yet as a shipped workflow in this repo.
+
 ## Choose An Entry Point
 
-- Want the full control plane, API server, scenario runner, and training loop? Start with the Python package in `autocontext/`.
-- Want a lighter Node/TypeScript toolkit for judging outputs, running improvement loops, queueing work, or exposing MCP tools? Start with `ts/`.
+- Want the full Python control plane for scenario execution, training, API serving, and operator workflows? Start with `autocontext/`.
+- Want the Node/TypeScript package for simulations, investigations, analysis, mission control, operator tooling, and external integrations? Start with `ts/`.
 - Want to wire another agent into autocontext? Start with the CLI-first guide in `autocontext/docs/agent-integration.md`.
 - Want to contribute or point a coding agent at the repo? Read `CONTRIBUTING.md` and `AGENTS.md`.
-
-<!-- autocontext-whats-new:start -->
-## What's New
-
-- GEPA-inspired ASI/Pareto optimizer wired into improvement loop
-- Component sensitivity profiling and credit assignment
-- Pluggable scoring backends with Elo and Glicko support
-- Novelty exploration and multi-basin playbook branching
-- Cost-aware loop control and long-run presets
-<!-- autocontext-whats-new:end -->
 
 ## Core Capabilities
 
 - Persistent playbooks, hints, tools, reports, and progress snapshots across runs
 - Staged validation, harness synthesis, and harness-aware execution
 - Scenario families for simulation, investigation, workflow, coordination, negotiation, artifact editing, operator-in-the-loop, tool-fragility, and schema-evolution tasks
+- Replays, checkpoints, reports, and exported artifacts for inspection and reuse
 - Frontier-to-local distillation with MLX on Apple Silicon
 - Runtime routing across Anthropic, OpenAI-compatible backends, Ollama, vLLM, MLX, and Pi-based runtimes
 - OpenClaw-facing APIs and agent integration surfaces
-- CLI, API server, and TypeScript terminal UI surfaces for operators and external agents
+- CLI, API server, MCP, and TypeScript/TUI surfaces for operators and external agents
 
 ## Quick Start From Source
 
@@ -109,28 +134,35 @@ The repo publishes two installable packages with different scopes:
 Important: the npm package for this project is `autoctx`.
 `autocontext` on npm is a different package.
 
-The Python package exposes the full `autoctx` control-plane CLI (`run`, `simulate`, `serve`, `mcp-serve`, `train`, `new-scenario`, `export`, `wait`, and more). The TypeScript package exposes the operator-facing CLI for simulations, investigations, analysis, missions, terminal UI, and MCP/Node workflows.
+The Python package exposes the full `autoctx` control-plane CLI for scenario execution, API serving, exports, training, and operator workflows. The TypeScript package exposes the `autoctx` CLI and library surface for simulations, investigations, analysis, mission control, MCP serving, and Node integrations.
 
 ## Which Package Should You Use?
 
 | If you want to... | Start here | Why |
 |---|---|---|
 | Run the full multi-generation control plane | [autocontext/README.md](autocontext/README.md) | Python has the API server, training loop, scenario scaffolding, export/import, and full CLI surface. |
-| Embed judging or improvement loops in a Node app | [ts/README.md](ts/README.md) | The TypeScript package is smaller and focused on judge-based workflows, queueing, and MCP serving. |
+| Run simulations, investigations, analysis, or missions from Node | [ts/README.md](ts/README.md) | The TypeScript package is focused on operator-facing workflows, integrations, mission control, and MCP serving. |
+| Embed autocontext in a Node app or operator workflow | [ts/README.md](ts/README.md) | The TypeScript package also exposes library surfaces for evaluation, artifacts, publishing, and integrations. |
 | Point an external agent at autocontext | [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md) | It documents the CLI-first contract, JSON output, MCP usage, and SDK options. |
 | Grab copy-paste integration snippets | [examples/README.md](examples/README.md) | The examples cover Python CLI, Claude Code MCP, Python SDK, and TypeScript library usage. |
-| Catch up on recent repo evolution | [CHANGELOG.md](CHANGELOG.md) | It summarizes the `v0.3.0` release and current unreleased work. |
+| Catch up on recent repo evolution | [CHANGELOG.md](CHANGELOG.md) | It summarizes recent public releases and notable changes. |
 
 ## Common Workflows
 
-- Run the generation loop: `uv run autoctx run --scenario grid_ctf --gens 3`
-- Inspect runs: `uv run autoctx list`, `uv run autoctx status <run_id>`
+- Run and improve a reusable scenario: `uv run autoctx run --scenario grid_ctf --gens 3`
+- Inspect or replay outputs: `uv run autoctx list`, `uv run autoctx status <run_id>`
 - Scaffold a custom scenario: `uv run autoctx new-scenario --template prompt-optimization --name my-task`
 - Export training data: `uv run autoctx export-training-data --scenario grid_ctf --all-runs --output training/grid_ctf.jsonl`
 - Train a local model: `uv run autoctx train --scenario grid_ctf --data training/grid_ctf.jsonl --time-budget 300`
-- Start the API server: `uv run autoctx serve --host 127.0.0.1 --port 8000`
-- Start the MCP server: `uv run autoctx mcp-serve`
+- Start operator surfaces: `uv run autoctx serve --host 127.0.0.1 --port 8000`, `uv run autoctx mcp-serve`
 - Wait on a monitor condition: `uv run autoctx wait <condition_id> --json`
+
+Representative TypeScript operator workflows:
+
+- Run a simulation: `npx autoctx simulate -d "simulate deploying a web service with rollback"`
+- Run an investigation: `npx autoctx investigate -d "why did conversion drop after Tuesday's release"`
+- Analyze an artifact: `npx autoctx analyze --id deploy_sim --type simulation`
+- Operate a mission: `npx autoctx mission create --name "Ship login" --goal "Implement OAuth"`
 
 `operator-in-the-loop` remains a typed scenario family for capability discovery and experimentation, but autocontext does not scaffold executable operator-loop runtimes. Use datasets, tools, or live-agent experiments instead of harness-owned escalation scripts.
 
@@ -140,6 +172,7 @@ MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenCl
 
 - `autocontext/`: Python package, CLI, API server, and training loop
 - `ts/`: published TypeScript package, CLI, and MCP-compatible tooling
+- `tui/`: interactive terminal UI
 - `docs/`: docs landing page and maintainer checklists
 - `examples/`: copy-paste integration snippets for package users and external agents
 - `infra/`: Docker, Fly.io, and bootstrap scripts

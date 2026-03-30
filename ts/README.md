@@ -8,7 +8,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 - **Simulation surface**: plain-language simulations with sweeps, replay, compare, and export
 - **Investigation surface**: evidence-driven diagnosis with hypotheses and confidence scoring
 - **Analysis surface**: interpret and compare runs, simulations, investigations, and missions
-- **Mission surface**: adaptive execution, mission artifacts, and campaign coordination
+- **Mission surface**: adaptive execution, mission artifacts, and verifier-driven control plane
 - **Knowledge system**: versioned playbooks, score trajectories, session reports, dead-end tracking
 - **Interactive server**: HTTP API, WebSocket control plane, bundled Ink TUI
 - **MCP control plane**: 40+ tools covering scenarios, runs, knowledge, evaluation, feedback, solve, sandbox, and export
@@ -249,13 +249,15 @@ const run = await runner.run("my-run", 3);
 
 ## TS / Python Scope
 
-The TypeScript package now includes the operator-facing 0.3.0 surfaces:
+The TypeScript package includes the operator-facing 0.3.0 surfaces:
 
 - `simulate`
 - `investigate`
 - `analyze`
 - `mission`
-- `train` (executor-backed hook surface)
+- `train` as a validation plus executor-hook surface
+
+`campaign` is still part of the concept model, but it is not yet a shipped first-class workflow.
 
 For end-to-end local MLX/CUDA training, the Python package is still the canonical out-of-the-box runtime.
 
@@ -269,7 +271,7 @@ These workflows require infrastructure not available in the npm package:
 - `trigger-distillation` — Training pipeline
 - Monitor conditions — Monitoring engine
 
-`train` is exposed in the TS CLI as a validation + executor-hook surface, but the npm package does not bundle a real MLX/CUDA trainer. For end-to-end local training, use the Python package (`pip install autoctx`) or inject a real `TrainingRunner` executor from code.
+`train` is exposed in the TS CLI as a validation plus executor-hook surface, but the npm package does not bundle a real MLX/CUDA trainer. For end-to-end local training, use the Python package (`pip install autoctx`) or inject a real `TrainingRunner` executor from code.
 
 ## Development
 
