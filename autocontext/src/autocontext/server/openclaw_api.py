@@ -65,7 +65,7 @@ def evaluate_strategy_endpoint(body: EvaluateRequest) -> dict[str, Any]:
     result = evaluate_strategy(body.scenario_name, body.strategy, body.num_matches, body.seed_base)
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result["error"]))
-    return result  # type: ignore[return-value]
+    return result
 
 
 @router.post("/validate")
@@ -79,7 +79,7 @@ def validate_strategy_endpoint(
     result = validate_strategy_against_harness(body.scenario_name, body.strategy, ctx=ctx)
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result["error"]))
-    return result  # type: ignore[return-value]
+    return result
 
 
 @router.post("/artifacts")
@@ -93,7 +93,7 @@ def publish_artifact_endpoint(
     result = publish_artifact(ctx, body)
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result["error"]))
-    return result  # type: ignore[return-value]
+    return result
 
 
 @router.get("/artifacts")
@@ -105,7 +105,7 @@ def list_artifacts_endpoint(
     """List published artifacts with optional filters."""
     from autocontext.mcp.tools import list_artifacts
 
-    return list_artifacts(ctx, scenario=scenario, artifact_type=artifact_type)  # type: ignore[return-value]
+    return list_artifacts(ctx, scenario=scenario, artifact_type=artifact_type)
 
 
 @router.get("/artifacts/{artifact_id}")
@@ -119,7 +119,7 @@ def fetch_artifact_endpoint(
     result = fetch_artifact(ctx, artifact_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=str(result["error"]))
-    return result  # type: ignore[return-value]
+    return result
 
 
 @router.get("/distill")
@@ -130,7 +130,7 @@ def distill_status_endpoint(
     """Check status of distillation workflows, optionally filtered by scenario."""
     from autocontext.mcp.tools import distill_status
 
-    return distill_status(ctx, scenario=scenario)  # type: ignore[return-value]
+    return distill_status(ctx, scenario=scenario)
 
 
 @router.post("/distill")
@@ -149,7 +149,7 @@ def trigger_distillation_endpoint(
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result["error"]))
-    return result  # type: ignore[return-value]
+    return result
 
 
 @router.get("/distill/{job_id}")
@@ -163,7 +163,7 @@ def get_distill_job_endpoint(
     result = get_distill_job(ctx, job_id)
     if "error" in result:
         raise HTTPException(status_code=404, detail=str(result["error"]))
-    return result  # type: ignore[return-value]
+    return result
 
 
 @router.patch("/distill/{job_id}")
@@ -183,7 +183,7 @@ def update_distill_job_endpoint(
     )
     if "error" in result:
         raise HTTPException(status_code=400, detail=str(result["error"]))
-    return result  # type: ignore[return-value]
+    return result
 
 
 @router.get("/capabilities")
@@ -191,7 +191,7 @@ def capabilities_endpoint() -> dict[str, Any]:
     """Return capability metadata for this autocontext instance."""
     from autocontext.mcp.tools import get_capabilities
 
-    return get_capabilities()  # type: ignore[return-value]
+    return get_capabilities()
 
 
 # -- Discovery & capability advertisement (AC-195) --
@@ -204,7 +204,7 @@ def discovery_capabilities_endpoint(
     """Full capability advertisement: version, runtime health, scenarios, artifacts."""
     from autocontext.mcp.tools import skill_advertise_capabilities
 
-    return skill_advertise_capabilities(ctx)  # type: ignore[return-value]
+    return skill_advertise_capabilities(ctx)
 
 
 @router.get("/discovery/scenario/{scenario_name}")
@@ -216,7 +216,7 @@ def discovery_scenario_endpoint(
     from autocontext.mcp.tools import skill_scenario_capabilities
 
     try:
-        return skill_scenario_capabilities(ctx, scenario_name)  # type: ignore[return-value]
+        return skill_scenario_capabilities(ctx, scenario_name)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Scenario '{scenario_name}' not found") from None
 
@@ -228,7 +228,7 @@ def discovery_health_endpoint(
     """Runtime health: executor mode, provider, harness mode, available models."""
     from autocontext.mcp.tools import skill_runtime_health
 
-    return skill_runtime_health(ctx)  # type: ignore[return-value]
+    return skill_runtime_health(ctx)
 
 
 @router.get("/discovery/scenario/{scenario_name}/artifacts")
@@ -239,7 +239,7 @@ def discovery_scenario_artifacts_endpoint(
     """All artifacts associated with a specific scenario."""
     from autocontext.mcp.tools import skill_scenario_artifact_lookup
 
-    return skill_scenario_artifact_lookup(ctx, scenario_name)  # type: ignore[return-value]
+    return skill_scenario_artifact_lookup(ctx, scenario_name)
 
 
 @router.get("/skill/manifest")
@@ -249,4 +249,4 @@ def skill_manifest_endpoint(
     """Return the ClawHub skill manifest for this autocontext instance."""
     from autocontext.mcp.tools import skill_manifest
 
-    return skill_manifest(ctx)  # type: ignore[return-value]
+    return skill_manifest(ctx)

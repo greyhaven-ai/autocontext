@@ -7,6 +7,7 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 from autocontext.agents.feedback_loops import (
     AnalystRating,
@@ -24,6 +25,13 @@ from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class DictSerializable(Protocol):
+    """Protocol for objects that support .to_dict() serialization."""
+
+    def to_dict(self) -> dict[str, Any]: ...
 
 EMPTY_PLAYBOOK_SENTINEL = "No playbook yet. Start from scenario rules and observation."
 
@@ -965,12 +973,12 @@ class ArtifactStore:
     def _progress_report_dir(self, scenario_name: str) -> Path:
         return self.knowledge_root / scenario_name / "progress_reports"
 
-    def write_progress_report(self, scenario_name: str, run_id: str, report: object) -> None:
+    def write_progress_report(self, scenario_name: str, run_id: str, report: DictSerializable) -> None:
         """Persist a RunProgressReport as JSON."""
         pr_dir = self._progress_report_dir(scenario_name)
         pr_dir.mkdir(parents=True, exist_ok=True)
         path = pr_dir / f"{run_id}.json"
-        self.write_json(path, report.to_dict())  # type: ignore[attr-defined]
+        self.write_json(path, report.to_dict())
 
     def read_progress_report(self, scenario_name: str, run_id: str) -> object | None:
         """Read a RunProgressReport, or None if missing."""
@@ -1016,12 +1024,12 @@ class ArtifactStore:
     def _weakness_dir(self, scenario_name: str) -> Path:
         return self.knowledge_root / scenario_name / "weakness_reports"
 
-    def write_weakness_report(self, scenario_name: str, run_id: str, report: object) -> None:
+    def write_weakness_report(self, scenario_name: str, run_id: str, report: DictSerializable) -> None:
         """Persist a WeaknessReport as JSON."""
         wr_dir = self._weakness_dir(scenario_name)
         wr_dir.mkdir(parents=True, exist_ok=True)
         path = wr_dir / f"{run_id}.json"
-        self.write_json(path, report.to_dict())  # type: ignore[attr-defined]
+        self.write_json(path, report.to_dict())
 
     def read_weakness_report(self, scenario_name: str, run_id: str) -> object | None:
         """Read a WeaknessReport, or None if missing."""
@@ -1185,7 +1193,7 @@ class ArtifactStore:
 
     # --- Pi session artifacts (AC-224) ----------------------------------------
 
-    def persist_pi_session(self, run_id: str, generation: int, trace: object, *, role: str = "") -> Path:
+    def persist_pi_session(self, run_id: str, generation: int, trace: DictSerializable, *, role: str = "") -> Path:
         """Persist a PiExecutionTrace to the generation directory.
 
         Writes:
@@ -1201,7 +1209,7 @@ class ArtifactStore:
             Path to the pi_session.json file.
         """
         gen_dir = self.generation_dir(run_id, generation)
-        trace_dict: dict[str, object] = trace.to_dict()  # type: ignore[attr-defined]
+        trace_dict: dict[str, object] = trace.to_dict()
         prefix = f"pi_{role}" if role else "pi"
         session_path = gen_dir / f"{prefix}_session.json"
         self.write_json(session_path, trace_dict)

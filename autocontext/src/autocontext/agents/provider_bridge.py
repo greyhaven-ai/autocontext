@@ -129,7 +129,7 @@ def _create_provider_bridge(
     from autocontext.providers.registry import create_provider
 
     if provider_type == "mlx":
-        from autocontext.providers.mlx_provider import MLXProvider  # type: ignore[import-untyped]
+        from autocontext.providers.mlx_provider import MLXProvider
 
         model_path = str(model_override or getattr(settings, "mlx_model_path", ""))
         provider: LLMProvider = MLXProvider(

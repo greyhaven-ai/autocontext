@@ -210,7 +210,7 @@ def _run_agent_task(
     cls = SCENARIO_REGISTRY[scenario_name]
     instance = cls()
     # Runtime-validated: _is_agent_task() already confirmed this
-    task: AgentTaskInterface = instance  # type: ignore[assignment]
+    task: AgentTaskInterface = instance
 
     provider, provider_model = _resolve_agent_task_runtime(settings, scenario_name)
     state = task.prepare_context(task.initial_state())

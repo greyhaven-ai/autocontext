@@ -74,7 +74,7 @@ class AgentSdkClient(LanguageModelClient):
         return ModelResponse(text=result_text, usage=usage)
 
     async def _query(self, prompt: str, model: str, role: str, system_prompt: str = "") -> str:
-        from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query  # type: ignore[import-not-found]
+        from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
         tool_list = ROLE_TOOL_CONFIG.get(role, ROLE_TOOL_CONFIG["competitor"])
         options = ClaudeAgentOptions(

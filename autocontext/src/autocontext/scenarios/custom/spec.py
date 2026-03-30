@@ -121,7 +121,7 @@ class ScenarioSpec:
                     name=s["name"],
                     description=s["description"],
                     formula_terms=s["formula_terms"],
-                    noise_range=tuple(s["noise_range"]),  # type: ignore[arg-type]
+                    noise_range=tuple(s["noise_range"]),
                 )
                 for s in data.get("scoring_components", [])
             ],

@@ -49,7 +49,7 @@ def _load_model_and_tokenizer(model_dir: Path) -> tuple[Any, Any]:
         if not HAS_MLX:
             raise ImportError("MLX is not installed")
 
-        import mlx.core as mx  # type: ignore[import-not-found]
+        import mlx.core as mx
 
         from autocontext.training.autoresearch.train import GPTModel, ModelConfig, load_checkpoint
     except ImportError as exc:
@@ -93,7 +93,7 @@ def _load_tokenizer(model_dir: Path) -> Any:
     import json
 
     try:
-        import tiktoken  # type: ignore[import-not-found]
+        import tiktoken
 
         from autocontext.training.autoresearch.prepare import (
             _BPE_PAT,
@@ -226,7 +226,7 @@ class MLXProvider(LLMProvider):
         Returns:
             List of all tokens (prompt + generated).
         """
-        import mlx.core as mx  # type: ignore[import-not-found]
+        import mlx.core as mx
 
         tokens = list(prompt_tokens)
         seq_len = int(self._model.cfg.seq_len)

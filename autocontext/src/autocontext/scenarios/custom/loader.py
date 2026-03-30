@@ -28,7 +28,7 @@ def load_custom_scenario(
 
         mod = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = mod
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        spec.loader.exec_module(mod)
 
     for attr_name in dir(mod):
         attr = getattr(mod, attr_name)

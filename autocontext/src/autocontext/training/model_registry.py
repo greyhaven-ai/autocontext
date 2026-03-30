@@ -198,17 +198,17 @@ class ModelRegistry:
                 and rec.activation_state == "active"
                 and _runtime_slots_overlap(rec.runtime_types, target.runtime_types)
             ):
-                rec.activation_state = "disabled"  # type: ignore[misc]
+                rec.activation_state = "disabled"
                 self.register(rec)
 
-        target.activation_state = "active"  # type: ignore[misc]
+        target.activation_state = "active"
         self.register(target)
 
     def deactivate(self, artifact_id: str) -> None:
         rec = self.load(artifact_id)
         if rec is None:
             raise ValueError(f"Artifact {artifact_id} not found")
-        rec.activation_state = "disabled"  # type: ignore[misc]
+        rec.activation_state = "disabled"
         self.register(rec)
 
 

@@ -149,7 +149,7 @@ class HintManager:
         for collection in (self._active, self._archived):
             hint = self._find_hint(normalized, collection)
             if hint is not None:
-                hint.impact_score = new_score  # type: ignore[misc]
+                hint.impact_score = new_score
                 self._reassign_ranks()
                 return
 

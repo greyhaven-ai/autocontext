@@ -115,7 +115,7 @@ def patch_legacy_generated_revise_output(
     ) -> str:
         return revise_generated_output(self, output, judge_result, state)
 
-    cls.revise_output = _patched_revise_output  # type: ignore[method-assign]
+    cls.revise_output = _patched_revise_output
     return cls
 
 
@@ -172,5 +172,5 @@ def patch_legacy_generated_evaluate_output(
             internal_retries=result.internal_retries,
         )
 
-    cls.evaluate_output = _patched_evaluate_output  # type: ignore[method-assign]
+    cls.evaluate_output = _patched_evaluate_output
     return cls

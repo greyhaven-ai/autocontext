@@ -267,7 +267,7 @@ class WorldStateManager:
     def snapshot(self) -> WorldState:
         """Return a deep copy of the current state with a new ID."""
         snap = copy.deepcopy(self._state)
-        snap.state_id = f"ws-{uuid.uuid4().hex[:8]}"  # type: ignore[misc]
+        snap.state_id = f"ws-{uuid.uuid4().hex[:8]}"
         return snap
 
     def get_entity(self, entity_id: str) -> WorldEntity | None:
@@ -281,7 +281,7 @@ class WorldStateManager:
         for delta in transition.changes:
             self._apply_delta(delta)
 
-        self._state.step_index += 1  # type: ignore[misc]
+        self._state.step_index += 1
         self._sync_collections()
         return self.snapshot()
 
@@ -465,11 +465,11 @@ class WorldStateManager:
             entity = self._entity_map.get(delta.target_id)
             if entity is not None and delta.field is not None:
                 if delta.field == "status":
-                    entity.status = delta.new_value  # type: ignore[misc]
+                    entity.status = delta.new_value
                 elif delta.field == "name":
-                    entity.name = delta.new_value  # type: ignore[misc]
+                    entity.name = delta.new_value
                 elif delta.field == "entity_type":
-                    entity.entity_type = delta.new_value  # type: ignore[misc]
+                    entity.entity_type = delta.new_value
                 else:
                     entity.properties[delta.field] = delta.new_value
 
@@ -490,15 +490,15 @@ class WorldStateManager:
             resource = self._resource_map.get(delta.target_id)
             if resource is not None and delta.field is not None:
                 if delta.field == "quantity":
-                    resource.quantity = delta.new_value  # type: ignore[misc]
+                    resource.quantity = delta.new_value
                 elif delta.field == "capacity":
-                    resource.capacity = delta.new_value  # type: ignore[misc]
+                    resource.capacity = delta.new_value
                 elif delta.field == "owner_entity_id":
-                    resource.owner_entity_id = delta.new_value  # type: ignore[misc]
+                    resource.owner_entity_id = delta.new_value
                 elif delta.field == "name":
-                    resource.name = delta.new_value  # type: ignore[misc]
+                    resource.name = delta.new_value
                 elif delta.field == "resource_type":
-                    resource.resource_type = delta.new_value  # type: ignore[misc]
+                    resource.resource_type = delta.new_value
 
         elif dt == "resource_removed":
             self._resource_map.pop(delta.target_id, None)
@@ -506,7 +506,7 @@ class WorldStateManager:
         elif dt == "variable_revealed":
             for var in self._state.hidden_variables:
                 if var.variable_id == delta.target_id:
-                    var.revealed = True  # type: ignore[misc]
+                    var.revealed = True
                     break
 
         elif dt == "variable_added":
@@ -518,17 +518,17 @@ class WorldStateManager:
                 if var.variable_id != delta.target_id or delta.field is None:
                     continue
                 if delta.field == "revealed":
-                    var.revealed = delta.new_value  # type: ignore[misc]
+                    var.revealed = delta.new_value
                 elif delta.field == "name":
-                    var.name = delta.new_value  # type: ignore[misc]
+                    var.name = delta.new_value
                 elif delta.field == "value":
                     var.value = delta.new_value
                 elif delta.field == "reveal_condition":
-                    var.reveal_condition = delta.new_value  # type: ignore[misc]
+                    var.reveal_condition = delta.new_value
                 break
 
         elif dt == "variable_removed":
-            self._state.hidden_variables = [  # type: ignore[misc]
+            self._state.hidden_variables = [
                 var for var in self._state.hidden_variables
                 if var.variable_id != delta.target_id
             ]
@@ -541,15 +541,15 @@ class WorldStateManager:
             if isinstance(delta.old_value, dict):
                 src = delta.old_value.get("source_entity_id")
                 tgt = delta.old_value.get("target_entity_id")
-                self._state.dependencies = [  # type: ignore[misc]
+                self._state.dependencies = [
                     d for d in self._state.dependencies
                     if not (d.source_entity_id == src and d.target_entity_id == tgt)
                 ]
 
     def _sync_collections(self) -> None:
         """Sync internal maps back to state lists."""
-        self._state.entities = list(self._entity_map.values())  # type: ignore[misc]
-        self._state.resources = list(self._resource_map.values())  # type: ignore[misc]
+        self._state.entities = list(self._entity_map.values())
+        self._state.resources = list(self._resource_map.values())
 
     @staticmethod
     def _coerce_list(value: Any) -> list[str]:

@@ -142,16 +142,16 @@ class MonitorEngine:
         """Dispatch to the appropriate evaluator based on condition type."""
         ct = condition.condition_type
         if ct == ConditionType.METRIC_THRESHOLD:
-            return evaluate_metric_threshold(event, payload, condition)  # type: ignore[arg-type]
+            return evaluate_metric_threshold(event, payload, condition)
         if ct == ConditionType.STALL_WINDOW:
             gate_history = payload.get("gate_history", [])
             if not isinstance(gate_history, list):
                 gate_history = []
-            return evaluate_stall_window(event, payload, condition, gate_history)  # type: ignore[arg-type]
+            return evaluate_stall_window(event, payload, condition, gate_history)
         if ct == ConditionType.ARTIFACT_CREATED:
-            return evaluate_artifact_created(event, payload, condition)  # type: ignore[arg-type]
+            return evaluate_artifact_created(event, payload, condition)
         if ct == ConditionType.PROCESS_EXIT:
-            return evaluate_process_exit(event, payload, condition)  # type: ignore[arg-type]
+            return evaluate_process_exit(event, payload, condition)
         # HEARTBEAT_LOST is handled by the background thread, not event-driven
         return None
 

@@ -155,7 +155,7 @@ def _text_change_magnitude(old: str, new: str) -> float:
     return round(1.0 - common / max_len, 4)
 
 
-def _list_change_magnitude(old: list, new: list) -> float:  # type: ignore[type-arg]
+def _list_change_magnitude(old: list, new: list) -> float:
     """Compute change magnitude for ordered lists."""
     old_set = set(str(x) for x in old)
     new_set = set(str(x) for x in new)

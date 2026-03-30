@@ -22,7 +22,7 @@ from autocontext.execution.ast_safety import check_ast_safety
 logger = logging.getLogger(__name__)
 
 _SAFE_BUILTINS = {
-    k: __builtins__[k] if isinstance(__builtins__, dict) else getattr(__builtins__, k)  # type: ignore[index]
+    k: __builtins__[k] if isinstance(__builtins__, dict) else getattr(__builtins__, k)
     for k in (
         "abs", "all", "any", "bool", "dict", "enumerate", "filter", "float",
         "frozenset", "int", "isinstance", "issubclass", "len", "list", "map",

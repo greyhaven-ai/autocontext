@@ -365,7 +365,7 @@ def validate_execution(source: str) -> list[str]:
         mod = importlib.util.module_from_spec(spec)
         try:
             sys.modules[mod_name] = mod
-            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            spec.loader.exec_module(mod)
         except Exception as exc:
             logger.debug("scenarios.custom.agent_task_validator: caught Exception", exc_info=True)
             errors.append(f"import failed: {exc}")

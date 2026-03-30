@@ -198,7 +198,7 @@ class AgentTaskCreator:
         # 7. Load and register
         cls = self._load_agent_task(custom_dir, name)
         from autocontext.scenarios import SCENARIO_REGISTRY
-        SCENARIO_REGISTRY[name] = cls  # type: ignore[assignment]
+        SCENARIO_REGISTRY[name] = cls
         logger.info("registered agent task '%s'", name)
 
         return cls()
@@ -216,7 +216,7 @@ class AgentTaskCreator:
 
         mod = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = mod
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        spec.loader.exec_module(mod)
 
         for attr_name in dir(mod):
             attr = getattr(mod, attr_name)
@@ -226,6 +226,6 @@ class AgentTaskCreator:
                 and attr is not AgentTaskInterface
             ):
                 attr = patch_legacy_generated_evaluate_output(attr, source_path)
-                return patch_legacy_generated_revise_output(attr, source_path)  # type: ignore[return-value]
+                return patch_legacy_generated_revise_output(attr, source_path)
 
         raise ImportError(f"no AgentTaskInterface subclass found in {module_name}")
