@@ -82,8 +82,9 @@ class TestHermesCLIRuntime:
         args = call_args.args[0]
         assert args[:2] == ["/usr/local/bin/hermes", "chat"]
         assert "--query" in args
-        assert "--provider" in args
-        assert "main" in args
+        # Hermes v0.5.0+: custom endpoints auto-detected via env vars,
+        # --provider main was removed
+        assert "--provider" not in args
         assert call_args.kwargs["cwd"] == "/my/ws"
         env = call_args.kwargs["env"]
         assert env["OPENAI_BASE_URL"] == "http://localhost:8080/v1"
