@@ -47,10 +47,33 @@ class TestRunStatus:
         result = store.run_status("nonexistent")
         assert result == []
 
-    def test_run_status_returns_generation_trajectory(self, store: SQLiteStore) -> None:
+    def test_run_status_preserves_generation_status_fields(self, store: SQLiteStore) -> None:
         store.create_run("run-1", "grid_ctf", 3, "local")
+        store.upsert_generation("run-1", 1, 0.40, 0.50, 1000.0, 2, 1, "advance", "completed")
+        store.upsert_generation("run-1", 2, 0.45, 0.55, 1010.0, 3, 2, "retry", "running")
         result = store.run_status("run-1")
-        assert isinstance(result, list)
+        assert result == [
+            {
+                "generation_index": 1,
+                "mean_score": 0.40,
+                "best_score": 0.50,
+                "elo": 1000.0,
+                "wins": 2,
+                "losses": 1,
+                "gate_decision": "advance",
+                "status": "completed",
+            },
+            {
+                "generation_index": 2,
+                "mean_score": 0.45,
+                "best_score": 0.55,
+                "elo": 1010.0,
+                "wins": 3,
+                "losses": 2,
+                "gate_decision": "retry",
+                "status": "running",
+            },
+        ]
 
 
 class TestListSolved:

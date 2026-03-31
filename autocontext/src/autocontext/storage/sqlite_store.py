@@ -706,7 +706,17 @@ class SQLiteStore:
 
     def run_status(self, run_id: str) -> list[dict[str, Any]]:
         """Return per-generation status for a run."""
-        return self.get_generation_trajectory(run_id)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status
+                FROM generations
+                WHERE run_id = ?
+                ORDER BY generation_index
+                """,
+                (run_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def list_solved(self) -> list[dict[str, Any]]:
         """Return best knowledge snapshots per scenario."""
