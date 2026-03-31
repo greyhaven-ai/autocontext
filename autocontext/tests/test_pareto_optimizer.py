@@ -27,7 +27,7 @@ class TestActionableSideInfo:
     def test_roundtrip(self) -> None:
         from autocontext.harness.optimizer.pareto import ActionableSideInfo
 
-        asi = ActionableSideInfo("ex-2", "near_miss", "Almost correct but off by 1", "Fix loop bound")
+        asi = ActionableSideInfo(example_id="ex-2", outcome="near_miss", diagnosis="Almost correct but off by 1", suggested_fix="Fix loop bound")
         d = asi.to_dict()
         restored = ActionableSideInfo.from_dict(d)
         assert restored.diagnosis == "Almost correct but off by 1"
@@ -203,8 +203,8 @@ class TestMergeCandidates:
             merge_candidates,
         )
 
-        a = Candidate("a", "art-a", {}, [ActionableSideInfo("e1", "fail", "diag1", "fix1")])
-        b = Candidate("b", "art-b", {}, [ActionableSideInfo("e2", "fail", "diag2", "fix2")])
+        a = Candidate("a", "art-a", {}, [ActionableSideInfo(example_id="e1", outcome="fail", diagnosis="diag1", suggested_fix="fix1")])
+        b = Candidate("b", "art-b", {}, [ActionableSideInfo(example_id="e2", outcome="fail", diagnosis="diag2", suggested_fix="fix2")])
 
         merged = merge_candidates(a, b)
         assert len(merged.asi) == 2

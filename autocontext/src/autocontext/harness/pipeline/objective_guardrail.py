@@ -14,12 +14,13 @@ Key types:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass(slots=True)
-class ObjectiveGuardrailPolicy:
+
+class ObjectiveGuardrailPolicy(BaseModel):
     """Configurable thresholds for objective verification guardrail."""
 
     min_recall: float = 0.5
@@ -27,58 +28,31 @@ class ObjectiveGuardrailPolicy:
     max_false_positive_rate: float = 0.3
     max_rubric_objective_gap: float = 0.2
     enabled: bool = True
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "min_recall": self.min_recall,
-            "min_precision": self.min_precision,
-            "max_false_positive_rate": self.max_false_positive_rate,
-            "max_rubric_objective_gap": self.max_rubric_objective_gap,
-            "enabled": self.enabled,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ObjectiveGuardrailPolicy:
-        return cls(
-            min_recall=data.get("min_recall", 0.5),
-            min_precision=data.get("min_precision", 0.5),
-            max_false_positive_rate=data.get("max_false_positive_rate", 0.3),
-            max_rubric_objective_gap=data.get("max_rubric_objective_gap", 0.2),
-            enabled=data.get("enabled", True),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class GuardrailResult:
+class GuardrailResult(BaseModel):
     """Outcome of an objective guardrail check."""
 
     passed: bool
     reason: str
     violations: list[str]
     metrics: dict[str, float]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "passed": self.passed,
-            "reason": self.reason,
-            "violations": self.violations,
-            "metrics": self.metrics,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GuardrailResult:
-        return cls(
-            passed=data.get("passed", False),
-            reason=data.get("reason", ""),
-            violations=data.get("violations", []),
-            metrics=data.get("metrics", {}),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def check_objective_guardrail(

@@ -85,8 +85,8 @@ class TestSelfPlayPool:
         config = SelfPlayConfig(enabled=True, pool_size=3)
         pool = SelfPlayPool(config)
 
-        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
-        pool.add(SelfPlayOpponent({"a": 2}, generation=2, elo=1050, score=0.6))
+        pool.add(SelfPlayOpponent(strategy={"a": 1}, generation=1, elo=1000, score=0.5))
+        pool.add(SelfPlayOpponent(strategy={"a": 2}, generation=2, elo=1050, score=0.6))
 
         opponents = pool.get_opponents()
         assert len(opponents) == 2
@@ -101,9 +101,9 @@ class TestSelfPlayPool:
         config = SelfPlayConfig(enabled=True, pool_size=2)
         pool = SelfPlayPool(config)
 
-        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
-        pool.add(SelfPlayOpponent({"a": 2}, generation=2, elo=1050, score=0.6))
-        pool.add(SelfPlayOpponent({"a": 3}, generation=3, elo=1100, score=0.7))
+        pool.add(SelfPlayOpponent(strategy={"a": 1}, generation=1, elo=1000, score=0.5))
+        pool.add(SelfPlayOpponent(strategy={"a": 2}, generation=2, elo=1050, score=0.6))
+        pool.add(SelfPlayOpponent(strategy={"a": 3}, generation=3, elo=1100, score=0.7))
 
         opponents = pool.get_opponents()
         assert len(opponents) == 2
@@ -120,7 +120,7 @@ class TestSelfPlayPool:
 
         config = SelfPlayConfig(enabled=False)
         pool = SelfPlayPool(config)
-        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
+        pool.add(SelfPlayOpponent(strategy={"a": 1}, generation=1, elo=1000, score=0.5))
 
         assert pool.get_opponents() == []
 
@@ -164,8 +164,8 @@ class TestBuildOpponentPool:
         baselines = [{"strategy": "baseline"}]
         config = SelfPlayConfig(enabled=True, pool_size=3, weight=0.5)
         pool = SelfPlayPool(config)
-        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
-        pool.add(SelfPlayOpponent({"a": 2}, generation=2, elo=1050, score=0.6))
+        pool.add(SelfPlayOpponent(strategy={"a": 1}, generation=1, elo=1000, score=0.5))
+        pool.add(SelfPlayOpponent(strategy={"a": 2}, generation=2, elo=1050, score=0.6))
 
         result = build_opponent_pool(baselines, pool)
         # Should have baselines + self-play opponents
@@ -181,7 +181,7 @@ class TestBuildOpponentPool:
 
         baselines = [{"strategy": "baseline"}]
         pool = SelfPlayPool(SelfPlayConfig(enabled=True, pool_size=3, weight=0.25))
-        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
+        pool.add(SelfPlayOpponent(strategy={"a": 1}, generation=1, elo=1000, score=0.5))
 
         result = build_opponent_pool(baselines, pool, trials=4)
 
@@ -199,7 +199,7 @@ class TestBuildOpponentPool:
 
         baselines = [{"strategy": "baseline"}]
         pool = SelfPlayPool(SelfPlayConfig(enabled=True))
-        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
+        pool.add(SelfPlayOpponent(strategy={"a": 1}, generation=1, elo=1000, score=0.5))
 
         result = build_opponent_pool(baselines, pool)
         self_play_entries = [e for e in result if e.get("source") == "self_play"]
@@ -214,7 +214,7 @@ class TestBuildOpponentPool:
         )
 
         pool = SelfPlayPool(SelfPlayConfig(enabled=True))
-        pool.add(SelfPlayOpponent({"a": 1}, generation=1, elo=1000, score=0.5))
+        pool.add(SelfPlayOpponent(strategy={"a": 1}, generation=1, elo=1000, score=0.5))
 
         result = build_opponent_pool([], pool)
         assert len(result) >= 1

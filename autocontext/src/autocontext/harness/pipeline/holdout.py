@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass(slots=True)
-class HoldoutPolicy:
+
+class HoldoutPolicy(BaseModel):
     """Configurable holdout evaluation policy."""
 
     holdout_seeds: int = 5
@@ -28,32 +28,17 @@ class HoldoutPolicy:
     max_generalization_gap: float = 0.2
     seed_offset: int = 10000
     enabled: bool = True
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "holdout_seeds": self.holdout_seeds,
-            "min_holdout_score": self.min_holdout_score,
-            "max_generalization_gap": self.max_generalization_gap,
-            "seed_offset": self.seed_offset,
-            "enabled": self.enabled,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HoldoutPolicy:
-        return cls(
-            holdout_seeds=data.get("holdout_seeds", 5),
-            min_holdout_score=data.get("min_holdout_score", 0.5),
-            max_generalization_gap=data.get("max_generalization_gap", 0.2),
-            seed_offset=data.get("seed_offset", 10000),
-            enabled=data.get("enabled", True),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class HoldoutResult:
+class HoldoutResult(BaseModel):
     """Outcome of holdout evaluation."""
 
     holdout_mean_score: float
@@ -62,30 +47,14 @@ class HoldoutResult:
     generalization_gap: float
     passed: bool
     reason: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "holdout_mean_score": self.holdout_mean_score,
-            "holdout_scores": self.holdout_scores,
-            "in_sample_score": self.in_sample_score,
-            "generalization_gap": self.generalization_gap,
-            "passed": self.passed,
-            "reason": self.reason,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HoldoutResult:
-        return cls(
-            holdout_mean_score=data.get("holdout_mean_score", 0.0),
-            holdout_scores=data.get("holdout_scores", []),
-            in_sample_score=data.get("in_sample_score", 0.0),
-            generalization_gap=data.get("generalization_gap", 0.0),
-            passed=data.get("passed", False),
-            reason=data.get("reason", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def holdout_check(

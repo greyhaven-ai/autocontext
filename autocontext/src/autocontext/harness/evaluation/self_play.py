@@ -14,42 +14,29 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass(slots=True)
-class SelfPlayOpponent:
+
+class SelfPlayOpponent(BaseModel):
     """A prior generation's strategy used as an opponent."""
 
     strategy: dict[str, Any]
     generation: int
     elo: float
     score: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "strategy": self.strategy,
-            "generation": self.generation,
-            "elo": self.elo,
-            "score": self.score,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SelfPlayOpponent:
-        return cls(
-            strategy=data.get("strategy", {}),
-            generation=data.get("generation", 0),
-            elo=data.get("elo", 1000.0),
-            score=data.get("score", 0.0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class SelfPlayConfig:
+class SelfPlayConfig(BaseModel):
     """Configuration for self-play opponent pool."""
 
     enabled: bool = False
@@ -57,19 +44,11 @@ class SelfPlayConfig:
     weight: float = 0.5  # fraction of matches vs self-play opponents
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "enabled": self.enabled,
-            "pool_size": self.pool_size,
-            "weight": self.weight,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SelfPlayConfig:
-        return cls(
-            enabled=data.get("enabled", False),
-            pool_size=data.get("pool_size", 3),
-            weight=data.get("weight", 0.5),
-        )
+        return cls.model_validate(data)
 
 
 class SelfPlayPool:

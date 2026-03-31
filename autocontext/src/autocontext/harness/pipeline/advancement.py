@@ -14,8 +14,9 @@ Key types:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 # Thresholds
 _ERROR_RATE_THRESHOLD = 0.2
@@ -23,8 +24,7 @@ _LOW_CONFIDENCE_THRESHOLD = 0.5
 _HIGH_VARIANCE_THRESHOLD = 0.04
 
 
-@dataclass(slots=True)
-class AdvancementMetrics:
+class AdvancementMetrics(BaseModel):
     """Composite metrics input to gate decisions."""
 
     best_score: float
@@ -42,57 +42,21 @@ class AdvancementMetrics:
     generalization_gap: float | None = None
     cost_usd: float = 0.0
     tokens_used: int = 0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def delta(self) -> float:
         return round(self.best_score - self.previous_best, 6)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "best_score": self.best_score,
-            "mean_score": self.mean_score,
-            "previous_best": self.previous_best,
-            "score_variance": self.score_variance,
-            "sample_count": self.sample_count,
-            "error_rate": self.error_rate,
-            "crash_count": self.crash_count,
-            "confidence": self.confidence,
-            "sample_agreement": self.sample_agreement,
-            "search_proxy_score": self.search_proxy_score,
-            "resolved_truth_score": self.resolved_truth_score,
-            "previous_resolved_truth_score": self.previous_resolved_truth_score,
-            "generalization_gap": self.generalization_gap,
-            "cost_usd": self.cost_usd,
-            "tokens_used": self.tokens_used,
-            "delta": self.delta,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AdvancementMetrics:
-        return cls(
-            best_score=data.get("best_score", 0.0),
-            mean_score=data.get("mean_score", 0.0),
-            previous_best=data.get("previous_best", 0.0),
-            score_variance=data.get("score_variance", 0.0),
-            sample_count=data.get("sample_count", 0),
-            error_rate=data.get("error_rate", 0.0),
-            crash_count=data.get("crash_count", 0),
-            confidence=data.get("confidence", 1.0),
-            sample_agreement=data.get("sample_agreement", 1.0),
-            search_proxy_score=data.get("search_proxy_score"),
-            resolved_truth_score=data.get("resolved_truth_score"),
-            previous_resolved_truth_score=data.get("previous_resolved_truth_score"),
-            generalization_gap=data.get("generalization_gap"),
-            cost_usd=data.get("cost_usd", 0.0),
-            tokens_used=data.get("tokens_used", 0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class AdvancementRationale:
+class AdvancementRationale(BaseModel):
     """Operator-visible gate decision explanation."""
 
     decision: str  # advance, retry, rollback
@@ -101,30 +65,14 @@ class AdvancementRationale:
     binding_checks: list[str]
     proxy_signals: list[str]
     risk_flags: list[str]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "decision": self.decision,
-            "reason": self.reason,
-            "component_scores": self.component_scores,
-            "binding_checks": self.binding_checks,
-            "proxy_signals": self.proxy_signals,
-            "risk_flags": self.risk_flags,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AdvancementRationale:
-        return cls(
-            decision=data.get("decision", "rollback"),
-            reason=data.get("reason", ""),
-            component_scores=data.get("component_scores", {}),
-            binding_checks=data.get("binding_checks", []),
-            proxy_signals=data.get("proxy_signals", []),
-            risk_flags=data.get("risk_flags", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def evaluate_advancement(
