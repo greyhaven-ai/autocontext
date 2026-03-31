@@ -100,6 +100,34 @@ Release notes:
 - No `NPM_TOKEN`, `NODE_AUTH_TOKEN`, or PyPI API token should be required for the publish jobs.
 - After cutover, remove the old combined `.github/workflows/publish.yml` publisher registration from PyPI and npm.
 
+## Type System Conventions
+
+### ABC vs Protocol
+
+- **ABC** — for internal class hierarchies where subclasses share implementation via inheritance (e.g., `ScenarioInterface`, `LLMProvider`, `AgentRuntime`, `Notifier`)
+- **Protocol** — for duck-typed integration points where implementors shouldn't need to import the base class (e.g., `ExecutionEngine`, `Evaluator`, `DictSerializable`, `ReplWorkerProtocol`)
+
+### Dict types
+
+- Use `dict[str, Any]` for JSON-like dicts (not `dict[str, object]`)
+- Prefer `TypedDict` when the dict shape is known at all call sites
+- Use `Mapping[str, Any]` for read-only dict parameters
+
+### Collection parameters
+
+- Use `Sequence[X]` for read-only list parameters in public API functions
+- Use `list[X]` for return types and parameters that are mutated
+- Use `Mapping[str, X]` for read-only dict parameters (already used in `ScenarioInterface`)
+
+### Type aliases
+
+- `LlmFn = Callable[[str, str], str]` — defined in `agents/types.py`
+- Use `from enum import StrEnum` (not `import enum` + `enum.StrEnum`)
+
+### Logger naming
+
+- Use `logger = logging.getLogger(__name__)` (lowercase, per PEP 8)
+
 ## Pull Requests
 
 - Keep changes scoped to one feature or cleanup theme.
