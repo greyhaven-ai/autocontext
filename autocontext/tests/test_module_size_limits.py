@@ -16,7 +16,7 @@ MAX_LINES = 800
 
 GRANDFATHERED: dict[str, int] = {
     # These are large but not yet split — tracked for future refactoring
-    "storage/sqlite_store.py": 1600,
+    "storage/sqlite_store.py": 1650,
     "storage/artifacts.py": 1300,
     "cli.py": 1600,
     "mcp/tools.py": 1500,

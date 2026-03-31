@@ -193,15 +193,10 @@ def cockpit_delete_notebook(session_id: str, request: Request) -> dict[str, str]
 def list_runs(request: Request) -> list[dict[str, Any]]:
     """List recent runs with summary info."""
     store = _get_store(request)
-    with store.connect() as conn:
-        runs = conn.execute(
-            "SELECT run_id, scenario, target_generations, status, created_at, updated_at "
-            "FROM runs ORDER BY created_at DESC LIMIT 50"
-        ).fetchall()
+    runs = store.list_runs(limit=50)
 
     result: list[dict[str, Any]] = []
-    for run in runs:
-        run_dict = dict(run)
+    for run_dict in runs:
         run_id = run_dict["run_id"]
         scenario = run_dict["scenario"]
 

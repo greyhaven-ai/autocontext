@@ -149,22 +149,11 @@ def create_app(
 
     @application.get("/api/runs")
     def list_runs() -> list[dict[str, Any]]:
-        with store.connect() as conn:
-            rows = conn.execute(
-                "SELECT run_id, scenario, target_generations, executor_mode, status, created_at "
-                "FROM runs ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return store.list_runs(limit=50)
 
     @application.get("/api/runs/{run_id}/status")
     def run_status(run_id: str) -> list[dict[str, Any]]:
-        with store.connect() as conn:
-            rows = conn.execute(
-                "SELECT generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status "
-                "FROM generations WHERE run_id = ? ORDER BY generation_index ASC",
-                (run_id,),
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return store.run_status(run_id)
 
     @application.get("/api/runs/{run_id}/replay/{generation}")
     def replay(run_id: str, generation: int) -> dict[str, Any]:

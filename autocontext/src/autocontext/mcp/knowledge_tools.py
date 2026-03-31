@@ -53,12 +53,7 @@ def read_skills(ctx: MtsToolContext, scenario_name: str) -> str:
 
 def list_runs(ctx: MtsToolContext) -> list[dict[str, Any]]:
     """List recent runs from SQLite."""
-    with ctx.sqlite.connect() as conn:
-        rows = conn.execute(
-            "SELECT run_id, scenario, target_generations, executor_mode, status, created_at "
-            "FROM runs ORDER BY created_at DESC LIMIT 20"
-        ).fetchall()
-    return [dict(row) for row in rows]
+    return ctx.sqlite.list_runs(limit=20)
 
 
 def run_status(ctx: MtsToolContext, run_id: str) -> list[dict[str, Any]]:
