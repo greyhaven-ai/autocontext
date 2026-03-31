@@ -18,6 +18,100 @@ import type {
   SubgoalStatus,
 } from "./types.js";
 
+// ---- Row types for better-sqlite3 query results ----
+
+interface MissionRow {
+  id: string;
+  name: string;
+  goal: string;
+  status: string;
+  budget: string | null;
+  metadata: string;
+  created_at: string;
+  updated_at: string | null;
+  completed_at: string | null;
+}
+
+interface StepRow {
+  id: string;
+  mission_id: string;
+  description: string;
+  status: string;
+  result: string | null;
+  error: string | null;
+  tool_calls: string;
+  metadata: string;
+  created_at: string;
+  completed_at: string | null;
+  parent_step_id: string | null;
+  order_index: number;
+}
+
+interface SubgoalRow {
+  id: string;
+  mission_id: string;
+  description: string;
+  priority: number;
+  status: string;
+  steps_json: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+interface VerificationRow {
+  id: string;
+  mission_id: string;
+  step_id: string | null;
+  claim: string;
+  evidence: string;
+  confidence: number;
+  verified: number;
+  metadata: string;
+  created_at: string;
+}
+
+// ---- Row → domain mappers ----
+
+function missionFromRow(row: MissionRow): Mission {
+  return {
+    id: row.id,
+    name: row.name,
+    goal: row.goal,
+    status: row.status as MissionStatus,
+    budget: row.budget ? JSON.parse(row.budget) as MissionBudget : undefined,
+    metadata: JSON.parse(row.metadata ?? "{}"),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
+function stepFromRow(row: StepRow): MissionStep {
+  const status = StepStatusSchema.safeParse(row.status);
+  return {
+    id: row.id,
+    missionId: row.mission_id,
+    description: row.description,
+    status: status.success ? status.data : ("pending" as StepStatus),
+    result: row.result ?? undefined,
+    createdAt: row.created_at,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
+function subgoalFromRow(row: SubgoalRow): MissionSubgoal {
+  const status = SubgoalStatusSchema.safeParse(row.status);
+  return {
+    id: row.id,
+    missionId: row.mission_id,
+    description: row.description,
+    priority: row.priority ?? 0,
+    status: status.success ? status.data : ("pending" as SubgoalStatus),
+    createdAt: row.created_at,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
 export class MissionStore {
   private db: Database.Database;
   private dbPath: string;
@@ -97,19 +191,9 @@ export class MissionStore {
   }
 
   getMission(id: string): Mission | null {
-    const row = this.db.prepare("SELECT * FROM missions WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    const row = this.db.prepare("SELECT * FROM missions WHERE id = ?").get(id) as MissionRow | undefined;
     if (!row) return null;
-    return {
-      id: row.id as string,
-      name: row.name as string,
-      goal: row.goal as string,
-      status: row.status as MissionStatus,
-      budget: row.budget ? JSON.parse(row.budget as string) : undefined,
-      metadata: JSON.parse((row.metadata as string) ?? "{}"),
-      createdAt: row.created_at as string,
-      updatedAt: (row.updated_at as string) ?? undefined,
-      completedAt: (row.completed_at as string) ?? undefined,
-    };
+    return missionFromRow(row);
   }
 
   listMissions(status?: MissionStatus): Mission[] {
@@ -118,18 +202,8 @@ export class MissionStore {
       : "SELECT * FROM missions ORDER BY created_at DESC";
     const rows = (status
       ? this.db.prepare(sql).all(status)
-      : this.db.prepare(sql).all()) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({
-      id: row.id as string,
-      name: row.name as string,
-      goal: row.goal as string,
-      status: row.status as MissionStatus,
-      budget: row.budget ? JSON.parse(row.budget as string) : undefined,
-      metadata: JSON.parse((row.metadata as string) ?? "{}"),
-      createdAt: row.created_at as string,
-      updatedAt: (row.updated_at as string) ?? undefined,
-      completedAt: (row.completed_at as string) ?? undefined,
-    }));
+      : this.db.prepare(sql).all()) as MissionRow[];
+    return rows.map(missionFromRow);
   }
 
   updateMissionStatus(id: string, status: MissionStatus): void {
