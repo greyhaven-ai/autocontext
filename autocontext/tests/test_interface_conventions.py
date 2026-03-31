@@ -11,32 +11,20 @@ from pathlib import Path
 
 SRC_ROOT = Path(__file__).resolve().parent.parent / "src" / "autocontext"
 
+def _base_name(base: ast.expr) -> str:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return ""
 
-def _find_classes(base_name: str) -> list[tuple[str, str]]:
-    """Find all classes inheriting from base_name across the codebase."""
-    results = []
-    for root, dirs, files in os.walk(SRC_ROOT):
-        dirs[:] = [d for d in dirs if d not in (".venv", "__pycache__")]
-        for f in files:
-            if not f.endswith(".py"):
-                continue
-            path = Path(root) / f
-            try:
-                tree = ast.parse(path.read_text(encoding="utf-8"))
-            except SyntaxError:
-                continue
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef):
-                    for base in node.bases:
-                        name = ""
-                        if isinstance(base, ast.Name):
-                            name = base.id
-                        elif isinstance(base, ast.Attribute):
-                            name = base.attr
-                        if name == base_name:
-                            rel = str(path.relative_to(SRC_ROOT))
-                            results.append((rel, node.name))
-    return results
+
+def _decorator_name(decorator: ast.expr) -> str:
+    if isinstance(decorator, ast.Name):
+        return decorator.id
+    if isinstance(decorator, ast.Attribute):
+        return decorator.attr
+    return ""
 
 
 class TestABCProtocolConventions:
@@ -59,17 +47,14 @@ class TestABCProtocolConventions:
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
                         is_protocol = any(
-                            (isinstance(b, ast.Name) and b.id == "Protocol")
-                            for b in node.bases
+                            _base_name(base) == "Protocol"
+                            for base in node.bases
                         )
                         if is_protocol:
                             for item in ast.walk(node):
                                 if isinstance(item, ast.FunctionDef):
                                     for dec in item.decorator_list:
-                                        dec_name = ""
-                                        if isinstance(dec, ast.Name):
-                                            dec_name = dec.id
-                                        if dec_name == "abstractmethod":
+                                        if _decorator_name(dec) == "abstractmethod":
                                             rel = str(path.relative_to(SRC_ROOT))
                                             violations.append(
                                                 f"{rel}:{node.name}.{item.name} — Protocol should not use @abstractmethod"
@@ -77,8 +62,8 @@ class TestABCProtocolConventions:
 
         assert violations == [], "\n".join(violations)
 
-    def test_abc_classes_have_abstractmethod(self) -> None:
-        """ABC subclasses should have at least one @abstractmethod."""
+    def test_root_abc_classes_have_abstractmethod(self) -> None:
+        """Root ABCs should define an abstract contract directly."""
         violations: list[str] = []
         for root, dirs, files in os.walk(SRC_ROOT):
             dirs[:] = [d for d in dirs if d not in (".venv", "__pycache__")]
@@ -93,22 +78,19 @@ class TestABCProtocolConventions:
                     continue
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ClassDef):
-                        is_abc = any(
-                            (isinstance(b, ast.Name) and b.id == "ABC")
-                            for b in node.bases
-                        )
-                        if is_abc:
+                        base_names = [_base_name(base) for base in node.bases]
+                        if "ABC" in base_names and all(base == "ABC" for base in base_names):
                             has_abstract = False
                             for item in node.body:
                                 if isinstance(item, ast.FunctionDef):
                                     for dec in item.decorator_list:
-                                        if isinstance(dec, ast.Name) and dec.id == "abstractmethod":
+                                        if _decorator_name(dec) == "abstractmethod":
                                             has_abstract = True
                             if not has_abstract:
                                 rel = str(path.relative_to(SRC_ROOT))
-                                violations.append(f"{rel}:{node.name} — ABC without @abstractmethod")
+                                violations.append(f"{rel}:{node.name} — root ABC without @abstractmethod")
 
         assert violations == [], (
-            "ABC classes without @abstractmethod (use Protocol if no abstract methods needed):\n"
+            "Root ABC classes without @abstractmethod (use Protocol if no abstract contract is needed):\n"
             + "\n".join(f"  {v}" for v in violations)
         )

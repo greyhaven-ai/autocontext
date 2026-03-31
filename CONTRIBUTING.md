@@ -106,6 +106,7 @@ Release notes:
 
 - **ABC** — for internal class hierarchies where subclasses share implementation via inheritance (e.g., `ScenarioInterface`, `LLMProvider`, `AgentRuntime`, `Notifier`)
 - **Protocol** — for duck-typed integration points where implementors shouldn't need to import the base class (e.g., `ExecutionEngine`, `Evaluator`, `DictSerializable`, `ReplWorkerProtocol`)
+- New root ABCs (`class X(ABC)`) should define at least one `@abstractmethod`; subclasses that inherit an abstract contract from another ABC do not need to redeclare one.
 
 ### Dict types
 
