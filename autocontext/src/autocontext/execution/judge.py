@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -137,9 +138,9 @@ class LLMJudge:
         task_prompt: str,
         agent_output: str,
         reference_context: str | None = None,
-        required_concepts: list[str] | None = None,
-        calibration_examples: list[dict] | None = None,
-        pinned_dimensions: list[str] | None = None,
+        required_concepts: Sequence[str] | None = None,
+        calibration_examples: Sequence[dict] | None = None,
+        pinned_dimensions: Sequence[str] | None = None,
     ) -> JudgeResult:
         """Evaluate agent output by calling the provider N times and averaging."""
         system_prompt = (
@@ -265,9 +266,9 @@ class LLMJudge:
         task_prompt: str,
         agent_output: str,
         reference_context: str | None = None,
-        required_concepts: list[str] | None = None,
-        calibration_examples: list[dict] | None = None,
-        pinned_dimensions: list[str] | None = None,
+        required_concepts: Sequence[str] | None = None,
+        calibration_examples: Sequence[dict] | None = None,
+        pinned_dimensions: Sequence[str] | None = None,
     ) -> str:
         parts = [
             f"## Rubric\n{self.rubric}\n",

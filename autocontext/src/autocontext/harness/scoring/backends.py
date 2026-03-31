@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -88,7 +89,7 @@ class ScoringBackend(ABC):
     def update(
         self,
         current_rating: float,
-        trials: list[TrialResult],
+        trials: Sequence[TrialResult],
         uncertainty: float | None = None,
     ) -> RatingUpdate:
         """Compute rating update from trial results."""
@@ -107,7 +108,7 @@ class EloBackend(ScoringBackend):
     def update(
         self,
         current_rating: float,
-        trials: list[TrialResult],
+        trials: Sequence[TrialResult],
         uncertainty: float | None = None,
     ) -> RatingUpdate:
         rating = current_rating
@@ -146,7 +147,7 @@ class GlickoBackend(ScoringBackend):
     def update(
         self,
         current_rating: float,
-        trials: list[TrialResult],
+        trials: Sequence[TrialResult],
         uncertainty: float | None = None,
     ) -> RatingUpdate:
         rd = uncertainty if uncertainty is not None else self._default_rd

@@ -1,6 +1,7 @@
 """Trigger detection for provider consultation (AC-212)."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from autocontext.consultation.types import ConsultationTrigger
@@ -12,8 +13,8 @@ _STALL_DECISIONS = frozenset({"rollback", "retry"})
 
 
 def detect_consultation_triggers(
-    gate_history: list[str],
-    score_history: list[float],
+    gate_history: Sequence[str],
+    score_history: Sequence[float],
     settings: AppSettings,
 ) -> list[ConsultationTrigger]:
     """Check if any consultation triggers are active.

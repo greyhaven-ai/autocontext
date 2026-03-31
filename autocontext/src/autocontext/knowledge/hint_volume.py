@@ -13,6 +13,7 @@ Key types:
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -126,7 +127,7 @@ class HintManager:
 
     def add_many(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         *,
         generation: int,
         impact_score: float = 0.5,
@@ -247,10 +248,10 @@ class HintManager:
 
 
 def apply_volume_cap(
-    hints: list[str],
+    hints: Sequence[str],
     max_hints: int = 7,
 ) -> tuple[list[str], list[str]]:
     """Simple cap for hint string lists. Returns (active, archived)."""
     if len(hints) <= max_hints:
         return list(hints), []
-    return hints[:max_hints], hints[max_hints:]
+    return list(hints[:max_hints]), list(hints[max_hints:])

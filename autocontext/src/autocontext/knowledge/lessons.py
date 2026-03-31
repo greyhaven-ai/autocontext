@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -134,7 +135,7 @@ class LessonStore:
             for lesson in lessons
         )
 
-    def write_lessons(self, scenario: str, lessons: list[Lesson]) -> None:
+    def write_lessons(self, scenario: str, lessons: Sequence[Lesson]) -> None:
         path = self._lessons_path(scenario)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -204,7 +205,7 @@ class LessonStore:
     def migrate_from_raw_bullets(
         self,
         scenario: str,
-        raw_bullets: list[str],
+        raw_bullets: Sequence[str],
         generation: int,
         best_score: float,
     ) -> list[Lesson]:

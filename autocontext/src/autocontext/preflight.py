@@ -5,6 +5,7 @@ validate the environment before any work begins.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,7 +65,7 @@ class PreflightChecker:
         ]
 
     @staticmethod
-    def to_markdown(results: list[CheckResult]) -> str:
+    def to_markdown(results: Sequence[CheckResult]) -> str:
         """Format check results as a markdown table."""
         lines = ["## Preflight Checks", ""]
         lines.append("| Check | Status | Detail |")

@@ -5,6 +5,7 @@ Each evaluator is a pure function returning ``MonitorAlert | None``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -65,7 +66,7 @@ def evaluate_stall_window(
     event: str,
     payload: dict[str, Any],
     condition: MonitorCondition,
-    gate_history: list[str],
+    gate_history: Sequence[str],
 ) -> MonitorAlert | None:
     """Fire when consecutive non-advance gate decisions >= window.
 

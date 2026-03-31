@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -136,12 +137,12 @@ class ValidationPipeline:
         return results
 
     @staticmethod
-    def all_passed(results: list[StageResult]) -> bool:
+    def all_passed(results: Sequence[StageResult]) -> bool:
         """Return True if no stage failed (vacuous truth for empty list)."""
         return not any(r.status is StageStatus.FAILED for r in results)
 
     @staticmethod
-    def failed_stage(results: list[StageResult]) -> str | None:
+    def failed_stage(results: Sequence[StageResult]) -> str | None:
         """Return the name of the first failed stage, or None if none failed."""
         for r in results:
             if r.status is StageStatus.FAILED:
