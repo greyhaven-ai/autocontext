@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from autocontext.agents.llm_client import DeterministicDevClient, LanguageModelClient, ModelResponse
-from autocontext.harness.pipeline.retry_context import RetryContext
+from autocontext.backpressure.retry_context import RetryContext
 from autocontext.config import AppSettings
 from autocontext.loop import GenerationRunner
 

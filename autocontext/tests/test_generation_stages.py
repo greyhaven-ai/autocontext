@@ -1212,7 +1212,7 @@ class TestStageTournament:
         assert "Cost control suppressed retry" in gate_events[-1].args[1]["reason"]
 
     def test_novelty_bonus_can_change_live_gate_decision(self) -> None:
-        from autocontext.harness.pipeline.gate import BackpressureGate
+        from autocontext.backpressure import BackpressureGate
 
         settings = _make_settings().model_copy(update={
             "holdout_enabled": False,
