@@ -691,6 +691,40 @@ class SQLiteStore:
             ).fetchone()
             return dict(row) if row else None
 
+    # -- Shared query services (AC-480) --
+    # These replace duplicated raw SQL in cli.py, mcp/tools.py, and server/ endpoints.
+
+    def list_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """List recent runs, newest first."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT run_id, scenario, target_generations, executor_mode, status, created_at "
+                "FROM runs ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def run_status(self, run_id: str) -> list[dict[str, Any]]:
+        """Return per-generation status for a run."""
+        return self.get_generation_trajectory(run_id)
+
+    def list_solved(self) -> list[dict[str, Any]]:
+        """Return best knowledge snapshots per scenario."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT scenario, best_score, best_elo, run_id, created_at "
+                "FROM knowledge_snapshots "
+                "ORDER BY best_score DESC"
+            ).fetchall()
+        # Deduplicate: keep only the best per scenario
+        seen: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            d = dict(row)
+            scn = d["scenario"]
+            if scn not in seen or d["best_score"] > seen[scn]["best_score"]:
+                seen[scn] = d
+        return list(seen.values())
+
     # -- Human feedback --
 
     def insert_human_feedback(

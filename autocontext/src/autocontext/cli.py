@@ -475,14 +475,10 @@ def list_runs(
 
     settings = load_settings()
     store = SQLiteStore(settings.db_path)
-    with store.connect() as conn:
-        rows = conn.execute(
-            "SELECT run_id, scenario, target_generations, executor_mode, status, created_at "
-            "FROM runs ORDER BY created_at DESC LIMIT 20"
-        ).fetchall()
+    rows = store.list_runs(limit=20)
 
     if json_output:
-        result = [dict(row) for row in rows]
+        result = rows
         sys.stdout.write(json.dumps(result) + "\n")
     else:
         table = Table(title="Recent Runs")
