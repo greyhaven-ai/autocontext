@@ -15,15 +15,15 @@ Key types:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.util.json_io import read_json, write_json
 
 
-@dataclass(slots=True)
-class ActorRef:
+class ActorRef(BaseModel):
     """Who or what generated an event.
 
     Actor types: role, tool, system, external.
@@ -34,23 +34,14 @@ class ActorRef:
     actor_name: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "actor_type": self.actor_type,
-            "actor_id": self.actor_id,
-            "actor_name": self.actor_name,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ActorRef:
-        return cls(
-            actor_type=data["actor_type"],
-            actor_id=data["actor_id"],
-            actor_name=data.get("actor_name", ""),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class ResourceRef:
+class ResourceRef(BaseModel):
     """An artifact, entity, or service involved in an event.
 
     Resource types: artifact, scenario_entity, service, model, knowledge.
@@ -62,25 +53,14 @@ class ResourceRef:
     resource_path: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "resource_type": self.resource_type,
-            "resource_id": self.resource_id,
-            "resource_name": self.resource_name,
-            "resource_path": self.resource_path,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ResourceRef:
-        return cls(
-            resource_type=data["resource_type"],
-            resource_id=data["resource_id"],
-            resource_name=data.get("resource_name", ""),
-            resource_path=data.get("resource_path", ""),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class TraceEvent:
+class TraceEvent(BaseModel):
     """A single timestamped event in a run trace.
 
     Categories: observation, hypothesis, action, tool_invocation,
@@ -110,58 +90,17 @@ class TraceEvent:
     stage: str
     outcome: str | None
     duration_ms: int | None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "event_id": self.event_id,
-            "run_id": self.run_id,
-            "generation_index": self.generation_index,
-            "sequence_number": self.sequence_number,
-            "timestamp": self.timestamp,
-            "category": self.category,
-            "event_type": self.event_type,
-            "actor": self.actor.to_dict(),
-            "resources": [r.to_dict() for r in self.resources],
-            "summary": self.summary,
-            "detail": self.detail,
-            "parent_event_id": self.parent_event_id,
-            "cause_event_ids": self.cause_event_ids,
-            "evidence_ids": self.evidence_ids,
-            "severity": self.severity,
-            "stage": self.stage,
-            "outcome": self.outcome,
-            "duration_ms": self.duration_ms,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TraceEvent:
-        return cls(
-            event_id=data["event_id"],
-            run_id=data["run_id"],
-            generation_index=data.get("generation_index", 0),
-            sequence_number=data.get("sequence_number", 0),
-            timestamp=data.get("timestamp", ""),
-            category=data["category"],
-            event_type=data.get("event_type", ""),
-            actor=ActorRef.from_dict(data["actor"]),
-            resources=[ResourceRef.from_dict(r) for r in data.get("resources", [])],
-            summary=data.get("summary", ""),
-            detail=data.get("detail", {}),
-            parent_event_id=data.get("parent_event_id"),
-            cause_event_ids=data.get("cause_event_ids", []),
-            evidence_ids=data.get("evidence_ids", []),
-            severity=data.get("severity", "info"),
-            stage=data.get("stage", ""),
-            outcome=data.get("outcome"),
-            duration_ms=data.get("duration_ms"),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class CausalEdge:
+class CausalEdge(BaseModel):
     """An explicit dependency or causality link between two events.
 
     Relations: causes, depends_on, triggers, supersedes, retries, recovers.
@@ -172,23 +111,14 @@ class CausalEdge:
     relation: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "source_event_id": self.source_event_id,
-            "target_event_id": self.target_event_id,
-            "relation": self.relation,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CausalEdge:
-        return cls(
-            source_event_id=data["source_event_id"],
-            target_event_id=data["target_event_id"],
-            relation=data["relation"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class RunTrace:
+class RunTrace(BaseModel):
     """Per-run or per-generation trace artifact.
 
     Contains ordered events and explicit causal edges.
@@ -202,32 +132,14 @@ class RunTrace:
     events: list[TraceEvent]
     causal_edges: list[CausalEdge]
     created_at: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "trace_id": self.trace_id,
-            "run_id": self.run_id,
-            "generation_index": self.generation_index,
-            "schema_version": self.schema_version,
-            "events": [e.to_dict() for e in self.events],
-            "causal_edges": [e.to_dict() for e in self.causal_edges],
-            "created_at": self.created_at,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RunTrace:
-        return cls(
-            trace_id=data["trace_id"],
-            run_id=data["run_id"],
-            generation_index=data.get("generation_index"),
-            schema_version=data.get("schema_version", "1.0.0"),
-            events=[TraceEvent.from_dict(e) for e in data.get("events", [])],
-            causal_edges=[CausalEdge.from_dict(e) for e in data.get("causal_edges", [])],
-            created_at=data.get("created_at", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class TraceStore:

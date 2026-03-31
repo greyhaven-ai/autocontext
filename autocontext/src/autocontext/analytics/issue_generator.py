@@ -8,16 +8,16 @@ require_correlation guard to prevent raw-count-driven generation.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+
+from pydantic import BaseModel
 
 from autocontext.analytics.clustering import FacetCluster
 from autocontext.analytics.correlation import CorrelationResult
 
 
-@dataclass(slots=True)
-class ThresholdConfig:
+class ThresholdConfig(BaseModel):
     """Thresholds for issue/probe candidate generation."""
 
     min_recurrence: int = 3
@@ -26,8 +26,7 @@ class ThresholdConfig:
     require_correlation: bool = True
 
 
-@dataclass(slots=True)
-class IssueCandidate:
+class IssueCandidate(BaseModel):
     """A proposed issue generated from correlated friction evidence."""
 
     candidate_id: str
@@ -48,49 +47,14 @@ class IssueCandidate:
     status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "candidate_id": self.candidate_id,
-            "title": self.title,
-            "description": self.description,
-            "priority": self.priority,
-            "source_cluster_ids": self.source_cluster_ids,
-            "correlation_id": self.correlation_id,
-            "recurrence_count": self.recurrence_count,
-            "confidence": self.confidence,
-            "correlation_rationale": self.correlation_rationale,
-            "affected_scenarios": self.affected_scenarios,
-            "affected_families": self.affected_families,
-            "affected_providers": self.affected_providers,
-            "affected_releases": self.affected_releases,
-            "evidence": self.evidence,
-            "created_at": self.created_at,
-            "status": self.status,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> IssueCandidate:
-        return cls(
-            candidate_id=data["candidate_id"],
-            title=data["title"],
-            description=data["description"],
-            priority=data["priority"],
-            source_cluster_ids=data.get("source_cluster_ids", []),
-            correlation_id=data.get("correlation_id", ""),
-            recurrence_count=data.get("recurrence_count", 0),
-            confidence=data.get("confidence", 0.0),
-            correlation_rationale=data.get("correlation_rationale", ""),
-            affected_scenarios=data.get("affected_scenarios", []),
-            affected_families=data.get("affected_families", []),
-            affected_providers=data.get("affected_providers", []),
-            affected_releases=data.get("affected_releases", []),
-            evidence=data.get("evidence", []),
-            created_at=data.get("created_at", ""),
-            status=data.get("status", "proposed"),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class ProbeCandidate:
+class ProbeCandidate(BaseModel):
     """A proposed probe/fixture generated from correlated friction evidence."""
 
     candidate_id: str
@@ -110,43 +74,11 @@ class ProbeCandidate:
     status: str = "proposed"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "candidate_id": self.candidate_id,
-            "probe_type": self.probe_type,
-            "title": self.title,
-            "description": self.description,
-            "source_cluster_ids": self.source_cluster_ids,
-            "correlation_id": self.correlation_id,
-            "target_scenario_family": self.target_scenario_family,
-            "target_friction_type": self.target_friction_type,
-            "recurrence_count": self.recurrence_count,
-            "confidence": self.confidence,
-            "correlation_rationale": self.correlation_rationale,
-            "seed_data": self.seed_data,
-            "evidence": self.evidence,
-            "created_at": self.created_at,
-            "status": self.status,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ProbeCandidate:
-        return cls(
-            candidate_id=data["candidate_id"],
-            probe_type=data["probe_type"],
-            title=data["title"],
-            description=data["description"],
-            source_cluster_ids=data.get("source_cluster_ids", []),
-            correlation_id=data.get("correlation_id", ""),
-            target_scenario_family=data.get("target_scenario_family", ""),
-            target_friction_type=data.get("target_friction_type", ""),
-            recurrence_count=data.get("recurrence_count", 0),
-            confidence=data.get("confidence", 0.0),
-            correlation_rationale=data.get("correlation_rationale", ""),
-            seed_data=data.get("seed_data", {}),
-            evidence=data.get("evidence", []),
-            created_at=data.get("created_at", ""),
-            status=data.get("status", "proposed"),
-        )
+        return cls.model_validate(data)
 
 
 class IssueGenerator:

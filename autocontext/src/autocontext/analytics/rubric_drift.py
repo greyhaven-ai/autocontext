@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import statistics
 import uuid
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.analytics.facets import RunFacet
 from autocontext.util.json_io import read_json, write_json
@@ -22,8 +23,7 @@ from autocontext.util.json_io import read_json, write_json
 _PERFECT_THRESHOLD = 0.95
 
 
-@dataclass(slots=True)
-class RubricSnapshot:
+class RubricSnapshot(BaseModel):
     """Point-in-time rubric-level metrics for a window of runs."""
 
     snapshot_id: str
@@ -44,58 +44,17 @@ class RubricSnapshot:
     release: str
     scenario_family: str
     agent_provider: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "snapshot_id": self.snapshot_id,
-            "created_at": self.created_at,
-            "window_start": self.window_start,
-            "window_end": self.window_end,
-            "run_count": self.run_count,
-            "mean_score": self.mean_score,
-            "median_score": self.median_score,
-            "stddev_score": self.stddev_score,
-            "min_score": self.min_score,
-            "max_score": self.max_score,
-            "score_inflation_rate": self.score_inflation_rate,
-            "perfect_score_rate": self.perfect_score_rate,
-            "revision_jump_rate": self.revision_jump_rate,
-            "retry_rate": self.retry_rate,
-            "rollback_rate": self.rollback_rate,
-            "release": self.release,
-            "scenario_family": self.scenario_family,
-            "agent_provider": self.agent_provider,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RubricSnapshot:
-        return cls(
-            snapshot_id=data["snapshot_id"],
-            created_at=data["created_at"],
-            window_start=data.get("window_start", ""),
-            window_end=data.get("window_end", ""),
-            run_count=data.get("run_count", 0),
-            mean_score=data.get("mean_score", 0.0),
-            median_score=data.get("median_score", 0.0),
-            stddev_score=data.get("stddev_score", 0.0),
-            min_score=data.get("min_score", 0.0),
-            max_score=data.get("max_score", 0.0),
-            score_inflation_rate=data.get("score_inflation_rate", 0.0),
-            perfect_score_rate=data.get("perfect_score_rate", 0.0),
-            revision_jump_rate=data.get("revision_jump_rate", 0.0),
-            retry_rate=data.get("retry_rate", 0.0),
-            rollback_rate=data.get("rollback_rate", 0.0),
-            release=data.get("release", ""),
-            scenario_family=data.get("scenario_family", ""),
-            agent_provider=data.get("agent_provider", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class DriftThresholds:
+class DriftThresholds(BaseModel):
     """Configurable thresholds for drift detection."""
 
     max_score_inflation: float = 0.15
@@ -106,8 +65,7 @@ class DriftThresholds:
     max_rollback_rate: float = 0.3
 
 
-@dataclass(slots=True)
-class DriftWarning:
+class DriftWarning(BaseModel):
     """A structured warning when rubric drift is detected."""
 
     warning_id: str
@@ -122,42 +80,14 @@ class DriftWarning:
     affected_scenarios: list[str]
     affected_providers: list[str]
     affected_releases: list[str]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "warning_id": self.warning_id,
-            "created_at": self.created_at,
-            "warning_type": self.warning_type,
-            "severity": self.severity,
-            "description": self.description,
-            "snapshot_id": self.snapshot_id,
-            "metric_name": self.metric_name,
-            "metric_value": self.metric_value,
-            "threshold_value": self.threshold_value,
-            "affected_scenarios": self.affected_scenarios,
-            "affected_providers": self.affected_providers,
-            "affected_releases": self.affected_releases,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DriftWarning:
-        return cls(
-            warning_id=data["warning_id"],
-            created_at=data["created_at"],
-            warning_type=data["warning_type"],
-            severity=data.get("severity", "medium"),
-            description=data.get("description", ""),
-            snapshot_id=data.get("snapshot_id", ""),
-            metric_name=data.get("metric_name", ""),
-            metric_value=data.get("metric_value", 0.0),
-            threshold_value=data.get("threshold_value", 0.0),
-            affected_scenarios=data.get("affected_scenarios", []),
-            affected_providers=data.get("affected_providers", []),
-            affected_releases=data.get("affected_releases", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class RubricDriftMonitor:

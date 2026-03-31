@@ -7,17 +7,17 @@ patterns are discovered by the clustering engine.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel
 
 from autocontext.analytics.clustering import FacetCluster
 from autocontext.util.json_io import read_json, write_json
 
 
-@dataclass(slots=True)
-class TaxonomyEntry:
+class TaxonomyEntry(BaseModel):
     """An entry in the evolving facet taxonomy."""
 
     entry_id: str
@@ -31,31 +31,11 @@ class TaxonomyEntry:
     confidence: float
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "entry_id": self.entry_id,
-            "name": self.name,
-            "parent_category": self.parent_category,
-            "description": self.description,
-            "is_system_defined": self.is_system_defined,
-            "source_cluster_id": self.source_cluster_id,
-            "created_at": self.created_at,
-            "recurrence_count": self.recurrence_count,
-            "confidence": self.confidence,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TaxonomyEntry:
-        return cls(
-            entry_id=data["entry_id"],
-            name=data["name"],
-            parent_category=data["parent_category"],
-            description=data["description"],
-            is_system_defined=data.get("is_system_defined", False),
-            source_cluster_id=data.get("source_cluster_id"),
-            created_at=data.get("created_at", ""),
-            recurrence_count=data.get("recurrence_count", 0),
-            confidence=data.get("confidence", 0.0),
-        )
+        return cls.model_validate(data)
 
 
 # Built-in taxonomy entries

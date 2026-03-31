@@ -15,8 +15,9 @@ Key types:
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.analytics.run_trace import RunTrace, TraceEvent
 
@@ -27,8 +28,7 @@ _SEVERITY_ORDER = {"info": 0, "warning": 1, "error": 2, "critical": 3}
 _HIGHLIGHT_CATEGORIES = {"failure", "recovery", "cancellation"}
 
 
-@dataclass(slots=True)
-class TimelineFilter:
+class TimelineFilter(BaseModel):
     """Criteria for filtering timeline entries."""
 
     roles: list[str] | None = None
@@ -39,8 +39,7 @@ class TimelineFilter:
     generation_index: int | None = None
 
 
-@dataclass(slots=True)
-class TimelineEntry:
+class TimelineEntry(BaseModel):
     """A display-ready entry in the timeline."""
 
     entry_id: str
@@ -49,34 +48,17 @@ class TimelineEntry:
     children_count: int
     artifact_links: list[str]
     highlight: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "entry_id": self.entry_id,
-            "event": self.event.to_dict(),
-            "depth": self.depth,
-            "children_count": self.children_count,
-            "artifact_links": self.artifact_links,
-            "highlight": self.highlight,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TimelineEntry:
-        return cls(
-            entry_id=data["entry_id"],
-            event=TraceEvent.from_dict(data["event"]),
-            depth=data.get("depth", 0),
-            children_count=data.get("children_count", 0),
-            artifact_links=data.get("artifact_links", []),
-            highlight=data.get("highlight", False),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class RunInspection:
+class RunInspection(BaseModel):
     """Structured inspection result for a run."""
 
     summary: str
@@ -89,8 +71,7 @@ class RunInspection:
     causal_depth: int
 
 
-@dataclass(slots=True)
-class GenerationInspection:
+class GenerationInspection(BaseModel):
     """Structured inspection result for a single generation."""
 
     generation_index: int

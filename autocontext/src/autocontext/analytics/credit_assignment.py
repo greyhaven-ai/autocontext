@@ -16,129 +16,78 @@ Key types:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass(slots=True)
-class ComponentChange:
+
+class ComponentChange(BaseModel):
     """Structured change descriptor for one component."""
 
     component: str  # playbook, tools, hints, analysis, etc.
     magnitude: float  # 0.0-1.0 normalized change magnitude
     description: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "component": self.component,
-            "magnitude": self.magnitude,
-            "description": self.description,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ComponentChange:
-        return cls(
-            component=data["component"],
-            magnitude=data.get("magnitude", 0.0),
-            description=data.get("description", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class GenerationChangeVector:
+class GenerationChangeVector(BaseModel):
     """All component changes plus score delta for a generation."""
 
     generation: int
     score_delta: float
     changes: list[ComponentChange]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def total_change_magnitude(self) -> float:
         return round(sum(c.magnitude for c in self.changes), 6)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "generation": self.generation,
-            "score_delta": self.score_delta,
-            "changes": [c.to_dict() for c in self.changes],
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GenerationChangeVector:
-        return cls(
-            generation=data.get("generation", 0),
-            score_delta=data.get("score_delta", 0.0),
-            changes=[ComponentChange.from_dict(c) for c in data.get("changes", [])],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class AttributionResult:
+class AttributionResult(BaseModel):
     """Credit attribution per component."""
 
     generation: int
     total_delta: float
     credits: dict[str, float]  # component → attributed delta
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "generation": self.generation,
-            "total_delta": self.total_delta,
-            "credits": self.credits,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AttributionResult:
-        raw_credits = data.get("credits", {})
-        credits = {
-            str(component): float(value)
-            for component, value in raw_credits.items()
-            if isinstance(component, str)
-        } if isinstance(raw_credits, dict) else {}
-        return cls(
-            generation=int(data.get("generation", 0)),
-            total_delta=float(data.get("total_delta", 0.0)),
-            credits=credits,
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class CreditAssignmentRecord:
+class CreditAssignmentRecord(BaseModel):
     """Durable attribution artifact for one generation."""
 
     run_id: str
     generation: int
     vector: GenerationChangeVector
     attribution: AttributionResult
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "run_id": self.run_id,
-            "generation": self.generation,
-            "vector": self.vector.to_dict(),
-            "attribution": self.attribution.to_dict(),
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CreditAssignmentRecord:
-        return cls(
-            run_id=str(data.get("run_id", "")),
-            generation=int(data.get("generation", 0)),
-            vector=GenerationChangeVector.from_dict(data.get("vector", {})),
-            attribution=AttributionResult.from_dict(data.get("attribution", {})),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def _text_change_magnitude(old: str, new: str) -> float:
@@ -182,7 +131,7 @@ def compute_change_vector(
     new_pb = str(current_state.get("playbook", ""))
     pb_mag = _text_change_magnitude(old_pb, new_pb)
     if pb_mag > 0:
-        changes.append(ComponentChange("playbook", pb_mag, f"Playbook changed ({pb_mag:.0%})"))
+        changes.append(ComponentChange(component="playbook", magnitude=pb_mag, description=f"Playbook changed ({pb_mag:.0%})"))
 
     # Tools
     old_tools = previous_state.get("tools", [])
@@ -192,21 +141,23 @@ def compute_change_vector(
         if tools_mag > 0:
             added = len(set(str(t) for t in new_tools) - set(str(t) for t in old_tools))
             removed = len(set(str(t) for t in old_tools) - set(str(t) for t in new_tools))
-            changes.append(ComponentChange("tools", tools_mag, f"+{added}/-{removed} tools"))
+            changes.append(ComponentChange(component="tools", magnitude=tools_mag, description=f"+{added}/-{removed} tools"))
 
     # Hints
     old_hints = str(previous_state.get("hints", ""))
     new_hints = str(current_state.get("hints", ""))
     hints_mag = _text_change_magnitude(old_hints, new_hints)
     if hints_mag > 0:
-        changes.append(ComponentChange("hints", hints_mag, f"Hints changed ({hints_mag:.0%})"))
+        changes.append(ComponentChange(component="hints", magnitude=hints_mag, description=f"Hints changed ({hints_mag:.0%})"))
 
     # Analysis
     old_analysis = str(previous_state.get("analysis", ""))
     new_analysis = str(current_state.get("analysis", ""))
     analysis_mag = _text_change_magnitude(old_analysis, new_analysis)
     if analysis_mag > 0:
-        changes.append(ComponentChange("analysis", analysis_mag, f"Analysis changed ({analysis_mag:.0%})"))
+        changes.append(ComponentChange(
+            component="analysis", magnitude=analysis_mag, description=f"Analysis changed ({analysis_mag:.0%})",
+        ))
 
     return GenerationChangeVector(
         generation=generation,

@@ -267,9 +267,42 @@ class TestFixtureStore:
         from autocontext.analytics.regression_fixtures import FixtureStore, RegressionFixture
 
         store = FixtureStore(tmp_path)
-        store.persist(RegressionFixture("f1", "grid_ctf", "d", 1, {}, 0.5, [], 0.8))
-        store.persist(RegressionFixture("f2", "grid_ctf", "d", 2, {}, 0.5, [], 0.8))
-        store.persist(RegressionFixture("f3", "othello", "d", 3, {}, 0.5, [], 0.8))
+        store.persist(
+            RegressionFixture(
+                fixture_id="f1",
+                scenario="grid_ctf",
+                description="d",
+                seed=1,
+                strategy={},
+                expected_min_score=0.5,
+                source_evidence=[],
+                confidence=0.8,
+            )
+        )
+        store.persist(
+            RegressionFixture(
+                fixture_id="f2",
+                scenario="grid_ctf",
+                description="d",
+                seed=2,
+                strategy={},
+                expected_min_score=0.5,
+                source_evidence=[],
+                confidence=0.8,
+            )
+        )
+        store.persist(
+            RegressionFixture(
+                fixture_id="f3",
+                scenario="othello",
+                description="d",
+                seed=3,
+                strategy={},
+                expected_min_score=0.5,
+                source_evidence=[],
+                confidence=0.8,
+            )
+        )
 
         grid_fixtures = store.list_for_scenario("grid_ctf")
         assert len(grid_fixtures) == 2
@@ -278,11 +311,33 @@ class TestFixtureStore:
         from autocontext.analytics.regression_fixtures import FixtureStore, RegressionFixture
 
         store = FixtureStore(tmp_path)
-        store.persist(RegressionFixture("old", "grid_ctf", "old", 1, {}, 0.5, [], 0.8))
+        store.persist(
+            RegressionFixture(
+                fixture_id="old",
+                scenario="grid_ctf",
+                description="old",
+                seed=1,
+                strategy={},
+                expected_min_score=0.5,
+                source_evidence=[],
+                confidence=0.8,
+            )
+        )
 
         store.replace_for_scenario(
             "grid_ctf",
-            [RegressionFixture("new", "grid_ctf", "new", 2, {}, 0.5, [], 0.9)],
+            [
+                RegressionFixture(
+                    fixture_id="new",
+                    scenario="grid_ctf",
+                    description="new",
+                    seed=2,
+                    strategy={},
+                    expected_min_score=0.5,
+                    source_evidence=[],
+                    confidence=0.9,
+                )
+            ],
         )
 
         fixtures = store.list_for_scenario("grid_ctf")
@@ -429,7 +484,7 @@ class TestGenerationRunnerFixtureWiring:
                 vector=GenerationChangeVector(
                     generation=1,
                     score_delta=0.1,
-                    changes=[ComponentChange("playbook", 0.6, "changed")],
+                    changes=[ComponentChange(component="playbook", magnitude=0.6, description="changed")],
                 ),
                 attribution=AttributionResult(
                     generation=1,

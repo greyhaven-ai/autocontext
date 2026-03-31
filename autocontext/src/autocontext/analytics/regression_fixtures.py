@@ -12,15 +12,15 @@ Key types:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.util.json_io import read_json, write_json
 
 
-@dataclass(slots=True)
-class RegressionFixture:
+class RegressionFixture(BaseModel):
     """A generated regression test fixture from friction evidence."""
 
     fixture_id: str
@@ -31,34 +31,14 @@ class RegressionFixture:
     expected_min_score: float
     source_evidence: list[str]
     confidence: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "fixture_id": self.fixture_id,
-            "scenario": self.scenario,
-            "description": self.description,
-            "seed": self.seed,
-            "strategy": self.strategy,
-            "expected_min_score": self.expected_min_score,
-            "source_evidence": self.source_evidence,
-            "confidence": self.confidence,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RegressionFixture:
-        return cls(
-            fixture_id=data["fixture_id"],
-            scenario=data.get("scenario", ""),
-            description=data.get("description", ""),
-            seed=data.get("seed", 0),
-            strategy=data.get("strategy", {}),
-            expected_min_score=data.get("expected_min_score", 0.0),
-            source_evidence=data.get("source_evidence", []),
-            confidence=data.get("confidence", 0.0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def generate_fixtures_from_friction(
