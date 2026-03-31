@@ -10,48 +10,35 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.analytics.clustering import FacetCluster
 from autocontext.analytics.facets import RunFacet
 from autocontext.util.json_io import read_json, write_json
 
 
-@dataclass(slots=True)
-class ReleaseContext:
+class ReleaseContext(BaseModel):
     """Metadata about a software release for regression detection."""
 
     version: str
     released_at: str
     commit_hash: str = ""
     change_summary: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "version": self.version,
-            "released_at": self.released_at,
-            "commit_hash": self.commit_hash,
-            "change_summary": self.change_summary,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ReleaseContext:
-        return cls(
-            version=data["version"],
-            released_at=data["released_at"],
-            commit_hash=data.get("commit_hash", ""),
-            change_summary=data.get("change_summary", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class CorrelationDimension:
+class CorrelationDimension(BaseModel):
     """A single dimension breakdown in a correlation result."""
 
     dimension: str  # agent_provider, scenario, scenario_family, release
@@ -63,31 +50,14 @@ class CorrelationDimension:
     top_delight_types: list[str]
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "dimension": self.dimension,
-            "value": self.value,
-            "friction_count": self.friction_count,
-            "delight_count": self.delight_count,
-            "run_count": self.run_count,
-            "top_friction_types": self.top_friction_types,
-            "top_delight_types": self.top_delight_types,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CorrelationDimension:
-        return cls(
-            dimension=data["dimension"],
-            value=data["value"],
-            friction_count=data.get("friction_count", 0),
-            delight_count=data.get("delight_count", 0),
-            run_count=data.get("run_count", 0),
-            top_friction_types=data.get("top_friction_types", []),
-            top_delight_types=data.get("top_delight_types", []),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class CorrelationResult:
+class CorrelationResult(BaseModel):
     """Aggregate correlation of friction/delight signals across runs."""
 
     correlation_id: str
@@ -99,39 +69,14 @@ class CorrelationResult:
     release_regressions: list[dict[str, Any]]
     cluster_ids: list[str]
     facet_run_ids: list[str]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "correlation_id": self.correlation_id,
-            "created_at": self.created_at,
-            "total_runs": self.total_runs,
-            "total_friction": self.total_friction,
-            "total_delight": self.total_delight,
-            "dimensions": [d.to_dict() for d in self.dimensions],
-            "release_regressions": self.release_regressions,
-            "cluster_ids": self.cluster_ids,
-            "facet_run_ids": self.facet_run_ids,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CorrelationResult:
-        return cls(
-            correlation_id=data["correlation_id"],
-            created_at=data["created_at"],
-            total_runs=data.get("total_runs", 0),
-            total_friction=data.get("total_friction", 0),
-            total_delight=data.get("total_delight", 0),
-            dimensions=[
-                CorrelationDimension.from_dict(d)
-                for d in data.get("dimensions", [])
-            ],
-            release_regressions=data.get("release_regressions", []),
-            cluster_ids=data.get("cluster_ids", []),
-            facet_run_ids=data.get("facet_run_ids", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class SignalCorrelator:

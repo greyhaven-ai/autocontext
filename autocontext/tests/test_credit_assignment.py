@@ -50,9 +50,9 @@ class TestGenerationChangeVector:
             generation=5,
             score_delta=0.08,
             changes=[
-                ComponentChange("playbook", 0.6, "major rewrite"),
-                ComponentChange("tools", 0.2, "1 tool added"),
-                ComponentChange("hints", 0.1, "1 hint updated"),
+                ComponentChange(component="playbook", magnitude=0.6, description="major rewrite"),
+                ComponentChange(component="tools", magnitude=0.2, description="1 tool added"),
+                ComponentChange(component="hints", magnitude=0.1, description="1 hint updated"),
             ],
         )
         assert vec.generation == 5
@@ -68,8 +68,8 @@ class TestGenerationChangeVector:
             generation=3,
             score_delta=0.05,
             changes=[
-                ComponentChange("playbook", 0.4, ""),
-                ComponentChange("tools", 0.3, ""),
+                ComponentChange(component="playbook", magnitude=0.4, description=""),
+                ComponentChange(component="tools", magnitude=0.3, description=""),
             ],
         )
         assert vec.total_change_magnitude == 0.7
@@ -82,7 +82,7 @@ class TestGenerationChangeVector:
 
         vec = GenerationChangeVector(
             generation=2, score_delta=0.1,
-            changes=[ComponentChange("playbook", 0.5, "changed")],
+            changes=[ComponentChange(component="playbook", magnitude=0.5, description="changed")],
         )
         d = vec.to_dict()
         restored = GenerationChangeVector.from_dict(d)
@@ -158,9 +158,9 @@ class TestAttributeCredit:
         vec = GenerationChangeVector(
             generation=5, score_delta=0.10,
             changes=[
-                ComponentChange("playbook", 0.6, "major change"),
-                ComponentChange("tools", 0.2, "minor change"),
-                ComponentChange("hints", 0.2, "minor change"),
+                ComponentChange(component="playbook", magnitude=0.6, description="major change"),
+                ComponentChange(component="tools", magnitude=0.2, description="minor change"),
+                ComponentChange(component="hints", magnitude=0.2, description="minor change"),
             ],
         )
         result = attribute_credit(vec)
@@ -177,7 +177,7 @@ class TestAttributeCredit:
 
         vec = GenerationChangeVector(
             generation=3, score_delta=0.0,
-            changes=[ComponentChange("playbook", 0.5, "changed but no improvement")],
+            changes=[ComponentChange(component="playbook", magnitude=0.5, description="changed but no improvement")],
         )
         result = attribute_credit(vec)
         assert all(v == 0.0 for v in result.credits.values())
@@ -222,7 +222,7 @@ class TestCreditAssignmentRecord:
             vector=GenerationChangeVector(
                 generation=4,
                 score_delta=0.1,
-                changes=[ComponentChange("playbook", 0.6, "changed")],
+                changes=[ComponentChange(component="playbook", magnitude=0.6, description="changed")],
             ),
             attribution=AttributionResult(
                 generation=4,
@@ -304,7 +304,7 @@ class TestSummarizeCreditPatterns:
                 vector=GenerationChangeVector(
                     generation=1,
                     score_delta=0.10,
-                    changes=[ComponentChange("playbook", 0.6, "changed")],
+                    changes=[ComponentChange(component="playbook", magnitude=0.6, description="changed")],
                 ),
                 attribution=AttributionResult(
                     generation=1,
@@ -318,7 +318,7 @@ class TestSummarizeCreditPatterns:
                 vector=GenerationChangeVector(
                     generation=2,
                     score_delta=0.05,
-                    changes=[ComponentChange("tools", 0.5, "tool added")],
+                    changes=[ComponentChange(component="tools", magnitude=0.5, description="tool added")],
                 ),
                 attribution=AttributionResult(
                     generation=2,

@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.analytics.facets import RunFacet
 
 
-@dataclass(slots=True)
-class EventPattern:
+class EventPattern(BaseModel):
     """A recurring event or sequence pattern across runs."""
 
     pattern_id: str
@@ -28,33 +28,14 @@ class EventPattern:
     evidence: list[dict[str, Any]]
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "pattern_id": self.pattern_id,
-            "pattern_type": self.pattern_type,
-            "description": self.description,
-            "event_sequence": self.event_sequence,
-            "frequency": self.frequency,
-            "run_ids": self.run_ids,
-            "confidence": self.confidence,
-            "evidence": self.evidence,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EventPattern:
-        return cls(
-            pattern_id=data["pattern_id"],
-            pattern_type=data["pattern_type"],
-            description=data["description"],
-            event_sequence=data.get("event_sequence", []),
-            frequency=data.get("frequency", 0),
-            run_ids=data.get("run_ids", []),
-            confidence=data.get("confidence", 0.0),
-            evidence=data.get("evidence", []),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class FacetCluster:
+class FacetCluster(BaseModel):
     """A group of similar friction or delight signals across runs."""
 
     cluster_id: str
@@ -67,38 +48,14 @@ class FacetCluster:
     confidence: float
     evidence_summary: str
     supporting_events: list[dict[str, Any]]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "cluster_id": self.cluster_id,
-            "label": self.label,
-            "category": self.category,
-            "signal_types": self.signal_types,
-            "run_ids": self.run_ids,
-            "frequency": self.frequency,
-            "recurrence_rate": self.recurrence_rate,
-            "confidence": self.confidence,
-            "evidence_summary": self.evidence_summary,
-            "supporting_events": self.supporting_events,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FacetCluster:
-        return cls(
-            cluster_id=data["cluster_id"],
-            label=data["label"],
-            category=data["category"],
-            signal_types=data.get("signal_types", []),
-            run_ids=data.get("run_ids", []),
-            frequency=data.get("frequency", 0),
-            recurrence_rate=data.get("recurrence_rate", 0.0),
-            confidence=data.get("confidence", 0.0),
-            evidence_summary=data.get("evidence_summary", ""),
-            supporting_events=data.get("supporting_events", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class PatternClusterer:

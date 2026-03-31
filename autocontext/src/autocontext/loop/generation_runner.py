@@ -5,7 +5,7 @@ import logging
 import time
 import uuid
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
@@ -895,9 +895,9 @@ class GenerationRunner:
             "run_id": trace.run_id,
             "trace_path": str(trace_path),
             "created_at": trace.created_at,
-            "run_inspection": asdict(inspector.inspect_run(trace)),
+            "run_inspection": inspector.inspect_run(trace).model_dump(),
             "generation_inspections": [
-                asdict(inspector.inspect_generation(trace, generation_index))
+                inspector.inspect_generation(trace, generation_index).model_dump()
                 for generation_index in generation_indices
             ],
             "timeline_summary": [entry.to_dict() for entry in builder.build_summary(trace)],

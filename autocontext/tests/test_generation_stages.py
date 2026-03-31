@@ -456,9 +456,9 @@ class TestStageKnowledgeSetup:
                 generation=1,
                 score_delta=0.08,
                 changes=[
-                    ComponentChange("analysis", 0.4, "analysis changed"),
-                    ComponentChange("playbook", 0.3, "playbook changed"),
-                    ComponentChange("tools", 0.3, "tools changed"),
+                    ComponentChange(component="analysis", magnitude=0.4, description="analysis changed"),
+                    ComponentChange(component="playbook", magnitude=0.3, description="playbook changed"),
+                    ComponentChange(component="tools", magnitude=0.3, description="tools changed"),
                 ],
             ),
             attribution=AttributionResult(

@@ -18,17 +18,17 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.analytics.run_trace import RunTrace, TraceEvent
 from autocontext.util.json_io import read_json, write_json
 
 
-@dataclass(slots=True)
-class TraceFinding:
+class TraceFinding(BaseModel):
     """A structured finding backed by trace evidence."""
 
     finding_id: str
@@ -38,36 +38,17 @@ class TraceFinding:
     evidence_event_ids: list[str]
     severity: str  # low, medium, high, critical
     category: str  # failure_motif, recovery_path, turning_point, recurring_pattern
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "finding_id": self.finding_id,
-            "finding_type": self.finding_type,
-            "title": self.title,
-            "description": self.description,
-            "evidence_event_ids": self.evidence_event_ids,
-            "severity": self.severity,
-            "category": self.category,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TraceFinding:
-        return cls(
-            finding_id=data["finding_id"],
-            finding_type=data["finding_type"],
-            title=data.get("title", ""),
-            description=data.get("description", ""),
-            evidence_event_ids=data.get("evidence_event_ids", []),
-            severity=data.get("severity", "medium"),
-            category=data.get("category", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class FailureMotif:
+class FailureMotif(BaseModel):
     """A recurring failure pattern grouped by event_type."""
 
     motif_id: str
@@ -75,32 +56,17 @@ class FailureMotif:
     occurrence_count: int
     evidence_event_ids: list[str]
     description: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "motif_id": self.motif_id,
-            "pattern_name": self.pattern_name,
-            "occurrence_count": self.occurrence_count,
-            "evidence_event_ids": self.evidence_event_ids,
-            "description": self.description,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FailureMotif:
-        return cls(
-            motif_id=data["motif_id"],
-            pattern_name=data["pattern_name"],
-            occurrence_count=data.get("occurrence_count", 0),
-            evidence_event_ids=data.get("evidence_event_ids", []),
-            description=data.get("description", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class RecoveryPath:
+class RecoveryPath(BaseModel):
     """A failure-to-recovery chain with intermediate events."""
 
     recovery_id: str
@@ -108,32 +74,17 @@ class RecoveryPath:
     recovery_event_id: str
     path_event_ids: list[str]
     description: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "recovery_id": self.recovery_id,
-            "failure_event_id": self.failure_event_id,
-            "recovery_event_id": self.recovery_event_id,
-            "path_event_ids": self.path_event_ids,
-            "description": self.description,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RecoveryPath:
-        return cls(
-            recovery_id=data["recovery_id"],
-            failure_event_id=data["failure_event_id"],
-            recovery_event_id=data["recovery_event_id"],
-            path_event_ids=data.get("path_event_ids", []),
-            description=data.get("description", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class TraceWriteup:
+class TraceWriteup(BaseModel):
     """Complete trace-grounded writeup."""
 
     writeup_id: str
@@ -144,34 +95,14 @@ class TraceWriteup:
     recovery_paths: list[RecoveryPath]
     summary: str
     created_at: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "writeup_id": self.writeup_id,
-            "run_id": self.run_id,
-            "generation_index": self.generation_index,
-            "findings": [f.to_dict() for f in self.findings],
-            "failure_motifs": [m.to_dict() for m in self.failure_motifs],
-            "recovery_paths": [r.to_dict() for r in self.recovery_paths],
-            "summary": self.summary,
-            "created_at": self.created_at,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TraceWriteup:
-        return cls(
-            writeup_id=data["writeup_id"],
-            run_id=data["run_id"],
-            generation_index=data.get("generation_index"),
-            findings=[TraceFinding.from_dict(f) for f in data.get("findings", [])],
-            failure_motifs=[FailureMotif.from_dict(m) for m in data.get("failure_motifs", [])],
-            recovery_paths=[RecoveryPath.from_dict(r) for r in data.get("recovery_paths", [])],
-            summary=data.get("summary", ""),
-            created_at=data.get("created_at", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
     def to_markdown(self) -> str:
         scenario = str(self.metadata.get("scenario", ""))
@@ -221,8 +152,7 @@ class TraceWriteup:
         return "\n".join(lines)
 
 
-@dataclass(slots=True)
-class WeaknessReport:
+class WeaknessReport(BaseModel):
     """Weakness-focused report with recommendations."""
 
     report_id: str
@@ -232,32 +162,14 @@ class WeaknessReport:
     recovery_analysis: str
     recommendations: list[str]
     created_at: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "report_id": self.report_id,
-            "run_id": self.run_id,
-            "weaknesses": [w.to_dict() for w in self.weaknesses],
-            "failure_motifs": [m.to_dict() for m in self.failure_motifs],
-            "recovery_analysis": self.recovery_analysis,
-            "recommendations": self.recommendations,
-            "created_at": self.created_at,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WeaknessReport:
-        return cls(
-            report_id=data["report_id"],
-            run_id=data["run_id"],
-            weaknesses=[TraceFinding.from_dict(w) for w in data.get("weaknesses", [])],
-            failure_motifs=[FailureMotif.from_dict(m) for m in data.get("failure_motifs", [])],
-            recovery_analysis=data.get("recovery_analysis", ""),
-            recommendations=data.get("recommendations", []),
-            created_at=data.get("created_at", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
     def to_markdown(self) -> str:
         scenario = str(self.metadata.get("scenario", ""))
