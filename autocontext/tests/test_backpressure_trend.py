@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from autocontext.backpressure import BackpressureGate, GateDecision
-from autocontext.backpressure.trend_gate import ScoreHistory, TrendAwareGate
+from autocontext.harness.pipeline.gate import BackpressureGate, GateDecision
+from autocontext.harness.pipeline.trend_gate import ScoreHistory, TrendAwareGate
 
 
 def test_trend_gate_delegates_for_single_gen() -> None:
