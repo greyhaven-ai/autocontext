@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Removed the legacy Python import shim at `autocontext.backpressure`; internal code already imports directly from `autocontext.harness.pipeline.*`, and downstream callers should do the same.
+
 ## [0.3.0] - 2026-03-29
 
 ### New Commands
