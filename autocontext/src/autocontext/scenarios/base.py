@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -102,7 +102,7 @@ class ScenarioInterface(ABC):
         """Build final result payload from terminal state."""
 
     @abstractmethod
-    def replay_to_narrative(self, replay: list[dict[str, Any]]) -> str:
+    def replay_to_narrative(self, replay: Sequence[dict[str, Any]]) -> str:
         """Render replay data into concise narrative text."""
 
     @abstractmethod

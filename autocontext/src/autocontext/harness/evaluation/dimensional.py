@@ -13,6 +13,7 @@ Key types:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -49,7 +50,7 @@ class DimensionalScore:
     dimensions: dict[str, float]
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def weighted_aggregate(self, dimension_specs: list[ScoringDimension]) -> float:
+    def weighted_aggregate(self, dimension_specs: Sequence[ScoringDimension]) -> float:
         """Compute weighted aggregate from dimension specs."""
         total_weight = sum(d.weight for d in dimension_specs)
         if total_weight == 0:
@@ -77,7 +78,7 @@ class DimensionalScore:
 
 
 def normalize_dimension_specs(
-    raw_specs: list[dict[str, Any]] | None,
+    raw_specs: Sequence[dict[str, Any]] | None,
 ) -> list[ScoringDimension]:
     """Convert scenario-provided dimension specs into typed dimensions."""
     if not raw_specs:
@@ -87,7 +88,7 @@ def normalize_dimension_specs(
 
 def extract_dimension_scores(
     metrics: dict[str, Any],
-    dimension_specs: list[ScoringDimension],
+    dimension_specs: Sequence[ScoringDimension],
 ) -> dict[str, float]:
     """Extract typed dimension scores from scenario metrics."""
     scores: dict[str, float] = {}
@@ -123,7 +124,7 @@ def detect_dimension_regression(
 
 
 def format_dimension_trajectory(
-    history: list[dict[str, float]],
+    history: Sequence[dict[str, float]],
 ) -> str:
     """Format dimension score history as a human-readable trajectory table."""
     if not history:

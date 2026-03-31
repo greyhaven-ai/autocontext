@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -124,7 +124,7 @@ def _resolve_rlm_backend(settings: AppSettings) -> _RlmBackendConfig:
     )
 
 
-def apply_dag_changes(dag: RoleDAG, changes: list[dict[str, Any]]) -> tuple[int, int]:
+def apply_dag_changes(dag: RoleDAG, changes: Sequence[dict[str, Any]]) -> tuple[int, int]:
     """Apply a list of DAG change directives. Returns (applied, skipped) counts."""
     applied = 0
     skipped = 0

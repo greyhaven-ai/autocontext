@@ -8,7 +8,7 @@ traces and terminal state rather than prose quality alone.
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -377,7 +377,7 @@ class SimulationInterface(ScenarioInterface):
             },
         )
 
-    def replay_to_narrative(self, replay: list[dict[str, Any]]) -> str:
+    def replay_to_narrative(self, replay: Sequence[dict[str, Any]]) -> str:
         if not replay:
             return "No simulation actions were recorded."
         rendered = []

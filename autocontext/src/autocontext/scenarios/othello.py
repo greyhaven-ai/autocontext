@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from autocontext.scenarios.base import Observation, Result, ScenarioInterface
@@ -126,7 +126,7 @@ class OthelloScenario(ScenarioInterface):
             metrics={k: float(v) for k, v in dict(state.get("metrics", {})).items()},
         )
 
-    def replay_to_narrative(self, replay: list[dict[str, Any]]) -> str:
+    def replay_to_narrative(self, replay: Sequence[dict[str, Any]]) -> str:
         if not replay:
             return "No Othello replay available."
         latest = replay[-1]

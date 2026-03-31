@@ -255,6 +255,32 @@ class TestLoadSelfPlayPool:
         assert opponents[0].generation == 1
         assert opponents[0].elo == 1110.0
 
+    def test_accepts_tuple_sequence_history(self) -> None:
+        from autocontext.harness.evaluation.self_play import (
+            SelfPlayConfig,
+            load_self_play_pool,
+        )
+
+        history = (
+            {
+                "generation_index": 1,
+                "content": json.dumps({"aggression": 0.9}),
+                "best_score": 0.8,
+                "gate_decision": "advance",
+                "elo": 1110.0,
+            },
+        )
+
+        pool = load_self_play_pool(
+            history,
+            SelfPlayConfig(enabled=True, pool_size=3, weight=0.5),
+            current_generation=3,
+        )
+
+        opponents = pool.get_opponents()
+        assert len(opponents) == 1
+        assert opponents[0].generation == 1
+
     def test_ignores_future_and_invalid_rows(self) -> None:
         from autocontext.harness.evaluation.self_play import (
             SelfPlayConfig,

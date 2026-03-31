@@ -13,6 +13,7 @@ Key types:
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -122,14 +123,18 @@ def planned_self_play_trials(
 
 
 def load_self_play_pool(
-    strategy_history: list[dict[str, Any]] | Any,
+    strategy_history: Sequence[dict[str, Any]] | Any,
     config: SelfPlayConfig,
     *,
     current_generation: int,
 ) -> SelfPlayPool:
     """Build a self-play pool from previously advanced strategies in the run."""
     pool = SelfPlayPool(config)
-    if not config.enabled or not isinstance(strategy_history, list):
+    if (
+        not config.enabled
+        or not isinstance(strategy_history, Sequence)
+        or isinstance(strategy_history, (str, bytes, bytearray))
+    ):
         return pool
 
     candidates: list[SelfPlayOpponent] = []
@@ -169,7 +174,7 @@ def load_self_play_pool(
 
 
 def build_opponent_pool(
-    baselines: list[dict[str, Any]],
+    baselines: Sequence[dict[str, Any]],
     self_play_pool: SelfPlayPool,
     *,
     trials: int | None = None,
