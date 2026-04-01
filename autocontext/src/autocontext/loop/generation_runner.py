@@ -538,7 +538,7 @@ class GenerationRunner:
         run_id: str,
         scenario_name: str,
         scenario: ScenarioInterface,
-        generation_rows: list[dict[str, Any]],
+        generation_rows: list[dict[str, Any]] | list,  # accepts GenerationMetricsRow too
         role_metrics: list[dict[str, Any]],
         staged_validations: list[dict[str, Any]],
         consultations: list[dict[str, Any]],

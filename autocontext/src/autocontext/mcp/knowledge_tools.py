@@ -51,14 +51,14 @@ def read_skills(ctx: MtsToolContext, scenario_name: str) -> str:
     return ctx.artifacts.read_skills(scenario_name)
 
 
-def list_runs(ctx: MtsToolContext) -> list[dict[str, Any]]:
+def list_runs(ctx: MtsToolContext) -> list[dict[str, Any]]:  # type: ignore[override]
     """List recent runs from SQLite."""
-    return ctx.sqlite.list_runs(limit=20)
+    return ctx.sqlite.list_runs(limit=20)  # type: ignore[return-value]
 
 
 def run_status(ctx: MtsToolContext, run_id: str) -> list[dict[str, Any]]:
     """Get generation-level metrics for a run."""
-    return ctx.sqlite.get_generation_metrics(run_id)
+    return ctx.sqlite.get_generation_metrics(run_id)  # type: ignore[return-value]
 
 
 def run_replay(ctx: MtsToolContext, run_id: str, generation: int) -> dict[str, Any]:

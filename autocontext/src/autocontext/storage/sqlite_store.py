@@ -4,7 +4,9 @@ import json
 import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+
+from autocontext.storage.row_types import GenerationMetricsRow, RunRow
 
 if TYPE_CHECKING:
     from autocontext.monitor.types import MonitorAlert, MonitorCondition
@@ -435,14 +437,14 @@ class SQLiteStore:
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def get_generation_metrics(self, run_id: str) -> list[dict[str, Any]]:
+    def get_generation_metrics(self, run_id: str) -> list[GenerationMetricsRow]:
         """Return all generation records for a run, ordered by generation index."""
         with self.connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM generations WHERE run_id = ? ORDER BY generation_index",
                 (run_id,),
             ).fetchall()
-            return [dict(row) for row in rows]
+            return cast(list[GenerationMetricsRow], [dict(row) for row in rows])
 
     def get_agent_role_metrics(self, run_id: str) -> list[dict[str, Any]]:
         """Return agent role metrics for a run, ordered by generation and row id."""
@@ -694,7 +696,7 @@ class SQLiteStore:
     # -- Shared query services (AC-480) --
     # These replace duplicated raw SQL in cli.py, mcp/tools.py, and server/ endpoints.
 
-    def list_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    def list_runs(self, *, limit: int = 50) -> list[RunRow]:
         """List recent runs, newest first."""
         with self.connect() as conn:
             rows = conn.execute(
@@ -702,7 +704,7 @@ class SQLiteStore:
                 "FROM runs ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return cast(list[RunRow], [dict(row) for row in rows])
 
     def run_status(self, run_id: str) -> list[dict[str, Any]]:
         """Return per-generation status for a run."""

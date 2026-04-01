@@ -129,7 +129,7 @@ def _get_competitor_outputs(sqlite: SQLiteStore, run_id: str) -> dict[int, str]:
 
 
 def _build_trajectory_snippet(
-    generations: list[dict[str, Any]],
+    generations: list[dict[str, Any]] | list,  # accepts GenerationMetricsRow too
     up_to_index: int,
 ) -> list[dict[str, Any]]:
     """Build a score trajectory list up to (and including) the given generation."""

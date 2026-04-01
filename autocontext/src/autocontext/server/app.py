@@ -149,7 +149,7 @@ def create_app(
 
     @application.get("/api/runs")
     def list_runs() -> list[dict[str, Any]]:
-        return store.list_runs(limit=50)
+        return store.list_runs(limit=50)  # type: ignore[return-value]
 
     @application.get("/api/runs/{run_id}/status")
     def run_status(run_id: str) -> list[dict[str, Any]]:
