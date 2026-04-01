@@ -13,8 +13,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +110,7 @@ def _extract_marker_bullets(text: str) -> list[str]:
     return bullets
 
 
-@dataclass(slots=True)
-class ConsolidatedRoleOutput:
+class ConsolidatedRoleOutput(BaseModel):
     """Combined analyst+coach output for consolidation benchmarking."""
 
     raw_markdown: str
@@ -121,34 +121,14 @@ class ConsolidatedRoleOutput:
     lessons: list[str]
     hints: list[str]
     parse_success: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "raw_markdown": self.raw_markdown,
-            "findings": self.findings,
-            "root_causes": self.root_causes,
-            "recommendations": self.recommendations,
-            "playbook": self.playbook,
-            "lessons": self.lessons,
-            "hints": self.hints,
-            "parse_success": self.parse_success,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ConsolidatedRoleOutput:
-        return cls(
-            raw_markdown=data.get("raw_markdown", ""),
-            findings=data.get("findings", []),
-            root_causes=data.get("root_causes", []),
-            recommendations=data.get("recommendations", []),
-            playbook=data.get("playbook", ""),
-            lessons=data.get("lessons", []),
-            hints=data.get("hints", []),
-            parse_success=data.get("parse_success", False),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def parse_consolidated_output(markdown: str) -> ConsolidatedRoleOutput:
@@ -183,8 +163,7 @@ def parse_consolidated_output(markdown: str) -> ConsolidatedRoleOutput:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(slots=True)
-class RoleBenchmarkResult:
+class RoleBenchmarkResult(BaseModel):
     """Metrics from one configuration (two-role or consolidated)."""
 
     mode: str  # "two_role" or "consolidated"
@@ -196,36 +175,14 @@ class RoleBenchmarkResult:
     hints_count: int
     total_tokens: int
     total_latency_ms: int
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "mode": self.mode,
-            "findings_count": self.findings_count,
-            "root_causes_count": self.root_causes_count,
-            "recommendations_count": self.recommendations_count,
-            "playbook_length": self.playbook_length,
-            "lessons_count": self.lessons_count,
-            "hints_count": self.hints_count,
-            "total_tokens": self.total_tokens,
-            "total_latency_ms": self.total_latency_ms,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RoleBenchmarkResult:
-        return cls(
-            mode=data["mode"],
-            findings_count=data.get("findings_count", 0),
-            root_causes_count=data.get("root_causes_count", 0),
-            recommendations_count=data.get("recommendations_count", 0),
-            playbook_length=data.get("playbook_length", 0),
-            lessons_count=data.get("lessons_count", 0),
-            hints_count=data.get("hints_count", 0),
-            total_tokens=data.get("total_tokens", 0),
-            total_latency_ms=data.get("total_latency_ms", 0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def compare_role_outputs(

@@ -16,43 +16,36 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
-class HintFeedback:
+class HintFeedback(BaseModel):
     """Competitor's annotation of hint quality after tournament."""
 
-    helpful: list[str]
-    misleading: list[str]
-    missing: list[str]
-    generation: int
-    metadata: dict[str, Any] = field(default_factory=dict)
+    helpful: list[str] = Field(default_factory=list)
+    misleading: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    generation: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("helpful", "misleading", "missing", mode="before")
+    @classmethod
+    def _normalize_feedback_items(cls, value: Any) -> list[str]:
+        return _normalize_feedback_list(value)
 
     def is_empty(self) -> bool:
         return not self.helpful and not self.misleading and not self.missing
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "helpful": self.helpful,
-            "misleading": self.misleading,
-            "missing": self.missing,
-            "generation": self.generation,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HintFeedback:
-        return cls(
-            helpful=_normalize_feedback_list(data.get("helpful")),
-            misleading=_normalize_feedback_list(data.get("misleading")),
-            missing=_normalize_feedback_list(data.get("missing")),
-            generation=data.get("generation", 0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def build_hint_reflection_prompt(

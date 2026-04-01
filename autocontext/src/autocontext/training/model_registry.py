@@ -20,13 +20,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from autocontext.util.json_io import read_json, write_json
 
 _VALID_STATES = frozenset({"candidate", "active", "disabled", "deprecated"})
 
 
-@dataclass(slots=True)
-class DistilledModelRecord:
+class DistilledModelRecord(BaseModel):
     """Registry entry for a distilled model artifact."""
 
     artifact_id: str
@@ -38,46 +39,23 @@ class DistilledModelRecord:
     activation_state: str  # candidate, active, disabled, deprecated
     training_metrics: dict[str, Any]
     provenance: dict[str, Any]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def __post_init__(self) -> None:
+    def model_post_init(self, __context: Any) -> None:
         if self.activation_state not in _VALID_STATES:
             raise ValueError(
                 f"Invalid activation_state {self.activation_state!r}; expected one of {sorted(_VALID_STATES)}",
             )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "artifact_id": self.artifact_id,
-            "scenario": self.scenario,
-            "scenario_family": self.scenario_family,
-            "backend": self.backend,
-            "checkpoint_path": self.checkpoint_path,
-            "runtime_types": self.runtime_types,
-            "activation_state": self.activation_state,
-            "training_metrics": self.training_metrics,
-            "provenance": self.provenance,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DistilledModelRecord:
-        return cls(
-            artifact_id=data["artifact_id"],
-            scenario=data.get("scenario", ""),
-            scenario_family=data.get("scenario_family", ""),
-            backend=data.get("backend", ""),
-            checkpoint_path=data.get("checkpoint_path", ""),
-            runtime_types=data.get("runtime_types", []),
-            activation_state=data.get("activation_state", "candidate"),
-            training_metrics=data.get("training_metrics", {}),
-            provenance=data.get("provenance", {}),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class DistilledModelArtifact:
+class DistilledModelArtifact(BaseModel):
     """Published artifact with training and architecture metadata."""
 
     artifact_id: str
@@ -88,34 +66,14 @@ class DistilledModelArtifact:
     architecture: str
     training_metrics: dict[str, Any]
     data_stats: dict[str, Any]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "artifact_id": self.artifact_id,
-            "checkpoint_path": self.checkpoint_path,
-            "backend": self.backend,
-            "scenario": self.scenario,
-            "parameter_count": self.parameter_count,
-            "architecture": self.architecture,
-            "training_metrics": self.training_metrics,
-            "data_stats": self.data_stats,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DistilledModelArtifact:
-        return cls(
-            artifact_id=data["artifact_id"],
-            checkpoint_path=data.get("checkpoint_path", ""),
-            backend=data.get("backend", ""),
-            scenario=data.get("scenario", ""),
-            parameter_count=data.get("parameter_count", 0),
-            architecture=data.get("architecture", ""),
-            training_metrics=data.get("training_metrics", {}),
-            data_stats=data.get("data_stats", {}),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 @dataclass(slots=True)

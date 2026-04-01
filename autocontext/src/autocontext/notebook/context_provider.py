@@ -8,9 +8,11 @@ dominating run-local evidence.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.notebook.types import SessionNotebook
 
@@ -42,8 +44,7 @@ class NotebookContextWarning:
     description: str
 
 
-@dataclass(slots=True)
-class EffectiveContextPreview:
+class EffectiveContextPreview(BaseModel):
     """Preview of notebook-derived context that will be injected at runtime."""
 
     session_id: str
@@ -51,38 +52,14 @@ class EffectiveContextPreview:
     warnings: list[NotebookContextWarning]
     notebook_empty: bool
     created_at: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "session_id": self.session_id,
-            "role_contexts": self.role_contexts,
-            "warnings": [
-                {"field": w.field, "warning_type": w.warning_type, "description": w.description}
-                for w in self.warnings
-            ],
-            "notebook_empty": self.notebook_empty,
-            "created_at": self.created_at,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EffectiveContextPreview:
-        return cls(
-            session_id=data["session_id"],
-            role_contexts=data.get("role_contexts", {}),
-            warnings=[
-                NotebookContextWarning(
-                    field=w["field"],
-                    warning_type=w["warning_type"],
-                    description=w["description"],
-                )
-                for w in data.get("warnings", [])
-            ],
-            notebook_empty=data.get("notebook_empty", True),
-            created_at=data.get("created_at", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class NotebookContextProvider:

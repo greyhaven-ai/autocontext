@@ -16,50 +16,35 @@ Key types:
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field, computed_field
 
 # ---------------------------------------------------------------------------
 # AC-336: Analyst quality scoring
 # ---------------------------------------------------------------------------
 
 
-@dataclass(slots=True)
-class AnalystRating:
+class AnalystRating(BaseModel):
     """Curator's quality rating for analyst output."""
 
-    actionability: int  # 1-5
-    specificity: int  # 1-5
-    correctness: int  # 1-5
-    rationale: str
-    generation: int
-    metadata: dict[str, Any] = field(default_factory=dict)
+    actionability: int = 3  # 1-5
+    specificity: int = 3  # 1-5
+    correctness: int = 3  # 1-5
+    rationale: str = ""
+    generation: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @property
+    @computed_field(return_type=float)
     def overall(self) -> float:
         return round(statistics.mean([self.actionability, self.specificity, self.correctness]), 2)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "actionability": self.actionability,
-            "specificity": self.specificity,
-            "correctness": self.correctness,
-            "rationale": self.rationale,
-            "generation": self.generation,
-            "overall": self.overall,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AnalystRating:
-        return cls(
-            actionability=data.get("actionability", 3),
-            specificity=data.get("specificity", 3),
-            correctness=data.get("correctness", 3),
-            rationale=data.get("rationale", ""),
-            generation=data.get("generation", 0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def format_analyst_feedback(rating: AnalystRating | None) -> str:
@@ -82,34 +67,21 @@ def format_analyst_feedback(rating: AnalystRating | None) -> str:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(slots=True)
-class ToolUsageRecord:
+class ToolUsageRecord(BaseModel):
     """Per-tool usage statistics."""
 
     tool_name: str
     used_in_gens: list[int]
     last_used: int
     total_refs: int
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "tool_name": self.tool_name,
-            "used_in_gens": self.used_in_gens,
-            "last_used": self.last_used,
-            "total_refs": self.total_refs,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolUsageRecord:
-        return cls(
-            tool_name=data["tool_name"],
-            used_in_gens=data.get("used_in_gens", []),
-            last_used=data.get("last_used", 0),
-            total_refs=data.get("total_refs", 0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class ToolUsageTracker:

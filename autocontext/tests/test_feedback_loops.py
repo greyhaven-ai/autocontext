@@ -39,6 +39,7 @@ class TestAnalystRating:
 
         rating = AnalystRating(actionability=3, specificity=4, correctness=2, rationale="test", generation=3)
         d = rating.to_dict()
+        assert d["overall"] == 3.0
         restored = AnalystRating.from_dict(d)
         assert restored.specificity == 4
         assert restored.generation == 3

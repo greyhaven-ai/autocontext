@@ -46,6 +46,44 @@ class TestHintFeedback:
         assert restored.misleading == ["b"]
         assert restored.generation == 3
 
+    def test_from_dict_normalizes_legacy_payload(self) -> None:
+        from autocontext.agents.hint_feedback import HintFeedback
+
+        restored = HintFeedback.from_dict({
+            "helpful": "focus on corners",
+            "generation": 2,
+        })
+
+        assert restored.helpful == ["focus on corners"]
+        assert restored.misleading == []
+        assert restored.missing == []
+        assert restored.generation == 2
+
+    def test_artifact_store_reads_legacy_feedback_payload(self, tmp_path) -> None:
+        import json
+
+        from autocontext.storage.artifacts import ArtifactStore
+
+        runs = tmp_path / "runs"
+        knowledge = tmp_path / "knowledge"
+        skills = tmp_path / "skills"
+        claude_skills = tmp_path / "claude_skills"
+        store = ArtifactStore(runs, knowledge, skills, claude_skills)
+
+        path = knowledge / "demo" / "hint_feedback" / "gen_1.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"helpful": "use BFS", "generation": 1}),
+            encoding="utf-8",
+        )
+
+        restored = store.read_latest_hint_feedback("demo", current_gen=2)
+
+        assert restored is not None
+        assert restored.helpful == ["use BFS"]
+        assert restored.misleading == []
+        assert restored.missing == []
+
 
 # ===========================================================================
 # build_hint_reflection_prompt

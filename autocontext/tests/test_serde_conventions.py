@@ -83,3 +83,30 @@ class TestExecutionModuleSerde:
             "execution/ has manual to_dict/from_dict:\n"
             + "\n".join(f"  {f}:{m} ({n} lines)" for f, m, n in violations)
         )
+
+
+class TestAgentsProvidersMisc:
+    """agents/, providers/, and other small modules should use Pydantic serde."""
+
+    def test_agents_uses_pydantic_serde(self) -> None:
+        violations = _count_manual_serde(SRC_ROOT / "agents")
+        # ToolUsageTracker is a plain class (not BaseModel) with custom to_dict
+        violations = [(f, m, n) for f, m, n in violations if "ToolUsageTracker" not in m]
+        assert violations == [], (
+            "agents/ has manual to_dict/from_dict:\n"
+            + "\n".join(f"  {f}:{m} ({n} lines)" for f, m, n in violations)
+        )
+
+    def test_providers_uses_pydantic_serde(self) -> None:
+        violations = _count_manual_serde(SRC_ROOT / "providers")
+        assert violations == [], (
+            "providers/ has manual to_dict/from_dict:\n"
+            + "\n".join(f"  {f}:{m} ({n} lines)" for f, m, n in violations)
+        )
+
+    def test_loop_uses_pydantic_serde(self) -> None:
+        violations = _count_manual_serde(SRC_ROOT / "loop")
+        assert violations == [], (
+            "loop/ has manual to_dict/from_dict:\n"
+            + "\n".join(f"  {f}:{m} ({n} lines)" for f, m, n in violations)
+        )

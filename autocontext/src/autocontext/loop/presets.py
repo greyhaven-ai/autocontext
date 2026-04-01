@@ -12,37 +12,27 @@ Key types:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.config.presets import LONG_RUN_PRESET_SETTINGS, SHORT_RUN_PRESET_SETTINGS
 
 
-@dataclass(slots=True)
-class RunPreset:
+class RunPreset(BaseModel):
     """Named preset with settings overrides."""
 
     name: str
     description: str
     settings: dict[str, Any]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "settings": self.settings,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RunPreset:
-        return cls(
-            name=data["name"],
-            description=data.get("description", ""),
-            settings=data.get("settings", {}),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 LONG_RUN_PRESET = RunPreset(

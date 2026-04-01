@@ -13,8 +13,10 @@ Key types:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # AC-339: Novelty-weighted exploration
@@ -158,7 +160,7 @@ class BasinCandidate:
     playbook: str
     lessons: str
     temperature: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def _strip_specific_tactics(playbook: str) -> str:
@@ -222,31 +224,18 @@ def generate_basin_candidates(
     return candidates[:config.candidates]
 
 
-@dataclass(slots=True)
-class BranchRecord:
+class BranchRecord(BaseModel):
     """Records which branch produced a strategy."""
 
     generation: int
     branch_type: str
     score: float
     advanced: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "generation": self.generation,
-            "branch_type": self.branch_type,
-            "score": self.score,
-            "advanced": self.advanced,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BranchRecord:
-        return cls(
-            generation=data.get("generation", 0),
-            branch_type=data.get("branch_type", ""),
-            score=data.get("score", 0.0),
-            advanced=data.get("advanced", False),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)

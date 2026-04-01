@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from typing import TYPE_CHECKING
 
 from autocontext.knowledge.evidence_freshness import (
@@ -143,33 +142,32 @@ def _filter_notebook_by_freshness(
     items = [item for _, item in records]
     active, _ = apply_freshness_decay(items, ctx.generation, _freshness_policy(ctx))
     active_ids = {item.item_id for item in active}
-    filtered = dataclasses.replace(
-        notebook,
-        current_objective=(
+    filtered = notebook.model_copy(update={
+        "current_objective": (
             notebook.current_objective
             if "notebook:current_objective" in active_ids
             else ""
         ),
-        current_hypotheses=(
+        "current_hypotheses": (
             notebook.current_hypotheses
             if "notebook:current_hypotheses" in active_ids
             else []
         ),
-        unresolved_questions=(
+        "unresolved_questions": (
             notebook.unresolved_questions
             if "notebook:unresolved_questions" in active_ids
             else []
         ),
-        operator_observations=(
+        "operator_observations": (
             notebook.operator_observations
             if "notebook:operator_observations" in active_ids
             else []
         ),
-        follow_ups=(
+        "follow_ups": (
             notebook.follow_ups
             if "notebook:follow_ups" in active_ids
             else []
         ),
-    )
+    })
     warnings = detect_stale_context(items, ctx.generation, _freshness_policy(ctx))
     return filtered, _format_freshness_warning_block("Notebook", warnings)

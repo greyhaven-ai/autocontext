@@ -10,8 +10,10 @@ AC-290: PiModelHandoff, resolve_pi_model, PiExecutionTrace
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.training.model_registry import ModelRegistry, resolve_model
 
@@ -26,11 +28,10 @@ class ScenarioRoutingContext:
     backend: str = ""
     runtime_type: str = "provider"
     manual_model_override: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(slots=True)
-class RoutingDecision:
+class RoutingDecision(BaseModel):
     """Resolved provider/model choice with provenance."""
 
     provider_type: str  # mlx, anthropic, openai-compatible, etc.
@@ -38,28 +39,14 @@ class RoutingDecision:
     artifact_id: str | None
     source: str  # registry, manual_override, fallback
     fallback_used: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "provider_type": self.provider_type,
-            "model": self.model,
-            "artifact_id": self.artifact_id,
-            "source": self.source,
-            "fallback_used": self.fallback_used,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RoutingDecision:
-        return cls(
-            provider_type=data.get("provider_type", ""),
-            model=data.get("model", ""),
-            artifact_id=data.get("artifact_id"),
-            source=data.get("source", ""),
-            fallback_used=data.get("fallback_used", False),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def _resolve_backend_provider_type(backend: str) -> str:
@@ -130,8 +117,7 @@ def resolve_provider_for_context(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(slots=True)
-class PiModelHandoff:
+class PiModelHandoff(BaseModel):
     """Contract for handing a resolved model to a Pi runtime."""
 
     artifact_id: str
@@ -139,28 +125,14 @@ class PiModelHandoff:
     backend: str
     scenario: str
     load_descriptor: str  # e.g. "mlx://grid_ctf/pi-v1"
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "artifact_id": self.artifact_id,
-            "checkpoint_path": self.checkpoint_path,
-            "backend": self.backend,
-            "scenario": self.scenario,
-            "load_descriptor": self.load_descriptor,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PiModelHandoff:
-        return cls(
-            artifact_id=data.get("artifact_id", ""),
-            checkpoint_path=data.get("checkpoint_path", ""),
-            backend=data.get("backend", ""),
-            scenario=data.get("scenario", ""),
-            load_descriptor=data.get("load_descriptor", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def resolve_pi_model(
@@ -200,8 +172,7 @@ def resolve_pi_model(
     )
 
 
-@dataclass(slots=True)
-class PiExecutionTrace:
+class PiExecutionTrace(BaseModel):
     """Trace of which Pi model/config actually ran."""
 
     scenario: str
@@ -211,29 +182,11 @@ class PiExecutionTrace:
     resolved_via: str  # registry, manual_override, fallback
     success: bool
     error: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "scenario": self.scenario,
-            "artifact_id": self.artifact_id,
-            "checkpoint_path": self.checkpoint_path,
-            "backend": self.backend,
-            "resolved_via": self.resolved_via,
-            "success": self.success,
-            "error": self.error,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PiExecutionTrace:
-        return cls(
-            scenario=data.get("scenario", ""),
-            artifact_id=data.get("artifact_id", ""),
-            checkpoint_path=data.get("checkpoint_path", ""),
-            backend=data.get("backend", ""),
-            resolved_via=data.get("resolved_via", ""),
-            success=data.get("success", False),
-            error=data.get("error", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
