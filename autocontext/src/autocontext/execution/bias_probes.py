@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from autocontext.providers.base import LLMProvider
 
@@ -30,15 +30,14 @@ class BiasReport(BaseModel):
     results: list[BiasProbeResult] = Field(default_factory=list)
     any_bias_detected: bool = False
 
+    @computed_field
     @property
     def bias_types_detected(self) -> list[str]:
         """Return probe types where bias was detected."""
         return [r.probe_type for r in self.results if r.detected]
 
     def to_dict(self) -> dict[str, Any]:
-        data = self.model_dump()
-        data["bias_types_detected"] = self.bias_types_detected
-        return data
+        return self.model_dump()
 
 
 def run_position_bias_probe(
