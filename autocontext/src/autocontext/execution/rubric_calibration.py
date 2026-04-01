@@ -20,15 +20,15 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.execution.judge import LLMJudge
 from autocontext.providers.base import LLMProvider
 
 
-@dataclass(slots=True)
-class CalibrationAnchor:
+class CalibrationAnchor(BaseModel):
     """A human-scored output serving as calibration reference."""
 
     anchor_id: str
@@ -37,39 +37,22 @@ class CalibrationAnchor:
     human_score: float
     score_band: str  # poor, fair, good, excellent
     human_notes: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "anchor_id": self.anchor_id,
-            "domain": self.domain,
-            "output_text": self.output_text,
-            "human_score": self.human_score,
-            "score_band": self.score_band,
-            "human_notes": self.human_notes,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CalibrationAnchor:
-        return cls(
-            anchor_id=data["anchor_id"],
-            domain=data.get("domain", ""),
-            output_text=data.get("output_text", ""),
-            human_score=data.get("human_score", 0.0),
-            score_band=data.get("score_band", ""),
-            human_notes=data.get("human_notes", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class CalibrationSet:
+class CalibrationSet(BaseModel):
     """Collection of calibration anchors for one domain."""
 
     domain: str
     anchors: list[CalibrationAnchor]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def score_bands(self) -> dict[str, list[CalibrationAnchor]]:
         """Group anchors by score band."""
@@ -79,23 +62,14 @@ class CalibrationSet:
         return bands
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "domain": self.domain,
-            "anchors": [a.to_dict() for a in self.anchors],
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CalibrationSet:
-        return cls(
-            domain=data["domain"],
-            anchors=[CalibrationAnchor.from_dict(a) for a in data.get("anchors", [])],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class JudgeVarianceResult:
+class JudgeVarianceResult(BaseModel):
     """Variance metrics from repeat-judging the same output."""
 
     mean: float
@@ -105,23 +79,11 @@ class JudgeVarianceResult:
     num_samples: int
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "mean": self.mean,
-            "variance": self.variance,
-            "std_dev": self.std_dev,
-            "range": self.range,
-            "num_samples": self.num_samples,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JudgeVarianceResult:
-        return cls(
-            mean=data.get("mean", 0.0),
-            variance=data.get("variance", 0.0),
-            std_dev=data.get("std_dev", 0.0),
-            range=data.get("range", 0.0),
-            num_samples=data.get("num_samples", 0),
-        )
+        return cls.model_validate(data)
 
 
 def measure_judge_variance(scores: list[float]) -> JudgeVarianceResult:
@@ -143,8 +105,7 @@ def measure_judge_variance(scores: list[float]) -> JudgeVarianceResult:
     )
 
 
-@dataclass(slots=True)
-class AlignmentResult:
+class AlignmentResult(BaseModel):
     """Alignment between human scores and judge scores."""
 
     mean_absolute_error: float
@@ -154,23 +115,11 @@ class AlignmentResult:
     per_anchor_errors: list[float]
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "mean_absolute_error": self.mean_absolute_error,
-            "bias": self.bias,
-            "correlation": self.correlation,
-            "num_pairs": self.num_pairs,
-            "per_anchor_errors": self.per_anchor_errors,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AlignmentResult:
-        return cls(
-            mean_absolute_error=data.get("mean_absolute_error", 0.0),
-            bias=data.get("bias", 0.0),
-            correlation=data.get("correlation", 0.0),
-            num_pairs=data.get("num_pairs", 0),
-            per_anchor_errors=data.get("per_anchor_errors", []),
-        )
+        return cls.model_validate(data)
 
 
 def _pearson_correlation(xs: list[float], ys: list[float]) -> float:
@@ -228,8 +177,7 @@ def compute_alignment(
     )
 
 
-@dataclass(slots=True)
-class AlignmentTolerance:
+class AlignmentTolerance(BaseModel):
     """Per-domain tolerance thresholds for acceptable alignment."""
 
     domain: str
@@ -263,12 +211,7 @@ class AlignmentTolerance:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "domain": self.domain,
-            "max_mean_absolute_error": self.max_mean_absolute_error,
-            "max_bias": self.max_bias,
-            "min_correlation": self.min_correlation,
-        }
+        return self.model_dump()
 
     def check(self, alignment: AlignmentResult) -> dict[str, Any]:
         """Check alignment against tolerance thresholds."""
@@ -296,8 +239,7 @@ class AlignmentTolerance:
         }
 
 
-@dataclass(slots=True)
-class CalibrationReport:
+class CalibrationReport(BaseModel):
     """Aggregate calibration report for one domain."""
 
     domain: str
@@ -305,7 +247,7 @@ class CalibrationReport:
     alignment: AlignmentResult
     variance: JudgeVarianceResult
     calibrated: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [
@@ -321,25 +263,11 @@ class CalibrationReport:
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "domain": self.domain,
-            "num_anchors": self.num_anchors,
-            "alignment": self.alignment.to_dict(),
-            "variance": self.variance.to_dict(),
-            "calibrated": self.calibrated,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CalibrationReport:
-        return cls(
-            domain=data["domain"],
-            num_anchors=data.get("num_anchors", 0),
-            alignment=AlignmentResult.from_dict(data.get("alignment", {})),
-            variance=JudgeVarianceResult.from_dict(data.get("variance", {})),
-            calibrated=data.get("calibrated", False),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def _score_band_for_score(score: float) -> str:

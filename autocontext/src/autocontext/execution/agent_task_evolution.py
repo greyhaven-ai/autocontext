@@ -6,11 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from autocontext.scenarios.agent_task import AgentTaskResult
 
 
-@dataclass(slots=True)
-class AgentTaskGenerationState:
+class AgentTaskGenerationState(BaseModel):
     """Cross-generation state for an agent task evolution run."""
 
     generation: int
@@ -19,30 +20,14 @@ class AgentTaskGenerationState:
     playbook: str
     score_history: list[float]
     lesson_history: list[str]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "generation": self.generation,
-            "best_output": self.best_output,
-            "best_score": self.best_score,
-            "playbook": self.playbook,
-            "score_history": self.score_history,
-            "lesson_history": self.lesson_history,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AgentTaskGenerationState:
-        return cls(
-            generation=data.get("generation", 0),
-            best_output=data.get("best_output", ""),
-            best_score=data.get("best_score", 0.0),
-            playbook=data.get("playbook", ""),
-            score_history=data.get("score_history", []),
-            lesson_history=data.get("lesson_history", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 @dataclass(slots=True)
@@ -131,8 +116,7 @@ def build_enriched_prompt(
     return "\n".join(sections)
 
 
-@dataclass(slots=True)
-class AgentTaskTrajectory:
+class AgentTaskTrajectory(BaseModel):
     """Trajectory report for a multi-generation agent task run."""
 
     task_name: str
@@ -142,7 +126,7 @@ class AgentTaskTrajectory:
     cold_start_score: float
     final_score: float
     improvement_delta: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def cold_vs_warm_summary(self) -> str:
         """Human-readable comparison of cold-start vs warmed performance."""
@@ -160,29 +144,11 @@ class AgentTaskTrajectory:
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "task_name": self.task_name,
-            "total_generations": self.total_generations,
-            "score_history": self.score_history,
-            "lessons_per_generation": self.lessons_per_generation,
-            "cold_start_score": self.cold_start_score,
-            "final_score": self.final_score,
-            "improvement_delta": self.improvement_delta,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AgentTaskTrajectory:
-        return cls(
-            task_name=data.get("task_name", ""),
-            total_generations=data.get("total_generations", 0),
-            score_history=data.get("score_history", []),
-            lessons_per_generation=data.get("lessons_per_generation", []),
-            cold_start_score=data.get("cold_start_score", 0.0),
-            final_score=data.get("final_score", 0.0),
-            improvement_delta=data.get("improvement_delta", 0.0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class ScenarioFamilyGuide:

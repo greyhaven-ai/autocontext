@@ -219,6 +219,20 @@ class TestAgentTaskTrajectory:
         assert restored.cold_start_score == 0.5
         assert restored.final_score == 0.7
 
+
+class TestAgentTaskGenerationEvaluationDefaults:
+    def test_defaults_are_real_containers(self) -> None:
+        from autocontext.execution.agent_task_evolution import AgentTaskGenerationEvaluation
+
+        evaluation = AgentTaskGenerationEvaluation(
+            output="draft",
+            score=0.5,
+            reasoning="Needs evidence",
+        )
+
+        assert evaluation.dimension_scores == {}
+        assert evaluation.metadata == {}
+
     def test_cold_vs_warm_comparison(self) -> None:
         from autocontext.execution.agent_task_evolution import AgentTaskTrajectory
 
@@ -319,6 +333,32 @@ class TestAgentTaskEvolutionRunner:
         assert len(state.score_history) == 1
         assert generated_prompts == ["Write an essay."]
         assert state.best_output == "My first essay draft."
+
+    def test_single_generation_with_minimal_evaluation_result(self) -> None:
+        from autocontext.execution.agent_task_evolution import (
+            AgentTaskEvolutionRunner,
+            AgentTaskGenerationEvaluation,
+        )
+
+        def mock_generate(prompt: str, generation: int) -> str:
+            return "Draft"
+
+        def mock_evaluate(output: str, generation: int) -> AgentTaskGenerationEvaluation:
+            return AgentTaskGenerationEvaluation(
+                output=output,
+                score=0.5,
+                reasoning="Needs evidence",
+            )
+
+        runner = AgentTaskEvolutionRunner(
+            task_prompt="Write an essay.",
+            generate_fn=mock_generate,
+            evaluate_fn=mock_evaluate,
+        )
+        trajectory = runner.run(num_generations=1)
+
+        assert trajectory.cold_start_score == 0.5
+        assert trajectory.final_score == 0.5
 
     def test_multi_generation_accumulates_lessons(self) -> None:
         """Multiple generations should grow the playbook."""

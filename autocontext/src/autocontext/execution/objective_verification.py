@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass(slots=True)
-class GroundTruthItem:
+
+class GroundTruthItem(BaseModel):
     """A single verifiable item that should appear in correct output.
 
     Domain-agnostic: works for drug interactions, proof steps, factual
@@ -47,32 +47,17 @@ class GroundTruthItem:
     match_keywords: list[list[str]]
     weight: str = "moderate"
     category: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "item_id": self.item_id,
-            "description": self.description,
-            "match_keywords": self.match_keywords,
-            "weight": self.weight,
-            "category": self.category,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GroundTruthItem:
-        return cls(
-            item_id=data["item_id"],
-            description=data.get("description", ""),
-            match_keywords=data.get("match_keywords", []),
-            weight=data.get("weight", "moderate"),
-            category=data.get("category", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class ItemMatchDetail:
+class ItemMatchDetail(BaseModel):
     """Detail about whether a single ground-truth item was found."""
 
     item_id: str
@@ -82,17 +67,10 @@ class ItemMatchDetail:
     matched_in: str  # the text fragment where match occurred, or ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "item_id": self.item_id,
-            "found": self.found,
-            "weight": self.weight,
-            "weight_matched": self.weight_matched,
-            "matched_in": self.matched_in,
-        }
+        return self.model_dump()
 
 
-@dataclass(slots=True)
-class OracleResult:
+class OracleResult(BaseModel):
     """Objective verification metrics."""
 
     total_known: int
@@ -103,40 +81,17 @@ class OracleResult:
     precision: float
     weight_agreement: float | None
     item_details: list[ItemMatchDetail]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "total_known": self.total_known,
-            "found_count": self.found_count,
-            "claimed_count": self.claimed_count,
-            "false_positive_count": self.false_positive_count,
-            "recall": self.recall,
-            "precision": self.precision,
-            "weight_agreement": self.weight_agreement,
-            "item_details": [d.to_dict() for d in self.item_details],
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OracleResult:
-        return cls(
-            total_known=data.get("total_known", 0),
-            found_count=data.get("found_count", 0),
-            claimed_count=data.get("claimed_count", 0),
-            false_positive_count=data.get("false_positive_count", 0),
-            recall=data.get("recall", 0.0),
-            precision=data.get("precision", 0.0),
-            weight_agreement=data.get("weight_agreement"),
-            item_details=[
-                ItemMatchDetail(**d) for d in data.get("item_details", [])
-            ],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class OracleComparison:
+class OracleComparison(BaseModel):
     """Comparison of rubric score vs objective metrics."""
 
     rubric_score: float
@@ -145,7 +100,7 @@ class OracleComparison:
     weight_agreement: float | None
     false_positive_rate: float
     rubric_objective_gap: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [
@@ -160,42 +115,22 @@ class OracleComparison:
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "rubric_score": self.rubric_score,
-            "objective_recall": self.objective_recall,
-            "objective_precision": self.objective_precision,
-            "weight_agreement": self.weight_agreement,
-            "false_positive_rate": self.false_positive_rate,
-            "rubric_objective_gap": self.rubric_objective_gap,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
 
-@dataclass(slots=True)
-class ObjectiveVerificationConfig:
+class ObjectiveVerificationConfig(BaseModel):
     """Serializable config for running an objective oracle in live task paths."""
 
     ground_truth: list[GroundTruthItem]
-    claim_patterns: list[str] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    claim_patterns: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "ground_truth": [item.to_dict() for item in self.ground_truth],
-            "claim_patterns": self.claim_patterns,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ObjectiveVerificationConfig:
-        return cls(
-            ground_truth=[
-                GroundTruthItem.from_dict(item)
-                for item in data.get("ground_truth", [])
-            ],
-            claim_patterns=data.get("claim_patterns", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
     def build_oracle(self) -> KeywordMatchOracle:
         compiled = [re.compile(pattern, re.MULTILINE) for pattern in self.claim_patterns]

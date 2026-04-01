@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from autocontext.execution.agent_task_evolution import (
     AgentTaskEvolutionRunner,
     AgentTaskGenerationEvaluation,
@@ -53,8 +55,7 @@ class PlaybookInspector:
         return {key: len(value) for key, value in snapshots.items()}
 
 
-@dataclass(slots=True)
-class TrajectoryComparison:
+class TrajectoryComparison(BaseModel):
     """Cross-seed improvement statistics."""
 
     task_name: str
@@ -66,7 +67,7 @@ class TrajectoryComparison:
     std_improvement: float
     per_seed_improvements: list[float]
     consistent: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [
@@ -81,33 +82,11 @@ class TrajectoryComparison:
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "task_name": self.task_name,
-            "num_seeds": self.num_seeds,
-            "num_generations": self.num_generations,
-            "mean_cold_start": self.mean_cold_start,
-            "mean_final": self.mean_final,
-            "mean_improvement": self.mean_improvement,
-            "std_improvement": self.std_improvement,
-            "per_seed_improvements": self.per_seed_improvements,
-            "consistent": self.consistent,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TrajectoryComparison:
-        return cls(
-            task_name=data.get("task_name", ""),
-            num_seeds=data.get("num_seeds", 0),
-            num_generations=data.get("num_generations", 0),
-            mean_cold_start=data.get("mean_cold_start", 0.0),
-            mean_final=data.get("mean_final", 0.0),
-            mean_improvement=data.get("mean_improvement", 0.0),
-            std_improvement=data.get("std_improvement", 0.0),
-            per_seed_improvements=data.get("per_seed_improvements", []),
-            consistent=data.get("consistent", False),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def validate_improvement(

@@ -358,11 +358,11 @@ class TestOracleToRevisionFeedback:
             false_positive_count=1, recall=0.33, precision=0.5,
             weight_agreement=None,
             item_details=[
-                ItemMatchDetail("item-1", found=True, weight="high",
+                ItemMatchDetail(item_id="item-1", found=True, weight="high",
                                 weight_matched=True, matched_in="line1"),
-                ItemMatchDetail("item-2", found=False, weight="moderate",
+                ItemMatchDetail(item_id="item-2", found=False, weight="moderate",
                                 weight_matched=False, matched_in=""),
-                ItemMatchDetail("item-3", found=False, weight="high",
+                ItemMatchDetail(item_id="item-3", found=False, weight="high",
                                 weight_matched=False, matched_in=""),
             ],
         )
@@ -379,9 +379,9 @@ class TestOracleToRevisionFeedback:
             false_positive_count=0, recall=1.0, precision=1.0,
             weight_agreement=1.0,
             item_details=[
-                ItemMatchDetail("item-1", found=True, weight="high",
+                ItemMatchDetail(item_id="item-1", found=True, weight="high",
                                 weight_matched=True, matched_in="line1"),
-                ItemMatchDetail("item-2", found=True, weight="moderate",
+                ItemMatchDetail(item_id="item-2", found=True, weight="moderate",
                                 weight_matched=True, matched_in="line2"),
             ],
         )
@@ -397,7 +397,7 @@ class TestOracleToRevisionFeedback:
             false_positive_count=0, recall=1.0, precision=1.0,
             weight_agreement=0.0,
             item_details=[
-                ItemMatchDetail("item-1", found=True, weight="high",
+                ItemMatchDetail(item_id="item-1", found=True, weight="high",
                                 weight_matched=False, matched_in="line1"),
             ],
         )

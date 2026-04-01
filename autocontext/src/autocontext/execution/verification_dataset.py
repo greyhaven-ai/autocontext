@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.execution.objective_verification import (
     GroundTruthItem,
@@ -30,8 +31,7 @@ from autocontext.execution.objective_verification import (
 from autocontext.util.json_io import read_json
 
 
-@dataclass(slots=True)
-class DatasetProvenance:
+class DatasetProvenance(BaseModel):
     """Provenance metadata for a verification dataset."""
 
     source: str
@@ -40,42 +40,25 @@ class DatasetProvenance:
     domain: str
     updated_at: str
     notes: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "source": self.source,
-            "curator": self.curator,
-            "version": self.version,
-            "domain": self.domain,
-            "updated_at": self.updated_at,
-            "notes": self.notes,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DatasetProvenance:
-        return cls(
-            source=data.get("source", ""),
-            curator=data.get("curator", ""),
-            version=data.get("version", ""),
-            domain=data.get("domain", ""),
-            updated_at=data.get("updated_at", ""),
-            notes=data.get("notes", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class VerificationDataset:
+class VerificationDataset(BaseModel):
     """Versioned collection of ground-truth items with provenance."""
 
     dataset_id: str
     name: str
     provenance: DatasetProvenance
     items: list[GroundTruthItem]
-    claim_patterns: list[str] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    claim_patterns: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def build_oracle(self) -> KeywordMatchOracle:
         """Build a KeywordMatchOracle from this dataset."""
@@ -83,25 +66,11 @@ class VerificationDataset:
         return KeywordMatchOracle(self.items, claim_patterns=compiled)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "dataset_id": self.dataset_id,
-            "name": self.name,
-            "provenance": self.provenance.to_dict(),
-            "items": [item.to_dict() for item in self.items],
-            "claim_patterns": self.claim_patterns,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VerificationDataset:
-        return cls(
-            dataset_id=data["dataset_id"],
-            name=data.get("name", ""),
-            provenance=DatasetProvenance.from_dict(data.get("provenance", {})),
-            items=[GroundTruthItem.from_dict(i) for i in data.get("items", [])],
-            claim_patterns=data.get("claim_patterns", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class DatasetRegistry:
@@ -177,8 +146,7 @@ class DatasetRegistry:
         return datasets
 
 
-@dataclass(slots=True)
-class VerificationRunRecord:
+class VerificationRunRecord(BaseModel):
     """Records which dataset/version was used for objective verification on a run."""
 
     run_id: str
@@ -188,62 +156,31 @@ class VerificationRunRecord:
     objective_recall: float
     objective_precision: float
     created_at: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "run_id": self.run_id,
-            "dataset_id": self.dataset_id,
-            "dataset_version": self.dataset_version,
-            "rubric_score": self.rubric_score,
-            "objective_recall": self.objective_recall,
-            "objective_precision": self.objective_precision,
-            "created_at": self.created_at,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> VerificationRunRecord:
-        return cls(
-            run_id=data["run_id"],
-            dataset_id=data.get("dataset_id", ""),
-            dataset_version=data.get("dataset_version", ""),
-            rubric_score=data.get("rubric_score", 0.0),
-            objective_recall=data.get("objective_recall", 0.0),
-            objective_precision=data.get("objective_precision", 0.0),
-            created_at=data.get("created_at", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class OracleRevisionFeedback:
+class OracleRevisionFeedback(BaseModel):
     """Structured feedback from oracle verification for revision loops."""
 
     missed_items: list[str]
     false_positives: list[str]
     weight_mismatches: list[str]
     revision_prompt_context: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "missed_items": self.missed_items,
-            "false_positives": self.false_positives,
-            "weight_mismatches": self.weight_mismatches,
-            "revision_prompt_context": self.revision_prompt_context,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OracleRevisionFeedback:
-        return cls(
-            missed_items=list(data.get("missed_items", [])),
-            false_positives=list(data.get("false_positives", [])),
-            weight_mismatches=list(data.get("weight_mismatches", [])),
-            revision_prompt_context=data.get("revision_prompt_context", ""),
-            metadata=dict(data.get("metadata", {})),
-        )
+        return cls.model_validate(data)
 
     def is_empty(self) -> bool:
         return (

@@ -20,9 +20,11 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +37,7 @@ class PhaseBudget:
     budget_seconds: float
 
 
-@dataclass(slots=True)
-class PhaseResult:
+class PhaseResult(BaseModel):
     """Outcome of a single phase execution."""
 
     phase_name: str
@@ -48,27 +49,11 @@ class PhaseResult:
     outputs: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "phase_name": self.phase_name,
-            "status": self.status,
-            "duration_seconds": self.duration_seconds,
-            "budget_seconds": self.budget_seconds,
-            "budget_remaining_seconds": self.budget_remaining_seconds,
-            "error": self.error,
-            "outputs": self.outputs,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PhaseResult:
-        return cls(
-            phase_name=data["phase_name"],
-            status=data["status"],
-            duration_seconds=data.get("duration_seconds", 0.0),
-            budget_seconds=data.get("budget_seconds", 0.0),
-            budget_remaining_seconds=data.get("budget_remaining_seconds", 0.0),
-            error=data.get("error"),
-            outputs=data.get("outputs", {}),
-        )
+        return cls.model_validate(data)
 
 
 @dataclass(slots=True)
@@ -80,13 +65,19 @@ class PhasedExecutionPlan:
     allow_rollover: bool = False
 
 
-@dataclass(slots=True)
-class PhasedExecutionResult:
+class PhasedExecutionResult(BaseModel):
     """Aggregate result across all phases."""
 
     phase_results: list[PhaseResult]
     total_duration_seconds: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        d = self.model_dump()
+        d["all_completed"] = self.all_completed
+        d["failed_phase"] = self.failed_phase
+        d["completed_phases"] = self.completed_phases
+        return d
 
     @property
     def all_completed(self) -> bool:
@@ -103,23 +94,9 @@ class PhasedExecutionResult:
     def completed_phases(self) -> int:
         return sum(1 for r in self.phase_results if r.status == "completed")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "phase_results": [r.to_dict() for r in self.phase_results],
-            "total_duration_seconds": self.total_duration_seconds,
-            "all_completed": self.all_completed,
-            "failed_phase": self.failed_phase,
-            "completed_phases": self.completed_phases,
-            "metadata": self.metadata,
-        }
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PhasedExecutionResult:
-        return cls(
-            phase_results=[PhaseResult.from_dict(r) for r in data.get("phase_results", [])],
-            total_duration_seconds=data.get("total_duration_seconds", 0.0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class PhaseTimer:

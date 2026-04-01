@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.execution.bias_probes import BiasReport, run_position_bias_probe
 from autocontext.execution.judge import DisagreementMetrics, JudgeResult
@@ -18,8 +19,7 @@ _BIAS_PROBE_SYSTEM_PROMPT = (
 )
 
 
-@dataclass(slots=True)
-class EvaluatorGuardrailResult:
+class EvaluatorGuardrailResult(BaseModel):
     """Outcome of live evaluator disagreement / bias checks."""
 
     passed: bool
@@ -27,17 +27,10 @@ class EvaluatorGuardrailResult:
     violations: list[str]
     disagreement: dict[str, Any] | None = None
     bias_report: dict[str, Any] | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "passed": self.passed,
-            "reason": self.reason,
-            "violations": self.violations,
-            "disagreement": self.disagreement,
-            "bias_report": self.bias_report,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
 
 def evaluate_evaluator_guardrail(
