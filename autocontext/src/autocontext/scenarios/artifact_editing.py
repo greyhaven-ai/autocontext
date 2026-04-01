@@ -8,39 +8,29 @@ validation pipeline outcomes, not just prose quality.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass(slots=True)
-class Artifact:
+
+class Artifact(BaseModel):
     """A versioned artifact that can be edited."""
 
     path: str
     content: str
     content_type: str  # e.g., "yaml", "json", "python", "text"
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "path": self.path,
-            "content": self.content,
-            "content_type": self.content_type,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Artifact:
-        return cls(
-            path=data["path"],
-            content=data["content"],
-            content_type=data["content_type"],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class ArtifactDiff:
+class ArtifactDiff(BaseModel):
     """Records a change to an artifact."""
 
     path: str
@@ -49,21 +39,11 @@ class ArtifactDiff:
     after: str | None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "path": self.path,
-            "operation": self.operation,
-            "before": self.before,
-            "after": self.after,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ArtifactDiff:
-        return cls(
-            path=data["path"],
-            operation=data["operation"],
-            before=data.get("before"),
-            after=data.get("after"),
-        )
+        return cls.model_validate(data)
 
 
 @dataclass(slots=True)
@@ -75,8 +55,7 @@ class ArtifactValidationResult:
     warnings: list[str]
 
 
-@dataclass(slots=True)
-class ArtifactEditingResult:
+class ArtifactEditingResult(BaseModel):
     """Result of evaluating an artifact-editing scenario."""
 
     score: float
@@ -88,36 +67,11 @@ class ArtifactEditingResult:
     artifacts_valid: int
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "diffs": [d.to_dict() for d in self.diffs],
-            "validation": {
-                "valid": self.validation.valid,
-                "errors": self.validation.errors,
-                "warnings": self.validation.warnings,
-            },
-            "artifacts_modified": self.artifacts_modified,
-            "artifacts_valid": self.artifacts_valid,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ArtifactEditingResult:
-        val_data = data["validation"]
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            diffs=[ArtifactDiff.from_dict(d) for d in data["diffs"]],
-            validation=ArtifactValidationResult(
-                valid=val_data["valid"],
-                errors=val_data["errors"],
-                warnings=val_data.get("warnings", []),
-            ),
-            artifacts_modified=data["artifacts_modified"],
-            artifacts_valid=data["artifacts_valid"],
-        )
+        return cls.model_validate(data)
 
 
 class ArtifactEditingInterface(ABC):

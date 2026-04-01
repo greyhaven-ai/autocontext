@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
+from pydantic import BaseModel
 
 from autocontext.config import load_settings
 from autocontext.execution.judge import LLMJudge
@@ -18,8 +18,7 @@ from autocontext.scenarios.families import get_family_marker
 TEMPLATE_DIR = Path(__file__).parent
 
 
-@dataclass(slots=True)
-class RubricDimension:
+class RubricDimension(BaseModel):
     """A single scoring dimension with a weight."""
 
     name: str
@@ -28,20 +27,13 @@ class RubricDimension:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RubricDimension:
-        """Create a RubricDimension from a dictionary."""
-        return cls(
-            name=data["name"],
-            description=data["description"],
-            weight=data.get("weight", 1.0),
-        )
+        return cls.model_validate(data)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to a dictionary."""
-        return {"name": self.name, "description": self.description, "weight": self.weight}
+        return self.model_dump()
 
 
-@dataclass(slots=True)
-class TemplateSpec:
+class TemplateSpec(BaseModel):
     """Specification loaded from a template's spec.yaml."""
 
     name: str
@@ -61,27 +53,7 @@ class TemplateSpec:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TemplateSpec:
-        """Create a TemplateSpec from a dictionary (parsed YAML)."""
-        dims_data = data.get("rubric_dimensions")
-        dims: list[RubricDimension] | None = None
-        if dims_data:
-            dims = [RubricDimension.from_dict(d) for d in dims_data]
-        return cls(
-            name=data["name"],
-            description=data["description"],
-            task_prompt=data["task_prompt"],
-            judge_rubric=data["judge_rubric"],
-            output_format=data.get("output_format", "free_text"),
-            judge_model=data.get("judge_model", ""),
-            max_rounds=data.get("max_rounds", 1),
-            quality_threshold=data.get("quality_threshold", 0.9),
-            reference_context=data.get("reference_context"),
-            required_concepts=data.get("required_concepts"),
-            calibration_examples=data.get("calibration_examples"),
-            revision_prompt=data.get("revision_prompt"),
-            sample_input=data.get("sample_input"),
-            rubric_dimensions=dims,
-        )
+        return cls.model_validate(data)
 
     def to_agent_task_spec(self) -> AgentTaskSpec:
         """Convert this template spec to an AgentTaskSpec."""

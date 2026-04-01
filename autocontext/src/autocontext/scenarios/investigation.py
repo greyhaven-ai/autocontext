@@ -8,14 +8,14 @@ chain coherence, and diagnosis accuracy rather than prose quality.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.scenarios.simulation import SimulationInterface
 
 
-@dataclass(slots=True)
-class EvidenceItem:
+class EvidenceItem(BaseModel):
     """A single piece of evidence in an investigation."""
 
     id: str
@@ -23,32 +23,17 @@ class EvidenceItem:
     source: str
     relevance: float  # 0.0–1.0 ground-truth relevance
     is_red_herring: bool
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "content": self.content,
-            "source": self.source,
-            "relevance": self.relevance,
-            "is_red_herring": self.is_red_herring,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EvidenceItem:
-        return cls(
-            id=data["id"],
-            content=data["content"],
-            source=data["source"],
-            relevance=data["relevance"],
-            is_red_herring=data["is_red_herring"],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class EvidenceChain:
+class EvidenceChain(BaseModel):
     """An ordered chain of evidence items with reasoning."""
 
     items: list[EvidenceItem]
@@ -59,21 +44,14 @@ class EvidenceChain:
         return any(item.is_red_herring for item in self.items)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "items": [item.to_dict() for item in self.items],
-            "reasoning": self.reasoning,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EvidenceChain:
-        return cls(
-            items=[EvidenceItem.from_dict(item) for item in data["items"]],
-            reasoning=data["reasoning"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class InvestigationResult:
+class InvestigationResult(BaseModel):
     """Result of evaluating an investigation scenario."""
 
     score: float
@@ -86,29 +64,11 @@ class InvestigationResult:
     diagnosis_correct: bool
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "diagnosis": self.diagnosis,
-            "evidence_collected": self.evidence_collected,
-            "red_herrings_avoided": self.red_herrings_avoided,
-            "red_herrings_followed": self.red_herrings_followed,
-            "diagnosis_correct": self.diagnosis_correct,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> InvestigationResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            diagnosis=data["diagnosis"],
-            evidence_collected=data["evidence_collected"],
-            red_herrings_avoided=data["red_herrings_avoided"],
-            red_herrings_followed=data["red_herrings_followed"],
-            diagnosis_correct=data["diagnosis_correct"],
-        )
+        return cls.model_validate(data)
 
 
 class InvestigationInterface(SimulationInterface):

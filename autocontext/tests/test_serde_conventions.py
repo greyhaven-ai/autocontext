@@ -110,3 +110,17 @@ class TestAgentsProvidersMisc:
             "loop/ has manual to_dict/from_dict:\n"
             + "\n".join(f"  {f}:{m} ({n} lines)" for f, m, n in violations)
         )
+
+
+class TestScenariosModuleSerde:
+    """scenarios/ data classes should use Pydantic serde."""
+
+    def test_scenarios_uses_pydantic_serde(self) -> None:
+        violations = _count_manual_serde(SRC_ROOT / "scenarios")
+        # WorldStateManager and WorldStateStore are plain classes with custom to_dict
+        violations = [(f, m, n) for f, m, n in violations
+                      if "WorldStateManager" not in m and "WorldStateStore" not in m]
+        assert violations == [], (
+            "scenarios/ has manual to_dict/from_dict:\n"
+            + "\n".join(f"  {f}:{m} ({n} lines)" for f, m, n in violations)
+        )

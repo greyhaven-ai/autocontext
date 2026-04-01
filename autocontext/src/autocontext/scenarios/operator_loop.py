@@ -9,41 +9,30 @@ escalations are scored separately.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.scenarios.simulation import SimulationInterface
 
 
-@dataclass(slots=True)
-class ClarificationRequest:
+class ClarificationRequest(BaseModel):
     """A clarification request from the agent to the operator."""
 
     question: str
     context: str
     urgency: str  # "low", "medium", "high"
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "question": self.question,
-            "context": self.context,
-            "urgency": self.urgency,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ClarificationRequest:
-        return cls(
-            question=data["question"],
-            context=data["context"],
-            urgency=data["urgency"],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class EscalationEvent:
+class EscalationEvent(BaseModel):
     """A record of an escalation to the operator."""
 
     step: int
@@ -51,32 +40,17 @@ class EscalationEvent:
     severity: str  # "low", "medium", "high", "critical"
     context: str
     was_necessary: bool  # ground truth for evaluation
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "step": self.step,
-            "reason": self.reason,
-            "severity": self.severity,
-            "context": self.context,
-            "was_necessary": self.was_necessary,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EscalationEvent:
-        return cls(
-            step=data["step"],
-            reason=data["reason"],
-            severity=data["severity"],
-            context=data["context"],
-            was_necessary=data["was_necessary"],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class OperatorLoopResult:
+class OperatorLoopResult(BaseModel):
     """Evaluation result for operator-in-the-loop judgment."""
 
     score: float
@@ -90,31 +64,11 @@ class OperatorLoopResult:
     clarifications_requested: int
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "total_actions": self.total_actions,
-            "escalations": self.escalations,
-            "necessary_escalations": self.necessary_escalations,
-            "unnecessary_escalations": self.unnecessary_escalations,
-            "missed_escalations": self.missed_escalations,
-            "clarifications_requested": self.clarifications_requested,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OperatorLoopResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            total_actions=data["total_actions"],
-            escalations=data["escalations"],
-            necessary_escalations=data["necessary_escalations"],
-            unnecessary_escalations=data["unnecessary_escalations"],
-            missed_escalations=data["missed_escalations"],
-            clarifications_requested=data["clarifications_requested"],
-        )
+        return cls.model_validate(data)
 
 
 class OperatorLoopInterface(SimulationInterface):

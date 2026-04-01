@@ -8,44 +8,31 @@ opponent modeling accuracy, efficiency, and strategic adaptation.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.scenarios.simulation import SimulationInterface
 
 
-@dataclass(slots=True)
-class HiddenPreferences:
+class HiddenPreferences(BaseModel):
     """The opponent's hidden negotiation parameters (ground truth)."""
 
     priorities: dict[str, float]  # dimension → weight (0.0–1.0)
     reservation_value: float  # minimum acceptable deal value
     aspiration_value: float  # ideal deal value
     batna_description: str  # best alternative to negotiated agreement
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "priorities": self.priorities,
-            "reservation_value": self.reservation_value,
-            "aspiration_value": self.aspiration_value,
-            "batna_description": self.batna_description,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HiddenPreferences:
-        return cls(
-            priorities=data["priorities"],
-            reservation_value=data["reservation_value"],
-            aspiration_value=data["aspiration_value"],
-            batna_description=data["batna_description"],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class NegotiationRound:
+class NegotiationRound(BaseModel):
     """A single round of negotiation."""
 
     round_number: int
@@ -53,65 +40,35 @@ class NegotiationRound:
     counter_offer: dict[str, Any] | None  # opponent counter (None if accepted/final)
     accepted: bool
     agent_reasoning: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "round_number": self.round_number,
-            "offer": self.offer,
-            "counter_offer": self.counter_offer,
-            "accepted": self.accepted,
-            "agent_reasoning": self.agent_reasoning,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NegotiationRound:
-        return cls(
-            round_number=data["round_number"],
-            offer=data["offer"],
-            counter_offer=data.get("counter_offer"),
-            accepted=data["accepted"],
-            agent_reasoning=data.get("agent_reasoning", ""),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class OpponentModel:
+class OpponentModel(BaseModel):
     """The agent's inferred model of the opponent."""
 
     inferred_priorities: dict[str, float]
     inferred_reservation: float
     strategy_hypothesis: str
     confidence: float  # 0.0–1.0
-    adaptation_notes: list[str] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    adaptation_notes: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "inferred_priorities": self.inferred_priorities,
-            "inferred_reservation": self.inferred_reservation,
-            "strategy_hypothesis": self.strategy_hypothesis,
-            "confidence": self.confidence,
-            "adaptation_notes": self.adaptation_notes,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OpponentModel:
-        return cls(
-            inferred_priorities=data["inferred_priorities"],
-            inferred_reservation=data["inferred_reservation"],
-            strategy_hypothesis=data["strategy_hypothesis"],
-            confidence=data["confidence"],
-            adaptation_notes=data.get("adaptation_notes", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class NegotiationResult:
+class NegotiationResult(BaseModel):
     """Evaluation result for a negotiation scenario."""
 
     score: float
@@ -124,29 +81,11 @@ class NegotiationResult:
     value_claimed_ratio: float  # fraction of available surplus claimed
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "deal_value": self.deal_value,
-            "rounds_used": self.rounds_used,
-            "max_rounds": self.max_rounds,
-            "opponent_model_accuracy": self.opponent_model_accuracy,
-            "value_claimed_ratio": self.value_claimed_ratio,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NegotiationResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            deal_value=data["deal_value"],
-            rounds_used=data["rounds_used"],
-            max_rounds=data["max_rounds"],
-            opponent_model_accuracy=data["opponent_model_accuracy"],
-            value_claimed_ratio=data["value_claimed_ratio"],
-        )
+        return cls.model_validate(data)
 
 
 class NegotiationInterface(SimulationInterface):

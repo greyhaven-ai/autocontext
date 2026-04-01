@@ -8,44 +8,31 @@ handoff quality, merge quality, and final outcome quality.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.scenarios.simulation import SimulationInterface
 
 
-@dataclass(slots=True)
-class WorkerContext:
+class WorkerContext(BaseModel):
     """Partial context assigned to a worker agent."""
 
     worker_id: str
     role: str
     context_partition: dict[str, Any]  # what this worker can see
     visible_data: list[str]  # keys/sections visible to this worker
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "worker_id": self.worker_id,
-            "role": self.role,
-            "context_partition": self.context_partition,
-            "visible_data": self.visible_data,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkerContext:
-        return cls(
-            worker_id=data["worker_id"],
-            role=data["role"],
-            context_partition=data.get("context_partition", {}),
-            visible_data=data.get("visible_data", []),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class HandoffRecord:
+class HandoffRecord(BaseModel):
     """A record of information passed between workers."""
 
     from_worker: str
@@ -53,32 +40,17 @@ class HandoffRecord:
     content: str
     quality: float  # 0.0–1.0
     step: int
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "from_worker": self.from_worker,
-            "to_worker": self.to_worker,
-            "content": self.content,
-            "quality": self.quality,
-            "step": self.step,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HandoffRecord:
-        return cls(
-            from_worker=data["from_worker"],
-            to_worker=data["to_worker"],
-            content=data["content"],
-            quality=data["quality"],
-            step=data["step"],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class CoordinationResult:
+class CoordinationResult(BaseModel):
     """Evaluation result for multi-agent coordination."""
 
     score: float
@@ -90,27 +62,11 @@ class CoordinationResult:
     merge_conflicts: int
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "workers_used": self.workers_used,
-            "handoffs_completed": self.handoffs_completed,
-            "duplication_rate": self.duplication_rate,
-            "merge_conflicts": self.merge_conflicts,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CoordinationResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            workers_used=data["workers_used"],
-            handoffs_completed=data["handoffs_completed"],
-            duplication_rate=data["duplication_rate"],
-            merge_conflicts=data["merge_conflicts"],
-        )
+        return cls.model_validate(data)
 
 
 class CoordinationInterface(SimulationInterface):

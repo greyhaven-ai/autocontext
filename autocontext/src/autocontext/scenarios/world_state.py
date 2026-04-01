@@ -13,16 +13,16 @@ from __future__ import annotations
 import copy
 import json
 import uuid
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from autocontext.util.json_io import read_json, write_json
 
 
-@dataclass(slots=True)
-class WorldEntity:
+class WorldEntity(BaseModel):
     """An entity in the world state (agent, service, task, etc.)."""
 
     entity_id: str
@@ -32,27 +32,14 @@ class WorldEntity:
     status: str  # active, inactive, blocked, completed, failed
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "entity_id": self.entity_id,
-            "entity_type": self.entity_type,
-            "name": self.name,
-            "properties": self.properties,
-            "status": self.status,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorldEntity:
-        return cls(
-            entity_id=data["entity_id"],
-            entity_type=data["entity_type"],
-            name=data.get("name", ""),
-            properties=data.get("properties", {}),
-            status=data.get("status", "active"),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class WorldResource:
+class WorldResource(BaseModel):
     """A quantifiable resource in the world."""
 
     resource_id: str
@@ -63,29 +50,14 @@ class WorldResource:
     owner_entity_id: str | None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "resource_id": self.resource_id,
-            "resource_type": self.resource_type,
-            "name": self.name,
-            "quantity": self.quantity,
-            "capacity": self.capacity,
-            "owner_entity_id": self.owner_entity_id,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorldResource:
-        return cls(
-            resource_id=data["resource_id"],
-            resource_type=data["resource_type"],
-            name=data.get("name", ""),
-            quantity=data.get("quantity", 0.0),
-            capacity=data.get("capacity"),
-            owner_entity_id=data.get("owner_entity_id"),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class DependencyEdge:
+class DependencyEdge(BaseModel):
     """A dependency between entities.
 
     Types: requires, blocks, produces, consumes.
@@ -94,28 +66,17 @@ class DependencyEdge:
     source_entity_id: str
     target_entity_id: str
     dependency_type: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "source_entity_id": self.source_entity_id,
-            "target_entity_id": self.target_entity_id,
-            "dependency_type": self.dependency_type,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DependencyEdge:
-        return cls(
-            source_entity_id=data["source_entity_id"],
-            target_entity_id=data["target_entity_id"],
-            dependency_type=data["dependency_type"],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class HiddenVariable:
+class HiddenVariable(BaseModel):
     """A hidden variable that may be revealed during play."""
 
     variable_id: str
@@ -125,27 +86,14 @@ class HiddenVariable:
     reveal_condition: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "variable_id": self.variable_id,
-            "name": self.name,
-            "value": self.value,
-            "revealed": self.revealed,
-            "reveal_condition": self.reveal_condition,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HiddenVariable:
-        return cls(
-            variable_id=data["variable_id"],
-            name=data.get("name", ""),
-            value=data.get("value"),
-            revealed=data.get("revealed", False),
-            reveal_condition=data.get("reveal_condition", ""),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class StateDelta:
+class StateDelta(BaseModel):
     """A single change within a state transition.
 
     Delta types: entity_created, entity_updated, entity_removed,
@@ -161,27 +109,14 @@ class StateDelta:
     new_value: Any
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "delta_type": self.delta_type,
-            "target_id": self.target_id,
-            "field": self.field,
-            "old_value": self.old_value,
-            "new_value": self.new_value,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StateDelta:
-        return cls(
-            delta_type=data["delta_type"],
-            target_id=data["target_id"],
-            field=data.get("field"),
-            old_value=data.get("old_value"),
-            new_value=data.get("new_value"),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class StateTransition:
+class StateTransition(BaseModel):
     """A transition that changes world state."""
 
     transition_id: str
@@ -189,32 +124,17 @@ class StateTransition:
     action: str
     actor_entity_id: str
     changes: list[StateDelta]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "transition_id": self.transition_id,
-            "timestamp": self.timestamp,
-            "action": self.action,
-            "actor_entity_id": self.actor_entity_id,
-            "changes": [c.to_dict() for c in self.changes],
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StateTransition:
-        return cls(
-            transition_id=data["transition_id"],
-            timestamp=data.get("timestamp", ""),
-            action=data.get("action", ""),
-            actor_entity_id=data.get("actor_entity_id", ""),
-            changes=[StateDelta.from_dict(c) for c in data.get("changes", [])],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class WorldState:
+class WorldState(BaseModel):
     """A snapshot of the entire world at a point in time."""
 
     state_id: str
@@ -224,32 +144,14 @@ class WorldState:
     resources: list[WorldResource]
     dependencies: list[DependencyEdge]
     hidden_variables: list[HiddenVariable]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "state_id": self.state_id,
-            "scenario_name": self.scenario_name,
-            "step_index": self.step_index,
-            "entities": [e.to_dict() for e in self.entities],
-            "resources": [r.to_dict() for r in self.resources],
-            "dependencies": [d.to_dict() for d in self.dependencies],
-            "hidden_variables": [v.to_dict() for v in self.hidden_variables],
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorldState:
-        return cls(
-            state_id=data["state_id"],
-            scenario_name=data.get("scenario_name", ""),
-            step_index=data.get("step_index", 0),
-            entities=[WorldEntity.from_dict(e) for e in data.get("entities", [])],
-            resources=[WorldResource.from_dict(r) for r in data.get("resources", [])],
-            dependencies=[DependencyEdge.from_dict(d) for d in data.get("dependencies", [])],
-            hidden_variables=[HiddenVariable.from_dict(v) for v in data.get("hidden_variables", [])],
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class WorldStateManager:

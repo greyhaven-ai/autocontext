@@ -8,14 +8,14 @@ on workflow completeness, compensation quality, and side-effect containment.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel
 
 from autocontext.scenarios.simulation import ActionResult, SimulationInterface
 
 
-@dataclass(slots=True)
-class WorkflowStep:
+class WorkflowStep(BaseModel):
     """A single step in a transactional workflow."""
 
     name: str
@@ -25,27 +25,14 @@ class WorkflowStep:
     compensation: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "idempotent": self.idempotent,
-            "reversible": self.reversible,
-            "compensation": self.compensation,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkflowStep:
-        return cls(
-            name=data["name"],
-            description=data["description"],
-            idempotent=data["idempotent"],
-            reversible=data["reversible"],
-            compensation=data.get("compensation"),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class SideEffect:
+class SideEffect(BaseModel):
     """A side effect produced by a workflow step."""
 
     step_name: str
@@ -55,27 +42,14 @@ class SideEffect:
     reversed: bool
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "step_name": self.step_name,
-            "effect_type": self.effect_type,
-            "description": self.description,
-            "reversible": self.reversible,
-            "reversed": self.reversed,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SideEffect:
-        return cls(
-            step_name=data["step_name"],
-            effect_type=data["effect_type"],
-            description=data["description"],
-            reversible=data["reversible"],
-            reversed=data["reversed"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class CompensationAction:
+class CompensationAction(BaseModel):
     """Result of executing a compensation/rollback action."""
 
     step_name: str
@@ -84,25 +58,14 @@ class CompensationAction:
     output: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "step_name": self.step_name,
-            "compensation_name": self.compensation_name,
-            "success": self.success,
-            "output": self.output,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CompensationAction:
-        return cls(
-            step_name=data["step_name"],
-            compensation_name=data["compensation_name"],
-            success=data["success"],
-            output=data["output"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class WorkflowResult:
+class WorkflowResult(BaseModel):
     """Result of evaluating a workflow scenario."""
 
     score: float
@@ -118,35 +81,11 @@ class WorkflowResult:
     side_effects_leaked: int
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "steps_completed": self.steps_completed,
-            "steps_total": self.steps_total,
-            "retries": self.retries,
-            "compensations_triggered": self.compensations_triggered,
-            "compensations_successful": self.compensations_successful,
-            "side_effects": [se.to_dict() for se in self.side_effects],
-            "side_effects_reversed": self.side_effects_reversed,
-            "side_effects_leaked": self.side_effects_leaked,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkflowResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            steps_completed=data["steps_completed"],
-            steps_total=data["steps_total"],
-            retries=data["retries"],
-            compensations_triggered=data["compensations_triggered"],
-            compensations_successful=data["compensations_successful"],
-            side_effects=[SideEffect.from_dict(se) for se in data["side_effects"]],
-            side_effects_reversed=data["side_effects_reversed"],
-            side_effects_leaked=data["side_effects_leaked"],
-        )
+        return cls.model_validate(data)
 
 
 class WorkflowInterface(SimulationInterface):

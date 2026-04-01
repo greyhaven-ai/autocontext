@@ -12,6 +12,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel
+
 from autocontext.scenarios.base import Observation, Result, ScenarioInterface
 
 
@@ -57,8 +59,7 @@ class ActionRecord:
     state_after: dict[str, Any]
 
 
-@dataclass(slots=True)
-class ActionTrace:
+class ActionTrace(BaseModel):
     """Complete record of all actions taken during a simulation."""
 
     records: list[ActionRecord]
@@ -74,51 +75,11 @@ class ActionTrace:
         return sum(1 for r in self.records if r.result.success) / len(self.records)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "records": [
-                {
-                    "step": r.step,
-                    "action": {"name": r.action.name, "parameters": r.action.parameters, "reasoning": r.action.reasoning},
-                    "result": {
-                        "success": r.result.success,
-                        "output": r.result.output,
-                        "state_changes": r.result.state_changes,
-                        "error": r.result.error,
-                        "side_effects": r.result.side_effects,
-                    },
-                    "state_before": r.state_before,
-                    "state_after": r.state_after,
-                }
-                for r in self.records
-            ],
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ActionTrace:
-        records = []
-        for rec in data["records"]:
-            action = Action(
-                name=rec["action"]["name"],
-                parameters=rec["action"]["parameters"],
-                reasoning=rec["action"].get("reasoning", ""),
-            )
-            result = ActionResult(
-                success=rec["result"]["success"],
-                output=rec["result"]["output"],
-                state_changes=rec["result"]["state_changes"],
-                error=rec["result"].get("error", ""),
-                side_effects=rec["result"].get("side_effects", []),
-            )
-            records.append(
-                ActionRecord(
-                    step=rec["step"],
-                    action=action,
-                    result=result,
-                    state_before=rec["state_before"],
-                    state_after=rec["state_after"],
-                )
-            )
-        return cls(records=records)
+        return cls.model_validate(data)
 
 
 @dataclass(slots=True)
@@ -133,8 +94,7 @@ class EnvironmentSpec:
     failure_modes: list[str] = field(default_factory=list)
 
 
-@dataclass(slots=True)
-class SimulationResult:
+class SimulationResult(BaseModel):
     """Result of evaluating a complete simulation trace."""
 
     score: float
@@ -147,29 +107,11 @@ class SimulationResult:
     rollback_quality: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "workflow_complete": self.workflow_complete,
-            "actions_taken": self.actions_taken,
-            "actions_successful": self.actions_successful,
-            "recovery_attempts": self.recovery_attempts,
-            "rollback_quality": self.rollback_quality,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SimulationResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            workflow_complete=data["workflow_complete"],
-            actions_taken=data["actions_taken"],
-            actions_successful=data["actions_successful"],
-            recovery_attempts=data.get("recovery_attempts", 0),
-            rollback_quality=data.get("rollback_quality", 0.0),
-        )
+        return cls.model_validate(data)
 
 
 class SimulationInterface(ScenarioInterface):

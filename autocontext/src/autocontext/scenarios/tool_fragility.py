@@ -9,8 +9,9 @@ runtime/tool, and stale-context failures.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel
 
 from autocontext.scenarios.simulation import SimulationInterface
 
@@ -22,8 +23,7 @@ FAILURE_CLASSES = frozenset({
 })
 
 
-@dataclass(slots=True)
-class ToolContract:
+class ToolContract(BaseModel):
     """Describes a tool/API contract at a specific version."""
 
     tool_name: str
@@ -33,27 +33,14 @@ class ToolContract:
     description: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "tool_name": self.tool_name,
-            "version": self.version,
-            "input_schema": self.input_schema,
-            "output_schema": self.output_schema,
-            "description": self.description,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolContract:
-        return cls(
-            tool_name=data["tool_name"],
-            version=data["version"],
-            input_schema=data.get("input_schema", {}),
-            output_schema=data.get("output_schema", {}),
-            description=data["description"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class ToolDrift:
+class ToolDrift(BaseModel):
     """Records a change in a tool's contract."""
 
     tool_name: str
@@ -64,29 +51,14 @@ class ToolDrift:
     breaking: bool
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "tool_name": self.tool_name,
-            "from_version": self.from_version,
-            "to_version": self.to_version,
-            "description": self.description,
-            "drift_type": self.drift_type,
-            "breaking": self.breaking,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolDrift:
-        return cls(
-            tool_name=data["tool_name"],
-            from_version=data["from_version"],
-            to_version=data["to_version"],
-            description=data["description"],
-            drift_type=data["drift_type"],
-            breaking=data["breaking"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class FailureAttribution:
+class FailureAttribution(BaseModel):
     """Attributes a failure to a specific class."""
 
     step: int
@@ -96,27 +68,14 @@ class FailureAttribution:
     recoverable: bool
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "step": self.step,
-            "failure_class": self.failure_class,
-            "description": self.description,
-            "tool_name": self.tool_name,
-            "recoverable": self.recoverable,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FailureAttribution:
-        return cls(
-            step=data["step"],
-            failure_class=data["failure_class"],
-            description=data["description"],
-            tool_name=data["tool_name"],
-            recoverable=data["recoverable"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class ToolFragilityResult:
+class ToolFragilityResult(BaseModel):
     """Result of evaluating a tool-fragility scenario."""
 
     score: float
@@ -129,31 +88,11 @@ class ToolFragilityResult:
     failure_attributions: list[FailureAttribution]
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "drifts_injected": self.drifts_injected,
-            "drifts_detected": self.drifts_detected,
-            "drifts_adapted": self.drifts_adapted,
-            "wasted_attempts": self.wasted_attempts,
-            "failure_attributions": [fa.to_dict() for fa in self.failure_attributions],
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolFragilityResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            drifts_injected=data["drifts_injected"],
-            drifts_detected=data["drifts_detected"],
-            drifts_adapted=data["drifts_adapted"],
-            wasted_attempts=data["wasted_attempts"],
-            failure_attributions=[
-                FailureAttribution.from_dict(fa) for fa in data["failure_attributions"]
-            ],
-        )
+        return cls.model_validate(data)
 
 
 class ToolFragilityInterface(SimulationInterface):

@@ -9,14 +9,14 @@ rate, recovery quality, and mutation adaptation.
 from __future__ import annotations
 
 from abc import abstractmethod
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel
 
 from autocontext.scenarios.simulation import SimulationInterface
 
 
-@dataclass(slots=True)
-class SchemaMutation:
+class SchemaMutation(BaseModel):
     """A single schema or state mutation applied to the environment."""
 
     version: int
@@ -27,29 +27,14 @@ class SchemaMutation:
     breaking: bool
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "version": self.version,
-            "description": self.description,
-            "fields_added": self.fields_added,
-            "fields_removed": self.fields_removed,
-            "fields_modified": self.fields_modified,
-            "breaking": self.breaking,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SchemaMutation:
-        return cls(
-            version=data["version"],
-            description=data["description"],
-            fields_added=data.get("fields_added", []),
-            fields_removed=data.get("fields_removed", []),
-            fields_modified=data.get("fields_modified", {}),
-            breaking=data["breaking"],
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class ContextValidity:
+class ContextValidity(BaseModel):
     """Whether a prior assumption is still valid after mutations."""
 
     assumption: str
@@ -57,23 +42,14 @@ class ContextValidity:
     invalidated_by_version: int | None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "assumption": self.assumption,
-            "still_valid": self.still_valid,
-            "invalidated_by_version": self.invalidated_by_version,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ContextValidity:
-        return cls(
-            assumption=data["assumption"],
-            still_valid=data["still_valid"],
-            invalidated_by_version=data.get("invalidated_by_version"),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class SchemaEvolutionResult:
+class SchemaEvolutionResult(BaseModel):
     """Result of evaluating a schema-evolution scenario."""
 
     score: float
@@ -86,29 +62,11 @@ class SchemaEvolutionResult:
     recovery_actions_successful: int
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "reasoning": self.reasoning,
-            "dimension_scores": self.dimension_scores,
-            "mutations_applied": self.mutations_applied,
-            "stale_assumptions_detected": self.stale_assumptions_detected,
-            "stale_assumptions_missed": self.stale_assumptions_missed,
-            "recovery_actions_taken": self.recovery_actions_taken,
-            "recovery_actions_successful": self.recovery_actions_successful,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SchemaEvolutionResult:
-        return cls(
-            score=data["score"],
-            reasoning=data["reasoning"],
-            dimension_scores=data["dimension_scores"],
-            mutations_applied=data["mutations_applied"],
-            stale_assumptions_detected=data["stale_assumptions_detected"],
-            stale_assumptions_missed=data["stale_assumptions_missed"],
-            recovery_actions_taken=data["recovery_actions_taken"],
-            recovery_actions_successful=data["recovery_actions_successful"],
-        )
+        return cls.model_validate(data)
 
 
 class SchemaEvolutionInterface(SimulationInterface):

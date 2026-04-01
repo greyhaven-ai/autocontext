@@ -8,8 +8,10 @@ rationale. Routes into the correct family-specific generator.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from autocontext.scenarios.families import ScenarioFamily, get_family, list_families
 
@@ -27,41 +29,20 @@ class FamilyCandidate:
     rationale: str
 
 
-@dataclass(slots=True)
-class FamilyClassification:
+class FamilyClassification(BaseModel):
     """Result of classifying a description into a scenario family."""
 
     family_name: str
     confidence: float
     rationale: str
-    alternatives: list[FamilyCandidate] = field(default_factory=list)
+    alternatives: list[FamilyCandidate] = Field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "family_name": self.family_name,
-            "confidence": self.confidence,
-            "rationale": self.rationale,
-            "alternatives": [
-                {"family_name": a.family_name, "confidence": a.confidence, "rationale": a.rationale}
-                for a in self.alternatives
-            ],
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FamilyClassification:
-        return cls(
-            family_name=data["family_name"],
-            confidence=data["confidence"],
-            rationale=data["rationale"],
-            alternatives=[
-                FamilyCandidate(
-                    family_name=a["family_name"],
-                    confidence=a["confidence"],
-                    rationale=a["rationale"],
-                )
-                for a in data.get("alternatives", [])
-            ],
-        )
+        return cls.model_validate(data)
 
 
 class LowConfidenceError(Exception):
