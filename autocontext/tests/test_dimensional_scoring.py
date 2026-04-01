@@ -61,8 +61,8 @@ class TestDimensionalScore:
         )
 
         dims = [
-            ScoringDimension("a", 0.6),
-            ScoringDimension("b", 0.4),
+            ScoringDimension(name="a", weight=0.6),
+            ScoringDimension(name="b", weight=0.4),
         ]
         score = DimensionalScore(
             aggregate=0.0,

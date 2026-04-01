@@ -14,12 +14,12 @@ Key types:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass(slots=True)
-class ScoringDimension:
+
+class ScoringDimension(BaseModel):
     """A named scoring dimension with weight."""
 
     name: str
@@ -27,28 +27,19 @@ class ScoringDimension:
     description: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "weight": self.weight,
-            "description": self.description,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ScoringDimension:
-        return cls(
-            name=data["name"],
-            weight=data.get("weight", 1.0),
-            description=data.get("description", ""),
-        )
+        return cls.model_validate(data)
 
 
-@dataclass(slots=True)
-class DimensionalScore:
+class DimensionalScore(BaseModel):
     """Aggregate score plus per-dimension breakdown."""
 
     aggregate: float
     dimensions: dict[str, float]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def weighted_aggregate(self, dimension_specs: Sequence[ScoringDimension]) -> float:
         """Compute weighted aggregate from dimension specs."""
@@ -62,19 +53,11 @@ class DimensionalScore:
         return round(weighted_sum / total_weight, 6)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "aggregate": self.aggregate,
-            "dimensions": self.dimensions,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DimensionalScore:
-        return cls(
-            aggregate=data.get("aggregate", 0.0),
-            dimensions=data.get("dimensions", {}),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 def normalize_dimension_specs(

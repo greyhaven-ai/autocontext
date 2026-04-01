@@ -21,6 +21,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 _WIN_THRESHOLD = 0.55
 _ELO_K = 32.0
 _GLICKO_Q = math.log(10) / 400
@@ -30,37 +32,27 @@ def _normalize_score(score: float) -> float:
     return max(0.0, min(1.0, float(score)))
 
 
-@dataclass(slots=True)
-class TrialResult:
+class TrialResult(BaseModel):
     """A single trial preserving the continuous score."""
 
     score: float
     seed: int
     opponent_rating: float
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def is_win(self, threshold: float = _WIN_THRESHOLD) -> bool:
         return self.score >= threshold
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "score": self.score,
-            "seed": self.seed,
-            "opponent_rating": self.opponent_rating,
-            "metadata": self.metadata,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TrialResult:
-        return cls(
-            score=data.get("score", 0.0),
-            seed=data.get("seed", 0),
-            opponent_rating=data.get("opponent_rating", 1000.0),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 @dataclass(slots=True)
+@dataclass
 class RatingUpdate:
     """Result of a scoring backend update."""
 

@@ -53,6 +53,7 @@ class TestAdvancementMetrics:
             previous_resolved_truth_score=0.84,
         )
         d = m.to_dict()
+        assert d["delta"] == 0.1
         restored = AdvancementMetrics.from_dict(d)
         assert restored.best_score == 0.9
         assert restored.confidence == 0.95
