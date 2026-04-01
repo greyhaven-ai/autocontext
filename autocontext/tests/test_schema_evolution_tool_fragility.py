@@ -1219,7 +1219,7 @@ class TestSchemaEvolutionCreator:
     def test_create_and_persist(self, tmp_path: Path) -> None:
         import json
 
-        from autocontext.scenarios.custom.schema_evolution_creator import SchemaEvolutionCreator
+        from autocontext.scenarios.custom.creator_registry import create_for_family
         from autocontext.scenarios.custom.schema_evolution_designer import (
             SCHEMA_EVOLUTION_SPEC_END,
             SCHEMA_EVOLUTION_SPEC_START,
@@ -1243,7 +1243,7 @@ class TestSchemaEvolutionCreator:
         def fake_llm(system: str, user: str) -> str:
             return f"{SCHEMA_EVOLUTION_SPEC_START}\n{json.dumps(fake_spec)}\n{SCHEMA_EVOLUTION_SPEC_END}"
 
-        creator = SchemaEvolutionCreator(fake_llm, tmp_path)
+        creator = create_for_family("schema_evolution", fake_llm, tmp_path)
         scenario = creator.create("test schema evo", name="test_schema_evo_scenario")
 
         assert isinstance(scenario, SchemaEvolutionInterface)
@@ -1261,7 +1261,6 @@ class TestToolFragilityCreator:
     def test_create_and_persist(self, tmp_path: Path) -> None:
         import json
 
-        from autocontext.scenarios.custom.tool_fragility_creator import ToolFragilityCreator
         from autocontext.scenarios.custom.tool_fragility_designer import (
             TOOL_FRAGILITY_SPEC_END,
             TOOL_FRAGILITY_SPEC_START,
@@ -1282,7 +1281,8 @@ class TestToolFragilityCreator:
         def fake_llm(system: str, user: str) -> str:
             return f"{TOOL_FRAGILITY_SPEC_START}\n{json.dumps(fake_spec)}\n{TOOL_FRAGILITY_SPEC_END}"
 
-        creator = ToolFragilityCreator(fake_llm, tmp_path)
+        from autocontext.scenarios.custom.creator_registry import create_for_family
+        creator = create_for_family("tool_fragility", fake_llm, tmp_path)
         scenario = creator.create("test tool frag", name="test_tool_frag_scenario")
 
         assert isinstance(scenario, ToolFragilityInterface)

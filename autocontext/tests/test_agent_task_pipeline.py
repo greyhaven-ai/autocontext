@@ -726,7 +726,7 @@ class TestAgentTaskCreator:
             return response_text
 
         monkeypatch.setattr(
-            "autocontext.scenarios.custom.simulation_creator.validate_source_for_family",
+            "autocontext.scenarios.custom.generic_creator.validate_source_for_family",
             lambda family_name, source: ["pipeline rejected simulation source"],
         )
 

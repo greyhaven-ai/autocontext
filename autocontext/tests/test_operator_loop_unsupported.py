@@ -159,10 +159,11 @@ def test_operator_loop_pipeline_registered():
 
 def test_operator_loop_creator_is_functional():
     """Creator should be importable without the UNSUPPORTED constant."""
-    from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
+    from autocontext.scenarios.custom.creator_registry import create_for_family
 
-    # Should be constructable
-    creator = OperatorLoopCreator(
+    # Should be constructable via registry
+    creator = create_for_family(
+        "operator_loop",
         llm_fn=lambda s, u: "",
         knowledge_root=__import__("pathlib").Path("/tmp/test"),
     )

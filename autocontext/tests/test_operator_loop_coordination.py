@@ -843,7 +843,7 @@ class TestOperatorLoopCreator:
     def test_create_persists_and_registers(self, tmp_path: Path) -> None:
         import json
 
-        from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
+        from autocontext.scenarios.custom.creator_registry import create_for_family
         from autocontext.scenarios.custom.operator_loop_designer import (
             OPERATOR_LOOP_SPEC_END,
             OPERATOR_LOOP_SPEC_START,
@@ -875,7 +875,7 @@ class TestOperatorLoopCreator:
                 f"{OPERATOR_LOOP_SPEC_END}"
             )
 
-        creator = OperatorLoopCreator(fake_llm, tmp_path)
+        creator = create_for_family("operator_loop", fake_llm, tmp_path)
         scenario = creator.create("test", name="test_op_creator")
         assert isinstance(scenario, OperatorLoopInterface)
 
@@ -890,7 +890,6 @@ class TestCoordinationCreator:
         import json
 
         from autocontext.scenarios.coordination import CoordinationInterface
-        from autocontext.scenarios.custom.coordination_creator import CoordinationCreator
         from autocontext.scenarios.custom.coordination_designer import (
             COORDINATION_SPEC_END,
             COORDINATION_SPEC_START,
@@ -919,7 +918,8 @@ class TestCoordinationCreator:
                 f"{COORDINATION_SPEC_END}"
             )
 
-        creator = CoordinationCreator(fake_llm, tmp_path)
+        from autocontext.scenarios.custom.creator_registry import create_for_family
+        creator = create_for_family("coordination", fake_llm, tmp_path)
         scenario = creator.create("test", name="test_coord_creator")
         assert isinstance(scenario, CoordinationInterface)
 

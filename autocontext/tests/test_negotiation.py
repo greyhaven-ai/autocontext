@@ -695,9 +695,7 @@ class TestNegotiationCreator:
     def test_create_and_persist(self, tmp_path: Path) -> None:
         import json
 
-        from autocontext.scenarios.custom.negotiation_creator import (
-            NegotiationCreator,
-        )
+        from autocontext.scenarios.custom.creator_registry import create_for_family
         from autocontext.scenarios.custom.negotiation_designer import (
             NEGOTIATION_SPEC_END,
             NEGOTIATION_SPEC_START,
@@ -732,7 +730,7 @@ class TestNegotiationCreator:
                 f"{NEGOTIATION_SPEC_END}"
             )
 
-        creator = NegotiationCreator(fake_llm, tmp_path)
+        creator = create_for_family("negotiation", fake_llm, tmp_path)
         scenario = creator.create("test negotiation", name="test_neg_creator")
         assert isinstance(scenario, NegotiationInterface)
 

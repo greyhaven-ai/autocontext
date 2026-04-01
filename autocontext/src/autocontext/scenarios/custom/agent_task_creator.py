@@ -22,8 +22,7 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_execution,
     validate_intent,
 )
-from autocontext.scenarios.custom.artifact_editing_creator import ArtifactEditingCreator
-from autocontext.scenarios.custom.coordination_creator import CoordinationCreator
+from autocontext.scenarios.custom.creator_registry import FAMILY_CONFIGS, create_for_family
 from autocontext.scenarios.custom.family_classifier import (
     classify_scenario_family,
     route_to_family,
@@ -32,16 +31,9 @@ from autocontext.scenarios.custom.family_pipeline import (
     validate_for_family,
     validate_source_for_family,
 )
-from autocontext.scenarios.custom.investigation_creator import InvestigationCreator
 from autocontext.scenarios.custom.naming import STOP_WORDS as SHARED_STOP_WORDS
 from autocontext.scenarios.custom.naming import derive_name as shared_derive_name
-from autocontext.scenarios.custom.negotiation_creator import NegotiationCreator
-from autocontext.scenarios.custom.operator_loop_creator import OperatorLoopCreator
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
-from autocontext.scenarios.custom.schema_evolution_creator import SchemaEvolutionCreator
-from autocontext.scenarios.custom.simulation_creator import SimulationCreator
-from autocontext.scenarios.custom.tool_fragility_creator import ToolFragilityCreator
-from autocontext.scenarios.custom.workflow_creator import WorkflowCreator
 from autocontext.scenarios.families import get_family_marker
 from autocontext.scenarios.investigation import InvestigationInterface
 from autocontext.scenarios.negotiation import NegotiationInterface
@@ -87,35 +79,10 @@ class AgentTaskCreator:
         name = self.derive_name(description)
         classification = classify_scenario_family(description)
         family = route_to_family(classification)
-        if family.name == "simulation":
-            logger.info("routing description to simulation creator")
-            return SimulationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
-        if family.name == "artifact_editing":
-            logger.info("routing description to artifact-editing creator")
-            return ArtifactEditingCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
-        if family.name == "investigation":
-            logger.info("routing description to investigation creator")
-            return InvestigationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
-        if family.name == "workflow":
-            logger.info("routing description to workflow creator")
-            return WorkflowCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
-        if family.name == "schema_evolution":
-            logger.info("routing description to schema-evolution creator")
-            return SchemaEvolutionCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
-        if family.name == "tool_fragility":
-            logger.info("routing description to tool-fragility creator")
-            return ToolFragilityCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
-        if family.name == "negotiation":
-            logger.info("routing description to negotiation creator")
-            return NegotiationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
-        if family.name == "operator_loop":
-            logger.info("routing description to operator-loop creator")
-            return OperatorLoopCreator(self.llm_fn, self.knowledge_root).create(
-                description, name=name
-            )
-        if family.name == "coordination":
-            logger.info("routing description to coordination creator")
-            return CoordinationCreator(self.llm_fn, self.knowledge_root).create(description, name=name)
+        if family.name in FAMILY_CONFIGS:
+            logger.info("routing description to %s creator", family.name)
+            creator = create_for_family(family.name, self.llm_fn, self.knowledge_root)
+            return creator.create(description, name=name)
         if family.name != "agent_task":
             raise ValueError(
                 f"Scenario family '{family.name}' is not yet supported for custom scaffolding"
