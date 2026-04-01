@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -37,10 +37,10 @@ class AgentTaskGenerationEvaluation:
     output: str
     score: float
     reasoning: str
-    dimension_scores: dict[str, float] = Field(default_factory=dict)
+    dimension_scores: dict[str, float] = field(default_factory=dict)
     round_count: int = 1
     met_threshold: bool = False
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def accumulate_lessons(

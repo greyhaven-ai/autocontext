@@ -202,6 +202,7 @@ class TestTrajectoryReport:
         )
         assert report.num_seeds == 2
         assert len(report.trajectories) == 2
+        assert report.metadata == {}
 
     def test_mean_scores_per_generation(self) -> None:
         from autocontext.execution.trajectory_harness import TrajectoryReport

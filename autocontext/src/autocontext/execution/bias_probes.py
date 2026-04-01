@@ -36,7 +36,9 @@ class BiasReport(BaseModel):
         return [r.probe_type for r in self.results if r.detected]
 
     def to_dict(self) -> dict[str, Any]:
-        return self.model_dump()
+        data = self.model_dump()
+        data["bias_types_detected"] = self.bias_types_detected
+        return data
 
 
 def run_position_bias_probe(

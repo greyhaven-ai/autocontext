@@ -5,7 +5,7 @@ import logging
 import math
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -41,8 +41,8 @@ class JudgeResult:
 
     score: float
     reasoning: str
-    dimension_scores: dict[str, float] = Field(default_factory=dict)
-    raw_responses: list[str] = Field(default_factory=list)
+    dimension_scores: dict[str, float] = field(default_factory=dict)
+    raw_responses: list[str] = field(default_factory=list)
     parse_method: ParseMethod = "none"
     internal_retries: int = 0
     dimensions_were_generated: bool = False

@@ -433,6 +433,32 @@ class TestBiasReportTypesDetected:
         assert "length" in types
         assert "style" not in types
 
+    def test_bias_report_to_dict_includes_detected_types(self) -> None:
+        from autocontext.execution.bias_probes import BiasProbeResult, BiasReport
+
+        report = BiasReport(
+            probes_run=2,
+            probes_failed=0,
+            results=[
+                BiasProbeResult(probe_type="position", detected=True, magnitude=0.2),
+                BiasProbeResult(probe_type="style", detected=False, magnitude=0.01),
+            ],
+            any_bias_detected=True,
+        )
+
+        payload = report.to_dict()
+        assert payload["bias_types_detected"] == ["position"]
+
+
+class TestJudgeResultDefaults:
+    def test_defaults_are_real_containers(self) -> None:
+        from autocontext.execution.judge import JudgeResult
+
+        result = JudgeResult(score=0.8, reasoning="ok")
+
+        assert result.dimension_scores == {}
+        assert result.raw_responses == []
+
 
 # ---------------------------------------------------------------------------
 # Settings tests

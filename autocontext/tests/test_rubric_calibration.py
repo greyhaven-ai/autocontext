@@ -82,9 +82,30 @@ class TestCalibrationSet:
         )
 
         anchors = [
-            CalibrationAnchor(anchor_id="a-1", domain="clinical_trial", output_text="Poor output", human_score=0.30, score_band="poor", human_notes="Very weak"),
-            CalibrationAnchor(anchor_id="a-2", domain="clinical_trial", output_text="OK output", human_score=0.60, score_band="fair", human_notes="Adequate"),
-            CalibrationAnchor(anchor_id="a-3", domain="clinical_trial", output_text="Good output", human_score=0.85, score_band="good", human_notes="Solid work"),
+            CalibrationAnchor(
+                anchor_id="a-1",
+                domain="clinical_trial",
+                output_text="Poor output",
+                human_score=0.30,
+                score_band="poor",
+                human_notes="Very weak",
+            ),
+            CalibrationAnchor(
+                anchor_id="a-2",
+                domain="clinical_trial",
+                output_text="OK output",
+                human_score=0.60,
+                score_band="fair",
+                human_notes="Adequate",
+            ),
+            CalibrationAnchor(
+                anchor_id="a-3",
+                domain="clinical_trial",
+                output_text="Good output",
+                human_score=0.85,
+                score_band="good",
+                human_notes="Solid work",
+            ),
         ]
         cal_set = CalibrationSet(domain="clinical_trial", anchors=anchors)
         assert cal_set.domain == "clinical_trial"
@@ -97,10 +118,38 @@ class TestCalibrationSet:
         )
 
         anchors = [
-            CalibrationAnchor(anchor_id="a-1", domain="test", output_text="output", human_score=0.30, score_band="poor", human_notes=""),
-            CalibrationAnchor(anchor_id="a-2", domain="test", output_text="output", human_score=0.60, score_band="fair", human_notes=""),
-            CalibrationAnchor(anchor_id="a-3", domain="test", output_text="output", human_score=0.85, score_band="good", human_notes=""),
-            CalibrationAnchor(anchor_id="a-4", domain="test", output_text="output", human_score=0.95, score_band="excellent", human_notes=""),
+            CalibrationAnchor(
+                anchor_id="a-1",
+                domain="test",
+                output_text="output",
+                human_score=0.30,
+                score_band="poor",
+                human_notes="",
+            ),
+            CalibrationAnchor(
+                anchor_id="a-2",
+                domain="test",
+                output_text="output",
+                human_score=0.60,
+                score_band="fair",
+                human_notes="",
+            ),
+            CalibrationAnchor(
+                anchor_id="a-3",
+                domain="test",
+                output_text="output",
+                human_score=0.85,
+                score_band="good",
+                human_notes="",
+            ),
+            CalibrationAnchor(
+                anchor_id="a-4",
+                domain="test",
+                output_text="output",
+                human_score=0.95,
+                score_band="excellent",
+                human_notes="",
+            ),
         ]
         cal_set = CalibrationSet(domain="test", anchors=anchors)
         bands = cal_set.score_bands()
@@ -115,7 +164,16 @@ class TestCalibrationSet:
 
         cal_set = CalibrationSet(
             domain="test",
-            anchors=[CalibrationAnchor(anchor_id="a-1", domain="test", output_text="out", human_score=0.5, score_band="fair", human_notes="ok")],
+            anchors=[
+                CalibrationAnchor(
+                    anchor_id="a-1",
+                    domain="test",
+                    output_text="out",
+                    human_score=0.5,
+                    score_band="fair",
+                    human_notes="ok",
+                ),
+            ],
         )
         d = cal_set.to_dict()
         restored = CalibrationSet.from_dict(d)
@@ -315,8 +373,20 @@ class TestCalibrationReport:
         report = CalibrationReport(
             domain="drug_interaction",
             num_anchors=4,
-            alignment=AlignmentResult(mean_absolute_error=0.12, bias=0.08, correlation=0.88, num_pairs=4, per_anchor_errors=[0.10, 0.15, 0.08, 0.15]),
-            variance=JudgeVarianceResult(mean=0.72, variance=0.002, std_dev=0.045, range=0.10, num_samples=5),
+            alignment=AlignmentResult(
+                mean_absolute_error=0.12,
+                bias=0.08,
+                correlation=0.88,
+                num_pairs=4,
+                per_anchor_errors=[0.10, 0.15, 0.08, 0.15],
+            ),
+            variance=JudgeVarianceResult(
+                mean=0.72,
+                variance=0.002,
+                std_dev=0.045,
+                range=0.10,
+                num_samples=5,
+            ),
             calibrated=False,
         )
         summary = report.summary()
@@ -333,8 +403,20 @@ class TestCalibrationReport:
         report = CalibrationReport(
             domain="test",
             num_anchors=2,
-            alignment=AlignmentResult(mean_absolute_error=0.1, bias=0.05, correlation=0.9, num_pairs=2, per_anchor_errors=[0.1, 0.1]),
-            variance=JudgeVarianceResult(mean=0.7, variance=0.001, std_dev=0.03, range=0.05, num_samples=3),
+            alignment=AlignmentResult(
+                mean_absolute_error=0.1,
+                bias=0.05,
+                correlation=0.9,
+                num_pairs=2,
+                per_anchor_errors=[0.1, 0.1],
+            ),
+            variance=JudgeVarianceResult(
+                mean=0.7,
+                variance=0.001,
+                std_dev=0.03,
+                range=0.05,
+                num_samples=3,
+            ),
             calibrated=True,
         )
         d = report.to_dict()

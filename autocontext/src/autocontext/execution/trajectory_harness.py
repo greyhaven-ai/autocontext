@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -140,7 +140,7 @@ class TrajectoryReport:
     trajectories: list[AgentTaskTrajectory]
     num_seeds: int
     num_generations: int
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def mean_scores_per_generation(self) -> list[float]:
         """Compute mean score at each generation across seeds."""
