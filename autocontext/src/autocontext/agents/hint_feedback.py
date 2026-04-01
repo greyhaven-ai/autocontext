@@ -18,7 +18,7 @@ import logging
 import re
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +26,16 @@ logger = logging.getLogger(__name__)
 class HintFeedback(BaseModel):
     """Competitor's annotation of hint quality after tournament."""
 
-    helpful: list[str]
-    misleading: list[str]
-    missing: list[str]
-    generation: int
+    helpful: list[str] = Field(default_factory=list)
+    misleading: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    generation: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("helpful", "misleading", "missing", mode="before")
+    @classmethod
+    def _normalize_feedback_items(cls, value: Any) -> list[str]:
+        return _normalize_feedback_list(value)
 
     def is_empty(self) -> bool:
         return not self.helpful and not self.misleading and not self.missing

@@ -18,7 +18,7 @@ from __future__ import annotations
 import statistics
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 # ---------------------------------------------------------------------------
 # AC-336: Analyst quality scoring
@@ -35,7 +35,7 @@ class AnalystRating(BaseModel):
     generation: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @property
+    @computed_field(return_type=float)
     def overall(self) -> float:
         return round(statistics.mean([self.actionability, self.specificity, self.correctness]), 2)
 
