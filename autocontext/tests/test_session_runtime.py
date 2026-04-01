@@ -54,7 +54,7 @@ class TestSessionDomainModel:
         assert turn.error == "timeout"
 
     def test_interrupted_turn_not_mistaken_for_success(self) -> None:
-        from autocontext.session.types import Session, TurnOutcome
+        from autocontext.session.types import Session
 
         session = Session.create(goal="test")
         turn = session.submit_turn(prompt="long task", role="competitor")
@@ -76,6 +76,22 @@ class TestSessionDomainModel:
         session.complete(summary="done")
         assert session.status == SessionStatus.COMPLETED
         assert session.summary == "done"
+
+    @pytest.mark.parametrize("terminal_action", ["complete", "fail", "cancel"])
+    def test_terminal_sessions_cannot_resume_or_accept_new_turns(
+        self,
+        terminal_action: str,
+    ) -> None:
+        from autocontext.session.types import Session
+
+        session = Session.create(goal="test")
+        getattr(session, terminal_action)()
+
+        with pytest.raises(ValueError, match="resume"):
+            session.resume()
+
+        with pytest.raises(ValueError, match="not active"):
+            session.submit_turn(prompt="should fail", role="competitor")
 
     def test_cannot_submit_turn_when_paused(self) -> None:
         from autocontext.session.types import Session

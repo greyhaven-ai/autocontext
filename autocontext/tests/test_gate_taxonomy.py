@@ -26,7 +26,7 @@ class TestNoDeadGateModules:
             if (SRC_ROOT / m).exists()
         ]
         assert remaining == [], (
-            f"Dead gate/guard/validator modules still exist:\n"
+            "Dead gate/guard/validator modules still exist:\n"
             + "\n".join(f"  {m}" for m in remaining)
         )
 
@@ -75,6 +75,6 @@ class TestGateTaxonomyIsClean:
                 dead.append(rel)
 
         assert dead == [], (
-            f"Gate/guard/validator files with no production imports:\n"
+            "Gate/guard/validator files with no production imports:\n"
             + "\n".join(f"  {d}" for d in dead)
         )

@@ -161,27 +161,32 @@ class Session(BaseModel):
     # -- Lifecycle transitions --
 
     def pause(self) -> None:
+        self._require_status(SessionStatus.ACTIVE, action="pause")
         self.status = SessionStatus.PAUSED
         self._touch()
         self._emit(SessionEventType.SESSION_PAUSED, {})
 
     def resume(self) -> None:
+        self._require_status(SessionStatus.PAUSED, action="resume")
         self.status = SessionStatus.ACTIVE
         self._touch()
         self._emit(SessionEventType.SESSION_RESUMED, {})
 
     def complete(self, summary: str = "") -> None:
+        self._require_not_terminal(action="complete")
         self.status = SessionStatus.COMPLETED
         self.summary = summary
         self._touch()
         self._emit(SessionEventType.SESSION_COMPLETED, {"summary": summary})
 
     def fail(self, error: str = "") -> None:
+        self._require_not_terminal(action="fail")
         self.status = SessionStatus.FAILED
         self._touch()
         self._emit(SessionEventType.SESSION_FAILED, {"error": error})
 
     def cancel(self) -> None:
+        self._require_not_terminal(action="cancel")
         self.status = SessionStatus.CANCELED
         self._touch()
         self._emit(SessionEventType.SESSION_CANCELED, {})
@@ -204,6 +209,20 @@ class Session(BaseModel):
                 return turn
         msg = f"Turn {turn_id} not found in session {self.session_id}"
         raise KeyError(msg)
+
+    def _require_status(self, expected: SessionStatus, action: str) -> None:
+        if self.status != expected:
+            msg = f"Cannot {action} session from status={self.status}"
+            raise ValueError(msg)
+
+    def _require_not_terminal(self, action: str) -> None:
+        if self.status in {
+            SessionStatus.COMPLETED,
+            SessionStatus.FAILED,
+            SessionStatus.CANCELED,
+        }:
+            msg = f"Cannot {action} session from terminal status={self.status}"
+            raise ValueError(msg)
 
     def _touch(self) -> None:
         self.updated_at = datetime.now(UTC).isoformat()
