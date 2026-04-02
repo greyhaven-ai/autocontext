@@ -29,6 +29,12 @@ class TestResearchQuery:
         q = ResearchQuery(topic="test", urgency=Urgency.HIGH)
         assert q.urgency == Urgency.HIGH
 
+    def test_rejects_non_positive_max_results(self) -> None:
+        from autocontext.research.types import ResearchQuery
+
+        with pytest.raises(ValueError):
+            ResearchQuery(topic="test", max_results=0)
+
 
 class TestResearchResult:
     """Result value object — what comes back with citations."""
@@ -56,6 +62,12 @@ class TestResearchResult:
         assert not result.has_citations
         assert result.confidence == 0.0
 
+    def test_rejects_out_of_range_confidence(self) -> None:
+        from autocontext.research.types import ResearchResult
+
+        with pytest.raises(ValueError):
+            ResearchResult(query_topic="OAuth2", summary="summary", confidence=1.5)
+
 
 class TestCitation:
     """Citation tracks provenance."""
@@ -73,6 +85,12 @@ class TestCitation:
         cite = Citation(source="Internal docs")
         assert cite.url == ""
         assert cite.relevance == 0.0
+
+    def test_rejects_out_of_range_relevance(self) -> None:
+        from autocontext.research.types import Citation
+
+        with pytest.raises(ValueError):
+            Citation(source="Internal docs", relevance=2.0)
 
 
 class TestResearchAdapter:
@@ -115,3 +133,15 @@ class TestResearchConfig:
 
         config = ResearchConfig(enabled=True, max_queries_per_session=10)
         assert config.max_queries_per_session == 10
+
+    def test_rejects_negative_query_limits(self) -> None:
+        from autocontext.research.types import ResearchConfig
+
+        with pytest.raises(ValueError):
+            ResearchConfig(max_queries_per_turn=-1)
+
+    def test_rejects_out_of_range_min_confidence(self) -> None:
+        from autocontext.research.types import ResearchConfig
+
+        with pytest.raises(ValueError):
+            ResearchConfig(min_confidence=2.0)

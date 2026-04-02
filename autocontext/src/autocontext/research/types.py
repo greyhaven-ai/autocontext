@@ -33,7 +33,7 @@ class ResearchQuery(BaseModel):
     topic: str
     context: str = ""
     urgency: Urgency = Urgency.NORMAL
-    max_results: int = 5
+    max_results: int = Field(default=5, ge=1)
     constraints: list[str] = Field(default_factory=list)
     scenario_family: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -46,7 +46,7 @@ class Citation(BaseModel):
 
     source: str
     url: str = ""
-    relevance: float = 0.0  # 0.0–1.0
+    relevance: float = Field(default=0.0, ge=0.0, le=1.0)
     snippet: str = ""
     retrieved_at: str = ""
 
@@ -59,7 +59,7 @@ class ResearchResult(BaseModel):
     query_topic: str
     summary: str
     citations: list[Citation] = Field(default_factory=list)
-    confidence: float = 0.0  # 0.0–1.0, how confident the result is
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -89,9 +89,9 @@ class ResearchConfig(BaseModel):
 
     enabled: bool = False
     adapter_name: str = ""  # e.g. "perplexity", "exa", "internal"
-    max_queries_per_session: int = 20
-    max_queries_per_turn: int = 3
+    max_queries_per_session: int = Field(default=20, ge=0)
+    max_queries_per_turn: int = Field(default=3, ge=0)
     require_citations: bool = True
-    min_confidence: float = 0.3
+    min_confidence: float = Field(default=0.3, ge=0.0, le=1.0)
 
     model_config = {"frozen": True}
