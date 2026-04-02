@@ -51,6 +51,7 @@ class ProgressDigest(BaseModel):
     active_count: int = 0
     completed_count: int = 0
     failed_count: int = 0
+    redirected_count: int = 0
     turn_count: int = 0
     worker_digests: list[WorkerDigest] = Field(default_factory=list)
     recent_changes: list[str] = Field(default_factory=list)
@@ -68,6 +69,7 @@ class ProgressDigest(BaseModel):
         active = [w for w in coordinator.workers if w.is_active]
         completed = [w for w in coordinator.workers if w.status == WorkerStatus.COMPLETED]
         failed = [w for w in coordinator.workers if w.status == WorkerStatus.FAILED]
+        redirected = [w for w in coordinator.workers if w.status == WorkerStatus.REDIRECTED]
 
         # Build short summary
         parts: list[str] = []
@@ -81,6 +83,8 @@ class ProgressDigest(BaseModel):
                 parts.append(f"{len(completed)} completed")
             if failed:
                 parts.append(f"{len(failed)} failed")
+            if redirected:
+                parts.append(f"{len(redirected)} redirected")
         summary = ". ".join(parts)[:300]
 
         # Recent changes from event stream
@@ -95,6 +99,7 @@ class ProgressDigest(BaseModel):
             active_count=len(active),
             completed_count=len(completed),
             failed_count=len(failed),
+            redirected_count=len(redirected),
             worker_digests=worker_digests,
             recent_changes=recent,
         )

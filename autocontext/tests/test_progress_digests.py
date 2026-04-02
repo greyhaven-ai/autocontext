@@ -6,8 +6,6 @@ session events, coordinator state, and heartbeat signals.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestWorkerDigest:
     """Compact status of one active worker."""
@@ -87,6 +85,21 @@ class TestProgressDigest:
 
         digest = ProgressDigest.from_coordinator(coord, max_recent_events=5)
         assert len(digest.recent_changes) > 0
+
+    def test_redirected_workers_still_appear_in_digest_summary(self) -> None:
+        from autocontext.session.coordinator import Coordinator
+        from autocontext.session.progress_digest import ProgressDigest
+
+        coord = Coordinator.create(session_id="s1", goal="test")
+        w = coord.delegate(task="t1", role="r1")
+        w.start()
+        coord.stop_worker(w.worker_id, reason="dead end")
+
+        digest = ProgressDigest.from_coordinator(coord)
+        assert digest.redirected_count == 1
+        assert "redirected" in digest.summary.lower()
+        assert len(digest.worker_digests) == 1
+        assert digest.worker_digests[0].status == "redirected"
 
 
 class TestDigestDegradation:
