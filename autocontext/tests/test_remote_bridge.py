@@ -78,6 +78,15 @@ class TestApprovalRequest:
         req.timeout()
         assert req.status == "timed_out"
 
+    def test_decision_is_terminal(self) -> None:
+        from autocontext.session.remote_bridge import ApprovalRequest
+
+        req = ApprovalRequest.create(action="deploy")
+        req.approve(by="bob")
+
+        with pytest.raises(ValueError, match="status=approved"):
+            req.deny(by="bob", reason="changed my mind")
+
 
 class TestRemoteBridge:
     """Bridge manages remote sessions and approval relay."""
@@ -121,6 +130,16 @@ class TestRemoteBridge:
 
         with pytest.raises(PermissionError, match="viewer"):
             bridge.respond(req.request_id, approved=True, by="alice")
+
+    def test_unconnected_operator_cannot_respond(self) -> None:
+        from autocontext.session.remote_bridge import RemoteBridge, SessionRole
+
+        bridge = RemoteBridge(mission_id="m1")
+        bridge.connect(operator="alice", role=SessionRole.VIEWER)
+        req = bridge.request_approval(action="deploy", context="ready")
+
+        with pytest.raises(PermissionError, match="not connected"):
+            bridge.respond(req.request_id, approved=True, by="mallory")
 
     def test_disconnect(self) -> None:
         from autocontext.session.remote_bridge import RemoteBridge, SessionRole

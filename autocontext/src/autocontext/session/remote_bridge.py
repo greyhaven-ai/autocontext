@@ -64,23 +64,32 @@ class ApprovalRequest(BaseModel):
         return cls(action=action, context=context)
 
     def approve(self, by: str) -> None:
+        self._require_pending(action="approve request")
         self.status = "approved"
         self.decided_by = by
         self.decided_at = _now()
 
     def deny(self, by: str, reason: str = "") -> None:
+        self._require_pending(action="deny request")
         self.status = "denied"
         self.decided_by = by
         self.denial_reason = reason
         self.decided_at = _now()
 
     def timeout(self) -> None:
+        self._require_pending(action="time out request")
         self.status = "timed_out"
         self.decided_at = _now()
 
     def cancel(self) -> None:
+        self._require_pending(action="cancel request")
         self.status = "canceled"
         self.decided_at = _now()
+
+    def _require_pending(self, action: str) -> None:
+        if self.status != "pending":
+            msg = f"Cannot {action} once status={self.status}"
+            raise ValueError(msg)
 
 
 class RemoteBridge:
@@ -123,7 +132,10 @@ class RemoteBridge:
         operator_session = next(
             (s for s in self._sessions.values() if s.operator == by), None
         )
-        if operator_session is not None and operator_session.role == SessionRole.VIEWER:
+        if operator_session is None:
+            msg = f"Operator '{by}' is not connected and cannot respond to approvals"
+            raise PermissionError(msg)
+        if operator_session.role != SessionRole.CONTROLLER:
             msg = f"Operator '{by}' is a viewer and cannot respond to approvals"
             raise PermissionError(msg)
 
