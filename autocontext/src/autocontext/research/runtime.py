@@ -65,7 +65,7 @@ class ResearchEnabledSession:
 
     @property
     def has_research(self) -> bool:
-        return self._adapter is not None
+        return self._adapter is not None and self._config.enabled
 
     @property
     def research_queries_used(self) -> int:
@@ -80,9 +80,10 @@ class ResearchEnabledSession:
 
         Returns None if:
         - No adapter attached
+        - Research is disabled by config
         - Query budget exhausted
         """
-        if self._adapter is None:
+        if self._adapter is None or not self._config.enabled:
             return None
 
         if self._query_count >= self._config.max_queries_per_session:

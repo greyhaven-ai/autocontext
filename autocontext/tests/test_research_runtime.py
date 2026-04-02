@@ -6,7 +6,7 @@ Research is gated by config and tracked at session level.
 
 from __future__ import annotations
 
-import pytest
+from autocontext.research.types import ResearchQuery, ResearchResult
 
 
 class StubAdapter:
@@ -16,8 +16,7 @@ class StubAdapter:
         self._response = response
         self.call_count = 0
 
-    def search(self, query: "ResearchQuery") -> "ResearchResult":
-        from autocontext.research.types import ResearchResult
+    def search(self, query: ResearchQuery) -> ResearchResult:
         self.call_count += 1
         return ResearchResult(
             query_topic=query.topic,
@@ -44,6 +43,22 @@ class TestResearchEnabledSession:
 
         session = ResearchEnabledSession.create(goal="Build API")
         assert not session.has_research
+
+    def test_disabled_config_blocks_research(self) -> None:
+        from autocontext.research.runtime import ResearchEnabledSession
+        from autocontext.research.types import ResearchConfig, ResearchQuery
+
+        adapter = StubAdapter()
+        session = ResearchEnabledSession.create(
+            goal="Build API",
+            research_adapter=adapter,
+            research_config=ResearchConfig(enabled=False, max_queries_per_session=5),
+        )
+
+        assert not session.has_research
+        assert session.research(ResearchQuery(topic="auth best practices")) is None
+        assert session.research_queries_used == 0
+        assert adapter.call_count == 0
 
     def test_research_query_during_session(self) -> None:
         from autocontext.research.runtime import ResearchEnabledSession
