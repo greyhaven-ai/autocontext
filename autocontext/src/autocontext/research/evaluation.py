@@ -8,6 +8,7 @@ improvement and citation coverage.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -58,8 +59,14 @@ def _citation_coverage(brief: ResearchBrief, text: str) -> float:
     """Fraction of unique citation sources mentioned in text."""
     if not brief.unique_citations:
         return 0.0
-    mentioned = sum(1 for c in brief.unique_citations if c.source in text)
+    mentioned = sum(1 for c in brief.unique_citations if _source_mentioned(c.source, text))
     return mentioned / len(brief.unique_citations)
+
+
+def _source_mentioned(source: str, text: str) -> bool:
+    """Return True when `source` appears as a distinct mention in `text`."""
+    pattern = rf"(?<!\w){re.escape(source)}(?!\w)"
+    return re.search(pattern, text, flags=re.IGNORECASE) is not None
 
 
 class ResearchEvaluator:

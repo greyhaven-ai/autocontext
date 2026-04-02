@@ -50,7 +50,6 @@ class ResearchStore:
         self._dir = root / BRIEFS_DIR
         self._dir.mkdir(parents=True, exist_ok=True)
         self._manifest_path = self._dir / MANIFEST_FILE
-        self._manifest: list[dict[str, Any]] = self._load_manifest()
 
     def save_brief(self, session_id: str, brief: ResearchBrief) -> BriefRef:
         brief_id = uuid.uuid4().hex[:12]
@@ -65,8 +64,9 @@ class ResearchStore:
         brief_path = self._dir / f"{brief_id}.json"
         brief_path.write_text(brief.model_dump_json(indent=2), encoding="utf-8")
 
-        self._manifest.append(ref.model_dump())
-        self._flush_manifest()
+        manifest = self._load_manifest()
+        manifest.append(ref.model_dump())
+        self._write_manifest(manifest)
 
         logger.debug("Saved brief %s for session %s (%d findings)", brief_id, session_id, len(brief.findings))
         return ref
@@ -79,18 +79,19 @@ class ResearchStore:
         return ResearchBrief.model_validate(data)
 
     def list_briefs(self, session_id: str) -> list[BriefRef]:
-        return [BriefRef.model_validate(e) for e in self._manifest if e["session_id"] == session_id]
+        manifest = self._load_manifest()
+        return [BriefRef.model_validate(e) for e in manifest if e["session_id"] == session_id]
 
     def brief_count(self) -> int:
-        return len(self._manifest)
+        return len(self._load_manifest())
 
     def delete_brief(self, brief_id: str) -> bool:
         brief_path = self._dir / f"{brief_id}.json"
         if not brief_path.exists():
             return False
         brief_path.unlink()
-        self._manifest = [e for e in self._manifest if e["brief_id"] != brief_id]
-        self._flush_manifest()
+        manifest = [e for e in self._load_manifest() if e["brief_id"] != brief_id]
+        self._write_manifest(manifest)
         return True
 
     def _load_manifest(self) -> list[dict[str, Any]]:
@@ -99,5 +100,5 @@ class ResearchStore:
         data: list[dict[str, Any]] = json.loads(self._manifest_path.read_text(encoding="utf-8"))
         return data
 
-    def _flush_manifest(self) -> None:
-        self._manifest_path.write_text(json.dumps(self._manifest, indent=2), encoding="utf-8")
+    def _write_manifest(self, manifest: list[dict[str, Any]]) -> None:
+        self._manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

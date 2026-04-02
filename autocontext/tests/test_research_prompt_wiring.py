@@ -6,8 +6,6 @@ for LLM context injection. Handles budget, truncation, ordering.
 
 from __future__ import annotations
 
-import pytest
-
 from autocontext.research.consultation import ResearchBrief
 from autocontext.research.types import Citation, ResearchResult
 

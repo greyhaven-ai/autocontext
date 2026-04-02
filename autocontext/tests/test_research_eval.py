@@ -135,3 +135,26 @@ class TestResearchEvaluator:
             score_fn=lambda t: 0.7,
         )
         assert result.citation_coverage == pytest.approx(1 / 3, abs=0.01)
+
+    def test_citation_coverage_avoids_prefix_false_positives(self) -> None:
+        from autocontext.research.evaluation import ResearchEvaluator
+
+        evaluator = ResearchEvaluator()
+        brief = ResearchBrief.from_results(
+            goal="test",
+            results=[
+                ResearchResult(
+                    query_topic="topic",
+                    summary="Finding",
+                    confidence=0.8,
+                    citations=[Citation(source="src-1", relevance=0.9)],
+                )
+            ],
+        )
+        result = evaluator.evaluate_pair(
+            brief=brief,
+            baseline_output="none",
+            augmented_output="This only mentions src-10, not the cited source",
+            score_fn=lambda t: 0.7,
+        )
+        assert result.citation_coverage == pytest.approx(0.0)

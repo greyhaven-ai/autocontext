@@ -6,11 +6,7 @@ cross-session learning, and prompt context windows.
 
 from __future__ import annotations
 
-import json
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from autocontext.research.types import Citation, ResearchResult
 
@@ -74,6 +70,22 @@ class TestResearchStore:
         loaded = store2.load_brief(ref.brief_id)
         assert loaded is not None
         assert loaded.goal == "persistent"
+
+    def test_manifest_merges_across_store_instances(self, tmp_path: Path) -> None:
+        from autocontext.research.persistence import ResearchStore
+
+        store1 = ResearchStore(tmp_path)
+        store2 = ResearchStore(tmp_path)
+
+        ref1 = store1.save_brief("s1", _make_brief("goal-a"))
+        ref2 = store2.save_brief("s2", _make_brief("goal-b"))
+
+        store3 = ResearchStore(tmp_path)
+        assert store3.brief_count() == 2
+        assert len(store3.list_briefs("s1")) == 1
+        assert len(store3.list_briefs("s2")) == 1
+        assert store3.load_brief(ref1.brief_id) is not None
+        assert store3.load_brief(ref2.brief_id) is not None
 
     def test_citations_round_trip(self, tmp_path: Path) -> None:
         from autocontext.research.persistence import ResearchStore
