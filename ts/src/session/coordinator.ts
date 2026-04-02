@@ -18,6 +18,7 @@ export type WorkerStatus = (typeof WorkerStatus)[keyof typeof WorkerStatus];
 export const CoordinatorEventType = {
   COORDINATOR_CREATED: "coordinator_created",
   WORKER_DELEGATED: "worker_delegated",
+  WORKER_STARTED: "worker_started",
   WORKER_COMPLETED: "worker_completed",
   WORKER_FAILED: "worker_failed",
   WORKER_REDIRECTED: "worker_redirected",
@@ -26,7 +27,8 @@ export const CoordinatorEventType = {
 } as const;
 export type CoordinatorEventType = (typeof CoordinatorEventType)[keyof typeof CoordinatorEventType];
 
-const ACTIVE_STATUSES = new Set<string>([WorkerStatus.PENDING, WorkerStatus.RUNNING]);
+const ACTIVE_STATUSES = new Set<WorkerStatus>([WorkerStatus.PENDING, WorkerStatus.RUNNING]);
+const RETRYABLE_STATUSES = new Set<WorkerStatus>([WorkerStatus.FAILED, WorkerStatus.REDIRECTED]);
 
 export interface CoordinatorEvent {
   readonly eventId: string;
@@ -56,12 +58,36 @@ export class Worker {
     return new Worker(opts);
   }
 
-  start(): void { this.status = WorkerStatus.RUNNING; }
-  complete(result: string): void { this.status = WorkerStatus.COMPLETED; this.result = result; }
-  fail(error: string = ""): void { this.status = WorkerStatus.FAILED; this.error = error; }
-  redirect(reason: string = ""): void { this.status = WorkerStatus.REDIRECTED; this.redirectReason = reason; }
+  start(): void {
+    this.requireStatus(new Set([WorkerStatus.PENDING]), "start worker");
+    this.status = WorkerStatus.RUNNING;
+  }
+
+  complete(result: string): void {
+    this.requireStatus(new Set([WorkerStatus.RUNNING]), "complete worker");
+    this.status = WorkerStatus.COMPLETED;
+    this.result = result;
+  }
+
+  fail(error: string = ""): void {
+    this.requireStatus(new Set([WorkerStatus.RUNNING]), "fail worker");
+    this.status = WorkerStatus.FAILED;
+    this.error = error;
+  }
+
+  redirect(reason: string = ""): void {
+    this.requireStatus(new Set([WorkerStatus.RUNNING]), "redirect worker");
+    this.status = WorkerStatus.REDIRECTED;
+    this.redirectReason = reason;
+  }
 
   get isActive(): boolean { return ACTIVE_STATUSES.has(this.status); }
+
+  private requireStatus(allowed: Set<WorkerStatus>, action: string): void {
+    if (!allowed.has(this.status)) {
+      throw new Error(`Cannot ${action} from status=${this.status}`);
+    }
+  }
 }
 
 export class Coordinator {
@@ -116,6 +142,11 @@ export class Coordinator {
 
   retry(workerId: string, newTask?: string): Worker {
     const parent = this.getWorker(workerId);
+    if (!RETRYABLE_STATUSES.has(parent.status)) {
+      throw new Error(
+        `Cannot retry worker unless it is failed or redirected (status=${parent.status})`,
+      );
+    }
     return this.delegate(newTask ?? parent.task, parent.role, parent.workerId);
   }
 

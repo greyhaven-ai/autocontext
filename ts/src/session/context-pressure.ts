@@ -21,6 +21,25 @@ export class CompactionPolicy {
     this.warningThreshold = opts?.warningThreshold ?? 0.70;
     this.compactThreshold = opts?.compactThreshold ?? 0.85;
     this.blockingThreshold = opts?.blockingThreshold ?? 0.95;
+    this.validateThresholds();
+  }
+
+  private validateThresholds(): void {
+    for (const [name, value] of [
+      ["warningThreshold", this.warningThreshold],
+      ["compactThreshold", this.compactThreshold],
+      ["blockingThreshold", this.blockingThreshold],
+    ] as const) {
+      if (value < 0 || value > 1) {
+        throw new Error(`${name} must be between 0.0 and 1.0`);
+      }
+    }
+
+    if (!(this.warningThreshold < this.compactThreshold && this.compactThreshold < this.blockingThreshold)) {
+      throw new Error(
+        "Compaction thresholds must satisfy warningThreshold < compactThreshold < blockingThreshold",
+      );
+    }
   }
 }
 
@@ -55,7 +74,7 @@ export class ContextPressure {
     else if (util >= p.warningThreshold) level = PressureLevel.WARNING;
     else level = PressureLevel.HEALTHY;
 
-    return new ContextPressure(usedTokens, effectiveWindow, Math.round(util * 10000) / 10000, level);
+    return new ContextPressure(usedTokens, effectiveWindow, util, level);
   }
 }
 

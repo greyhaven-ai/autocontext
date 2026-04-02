@@ -86,6 +86,26 @@ describe("Coordinator", () => {
     expect(coord.workers).toHaveLength(2);
   });
 
+  it("rejects invalid worker lifecycle transitions", () => {
+    const coord = Coordinator.create("s1", "test");
+    const worker = coord.delegate("t1", "r1");
+
+    expect(() => coord.completeWorker(worker.workerId, "done")).toThrow("status=pending");
+
+    worker.start();
+    coord.completeWorker(worker.workerId, "done");
+    expect(() => coord.stopWorker(worker.workerId, "too late")).toThrow("status=completed");
+  });
+
+  it("only retries failed or redirected workers", () => {
+    const coord = Coordinator.create("s1", "test");
+    const worker = coord.delegate("t1", "r1");
+    worker.start();
+    coord.completeWorker(worker.workerId, "done");
+
+    expect(() => coord.retry(worker.workerId, "retry")).toThrow("failed or redirected");
+  });
+
   it("emits structured events", () => {
     const coord = Coordinator.create("s1", "test");
     coord.delegate("t1", "r1");

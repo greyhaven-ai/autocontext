@@ -17,7 +17,7 @@ export const SupervisorState = {
 } as const;
 export type SupervisorState = (typeof SupervisorState)[keyof typeof SupervisorState];
 
-const ALIVE_STATES = new Set<string>([
+const ALIVE_STATES = new Set<SupervisorState>([
   SupervisorState.LAUNCHING,
   SupervisorState.RUNNING,
   SupervisorState.WAITING,
@@ -46,15 +46,75 @@ export class SupervisedEntry {
     return new SupervisedEntry(opts);
   }
 
-  markRunning(): void { this.state = SupervisorState.RUNNING; this.blockedReason = ""; this.touch(); }
-  markWaiting(reason: string = ""): void { this.state = SupervisorState.WAITING; this.blockedReason = reason; this.touch(); }
-  markCompleted(): void { this.state = SupervisorState.COMPLETED; this.touch(); }
-  markFailed(error: string = ""): void { this.state = SupervisorState.FAILED; this.error = error; this.touch(); }
-  requestStop(): void { this.state = SupervisorState.STOPPING; this.touch(); }
-  markStopped(): void { this.state = SupervisorState.STOPPED; this.touch(); }
+  markRunning(): void {
+    this.requireState(
+      new Set([SupervisorState.LAUNCHING, SupervisorState.WAITING]),
+      "mark entry running",
+    );
+    this.state = SupervisorState.RUNNING;
+    this.blockedReason = "";
+    this.touch();
+  }
+
+  markWaiting(reason: string = ""): void {
+    this.requireState(
+      new Set([SupervisorState.LAUNCHING, SupervisorState.RUNNING]),
+      "mark entry waiting",
+    );
+    this.state = SupervisorState.WAITING;
+    this.blockedReason = reason;
+    this.touch();
+  }
+
+  markCompleted(): void {
+    this.requireState(
+      new Set([
+        SupervisorState.LAUNCHING,
+        SupervisorState.RUNNING,
+        SupervisorState.WAITING,
+        SupervisorState.STOPPING,
+      ]),
+      "mark entry completed",
+    );
+    this.state = SupervisorState.COMPLETED;
+    this.blockedReason = "";
+    this.touch();
+  }
+
+  markFailed(error: string = ""): void {
+    this.requireState(ALIVE_STATES, "mark entry failed");
+    this.state = SupervisorState.FAILED;
+    this.blockedReason = "";
+    this.error = error;
+    this.touch();
+  }
+
+  requestStop(): void {
+    this.requireState(
+      new Set([SupervisorState.LAUNCHING, SupervisorState.RUNNING, SupervisorState.WAITING]),
+      "request stop for entry",
+    );
+    this.state = SupervisorState.STOPPING;
+    this.blockedReason = "";
+    this.touch();
+  }
+
+  markStopped(): void {
+    this.requireState(new Set([SupervisorState.STOPPING]), "mark entry stopped");
+    this.state = SupervisorState.STOPPED;
+    this.blockedReason = "";
+    this.touch();
+  }
+
   heartbeat(): void { this.touch(); }
 
   get isAlive(): boolean { return ALIVE_STATES.has(this.state); }
+
+  private requireState(allowed: Set<SupervisorState>, action: string): void {
+    if (!allowed.has(this.state)) {
+      throw new Error(`Cannot ${action} from state=${this.state}`);
+    }
+  }
 
   private touch(): void { this.lastActivityAt = new Date().toISOString(); }
 }

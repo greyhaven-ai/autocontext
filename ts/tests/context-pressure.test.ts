@@ -37,6 +37,19 @@ describe("ContextPressure", () => {
     const p = ContextPressure.measure(60_000, 100_000, policy);
     expect(p.level).toBe(PressureLevel.WARNING);
   });
+
+  it("rejects invalid threshold ordering", () => {
+    expect(
+      () => new CompactionPolicy({ warningThreshold: 0.9, compactThreshold: 0.7, blockingThreshold: 0.8 }),
+    ).toThrow("warningThreshold < compactThreshold < blockingThreshold");
+  });
+
+  it("keeps utilization consistent with the chosen level near thresholds", () => {
+    const p = ContextPressure.measure(84_996, 100_000);
+    expect(p.level).toBe(PressureLevel.WARNING);
+    expect(p.utilization).toBeCloseTo(0.84996, 8);
+    expect(p.utilization).toBeLessThan(0.85);
+  });
 });
 
 describe("effectiveWindow", () => {

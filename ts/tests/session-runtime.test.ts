@@ -57,6 +57,14 @@ describe("Session domain model", () => {
     expect(() => session.submitTurn({ prompt: "nope", role: "r" })).toThrow("not active");
   });
 
+  it("does not allow terminal sessions to resume or accept new turns", () => {
+    const session = Session.create({ goal: "test" });
+    session.complete("done");
+
+    expect(() => session.resume()).toThrow("status=completed");
+    expect(() => session.submitTurn({ prompt: "again", role: "r" })).toThrow("not active");
+  });
+
   it("tracks cumulative token usage", () => {
     const session = Session.create({ goal: "test" });
     const t1 = session.submitTurn({ prompt: "p1", role: "r1" });

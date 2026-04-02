@@ -41,6 +41,12 @@ export const SessionEventType = {
 } as const;
 export type SessionEventType = (typeof SessionEventType)[keyof typeof SessionEventType];
 
+const TERMINAL_SESSION_STATUSES = new Set<SessionStatus>([
+  SessionStatus.COMPLETED,
+  SessionStatus.FAILED,
+  SessionStatus.CANCELED,
+]);
+
 // ---- Value Objects ----
 
 export interface SessionEvent {
@@ -158,18 +164,21 @@ export class Session {
   // -- Lifecycle --
 
   pause(): void {
+    this.requireStatus(SessionStatus.ACTIVE, "pause");
     this.status = SessionStatus.PAUSED;
     this.touch();
     this.emit(SessionEventType.SESSION_PAUSED, {});
   }
 
   resume(): void {
+    this.requireStatus(SessionStatus.PAUSED, "resume");
     this.status = SessionStatus.ACTIVE;
     this.touch();
     this.emit(SessionEventType.SESSION_RESUMED, {});
   }
 
   complete(summary: string = ""): void {
+    this.requireNotTerminal("complete");
     this.status = SessionStatus.COMPLETED;
     this.summary = summary;
     this.touch();
@@ -177,12 +186,14 @@ export class Session {
   }
 
   fail(error: string = ""): void {
+    this.requireNotTerminal("fail");
     this.status = SessionStatus.FAILED;
     this.touch();
     this.emit(SessionEventType.SESSION_FAILED, { error });
   }
 
   cancel(): void {
+    this.requireNotTerminal("cancel");
     this.status = SessionStatus.CANCELED;
     this.touch();
     this.emit(SessionEventType.SESSION_CANCELED, {});
@@ -204,6 +215,18 @@ export class Session {
     const turn = this.turns.find((t) => t.turnId === turnId);
     if (!turn) throw new Error(`Turn ${turnId} not found in session ${this.sessionId}`);
     return turn;
+  }
+
+  private requireStatus(expected: SessionStatus, action: string): void {
+    if (this.status !== expected) {
+      throw new Error(`Cannot ${action} session from status=${this.status}`);
+    }
+  }
+
+  private requireNotTerminal(action: string): void {
+    if (TERMINAL_SESSION_STATUSES.has(this.status)) {
+      throw new Error(`Cannot ${action} session from terminal status=${this.status}`);
+    }
   }
 
   private touch(): void {

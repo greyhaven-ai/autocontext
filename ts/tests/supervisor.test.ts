@@ -60,4 +60,13 @@ describe("Supervisor", () => {
     sup.stop("s1");
     expect(entry.state).toBe(SupervisorState.STOPPING);
   });
+
+  it("rejects reopening terminal entries", () => {
+    const sup = new Supervisor();
+    const entry = sup.launch({ sessionId: "s1", goal: "test" });
+    entry.markCompleted();
+
+    expect(() => sup.stop("s1")).toThrow("state=completed");
+    expect(() => entry.markRunning()).toThrow("state=completed");
+  });
 });
