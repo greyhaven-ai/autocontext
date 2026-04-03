@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-04-03
+
+### Changed
+
+- Expanded the research surface with validated domain contracts, runtime gating, persistence hardening, and better evaluation wiring for briefs, prompts, and adapters.
+- Hardened Python and TypeScript operator-control surfaces around terminal lifecycle transitions, remote approvals, progress digests, and agentOS session/runtime error handling.
+- Improved SQLite bootstrap and migration compatibility so packaged installs and fresh databases stay aligned with the live generation schema.
+- Expanded the TypeScript provider compatibility surface with env-driven config for `gemini`, `mistral`, `groq`, `openrouter`, and `azure-openai`, and synced the public provider docs/tests to match.
+- Python and TypeScript package metadata are bumped to `0.3.3`.
+
 ## [0.3.2] - 2026-04-02
 
 ### Changed

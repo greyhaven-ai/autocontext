@@ -118,7 +118,7 @@ describe("Rubric drift", () => {
     ];
 
     const report = monitor.analyze(facets, {
-      release: "0.3.2",
+      release: "0.3.3",
       scenarioFamily: "game",
       agentProvider: "anthropic",
     });

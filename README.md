@@ -142,7 +142,7 @@ The repo publishes two installable packages with different scopes:
 
 - Python package: `pip install autocontext`
 - TypeScript package: `npm install autoctx`
-- Current release line: `autocontext==0.3.2` and `autoctx@0.3.2`
+- Current release line: `autocontext==0.3.3` and `autoctx@0.3.3`
 
 Important:
 - The Python package on PyPI is now `autocontext`.
