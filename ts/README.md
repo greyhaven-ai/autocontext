@@ -127,7 +127,7 @@ AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario support_triage --json
 AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario support_triage --json
 ```
 
-Supported providers: `anthropic`, `openai`, `openai-compatible`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
+Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
 
 `autoctx simulate` and `autoctx investigate` require a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
 
