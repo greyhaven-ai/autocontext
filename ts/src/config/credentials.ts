@@ -176,6 +176,10 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
   { id: "azure-openai", displayName: "Azure OpenAI", envVar: "AZURE_OPENAI_API_KEY", requiresKey: true },
   { id: "ollama", displayName: "Ollama", defaultBaseUrl: "http://localhost:11434", requiresKey: false },
   { id: "vllm", displayName: "vLLM", defaultBaseUrl: "http://localhost:8000", requiresKey: false },
+  { id: "hermes", displayName: "Hermes Gateway", defaultBaseUrl: "http://localhost:8080", requiresKey: false },
+  { id: "openai-compatible", displayName: "OpenAI-Compatible", requiresKey: true },
+  { id: "pi", displayName: "Pi (CLI)", requiresKey: false },
+  { id: "pi-rpc", displayName: "Pi (RPC)", requiresKey: false },
   { id: "deterministic", displayName: "Deterministic (testing)", requiresKey: false },
 ];
 

@@ -7,7 +7,7 @@
 
 import { ProviderError } from "../types/index.js";
 import type { CompletionResult, LLMProvider } from "../types/index.js";
-import { loadPersistedCredentials, loadProjectConfig } from "../config/index.js";
+import { getKnownProvider, loadPersistedCredentials, loadProjectConfig } from "../config/index.js";
 import { DeterministicProvider } from "./deterministic.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
@@ -127,6 +127,37 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
   };
 }
 
+const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<string, {
+  baseUrl?: string;
+  envVar: string;
+  defaultModel: string;
+}> = {
+  gemini: {
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    envVar: "GEMINI_API_KEY",
+    defaultModel: "gemini-2.5-pro",
+  },
+  mistral: {
+    baseUrl: "https://api.mistral.ai/v1",
+    envVar: "MISTRAL_API_KEY",
+    defaultModel: "mistral-large-latest",
+  },
+  groq: {
+    baseUrl: "https://api.groq.com/openai/v1",
+    envVar: "GROQ_API_KEY",
+    defaultModel: "llama-3.3-70b-versatile",
+  },
+  openrouter: {
+    baseUrl: "https://openrouter.ai/api/v1",
+    envVar: "OPENROUTER_API_KEY",
+    defaultModel: "anthropic/claude-sonnet-4",
+  },
+  "azure-openai": {
+    envVar: "AZURE_OPENAI_API_KEY",
+    defaultModel: "gpt-4o",
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -209,12 +240,22 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
     return new RuntimeBridgeProvider(runtime as any, opts.model ?? "pi-rpc-default");
   }
 
+  // OpenAI-compatible providers with per-service defaults
+  const compat = OPENAI_COMPATIBLE_PROVIDER_DEFAULTS[type];
+  if (compat) {
+    return createOpenAICompatibleProvider({
+      apiKey: opts.apiKey ?? process.env[compat.envVar] ?? "",
+      baseUrl: opts.baseUrl ?? compat.baseUrl,
+      model: opts.model ?? compat.defaultModel,
+    });
+  }
+
   if (type === "deterministic") {
     return new DeterministicProvider();
   }
 
   throw new ProviderError(
-    `Unknown provider type: ${JSON.stringify(type)}. Supported: anthropic, openai, openai-compatible, ollama, vllm, hermes, pi, pi-rpc, deterministic`,
+    `Unknown provider type: ${JSON.stringify(type)}. Supported: anthropic, openai, openai-compatible, ollama, vllm, hermes, gemini, mistral, groq, openrouter, azure-openai, pi, pi-rpc, deterministic`,
   );
 }
 
@@ -321,11 +362,29 @@ export function resolveProviderConfig(
     return { providerType: type, apiKey: genericKey, baseUrl, model };
   }
 
-  // openai, openai-compatible, and other generic types
-  const apiKey = genericKey ?? process.env.OPENAI_API_KEY;
+  const providerSpecificEnvVar =
+    OPENAI_COMPATIBLE_PROVIDER_DEFAULTS[type]?.envVar ??
+    getKnownProvider(type)?.envVar;
+  const providerSpecificKey = providerSpecificEnvVar
+    ? process.env[providerSpecificEnvVar]
+    : undefined;
+  const openaiFallbackKey =
+    type === "openai" || type === "openai-compatible"
+      ? process.env.OPENAI_API_KEY
+      : undefined;
+  const apiKey = genericKey ?? providerSpecificKey ?? openaiFallbackKey;
   if (!apiKey) {
+    const keyVars = [
+      "AUTOCONTEXT_API_KEY",
+      "AUTOCONTEXT_AGENT_API_KEY",
+    ];
+    if (providerSpecificEnvVar) {
+      keyVars.push(providerSpecificEnvVar);
+    } else if (type === "openai" || type === "openai-compatible") {
+      keyVars.push("OPENAI_API_KEY");
+    }
     throw new ProviderError(
-      "API key required: set AUTOCONTEXT_API_KEY, AUTOCONTEXT_AGENT_API_KEY, or OPENAI_API_KEY",
+      `API key required: set ${keyVars.join(", or ")}`,
     );
   }
   return { providerType: type, apiKey, baseUrl, model };

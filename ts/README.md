@@ -14,7 +14,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 - **Knowledge system**: versioned playbooks, score trajectories, session reports, dead-end tracking
 - **Interactive server**: HTTP API, WebSocket control plane, bundled Ink TUI
 - **MCP control plane**: 40+ tools covering scenarios, runs, knowledge, evaluation, feedback, solve, sandbox, and export
-- **Provider routing**: Anthropic, OpenAI-compatible, Ollama, vLLM, Hermes, Pi, Pi-RPC, deterministic
+- **Provider routing**: Anthropic, OpenAI-compatible, Gemini, Mistral, Groq, OpenRouter, Azure OpenAI, Ollama, vLLM, Hermes, Pi, Pi-RPC, deterministic
 - **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
 - **Package management**: strategy package export/import, training data export
 - **Training hook surface**: dataset validation and executor-backed `train` entry point
@@ -127,7 +127,7 @@ AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario support_triage --json
 AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario support_triage --json
 ```
 
-Supported providers: `anthropic`, `openai`, `openai-compatible`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
+Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
 
 `autoctx simulate` and `autoctx investigate` require a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
 

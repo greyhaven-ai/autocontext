@@ -11,6 +11,16 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const PROVIDER_ENV_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "MISTRAL_API_KEY",
+  "GROQ_API_KEY",
+  "OPENROUTER_API_KEY",
+  "AZURE_OPENAI_API_KEY",
+] as const;
+
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-provider-routing-"));
 }
@@ -19,7 +29,7 @@ const savedEnv: Record<string, string | undefined> = {};
 
 function restoreProviderEnv(): void {
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("AUTOCONTEXT_") || key === "ANTHROPIC_API_KEY" || key === "OPENAI_API_KEY") {
+    if (key.startsWith("AUTOCONTEXT_") || PROVIDER_ENV_KEYS.includes(key as typeof PROVIDER_ENV_KEYS[number])) {
       if (key in savedEnv) {
         process.env[key] = savedEnv[key];
       } else {
@@ -31,7 +41,7 @@ function restoreProviderEnv(): void {
 
 function saveAndClearProviderEnv(): void {
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("AUTOCONTEXT_") || key === "ANTHROPIC_API_KEY" || key === "OPENAI_API_KEY") {
+    if (key.startsWith("AUTOCONTEXT_") || PROVIDER_ENV_KEYS.includes(key as typeof PROVIDER_ENV_KEYS[number])) {
       savedEnv[key] = process.env[key];
       delete process.env[key];
     }
@@ -134,6 +144,27 @@ describe("resolveProviderConfig env var alignment", () => {
     const { resolveProviderConfig } = await import("../src/providers/index.js");
     const config = resolveProviderConfig();
     expect(config.providerType).toBe("hermes");
+  });
+
+  it("uses provider-specific API key env vars for new compat providers", async () => {
+    const { resolveProviderConfig } = await import("../src/providers/index.js");
+    const providerEnvPairs = [
+      ["gemini", "GEMINI_API_KEY", "gem-key"],
+      ["mistral", "MISTRAL_API_KEY", "mistral-key"],
+      ["groq", "GROQ_API_KEY", "groq-key"],
+      ["openrouter", "OPENROUTER_API_KEY", "openrouter-key"],
+      ["azure-openai", "AZURE_OPENAI_API_KEY", "azure-key"],
+    ] as const;
+
+    for (const [providerType, envVar, apiKey] of providerEnvPairs) {
+      saveAndClearProviderEnv();
+      process.env.AUTOCONTEXT_AGENT_PROVIDER = providerType;
+      process.env[envVar] = apiKey;
+
+      const config = resolveProviderConfig();
+      expect(config.providerType).toBe(providerType);
+      expect(config.apiKey).toBe(apiKey);
+    }
   });
 });
 
