@@ -28,8 +28,7 @@ class MtsToolContext:
         self.settings = settings
         self.sqlite = SQLiteStore(settings.db_path)
         migrations_dir = Path(__file__).resolve().parents[3] / "migrations"
-        if migrations_dir.exists():
-            self.sqlite.migrate(migrations_dir)
+        self.sqlite.migrate(migrations_dir)
         self.artifacts = ArtifactStore(
             settings.runs_root,
             settings.knowledge_root,

@@ -1002,8 +1002,7 @@ def export_cmd(
 
     sqlite = SQLiteStore(resolved_db)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
-    if migrations_dir.exists():
-        sqlite.migrate(migrations_dir)
+    sqlite.migrate(migrations_dir)
     artifacts = ArtifactStore(
         runs_root=resolved_runs,
         knowledge_root=resolved_knowledge,
@@ -1308,8 +1307,7 @@ def import_package_cmd(
     resolved_db = Path(db_path) if db_path is not None else settings.db_path
     sqlite = SQLiteStore(resolved_db)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
-    if migrations_dir.exists():
-        sqlite.migrate(migrations_dir)
+    sqlite.migrate(migrations_dir)
     artifacts = ArtifactStore(
         runs_root=settings.runs_root,
         knowledge_root=Path(knowledge_root) if knowledge_root else settings.knowledge_root,
@@ -1354,8 +1352,7 @@ def wait(
     settings = load_settings()
     store = SQLiteStore(settings.db_path)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
-    if migrations_dir.exists():
-        store.migrate(migrations_dir)
+    store.migrate(migrations_dir)
 
     # Check condition exists
     condition = store.get_monitor_condition(condition_id)
@@ -1506,8 +1503,7 @@ def queue(
     settings = load_settings()
     store = _sqlite_from_settings(settings)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
-    if migrations_dir.exists():
-        store.migrate(migrations_dir)
+    store.migrate(migrations_dir)
 
     task_id = enqueue_task(store=store, spec_name=spec, priority=priority)
 

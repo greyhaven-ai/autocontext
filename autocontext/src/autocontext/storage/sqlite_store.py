@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from autocontext.storage.bootstrap_schema import bootstrap_core_schema, default_migrations_dir
 from autocontext.storage.row_types import GenerationMetricsRow, RunRow
 
 if TYPE_CHECKING:
@@ -28,57 +29,19 @@ class SQLiteStore:
         return conn
 
     def ensure_core_tables(self) -> None:
-        """Create essential tables if they don't exist (AC-521).
-
-        This is a safety net for when migration files are unavailable
-        (e.g. pip-installed package where migrations/ isn't packaged).
-        Uses CREATE TABLE IF NOT EXISTS so it's safe to call after migrate().
-        """
+        """Create the current core schema when migration files are unavailable."""
+        migrations_dir = default_migrations_dir()
+        if migrations_dir.exists() and any(migrations_dir.glob("*.sql")):
+            self.migrate(migrations_dir)
+            return
         with self.connect() as conn:
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS runs (
-                    run_id TEXT PRIMARY KEY,
-                    scenario TEXT NOT NULL,
-                    target_generations INTEGER NOT NULL,
-                    executor_mode TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    agent_provider TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-                );
-
-                CREATE TABLE IF NOT EXISTS generations (
-                    run_id TEXT NOT NULL,
-                    generation_index INTEGER NOT NULL,
-                    mean_score REAL NOT NULL,
-                    best_score REAL NOT NULL,
-                    gate_decision TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    elo REAL NOT NULL DEFAULT 1000.0,
-                    wins INTEGER NOT NULL DEFAULT 0,
-                    losses INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    PRIMARY KEY (run_id, generation_index),
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                );
-
-                CREATE TABLE IF NOT EXISTS matches (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id TEXT NOT NULL,
-                    generation_index INTEGER NOT NULL,
-                    seed INTEGER NOT NULL,
-                    score REAL NOT NULL,
-                    passed_validation INTEGER NOT NULL,
-                    strategy TEXT NOT NULL,
-                    competitor_output TEXT NOT NULL DEFAULT '',
-                    judge_reasoning TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                );
-            """)
+            bootstrap_core_schema(conn)
 
     def migrate(self, migrations_dir: Path) -> None:
+        if not migrations_dir.exists() or not any(migrations_dir.glob("*.sql")):
+            with self.connect() as conn:
+                bootstrap_core_schema(conn)
+            return
         with self.connect() as conn:
             conn.execute(
                 """

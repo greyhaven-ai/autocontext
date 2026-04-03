@@ -111,8 +111,7 @@ def create_app(
     application.state.app_settings = app_settings
     store = SQLiteStore(app_settings.db_path)
     migrations_dir = Path(__file__).resolve().parents[3] / "migrations"
-    if migrations_dir.exists():
-        store.migrate(migrations_dir)
+    store.migrate(migrations_dir)
     application.state.store = store
     application.state.migrations_dir = migrations_dir
     scenario_creator = _build_scenario_creator(app_settings)

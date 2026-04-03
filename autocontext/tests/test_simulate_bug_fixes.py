@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+import types
 from abc import abstractmethod
 
 import pytest
@@ -44,9 +45,8 @@ class TestAbstractClassFiltering:
 
     def test_find_scenario_class_skips_abstract(self) -> None:
         """The helper should skip abstract classes and find concrete ones."""
-        from autocontext.simulation.engine import _find_scenario_class
-
         from autocontext.scenarios.simulation import SimulationInterface
+        from autocontext.simulation.engine import _find_scenario_class
 
         class AbstractMiddle(SimulationInterface):
             @abstractmethod
@@ -64,7 +64,6 @@ class TestAbstractClassFiltering:
             def custom_method(self): return "done"
 
         # Build a fake module namespace
-        import types
         mod = types.ModuleType("fake_mod")
         mod.AbstractMiddle = AbstractMiddle  # type: ignore[attr-defined]
         mod.ConcreteEnd = ConcreteEnd  # type: ignore[attr-defined]
@@ -76,7 +75,6 @@ class TestAbstractClassFiltering:
     def test_find_scenario_class_returns_none_when_all_abstract(self) -> None:
         from autocontext.simulation.engine import _find_scenario_class
 
-        import types
         mod = types.ModuleType("empty_mod")
         found = _find_scenario_class(mod)
         assert found is None
