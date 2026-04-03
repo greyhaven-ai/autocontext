@@ -83,6 +83,7 @@ class GenerationRunner:
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
         self.sqlite = SQLiteStore(settings.db_path)
+        self.sqlite.ensure_core_tables()
         self.trajectory_builder = ScoreTrajectoryBuilder(self.sqlite)
         self.artifacts = ArtifactStore(
             settings.runs_root,

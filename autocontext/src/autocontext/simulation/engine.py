@@ -7,10 +7,12 @@ executes trajectories/sweeps, and returns structured findings.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import logging
 import re
 import sys
+import types
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -29,6 +31,43 @@ def _generate_id() -> str:
 def _derive_name(description: str) -> str:
     words = re.sub(r"[^a-z0-9\s]", "", description.lower()).split()
     return "_".join(w for w in words if len(w) > 2)[:4] or "simulation"
+
+
+def _find_scenario_class(mod: types.ModuleType) -> type | None:
+    """Find first concrete (non-abstract) scenario class in a module.
+
+    Checks SimulationInterface first, then OperatorLoopInterface.
+    Skips abstract classes to avoid AC-520.
+    """
+    from autocontext.scenarios.simulation import SimulationInterface
+
+    for attr_name in dir(mod):
+        attr = getattr(mod, attr_name)
+        if (
+            isinstance(attr, type)
+            and issubclass(attr, SimulationInterface)
+            and attr is not SimulationInterface
+            and not inspect.isabstract(attr)
+        ):
+            return attr
+
+    # Try operator_loop interface
+    try:
+        from autocontext.scenarios.operator_loop import OperatorLoopInterface
+    except ImportError:
+        return None
+
+    for attr_name in dir(mod):
+        attr = getattr(mod, attr_name)
+        if (
+            isinstance(attr, type)
+            and issubclass(attr, OperatorLoopInterface)
+            and attr is not OperatorLoopInterface
+            and not inspect.isabstract(attr)
+        ):
+            return attr
+
+    return None
 
 
 class SimulationEngine:
@@ -349,22 +388,8 @@ class SimulationEngine:
         exec(source, mod.__dict__)  # noqa: S102
         sys.modules[mod_name] = mod
 
-        # Find the scenario class
-        from autocontext.scenarios.simulation import SimulationInterface
-        cls = None
-        for attr_name in dir(mod):
-            attr = getattr(mod, attr_name)
-            if isinstance(attr, type) and issubclass(attr, SimulationInterface) and attr is not SimulationInterface:
-                cls = attr
-                break
-        if cls is None:
-            # Try operator_loop interface
-            from autocontext.scenarios.operator_loop import OperatorLoopInterface
-            for attr_name in dir(mod):
-                attr = getattr(mod, attr_name)
-                if isinstance(attr, type) and issubclass(attr, OperatorLoopInterface) and attr is not OperatorLoopInterface:
-                    cls = attr
-                    break
+        # Find the scenario class (skip abstract classes — AC-520)
+        cls = _find_scenario_class(mod)
 
         if cls is None:
             return {"score": 0, "reasoning": "No scenario class found", "dimension_scores": {}}

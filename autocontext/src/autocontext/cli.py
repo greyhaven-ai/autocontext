@@ -160,6 +160,12 @@ def _write_json_stderr(message: str) -> None:
     sys.stderr.write(json.dumps({"error": message}) + "\n")
 
 
+def _check_json_exit(result: dict[str, Any]) -> None:
+    """Raise SystemExit(1) if JSON result has status=failed (AC-520)."""
+    if isinstance(result, dict) and result.get("status") == "failed":
+        raise SystemExit(1)
+
+
 def _is_agent_task(scenario_name: str) -> bool:
     """Check if a scenario should use the direct agent-task execution path."""
     if scenario_name not in SCENARIO_REGISTRY:
@@ -1103,6 +1109,7 @@ def simulate(
         result = export_simulation(id=export_id, knowledge_root=settings.knowledge_root, format=export_format)
         if json_output:
             _write_json_stdout(result)
+            _check_json_exit(result)
         elif result["status"] == "failed":
             console.print(f"[red]Export failed:[/red] {result.get('error')}")
             raise typer.Exit(code=1)
@@ -1115,6 +1122,7 @@ def simulate(
         result = engine.compare(left=compare_left, right=compare_right)
         if json_output:
             _write_json_stdout(result)
+            _check_json_exit(result)
         elif result["status"] == "failed":
             console.print(f"[red]Compare failed:[/red] {result.get('error')}")
             raise typer.Exit(code=1)
@@ -1131,6 +1139,7 @@ def simulate(
         )
         if json_output:
             _write_json_stdout(result)
+            _check_json_exit(result)
         elif result["status"] == "failed":
             console.print(f"[red]Replay failed:[/red] {result.get('error')}")
             raise typer.Exit(code=1)
@@ -1159,6 +1168,7 @@ def simulate(
 
     if json_output:
         _write_json_stdout(result)
+        _check_json_exit(result)
     elif result["status"] == "failed":
         console.print(f"[red]Simulation failed:[/red] {result.get('error')}")
         raise typer.Exit(code=1)
