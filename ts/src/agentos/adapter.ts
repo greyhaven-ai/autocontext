@@ -35,6 +35,10 @@ export class AgentOsSessionAdapter {
   }
 
   async startSession(goal: string): Promise<Session> {
+    if (!this.config.enabled) {
+      throw new Error("agentOS integration is disabled");
+    }
+
     const session = Session.create({ goal, metadata: { runtime: "agentos", agentType: this.config.agentType } });
 
     const { sessionId: aosSessionId } = await this.runtime.createSession(this.config.agentType, {
@@ -59,8 +63,14 @@ export class AgentOsSessionAdapter {
     // Submit turn through autocontext's session model
     const turn = session.submitTurn({ prompt, role: "operator" });
 
-    // Forward to agentOS runtime
-    await this.runtime.prompt(aosSessionId, prompt);
+    try {
+      // Forward to agentOS runtime
+      await this.runtime.prompt(aosSessionId, prompt);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      session.failTurn(turn.turnId, message);
+      throw error;
+    }
 
     // Collect response from agentOS events
     const lastMessage = [...binding.aosEvents].reverse().find((e) => e.method === "message" && e.params?.role === "assistant");

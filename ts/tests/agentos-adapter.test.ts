@@ -6,7 +6,7 @@
  * stub AgentOsRuntime so there's no real VM dependency.
  */
 
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 
 // ---- Stub agentOS runtime ----
 
@@ -107,6 +107,15 @@ describe("AgentOsSessionAdapter", () => {
     expect(runtime.sessions.size).toBe(1);
   });
 
+  it("rejects startup when integration is disabled", async () => {
+    const disabledAdapter = new AgentOsSessionAdapter(
+      runtime as unknown as AgentOsRuntimePort,
+      new AgentOsConfig({ enabled: false }),
+    );
+    await expect(disabledAdapter.startSession("Build auth API")).rejects.toThrow("disabled");
+    expect(runtime.sessions.size).toBe(0);
+  });
+
   it("submits a turn via prompt", async () => {
     const session = await adapter.startSession("test");
     await adapter.submitTurn(session.sessionId, "Write a hello world script");
@@ -140,6 +149,26 @@ describe("AgentOsSessionAdapter", () => {
     const session = await adapter.startSession("test");
     await adapter.closeSession(session.sessionId);
     await expect(adapter.submitTurn(session.sessionId, "too late")).rejects.toThrow();
+  });
+
+  it("fails the turn if the runtime prompt errors", async () => {
+    class FailingRuntime extends StubAgentOsRuntime {
+      override async prompt(_sessionId: string, _prompt: string): Promise<void> {
+        throw new Error("runtime down");
+      }
+    }
+
+    const failingRuntime = new FailingRuntime();
+    const failingAdapter = new AgentOsSessionAdapter(
+      failingRuntime as unknown as AgentOsRuntimePort,
+      new AgentOsConfig({ enabled: true }),
+    );
+
+    const session = await failingAdapter.startSession("test");
+    await expect(failingAdapter.submitTurn(session.sessionId, "hello")).rejects.toThrow("runtime down");
+    expect(session.turns).toHaveLength(1);
+    expect(session.turns[0]?.outcome).toBe("failed");
+    expect(session.turns[0]?.error).toContain("runtime down");
   });
 
   it("tracks multiple sessions", async () => {

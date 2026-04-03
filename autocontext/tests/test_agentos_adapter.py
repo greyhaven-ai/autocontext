@@ -7,8 +7,6 @@ for cross-language orchestration and config management.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestAgentOsPermissions:
     def test_defaults(self) -> None:
