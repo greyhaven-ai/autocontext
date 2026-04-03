@@ -1,10 +1,16 @@
 {
-  "name": "@autocontext/pi",
-  "version": "0.1.0",
-  "description": "Official autocontext extension for Pi coding agent",
+  "name": "pi-autocontext",
+  "version": "0.2.0",
+  "description": "autocontext extension for Pi coding agent \u2014 iterative strategy generation, LLM judging, and evaluation tools",
   "type": "module",
-  "keywords": ["pi-package", "pi", "pi-extension", "autocontext", "autoctx"],
+  "keywords": ["pi-package", "pi", "pi-extension", "autocontext", "autoctx", "evaluation", "llm", "judging"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/greyhaven-ai/autocontext",
+    "directory": "pi"
+  },
+  "homepage": "https://github.com/greyhaven-ai/autocontext/tree/main/pi",
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-ai": "*",
@@ -12,7 +18,7 @@
     "@sinclair/typebox": "*"
   },
   "dependencies": {
-    "autoctx": "file:../ts"
+    "autoctx": "^0.3.2"
   },
   "devDependencies": {
     "@sinclair/typebox": "^0.34.0",
@@ -24,9 +30,17 @@
     "skills": ["./skills"],
     "prompts": ["./prompts"]
   },
+  "files": [
+    "src",
+    "skills",
+    "prompts",
+    "types",
+    "README.md"
+  ],
   "scripts": {
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsc"
+    "build": "tsc",
+    "prepublishOnly": "npm run lint && npm test"
   }
 }
