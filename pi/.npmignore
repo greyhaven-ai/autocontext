@@ -1,0 +1,8 @@
+node_modules
+dist
+tests
+*.test.ts
+tsconfig.json
+vitest.config.ts
+package-lock.json
+.DS_Store
