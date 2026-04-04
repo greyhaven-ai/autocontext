@@ -6,8 +6,6 @@ derived from events, tool calls, and step outcomes.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestActionLabel:
     """ActionLabel value object for timeline/event display."""
@@ -91,7 +89,14 @@ class TestLabelBatch:
         coord.complete_worker(w.worker_id, result="done")
 
         labels = labels_from_coordinator(coord, max_labels=10)
-        assert len(labels) >= 2  # at least delegated + completed
+        assert len(labels) == len(coord.events) == 3
+        assert labels[0].text == "Coordinator started"
+        assert labels[1].text.startswith("Worker delegated:")
+        assert "task=Research auth" in labels[1].text
+        assert "role=researcher" in labels[1].text
+        assert "worker_id=" in labels[1].text
+        assert labels[2].text.startswith("Worker completed:")
+        assert "worker_id=" in labels[2].text
 
     def test_max_labels_respected(self) -> None:
         from autocontext.session.action_labels import labels_from_coordinator
@@ -102,4 +107,5 @@ class TestLabelBatch:
             coord.delegate(task=f"task-{i}", role="r1")
 
         labels = labels_from_coordinator(coord, max_labels=5)
-        assert len(labels) <= 5
+        assert len(labels) == 5
+        assert all(label.text.startswith("Worker delegated") for label in labels)

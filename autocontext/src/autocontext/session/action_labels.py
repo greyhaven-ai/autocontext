@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from autocontext.session.coordinator import CoordinatorEventType
+from autocontext.session.types import SessionEventType
+
 if TYPE_CHECKING:
     from autocontext.session.coordinator import Coordinator, CoordinatorEvent
     from autocontext.session.types import SessionEvent
@@ -18,8 +21,11 @@ if TYPE_CHECKING:
 _MAX_LABEL_LEN = 120
 
 _FAILURE_EVENT_TYPES = frozenset({
-    "worker_failed", "turn_failed", "turn_interrupted",
-    "session_failed", "session_canceled",
+    CoordinatorEventType.WORKER_FAILED.value,
+    SessionEventType.TURN_FAILED.value,
+    SessionEventType.TURN_INTERRUPTED.value,
+    SessionEventType.SESSION_FAILED.value,
+    SessionEventType.SESSION_CANCELED.value,
 })
 
 _EVENT_LABEL_MAP: dict[str, str] = {
@@ -87,6 +93,7 @@ def label_from_event(event: CoordinatorEvent | SessionEvent) -> ActionLabel:
             detail_parts.append(f"{key}={str(val)[:40]}")
 
     if detail_parts:
+        # Keep labels glanceable in narrow timeline views rather than dumping every payload field.
         detail = ", ".join(detail_parts[:3])
         text = f"{base}: {detail}"
     else:
