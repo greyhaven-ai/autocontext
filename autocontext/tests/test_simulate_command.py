@@ -130,7 +130,7 @@ class TestSimulationEngine:
         assert len(set(scores)) > 1
         assert len(set(reasons)) > 1
 
-    def test_operator_loop_run_exercises_escalation_and_clarification_path(self, tmp_knowledge: Path) -> None:
+    def test_operator_loop_run_prefers_safe_autonomy_over_unnecessary_escalation(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine
 
         operator_loop_spec = json.dumps({
@@ -164,10 +164,9 @@ class TestSimulationEngine:
 
         assert result["status"] == "completed"
         assert result["family"] == "operator_loop"
-        assert result["summary"]["dimension_scores"]["escalation_precision"] > 0
-        assert result["summary"]["dimension_scores"]["escalation_recall"] > 0
-        assert "Escalations: 1" in result["summary"]["reasoning"]
-        assert "Clarifications: 1" in result["summary"]["reasoning"]
+        assert result["summary"]["dimension_scores"]["autonomy_efficiency"] == 1.0
+        assert "Escalations: 0" in result["summary"]["reasoning"]
+        assert "Clarifications: 0" in result["summary"]["reasoning"]
         assert "Missed escalations: 0" in result["summary"]["reasoning"]
 
 

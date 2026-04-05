@@ -16,12 +16,15 @@ import types
 import uuid
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.types import LlmFn
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from autocontext.scenarios.operator_loop import OperatorLoopInterface
 
 
 def _generate_id() -> str:
@@ -390,7 +393,6 @@ class SimulationEngine:
 
         # Find the scenario class (skip abstract classes — AC-520)
         cls = _find_scenario_class(mod)
-
         if cls is None:
             return {"score": 0, "reasoning": "No scenario class found", "dimension_scores": {}}
 
@@ -441,7 +443,12 @@ class SimulationEngine:
             "dimension_scores": eval_result.dimension_scores,
         }
 
-    def _execute_operator_loop_single(self, instance: Any, seed: int, max_steps: int | None = None) -> dict[str, Any]:
+    def _execute_operator_loop_single(
+        self,
+        instance: OperatorLoopInterface,
+        seed: int,
+        max_steps: int | None = None,
+    ) -> dict[str, Any]:
         from autocontext.scenarios.simulation import Action, ActionRecord, ActionResult, ActionTrace
 
         state = instance.initial_state(seed)
@@ -474,9 +481,6 @@ class SimulationEngine:
                 state = self._operator_loop_intervene(instance, state, blocked_action, blocked_reason)
                 continue
 
-            if blocked_action is not None:
-                state = self._operator_loop_intervene(instance, state, blocked_action, blocked_reason)
-
             if action_to_run is None:
                 break
 
@@ -508,7 +512,13 @@ class SimulationEngine:
             "dimension_scores": eval_result.dimension_scores,
         }
 
-    def _operator_loop_intervene(self, instance: Any, state: dict[str, Any], action: Any, reason: str) -> dict[str, Any]:
+    def _operator_loop_intervene(
+        self,
+        instance: OperatorLoopInterface,
+        state: dict[str, Any],
+        action: Any,
+        reason: str,
+    ) -> dict[str, Any]:
         from autocontext.scenarios.operator_loop import ClarificationRequest, EscalationEvent
 
         clarification = ClarificationRequest(
