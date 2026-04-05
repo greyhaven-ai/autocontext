@@ -130,6 +130,46 @@ class TestSimulationEngine:
         assert len(set(scores)) > 1
         assert len(set(reasons)) > 1
 
+    def test_operator_loop_run_exercises_escalation_and_clarification_path(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        operator_loop_spec = json.dumps({
+            "description": "Escalation-first deployment review with ambiguous prerequisites",
+            "environment_description": "A deployment requires human confirmation before release.",
+            "initial_state_description": "The rollout is blocked until the review is complete.",
+            "escalation_policy": {"escalation_threshold": "medium", "max_escalations": 5},
+            "success_criteria": ["review completed", "release approved safely"],
+            "failure_modes": ["unsafe autonomous release"],
+            "max_steps": 5,
+            "actions": [
+                {
+                    "name": "release_to_prod",
+                    "description": "Attempt production release",
+                    "parameters": {},
+                    "preconditions": ["operator_review_complete"],
+                    "effects": ["released"],
+                },
+                {
+                    "name": "operator_review_complete",
+                    "description": "Record operator review",
+                    "parameters": {},
+                    "preconditions": [],
+                    "effects": ["reviewed"],
+                },
+            ],
+        })
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(operator_loop_spec), knowledge_root=tmp_knowledge)
+        result = engine.run(description="Simulate an operator escalation for an ambiguous production release")
+
+        assert result["status"] == "completed"
+        assert result["family"] == "operator_loop"
+        assert result["summary"]["dimension_scores"]["escalation_precision"] > 0
+        assert result["summary"]["dimension_scores"]["escalation_recall"] > 0
+        assert "Escalations: 1" in result["summary"]["reasoning"]
+        assert "Clarifications: 1" in result["summary"]["reasoning"]
+        assert "Missed escalations: 0" in result["summary"]["reasoning"]
+
 
 # ---------------------------------------------------------------------------
 # Replay

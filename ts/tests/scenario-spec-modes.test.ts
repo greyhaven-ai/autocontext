@@ -3,8 +3,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { createServer } from "node:http";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -31,6 +32,39 @@ function runCli(
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ac-spec-modes-"));
+}
+
+function runCliAsync(
+  args: string[],
+  opts: { input?: string; env?: Record<string, string>; cwd?: string } = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npx", ["tsx", CLI, ...args], {
+      cwd: opts.cwd,
+      env: { ...process.env, NODE_NO_WARNINGS: "1", ...opts.env },
+      stdio: "pipe",
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({ stdout, stderr, exitCode: code ?? 1 });
+    });
+
+    if (opts.input) {
+      child.stdin.write(opts.input);
+    }
+    child.stdin.end();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +238,86 @@ describe("new-scenario --from-stdin", () => {
         existsSync(join(knowledgeRoot, "_custom_scenarios", "stdin_board_game")),
       ).toBe(false);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --prompt-only mode
+// ---------------------------------------------------------------------------
+
+describe("judge -s with freshly generated saved scenarios", () => {
+  it("resolves a newly saved custom scenario from the project-configured supported path", async () => {
+    const dir = makeTempDir();
+    const nestedCwd = join(dir, "packages", "demo", "src");
+    const knowledgeRoot = join(dir, "state", "knowledge");
+    writeFileSync(join(dir, ".autoctx.json"), JSON.stringify({
+      provider: "openai-compatible",
+      model: "judge-mock",
+      knowledge_dir: "state/knowledge",
+      runs_dir: "state/runs",
+    }, null, 2), "utf-8");
+    mkdirSync(nestedCwd, { recursive: true });
+    const judgeResponse = '<!-- JUDGE_RESULT_START -->\n{"score":0.82,"reasoning":"Saved scenario loaded"}\n<!-- JUDGE_RESULT_END -->';
+    const server = createServer((req, res) => {
+      if (req.url !== "/v1/chat/completions") {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        model: "judge-mock",
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+        choices: [{ message: { content: judgeResponse } }],
+      }));
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.listen(0, "127.0.0.1", () => resolve());
+        server.once("error", reject);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Failed to bind mock judge server");
+      }
+
+      const createResult = runCli(
+        ["new-scenario", "--from-stdin", "--json"],
+        {
+          cwd: dir,
+          input: JSON.stringify({
+            name: "fresh_saved_task",
+            family: "workflow",
+            description: "Evaluate incident summaries",
+            taskPrompt: "Summarize the incident report.",
+            rubric: "Clarity and factual accuracy",
+          }),
+        },
+      );
+      expect(createResult.exitCode).toBe(0);
+      expect(
+        existsSync(join(knowledgeRoot, "_custom_scenarios", "fresh_saved_task", "spec.json")),
+      ).toBe(true);
+
+      const judged = await runCliAsync(
+        ["judge", "-s", "fresh_saved_task", "-o", "A concise summary"],
+        {
+          cwd: nestedCwd,
+          env: {
+            AUTOCONTEXT_AGENT_API_KEY: "test-key",
+            AUTOCONTEXT_AGENT_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          },
+        },
+      );
+
+      expect(judged.exitCode).toBe(0);
+      const parsed = JSON.parse(judged.stdout) as Record<string, unknown>;
+      expect(parsed.score).toBe(0.82);
+      expect(parsed.reasoning).toBe("Saved scenario loaded");
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
       rmSync(dir, { recursive: true, force: true });
     }
   });

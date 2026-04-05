@@ -8,9 +8,10 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   SimulationEngine,
   parseVariableOverrides,
@@ -31,6 +32,35 @@ function buildEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
   for (const key of SANITIZED_KEYS) delete env[key];
   return { ...env, ...overrides };
+}
+
+function runCliAsync(
+  args: string[],
+  opts: { cwd?: string; env?: Record<string, string> } = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npx", ["tsx", CLI, ...args], {
+      cwd: opts.cwd,
+      env: buildEnv(opts.env),
+      stdio: "pipe",
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({ stdout, stderr, exitCode: code ?? 1 });
+    });
+    child.stdin.end();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +408,52 @@ describe("simulate CLI integration", () => {
       expect(result.stderr).toMatch(/preset 'aggressive' was not found/);
       expect(result.stderr).not.toMatch(/API key required|ANTHROPIC_API_KEY/);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("exits non-zero with --json when provider-backed execution returns failed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-446-cli-"));
+    const server = createServer((req, res) => {
+      if (req.url !== "/v1/chat/completions") {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        model: "simulate-mock",
+        usage: { prompt_tokens: 12, completion_tokens: 2 },
+        choices: [{ message: { content: "this is not valid simulation json" } }],
+      }));
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.listen(0, "127.0.0.1", () => resolve());
+        server.once("error", reject);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Failed to bind mock simulate server");
+      }
+
+      const result = await runCliAsync(["simulate", "-d", "simulate a deployment", "--json"], {
+        cwd: dir,
+        env: {
+          AUTOCONTEXT_AGENT_PROVIDER: "openai-compatible",
+          AUTOCONTEXT_AGENT_API_KEY: "test-key",
+          AUTOCONTEXT_AGENT_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+          AUTOCONTEXT_AGENT_DEFAULT_MODEL: "simulate-mock",
+          AUTOCONTEXT_KNOWLEDGE_ROOT: join(dir, "knowledge"),
+        },
+      });
+
+      expect(result.stdout).not.toBe("");
+      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(parsed.status).toBe("failed");
+      expect(result.exitCode).toBe(1);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
       rmSync(dir, { recursive: true, force: true });
     }
   });

@@ -395,6 +395,11 @@ class SimulationEngine:
             return {"score": 0, "reasoning": "No scenario class found", "dimension_scores": {}}
 
         instance = cls()
+        from autocontext.scenarios.operator_loop import OperatorLoopInterface
+
+        if isinstance(instance, OperatorLoopInterface):
+            return self._execute_operator_loop_single(instance, seed, max_steps)
+
         state = instance.initial_state(seed)
         limit = max_steps or getattr(instance, "max_steps", lambda: 20)()
         records: list[dict[str, Any]] = []
@@ -435,6 +440,91 @@ class SimulationEngine:
             "reasoning": eval_result.reasoning,
             "dimension_scores": eval_result.dimension_scores,
         }
+
+    def _execute_operator_loop_single(self, instance: Any, seed: int, max_steps: int | None = None) -> dict[str, Any]:
+        from autocontext.scenarios.simulation import Action, ActionRecord, ActionResult, ActionTrace
+
+        state = instance.initial_state(seed)
+        limit = max_steps or getattr(instance, "max_steps", lambda: 20)()
+        records: list[dict[str, Any]] = []
+        step_num = 0
+
+        for _ in range(limit):
+            if instance.is_terminal(state):
+                break
+
+            actions = instance.get_available_actions(state)
+            if not actions:
+                break
+
+            action_to_run = None
+            blocked_action = None
+            blocked_reason = ""
+            for candidate in actions:
+                candidate_action = Action(name=candidate.name, parameters={})
+                valid, reason = instance.validate_action(state, candidate_action)
+                if valid:
+                    action_to_run = candidate_action
+                    break
+                if blocked_action is None:
+                    blocked_action = candidate_action
+                    blocked_reason = reason
+
+            if action_to_run is None and blocked_action is not None:
+                state = self._operator_loop_intervene(instance, state, blocked_action, blocked_reason)
+                continue
+
+            if blocked_action is not None:
+                state = self._operator_loop_intervene(instance, state, blocked_action, blocked_reason)
+
+            if action_to_run is None:
+                break
+
+            state_before = dict(state)
+            result, state = instance.execute_action(state, action_to_run)
+            step_num += 1
+            records.append({
+                "step": step_num,
+                "action": action_to_run.name,
+                "success": result.success,
+                "state_before": state_before,
+                "state_after": dict(state),
+            })
+
+        trace = ActionTrace(records=[
+            ActionRecord(
+                step=r["step"],
+                action=Action(name=r["action"], parameters={}),
+                result=ActionResult(success=r["success"], output="", state_changes={}),
+                state_before=r["state_before"],
+                state_after=r["state_after"],
+            )
+            for r in records
+        ])
+        eval_result = instance.evaluate_trace(trace, state)
+        return {
+            "score": round(eval_result.score, 4),
+            "reasoning": eval_result.reasoning,
+            "dimension_scores": eval_result.dimension_scores,
+        }
+
+    def _operator_loop_intervene(self, instance: Any, state: dict[str, Any], action: Any, reason: str) -> dict[str, Any]:
+        from autocontext.scenarios.operator_loop import ClarificationRequest, EscalationEvent
+
+        clarification = ClarificationRequest(
+            question=f"Should '{action.name}' wait for operator input?",
+            context=reason or f"Action '{action.name}' is blocked.",
+            urgency="medium",
+        )
+        next_state = instance.request_clarification(state, clarification)
+        escalation = EscalationEvent(
+            step=next_state.get("step", state.get("step", 0)),
+            reason=reason or f"Blocked action: {action.name}",
+            severity="medium",
+            context=f"Action '{action.name}' requires operator review before proceeding.",
+            was_necessary=True,
+        )
+        return instance.escalate(next_state, escalation)
 
     def _execute_sweep(
         self,
