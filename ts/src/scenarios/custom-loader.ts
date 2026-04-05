@@ -10,6 +10,7 @@ import { createAgentTask } from "./agent-task-factory.js";
 import { parseRawSpec, type AgentTaskSpec } from "./agent-task-spec.js";
 import { hasCodegen } from "./codegen/index.js";
 import { readScenarioFamily } from "./codegen/loader.js";
+import { customScenarioDirectory } from "./codegen/executor.js";
 
 export interface CustomScenarioEntry {
   name: string;
@@ -151,12 +152,18 @@ export function loadCustomScenarios(customDir: string): Map<string, CustomScenar
  * Returns the number of custom scenarios discovered.
  * This mirrors Python's _load_persisted_custom_scenarios() at import time.
  */
+function resolveCustomScenarioEntry(
+  knowledgeRoot: string,
+  name: string,
+): CustomScenarioEntry | null {
+  return loadCustomScenarios(customScenarioDirectory(knowledgeRoot)).get(name) ?? null;
+}
+
 export function discoverAndRegisterCustomScenarios(
   knowledgeRoot: string,
   provider?: LLMProvider,
 ): number {
-  const customDir = join(knowledgeRoot, "_custom_scenarios");
-  const loaded = loadCustomScenarios(customDir);
+  const loaded = loadCustomScenarios(customScenarioDirectory(knowledgeRoot));
   registerCustomScenarios(loaded, provider);
   return loaded.size;
 }
@@ -165,8 +172,7 @@ export function resolveCustomAgentTask(
   knowledgeRoot: string,
   name: string,
 ): ResolvedCustomAgentTask | null {
-  const customDir = join(knowledgeRoot, "_custom_scenarios");
-  const entry = loadCustomScenarios(customDir).get(name);
+  const entry = resolveCustomScenarioEntry(knowledgeRoot, name);
   if (!entry || entry.type !== "agent_task") {
     return null;
   }
@@ -174,6 +180,31 @@ export function resolveCustomAgentTask(
     name,
     path: entry.path,
     spec: normalizeAgentTaskSpec(entry.spec),
+  };
+}
+
+export function resolveCustomJudgeScenario(
+  knowledgeRoot: string,
+  name: string,
+): ResolvedCustomAgentTask | null {
+  const entry = resolveCustomScenarioEntry(knowledgeRoot, name);
+  if (!entry) {
+    return null;
+  }
+
+  const spec = entry.spec as Record<string, unknown>;
+  const hasPrompt = typeof spec.taskPrompt === "string" && spec.taskPrompt.trim().length > 0;
+  const hasRubric =
+    (typeof spec.judgeRubric === "string" && spec.judgeRubric.trim().length > 0)
+    || (typeof spec.rubric === "string" && spec.rubric.trim().length > 0);
+  if (!hasPrompt || !hasRubric) {
+    return null;
+  }
+
+  return {
+    name,
+    path: entry.path,
+    spec: normalizeAgentTaskSpec(spec),
   };
 }
 

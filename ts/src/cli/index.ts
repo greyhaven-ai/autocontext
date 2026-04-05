@@ -237,10 +237,10 @@ function mergeUniqueStrings(
 
 async function loadSavedAgentTaskScenario(name: string): Promise<SavedAgentTaskScenario | null> {
   const { loadSettings } = await import("../config/index.js");
-  const { resolveCustomAgentTask, renderAgentTaskPrompt } = await import("../scenarios/custom-loader.js");
+  const { resolveCustomJudgeScenario, renderAgentTaskPrompt } = await import("../scenarios/custom-loader.js");
 
   const settings = loadSettings();
-  const saved = resolveCustomAgentTask(resolve(settings.knowledgeRoot), name);
+  const saved = resolveCustomJudgeScenario(resolve(settings.knowledgeRoot), name);
   if (!saved) {
     return null;
   }
@@ -1991,7 +1991,7 @@ Without flags, prompts interactively for provider and key.
 Keys starting with ! are executed as shell commands (e.g. !security find-generic-password).
 
 Examples:
-  autoctx login --provider anthropic --key sk-ant-...
+  autoctx login --provider anthropic --key YOUR_ANTHROPIC_API_KEY
   autoctx login --provider ollama --base-url http://localhost:11434
   autoctx login                            # interactive prompt
 
@@ -2599,6 +2599,9 @@ Examples:
 
   if (values.json) {
     console.log(JSON.stringify(result, null, 2));
+    if (result.status === "failed") {
+      process.exit(1);
+    }
   } else {
     if (result.status === "failed") {
       console.error(`Simulation failed: ${result.error}`);
