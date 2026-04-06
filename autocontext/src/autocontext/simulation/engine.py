@@ -126,11 +126,25 @@ class SimulationEngine:
             assumptions = self._build_assumptions(spec, family)
             warnings = self._build_warnings(family)
 
+            # AC-527: Evaluate behavioral contract before marking completed.
+            from autocontext.scenarios.family_contracts import get_family_contract
+
+            contract = get_family_contract(family)
+            contract_result = contract.evaluate(description, summary) if contract else None
+            status = "completed"
+            missing_signals: list[str] = []
+            if contract_result and not contract_result.satisfied:
+                status = "incomplete"
+                missing_signals = contract_result.missing_signals
+                if contract_result.score_ceiling is not None:
+                    summary["score"] = min(summary.get("score", 0), contract_result.score_ceiling)
+                warnings.append(contract_result.reason)
+
             report = {
                 "id": sim_id,
                 "name": name,
                 "family": family,
-                "status": "completed",
+                "status": status,
                 "description": description,
                 "assumptions": assumptions,
                 "variables": resolved_variables,
@@ -147,19 +161,26 @@ class SimulationEngine:
                 },
                 "warnings": warnings,
             }
+            if missing_signals:
+                report["missing_signals"] = missing_signals
             write_json(scenario_dir / "report.json", report)
             return report
 
         except Exception as exc:
             logger.debug("simulation.engine: caught Exception", exc_info=True)
             return {
-                "id": sim_id, "name": name, "family": "simulation",
-                "status": "failed", "description": description,
-                "assumptions": [], "variables": variables or {},
+                "id": sim_id,
+                "name": name,
+                "family": "simulation",
+                "status": "failed",
+                "description": description,
+                "assumptions": [],
+                "variables": variables or {},
                 "sweep": None,
                 "summary": {"score": 0, "reasoning": str(exc), "dimension_scores": {}},
                 "artifacts": {"scenario_dir": "", "report_path": ""},
-                "warnings": [], "error": str(exc),
+                "warnings": [],
+                "error": str(exc),
             }
 
     # ------------------------------------------------------------------
@@ -275,9 +296,7 @@ class SimulationEngine:
             dimension_deltas[key] = {"left": lv, "right": rv, "delta": round(rv - lv, 4)}
 
         likely_drivers = [
-            key
-            for key, value in variable_deltas.items()
-            if not self._values_equal(value.get("left"), value.get("right"))
+            key for key, value in variable_deltas.items() if not self._values_equal(value.get("left"), value.get("right"))
         ]
         likely_drivers += [k for k, v in dimension_deltas.items() if abs(v["delta"]) > 0.05 and k not in likely_drivers]
 
@@ -342,6 +361,7 @@ class SimulationEngine:
             from autocontext.scenarios.custom.operator_loop_codegen import generate_operator_loop_class
             from autocontext.scenarios.custom.operator_loop_spec import OperatorLoopSpec
             from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel
+
             ol_spec = OperatorLoopSpec(
                 description=spec.get("description", ""),
                 environment_description=spec.get("environment_description", ""),
@@ -356,6 +376,7 @@ class SimulationEngine:
         else:
             from autocontext.scenarios.custom.simulation_codegen import generate_simulation_class
             from autocontext.scenarios.custom.simulation_spec import SimulationActionSpecModel, SimulationSpec
+
             sim_spec = SimulationSpec(
                 description=spec.get("description", ""),
                 environment_description=spec.get("environment_description", ""),
@@ -380,6 +401,7 @@ class SimulationEngine:
         write_json(sim_dir / "spec.json", {"name": name, "family": family, **spec})
         (sim_dir / "scenario.py").write_text(source, encoding="utf-8")
         from autocontext.scenarios.families import get_family_marker
+
         (sim_dir / "scenario_type.txt").write_text(get_family_marker(family), encoding="utf-8")
         return sim_dir
 
@@ -407,6 +429,7 @@ class SimulationEngine:
         records: list[dict[str, Any]] = []
 
         from autocontext.scenarios.simulation import Action, ActionRecord, ActionResult, ActionTrace
+
         step_num = 0
         for _ in range(limit):
             if instance.is_terminal(state):
@@ -418,24 +441,28 @@ class SimulationEngine:
             state_before = dict(state)
             result, state = instance.execute_action(state, action)
             step_num += 1
-            records.append({
-                "step": step_num,
-                "action": action.name,
-                "success": result.success,
-                "state_before": state_before,
-                "state_after": dict(state),
-            })
-
-        trace = ActionTrace(records=[
-            ActionRecord(
-                step=r["step"],
-                action=Action(name=r["action"], parameters={}),
-                result=ActionResult(success=r["success"], output="", state_changes={}),
-                state_before=r["state_before"],
-                state_after=r["state_after"],
+            records.append(
+                {
+                    "step": step_num,
+                    "action": action.name,
+                    "success": result.success,
+                    "state_before": state_before,
+                    "state_after": dict(state),
+                }
             )
-            for r in records
-        ])
+
+        trace = ActionTrace(
+            records=[
+                ActionRecord(
+                    step=r["step"],
+                    action=Action(name=r["action"], parameters={}),
+                    result=ActionResult(success=r["success"], output="", state_changes={}),
+                    state_before=r["state_before"],
+                    state_after=r["state_after"],
+                )
+                for r in records
+            ]
+        )
         eval_result = instance.evaluate_trace(trace, state)
         return {
             "score": round(eval_result.score, 4),
@@ -455,6 +482,8 @@ class SimulationEngine:
         limit = max_steps or getattr(instance, "max_steps", lambda: 20)()
         records: list[dict[str, Any]] = []
         step_num = 0
+        escalation_count = 0
+        clarification_count = 0
 
         for _ in range(limit):
             if instance.is_terminal(state):
@@ -479,6 +508,8 @@ class SimulationEngine:
 
             if action_to_run is None and blocked_action is not None:
                 state = self._operator_loop_intervene(instance, state, blocked_action, blocked_reason)
+                escalation_count += 1
+                clarification_count += 1
                 continue
 
             if action_to_run is None:
@@ -487,29 +518,35 @@ class SimulationEngine:
             state_before = dict(state)
             result, state = instance.execute_action(state, action_to_run)
             step_num += 1
-            records.append({
-                "step": step_num,
-                "action": action_to_run.name,
-                "success": result.success,
-                "state_before": state_before,
-                "state_after": dict(state),
-            })
-
-        trace = ActionTrace(records=[
-            ActionRecord(
-                step=r["step"],
-                action=Action(name=r["action"], parameters={}),
-                result=ActionResult(success=r["success"], output="", state_changes={}),
-                state_before=r["state_before"],
-                state_after=r["state_after"],
+            records.append(
+                {
+                    "step": step_num,
+                    "action": action_to_run.name,
+                    "success": result.success,
+                    "state_before": state_before,
+                    "state_after": dict(state),
+                }
             )
-            for r in records
-        ])
+
+        trace = ActionTrace(
+            records=[
+                ActionRecord(
+                    step=r["step"],
+                    action=Action(name=r["action"], parameters={}),
+                    result=ActionResult(success=r["success"], output="", state_changes={}),
+                    state_before=r["state_before"],
+                    state_after=r["state_after"],
+                )
+                for r in records
+            ]
+        )
         eval_result = instance.evaluate_trace(trace, state)
         return {
             "score": round(eval_result.score, 4),
             "reasoning": eval_result.reasoning,
             "dimension_scores": eval_result.dimension_scores,
+            "escalation_count": escalation_count,
+            "clarification_count": clarification_count,
         }
 
     def _operator_loop_intervene(
