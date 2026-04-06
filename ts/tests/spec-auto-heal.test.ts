@@ -454,6 +454,54 @@ describe("healSpec normalizes simulation preconditions (AC-529)", () => {
     expect(actions[1].preconditions).toContain("provision_infrastructure");
   });
 
+  it("preserves hyphenated action names when preconditions use spaces", () => {
+    const spec = {
+      actions: [
+        {
+          name: "run-tests",
+          description: "Run tests",
+          parameters: {},
+          preconditions: [],
+          effects: [],
+        },
+        {
+          name: "deploy",
+          description: "Deploy",
+          parameters: {},
+          preconditions: ["run tests"],
+          effects: [],
+        },
+      ],
+    };
+    const healed = healSpec(spec, "simulation");
+    const actions = healed.actions as Array<{ preconditions: string[] }>;
+    expect(actions[1].preconditions).toEqual(["run-tests"]);
+  });
+
+  it("preserves dotted action names when preconditions use spaces", () => {
+    const spec = {
+      actions: [
+        {
+          name: "provision.infrastructure",
+          description: "Provision infra",
+          parameters: {},
+          preconditions: [],
+          effects: [],
+        },
+        {
+          name: "deploy",
+          description: "Deploy",
+          parameters: {},
+          preconditions: ["provision infrastructure"],
+          effects: [],
+        },
+      ],
+    };
+    const healed = healSpec(spec, "simulation");
+    const actions = healed.actions as Array<{ preconditions: string[] }>;
+    expect(actions[1].preconditions).toEqual(["provision.infrastructure"]);
+  });
+
   it("preserves valid action-name preconditions unchanged", () => {
     const spec = {
       actions: [

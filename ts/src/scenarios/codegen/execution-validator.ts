@@ -113,6 +113,8 @@ export async function validateGeneratedScenario(
   // Step 4: Family-specific validation
   if (family === "agent_task") {
     await validateAgentTask(scenario, state, errors, executedMethods);
+  } else if (family === "operator_loop") {
+    validateOperatorLoop(scenario, state, errors, executedMethods);
   } else if (SIMULATION_LIKE_FAMILIES.has(family) || family === "game") {
     validateSimulationLike(scenario, state, errors, executedMethods);
   } else if (family === "artifact_editing") {
@@ -151,6 +153,20 @@ function getRequiredMethods(family: string): string[] {
       "initialState",
     ];
   }
+  if (family === "operator_loop") {
+    return [
+      "describeScenario",
+      "describeEnvironment",
+      "initialState",
+      "getAvailableActions",
+      "executeAction",
+      "isTerminal",
+      "getResult",
+      "getRubric",
+      "requestClarification",
+      "escalate",
+    ];
+  }
   if (SIMULATION_LIKE_FAMILIES.has(family)) {
     return [
       "describeScenario",
@@ -164,6 +180,50 @@ function getRequiredMethods(family: string): string[] {
     ];
   }
   return ["initialState"];
+}
+
+function validateOperatorLoop(
+  scenario: Record<string, (...args: unknown[]) => unknown>,
+  state: Record<string, unknown>,
+  errors: string[],
+  executedMethods: string[],
+): void {
+  validateSimulationLike(scenario, state, errors, executedMethods);
+
+  // requestClarification
+  try {
+    const clarified = scenario.requestClarification(state, {
+      question: "What additional information is required?",
+      urgency: "medium",
+    });
+    if (clarified == null || typeof clarified !== "object") {
+      errors.push("requestClarification must return an object state");
+    } else {
+      executedMethods.push("requestClarification");
+    }
+  } catch (err) {
+    errors.push(
+      `requestClarification crashed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // escalate
+  try {
+    const escalated = scenario.escalate(state, {
+      reason: "Validation checkpoint",
+      severity: "high",
+      wasNecessary: true,
+    });
+    if (escalated == null || typeof escalated !== "object") {
+      errors.push("escalate must return an object state");
+    } else {
+      executedMethods.push("escalate");
+    }
+  } catch (err) {
+    errors.push(
+      `escalate crashed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 async function validateAgentTask(

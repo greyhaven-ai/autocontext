@@ -148,4 +148,64 @@ module.exports = { scenario };
       );
     }
   });
+
+  it("rejects operator_loop scenarios missing required intervention hooks", async () => {
+    const source = `
+const ACTIONS = [{ name: "inspect", description: "Inspect", parameters: {}, preconditions: [], effects: [] }];
+const scenario = {
+  name: "broken_op",
+  describeScenario() { return "test"; },
+  describeEnvironment() { return { name: "test", description: "", availableActions: ACTIONS, initialStateDescription: "", successCriteria: [], failureModes: [] }; },
+  initialState(seed) { return { seed: seed || 0, step: 0, completedActions: [], situationsRequiringEscalation: [] }; },
+  getAvailableActions() { return ACTIONS; },
+  executeAction(state, action) { return { result: { success: true, output: "done" }, state: { ...state, completedActions: [action.name] } }; },
+  isTerminal() { return true; },
+  getResult() { return { score: 1, reasoning: "done", dimensionScores: {} }; },
+  getRubric() { return "test rubric"; },
+};
+module.exports = { scenario };
+`;
+    const result = await validateGeneratedScenario(
+      source,
+      "operator_loop",
+      "broken_op",
+    );
+    expect(result.valid).toBe(false);
+    expect(
+      result.errors.some(
+        (e) =>
+          e.includes("missing required methods") &&
+          e.includes("requestClarification") &&
+          e.includes("escalate"),
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts operator_loop scenarios with clarification and escalation hooks", async () => {
+    const source = `
+const ACTIONS = [{ name: "inspect", description: "Inspect", parameters: {}, preconditions: [], effects: [] }];
+const scenario = {
+  name: "valid_op",
+  describeScenario() { return "test"; },
+  describeEnvironment() { return { name: "test", description: "", availableActions: ACTIONS, initialStateDescription: "", successCriteria: [], failureModes: [] }; },
+  initialState(seed) { return { seed: seed || 0, step: 0, completedActions: [], situationsRequiringEscalation: [] }; },
+  getAvailableActions() { return ACTIONS; },
+  executeAction(state, action) { return { result: { success: true, output: "done" }, state: { ...state, completedActions: [action.name] } }; },
+  isTerminal() { return true; },
+  getResult() { return { score: 1, reasoning: "done", dimensionScores: {} }; },
+  getRubric() { return "test rubric"; },
+  requestClarification(state, req) { return { ...state, clarificationRequest: req }; },
+  escalate(state, event) { return { ...state, escalationEvent: event }; },
+};
+module.exports = { scenario };
+`;
+    const result = await validateGeneratedScenario(
+      source,
+      "operator_loop",
+      "valid_op",
+    );
+    expect(result.valid).toBe(true);
+    expect(result.executedMethods).toContain("requestClarification");
+    expect(result.executedMethods).toContain("escalate");
+  });
 });

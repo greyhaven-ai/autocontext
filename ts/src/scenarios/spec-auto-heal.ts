@@ -552,6 +552,13 @@ const PRECONDITION_FAMILIES = new Set([
   "negotiation",
 ]);
 
+function normalizePreconditionToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 /**
  * Normalize action preconditions: keep only strings that match an existing
  * action name (exact or fuzzy). Strips prose descriptions that the runtime
@@ -572,7 +579,7 @@ function healSimulationPreconditions(
   // Build a normalized lookup for fuzzy matching (lowercase, underscores → spaces)
   const normalizedMap = new Map<string, string>();
   for (const name of actionNames) {
-    normalizedMap.set(name.toLowerCase().replace(/_/g, " "), name);
+    normalizedMap.set(normalizePreconditionToken(name), name);
   }
 
   const healedActions = actions.map((action: Record<string, unknown>) => {
@@ -584,12 +591,8 @@ function healSimulationPreconditions(
         const s = String(p);
         // Exact match against known action names
         if (actionNames.has(s)) return s;
-        // Fuzzy: normalize (lowercase, underscores → spaces, strip punctuation) and check
-        const normalized = s
-          .toLowerCase()
-          .replace(/_/g, " ")
-          .replace(/[^a-z0-9 ]/g, "")
-          .trim();
+        // Fuzzy: normalize action names and preconditions with the same tokenization.
+        const normalized = normalizePreconditionToken(s);
         const match = normalizedMap.get(normalized);
         if (match) return match;
         // No match → strip (it's prose, not an action name)
