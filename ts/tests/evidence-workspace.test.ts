@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   mkdtempSync,
   mkdirSync,
+  unlinkSync,
   rmSync,
   writeFileSync,
   existsSync,
@@ -187,6 +188,31 @@ describe("Materializer", () => {
       readFileSync(join(wsDir, "manifest.json"), "utf-8"),
     );
     expect(manifest.artifacts).toBeDefined();
+  });
+
+  it("removes stale files when rematerializing a reused workspace", () => {
+    const wsDir = join(evidenceTmp, "workspace");
+    const first = materializeWorkspace({
+      knowledgeRoot: join(evidenceTmp, "knowledge"),
+      runsRoot: join(evidenceTmp, "runs"),
+      sourceRunIds: ["run_001"],
+      workspaceDir: wsDir,
+    });
+    const traceArtifact = first.artifacts.find((a) => a.kind === "trace");
+    expect(traceArtifact).toBeDefined();
+    const stalePath = join(wsDir, traceArtifact!.path);
+    expect(existsSync(stalePath)).toBe(true);
+
+    unlinkSync(join(evidenceTmp, "runs", "run_001", "events.ndjson"));
+
+    const second = materializeWorkspace({
+      knowledgeRoot: join(evidenceTmp, "knowledge"),
+      runsRoot: join(evidenceTmp, "runs"),
+      sourceRunIds: ["run_001"],
+      workspaceDir: wsDir,
+    });
+    expect(second.artifacts.every((a) => a.kind !== "trace")).toBe(true);
+    expect(existsSync(stalePath)).toBe(false);
   });
 
   it("scanKnowledgeArtifacts finds playbook and tools", () => {

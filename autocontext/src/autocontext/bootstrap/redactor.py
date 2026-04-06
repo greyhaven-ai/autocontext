@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import PurePosixPath, PureWindowsPath
 
 from autocontext.bootstrap.snapshot import EnvironmentSnapshot
 
@@ -28,6 +29,7 @@ def redact_snapshot(snapshot: EnvironmentSnapshot, config: RedactionConfig | Non
     hostname = snapshot.hostname
     username = snapshot.username
     working_directory = snapshot.working_directory
+    shell = snapshot.shell
     notable_files = list(snapshot.notable_files)
 
     if config.redact_hostname and hostname:
@@ -44,12 +46,17 @@ def redact_snapshot(snapshot: EnvironmentSnapshot, config: RedactionConfig | Non
         working_directory = "."
         notable_files = [_strip_prefix(f, prefix) for f in notable_files]
         redacted_fields.append("working_directory")
+    if config.redact_paths and shell:
+        redacted_shell = _redact_path_like(shell)
+        if redacted_shell != shell:
+            shell = redacted_shell
+            redacted_fields.append("shell")
 
     return EnvironmentSnapshot(
         working_directory=working_directory,
         os_name=snapshot.os_name,
         os_version=snapshot.os_version,
-        shell=snapshot.shell,
+        shell=shell,
         hostname=hostname,
         username=username,
         python_version=snapshot.python_version,
@@ -79,3 +86,14 @@ def _strip_prefix(path: str, prefix: str) -> str:
         stripped = path[len(prefix) :]
         return f".{stripped}" if stripped.startswith("/") else f"./{stripped}"
     return path
+
+
+def _redact_path_like(value: str) -> str:
+    """Collapse an absolute path to its basename while preserving tool identity."""
+    posix = PurePosixPath(value)
+    if posix.is_absolute():
+        return posix.name
+    windows = PureWindowsPath(value)
+    if windows.is_absolute():
+        return windows.name
+    return value

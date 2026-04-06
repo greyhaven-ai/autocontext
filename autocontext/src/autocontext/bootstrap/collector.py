@@ -117,8 +117,9 @@ def _collect_packages() -> dict[str, Any]:
     packages: list[PackageInfo] = []
     try:
         for dist in importlib.metadata.distributions():
-            name = dist.metadata.get("Name", "")
-            version = dist.metadata.get("Version", "")
+            metadata = dist.metadata
+            name = metadata["Name"] if "Name" in metadata else ""
+            version = metadata["Version"] if "Version" in metadata else ""
             if name:
                 packages.append(PackageInfo(name=name, version=version))
     except Exception:

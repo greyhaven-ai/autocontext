@@ -22,6 +22,7 @@ export function redactSnapshot(
 ): EnvironmentSnapshot {
   const redactedFields: string[] = [];
   let { hostname, username, workingDirectory } = snapshot;
+  let { shell } = snapshot;
   let notableFiles = [...snapshot.notableFiles];
 
   if (config.redactHostname && hostname) {
@@ -40,13 +41,31 @@ export function redactSnapshot(
     );
     redactedFields.push("workingDirectory");
   }
+  if (config.redactPaths && shell) {
+    const redactedShell = redactPathLike(shell);
+    if (redactedShell !== shell) {
+      shell = redactedShell;
+      redactedFields.push("shell");
+    }
+  }
 
   return {
     ...snapshot,
     hostname,
     username,
     workingDirectory,
+    shell,
     notableFiles,
     redactedFields,
   };
+}
+
+function redactPathLike(value: string): string {
+  if (value.startsWith("/")) {
+    return value.split("/").filter(Boolean).at(-1) ?? value;
+  }
+  if (/^[A-Za-z]:[\\/]/.test(value)) {
+    return value.split(/[/\\]/).at(-1) ?? value;
+  }
+  return value;
 }

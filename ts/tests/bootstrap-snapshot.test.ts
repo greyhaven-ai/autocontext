@@ -149,6 +149,17 @@ describe("Redactor", () => {
     expect(result.workingDirectory).toBe(".");
   });
 
+  it("redacts absolute shell paths when path redaction is enabled", () => {
+    const snap = makeSnapshot({ shell: "/bin/zsh" });
+    const result = redactSnapshot(snap, {
+      redactHostname: false,
+      redactUsername: false,
+      redactPaths: true,
+    });
+    expect(result.shell).toBe("zsh");
+    expect(result.redactedFields).toContain("shell");
+  });
+
   it("records redacted field names", () => {
     const snap = makeSnapshot();
     const result = redactSnapshot(snap, DEFAULT_REDACTION);

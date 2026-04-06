@@ -134,6 +134,12 @@ class TestRedactor:
         result = redact_snapshot(snap, RedactionConfig(redact_hostname=False, redact_username=False, redact_paths=True))
         assert result.working_directory == "."
 
+    def test_redact_paths_strips_absolute_shell_path(self) -> None:
+        snap = _make_snapshot(shell="/bin/zsh")
+        result = redact_snapshot(snap, RedactionConfig(redact_hostname=False, redact_username=False, redact_paths=True))
+        assert result.shell == "zsh"
+        assert "shell" in result.redacted_fields
+
     def test_redact_records_redacted_fields(self) -> None:
         snap = _make_snapshot()
         result = redact_snapshot(snap, RedactionConfig(redact_hostname=True, redact_username=True, redact_paths=True))

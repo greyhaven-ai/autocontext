@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 ARTIFACT_PRIORITY = ["gate_decision", "trace", "report", "role_output", "tool", "log"]
 _DEFAULT_BUDGET = 10 * 1024 * 1024  # 10 MB
+_MANIFEST_FILENAME = "manifest.json"
+_ACCESS_LOG_FILENAME = "evidence_access_log.json"
 
 _KIND_PATTERNS: dict[str, list[str]] = {
     "gate_decision": ["gate_decision*.json", "gate*.json"],
@@ -40,6 +42,7 @@ def materialize_workspace(
 ) -> EvidenceWorkspace:
     """Materialize evidence from prior runs into a flat workspace directory."""
     workspace_dir.mkdir(parents=True, exist_ok=True)
+    _cleanup_previous_workspace(workspace_dir)
 
     all_artifacts: list[EvidenceArtifact] = []
 
@@ -97,10 +100,51 @@ def materialize_workspace(
     )
 
     # Write manifest
-    manifest_path = workspace_dir / "manifest.json"
+    manifest_path = workspace_dir / _MANIFEST_FILENAME
     manifest_path.write_text(json.dumps(workspace.to_dict(), indent=2), encoding="utf-8")
 
     return workspace
+
+
+def _cleanup_previous_workspace(workspace_dir: Path) -> None:
+    """Remove files tracked by the prior manifest before rewriting the workspace."""
+    manifest_path = workspace_dir / _MANIFEST_FILENAME
+    if manifest_path.is_file():
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            artifacts = data.get("artifacts", [])
+            if isinstance(artifacts, list):
+                for artifact in artifacts:
+                    if not isinstance(artifact, dict):
+                        continue
+                    rel_path = artifact.get("path")
+                    if not isinstance(rel_path, str):
+                        continue
+                    artifact_path = _resolve_workspace_path(workspace_dir, rel_path)
+                    if artifact_path is None:
+                        continue
+                    try:
+                        artifact_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    for metadata_name in (_MANIFEST_FILENAME, _ACCESS_LOG_FILENAME):
+        try:
+            (workspace_dir / metadata_name).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _resolve_workspace_path(workspace_dir: Path, rel_path: str) -> Path | None:
+    """Resolve a manifest path inside the workspace and reject directory escapes."""
+    candidate = (workspace_dir / rel_path).resolve()
+    try:
+        candidate.relative_to(workspace_dir.resolve())
+    except ValueError:
+        return None
+    return candidate
 
 
 def _scan_run_artifacts(run_dir: Path, run_id: str) -> list[EvidenceArtifact]:

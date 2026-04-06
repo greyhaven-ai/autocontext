@@ -6,11 +6,12 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { EvidenceArtifact, EvidenceWorkspace } from "./workspace.js";
 
 export const ARTIFACT_PRIORITY: EvidenceArtifact["kind"][] = [
@@ -23,6 +24,8 @@ export const ARTIFACT_PRIORITY: EvidenceArtifact["kind"][] = [
 ];
 
 const DEFAULT_BUDGET = 10 * 1024 * 1024;
+const MANIFEST_FILENAME = "manifest.json";
+const ACCESS_LOG_FILENAME = "evidence_access_log.json";
 
 export interface MaterializeOptions {
   knowledgeRoot: string;
@@ -41,6 +44,7 @@ export function materializeWorkspace(
   const budgetBytes = opts.budgetBytes ?? DEFAULT_BUDGET;
 
   mkdirSync(workspaceDir, { recursive: true });
+  cleanupPreviousWorkspace(workspaceDir);
 
   let allArtifacts: EvidenceArtifact[] = [];
 
@@ -92,12 +96,45 @@ export function materializeWorkspace(
   };
 
   writeFileSync(
-    join(workspaceDir, "manifest.json"),
+    join(workspaceDir, MANIFEST_FILENAME),
     JSON.stringify(workspace, null, 2),
     "utf-8",
   );
 
   return workspace;
+}
+
+function cleanupPreviousWorkspace(workspaceDir: string): void {
+  const manifestPath = join(workspaceDir, MANIFEST_FILENAME);
+  if (existsSync(manifestPath)) {
+    try {
+      const data = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+        artifacts?: Array<{ path?: unknown }>;
+      };
+      for (const artifact of data.artifacts ?? []) {
+        if (typeof artifact.path !== "string") continue;
+        const artifactPath = resolveWorkspacePath(workspaceDir, artifact.path);
+        if (!artifactPath) continue;
+        rmSync(artifactPath, { force: true });
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  rmSync(join(workspaceDir, MANIFEST_FILENAME), { force: true });
+  rmSync(join(workspaceDir, ACCESS_LOG_FILENAME), { force: true });
+}
+
+function resolveWorkspacePath(
+  workspaceDir: string,
+  relativePath: string,
+): string | null {
+  const root = resolve(workspaceDir);
+  const candidate = resolve(root, relativePath);
+  const rel = relative(root, candidate);
+  if (rel === "" || rel.startsWith("..")) return null;
+  return candidate;
 }
 
 export function scanRunArtifacts(

@@ -200,6 +200,29 @@ class TestMaterializer:
         data = json.loads(manifest.read_text())
         assert "artifacts" in data
 
+    def test_rematerialization_removes_stale_workspace_files(self, evidence_tmpdir: Path) -> None:
+        ws_dir = evidence_tmpdir / "workspace"
+        first = materialize_workspace(
+            knowledge_root=evidence_tmpdir / "knowledge",
+            runs_root=evidence_tmpdir / "runs",
+            source_run_ids=["run_001"],
+            workspace_dir=ws_dir,
+        )
+        trace_artifact = next(a for a in first.artifacts if a.kind == "trace")
+        stale_path = ws_dir / trace_artifact.path
+        assert stale_path.exists()
+
+        (evidence_tmpdir / "runs" / "run_001" / "events.ndjson").unlink()
+
+        second = materialize_workspace(
+            knowledge_root=evidence_tmpdir / "knowledge",
+            runs_root=evidence_tmpdir / "runs",
+            source_run_ids=["run_001"],
+            workspace_dir=ws_dir,
+        )
+        assert all(a.kind != "trace" for a in second.artifacts)
+        assert not stale_path.exists()
+
     def test_scan_knowledge_finds_playbook_and_tools(self, evidence_tmpdir: Path) -> None:
         ws_dir = evidence_tmpdir / "workspace"
         ws = materialize_workspace(

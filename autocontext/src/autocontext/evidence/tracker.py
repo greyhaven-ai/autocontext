@@ -34,7 +34,12 @@ def load_access_log(workspace_dir: str) -> list[str]:
         return []
     try:
         data = json.loads(log_path.read_text(encoding="utf-8"))
-        return data.get("accessed", [])
+        if not isinstance(data, dict):
+            return []
+        accessed = data.get("accessed", [])
+        if not isinstance(accessed, list):
+            return []
+        return [artifact_id for artifact_id in accessed if isinstance(artifact_id, str)]
     except (json.JSONDecodeError, OSError):
         return []
 
