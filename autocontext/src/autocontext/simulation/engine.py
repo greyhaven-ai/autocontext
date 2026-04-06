@@ -31,6 +31,11 @@ if TYPE_CHECKING:
     from autocontext.scenarios.operator_loop import OperatorLoopInterface
 
 
+# Backward-compatible alias for existing tests and callers that still import
+# the abstract-class filter helper from this module.
+_find_scenario_class = find_scenario_class
+
+
 def _generate_id() -> str:
     return f"sim_{uuid.uuid4().hex[:12]}"
 
