@@ -7,18 +7,22 @@ executes trajectories/sweeps, and returns structured findings.
 from __future__ import annotations
 
 import importlib.util
-import inspect
 import json
 import logging
 import re
 import sys
-import types
 import uuid
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.types import LlmFn
+from autocontext.simulation.helpers import (
+    aggregate_contract_signal_counts,
+    apply_behavioral_contract,
+    find_scenario_class,
+    infer_family,
+)
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
@@ -34,50 +38,6 @@ def _generate_id() -> str:
 def _derive_name(description: str) -> str:
     words = re.sub(r"[^a-z0-9\s]", "", description.lower()).split()
     return "_".join(w for w in words if len(w) > 2)[:4] or "simulation"
-
-
-_OPERATOR_LOOP_FAMILY_TRIGGERS = re.compile(
-    r"escalat|operator|human.in.the.loop|clarif|ambiguous|"
-    r"incomplete.input|ask.*question|missing.information|gather.more.info"
-)
-
-
-def _find_scenario_class(mod: types.ModuleType) -> type | None:
-    """Find first concrete (non-abstract) scenario class in a module.
-
-    Checks SimulationInterface first, then OperatorLoopInterface.
-    Skips abstract classes to avoid AC-520.
-    """
-    from autocontext.scenarios.simulation import SimulationInterface
-
-    for attr_name in dir(mod):
-        attr = getattr(mod, attr_name)
-        if (
-            isinstance(attr, type)
-            and issubclass(attr, SimulationInterface)
-            and attr is not SimulationInterface
-            and not inspect.isabstract(attr)
-        ):
-            return attr
-
-    # Try operator_loop interface
-    try:
-        from autocontext.scenarios.operator_loop import OperatorLoopInterface
-    except ImportError:
-        return None
-
-    for attr_name in dir(mod):
-        attr = getattr(mod, attr_name)
-        if (
-            isinstance(attr, type)
-            and issubclass(attr, OperatorLoopInterface)
-            and attr is not OperatorLoopInterface
-            and not inspect.isabstract(attr)
-        ):
-            return attr
-
-    return None
-
 
 class SimulationEngine:
     """Plain-language simulation engine with sweep/replay/compare."""
@@ -105,7 +65,7 @@ class SimulationEngine:
         resolved_variables = variables or {}
 
         try:
-            family = self._infer_family(description)
+            family = infer_family(description)
             spec = self._apply_variables(self._build_spec(description, family), resolved_variables)
 
             source = self._generate_source(spec, name, family)
@@ -132,7 +92,7 @@ class SimulationEngine:
             assumptions = self._build_assumptions(spec, family)
             warnings = self._build_warnings(family)
 
-            status, missing_signals = self._apply_behavioral_contract(
+            status, missing_signals = apply_behavioral_contract(
                 description=description,
                 family=family,
                 summary=summary,
@@ -228,7 +188,7 @@ class SimulationEngine:
             sweep_result = None
 
         warnings = self._build_warnings(family)
-        status, missing_signals = self._apply_behavioral_contract(
+        status, missing_signals = apply_behavioral_contract(
             description=original.get("description", ""),
             family=family,
             summary=result,
@@ -333,12 +293,6 @@ class SimulationEngine:
     # Internals
     # ------------------------------------------------------------------
 
-    def _infer_family(self, description: str) -> str:
-        lower = description.lower()
-        if _OPERATOR_LOOP_FAMILY_TRIGGERS.search(lower):
-            return "operator_loop"
-        return "simulation"
-
     def _build_spec(self, description: str, family: str) -> dict[str, Any]:
         system = (
             f"You are a simulation designer. Produce a {family} spec as JSON.\n"
@@ -425,7 +379,7 @@ class SimulationEngine:
         sys.modules[mod_name] = mod
 
         # Find the scenario class (skip abstract classes — AC-520)
-        cls = _find_scenario_class(mod)
+        cls = find_scenario_class(mod)
         if cls is None:
             return {"score": 0, "reasoning": "No scenario class found", "dimension_scores": {}}
 
@@ -625,7 +579,7 @@ class SimulationEngine:
             "best_case": {"score": best["score"], "variables": {}},
             "worst_case": {"score": worst["score"], "variables": {}},
         }
-        aggregate.update(self._aggregate_contract_signal_counts(results))
+        aggregate.update(aggregate_contract_signal_counts(results))
         return aggregate
 
     def _aggregate_sweep(self, sweep: dict[str, Any]) -> dict[str, Any]:
@@ -642,40 +596,8 @@ class SimulationEngine:
             "best_case": {"score": best["score"], "variables": best.get("variables", {})},
             "worst_case": {"score": worst["score"], "variables": worst.get("variables", {})},
         }
-        aggregate.update(self._aggregate_contract_signal_counts(results))
+        aggregate.update(aggregate_contract_signal_counts(results))
         return aggregate
-
-    def _aggregate_contract_signal_counts(self, results: list[dict[str, Any]]) -> dict[str, int]:
-        aggregate: dict[str, int] = {}
-        for key in ("escalation_count", "clarification_count"):
-            counts = [value for value in (result.get(key) for result in results) if isinstance(value, int | float)]
-            if counts:
-                aggregate[key] = int(sum(counts))
-        return aggregate
-
-    def _apply_behavioral_contract(
-        self,
-        *,
-        description: str,
-        family: str,
-        summary: dict[str, Any],
-        warnings: list[str],
-    ) -> tuple[str, list[str]]:
-        from autocontext.scenarios.family_contracts import get_family_contract
-
-        contract = get_family_contract(family)
-        if contract is None:
-            return "completed", []
-
-        contract_result = contract.evaluate(description, summary)
-        warnings.extend(contract_result.warnings)
-        if contract_result.satisfied:
-            return "completed", []
-
-        if contract_result.score_ceiling is not None:
-            summary["score"] = min(summary.get("score", 0), contract_result.score_ceiling)
-        warnings.append(contract_result.reason)
-        return "incomplete", contract_result.missing_signals
 
     def _build_assumptions(self, spec: dict[str, Any], family: str) -> list[str]:
         assumptions = [f"Modeled as {family} with {len(spec.get('actions', []))} actions"]
