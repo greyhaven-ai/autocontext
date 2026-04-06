@@ -55,6 +55,7 @@ class ScenarioSpec(BaseModel):
     win_threshold: float = 0.55
     observation_constraints: list[str] = Field(default_factory=list)
     scenario_type: str = "parametric"  # "parametric" | "agent_task"
+    family: str = ""  # Explicit family name for detect_family (AC-524); empty = structural fallback
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
