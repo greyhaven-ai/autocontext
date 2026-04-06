@@ -36,7 +36,11 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "simulation", "test_sim");
+    const result = await validateGeneratedScenario(
+      source,
+      "simulation",
+      "test_sim",
+    );
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
     expect(result.executedMethods).toContain("initialState");
@@ -55,7 +59,11 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "agent_task", "test_task");
+    const result = await validateGeneratedScenario(
+      source,
+      "agent_task",
+      "test_task",
+    );
     expect(result.valid).toBe(true);
     expect(result.executedMethods).toContain("initialState");
     expect(result.executedMethods).toContain("getTaskPrompt");
@@ -63,13 +71,14 @@ module.exports = { scenario };
 
   it("validates a working operator_loop scenario", async () => {
     const source = `
+const ACTIONS = [{ name: "monitor", description: "Monitor system", parameters: {}, preconditions: [], effects: [] }];
 const scenario = {
   name: "test_op",
   describeScenario() { return "Test"; },
-  describeEnvironment() { return { name: "test", availableActions: [] }; },
+  describeEnvironment() { return { name: "test", availableActions: ACTIONS }; },
   initialState(seed) { return { seed: seed || 0, step: 0, completedActions: [], escalationLog: [], clarificationLog: [], autonomousActions: 0, situationsRequiringEscalation: [] }; },
-  getAvailableActions() { return []; },
-  executeAction(state, action) { return { result: { success: true, output: "" }, state }; },
+  getAvailableActions(state) { return ACTIONS.filter(a => !(state.completedActions || []).includes(a.name)); },
+  executeAction(state, action) { return { result: { success: true, output: "" }, state: { ...state, completedActions: [...(state.completedActions || []), action.name] } }; },
   isTerminal() { return true; },
   getResult(state) { return { score: 1, reasoning: "ok", dimensionScores: {} }; },
   getEscalationLog(state) { return state.escalationLog || []; },
@@ -81,7 +90,11 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "operator_loop", "test_op");
+    const result = await validateGeneratedScenario(
+      source,
+      "operator_loop",
+      "test_op",
+    );
     expect(result.valid).toBe(true);
   });
 });
@@ -106,9 +119,13 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "simulation", "broken");
+    const result = await validateGeneratedScenario(
+      source,
+      "simulation",
+      "broken",
+    );
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes("initialState"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("initialState"))).toBe(true);
   });
 
   it("catches scenario that returns wrong shape from initialState", async () => {
@@ -126,9 +143,17 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "simulation", "bad_state");
+    const result = await validateGeneratedScenario(
+      source,
+      "simulation",
+      "bad_state",
+    );
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes("initialState") && e.includes("object"))).toBe(true);
+    expect(
+      result.errors.some(
+        (e) => e.includes("initialState") && e.includes("object"),
+      ),
+    ).toBe(true);
   });
 
   it("catches scenario with syntax error", async () => {
@@ -140,7 +165,11 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "simulation", "syntax_error");
+    const result = await validateGeneratedScenario(
+      source,
+      "simulation",
+      "syntax_error",
+    );
     expect(result.valid).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
   });
@@ -153,9 +182,13 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "simulation", "incomplete");
+    const result = await validateGeneratedScenario(
+      source,
+      "simulation",
+      "incomplete",
+    );
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes("missing"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("missing"))).toBe(true);
   });
 
   it("catches getResult returning non-numeric score", async () => {
@@ -173,9 +206,15 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "simulation", "bad_score");
+    const result = await validateGeneratedScenario(
+      source,
+      "simulation",
+      "bad_score",
+    );
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes("score") && e.includes("number"))).toBe(true);
+    expect(
+      result.errors.some((e) => e.includes("score") && e.includes("number")),
+    ).toBe(true);
   });
 
   it("catches simulation scenarios that only fail when describeEnvironment is executed", async () => {
@@ -193,9 +232,15 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "simulation", "bad_environment");
+    const result = await validateGeneratedScenario(
+      source,
+      "simulation",
+      "bad_environment",
+    );
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes("describeEnvironment"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("describeEnvironment"))).toBe(
+      true,
+    );
   });
 
   it("catches artifact-editing scenarios that only fail when edit methods are executed", async () => {
@@ -211,9 +256,13 @@ const scenario = {
 };
 module.exports = { scenario };
 `;
-    const result = await validateGeneratedScenario(source, "artifact_editing", "bad_artifact");
+    const result = await validateGeneratedScenario(
+      source,
+      "artifact_editing",
+      "bad_artifact",
+    );
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes("getEditPrompt"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("getEditPrompt"))).toBe(true);
   });
 });
 
@@ -238,7 +287,9 @@ const scenario = {
 module.exports = { scenario };
 `;
     const result: ExecutionValidationResult = await validateGeneratedScenario(
-      source, "simulation", "shape_test",
+      source,
+      "simulation",
+      "shape_test",
     );
     expect(result).toHaveProperty("valid");
     expect(result).toHaveProperty("errors");
@@ -268,7 +319,8 @@ describe("execution validation — live solve wiring", () => {
   it("routes the live codegen solve path through generateAndValidateScenarioSource", async () => {
     const codegen = await import("../src/scenarios/codegen/index.js");
     const { SolveManager } = await import("../src/knowledge/solver.js");
-    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { DeterministicProvider } =
+      await import("../src/providers/deterministic.js");
 
     const spy = vi.spyOn(codegen, "generateAndValidateScenarioSource");
     const manager = new SolveManager({
@@ -314,17 +366,23 @@ describe("execution validation — live solve wiring", () => {
       },
     };
 
-    await (manager as unknown as {
-      runCodegenScenario: (
-        job: Record<string, unknown>,
-        created: typeof created,
-        family: "simulation",
-      ) => Promise<void>;
-    }).runCodegenScenario(job, created, "simulation");
+    await (
+      manager as unknown as {
+        runCodegenScenario: (
+          job: Record<string, unknown>,
+          created: typeof created,
+          family: "simulation",
+        ) => Promise<void>;
+      }
+    ).runCodegenScenario(job, created, "simulation");
 
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith("simulation", created.spec, "saved_sim");
-    expect(existsSync(join(dir, "knowledge", "_custom_scenarios", "saved_sim", "scenario.js"))).toBe(true);
+    expect(
+      existsSync(
+        join(dir, "knowledge", "_custom_scenarios", "saved_sim", "scenario.js"),
+      ),
+    ).toBe(true);
     expect(job.status).toBe("completed");
   });
 });

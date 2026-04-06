@@ -17,9 +17,7 @@ import type { AgentTaskSpec } from "./agent-task-spec.js";
 // External data detection patterns (ported from Python)
 // ---------------------------------------------------------------------------
 
-const ALWAYS_EXTERNAL_PATTERNS = [
-  "you will be provided with",
-];
+const ALWAYS_EXTERNAL_PATTERNS = ["you will be provided with"];
 
 const CONTEXTUAL_DATA_PATTERNS = [
   "given the following data",
@@ -46,7 +44,9 @@ function hasInlineDataAfter(prompt: string, pattern: string): boolean {
 
   // Check for key-value lines
   const lines = after.split("\n").filter((l) => l.trim());
-  const kvLines = lines.filter((l) => /^[A-Za-z0-9 _()/.-]{1,40}:\s+\S/.test(l.trim()));
+  const kvLines = lines.filter((l) =>
+    /^[A-Za-z0-9 _()/.-]{1,40}:\s+\S/.test(l.trim()),
+  );
   if (kvLines.length >= 2) return true;
 
   return false;
@@ -76,7 +76,10 @@ export function needsSampleInput(spec: AgentTaskSpec): boolean {
   }
 
   for (const pattern of CONTEXTUAL_DATA_PATTERNS) {
-    if (promptLower.includes(pattern) && !hasInlineDataAfter(spec.taskPrompt, pattern)) {
+    if (
+      promptLower.includes(pattern) &&
+      !hasInlineDataAfter(spec.taskPrompt, pattern)
+    ) {
       return true;
     }
   }
@@ -89,22 +92,66 @@ export function needsSampleInput(spec: AgentTaskSpec): boolean {
 // ---------------------------------------------------------------------------
 
 const STOP_WORDS = new Set([
-  "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "with",
-  "is", "are", "will", "be", "you", "your", "this", "that", "from",
-  "have", "has", "been", "should", "could", "would", "can", "may",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "of",
+  "for",
+  "to",
+  "in",
+  "on",
+  "with",
+  "is",
+  "are",
+  "will",
+  "be",
+  "you",
+  "your",
+  "this",
+  "that",
+  "from",
+  "have",
+  "has",
+  "been",
+  "should",
+  "could",
+  "would",
+  "can",
+  "may",
 ]);
 
 function extractDomainHints(taskPrompt: string, description: string): string[] {
   const text = `${taskPrompt} ${description}`.toLowerCase();
   const words = text.replace(/[^a-z0-9\s]/g, " ").split(/\s+/);
-  return words
-    .filter((w) => w.length > 3 && !STOP_WORDS.has(w))
-    .slice(0, 10);
+  return words.filter((w) => w.length > 3 && !STOP_WORDS.has(w)).slice(0, 10);
 }
 
-const COLLECTION_WORDS = new Set(["data", "records", "items", "list", "entries", "results"]);
-const ENTITY_WORDS = new Set(["patient", "customer", "user", "client", "employee", "student"]);
-const ITEM_WORDS = new Set(["drug", "medication", "interaction", "product", "order", "transaction"]);
+const COLLECTION_WORDS = new Set([
+  "data",
+  "records",
+  "items",
+  "list",
+  "entries",
+  "results",
+]);
+const ENTITY_WORDS = new Set([
+  "patient",
+  "customer",
+  "user",
+  "client",
+  "employee",
+  "student",
+]);
+const ITEM_WORDS = new Set([
+  "drug",
+  "medication",
+  "interaction",
+  "product",
+  "order",
+  "transaction",
+]);
 
 /**
  * Generate a synthetic placeholder sampleInput from task context.
@@ -122,7 +169,10 @@ export function generateSyntheticSampleInput(
     if (COLLECTION_WORDS.has(hint)) {
       sample[hint] = [`sample_${hint}_1`, `sample_${hint}_2`];
     } else if (ENTITY_WORDS.has(hint)) {
-      sample[hint] = { name: `Sample ${hint.charAt(0).toUpperCase() + hint.slice(1)}`, id: `${hint}-001` };
+      sample[hint] = {
+        name: `Sample ${hint.charAt(0).toUpperCase() + hint.slice(1)}`,
+        id: `${hint}-001`,
+      };
     } else if (ITEM_WORDS.has(hint)) {
       sample[hint] = [`sample_${hint}_A`, `sample_${hint}_B`];
     } else {
@@ -140,7 +190,10 @@ export function generateSyntheticSampleInput(
   return JSON.stringify(sample, null, 2);
 }
 
-function getStringValue(spec: Record<string, unknown>, ...keys: string[]): string | null {
+function getStringValue(
+  spec: Record<string, unknown>,
+  ...keys: string[]
+): string | null {
   for (const key of keys) {
     const value = spec[key];
     if (typeof value === "string" && value.trim().length > 0) {
@@ -150,7 +203,10 @@ function getStringValue(spec: Record<string, unknown>, ...keys: string[]): strin
   return null;
 }
 
-function getNumberValue(spec: Record<string, unknown>, ...keys: string[]): number | null {
+function getNumberValue(
+  spec: Record<string, unknown>,
+  ...keys: string[]
+): number | null {
   for (const key of keys) {
     const value = spec[key];
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -160,10 +216,16 @@ function getNumberValue(spec: Record<string, unknown>, ...keys: string[]): numbe
   return null;
 }
 
-function getStringArrayValue(spec: Record<string, unknown>, ...keys: string[]): string[] | null {
+function getStringArrayValue(
+  spec: Record<string, unknown>,
+  ...keys: string[]
+): string[] | null {
   for (const key of keys) {
     const value = spec[key];
-    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+    if (
+      Array.isArray(value) &&
+      value.every((entry) => typeof entry === "string")
+    ) {
       return value;
     }
   }
@@ -176,29 +238,68 @@ function getRecordArrayValue(
 ): Array<Record<string, unknown>> | null {
   for (const key of keys) {
     const value = spec[key];
-    if (Array.isArray(value) && value.every((entry) => entry != null && typeof entry === "object")) {
+    if (
+      Array.isArray(value) &&
+      value.every((entry) => entry != null && typeof entry === "object")
+    ) {
       return value as Array<Record<string, unknown>>;
     }
   }
   return null;
 }
 
-function normalizeAgentTaskHealSpec(spec: Record<string, unknown>): AgentTaskSpec {
+function normalizeAgentTaskHealSpec(
+  spec: Record<string, unknown>,
+): AgentTaskSpec {
   const outputFormat = getStringValue(spec, "outputFormat", "output_format");
   return {
     taskPrompt: getStringValue(spec, "taskPrompt", "task_prompt") ?? "",
-    judgeRubric: getStringValue(spec, "judgeRubric", "judge_rubric", "rubric") ?? "Evaluate the response.",
-    outputFormat: outputFormat === "json_schema" || outputFormat === "code" ? outputFormat : "free_text",
+    judgeRubric:
+      getStringValue(spec, "judgeRubric", "judge_rubric", "rubric") ??
+      "Evaluate the response.",
+    outputFormat:
+      outputFormat === "json_schema" || outputFormat === "code"
+        ? outputFormat
+        : "free_text",
     judgeModel: getStringValue(spec, "judgeModel", "judge_model") ?? "",
-    difficultyTiers: getRecordArrayValue(spec, "difficultyTiers", "difficulty_tiers"),
-    referenceContext: getStringValue(spec, "referenceContext", "reference_context"),
-    referenceSources: getStringArrayValue(spec, "referenceSources", "reference_sources"),
-    requiredConcepts: getStringArrayValue(spec, "requiredConcepts", "required_concepts"),
-    calibrationExamples: getRecordArrayValue(spec, "calibrationExamples", "calibration_examples"),
-    contextPreparation: getStringValue(spec, "contextPreparation", "context_preparation"),
-    requiredContextKeys: getStringArrayValue(spec, "requiredContextKeys", "required_context_keys"),
+    difficultyTiers: getRecordArrayValue(
+      spec,
+      "difficultyTiers",
+      "difficulty_tiers",
+    ),
+    referenceContext: getStringValue(
+      spec,
+      "referenceContext",
+      "reference_context",
+    ),
+    referenceSources: getStringArrayValue(
+      spec,
+      "referenceSources",
+      "reference_sources",
+    ),
+    requiredConcepts: getStringArrayValue(
+      spec,
+      "requiredConcepts",
+      "required_concepts",
+    ),
+    calibrationExamples: getRecordArrayValue(
+      spec,
+      "calibrationExamples",
+      "calibration_examples",
+    ),
+    contextPreparation: getStringValue(
+      spec,
+      "contextPreparation",
+      "context_preparation",
+    ),
+    requiredContextKeys: getStringArrayValue(
+      spec,
+      "requiredContextKeys",
+      "required_context_keys",
+    ),
     maxRounds: getNumberValue(spec, "maxRounds", "max_rounds") ?? 1,
-    qualityThreshold: getNumberValue(spec, "qualityThreshold", "quality_threshold") ?? 0.9,
+    qualityThreshold:
+      getNumberValue(spec, "qualityThreshold", "quality_threshold") ?? 0.9,
     revisionPrompt: getStringValue(spec, "revisionPrompt", "revision_prompt"),
     sampleInput: getStringValue(spec, "sampleInput", "sample_input"),
   };
@@ -278,14 +379,24 @@ export function healAgentTaskSpec(
 // Type coercion
 // ---------------------------------------------------------------------------
 
-const NUMERIC_FIELD_PATTERNS = /^(max|min|limit|count|threshold|steps|rounds|quality|size|depth|width|height|port|timeout|retries)/i;
-const BOOLEAN_FIELDS = new Set(["retryable", "enabled", "active", "visible", "required", "optional"]);
+const NUMERIC_FIELD_PATTERNS =
+  /^(max|min|limit|count|threshold|steps|rounds|quality|size|depth|width|height|port|timeout|retries)/i;
+const BOOLEAN_FIELDS = new Set([
+  "retryable",
+  "enabled",
+  "active",
+  "visible",
+  "required",
+  "optional",
+]);
 
 /**
  * Coerce string values to their likely intended types.
  * Fixes common LLM output issues like maxSteps: "10" → maxSteps: 10.
  */
-export function coerceSpecTypes(spec: Record<string, unknown>): Record<string, unknown> {
+export function coerceSpecTypes(
+  spec: Record<string, unknown>,
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(spec)) {
@@ -293,7 +404,7 @@ export function coerceSpecTypes(spec: Record<string, unknown>): Record<string, u
       result[key] = value.map((entry) =>
         entry != null && typeof entry === "object"
           ? coerceSpecTypes(entry as Record<string, unknown>)
-          : entry
+          : entry,
       );
       continue;
     }
@@ -305,7 +416,11 @@ export function coerceSpecTypes(spec: Record<string, unknown>): Record<string, u
 
     if (typeof value === "string") {
       // String → number
-      if (NUMERIC_FIELD_PATTERNS.test(key) || key.endsWith("_steps") || key.endsWith("Steps")) {
+      if (
+        NUMERIC_FIELD_PATTERNS.test(key) ||
+        key.endsWith("_steps") ||
+        key.endsWith("Steps")
+      ) {
         const num = Number(value);
         if (!isNaN(num) && value.trim() !== "") {
           result[key] = num;
@@ -315,8 +430,14 @@ export function coerceSpecTypes(spec: Record<string, unknown>): Record<string, u
 
       // String → boolean
       if (BOOLEAN_FIELDS.has(key)) {
-        if (value.toLowerCase() === "true") { result[key] = true; continue; }
-        if (value.toLowerCase() === "false") { result[key] = false; continue; }
+        if (value.toLowerCase() === "true") {
+          result[key] = true;
+          continue;
+        }
+        if (value.toLowerCase() === "false") {
+          result[key] = false;
+          continue;
+        }
       }
     }
 
@@ -334,7 +455,9 @@ export function coerceSpecTypes(spec: Record<string, unknown>): Record<string, u
  * Infer missing fields from available context.
  * Does not overwrite existing non-empty values.
  */
-export function inferMissingFields(spec: Record<string, unknown>): Record<string, unknown> {
+export function inferMissingFields(
+  spec: Record<string, unknown>,
+): Record<string, unknown> {
   const result = { ...spec };
   const taskPrompt = getStringValue(spec, "taskPrompt", "task_prompt") ?? "";
 
@@ -343,14 +466,20 @@ export function inferMissingFields(spec: Record<string, unknown>): Record<string
     if (taskPrompt) {
       // Take first sentence or first 100 chars
       const firstSentence = taskPrompt.split(/[.!?]\s/)[0];
-      result.description = firstSentence.length > 100
-        ? firstSentence.slice(0, 100) + "..."
-        : firstSentence + ".";
+      result.description =
+        firstSentence.length > 100
+          ? firstSentence.slice(0, 100) + "..."
+          : firstSentence + ".";
     }
   }
 
   // Infer rubric from taskPrompt
-  const hasRubric = getStringValue(result, "rubric", "judgeRubric", "judge_rubric");
+  const hasRubric = getStringValue(
+    result,
+    "rubric",
+    "judgeRubric",
+    "judge_rubric",
+  );
   if (!hasRubric && taskPrompt) {
     const inferredRubric = `Evaluate the quality and completeness of the response to: ${taskPrompt.slice(0, 80)}`;
     result.rubric = inferredRubric;
@@ -389,9 +518,87 @@ export function healSpec(
 
   // Pass 3: family-specific healing
   if (family === "agent_task") {
-    const healedTask = healAgentTaskSpec(normalizeAgentTaskHealSpec(healed), description);
+    const healedTask = healAgentTaskSpec(
+      normalizeAgentTaskHealSpec(healed),
+      description,
+    );
     healed = applyHealedAgentTaskSpec(healed, healedTask);
   }
 
+  // Pass 4: simulation-family precondition normalization (AC-529)
+  if (PRECONDITION_FAMILIES.has(family)) {
+    healed = healSimulationPreconditions(healed);
+  }
+
   return healed;
+}
+
+// ---------------------------------------------------------------------------
+// Precondition normalization (AC-529)
+// ---------------------------------------------------------------------------
+
+/**
+ * Families whose runtime checks completed.has(req) against action names.
+ * These are the families that need precondition healing.
+ */
+const PRECONDITION_FAMILIES = new Set([
+  "simulation",
+  "workflow",
+  "operator_loop",
+  "coordination",
+  "investigation",
+  "schema_evolution",
+  "tool_fragility",
+  "negotiation",
+]);
+
+/**
+ * Normalize action preconditions: keep only strings that match an existing
+ * action name (exact or fuzzy). Strips prose descriptions that the runtime
+ * cannot satisfy via completed.has(). (AC-529)
+ */
+function healSimulationPreconditions(
+  spec: Record<string, unknown>,
+): Record<string, unknown> {
+  const actions = spec.actions;
+  if (!Array.isArray(actions) || actions.length === 0) return spec;
+
+  const actionNames = new Set(
+    actions
+      .map((a: Record<string, unknown>) => String(a.name ?? ""))
+      .filter(Boolean),
+  );
+
+  // Build a normalized lookup for fuzzy matching (lowercase, underscores → spaces)
+  const normalizedMap = new Map<string, string>();
+  for (const name of actionNames) {
+    normalizedMap.set(name.toLowerCase().replace(/_/g, " "), name);
+  }
+
+  const healedActions = actions.map((action: Record<string, unknown>) => {
+    const preconds = action.preconditions;
+    if (!Array.isArray(preconds) || preconds.length === 0) return action;
+
+    const healed = preconds
+      .map((p: unknown) => {
+        const s = String(p);
+        // Exact match against known action names
+        if (actionNames.has(s)) return s;
+        // Fuzzy: normalize (lowercase, underscores → spaces, strip punctuation) and check
+        const normalized = s
+          .toLowerCase()
+          .replace(/_/g, " ")
+          .replace(/[^a-z0-9 ]/g, "")
+          .trim();
+        const match = normalizedMap.get(normalized);
+        if (match) return match;
+        // No match → strip (it's prose, not an action name)
+        return null;
+      })
+      .filter((p): p is string => p !== null);
+
+    return { ...action, preconditions: healed };
+  });
+
+  return { ...spec, actions: healedActions };
 }

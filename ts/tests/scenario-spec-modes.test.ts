@@ -25,7 +25,11 @@ function runCli(
     return { stdout, stderr: "", exitCode: 0 };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; status?: number };
-    return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", exitCode: e.status ?? 1 };
+    return {
+      stdout: e.stdout ?? "",
+      stderr: e.stderr ?? "",
+      exitCode: e.status ?? 1,
+    };
   }
 }
 
@@ -40,8 +44,12 @@ function makeTempDir(): string {
 describe("new-scenario --from-spec", () => {
   let dir: string;
 
-  beforeEach(() => { dir = makeTempDir(); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = makeTempDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it("--help mentions --from-spec", () => {
     const { stdout } = runCli(["new-scenario", "--help"]);
@@ -51,13 +59,34 @@ describe("new-scenario --from-spec", () => {
   it("accepts a spec file and registers without calling an LLM", () => {
     const specPath = join(dir, "spec.json");
     const knowledgeRoot = join(dir, "knowledge");
-    writeFileSync(specPath, JSON.stringify({
-      name: "summarization_quality",
-      family: "investigation",
-      description: "Evaluate summarization of documents",
-      taskPrompt: "Given a source document, produce a summary under 200 words.",
-      rubric: "Factual accuracy, coverage, conciseness",
-    }), "utf-8");
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        name: "summarization_quality",
+        family: "investigation",
+        description: "Evaluate summarization of documents",
+        taskPrompt:
+          "Given a source document, produce a summary under 200 words.",
+        rubric: "Factual accuracy, coverage, conciseness",
+        actions: [
+          {
+            name: "gather_logs",
+            description: "Collect system logs",
+            parameters: {},
+            preconditions: [],
+            effects: ["logs_gathered"],
+          },
+          {
+            name: "analyze_data",
+            description: "Analyze collected data",
+            parameters: {},
+            preconditions: ["gather_logs"],
+            effects: ["analysis_done"],
+          },
+        ],
+      }),
+      "utf-8",
+    );
 
     const { stdout, exitCode } = runCli(
       ["new-scenario", "--from-spec", specPath, "--json"],
@@ -75,12 +104,22 @@ describe("new-scenario --from-spec", () => {
     );
     expect(
       existsSync(
-        join(knowledgeRoot, "_custom_scenarios", "summarization_quality", "spec.json"),
+        join(
+          knowledgeRoot,
+          "_custom_scenarios",
+          "summarization_quality",
+          "spec.json",
+        ),
       ),
     ).toBe(true);
     expect(
       existsSync(
-        join(knowledgeRoot, "_custom_scenarios", "summarization_quality", "scenario.js"),
+        join(
+          knowledgeRoot,
+          "_custom_scenarios",
+          "summarization_quality",
+          "scenario.js",
+        ),
       ),
     ).toBe(true);
   });
@@ -96,12 +135,33 @@ describe("new-scenario --from-spec", () => {
   it("derives family from the spec when family is omitted", () => {
     const specPath = join(dir, "derived.json");
     const knowledgeRoot = join(dir, "knowledge");
-    writeFileSync(specPath, JSON.stringify({
-      name: "incident_root_cause",
-      description: "Investigate the root cause of a production outage",
-      taskPrompt: "Investigate the root cause of the outage and explain the failure chain.",
-      rubric: "Root cause accuracy, evidence, remediation quality",
-    }), "utf-8");
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        name: "incident_root_cause",
+        description: "Investigate the root cause of a production outage",
+        taskPrompt:
+          "Investigate the root cause of the outage and explain the failure chain.",
+        rubric: "Root cause accuracy, evidence, remediation quality",
+        actions: [
+          {
+            name: "gather_logs",
+            description: "Collect system logs",
+            parameters: {},
+            preconditions: [],
+            effects: ["logs_gathered"],
+          },
+          {
+            name: "analyze_data",
+            description: "Analyze collected data",
+            parameters: {},
+            preconditions: ["gather_logs"],
+            effects: ["analysis_done"],
+          },
+        ],
+      }),
+      "utf-8",
+    );
 
     const { stdout, exitCode } = runCli(
       ["new-scenario", "--from-spec", specPath, "--json"],
@@ -115,13 +175,17 @@ describe("new-scenario --from-spec", () => {
   it("fails fast for dead-end families instead of leaving a fake scaffold", () => {
     const specPath = join(dir, "game.json");
     const knowledgeRoot = join(dir, "knowledge");
-    writeFileSync(specPath, JSON.stringify({
-      name: "custom_board_game",
-      family: "game",
-      description: "A custom board game with turns and scoring.",
-      taskPrompt: "Play a two-player board game with scoring and turns.",
-      rubric: "Strategic depth and balance",
-    }), "utf-8");
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        name: "custom_board_game",
+        family: "game",
+        description: "A custom board game with turns and scoring.",
+        taskPrompt: "Play a two-player board game with scoring and turns.",
+        rubric: "Strategic depth and balance",
+      }),
+      "utf-8",
+    );
 
     const { exitCode, stderr } = runCli(
       ["new-scenario", "--from-spec", specPath, "--json"],
@@ -156,6 +220,22 @@ describe("new-scenario --from-stdin", () => {
         description: "Evaluate code review quality",
         taskPrompt: "Review this pull request diff.",
         rubric: "Thoroughness, accuracy, actionability",
+        actions: [
+          {
+            name: "review_diff",
+            description: "Review the diff",
+            parameters: {},
+            preconditions: [],
+            effects: ["diff_reviewed"],
+          },
+          {
+            name: "write_feedback",
+            description: "Write review feedback",
+            parameters: {},
+            preconditions: ["review_diff"],
+            effects: ["feedback_written"],
+          },
+        ],
       });
 
       const { stdout, exitCode } = runCli(
@@ -171,7 +251,14 @@ describe("new-scenario --from-stdin", () => {
       expect(result.family).toBe("workflow");
       expect(result.persisted).toBe(true);
       expect(
-        existsSync(join(knowledgeRoot, "_custom_scenarios", "code_review", "scenario.js")),
+        existsSync(
+          join(
+            knowledgeRoot,
+            "_custom_scenarios",
+            "code_review",
+            "scenario.js",
+          ),
+        ),
       ).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -201,7 +288,9 @@ describe("new-scenario --from-stdin", () => {
       expect(exitCode).toBe(1);
       expect(stderr).toContain("does not support family 'game'");
       expect(
-        existsSync(join(knowledgeRoot, "_custom_scenarios", "stdin_board_game")),
+        existsSync(
+          join(knowledgeRoot, "_custom_scenarios", "stdin_board_game"),
+        ),
       ).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -222,7 +311,8 @@ describe("new-scenario --prompt-only", () => {
   it("outputs the prompt without calling an LLM", () => {
     const { stdout, exitCode } = runCli([
       "new-scenario",
-      "--description", "Test summarization quality",
+      "--description",
+      "Test summarization quality",
       "--prompt-only",
     ]);
     expect(exitCode).toBe(0);

@@ -9,7 +9,13 @@
  * and the codegen/materialization pipeline.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
@@ -17,7 +23,10 @@ import { detectScenarioFamily } from "../scenarios/scenario-creator.js";
 import { generateScenarioSource } from "../scenarios/codegen/index.js";
 import { validateGeneratedScenario } from "../scenarios/codegen/execution-validator.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
-import { getScenarioTypeMarker } from "../scenarios/families.js";
+import {
+  getScenarioTypeMarker,
+  SIMULATION_LIKE_FAMILIES,
+} from "../scenarios/families.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,11 +75,22 @@ export interface SimulationExecutionConfig {
   sweep?: SweepDimension[];
 }
 
+/** Simulation run status — completed, degraded (low fidelity), or failed (AC-532). */
+export type SimulationStatus = "completed" | "degraded" | "failed";
+
+/** Score below this threshold marks a run as degraded rather than completed (AC-532). */
+export const DEGRADED_SCORE_THRESHOLD = 0.2;
+
+/** Derive simulation status from score (AC-532). */
+export function deriveSimulationStatus(score: number): SimulationStatus {
+  return score >= DEGRADED_SCORE_THRESHOLD ? "completed" : "degraded";
+}
+
 export interface SimulationResult {
   id: string;
   name: string;
   family: ScenarioFamilyName;
-  status: "completed" | "failed";
+  status: SimulationStatus;
   description: string;
   assumptions: string[];
   variables: Record<string, unknown>;
@@ -112,12 +132,15 @@ export interface VariableDelta {
 }
 
 export interface SimulationCompareResult {
-  status: "completed" | "failed";
+  status: SimulationStatus;
   left: { name: string; score: number; variables: Record<string, unknown> };
   right: { name: string; score: number; variables: Record<string, unknown> };
   scoreDelta: number;
   variableDeltas: Record<string, VariableDelta>;
-  dimensionDeltas: Record<string, { left: number; right: number; delta: number }>;
+  dimensionDeltas: Record<
+    string,
+    { left: number; right: number; delta: number }
+  >;
   likelyDrivers: string[];
   summary: string;
   reportPath?: string;
@@ -175,9 +198,8 @@ function generateId(): string {
   return `sim_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const SIMULATION_FAMILIES: Set<string> = new Set([
-  "simulation", "operator_loop", "coordination",
-]);
+/** Re-export for backward compatibility — canonical source is families.ts */
+export { SIMULATION_LIKE_FAMILIES as SIMULATION_FAMILIES };
 
 export class SimulationEngine {
   private provider: LLMProvider;
@@ -199,8 +221,19 @@ export class SimulationEngine {
     const execution = this.buildExecutionConfig(request);
 
     try {
-      const baseVariant = await this.buildVariant(request.description, family, name, request.variables);
-      this.persistArtifacts(name, family, baseVariant.spec, baseVariant.source, scenarioDir);
+      const baseVariant = await this.buildVariant(
+        request.description,
+        family,
+        name,
+        request.variables,
+      );
+      this.persistArtifacts(
+        name,
+        family,
+        baseVariant.spec,
+        baseVariant.source,
+        scenarioDir,
+      );
 
       // Execute — single or sweep
       let summary: SimulationSummary;
@@ -227,14 +260,19 @@ export class SimulationEngine {
         summary = this.aggregateRuns(results);
       }
 
-      const assumptions = this.buildAssumptions(baseVariant.spec, family, request.variables);
+      const assumptions = this.buildAssumptions(
+        baseVariant.spec,
+        family,
+        request.variables,
+      );
       const warnings = this.buildWarnings(family, this.provider.name);
 
       const reportPath = join(scenarioDir, "report.json");
       const resultObj: SimulationResult = {
-        id, name,
+        id,
+        name,
         family,
-        status: "completed",
+        status: deriveSimulationStatus(summary.score),
         description: request.description,
         assumptions,
         variables: request.variables ?? {},
@@ -249,7 +287,8 @@ export class SimulationEngine {
       return resultObj;
     } catch (err) {
       return {
-        id, name,
+        id,
+        name,
         family,
         status: "failed",
         description: request.description,
@@ -280,17 +319,26 @@ export class SimulationEngine {
     const reportPath = join(scenarioDir, "report.json");
     if (!existsSync(reportPath)) {
       return {
-        id, name, family: "simulation", status: "failed",
-        description: "", assumptions: [], variables: {},
+        id,
+        name,
+        family: "simulation",
+        status: "failed",
+        description: "",
+        assumptions: [],
+        variables: {},
         summary: { score: 0, reasoning: "", dimensionScores: {} },
-        artifacts: { scenarioDir: "" }, warnings: [],
+        artifacts: { scenarioDir: "" },
+        warnings: [],
         error: `Simulation '${name}' not found at ${scenarioDir}`,
       };
     }
 
-    const originalReport = JSON.parse(readFileSync(reportPath, "utf-8")) as SimulationResult;
+    const originalReport = JSON.parse(
+      readFileSync(reportPath, "utf-8"),
+    ) as SimulationResult;
     const originalScore = originalReport.summary?.score ?? 0;
-    const family = (originalReport.family ?? "simulation") as ScenarioFamilyName;
+    const family = (originalReport.family ??
+      "simulation") as ScenarioFamilyName;
     const execution = this.resolveExecutionConfig(originalReport);
     const replayMaxSteps = request.maxSteps ?? execution.maxSteps;
 
@@ -311,7 +359,10 @@ export class SimulationEngine {
         );
         sweepResult = replayedSweep;
         summary = this.aggregateSweep(replayedSweep);
-        variables = this.collectReplayVariables(originalReport, request.variables);
+        variables = this.collectReplayVariables(
+          originalReport,
+          request.variables,
+        );
       } else {
         const variant = await this.loadReplayVariant(
           scenarioDir,
@@ -333,8 +384,10 @@ export class SimulationEngine {
 
       const replayReportPath = join(scenarioDir, `replay_${id}.json`);
       const result: SimulationResult = {
-        id, name, family,
-        status: "completed",
+        id,
+        name,
+        family,
+        status: deriveSimulationStatus(summary.score),
         description: originalReport.description ?? "",
         assumptions: originalReport.assumptions ?? [],
         variables,
@@ -359,12 +412,19 @@ export class SimulationEngine {
       return result;
     } catch (err) {
       return {
-        id, name, family, status: "failed",
+        id,
+        name,
+        family,
+        status: "failed",
         description: originalReport.description ?? "",
         assumptions: [],
-        variables: this.collectReplayVariables(originalReport, request.variables),
+        variables: this.collectReplayVariables(
+          originalReport,
+          request.variables,
+        ),
         summary: { score: 0, reasoning: "", dimensionScores: {} },
-        artifacts: { scenarioDir }, warnings: [],
+        artifacts: { scenarioDir },
+        warnings: [],
         error: err instanceof Error ? err.message : String(err),
         replayOf: name,
       };
@@ -426,26 +486,46 @@ export class SimulationEngine {
     // Variable deltas
     const leftVars = this.collectCompareVariables(leftReport);
     const rightVars = this.collectCompareVariables(rightReport);
-    const allVarKeys = new Set([...Object.keys(leftVars), ...Object.keys(rightVars)]);
+    const allVarKeys = new Set([
+      ...Object.keys(leftVars),
+      ...Object.keys(rightVars),
+    ]);
     const variableDeltas: Record<string, VariableDelta> = {};
     for (const key of allVarKeys) {
       const lv = leftVars[key];
       const rv = rightVars[key];
-      const delta = typeof lv === "number" && typeof rv === "number"
-        ? Math.round((rv - lv) * 10000) / 10000
-        : undefined;
+      const delta =
+        typeof lv === "number" && typeof rv === "number"
+          ? Math.round((rv - lv) * 10000) / 10000
+          : undefined;
       variableDeltas[key] = { left: lv, right: rv, delta };
     }
 
     // Dimension deltas
-    const leftDims = (leftReport.summary?.dimensionScores ?? {}) as Record<string, number>;
-    const rightDims = (rightReport.summary?.dimensionScores ?? {}) as Record<string, number>;
-    const allDimKeys = new Set([...Object.keys(leftDims), ...Object.keys(rightDims)]);
-    const dimensionDeltas: Record<string, { left: number; right: number; delta: number }> = {};
+    const leftDims = (leftReport.summary?.dimensionScores ?? {}) as Record<
+      string,
+      number
+    >;
+    const rightDims = (rightReport.summary?.dimensionScores ?? {}) as Record<
+      string,
+      number
+    >;
+    const allDimKeys = new Set([
+      ...Object.keys(leftDims),
+      ...Object.keys(rightDims),
+    ]);
+    const dimensionDeltas: Record<
+      string,
+      { left: number; right: number; delta: number }
+    > = {};
     for (const key of allDimKeys) {
       const lv = leftDims[key] ?? 0;
       const rv = rightDims[key] ?? 0;
-      dimensionDeltas[key] = { left: lv, right: rv, delta: Math.round((rv - lv) * 10000) / 10000 };
+      dimensionDeltas[key] = {
+        left: lv,
+        right: rv,
+        delta: Math.round((rv - lv) * 10000) / 10000,
+      };
     }
 
     // Likely drivers: variables that changed AND where dimensions shifted
@@ -463,8 +543,10 @@ export class SimulationEngine {
     }
 
     // Summary
-    const direction = scoreDelta > 0 ? "improved" : scoreDelta < 0 ? "regressed" : "unchanged";
-    const summary = `Score ${direction} by ${Math.abs(scoreDelta).toFixed(4)} ` +
+    const direction =
+      scoreDelta > 0 ? "improved" : scoreDelta < 0 ? "regressed" : "unchanged";
+    const summary =
+      `Score ${direction} by ${Math.abs(scoreDelta).toFixed(4)} ` +
       `(${leftScore.toFixed(2)} → ${rightScore.toFixed(2)}). ` +
       `${Object.keys(variableDeltas).length} variable(s) compared, ` +
       `${likelyDrivers.length} likely driver(s).`;
@@ -472,11 +554,22 @@ export class SimulationEngine {
     // Persist report
     const reportsDir = join(this.knowledgeRoot, "_simulations", "_comparisons");
     if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
-    const reportPath = join(reportsDir, `${request.left}_vs_${request.right}.json`);
+    const reportPath = join(
+      reportsDir,
+      `${request.left}_vs_${request.right}.json`,
+    );
     const result: SimulationCompareResult = {
-      status: "completed",
-      left: { name: request.left, score: leftScore, variables: leftVars as Record<string, unknown> },
-      right: { name: request.right, score: rightScore, variables: rightVars as Record<string, unknown> },
+      status: deriveSimulationStatus(Math.min(leftScore, rightScore)),
+      left: {
+        name: request.left,
+        score: leftScore,
+        variables: leftVars as Record<string, unknown>,
+      },
+      right: {
+        name: request.right,
+        score: rightScore,
+        variables: rightVars as Record<string, unknown>,
+      },
       scoreDelta,
       variableDeltas,
       dimensionDeltas,
@@ -494,7 +587,9 @@ export class SimulationEngine {
     const baseReportPath = join(simulationsRoot, name, "report.json");
     if (existsSync(baseReportPath)) {
       try {
-        return JSON.parse(readFileSync(baseReportPath, "utf-8")) as SimulationResult;
+        return JSON.parse(
+          readFileSync(baseReportPath, "utf-8"),
+        ) as SimulationResult;
       } catch {
         return null;
       }
@@ -504,10 +599,16 @@ export class SimulationEngine {
 
     for (const entry of readdirSync(simulationsRoot, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
-      const replayReportPath = join(simulationsRoot, entry.name, `replay_${name}.json`);
+      const replayReportPath = join(
+        simulationsRoot,
+        entry.name,
+        `replay_${name}.json`,
+      );
       if (!existsSync(replayReportPath)) continue;
       try {
-        return JSON.parse(readFileSync(replayReportPath, "utf-8")) as SimulationResult;
+        return JSON.parse(
+          readFileSync(replayReportPath, "utf-8"),
+        ) as SimulationResult;
       } catch {
         return null;
       }
@@ -516,7 +617,9 @@ export class SimulationEngine {
     return null;
   }
 
-  private collectCompareVariables(report: SimulationResult): Record<string, unknown> {
+  private collectCompareVariables(
+    report: SimulationResult,
+  ): Record<string, unknown> {
     const merged: Record<string, unknown> = { ...(report.variables ?? {}) };
 
     if (!report.sweep?.results?.length) {
@@ -535,7 +638,11 @@ export class SimulationEngine {
     }
 
     for (const [key, values] of valueSets.entries()) {
-      if (key in merged && values.length === 1 && this.valuesEqual(merged[key], values[0])) {
+      if (
+        key in merged &&
+        values.length === 1 &&
+        this.valuesEqual(merged[key], values[0])
+      ) {
         continue;
       }
       merged[key] = values.length === 1 ? values[0] : values;
@@ -552,11 +659,16 @@ export class SimulationEngine {
   // -------------------------------------------------------------------------
 
   private failedResult(
-    id: string, name: string, family: ScenarioFamilyName,
-    request: SimulationRequest, errors: string[],
+    id: string,
+    name: string,
+    family: ScenarioFamilyName,
+    request: SimulationRequest,
+    errors: string[],
   ): SimulationResult {
     return {
-      id, name, family,
+      id,
+      name,
+      family,
       status: "failed",
       description: request.description,
       assumptions: [],
@@ -570,37 +682,41 @@ export class SimulationEngine {
 
   private inferFamily(description: string): string {
     const family = detectScenarioFamily(description);
-    // Coerce to simulation-like families
-    if (SIMULATION_FAMILIES.has(family)) return family;
-    // Escalation/operator keywords → operator_loop
-    const lower = description.toLowerCase();
-    if (/escalat|operator|human.in.the.loop|clarification/i.test(lower)) return "operator_loop";
+    if (SIMULATION_LIKE_FAMILIES.has(family)) return family;
     return "simulation";
   }
 
-  private buildExecutionConfig(request: SimulationRequest): SimulationExecutionConfig {
+  private buildExecutionConfig(
+    request: SimulationRequest,
+  ): SimulationExecutionConfig {
     return {
       runs: Math.max(1, request.runs ?? 1),
       maxSteps: request.maxSteps,
-      sweep: request.sweep && request.sweep.length > 0 ? request.sweep : undefined,
+      sweep:
+        request.sweep && request.sweep.length > 0 ? request.sweep : undefined,
     };
   }
 
-  private resolveExecutionConfig(report: SimulationResult): SimulationExecutionConfig {
+  private resolveExecutionConfig(
+    report: SimulationResult,
+  ): SimulationExecutionConfig {
     if (report.execution) {
       return {
         runs: Math.max(1, report.execution.runs ?? 1),
         maxSteps: report.execution.maxSteps,
-        sweep: report.execution.sweep && report.execution.sweep.length > 0
-          ? report.execution.sweep
-          : undefined,
+        sweep:
+          report.execution.sweep && report.execution.sweep.length > 0
+            ? report.execution.sweep
+            : undefined,
       };
     }
 
     if (report.sweep && report.sweep.results.length > 0) {
       const runsPerCell = Math.max(
         1,
-        Math.round(report.sweep.runs / Math.max(report.sweep.results.length, 1)),
+        Math.round(
+          report.sweep.runs / Math.max(report.sweep.results.length, 1),
+        ),
       );
       return {
         runs: runsPerCell,
@@ -623,7 +739,10 @@ export class SimulationEngine {
 
   private loadPersistedSpec(specPath: string): Record<string, unknown> | null {
     if (!existsSync(specPath)) return null;
-    const persisted = JSON.parse(readFileSync(specPath, "utf-8")) as Record<string, unknown>;
+    const persisted = JSON.parse(readFileSync(specPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
     const { name: _name, family: _family, ...spec } = persisted;
     return spec;
   }
@@ -652,7 +771,11 @@ export class SimulationEngine {
     }
 
     const spec = this.applyVariableOverrides(savedSpec, family, variables);
-    const validation = await validateGeneratedScenario(generateScenarioSource(family, spec, name), family, name);
+    const validation = await validateGeneratedScenario(
+      generateScenarioSource(family, spec, name),
+      family,
+      name,
+    );
     if (!validation.valid) {
       throw new Error(validation.errors.join("; "));
     }
@@ -737,13 +860,17 @@ Required fields:
 - failure_modes: array of strings
 - max_steps: positive integer
 - actions: array of {name, description, parameters, preconditions, effects}
-${family === "operator_loop" ? '- escalation_policy: {escalation_threshold, max_escalations}' : ""}
-${family === "coordination" ? '- workers: array of {worker_id, role} with at least 2 workers' : ""}
+${family === "operator_loop" ? "- escalation_policy: {escalation_threshold, max_escalations}" : ""}
+${family === "coordination" ? "- workers: array of {worker_id, role} with at least 2 workers" : ""}
 
-${serializedVariables ? `Incorporate these requested simulation parameters directly into the returned spec so they materially change execution when they change:
+${
+  serializedVariables
+    ? `Incorporate these requested simulation parameters directly into the returned spec so they materially change execution when they change:
 ${serializedVariables}
 
-Prefer mapping them into native fields like max_steps, escalation_policy, workers, action parameters, environment details, or other family-appropriate controls. If a parameter does not cleanly fit a native field, preserve it under simulation_variables.` : ""}
+Prefer mapping them into native fields like max_steps, escalation_policy, workers, action parameters, environment details, or other family-appropriate controls. If a parameter does not cleanly fit a native field, preserve it under simulation_variables.`
+    : ""
+}
 
 Output ONLY the JSON object, no markdown fences.`;
 
@@ -766,7 +893,11 @@ Output ONLY the JSON object, no markdown fences.`;
     variables?: Record<string, unknown>,
   ): Promise<BuiltSimulationVariant> {
     const rawSpec = await this.buildSpec(description, family, variables);
-    const healedSpec = this.applyVariableOverrides(healSpec(rawSpec, family), family, variables);
+    const healedSpec = this.applyVariableOverrides(
+      healSpec(rawSpec, family),
+      family,
+      variables,
+    );
     const source = generateScenarioSource(family, healedSpec, name);
     const validation = await validateGeneratedScenario(source, family, name);
     if (!validation.valid) {
@@ -800,7 +931,9 @@ Output ONLY the JSON object, no markdown fences.`;
         case "escalation_threshold":
         case "escalationThreshold": {
           if (family === "operator_loop") {
-            const policy = { ...((next.escalation_policy as Record<string, unknown>) ?? {}) };
+            const policy = {
+              ...((next.escalation_policy as Record<string, unknown>) ?? {}),
+            };
             policy.escalation_threshold = value;
             next.escalation_policy = policy;
           } else {
@@ -811,8 +944,14 @@ Output ONLY the JSON object, no markdown fences.`;
         case "max_escalations":
         case "maxEscalations": {
           const maxEscalations = Number(value);
-          if (family === "operator_loop" && Number.isFinite(maxEscalations) && maxEscalations > 0) {
-            const policy = { ...((next.escalation_policy as Record<string, unknown>) ?? {}) };
+          if (
+            family === "operator_loop" &&
+            Number.isFinite(maxEscalations) &&
+            maxEscalations > 0
+          ) {
+            const policy = {
+              ...((next.escalation_policy as Record<string, unknown>) ?? {}),
+            };
             policy.max_escalations = Math.floor(maxEscalations);
             next.escalation_policy = policy;
           } else {
@@ -823,8 +962,14 @@ Output ONLY the JSON object, no markdown fences.`;
         case "worker_count":
         case "workerCount": {
           const workerCount = Number(value);
-          if (family === "coordination" && Number.isFinite(workerCount) && workerCount >= 2) {
-            const existingWorkers = Array.isArray(next.workers) ? [...(next.workers as Array<Record<string, unknown>>)] : [];
+          if (
+            family === "coordination" &&
+            Number.isFinite(workerCount) &&
+            workerCount >= 2
+          ) {
+            const existingWorkers = Array.isArray(next.workers)
+              ? [...(next.workers as Array<Record<string, unknown>>)]
+              : [];
             const normalizedCount = Math.floor(workerCount);
             const workers = existingWorkers.slice(0, normalizedCount);
             while (workers.length < normalizedCount) {
@@ -846,8 +991,9 @@ Output ONLY the JSON object, no markdown fences.`;
 
     if (Object.keys(passthrough).length > 0) {
       const existingVariables =
-        next.simulation_variables && typeof next.simulation_variables === "object"
-          ? next.simulation_variables as Record<string, unknown>
+        next.simulation_variables &&
+        typeof next.simulation_variables === "object"
+          ? (next.simulation_variables as Record<string, unknown>)
           : {};
       next.simulation_variables = { ...existingVariables, ...passthrough };
     }
@@ -856,12 +1002,31 @@ Output ONLY the JSON object, no markdown fences.`;
   }
 
   private async executeRuns(
-    source: string, family: ScenarioFamilyName, name: string,
-    runs: number, maxSteps?: number,
-  ): Promise<Array<{ score: number; reasoning: string; dimensionScores: Record<string, number> }>> {
-    const results: Array<{ score: number; reasoning: string; dimensionScores: Record<string, number> }> = [];
+    source: string,
+    family: ScenarioFamilyName,
+    name: string,
+    runs: number,
+    maxSteps?: number,
+  ): Promise<
+    Array<{
+      score: number;
+      reasoning: string;
+      dimensionScores: Record<string, number>;
+    }>
+  > {
+    const results: Array<{
+      score: number;
+      reasoning: string;
+      dimensionScores: Record<string, number>;
+    }> = [];
     for (let seed = 0; seed < runs; seed++) {
-      const result = await this.executeSingle(source, family, name, seed, maxSteps);
+      const result = await this.executeSingle(
+        source,
+        family,
+        name,
+        seed,
+        maxSteps,
+      );
       results.push(result);
     }
     return results;
@@ -882,7 +1047,12 @@ Output ONLY the JSON object, no markdown fences.`;
     for (let i = 0; i < combos.length; i++) {
       const variables = { ...(request.variables ?? {}), ...combos[i] };
       const variantName = `${name}__sweep_${i + 1}`;
-      const variant = await this.buildVariant(description, family, variantName, variables);
+      const variant = await this.buildVariant(
+        description,
+        family,
+        variantName,
+        variables,
+      );
       this.persistArtifacts(
         variantName,
         family,
@@ -907,19 +1077,32 @@ Output ONLY the JSON object, no markdown fences.`;
       });
     }
 
-    return { dimensions, runs: runResults.length * runsPerCombo, results: runResults };
+    return {
+      dimensions,
+      runs: runResults.length * runsPerCombo,
+      results: runResults,
+    };
   }
 
   private async executeSingle(
     source: string,
     family: ScenarioFamilyName,
     name: string,
-    seed: number, maxSteps?: number,
-  ): Promise<{ score: number; reasoning: string; dimensionScores: Record<string, number> }> {
+    seed: number,
+    maxSteps?: number,
+  ): Promise<{
+    score: number;
+    reasoning: string;
+    dimensionScores: Record<string, number>;
+  }> {
     const moduleObj = { exports: {} as Record<string, unknown> };
     const fn = new Function("module", "exports", source);
     fn(moduleObj, moduleObj.exports);
-    const scenario = (moduleObj.exports as { scenario: Record<string, (...args: unknown[]) => unknown> }).scenario;
+    const scenario = (
+      moduleObj.exports as {
+        scenario: Record<string, (...args: unknown[]) => unknown>;
+      }
+    ).scenario;
 
     switch (family) {
       case "operator_loop":
@@ -935,7 +1118,11 @@ Output ONLY the JSON object, no markdown fences.`;
     scenario: Record<string, (...args: unknown[]) => unknown>,
     seed: number,
     maxSteps?: number,
-  ): { score: number; reasoning: string; dimensionScores: Record<string, number> } {
+  ): {
+    score: number;
+    reasoning: string;
+    dimensionScores: Record<string, number>;
+  } {
     let state = scenario.initialState(seed) as Record<string, unknown>;
     const limit = maxSteps ?? 20;
     let steps = 0;
@@ -944,10 +1131,16 @@ Output ONLY the JSON object, no markdown fences.`;
     while (steps < limit) {
       const terminal = scenario.isTerminal(state) as boolean;
       if (terminal) break;
-      const actions = scenario.getAvailableActions(state) as Array<{ name: string }>;
+      const actions = scenario.getAvailableActions(state) as Array<{
+        name: string;
+      }>;
       if (!actions || actions.length === 0) break;
-      const actionResult = scenario.executeAction(state, { name: actions[0].name, parameters: {} }) as {
-        result: Record<string, unknown>; state: Record<string, unknown>;
+      const actionResult = scenario.executeAction(state, {
+        name: actions[0].name,
+        parameters: {},
+      }) as {
+        result: Record<string, unknown>;
+        state: Record<string, unknown>;
       };
       records.push({ result: { success: !!actionResult.result?.success } });
       state = actionResult.state;
@@ -955,7 +1148,9 @@ Output ONLY the JSON object, no markdown fences.`;
     }
 
     const evalResult = scenario.getResult(state, { records }) as {
-      score: number; reasoning: string; dimensionScores?: Record<string, number>;
+      score: number;
+      reasoning: string;
+      dimensionScores?: Record<string, number>;
     };
 
     return {
@@ -969,7 +1164,11 @@ Output ONLY the JSON object, no markdown fences.`;
     scenario: Record<string, (...args: unknown[]) => unknown>,
     seed: number,
     maxSteps?: number,
-  ): { score: number; reasoning: string; dimensionScores: Record<string, number> } {
+  ): {
+    score: number;
+    reasoning: string;
+    dimensionScores: Record<string, number>;
+  } {
     let state = scenario.initialState(seed) as Record<string, unknown>;
     const limit = maxSteps ?? 20;
     let steps = 0;
@@ -981,7 +1180,10 @@ Output ONLY the JSON object, no markdown fences.`;
       const terminal = scenario.isTerminal(state) as boolean;
       if (terminal) break;
 
-      if (!requestedClarification && typeof scenario.requestClarification === "function") {
+      if (
+        !requestedClarification &&
+        typeof scenario.requestClarification === "function"
+      ) {
         state = scenario.requestClarification(state, {
           question: "Clarify the current uncertainty before continuing.",
           urgency: "medium",
@@ -989,7 +1191,10 @@ Output ONLY the JSON object, no markdown fences.`;
         requestedClarification = true;
       }
 
-      const actions = scenario.getAvailableActions(state) as Array<{ name: string; parameters?: Record<string, unknown> }>;
+      const actions = scenario.getAvailableActions(state) as Array<{
+        name: string;
+        parameters?: Record<string, unknown>;
+      }>;
       if (!actions || actions.length === 0) break;
 
       const action = {
@@ -1007,7 +1212,9 @@ Output ONLY the JSON object, no markdown fences.`;
       state = actionResult.state ?? state;
 
       const situations = Array.isArray(state.situationsRequiringEscalation)
-        ? state.situationsRequiringEscalation as Array<Record<string, unknown>>
+        ? (state.situationsRequiringEscalation as Array<
+            Record<string, unknown>
+          >)
         : [];
       const latest = situations[situations.length - 1];
       if (latest && typeof scenario.escalate === "function") {
@@ -1030,7 +1237,9 @@ Output ONLY the JSON object, no markdown fences.`;
     }
 
     const evalResult = scenario.getResult(state, { records }) as {
-      score: number; reasoning: string; dimensionScores?: Record<string, number>;
+      score: number;
+      reasoning: string;
+      dimensionScores?: Record<string, number>;
     };
 
     return {
@@ -1044,7 +1253,11 @@ Output ONLY the JSON object, no markdown fences.`;
     scenario: Record<string, (...args: unknown[]) => unknown>,
     seed: number,
     maxSteps?: number,
-  ): { score: number; reasoning: string; dimensionScores: Record<string, number> } {
+  ): {
+    score: number;
+    reasoning: string;
+    dimensionScores: Record<string, number>;
+  } {
     let state = scenario.initialState(seed) as Record<string, unknown>;
     const limit = maxSteps ?? 20;
     let steps = 0;
@@ -1052,7 +1265,7 @@ Output ONLY the JSON object, no markdown fences.`;
     const records: Array<{ result: { success: boolean } }> = [];
     const workerContexts =
       typeof scenario.getWorkerContexts === "function"
-        ? scenario.getWorkerContexts() as Array<Record<string, unknown>>
+        ? (scenario.getWorkerContexts() as Array<Record<string, unknown>>)
         : [];
     const workerIds = workerContexts.map((worker, index) =>
       String(worker.workerId ?? worker.id ?? `worker_${index + 1}`),
@@ -1062,7 +1275,10 @@ Output ONLY the JSON object, no markdown fences.`;
       const terminal = scenario.isTerminal(state) as boolean;
       if (terminal) break;
 
-      const actions = scenario.getAvailableActions(state) as Array<{ name: string; parameters?: Record<string, unknown> }>;
+      const actions = scenario.getAvailableActions(state) as Array<{
+        name: string;
+        parameters?: Record<string, unknown>;
+      }>;
       if (!actions || actions.length === 0) break;
 
       const action = {
@@ -1073,7 +1289,10 @@ Output ONLY the JSON object, no markdown fences.`;
             : {},
       };
 
-      if (workerIds.length > 1 && typeof scenario.recordHandoff === "function") {
+      if (
+        workerIds.length > 1 &&
+        typeof scenario.recordHandoff === "function"
+      ) {
         const fromWorker = workerIds[workerIndex % workerIds.length];
         const toWorker = workerIds[(workerIndex + 1) % workerIds.length];
         state = scenario.recordHandoff(state, fromWorker, toWorker, {
@@ -1101,7 +1320,9 @@ Output ONLY the JSON object, no markdown fences.`;
     }
 
     const evalResult = scenario.getResult(state, { records }) as {
-      score: number; reasoning: string; dimensionScores?: Record<string, number>;
+      score: number;
+      reasoning: string;
+      dimensionScores?: Record<string, number>;
     };
 
     return {
@@ -1112,14 +1333,20 @@ Output ONLY the JSON object, no markdown fences.`;
   }
 
   private aggregateRuns(
-    results: Array<{ score: number; reasoning: string; dimensionScores: Record<string, number> }>,
+    results: Array<{
+      score: number;
+      reasoning: string;
+      dimensionScores: Record<string, number>;
+    }>,
   ): SimulationSummary {
-    if (results.length === 0) return { score: 0, reasoning: "No runs completed", dimensionScores: {} };
+    if (results.length === 0)
+      return { score: 0, reasoning: "No runs completed", dimensionScores: {} };
     if (results.length === 1) return results[0];
 
-    const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
-    const best = results.reduce((a, b) => a.score > b.score ? a : b);
-    const worst = results.reduce((a, b) => a.score < b.score ? a : b);
+    const avgScore =
+      results.reduce((sum, r) => sum + r.score, 0) / results.length;
+    const best = results.reduce((a, b) => (a.score > b.score ? a : b));
+    const worst = results.reduce((a, b) => (a.score < b.score ? a : b));
 
     return {
       score: Math.round(avgScore * 10000) / 10000,
@@ -1132,11 +1359,17 @@ Output ONLY the JSON object, no markdown fences.`;
 
   private aggregateSweep(sweep: SweepResult): SimulationSummary {
     const results = sweep.results;
-    if (results.length === 0) return { score: 0, reasoning: "No sweep runs completed", dimensionScores: {} };
+    if (results.length === 0)
+      return {
+        score: 0,
+        reasoning: "No sweep runs completed",
+        dimensionScores: {},
+      };
 
-    const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
-    const best = results.reduce((a, b) => a.score > b.score ? a : b);
-    const worst = results.reduce((a, b) => a.score < b.score ? a : b);
+    const avgScore =
+      results.reduce((sum, r) => sum + r.score, 0) / results.length;
+    const best = results.reduce((a, b) => (a.score > b.score ? a : b));
+    const worst = results.reduce((a, b) => (a.score < b.score ? a : b));
 
     // Sensitivity analysis: for each dimension, how much does score vary?
     const sensitivity: Array<{ name: string; variance: number }> = [];
@@ -1150,7 +1383,9 @@ Output ONLY the JSON object, no markdown fences.`;
           scoresByValue.set(val, scores);
         }
       }
-      const means = [...scoresByValue.values()].map((s) => s.reduce((a, b) => a + b, 0) / s.length);
+      const means = [...scoresByValue.values()].map(
+        (s) => s.reduce((a, b) => a + b, 0) / s.length,
+      );
       if (means.length > 1) {
         const range = Math.max(...means) - Math.min(...means);
         sensitivity.push({ name: dim.name, variance: range });
@@ -1174,25 +1409,36 @@ Output ONLY the JSON object, no markdown fences.`;
     variables?: Record<string, unknown>,
   ): string[] {
     const assumptions: string[] = [];
-    assumptions.push(`Modeled as a ${family} scenario with ${(spec.actions as unknown[])?.length ?? 0} actions`);
+    assumptions.push(
+      `Modeled as a ${family} scenario with ${(spec.actions as unknown[])?.length ?? 0} actions`,
+    );
     if (spec.max_steps || spec.maxSteps) {
-      assumptions.push(`Bounded to ${spec.max_steps ?? spec.maxSteps} maximum steps`);
+      assumptions.push(
+        `Bounded to ${spec.max_steps ?? spec.maxSteps} maximum steps`,
+      );
     }
     if (spec.success_criteria || spec.successCriteria) {
-      const criteria = (spec.success_criteria ?? spec.successCriteria) as string[];
+      const criteria = (spec.success_criteria ??
+        spec.successCriteria) as string[];
       assumptions.push(`Success defined as: ${criteria.join(", ")}`);
     }
     if (variables && Object.keys(variables).length > 0) {
       assumptions.push(`Requested parameters: ${JSON.stringify(variables)}`);
     }
     if (family === "operator_loop") {
-      assumptions.push("Runtime includes at least one clarification request and an operator review checkpoint.");
+      assumptions.push(
+        "Runtime includes at least one clarification request and an operator review checkpoint.",
+      );
     }
     if (family === "coordination") {
-      assumptions.push("Runtime records worker handoffs and merges outputs during execution.");
+      assumptions.push(
+        "Runtime records worker handoffs and merges outputs during execution.",
+      );
     }
     assumptions.push("Agent selects actions greedily (first available)");
-    assumptions.push("Environment is deterministic given the same seed and parameter set");
+    assumptions.push(
+      "Environment is deterministic given the same seed and parameter set",
+    );
     return assumptions;
   }
 
@@ -1204,46 +1450,71 @@ Output ONLY the JSON object, no markdown fences.`;
       "Variable sensitivity analysis is based on score variance across sweep values, not causal attribution.",
     ];
     if (providerName === "deterministic") {
-      warnings.push("Synthetic deterministic provider in use; results are placeholder and not model-derived.");
+      warnings.push(
+        "Synthetic deterministic provider in use; results are placeholder and not model-derived.",
+      );
     }
     return warnings;
   }
 
   private persistArtifacts(
-    name: string, family: string, spec: Record<string, unknown>, source: string,
+    name: string,
+    family: string,
+    spec: Record<string, unknown>,
+    source: string,
     scenarioDir = join(this.knowledgeRoot, "_simulations", name),
   ): string {
     if (!existsSync(scenarioDir)) mkdirSync(scenarioDir, { recursive: true });
 
-    writeFileSync(join(scenarioDir, "spec.json"), JSON.stringify({ name, family, ...spec }, null, 2), "utf-8");
+    writeFileSync(
+      join(scenarioDir, "spec.json"),
+      JSON.stringify({ name, family, ...spec }, null, 2),
+      "utf-8",
+    );
     writeFileSync(join(scenarioDir, "scenario.js"), source, "utf-8");
-    writeFileSync(join(scenarioDir, "scenario_type.txt"), getScenarioTypeMarker(family as ScenarioFamilyName), "utf-8");
+    writeFileSync(
+      join(scenarioDir, "scenario_type.txt"),
+      getScenarioTypeMarker(family as ScenarioFamilyName),
+      "utf-8",
+    );
 
     return scenarioDir;
   }
 
   private deriveName(description: string): string {
-    return description
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, "")
-      .split(/\s+/)
-      .filter((w) => w.length > 2)
-      .slice(0, 4)
-      .join("_") || "simulation";
+    return (
+      description
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "")
+        .split(/\s+/)
+        .filter((w) => w.length > 2)
+        .slice(0, 4)
+        .join("_") || "simulation"
+    );
   }
 
   private parseJSON(text: string): Record<string, unknown> | null {
     const trimmed = text.trim();
-    try { return JSON.parse(trimmed); } catch { /* continue */ }
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      /* continue */
+    }
     const start = trimmed.indexOf("{");
     const end = trimmed.lastIndexOf("}");
     if (start !== -1 && end > start) {
-      try { return JSON.parse(trimmed.slice(start, end + 1)); } catch { /* continue */ }
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1));
+      } catch {
+        /* continue */
+      }
     }
     return null;
   }
 
-  private cartesianProduct(dimensions: SweepDimension[]): Array<Record<string, unknown>> {
+  private cartesianProduct(
+    dimensions: SweepDimension[],
+  ): Array<Record<string, unknown>> {
     if (dimensions.length === 0) return [{}];
     const [first, ...rest] = dimensions;
     const restCombos = this.cartesianProduct(rest);
