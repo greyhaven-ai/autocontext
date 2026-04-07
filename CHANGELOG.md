@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.6] - 2026-04-07
+
+### Changed
+
+- Hardened bootstrap, evidence, and privacy handling so environment snapshots redact shell paths correctly, rematerialized workspaces do not retain stale artifacts, and live prompt/evidence flows now wire the collected snapshot and evidence manifest into the real loop.
+- Tightened scenario-generation safety in the TypeScript surface so `operator_loop` validation requires its real escalation/clarification hooks and spec auto-heal preserves punctuation-heavy precondition dependencies instead of dropping valid ordering.
+- Improved evidence and security backstops by failing closed on TruffleHog execution errors and making the evidence workspace/MCP integration rely on a materialized runtime workspace instead of dead helper-only paths.
+- Hardened blob-store backends so local keys cannot escape the configured root and Hugging Face bucket metadata/list/delete behavior remains accurate across fresh process boundaries.
+- Python and TypeScript package metadata are bumped to `0.3.6`.
+
 ## [0.3.5] - 2026-04-06
 
 ### Changed

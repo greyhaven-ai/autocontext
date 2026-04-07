@@ -10,7 +10,7 @@ The intended use is to hand the harness a real task in plain language, let it so
 pip install autocontext
 ```
 
-The current PyPI release line is `autocontext==0.3.5`.
+The current PyPI release line is `autocontext==0.3.6`.
 The PyPI package name is now `autocontext`. The CLI entrypoint remains `autoctx`.
 
 ## Working Directory
