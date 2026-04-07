@@ -39,6 +39,7 @@ def materialize_workspace(
     workspace_dir: Path,
     budget_bytes: int = _DEFAULT_BUDGET,
     scenario_name: str | None = None,
+    scan_for_secrets: bool = False,
 ) -> EvidenceWorkspace:
     """Materialize evidence from prior runs into a flat workspace directory."""
     workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -91,6 +92,10 @@ def materialize_workspace(
         selected.append(workspace_artifact)
         total_size += artifact.size_bytes
 
+    # AC-519 prep: TruffleHog backstop scan — filter flagged artifacts
+    if scan_for_secrets:
+        selected, total_size = _apply_secret_scan(workspace_dir, selected, total_size)
+
     workspace = EvidenceWorkspace(
         workspace_dir=str(workspace_dir),
         source_runs=source_run_ids,
@@ -104,6 +109,41 @@ def materialize_workspace(
     manifest_path.write_text(json.dumps(workspace.to_dict(), indent=2), encoding="utf-8")
 
     return workspace
+
+
+def _apply_secret_scan(
+    workspace_dir: Path,
+    artifacts: list[EvidenceArtifact],
+    total_size: int,
+) -> tuple[list[EvidenceArtifact], int]:
+    """Run TruffleHog on the workspace and remove flagged artifacts."""
+    from autocontext.security.scanner import SecretScanner
+
+    scanner = SecretScanner()
+    result = scanner.scan(str(workspace_dir))
+
+    # Persist scan report
+    report_path = workspace_dir / "secret_scan_report.json"
+    report_path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+
+    if result.is_clean:
+        return artifacts, total_size
+
+    # Remove flagged artifacts from the manifest and delete files
+    flagged_basenames = {Path(f).name for f in result.flagged_files}
+    clean: list[EvidenceArtifact] = []
+    clean_size = 0
+    for artifact in artifacts:
+        if artifact.path in flagged_basenames or (workspace_dir / artifact.path).name in flagged_basenames:
+            logger.warning("secret scan flagged artifact %s (%s) — excluding", artifact.artifact_id, artifact.path)
+            flagged_path = workspace_dir / artifact.path
+            if flagged_path.exists():
+                flagged_path.unlink()
+        else:
+            clean.append(artifact)
+            clean_size += artifact.size_bytes
+
+    return clean, clean_size
 
 
 def _cleanup_previous_workspace(workspace_dir: Path) -> None:
