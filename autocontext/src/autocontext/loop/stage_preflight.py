@@ -4,6 +4,7 @@ Runs once before Generation 1 to synthesize a harness validator using the
 HarnessSynthesizer. Skips if disabled, if generation != 1, or if a harness
 already exists (unless force mode is enabled).
 """
+
 from __future__ import annotations
 
 import logging
@@ -39,6 +40,43 @@ def stage_preflight(
     """
     settings = ctx.settings
 
+    # AC-503: Collect environment snapshot at gen 1
+    if settings.env_snapshot_enabled and ctx.generation == 1:
+        try:
+            from autocontext.bootstrap.collector import collect_snapshot
+            from autocontext.bootstrap.redactor import RedactionConfig, redact_snapshot
+            from autocontext.bootstrap.renderer import render_full_json, render_prompt_section
+
+            snapshot = collect_snapshot()
+            config = RedactionConfig(
+                redact_hostname=settings.env_snapshot_redact_hostname,
+                redact_username=settings.env_snapshot_redact_username,
+                redact_paths=settings.env_snapshot_redact_paths,
+            )
+            redacted = redact_snapshot(snapshot, config)
+
+            # Persist full snapshot as artifact
+
+            knowledge_dir = artifacts.knowledge_root / ctx.scenario_name
+            knowledge_dir.mkdir(parents=True, exist_ok=True)
+            snapshot_path = knowledge_dir / "environment_snapshot.json"
+            snapshot_path.write_text(render_full_json(redacted), encoding="utf-8")
+
+            # Set prompt section on context
+            ctx.environment_snapshot = render_prompt_section(redacted)
+
+            events.emit(
+                "env_snapshot_collected",
+                {
+                    "run_id": ctx.run_id,
+                    "scenario": ctx.scenario_name,
+                    "path": str(snapshot_path),
+                },
+            )
+            logger.info("environment snapshot collected for %s", ctx.scenario_name)
+        except Exception:
+            logger.warning("failed to collect environment snapshot", exc_info=True)
+
     # Gate: disabled
     if not settings.harness_preflight_enabled:
         return ctx
@@ -52,18 +90,24 @@ def stage_preflight(
 
     # Gate: harness already exists (unless force)
     if harness_path.exists() and not settings.harness_preflight_force:
-        events.emit("preflight_skipped", {
-            "run_id": ctx.run_id,
-            "scenario": ctx.scenario_name,
-            "reason": "harness already exists",
-        })
+        events.emit(
+            "preflight_skipped",
+            {
+                "run_id": ctx.run_id,
+                "scenario": ctx.scenario_name,
+                "reason": "harness already exists",
+            },
+        )
         return ctx
 
     # --- Run synthesis ---
-    events.emit("preflight_start", {
-        "run_id": ctx.run_id,
-        "scenario": ctx.scenario_name,
-    })
+    events.emit(
+        "preflight_start",
+        {
+            "run_id": ctx.run_id,
+            "scenario": ctx.scenario_name,
+        },
+    )
 
     provider = get_provider(settings)
     state_gen = SampleStateGenerator(ctx.scenario)
@@ -91,12 +135,15 @@ def stage_preflight(
 
     # Emit completion event
     event_name = "preflight_complete" if result.converged else "preflight_incomplete"
-    events.emit(event_name, {
-        "run_id": ctx.run_id,
-        "scenario": ctx.scenario_name,
-        "converged": result.converged,
-        "accuracy": result.accuracy,
-        "iterations": result.iterations,
-    })
+    events.emit(
+        event_name,
+        {
+            "run_id": ctx.run_id,
+            "scenario": ctx.scenario_name,
+            "converged": result.converged,
+            "accuracy": result.accuracy,
+            "iterations": result.iterations,
+        },
+    )
 
     return ctx

@@ -77,32 +77,38 @@ def build_prompt_bundle(
     constraint_mode: bool = False,
     context_budget_tokens: int = 0,
     notebook_contexts: dict[str, str] | None = None,
+    environment_snapshot: str = "",
+    evidence_manifest: str = "",
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     if context_budget_tokens > 0:
         budget = ContextBudget(max_tokens=context_budget_tokens)
-        budgeted = budget.apply({
-            "playbook": current_playbook,
-            "trajectory": score_trajectory,
-            "lessons": operational_lessons,
-            "tools": available_tools,
-            "analysis": recent_analysis,
-            "analyst_feedback": analyst_feedback,
-            "analyst_attribution": analyst_attribution,
-            "coach_attribution": coach_attribution,
-            "architect_attribution": architect_attribution,
-            "hints": coach_competitor_hints,
-            "coach_hint_feedback": coach_hint_feedback,
-            "experiment_log": experiment_log,
-            "dead_ends": dead_ends,
-            "research_protocol": research_protocol,
-            "session_reports": session_reports,
-            "tool_usage_report": architect_tool_usage_report,
-            "notebook_competitor": _nb.get("competitor", ""),
-            "notebook_analyst": _nb.get("analyst", ""),
-            "notebook_coach": _nb.get("coach", ""),
-            "notebook_architect": _nb.get("architect", ""),
-        })
+        budgeted = budget.apply(
+            {
+                "playbook": current_playbook,
+                "trajectory": score_trajectory,
+                "lessons": operational_lessons,
+                "tools": available_tools,
+                "analysis": recent_analysis,
+                "analyst_feedback": analyst_feedback,
+                "analyst_attribution": analyst_attribution,
+                "coach_attribution": coach_attribution,
+                "architect_attribution": architect_attribution,
+                "hints": coach_competitor_hints,
+                "coach_hint_feedback": coach_hint_feedback,
+                "experiment_log": experiment_log,
+                "dead_ends": dead_ends,
+                "research_protocol": research_protocol,
+                "session_reports": session_reports,
+                "tool_usage_report": architect_tool_usage_report,
+                "environment_snapshot": environment_snapshot,
+                "evidence_manifest": evidence_manifest,
+                "notebook_competitor": _nb.get("competitor", ""),
+                "notebook_analyst": _nb.get("analyst", ""),
+                "notebook_coach": _nb.get("coach", ""),
+                "notebook_architect": _nb.get("architect", ""),
+            }
+        )
         current_playbook = budgeted["playbook"]
         score_trajectory = budgeted["trajectory"]
         operational_lessons = budgeted["lessons"]
@@ -119,6 +125,8 @@ def build_prompt_bundle(
         research_protocol = budgeted["research_protocol"]
         session_reports = budgeted["session_reports"]
         architect_tool_usage_report = budgeted["tool_usage_report"]
+        environment_snapshot = budgeted["environment_snapshot"]
+        evidence_manifest = budgeted["evidence_manifest"]
         _nb = {
             "competitor": budgeted["notebook_competitor"],
             "analyst": budgeted["notebook_analyst"],
@@ -126,86 +134,24 @@ def build_prompt_bundle(
             "architect": budgeted["notebook_architect"],
         }
 
-    lessons_block = (
-        f"Operational lessons (from prior generations):\n{operational_lessons}\n\n"
-        if operational_lessons
-        else ""
-    )
-    analysis_block = (
-        f"Most recent generation analysis:\n{recent_analysis}\n\n"
-        if recent_analysis
-        else ""
-    )
-    analyst_feedback_block = (
-        f"{analyst_feedback.strip()}\n\n"
-        if analyst_feedback
-        else ""
-    )
-    analyst_attribution_block = (
-        f"{analyst_attribution.strip()}\n\n"
-        if analyst_attribution
-        else ""
-    )
-    coach_attribution_block = (
-        f"{coach_attribution.strip()}\n\n"
-        if coach_attribution
-        else ""
-    )
-    architect_attribution_block = (
-        f"{architect_attribution.strip()}\n\n"
-        if architect_attribution
-        else ""
-    )
-    coach_hint_feedback_block = (
-        f"{coach_hint_feedback.strip()}\n\n"
-        if coach_hint_feedback
-        else ""
-    )
-    replay_block = (
-        f"Previous match replay:\n{replay_narrative}\n\n"
-        if replay_narrative
-        else ""
-    )
-    trajectory_block = (
-        f"Score trajectory:\n{score_trajectory}\n\n"
-        if score_trajectory
-        else ""
-    )
-    registry_block = (
-        f"Strategy-score registry:\n{strategy_registry}\n\n"
-        if strategy_registry
-        else ""
-    )
-    progress_block = (
-        f"Progress snapshot:\n```json\n{progress_json}\n```\n\n"
-        if progress_json
-        else ""
-    )
-    experiment_log_block = (
-        f"Experiment log:\n{experiment_log}\n\n"
-        if experiment_log
-        else ""
-    )
-    dead_ends_block = (
-        f"Known dead ends (DO NOT repeat these approaches):\n{dead_ends}\n\n"
-        if dead_ends
-        else ""
-    )
-    protocol_block = (
-        f"Research protocol (current focus and constraints):\n{research_protocol}\n\n"
-        if research_protocol
-        else ""
-    )
-    session_reports_block = (
-        f"Prior session reports:\n{session_reports}\n\n"
-        if session_reports
-        else ""
-    )
-    tool_usage_block = (
-        f"{architect_tool_usage_report.strip()}\n\n"
-        if architect_tool_usage_report
-        else ""
-    )
+    lessons_block = f"Operational lessons (from prior generations):\n{operational_lessons}\n\n" if operational_lessons else ""
+    analysis_block = f"Most recent generation analysis:\n{recent_analysis}\n\n" if recent_analysis else ""
+    analyst_feedback_block = f"{analyst_feedback.strip()}\n\n" if analyst_feedback else ""
+    analyst_attribution_block = f"{analyst_attribution.strip()}\n\n" if analyst_attribution else ""
+    coach_attribution_block = f"{coach_attribution.strip()}\n\n" if coach_attribution else ""
+    architect_attribution_block = f"{architect_attribution.strip()}\n\n" if architect_attribution else ""
+    coach_hint_feedback_block = f"{coach_hint_feedback.strip()}\n\n" if coach_hint_feedback else ""
+    replay_block = f"Previous match replay:\n{replay_narrative}\n\n" if replay_narrative else ""
+    trajectory_block = f"Score trajectory:\n{score_trajectory}\n\n" if score_trajectory else ""
+    registry_block = f"Strategy-score registry:\n{strategy_registry}\n\n" if strategy_registry else ""
+    progress_block = f"Progress snapshot:\n```json\n{progress_json}\n```\n\n" if progress_json else ""
+    experiment_log_block = f"Experiment log:\n{experiment_log}\n\n" if experiment_log else ""
+    dead_ends_block = f"Known dead ends (DO NOT repeat these approaches):\n{dead_ends}\n\n" if dead_ends else ""
+    protocol_block = f"Research protocol (current focus and constraints):\n{research_protocol}\n\n" if research_protocol else ""
+    session_reports_block = f"Prior session reports:\n{session_reports}\n\n" if session_reports else ""
+    tool_usage_block = f"{architect_tool_usage_report.strip()}\n\n" if architect_tool_usage_report else ""
+    snapshot_block = f"{environment_snapshot}\n\n" if environment_snapshot else ""
+    evidence_block = f"{evidence_manifest}\n\n" if evidence_manifest else ""
     base_context = (
         f"Scenario rules:\n{scenario_rules}\n\n"
         f"Strategy interface:\n{strategy_interface}\n\n"
@@ -213,6 +159,7 @@ def build_prompt_bundle(
         f"Observation narrative:\n{observation.narrative}\n\n"
         f"Observation state:\n{observation.state}\n\n"
         f"Constraints:\n{observation.constraints}\n\n"
+        f"{snapshot_block}"
         f"Current playbook:\n{current_playbook}\n\n"
         f"{lessons_block}"
         f"{analysis_block}"
@@ -227,27 +174,15 @@ def build_prompt_bundle(
         f"{protocol_block}"
         f"{session_reports_block}"
     )
-    hints_block = (
-        f"Coach hints for competitor:\n{coach_competitor_hints}\n\n"
-        if coach_competitor_hints
-        else ""
-    )
+    hints_block = f"Coach hints for competitor:\n{coach_competitor_hints}\n\n" if coach_competitor_hints else ""
     competitor_constraint = _COMPETITOR_CONSTRAINT_SUFFIX if constraint_mode else ""
     analyst_constraint = _ANALYST_CONSTRAINT_SUFFIX if constraint_mode else ""
     coach_constraint = _COACH_CONSTRAINT_SUFFIX if constraint_mode else ""
     architect_constraint = _ARCHITECT_CONSTRAINT_SUFFIX if constraint_mode else ""
-    competitor_nb = (
-        f"Session notebook context:\n{_nb['competitor']}\n\n" if _nb.get("competitor") else ""
-    )
-    analyst_nb = (
-        f"Session notebook context:\n{_nb['analyst']}\n\n" if _nb.get("analyst") else ""
-    )
-    coach_nb = (
-        f"Session notebook context:\n{_nb['coach']}\n\n" if _nb.get("coach") else ""
-    )
-    architect_nb = (
-        f"Session notebook context:\n{_nb['architect']}\n\n" if _nb.get("architect") else ""
-    )
+    competitor_nb = f"Session notebook context:\n{_nb['competitor']}\n\n" if _nb.get("competitor") else ""
+    analyst_nb = f"Session notebook context:\n{_nb['analyst']}\n\n" if _nb.get("analyst") else ""
+    coach_nb = f"Session notebook context:\n{_nb['coach']}\n\n" if _nb.get("coach") else ""
+    architect_nb = f"Session notebook context:\n{_nb['architect']}\n\n" if _nb.get("architect") else ""
     return PromptBundle(
         competitor=base_context
         + hints_block
@@ -255,14 +190,12 @@ def build_prompt_bundle(
         + competitor_constraint
         + "Describe your strategy reasoning and recommend specific parameter values.",
         analyst=base_context
+        + evidence_block
         + analyst_feedback_block
         + analyst_attribution_block
         + analyst_nb
         + analyst_constraint
-        + (
-            "Analyze strengths/failures and return markdown with sections: "
-            "Findings, Root Causes, Actionable Recommendations."
-        ),
+        + ("Analyze strengths/failures and return markdown with sections: Findings, Root Causes, Actionable Recommendations."),
         coach=base_context
         + coach_attribution_block
         + coach_hint_feedback_block
@@ -288,6 +221,7 @@ def build_prompt_bundle(
             "<!-- COMPETITOR_HINTS_END -->"
         ),
         architect=base_context
+        + evidence_block
         + tool_usage_block
         + architect_attribution_block
         + architect_nb
