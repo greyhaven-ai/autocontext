@@ -9,6 +9,13 @@ import hashlib
 import tempfile
 from pathlib import Path
 
+from autocontext.blobstore.cache import HydrationCache
+from autocontext.blobstore.local import LocalBlobStore
+from autocontext.blobstore.mirror import BlobMirror
+from autocontext.blobstore.registry import BlobRegistry
+from autocontext.blobstore.sync import SyncManager
+from autocontext.config.settings import AppSettings
+
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
@@ -16,8 +23,6 @@ from pathlib import Path
 
 class TestBlobStoreSettings:
     def test_settings_have_blob_store_fields(self) -> None:
-        from autocontext.config.settings import AppSettings
-
         settings = AppSettings()
         assert hasattr(settings, "blob_store_enabled")
         assert settings.blob_store_enabled is False
@@ -37,8 +42,6 @@ class TestHydrationCache:
     """Lazy hydration with digest verification and bounded eviction."""
 
     def test_put_and_get(self) -> None:
-        from autocontext.blobstore.cache import HydrationCache
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = HydrationCache(root=Path(tmp), max_mb=100)
             data = b"cached payload"
@@ -49,15 +52,11 @@ class TestHydrationCache:
             assert result == data
 
     def test_get_returns_none_for_missing(self) -> None:
-        from autocontext.blobstore.cache import HydrationCache
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = HydrationCache(root=Path(tmp), max_mb=100)
             assert cache.get("missing") is None
 
     def test_verify_digest_on_get(self) -> None:
-        from autocontext.blobstore.cache import HydrationCache
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = HydrationCache(root=Path(tmp), max_mb=100)
             data = b"original"
@@ -71,8 +70,6 @@ class TestHydrationCache:
             assert result is None
 
     def test_eviction_when_over_budget(self) -> None:
-        from autocontext.blobstore.cache import HydrationCache
-
         with tempfile.TemporaryDirectory() as tmp:
             # 1KB budget
             cache = HydrationCache(root=Path(tmp), max_mb=0.001)
@@ -88,8 +85,6 @@ class TestHydrationCache:
             assert cache.get("second.bin") is not None
 
     def test_total_size(self) -> None:
-        from autocontext.blobstore.cache import HydrationCache
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = HydrationCache(root=Path(tmp), max_mb=100)
             cache.put("a.txt", b"aaa", "sha256:a")
@@ -97,14 +92,27 @@ class TestHydrationCache:
             assert cache.total_size_bytes() == 6
 
     def test_clear(self) -> None:
-        from autocontext.blobstore.cache import HydrationCache
-
         with tempfile.TemporaryDirectory() as tmp:
             cache = HydrationCache(root=Path(tmp), max_mb=100)
             cache.put("a.txt", b"data", "sha256:x")
             cache.clear()
             assert cache.get("a.txt") is None
             assert cache.total_size_bytes() == 0
+
+    def test_put_rejects_escaping_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = HydrationCache(root=Path(tmp), max_mb=100)
+            digest = "sha256:" + hashlib.sha256(b"data").hexdigest()
+            escaped_name = f"escape-{Path(tmp).name}.txt"
+
+            try:
+                cache.put(f"../{escaped_name}", b"data", digest)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("expected ValueError for escaping cache key")
+
+            assert not (Path(tmp).parent / escaped_name).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -116,10 +124,6 @@ class TestBlobMirror:
     """Mirrors large artifacts from ArtifactStore to a BlobStore backend."""
 
     def test_mirror_write_sends_to_blob_store(self) -> None:
-        from autocontext.blobstore.mirror import BlobMirror
-
-        from autocontext.blobstore.local import LocalBlobStore
-
         with tempfile.TemporaryDirectory() as tmp:
             store = LocalBlobStore(root=Path(tmp) / "blobs")
             mirror = BlobMirror(store=store, min_size_bytes=0)
@@ -140,10 +144,6 @@ class TestBlobMirror:
             assert retrieved == data
 
     def test_mirror_skips_small_artifacts(self) -> None:
-        from autocontext.blobstore.mirror import BlobMirror
-
-        from autocontext.blobstore.local import LocalBlobStore
-
         with tempfile.TemporaryDirectory() as tmp:
             store = LocalBlobStore(root=Path(tmp) / "blobs")
             mirror = BlobMirror(store=store, min_size_bytes=1000)
@@ -156,10 +156,6 @@ class TestBlobMirror:
             assert ref is None  # Too small to mirror
 
     def test_mirror_file(self) -> None:
-        from autocontext.blobstore.mirror import BlobMirror
-
-        from autocontext.blobstore.local import LocalBlobStore
-
         with tempfile.TemporaryDirectory() as tmp:
             store = LocalBlobStore(root=Path(tmp) / "blobs")
             mirror = BlobMirror(store=store, min_size_bytes=0)
@@ -176,11 +172,6 @@ class TestBlobMirror:
             assert store.get("runs/r1/checkpoint.bin") == b"file payload"
 
     def test_mirror_registers_in_registry(self) -> None:
-        from autocontext.blobstore.mirror import BlobMirror
-
-        from autocontext.blobstore.local import LocalBlobStore
-        from autocontext.blobstore.registry import BlobRegistry
-
         with tempfile.TemporaryDirectory() as tmp:
             store = LocalBlobStore(root=Path(tmp) / "blobs")
             registry = BlobRegistry()
@@ -205,10 +196,6 @@ class TestBlobMirror:
 
 class TestSyncManager:
     def test_sync_run_copies_artifacts(self) -> None:
-        from autocontext.blobstore.sync import SyncManager
-
-        from autocontext.blobstore.local import LocalBlobStore
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             # Create a run directory
@@ -227,21 +214,32 @@ class TestSyncManager:
             assert store.get("runs/run_001/events.ndjson") is not None
 
     def test_sync_run_returns_zero_for_missing(self) -> None:
-        from autocontext.blobstore.sync import SyncManager
-
-        from autocontext.blobstore.local import LocalBlobStore
-
         with tempfile.TemporaryDirectory() as tmp:
             store = LocalBlobStore(root=Path(tmp) / "blobs")
             mgr = SyncManager(store=store, runs_root=Path(tmp) / "runs")
             result = mgr.sync_run("nonexistent")
             assert result.synced_count == 0
 
+    def test_sync_run_updates_changed_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "runs" / "run_001"
+            run_dir.mkdir(parents=True)
+            artifact = run_dir / "events.ndjson"
+            artifact.write_bytes(b"v1")
+
+            store = LocalBlobStore(root=root / "blobs")
+            mgr = SyncManager(store=store, runs_root=root / "runs")
+            first = mgr.sync_run("run_001")
+            artifact.write_bytes(b"v2")
+            second = mgr.sync_run("run_001")
+
+            assert first.synced_count == 1
+            assert second.synced_count == 1
+            assert second.skipped_count == 0
+            assert store.get("runs/run_001/events.ndjson") == b"v2"
+
     def test_status_shows_counts(self) -> None:
-        from autocontext.blobstore.sync import SyncManager
-
-        from autocontext.blobstore.local import LocalBlobStore
-
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run_dir = root / "runs" / "run_001"

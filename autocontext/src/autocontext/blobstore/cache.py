@@ -10,6 +10,8 @@ import hashlib
 import logging
 from pathlib import Path
 
+from autocontext.blobstore.store import normalize_blob_key, resolve_blob_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,15 +26,17 @@ class HydrationCache:
 
     def put(self, key: str, data: bytes, digest: str) -> None:
         """Cache data under key with associated digest."""
-        path = self.root / key
+        normalized_key = normalize_blob_key(key)
+        path = resolve_blob_path(self.root, normalized_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-        self._digests[key] = digest
+        self._digests[normalized_key] = digest
         self._evict_if_needed()
 
     def get(self, key: str, expected_digest: str | None = None) -> bytes | None:
         """Retrieve cached data. Verifies digest if provided."""
-        path = self.root / key
+        normalized_key = normalize_blob_key(key)
+        path = resolve_blob_path(self.root, normalized_key)
         if not path.is_file():
             return None
         data = path.read_bytes()
@@ -41,7 +45,10 @@ class HydrationCache:
             if actual != expected_digest:
                 logger.warning("digest mismatch for %s: expected %s, got %s", key, expected_digest, actual)
                 path.unlink(missing_ok=True)
+                self._digests.pop(normalized_key, None)
                 return None
+        # Refresh recency so eviction behaves like an LRU cache.
+        path.touch(exist_ok=True)
         return data
 
     def total_size_bytes(self) -> int:

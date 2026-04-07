@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,15 +47,15 @@ class SyncManager:
                 continue
             key = f"runs/{run_id}/{path.relative_to(run_dir)}"
             try:
-                # Check if already in store
+                local_size = path.stat().st_size
                 existing = self.store.head(key)
-                if existing is not None:
+                if existing is not None and _matches_local_artifact(path, local_size, existing):
                     skipped += 1
                     continue
 
                 self.store.put_file(key, path)
                 synced += 1
-                total_bytes += path.stat().st_size
+                total_bytes += local_size
             except Exception as exc:
                 errors.append(f"{key}: {exc}")
 
@@ -85,3 +86,17 @@ class SyncManager:
             "synced_runs": sorted(runs),
             "run_count": len(runs),
         }
+
+
+def _matches_local_artifact(path: Path, local_size: int, existing: dict[str, Any]) -> bool:
+    """Return True when remote metadata matches the current local artifact."""
+    if existing.get("size_bytes") != local_size:
+        return False
+    existing_digest = existing.get("digest")
+    if not isinstance(existing_digest, str) or not existing_digest:
+        return False
+    return existing_digest == _file_sha256(path)
+
+
+def _file_sha256(path: Path) -> str:
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
