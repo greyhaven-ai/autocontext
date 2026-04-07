@@ -623,6 +623,13 @@ class AppSettings(BaseModel):
     monitor_enabled: bool = Field(default=True, description="Enable monitor condition engine")
     monitor_heartbeat_timeout: float = Field(default=300.0, ge=1.0, description="Default heartbeat timeout (seconds)")
     monitor_max_conditions: int = Field(default=100, ge=1, description="Max active conditions")
+    # Blob store (AC-518)
+    blob_store_enabled: bool = Field(default=False, description="Enable blob store for large artifact mirroring")
+    blob_store_backend: str = Field(default="local", description="Blob store backend: 'local' or 'hf_bucket'")
+    blob_store_root: str = Field(default="./blobs", description="Root directory for local blob store")
+    blob_store_repo: str = Field(default="", description="HF repo ID for hf_bucket backend")
+    blob_store_cache_max_mb: int = Field(default=500, ge=1, description="Max hydration cache size in MB")
+    blob_store_min_size_bytes: int = Field(default=1024, ge=0, description="Min artifact size to mirror (0=all)")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod
