@@ -248,9 +248,7 @@ def autocontext_record_feedback(
     generation_id: str | None = None,
 ) -> str:
     """Record human feedback on an agent task output. Score should be 0.0-1.0."""
-    return json.dumps(tools.record_feedback(
-        _get_ctx(), scenario_name, agent_output, human_score, human_notes, generation_id
-    ))
+    return json.dumps(tools.record_feedback(_get_ctx(), scenario_name, agent_output, human_score, human_notes, generation_id))
 
 
 @mcp.tool()
@@ -274,10 +272,17 @@ def autocontext_run_improvement_loop(
         concepts = json.loads(required_concepts) if required_concepts else None
     except json.JSONDecodeError:
         return json.dumps({"error": "Invalid JSON in required_concepts parameter"})
-    return json.dumps(tools.run_improvement_loop(
-        _get_ctx(), scenario_name, initial_output, max_rounds,
-        quality_threshold, reference_context, concepts,
-    ))
+    return json.dumps(
+        tools.run_improvement_loop(
+            _get_ctx(),
+            scenario_name,
+            initial_output,
+            max_rounds,
+            quality_threshold,
+            reference_context,
+            concepts,
+        )
+    )
 
 
 # -- Agent Task Management tools --
@@ -304,19 +309,21 @@ def autocontext_create_agent_task(
         objective_config = json.loads(objective_verification) if objective_verification else None
     except json.JSONDecodeError:
         return json.dumps({"error": "Invalid JSON in required_concepts or objective_verification parameter"})
-    return json.dumps(tools.create_agent_task(
-        _get_ctx(),
-        name=name,
-        task_prompt=task_prompt,
-        rubric=rubric,
-        reference_context=reference_context,
-        required_concepts=concepts,
-        generations=generations,
-        max_rounds=max_rounds,
-        quality_threshold=quality_threshold,
-        revision_prompt=revision_prompt,
-        objective_verification=objective_config,
-    ))
+    return json.dumps(
+        tools.create_agent_task(
+            _get_ctx(),
+            name=name,
+            task_prompt=task_prompt,
+            rubric=rubric,
+            reference_context=reference_context,
+            required_concepts=concepts,
+            generations=generations,
+            max_rounds=max_rounds,
+            quality_threshold=quality_threshold,
+            revision_prompt=revision_prompt,
+            objective_verification=objective_config,
+        )
+    )
 
 
 @mcp.tool()
@@ -404,9 +411,14 @@ def autocontext_evaluate_strategy(
 ) -> str:
     """Evaluate a candidate strategy against a scenario by running tournament matches.
     strategy should be a JSON string."""
-    return json.dumps(tools.evaluate_strategy(
-        scenario_name, json.loads(strategy), num_matches, seed_base,
-    ))
+    return json.dumps(
+        tools.evaluate_strategy(
+            scenario_name,
+            json.loads(strategy),
+            num_matches,
+            seed_base,
+        )
+    )
 
 
 @mcp.tool()
@@ -416,18 +428,25 @@ def autocontext_validate_strategy_against_harness(
 ) -> str:
     """Validate a strategy against scenario constraints and harness validators.
     strategy should be a JSON string."""
-    return json.dumps(tools.validate_strategy_against_harness(
-        scenario_name, json.loads(strategy), ctx=_get_ctx(),
-    ))
+    return json.dumps(
+        tools.validate_strategy_against_harness(
+            scenario_name,
+            json.loads(strategy),
+            ctx=_get_ctx(),
+        )
+    )
 
 
 @mcp.tool()
 def autocontext_publish_artifact(artifact_data: str) -> str:
     """Publish an artifact (harness, policy, or distilled model).
     artifact_data should be a JSON string of the artifact dict."""
-    return json.dumps(tools.publish_artifact(
-        _get_ctx(), json.loads(artifact_data),
-    ))
+    return json.dumps(
+        tools.publish_artifact(
+            _get_ctx(),
+            json.loads(artifact_data),
+        )
+    )
 
 
 @mcp.tool()
@@ -442,9 +461,13 @@ def autocontext_list_artifacts(
     artifact_type: str | None = None,
 ) -> str:
     """List published artifacts with optional scenario and type filters."""
-    return json.dumps(tools.list_artifacts(
-        _get_ctx(), scenario=scenario, artifact_type=artifact_type,
-    ))
+    return json.dumps(
+        tools.list_artifacts(
+            _get_ctx(),
+            scenario=scenario,
+            artifact_type=artifact_type,
+        )
+    )
 
 
 @mcp.tool()
@@ -463,9 +486,14 @@ def autocontext_trigger_distillation(
     source_artifact_ids and training_config should be JSON strings."""
     ids = json.loads(source_artifact_ids) if source_artifact_ids else None
     config = json.loads(training_config) if training_config else None
-    return json.dumps(tools.trigger_distillation(
-        _get_ctx(), scenario, source_artifact_ids=ids, training_config=config,
-    ))
+    return json.dumps(
+        tools.trigger_distillation(
+            _get_ctx(),
+            scenario,
+            source_artifact_ids=ids,
+            training_config=config,
+        )
+    )
 
 
 @mcp.tool()
@@ -484,12 +512,16 @@ def autocontext_update_distill_job(
 ) -> str:
     """Update a distillation job status. training_metrics should be a JSON string."""
     metrics = json.loads(training_metrics) if training_metrics else None
-    return json.dumps(tools.update_distill_job(
-        _get_ctx(), job_id, status,
-        result_artifact_id=result_artifact_id,
-        error_message=error_message,
-        training_metrics=metrics,
-    ))
+    return json.dumps(
+        tools.update_distill_job(
+            _get_ctx(),
+            job_id,
+            status,
+            result_artifact_id=result_artifact_id,
+            error_message=error_message,
+            training_metrics=metrics,
+        )
+    )
 
 
 @mcp.tool()
@@ -514,9 +546,14 @@ def autocontext_import_package(package_data: str, conflict_policy: str = "merge"
     package_data should be a JSON string of a StrategyPackage.
     conflict_policy: overwrite, merge, or skip.
     """
-    return json.dumps(tools.import_package(
-        _get_ctx(), json.loads(package_data), conflict_policy,
-    ))
+    return json.dumps(
+        tools.import_package(
+            _get_ctx(),
+            json.loads(package_data),
+            conflict_policy,
+        )
+    )
+
 
 # -- Discovery & capability advertisement tools (AC-195) --
 
@@ -570,23 +607,37 @@ def autocontext_skill_select(description: str) -> str:
 
 @mcp.tool()
 def autocontext_skill_evaluate(
-    scenario_name: str, strategy: str, num_matches: int = 3, seed_base: int = 42,
+    scenario_name: str,
+    strategy: str,
+    num_matches: int = 3,
+    seed_base: int = 42,
 ) -> str:
     """Full validate + evaluate workflow for a strategy.
     strategy should be a JSON string. Returns validation + tournament results."""
-    return json.dumps(tools.skill_evaluate(
-        _get_ctx(), scenario_name, json.loads(strategy), num_matches, seed_base,
-    ))
+    return json.dumps(
+        tools.skill_evaluate(
+            _get_ctx(),
+            scenario_name,
+            json.loads(strategy),
+            num_matches,
+            seed_base,
+        )
+    )
 
 
 @mcp.tool()
 def autocontext_skill_discover_artifacts(
-    scenario: str | None = None, artifact_type: str | None = None,
+    scenario: str | None = None,
+    artifact_type: str | None = None,
 ) -> str:
     """Find published artifacts with optional scenario and type filters."""
-    return json.dumps(tools.skill_discover_artifacts(
-        _get_ctx(), scenario=scenario, artifact_type=artifact_type,
-    ))
+    return json.dumps(
+        tools.skill_discover_artifacts(
+            _get_ctx(),
+            scenario=scenario,
+            artifact_type=artifact_type,
+        )
+    )
 
 
 # -- Monitor conditions (AC-209) --
@@ -635,6 +686,18 @@ def autocontext_wait_for_monitor_tool(
 ) -> str:
     """Wait for a monitor condition to fire. Blocks until alert or timeout."""
     return json.dumps(tools.autocontext_wait_for_monitor(condition_id, timeout_seconds))
+
+
+@mcp.tool()
+def autocontext_env_snapshot(scenario_name: str) -> str:
+    """Return the environment snapshot collected at run start for a scenario (AC-503)."""
+    return tools.get_env_snapshot(_get_ctx(), scenario_name)
+
+
+@mcp.tool()
+def autocontext_evidence_list(scenario_name: str) -> str:
+    """Return the evidence workspace manifest for a scenario (AC-504)."""
+    return tools.get_evidence_list(_get_ctx(), scenario_name)
 
 
 def run_server() -> None:

@@ -10,7 +10,7 @@ The intended use is to hand the harness a real task in plain language, let it so
 pip install autocontext
 ```
 
-The current PyPI release line is `autocontext==0.3.3`.
+The current PyPI release line is `autocontext==0.3.6`.
 The PyPI package name is now `autocontext`. The CLI entrypoint remains `autoctx`.
 
 ## Working Directory
@@ -80,7 +80,7 @@ AUTOCONTEXT_PI_COMMAND=pi \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
-`autoctx simulate` now follows the configured `AUTOCONTEXT_AGENT_PROVIDER` runtime surface as well, so Pi-backed and OpenAI-compatible/Ollama-backed simulations use the same live agent runtime path as other generation flows.
+`autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER` and other role-routing overrides apply to live simulation generation as well.
 
 Run with Pi RPC (remote Pi agent via HTTP):
 

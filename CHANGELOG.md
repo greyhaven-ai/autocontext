@@ -4,15 +4,44 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.3.3` and are not part of the last published release until the next version is cut.
+Changes in this section are on the branch/repo after `0.3.6` and are not part of the last published release until the next version is cut.
 
 ### Fixed
 
-- Python `autoctx simulate` now resolves live generation through the configured `AUTOCONTEXT_AGENT_PROVIDER` runtime surface instead of incorrectly depending on the judge-provider path, which restores Pi and other agent-runtime-backed simulation flows.
+- Python `autoctx simulate` now resolves live generation through the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER` and other role-routing overrides are honored instead of being bypassed by the raw client builder.
 - Python simulation spec normalization now tolerates LLM-friendly action/spec shapes such as `postconditions`, nested criteria objects, and extra action-planning metadata without failing code generation.
+- Structured simulation preconditions now preserve referenced action ids when LLM output includes both an `action` field and human-readable prose, so generated dependencies remain executable.
 - Regenerating a custom scenario with the same name in one process now force-reloads the generated module so `solve` and creator validation do not reuse stale scenario classes from `sys.modules`.
 - Pi-backed live flows now default to a 300 second timeout, reducing spurious failures in longer `solve` runs.
 - Public docs now describe `operator-in-the-loop` as a runnable family and no longer contradict the executable tests.
+
+## [0.3.6] - 2026-04-07
+
+### Changed
+
+- Hardened bootstrap, evidence, and privacy handling so environment snapshots redact shell paths correctly, rematerialized workspaces do not retain stale artifacts, and live prompt/evidence flows now wire the collected snapshot and evidence manifest into the real loop.
+- Tightened scenario-generation safety in the TypeScript surface so `operator_loop` validation requires its real escalation/clarification hooks and spec auto-heal preserves punctuation-heavy precondition dependencies instead of dropping valid ordering.
+- Improved evidence and security backstops by failing closed on TruffleHog execution errors and making the evidence workspace/MCP integration rely on a materialized runtime workspace instead of dead helper-only paths.
+- Hardened blob-store backends so local keys cannot escape the configured root and Hugging Face bucket metadata/list/delete behavior remains accurate across fresh process boundaries.
+- Python and TypeScript package metadata are bumped to `0.3.6`.
+
+## [0.3.5] - 2026-04-06
+
+### Changed
+
+- Stabilized the post-`0.3.4` simulation path so operator-loop scenarios preserve behavioral-contract signals across multi-run, sweep, and replay flows instead of silently dropping them.
+- Hardened plain-language simulation execution around explicit family detection, operator-loop contract enforcement, and shared CLI engine-result handling so incomplete runs surface consistently across Python and TypeScript surfaces.
+- Tightened the simulation-engine implementation without regressing the repo module-size guardrail, including the compatibility shim needed by existing abstract-class filtering tests.
+- Python and TypeScript package metadata are bumped to `0.3.5`.
+
+## [0.3.4] - 2026-04-04
+
+### Changed
+
+- Added action-label and living-docs surfaces to the operator workflow, including reviewer-driven cleanup on the action-label taxonomy and living-docs maintenance path.
+- Landed the TypeScript/Python parity tranche for session store and the full research package, keeping the rebased cross-surface runtime behavior aligned on current `main`.
+- Folded in the `pi-autocontext` polish follow-up so the published Pi package line reflects the renamed extension and its best-practices cleanup.
+- Python and TypeScript package metadata are bumped to `0.3.4`.
 
 ## [0.3.3] - 2026-04-03
 

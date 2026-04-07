@@ -93,6 +93,21 @@ export class Turn {
   get succeeded(): boolean {
     return this.outcome === TurnOutcome.COMPLETED;
   }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      turnId: this.turnId, turnIndex: this.turnIndex, prompt: this.prompt,
+      role: this.role, response: this.response, outcome: this.outcome,
+      error: this.error, tokensUsed: this.tokensUsed,
+      startedAt: this.startedAt, completedAt: this.completedAt,
+    };
+  }
+
+  static fromJSON(data: Record<string, unknown>): Turn {
+    const t = new Turn({ turnIndex: data.turnIndex as number, prompt: data.prompt as string, role: data.role as string });
+    Object.assign(t, { turnId: data.turnId, response: data.response ?? "", outcome: data.outcome ?? TurnOutcome.PENDING, error: data.error ?? "", tokensUsed: data.tokensUsed ?? 0, startedAt: data.startedAt, completedAt: data.completedAt ?? "" });
+    return t;
+  }
 }
 
 // ---- Session Aggregate Root ----
@@ -235,5 +250,28 @@ export class Session {
 
   private emit(eventType: SessionEventType, payload: Record<string, unknown>): void {
     this.events.push(createEvent(eventType, { sessionId: this.sessionId, ...payload }));
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      sessionId: this.sessionId, goal: this.goal, status: this.status,
+      summary: this.summary, metadata: this.metadata,
+      turns: this.turns.map((t) => t.toJSON()),
+      events: this.events,
+      createdAt: this.createdAt, updatedAt: this.updatedAt,
+    };
+  }
+
+  static fromJSON(data: Record<string, unknown>): Session {
+    const s = new Session({ goal: data.goal as string, metadata: (data.metadata as Record<string, unknown>) ?? {} });
+    Object.assign(s, {
+      sessionId: data.sessionId, status: data.status ?? SessionStatus.ACTIVE,
+      summary: data.summary ?? "", createdAt: data.createdAt, updatedAt: data.updatedAt ?? "",
+    });
+    const turns = (data.turns as Record<string, unknown>[]) ?? [];
+    for (const td of turns) s.turns.push(Turn.fromJSON(td));
+    const events = (data.events as SessionEvent[]) ?? [];
+    for (const e of events) s.events.push(e);
+    return s;
   }
 }

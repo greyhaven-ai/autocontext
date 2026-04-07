@@ -327,3 +327,35 @@ def get_capabilities() -> dict[str, Any]:
             },
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# AC-503: Environment snapshot
+# ---------------------------------------------------------------------------
+
+
+def get_env_snapshot(ctx: MtsToolContext, scenario_name: str) -> str:
+    """Return the persisted environment snapshot for a scenario, or a not-found message."""
+    snapshot_path = ctx.settings.knowledge_root / scenario_name / "environment_snapshot.json"
+    if not snapshot_path.exists():
+        return json.dumps({"error": f"No snapshot found for scenario '{scenario_name}'"})
+    try:
+        return snapshot_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return json.dumps({"error": f"Failed to read snapshot: {exc}"})
+
+
+# ---------------------------------------------------------------------------
+# AC-504: Evidence workspace
+# ---------------------------------------------------------------------------
+
+
+def get_evidence_list(ctx: MtsToolContext, scenario_name: str) -> str:
+    """Return the evidence workspace manifest for a scenario, or a not-found message."""
+    manifest_path = ctx.settings.knowledge_root / scenario_name / "_evidence" / "manifest.json"
+    if not manifest_path.exists():
+        return json.dumps({"error": f"No evidence workspace found for scenario '{scenario_name}'"})
+    try:
+        return manifest_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return json.dumps({"error": f"Failed to read evidence manifest: {exc}"})

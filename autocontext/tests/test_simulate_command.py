@@ -37,6 +37,21 @@ def _mock_llm_fn(spec_json: str | None = None):
     return llm_fn
 
 
+def _mock_operator_loop_result(
+    *,
+    score: float = 0.8,
+    escalations: int = 0,
+    clarifications: int = 0,
+) -> dict[str, object]:
+    return {
+        "score": score,
+        "reasoning": "Operator loop completed",
+        "dimension_scores": {},
+        "escalation_count": escalations,
+        "clarification_count": clarifications,
+    }
+
+
 # ---------------------------------------------------------------------------
 # SimulationEngine core
 # ---------------------------------------------------------------------------
@@ -169,6 +184,126 @@ class TestSimulationEngine:
         assert persisted["success_criteria"] == ["complete all steps"]
         assert persisted["failure_modes"] == ["run timed out"]
 
+    def test_structured_preconditions_keep_action_dependencies(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        spec_json = json.dumps({
+            "description": "Structured precondition simulation",
+            "environment_description": "Test env",
+            "initial_state_description": "Start state",
+            "success_criteria": ["complete all steps"],
+            "failure_modes": ["timeout"],
+            "max_steps": 10,
+            "actions": [
+                {
+                    "name": "step_a",
+                    "description": "First",
+                    "parameters": {},
+                    "preconditions": [],
+                    "effects": ["a_done"],
+                },
+                {
+                    "name": "step_b",
+                    "description": "Second",
+                    "parameters": {},
+                    "preconditions": [{"action": "step_a", "description": "after step a"}],
+                    "effects": ["b_done"],
+                },
+            ],
+        })
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(spec_json), knowledge_root=tmp_knowledge)
+        result = engine.run(description="Simulation with structured preconditions")
+
+        assert result["status"] == "completed"
+        assert result["summary"]["reasoning"] == "Completed 2 of 2 required actions."
+
+    def test_operator_loop_run_prefers_safe_autonomy_over_unnecessary_escalation(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        operator_loop_spec = json.dumps({
+            "description": "Escalation-first deployment review with ambiguous prerequisites",
+            "environment_description": "A deployment requires human confirmation before release.",
+            "initial_state_description": "The rollout is blocked until the review is complete.",
+            "escalation_policy": {"escalation_threshold": "medium", "max_escalations": 5},
+            "success_criteria": ["review completed", "release approved safely"],
+            "failure_modes": ["unsafe autonomous release"],
+            "max_steps": 5,
+            "actions": [
+                {
+                    "name": "release_to_prod",
+                    "description": "Attempt production release",
+                    "parameters": {},
+                    "preconditions": ["operator_review_complete"],
+                    "effects": ["released"],
+                },
+                {
+                    "name": "operator_review_complete",
+                    "description": "Record operator review",
+                    "parameters": {},
+                    "preconditions": [],
+                    "effects": ["reviewed"],
+                },
+            ],
+        })
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(operator_loop_spec), knowledge_root=tmp_knowledge)
+        result = engine.run(description="Simulate an operator escalation for an ambiguous production release")
+
+        assert result["status"] == "completed"
+        assert result["family"] == "operator_loop"
+        assert result["summary"]["dimension_scores"]["autonomy_efficiency"] == 1.0
+        assert "Escalations: 0" in result["summary"]["reasoning"]
+        assert "Clarifications: 0" in result["summary"]["reasoning"]
+        assert "Missed escalations: 0" in result["summary"]["reasoning"]
+
+    def test_operator_loop_multi_run_preserves_contract_signal_counts(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        engine._execute_single = lambda source, name, seed, max_steps=None: _mock_operator_loop_result(  # type: ignore[method-assign]
+            escalations=1,
+            clarifications=1,
+        )
+
+        result = engine.run(
+            description="Simulate a customer support escalation where the AI agent must escalate to a human operator",
+            runs=2,
+        )
+
+        assert result["status"] == "completed"
+        assert result["summary"]["escalation_count"] == 2
+        assert result["summary"]["clarification_count"] == 2
+
+    def test_operator_loop_sweep_preserves_contract_signal_counts(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        engine._execute_single = lambda source, name, seed, max_steps=None: _mock_operator_loop_result(  # type: ignore[method-assign]
+            escalations=1,
+            clarifications=0,
+        )
+
+        result = engine.run(
+            description="Simulate a customer support escalation where the AI agent must escalate to a human operator",
+            sweep=[{"name": "seed", "values": [1, 2]}],
+        )
+
+        assert result["status"] == "completed"
+        assert result["summary"]["escalation_count"] == 2
+
+    def test_clarification_only_prompt_routes_to_operator_loop_contract(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        engine._execute_single = lambda source, name, seed, max_steps=None: _mock_operator_loop_result()  # type: ignore[method-assign]
+
+        result = engine.run(description="Handle requests with incomplete inputs, asking clarifying questions when needed")
+
+        assert result["family"] == "operator_loop"
+        assert result["status"] == "completed"
+        assert any("clarification" in warning.lower() for warning in result["warnings"])
+
 
 # ---------------------------------------------------------------------------
 # Replay
@@ -221,6 +356,27 @@ class TestSimulateReplay:
         assert replay["variables"]["max_steps"] == 1
         assert replay["summary"]["score"] != original["summary"]["score"]
         assert replay["summary"]["reasoning"] != original["summary"]["reasoning"]
+
+    def test_operator_loop_replay_reapplies_behavioral_contract(self, tmp_knowledge: Path) -> None:
+        from autocontext.simulation.engine import SimulationEngine
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        results = iter([
+            _mock_operator_loop_result(score=0.9, escalations=1, clarifications=0),
+            _mock_operator_loop_result(score=0.8, escalations=0, clarifications=0),
+        ])
+        engine._execute_single = lambda source, name, seed, max_steps=None: next(results)  # type: ignore[method-assign]
+
+        original = engine.run(
+            description="Simulate a customer support escalation where the AI agent must escalate to a human operator",
+            save_as="contract_replay",
+        )
+        replay = engine.replay(id="contract_replay")
+
+        assert original["status"] == "completed"
+        assert replay["status"] == "incomplete"
+        assert replay["missing_signals"] == ["escalation"]
+        assert replay["summary"]["score"] == 0.3
 
 
 # ---------------------------------------------------------------------------

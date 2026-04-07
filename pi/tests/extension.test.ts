@@ -230,6 +230,14 @@ describe("SKILL.md", () => {
     expect(nameMatch).not.toBeNull();
     expect(nameMatch![1]).toBe("autocontext");
   });
+
+  it("has allowed-tools for pre-approval", () => {
+    const content = readFileSync(skillPath, "utf-8");
+    expect(content).toMatch(/allowed-tools:/);
+    expect(content).toContain("autocontext_judge");
+    expect(content).toContain("autocontext_improve");
+    expect(content).toContain("autocontext_status");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -246,6 +254,20 @@ describe("Prompt templates", () => {
   it("status prompt references autoctx tools", () => {
     const content = readFileSync(join(promptsDir, "autoctx-status.md"), "utf-8");
     expect(content).toContain("autocontext");
+  });
+
+  it("has a judge prompt template", () => {
+    expect(existsSync(join(promptsDir, "autoctx-judge.md"))).toBe(true);
+    const content = readFileSync(join(promptsDir, "autoctx-judge.md"), "utf-8");
+    expect(content).toMatch(/^---/);
+    expect(content).toContain("autocontext_judge");
+  });
+
+  it("has an improve prompt template", () => {
+    expect(existsSync(join(promptsDir, "autoctx-improve.md"))).toBe(true);
+    const content = readFileSync(join(promptsDir, "autoctx-improve.md"), "utf-8");
+    expect(content).toMatch(/^---/);
+    expect(content).toContain("autocontext_improve");
   });
 });
 
@@ -304,6 +326,37 @@ describe("Extension entry point", () => {
   it("subscribes to session_start event", async () => {
     const api = await loadExtension();
     expect(api.events.has("session_start")).toBe(true);
+  });
+
+  it("all tools have promptGuidelines", async () => {
+    const api = await loadExtension();
+    for (const tool of api.tools) {
+      expect((tool as any).promptGuidelines, `${tool.name} missing promptGuidelines`).toBeDefined();
+      expect((tool as any).promptGuidelines.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("all tools have renderCall", async () => {
+    const api = await loadExtension();
+    for (const tool of api.tools) {
+      expect((tool as any).renderCall, `${tool.name} missing renderCall`).toBeDefined();
+    }
+  });
+
+  it("tool errors throw instead of returning ok()", async () => {
+    // status tool should throw when no store is available
+    vi.doUnmock("autoctx");
+    vi.doMock("autoctx", () => ({
+      loadSettings: () => ({}),
+      resolveProviderConfig: () => ({ providerType: "anthropic" }),
+      createProvider: () => ({ defaultModel: () => "test" }),
+      SQLiteStore: class { constructor() { throw new Error("no db"); } },
+    }));
+    const mod = await import("../src/index.js");
+    const api = createMockPiAPI();
+    mod.default(api as unknown);
+    const status = api.tools.find((t) => t.name === "autocontext_status")!;
+    await expect(status.execute("c1", {}, undefined, undefined, undefined)).rejects.toThrow();
   });
 });
 

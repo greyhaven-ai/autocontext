@@ -31,6 +31,7 @@ from autocontext.util.json_io import read_json, write_json
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from autocontext.agents.llm_client import LanguageModelClient
     from autocontext.providers.base import LLMProvider
     from autocontext.training.runner import TrainingConfig, TrainingResult
 
@@ -208,20 +209,17 @@ def _resolve_simulation_runtime(settings: AppSettings) -> tuple[LLMProvider, str
     """Resolve the architect-style runtime used for simulation spec generation.
 
     Simulations are authoring/spec-generation tasks, so they should follow the
-    configured agent runtime surface rather than the judge provider.
+    configured architect runtime surface rather than the judge provider.
     """
-    from autocontext.agents.llm_client import build_client_from_settings
-
-    client = build_client_from_settings(settings)
-    provider_type = settings.agent_provider.lower().strip()
-    if provider_type in {"openai", "openai-compatible", "ollama", "vllm"}:
-        resolved_model = settings.agent_default_model or settings.model_architect
-    elif provider_type == "pi" and settings.pi_model:
-        resolved_model = settings.pi_model
-    elif provider_type == "hermes" and settings.hermes_model:
-        resolved_model = settings.hermes_model
-    else:
-        resolved_model = settings.model_architect or settings.agent_default_model
+    sqlite = _sqlite_from_settings(settings)
+    artifacts = _artifacts_from_settings(settings)
+    orchestrator = AgentOrchestrator.from_settings(settings, artifacts=artifacts, sqlite=sqlite)
+    client, model = orchestrator.resolve_role_execution(
+        "architect",
+        generation=1,
+        scenario_name="",
+    )
+    resolved_model = model or settings.model_architect or settings.agent_default_model
     return _wrap_role_client_as_provider(client, resolved_model, role="architect")
 
 

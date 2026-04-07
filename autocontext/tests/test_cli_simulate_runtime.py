@@ -50,6 +50,31 @@ class _FakeSimulationEngine:
         }
 
 
+class _FakeOrchestrator:
+    def __init__(self, client: _RecordingClient, model: str) -> None:
+        self._client = client
+        self._model = model
+        self.calls: list[dict[str, object]] = []
+
+    def resolve_role_execution(
+        self,
+        role: str,
+        *,
+        generation: int,
+        retry_count: int = 0,
+        is_plateau: bool = False,
+        scenario_name: str = "",
+    ) -> tuple[_RecordingClient, str]:
+        self.calls.append({
+            "role": role,
+            "generation": generation,
+            "retry_count": retry_count,
+            "is_plateau": is_plateau,
+            "scenario_name": scenario_name,
+        })
+        return self._client, self._model
+
+
 def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
     return AppSettings(
         db_path=tmp_path / "runs" / "autocontext.sqlite3",
@@ -58,6 +83,7 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
         skills_root=tmp_path / "skills",
         claude_skills_path=tmp_path / ".claude" / "skills",
         agent_provider=str(overrides.get("agent_provider", "pi")),
+        architect_provider=str(overrides.get("architect_provider", "")),
         judge_provider=str(overrides.get("judge_provider", "anthropic")),
         model_architect=str(overrides.get("model_architect", "claude-opus-4-6")),
         agent_default_model=str(overrides.get("agent_default_model", "gpt-4o")),
@@ -66,13 +92,20 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
 
 
 class TestSimulateRuntimeResolution:
-    def test_simulate_uses_agent_runtime_instead_of_judge_provider(self, tmp_path: Path) -> None:
-        settings = _settings(tmp_path, agent_provider="pi", judge_provider="anthropic")
+    def test_simulate_uses_architect_role_runtime_instead_of_judge_provider(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path, agent_provider="anthropic", architect_provider="pi", judge_provider="anthropic")
         client = _RecordingClient(text='{"spec": "from-runtime"}')
+        orchestrator = _FakeOrchestrator(client, "pi-architect")
 
         with (
             patch("autocontext.cli.load_settings", return_value=settings),
-            patch("autocontext.agents.llm_client.build_client_from_settings", return_value=client),
+            patch("autocontext.cli._sqlite_from_settings", return_value=object()),
+            patch("autocontext.cli._artifacts_from_settings", return_value=object()),
+            patch("autocontext.cli.AgentOrchestrator.from_settings", return_value=orchestrator) as mock_from_settings,
+            patch(
+                "autocontext.agents.llm_client.build_client_from_settings",
+                side_effect=AssertionError("simulate should resolve through architect role routing"),
+            ),
             patch("autocontext.simulation.engine.SimulationEngine", _FakeSimulationEngine),
             patch(
                 "autocontext.providers.registry.get_provider",
@@ -84,15 +117,23 @@ class TestSimulateRuntimeResolution:
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
         assert payload["provider_text"] == '{"spec": "from-runtime"}'
+        mock_from_settings.assert_called_once()
+        assert orchestrator.calls == [{
+            "role": "architect",
+            "generation": 1,
+            "retry_count": 0,
+            "is_plateau": False,
+            "scenario_name": "",
+        }]
         assert client.calls == [{
-            "model": settings.model_architect,
+            "model": "pi-architect",
             "prompt": "architect-system\n\narchitect-user",
             "max_tokens": 4096,
             "temperature": 0.0,
             "role": "architect",
         }]
 
-    def test_simulate_prefers_agent_default_model_for_openai_compatible_providers(self, tmp_path: Path) -> None:
+    def test_simulate_uses_resolved_architect_model(self, tmp_path: Path) -> None:
         settings = _settings(
             tmp_path,
             agent_provider="ollama",
@@ -100,10 +141,13 @@ class TestSimulateRuntimeResolution:
             model_architect="claude-opus-4-6",
         )
         client = _RecordingClient(text='{"spec": "ollama-runtime"}')
+        orchestrator = _FakeOrchestrator(client, "llama3.1")
 
         with (
             patch("autocontext.cli.load_settings", return_value=settings),
-            patch("autocontext.agents.llm_client.build_client_from_settings", return_value=client),
+            patch("autocontext.cli._sqlite_from_settings", return_value=object()),
+            patch("autocontext.cli._artifacts_from_settings", return_value=object()),
+            patch("autocontext.cli.AgentOrchestrator.from_settings", return_value=orchestrator),
             patch("autocontext.simulation.engine.SimulationEngine", _FakeSimulationEngine),
             patch(
                 "autocontext.providers.registry.get_provider",

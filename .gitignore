@@ -19,6 +19,10 @@ __pycache__/
 # Node
 node_modules/
 
+# Claude Code / superpowers workflow artifacts
+.claude/projects/
+docs/superpowers/
+
 # OS/editor
 .DS_Store
 

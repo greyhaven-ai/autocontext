@@ -105,6 +105,37 @@ logger = logging.getLogger(__name__)
 _NOTEBOOK_CONTEXT_PROVIDER = NotebookContextProvider()
 
 
+def _evidence_source_run_ids(ctx: GenerationContext, *, artifacts: ArtifactStore) -> list[str]:
+    """Return prior same-scenario run ids with persisted knowledge snapshots."""
+    snapshots_dir = artifacts.knowledge_root / ctx.scenario_name / "snapshots"
+    if not snapshots_dir.is_dir():
+        return []
+    try:
+        return sorted(
+            path.name
+            for path in snapshots_dir.iterdir()
+            if path.is_dir() and path.name != ctx.run_id
+        )
+    except OSError:
+        return []
+
+
+def _materialize_evidence_manifest(ctx: GenerationContext, *, artifacts: ArtifactStore) -> str:
+    """Build the evidence workspace and render its prompt-facing manifest."""
+    from autocontext.evidence import materialize_workspace, render_evidence_manifest
+
+    workspace = materialize_workspace(
+        knowledge_root=artifacts.knowledge_root,
+        runs_root=artifacts.runs_root,
+        source_run_ids=_evidence_source_run_ids(ctx, artifacts=artifacts),
+        workspace_dir=artifacts.knowledge_root / ctx.scenario_name / "_evidence",
+        budget_bytes=ctx.settings.evidence_workspace_budget_mb * 1024 * 1024,
+        scenario_name=ctx.scenario_name,
+        scan_for_secrets=True,
+    )
+    return render_evidence_manifest(workspace)
+
+
 class _ClientAsProvider(LLMProvider):
     """Adapts LanguageModelClient → LLMProvider for policy refinement."""
 
@@ -325,6 +356,7 @@ def stage_knowledge_setup(
 
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
     strategy_interface = scenario.describe_strategy_interface()
+    evidence_manifest = ""
     notebook_contexts: dict[str, str] | None = None
     if not ablation:
         raw_notebook = artifacts.read_notebook(ctx.run_id)
@@ -348,6 +380,11 @@ def stage_knowledge_setup(
                 if experiment_log
                 else freshness_block
             )
+    if not ablation and ctx.settings.evidence_workspace_enabled:
+        try:
+            evidence_manifest = _materialize_evidence_manifest(ctx, artifacts=artifacts)
+        except Exception:
+            logger.warning("failed to materialize evidence workspace for %s", ctx.scenario_name, exc_info=True)
 
     prompts = build_prompt_bundle(
         scenario_rules=scenario.describe_rules(),
@@ -374,10 +411,13 @@ def stage_knowledge_setup(
         constraint_mode=ctx.settings.constraint_prompts_enabled,
         context_budget_tokens=ctx.settings.context_budget_tokens,
         notebook_contexts=notebook_contexts,
+        environment_snapshot="" if ablation else ctx.environment_snapshot,
+        evidence_manifest=evidence_manifest,
     )
 
     ctx.applied_competitor_hints = "" if ablation else coach_hints_for_prompt
     ctx.prompts = prompts
+    ctx.evidence_manifest = evidence_manifest
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = tool_context
     ctx.base_playbook = playbook

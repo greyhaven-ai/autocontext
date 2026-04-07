@@ -15,6 +15,7 @@
 import { parseArgs } from "node:util";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { emitEngineResult } from "./emit-engine-result.js";
 
 function getMigrationsDir(): string {
   const thisDir = dirname(fileURLToPath(import.meta.url));
@@ -78,7 +79,9 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(projectConfig, null, 2));
     } else {
       console.log(HELP);
-      console.log("\nTip: Run `autoctx init` to set up this project with a .autoctx.json config.");
+      console.log(
+        "\nTip: Run `autoctx init` to set up this project with a .autoctx.json config.",
+      );
     }
     process.exit(0);
   }
@@ -235,12 +238,18 @@ function mergeUniqueStrings(
   return merged.length > 0 ? [...new Set(merged)] : undefined;
 }
 
-async function loadSavedAgentTaskScenario(name: string): Promise<SavedAgentTaskScenario | null> {
+async function loadSavedAgentTaskScenario(
+  name: string,
+): Promise<SavedAgentTaskScenario | null> {
   const { loadSettings } = await import("../config/index.js");
-  const { resolveCustomAgentTask, renderAgentTaskPrompt } = await import("../scenarios/custom-loader.js");
+  const { resolveCustomJudgeScenario, renderAgentTaskPrompt } =
+    await import("../scenarios/custom-loader.js");
 
   const settings = loadSettings();
-  const saved = resolveCustomAgentTask(resolve(settings.knowledgeRoot), name);
+  const saved = resolveCustomJudgeScenario(
+    resolve(settings.knowledgeRoot),
+    name,
+  );
   if (!saved) {
     return null;
   }
@@ -258,7 +267,9 @@ async function loadSavedAgentTaskScenario(name: string): Promise<SavedAgentTaskS
   };
 }
 
-async function resolveScenarioOption(explicit?: string): Promise<string | undefined> {
+async function resolveScenarioOption(
+  explicit?: string,
+): Promise<string | undefined> {
   if (explicit?.trim()) {
     return explicit.trim();
   }
@@ -275,7 +286,9 @@ async function promptForValue(label: string): Promise<string> {
   }
 }
 
-async function summarizeDirectory(root: string): Promise<{ exists: boolean; directories: number; files: number }> {
+async function summarizeDirectory(
+  root: string,
+): Promise<{ exists: boolean; directories: number; files: number }> {
   const { existsSync, readdirSync } = await import("node:fs");
   if (!existsSync(root)) {
     return { exists: false, directories: 0, files: 0 };
@@ -300,8 +313,12 @@ async function summarizeDirectory(root: string): Promise<{ exists: boolean; dire
   return { exists: true, directories, files };
 }
 
-async function buildProjectConfigSummary(): Promise<Record<string, unknown> | null> {
-  const { findProjectConfigLocation, loadProjectConfig, loadSettings } = await import("../config/index.js");
+async function buildProjectConfigSummary(): Promise<Record<
+  string,
+  unknown
+> | null> {
+  const { findProjectConfigLocation, loadProjectConfig, loadSettings } =
+    await import("../config/index.js");
   const projectConfig = loadProjectConfig();
   if (!projectConfig) {
     return null;
@@ -364,7 +381,11 @@ async function writeAgentsGuide(targetDir: string): Promise<boolean> {
     if (start !== -1 && end !== -1 && end > start) {
       const replacementEnd = end + "<!-- AUTOCTX_GUIDE_END -->".length;
       const updated = `${existing.slice(0, start)}${block}${existing.slice(replacementEnd)}`;
-      writeFileSync(agentsPath, updated.endsWith("\n") ? updated : updated + "\n", "utf-8");
+      writeFileSync(
+        agentsPath,
+        updated.endsWith("\n") ? updated : updated + "\n",
+        "utf-8",
+      );
       return true;
     }
     if (existing.includes("## AutoContext")) {
@@ -387,10 +408,15 @@ async function validateOllamaConnection(baseUrl: string): Promise<void> {
   try {
     const response = await fetch(`${normalizeOllamaBaseUrl(baseUrl)}/api/tags`);
     if (!response.ok) {
-      throw new Error(`Ollama connection failed: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Ollama connection failed: ${response.status} ${response.statusText}`,
+      );
     }
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith("Ollama connection failed:")) {
+    if (
+      err instanceof Error &&
+      err.message.startsWith("Ollama connection failed:")
+    ) {
       throw err;
     }
     throw new Error(
@@ -399,12 +425,22 @@ async function validateOllamaConnection(baseUrl: string): Promise<void> {
   }
 }
 
-async function getProvider(overrides: { providerType?: string; apiKey?: string; baseUrl?: string; model?: string } = {}) {
+async function getProvider(
+  overrides: {
+    providerType?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+  } = {},
+) {
   const { createConfiguredProvider } = await import("../providers/index.js");
   const { loadSettings } = await import("../config/index.js");
 
   try {
-    const { provider, config } = createConfiguredProvider(overrides, loadSettings());
+    const { provider, config } = createConfiguredProvider(
+      overrides,
+      loadSettings(),
+    );
     const model = config.model ?? provider.defaultModel();
     return { provider, model };
   } catch (err) {
@@ -452,14 +488,17 @@ See also: list, replay, export, benchmark`);
     process.exit(0);
   }
   if (!scenarioName) {
-    console.error("Error: no scenario configured. Run `autoctx init` or pass --scenario <name>.");
+    console.error(
+      "Error: no scenario configured. Run `autoctx init` or pass --scenario <name>.",
+    );
     process.exit(1);
   }
 
   const { SQLiteStore } = await import("../storage/index.js");
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
-  const { assertFamilyContract } = await import("../scenarios/family-interfaces.js");
+  const { assertFamilyContract } =
+    await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
 
@@ -473,7 +512,9 @@ See also: list, replay, export, benchmark`);
   const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
   if (!ScenarioClass) {
     const allScenarios = Object.keys(SCENARIO_REGISTRY).sort();
-    console.error(`Unknown scenario: ${scenarioName}. Available: ${allScenarios.join(", ")}`);
+    console.error(
+      `Unknown scenario: ${scenarioName}. Available: ${allScenarios.join(", ")}`,
+    );
     process.exit(1);
   }
   const scenario = new ScenarioClass();
@@ -487,7 +528,10 @@ See also: list, replay, export, benchmark`);
   const gens = values.gens
     ? parsePositiveInteger(values.gens, "--gens")
     : settings.defaultGenerations;
-  const matches = parsePositiveInteger(values.matches ?? String(settings.matchesPerGeneration), "--matches");
+  const matches = parsePositiveInteger(
+    values.matches ?? String(settings.matchesPerGeneration),
+    "--matches",
+  );
 
   const runner = new GenerationRunner({
     provider: providerBundle.defaultProvider,
@@ -521,19 +565,29 @@ See also: list, replay, export, benchmark`);
   const isSynthetic = resolvedProvider === "deterministic";
 
   if (isSynthetic && !values.json) {
-    console.error("Note: Running with deterministic provider — results are synthetic.");
+    console.error(
+      "Note: Running with deterministic provider — results are synthetic.",
+    );
   }
 
   try {
     const result = await runner.run(runId, gens);
     if (values.json) {
-      console.log(JSON.stringify({
-        ...result,
-        provider: resolvedProvider,
-        ...(isSynthetic ? { synthetic: true } : {}),
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            ...result,
+            provider: resolvedProvider,
+            ...(isSynthetic ? { synthetic: true } : {}),
+          },
+          null,
+          2,
+        ),
+      );
     } else {
-      console.log(`Run ${result.runId}: ${result.generationsCompleted} generations, best score ${result.bestScore.toFixed(4)}, Elo ${result.currentElo.toFixed(1)}`);
+      console.log(
+        `Run ${result.runId}: ${result.generationsCompleted} generations, best score ${result.bestScore.toFixed(4)}, Elo ${result.currentElo.toFixed(1)}`,
+      );
     }
   } finally {
     store.close();
@@ -552,7 +606,9 @@ async function cmdTui(dbPath: string): Promise<void> {
 
   if (values.help) {
     console.log("autoctx tui [--port 8000] [--headless]");
-    console.log("Starts the interactive WebSocket server and bundled terminal UI.");
+    console.log(
+      "Starts the interactive WebSocket server and bundled terminal UI.",
+    );
     process.exit(0);
   }
 
@@ -597,10 +653,12 @@ async function cmdTui(dbPath: string): Promise<void> {
   const { render } = await import("ink");
   const { InteractiveTui } = await import("../tui/app.js");
 
-  const app = render(React.createElement(InteractiveTui, {
-    manager: mgr,
-    serverUrl: server.url,
-  }));
+  const app = render(
+    React.createElement(InteractiveTui, {
+      manager: mgr,
+      serverUrl: server.url,
+    }),
+  );
 
   try {
     await app.waitUntilExit();
@@ -624,7 +682,9 @@ async function cmdJudge(_dbPath: string): Promise<void> {
 
   if (
     values.help ||
-    (!values["from-stdin"] && (!values.output || (!values.scenario && (!values.prompt || !values.rubric))))
+    (!values["from-stdin"] &&
+      (!values.output ||
+        (!values.scenario && (!values.prompt || !values.rubric))))
   ) {
     console.log(`autoctx judge — One-shot evaluation of output against a rubric
 
@@ -669,19 +729,29 @@ See also: improve, queue, run`);
       process.exit(1);
     }
     const reasoning = (parsed.reasoning as string) ?? "";
-    const dimensions = (parsed.dimensions ?? parsed.dimensionScores ?? {}) as Record<string, number>;
-    console.log(JSON.stringify({
-      score,
-      reasoning,
-      dimensionScores: dimensions,
-      source: "delegated",
-    }, null, 2));
+    const dimensions = (parsed.dimensions ??
+      parsed.dimensionScores ??
+      {}) as Record<string, number>;
+    console.log(
+      JSON.stringify(
+        {
+          score,
+          reasoning,
+          dimensionScores: dimensions,
+          source: "delegated",
+        },
+        null,
+        2,
+      ),
+    );
     process.exit(0);
   }
 
   const { provider, model } = await getProvider();
   const { LLMJudge } = await import("../judge/index.js");
-  const savedScenario = values.scenario ? await loadSavedAgentTaskScenario(values.scenario) : null;
+  const savedScenario = values.scenario
+    ? await loadSavedAgentTaskScenario(values.scenario)
+    : null;
   if (values.scenario && !savedScenario) {
     console.error(`Unknown saved custom scenario: ${values.scenario}`);
     process.exit(1);
@@ -690,7 +760,9 @@ See also: improve, queue, run`);
   const rubric = values.rubric ?? savedScenario?.rubric;
   const agentOutput = values.output;
   if (!taskPrompt || !rubric || !agentOutput) {
-    console.error("Error: judge requires either --scenario <name> or both --prompt and --rubric.");
+    console.error(
+      "Error: judge requires either --scenario <name> or both --prompt and --rubric.",
+    );
     process.exit(1);
   }
 
@@ -703,11 +775,17 @@ See also: improve, queue, run`);
     calibrationExamples: savedScenario?.calibrationExamples,
   });
 
-  console.log(JSON.stringify({
-    score: result.score,
-    reasoning: result.reasoning,
-    dimensionScores: result.dimensionScores,
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        score: result.score,
+        reasoning: result.reasoning,
+        dimensionScores: result.dimensionScores,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function cmdImprove(_dbPath: string): Promise<void> {
@@ -734,7 +812,11 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     },
   });
 
-  if (values.help || (!values.scenario && (!values.prompt || !values.rubric)) || (!values.output && !values.rlm && !values.scenario)) {
+  if (
+    values.help ||
+    (!values.scenario && (!values.prompt || !values.rubric)) ||
+    (!values.output && !values.rlm && !values.scenario)
+  ) {
     console.log(`autoctx improve — Run multi-round improvement loop
 
 Usage: autoctx improve [options]
@@ -764,7 +846,9 @@ See also: judge, queue, run`);
   const { provider, model } = await getProvider();
   const { SimpleAgentTask } = await import("../execution/task-runner.js");
   const { ImprovementLoop } = await import("../execution/improvement-loop.js");
-  const savedScenario = values.scenario ? await loadSavedAgentTaskScenario(values.scenario) : null;
+  const savedScenario = values.scenario
+    ? await loadSavedAgentTaskScenario(values.scenario)
+    : null;
   if (values.scenario && !savedScenario) {
     console.error(`Unknown saved custom scenario: ${values.scenario}`);
     process.exit(1);
@@ -772,15 +856,17 @@ See also: judge, queue, run`);
   const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
   const rubric = values.rubric ?? savedScenario?.rubric;
   if (!taskPrompt || !rubric) {
-    console.error("Error: improve requires either --scenario <name> or both --prompt and --rubric.");
+    console.error(
+      "Error: improve requires either --scenario <name> or both --prompt and --rubric.",
+    );
     process.exit(1);
   }
   const maxRounds = values.rounds
     ? parsePositiveInteger(values.rounds, "--rounds")
-    : savedScenario?.maxRounds ?? 5;
+    : (savedScenario?.maxRounds ?? 5);
   const qualityThreshold = values.threshold
     ? parseFloat(values.threshold)
-    : savedScenario?.qualityThreshold ?? 0.9;
+    : (savedScenario?.qualityThreshold ?? 0.9);
   const minRounds = values["min-rounds"]
     ? parsePositiveInteger(values["min-rounds"], "--min-rounds")
     : 1;
@@ -794,12 +880,24 @@ See also: judge, queue, run`);
     {
       enabled: values.rlm ?? false,
       model: values["rlm-model"],
-      ...(values["rlm-turns"] ? { maxTurns: parseInt(values["rlm-turns"], 10) } : {}),
-      ...(values["rlm-max-tokens"] ? { maxTokensPerTurn: parseInt(values["rlm-max-tokens"], 10) } : {}),
-      ...(values["rlm-temperature"] ? { temperature: parseFloat(values["rlm-temperature"]) } : {}),
-      ...(values["rlm-max-stdout"] ? { maxStdoutChars: parseInt(values["rlm-max-stdout"], 10) } : {}),
-      ...(values["rlm-timeout-ms"] ? { codeTimeoutMs: parseInt(values["rlm-timeout-ms"], 10) } : {}),
-      ...(values["rlm-memory-mb"] ? { memoryLimitMb: parseInt(values["rlm-memory-mb"], 10) } : {}),
+      ...(values["rlm-turns"]
+        ? { maxTurns: parseInt(values["rlm-turns"], 10) }
+        : {}),
+      ...(values["rlm-max-tokens"]
+        ? { maxTokensPerTurn: parseInt(values["rlm-max-tokens"], 10) }
+        : {}),
+      ...(values["rlm-temperature"]
+        ? { temperature: parseFloat(values["rlm-temperature"]) }
+        : {}),
+      ...(values["rlm-max-stdout"]
+        ? { maxStdoutChars: parseInt(values["rlm-max-stdout"], 10) }
+        : {}),
+      ...(values["rlm-timeout-ms"]
+        ? { codeTimeoutMs: parseInt(values["rlm-timeout-ms"], 10) }
+        : {}),
+      ...(values["rlm-memory-mb"]
+        ? { memoryLimitMb: parseInt(values["rlm-memory-mb"], 10) }
+        : {}),
     },
   );
   const loop = new ImprovementLoop({
@@ -810,10 +908,12 @@ See also: judge, queue, run`);
   });
 
   const startTime = performance.now();
-  const initialOutput = values.output ?? await task.generateOutput({
-    referenceContext: savedScenario?.referenceContext,
-    requiredConcepts: savedScenario?.requiredConcepts,
-  });
+  const initialOutput =
+    values.output ??
+    (await task.generateOutput({
+      referenceContext: savedScenario?.referenceContext,
+      requiredConcepts: savedScenario?.requiredConcepts,
+    }));
   const result = await loop.run({
     initialOutput,
     state: {},
@@ -826,30 +926,41 @@ See also: judge, queue, run`);
 
   if (values.verbose) {
     for (const round of result.rounds) {
-      console.error(JSON.stringify({
-        round: round.roundNumber,
-        score: round.score,
-        dimensionScores: round.dimensionScores,
-        reasoning: round.reasoning.length > 200 ? round.reasoning.slice(0, 200) + "..." : round.reasoning,
-        isRevision: round.isRevision,
-        judgeFailed: round.judgeFailed,
-      }));
+      console.error(
+        JSON.stringify({
+          round: round.roundNumber,
+          score: round.score,
+          dimensionScores: round.dimensionScores,
+          reasoning:
+            round.reasoning.length > 200
+              ? round.reasoning.slice(0, 200) + "..."
+              : round.reasoning,
+          isRevision: round.isRevision,
+          judgeFailed: round.judgeFailed,
+        }),
+      );
     }
   }
 
-  console.log(JSON.stringify({
-    totalRounds: result.totalRounds,
-    metThreshold: result.metThreshold,
-    bestScore: result.bestScore,
-    bestRound: result.bestRound,
-    judgeFailures: result.judgeFailures,
-    terminationReason: result.terminationReason,
-    totalInternalRetries: result.totalInternalRetries,
-    dimensionTrajectory: result.dimensionTrajectory,
-    bestOutput: result.bestOutput,
-    durationMs,
-    ...(rlmSessions.length > 0 ? { rlmSessions } : {}),
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        totalRounds: result.totalRounds,
+        metThreshold: result.metThreshold,
+        bestScore: result.bestScore,
+        bestRound: result.bestRound,
+        judgeFailures: result.judgeFailures,
+        terminationReason: result.terminationReason,
+        totalInternalRetries: result.totalInternalRetries,
+        dimensionTrajectory: result.dimensionTrajectory,
+        bestOutput: result.bestOutput,
+        durationMs,
+        ...(rlmSessions.length > 0 ? { rlmSessions } : {}),
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function cmdRepl(_dbPath: string): Promise<void> {
@@ -877,8 +988,8 @@ async function cmdRepl(_dbPath: string): Promise<void> {
   if (values.help || (!values.scenario && (!values.prompt || !values.rubric))) {
     console.log(
       "autoctx repl (-s <saved-scenario> | -p <task-prompt>) [-r <rubric>] " +
-      "[--phase generate|revise] [-o <current-output>] [--reference-context TEXT] " +
-      "[--required-concept C]... [-m model] [-n turns]",
+        "[--phase generate|revise] [-o <current-output>] [--reference-context TEXT] " +
+        "[--required-concept C]... [-m model] [-n turns]",
     );
     process.exit(values.help ? 0 : 1);
   }
@@ -891,7 +1002,9 @@ async function cmdRepl(_dbPath: string): Promise<void> {
 
   const { provider, model } = await getProvider();
   const { runAgentTaskRlmSession } = await import("../rlm/index.js");
-  const savedScenario = values.scenario ? await loadSavedAgentTaskScenario(values.scenario) : null;
+  const savedScenario = values.scenario
+    ? await loadSavedAgentTaskScenario(values.scenario)
+    : null;
   if (values.scenario && !savedScenario) {
     console.error(`Unknown saved custom scenario: ${values.scenario}`);
     process.exit(1);
@@ -899,7 +1012,9 @@ async function cmdRepl(_dbPath: string): Promise<void> {
   const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
   const rubric = values.rubric ?? savedScenario?.rubric;
   if (!taskPrompt || !rubric) {
-    console.error("Error: repl requires either --scenario <name> or both --prompt and --rubric.");
+    console.error(
+      "Error: repl requires either --scenario <name> or both --prompt and --rubric.",
+    );
     process.exit(1);
   }
   const requiredConcepts = mergeUniqueStrings(
@@ -924,7 +1039,8 @@ async function cmdRepl(_dbPath: string): Promise<void> {
     taskPrompt,
     rubric,
     currentOutput: values.output,
-    referenceContext: values["reference-context"] ?? savedScenario?.referenceContext,
+    referenceContext:
+      values["reference-context"] ?? savedScenario?.referenceContext,
     requiredConcepts,
   });
 
@@ -955,7 +1071,7 @@ async function cmdQueue(dbPath: string): Promise<void> {
   if (values.help || !values.spec) {
     console.log(
       "autoctx queue -s <spec-name> [-p prompt] [-r rubric] [--priority N] " +
-      "[--min-rounds N] [--rlm] [--rlm-turns N]",
+        "[--min-rounds N] [--rlm] [--rlm-turns N]",
     );
     process.exit(values.help ? 0 : 1);
   }
@@ -976,18 +1092,34 @@ async function cmdQueue(dbPath: string): Promise<void> {
     maxRounds: savedScenario?.maxRounds,
     qualityThreshold: savedScenario?.qualityThreshold,
     priority: parseInt(values.priority!, 10),
-    ...(values["min-rounds"] ? { minRounds: parseInt(values["min-rounds"], 10) } : {}),
+    ...(values["min-rounds"]
+      ? { minRounds: parseInt(values["min-rounds"], 10) }
+      : {}),
     rlmEnabled: values.rlm,
     rlmModel: values["rlm-model"],
-    ...(values["rlm-turns"] ? { rlmMaxTurns: parseInt(values["rlm-turns"], 10) } : {}),
-    ...(values["rlm-max-tokens"] ? { rlmMaxTokensPerTurn: parseInt(values["rlm-max-tokens"], 10) } : {}),
-    ...(values["rlm-temperature"] ? { rlmTemperature: parseFloat(values["rlm-temperature"]) } : {}),
-    ...(values["rlm-max-stdout"] ? { rlmMaxStdoutChars: parseInt(values["rlm-max-stdout"], 10) } : {}),
-    ...(values["rlm-timeout-ms"] ? { rlmCodeTimeoutMs: parseInt(values["rlm-timeout-ms"], 10) } : {}),
-    ...(values["rlm-memory-mb"] ? { rlmMemoryLimitMb: parseInt(values["rlm-memory-mb"], 10) } : {}),
+    ...(values["rlm-turns"]
+      ? { rlmMaxTurns: parseInt(values["rlm-turns"], 10) }
+      : {}),
+    ...(values["rlm-max-tokens"]
+      ? { rlmMaxTokensPerTurn: parseInt(values["rlm-max-tokens"], 10) }
+      : {}),
+    ...(values["rlm-temperature"]
+      ? { rlmTemperature: parseFloat(values["rlm-temperature"]) }
+      : {}),
+    ...(values["rlm-max-stdout"]
+      ? { rlmMaxStdoutChars: parseInt(values["rlm-max-stdout"], 10) }
+      : {}),
+    ...(values["rlm-timeout-ms"]
+      ? { rlmCodeTimeoutMs: parseInt(values["rlm-timeout-ms"], 10) }
+      : {}),
+    ...(values["rlm-memory-mb"]
+      ? { rlmMemoryLimitMb: parseInt(values["rlm-memory-mb"], 10) }
+      : {}),
   });
 
-  console.log(JSON.stringify({ taskId: id, specName: values.spec, status: "queued" }));
+  console.log(
+    JSON.stringify({ taskId: id, specName: values.spec, status: "queued" }),
+  );
   store.close();
 }
 
@@ -1019,7 +1151,9 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
   if (values.help) {
     console.log("autoctx serve [--port 8000] [--host 127.0.0.1] [--json]");
     console.log("Starts the HTTP API server (matches Python 'autoctx serve').");
-    console.log("With --json, prints a machine-parseable JSON line on startup.");
+    console.log(
+      "With --json, prints a machine-parseable JSON line on startup.",
+    );
     process.exit(0);
   }
 
@@ -1059,7 +1193,11 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
   }
 
   await new Promise<void>((res) => {
-    const cleanup = () => { process.off("SIGINT", cleanup); process.off("SIGTERM", cleanup); res(); };
+    const cleanup = () => {
+      process.off("SIGINT", cleanup);
+      process.off("SIGTERM", cleanup);
+      res();
+    };
     process.on("SIGINT", cleanup);
     process.on("SIGTERM", cleanup);
   });
@@ -1154,7 +1292,10 @@ See also: run, replay, status`);
   store.migrate(getMigrationsDir());
 
   try {
-    const runs = store.listRuns(parseInt(values.limit ?? "50", 10), values.scenario);
+    const runs = store.listRuns(
+      parseInt(values.limit ?? "50", 10),
+      values.scenario,
+    );
     if (values.json) {
       console.log(JSON.stringify(runs, null, 2));
     } else {
@@ -1162,7 +1303,9 @@ See also: run, replay, status`);
         console.log("No runs found.");
       } else {
         for (const run of runs) {
-          console.log(`${run.run_id}  ${run.scenario}  ${run.status}  ${run.created_at}`);
+          console.log(
+            `${run.run_id}  ${run.scenario}  ${run.status}  ${run.created_at}`,
+          );
         }
       }
     }
@@ -1211,12 +1354,12 @@ See also: run, list, export`);
   );
   const availableGenerations = existsSync(generationsDir)
     ? readdirSync(generationsDir)
-      .map((name) => {
-        const match = /^gen_(\d+)$/.exec(name);
-        return match ? parseInt(match[1] ?? "", 10) : null;
-      })
-      .filter((value): value is number => value !== null)
-      .sort((a, b) => a - b)
+        .map((name) => {
+          const match = /^gen_(\d+)$/.exec(name);
+          return match ? parseInt(match[1] ?? "", 10) : null;
+        })
+        .filter((value): value is number => value !== null)
+        .sort((a, b) => a - b)
     : [];
   const replayDir = join(
     resolve(settings.runsRoot),
@@ -1226,9 +1369,10 @@ See also: run, list, export`);
     "replays",
   );
   if (!existsSync(replayDir)) {
-    const available = availableGenerations.length > 0
-      ? ` Available generations: ${availableGenerations.join(", ")}.`
-      : "";
+    const available =
+      availableGenerations.length > 0
+        ? ` Available generations: ${availableGenerations.join(", ")}.`
+        : "";
     console.error(`No replay files found under ${replayDir}.${available}`);
     process.exit(1);
   }
@@ -1236,15 +1380,23 @@ See also: run, list, export`);
     .filter((name) => name.endsWith(".json"))
     .sort();
   if (replayFiles.length === 0) {
-    const available = availableGenerations.length > 0
-      ? ` Available generations: ${availableGenerations.join(", ")}.`
-      : "";
+    const available =
+      availableGenerations.length > 0
+        ? ` Available generations: ${availableGenerations.join(", ")}.`
+        : "";
     console.error(`No replay files found under ${replayDir}.${available}`);
     process.exit(1);
   }
-  const payload = JSON.parse(readFileSync(join(replayDir, replayFiles[0]), "utf-8"));
-  const available = availableGenerations.length > 0 ? availableGenerations.join(", ") : String(gen);
-  console.error(`Replaying generation ${gen}. Available generations: ${available}`);
+  const payload = JSON.parse(
+    readFileSync(join(replayDir, replayFiles[0]), "utf-8"),
+  );
+  const available =
+    availableGenerations.length > 0
+      ? availableGenerations.join(", ")
+      : String(gen);
+  console.error(
+    `Replaying generation ${gen}. Available generations: ${available}`,
+  );
   console.log(JSON.stringify(payload, null, 2));
 }
 
@@ -1284,11 +1436,13 @@ See also: run, list`);
   const { SQLiteStore } = await import("../storage/index.js");
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
-  const { assertFamilyContract } = await import("../scenarios/family-interfaces.js");
+  const { assertFamilyContract } =
+    await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
 
-  const scenarioName = (await resolveScenarioOption(values.scenario)) ?? "grid_ctf";
+  const scenarioName =
+    (await resolveScenarioOption(values.scenario)) ?? "grid_ctf";
   const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
   if (!ScenarioClass) {
     console.error(`Unknown scenario: ${scenarioName}`);
@@ -1341,10 +1495,14 @@ See also: run, list`);
     console.log(JSON.stringify(output, null, 2));
   } else {
     if (isBenchSynthetic) {
-      console.error("Note: Running with deterministic provider — results are synthetic.");
+      console.error(
+        "Note: Running with deterministic provider — results are synthetic.",
+      );
     }
-    console.log(`Benchmark: ${scenarioName}, ${numRuns} runs x ${numGens} gens`);
-    console.log(`Scores: ${scores.map(s => s.toFixed(4)).join(", ")}`);
+    console.log(
+      `Benchmark: ${scenarioName}, ${numRuns} runs x ${numGens} gens`,
+    );
+    console.log(`Scores: ${scores.map((s) => s.toFixed(4)).join(", ")}`);
     console.log(`Mean best score: ${mean.toFixed(4)}`);
   }
 }
@@ -1403,7 +1561,11 @@ See also: import-package, run, replay`);
       const { writeFileSync, mkdirSync } = await import("node:fs");
       mkdirSync(dirname(values.output), { recursive: true });
       writeFileSync(values.output, JSON.stringify(result, null, 2), "utf-8");
-      console.log(values.json ? JSON.stringify({ output: values.output }) : `Exported to ${values.output}`);
+      console.log(
+        values.json
+          ? JSON.stringify({ output: values.output })
+          : `Exported to ${values.output}`,
+      );
     } else {
       console.log(JSON.stringify(result, null, 2));
     }
@@ -1427,9 +1589,15 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only]");
-    console.log("\nExports training data as JSONL with Python-compatible snake_case fields.");
-    console.log("\nUnsupported Python commands: train, trigger-distillation (require MLX/CUDA backends)");
+    console.log(
+      "autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only]",
+    );
+    console.log(
+      "\nExports training data as JSONL with Python-compatible snake_case fields.",
+    );
+    console.log(
+      "\nUnsupported Python commands: train, trigger-distillation (require MLX/CUDA backends)",
+    );
     process.exit(0);
   }
 
@@ -1457,7 +1625,9 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
   });
 
   try {
-    console.error(`Exporting training data${values["run-id"] ? ` for run ${values["run-id"]}` : ` for scenario ${values.scenario}` }...`);
+    console.error(
+      `Exporting training data${values["run-id"] ? ` for run ${values["run-id"]}` : ` for scenario ${values.scenario}`}...`,
+    );
     const records = exportTrainingData(store, artifacts, {
       runId: values["run-id"],
       scenario: values.scenario,
@@ -1468,7 +1638,10 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
           console.error(`Scanning ${progress.totalRuns} run(s)...`);
           return;
         }
-        if (progress.phase === "generation" && progress.generationIndex !== undefined) {
+        if (
+          progress.phase === "generation" &&
+          progress.generationIndex !== undefined
+        ) {
           console.error(
             `Processed run ${progress.runId} generation ${progress.generationIndex} (${progress.recordsEmitted} records)`,
           );
@@ -1483,7 +1656,9 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
       const { writeFileSync, mkdirSync } = await import("node:fs");
       mkdirSync(dirname(values.output), { recursive: true });
       writeFileSync(values.output, jsonl + "\n", "utf-8");
-      console.log(JSON.stringify({ output: values.output, records: records.length }));
+      console.log(
+        JSON.stringify({ output: values.output, records: records.length }),
+      );
     } else {
       console.log(jsonl);
     }
@@ -1505,7 +1680,9 @@ async function cmdImportPackage(_dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log("autoctx import-package --file <path> [--scenario <name>] [--conflict overwrite|merge|skip] [--json]");
+    console.log(
+      "autoctx import-package --file <path> [--scenario <name>] [--conflict overwrite|merge|skip] [--json]",
+    );
     process.exit(0);
   }
 
@@ -1525,7 +1702,10 @@ async function cmdImportPackage(_dbPath: string): Promise<void> {
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
   });
-  const conflict = (values.conflict ?? "overwrite") as "overwrite" | "merge" | "skip";
+  const conflict = (values.conflict ?? "overwrite") as
+    | "overwrite"
+    | "merge"
+    | "skip";
   if (!["overwrite", "merge", "skip"].includes(conflict)) {
     console.error("Error: --conflict must be one of overwrite, merge, skip");
     process.exit(1);
@@ -1607,7 +1787,9 @@ Options:
       console.log(JSON.stringify(templates, null, 2));
     } else {
       for (const template of templates) {
-        console.log(`${template.name}\t${template.outputFormat}\tmaxRounds=${template.maxRounds}\t${template.description}`);
+        console.log(
+          `${template.name}\t${template.outputFormat}\tmaxRounds=${template.maxRounds}\t${template.description}`,
+        );
       }
     }
     return;
@@ -1628,13 +1810,22 @@ Options:
     try {
       loader.getTemplate(values.template);
     } catch {
-      const available = loader.listTemplates().map((template) => template.name).join(", ");
-      console.error(`Error: template '${values.template}' not found. Available: ${available}`);
+      const available = loader
+        .listTemplates()
+        .map((template) => template.name)
+        .join(", ");
+      console.error(
+        `Error: template '${values.template}' not found. Available: ${available}`,
+      );
       process.exit(1);
     }
 
     const settings = loadSettings();
-    const targetDir = join(resolve(settings.knowledgeRoot), "_custom_scenarios", values.name);
+    const targetDir = join(
+      resolve(settings.knowledgeRoot),
+      "_custom_scenarios",
+      values.name,
+    );
     loader.scaffold(values.template, targetDir, { name: values.name });
 
     const payload = {
@@ -1646,29 +1837,41 @@ Options:
     if (values.json) {
       console.log(JSON.stringify(payload, null, 2));
     } else {
-      console.log(`Scenario '${values.name}' created from template '${values.template}'`);
+      console.log(
+        `Scenario '${values.name}' created from template '${values.template}'`,
+      );
       console.log(`Files scaffolded to: ${targetDir}`);
-      console.log("Available to agent-task tooling after scaffold via knowledge/_custom_scenarios.");
+      console.log(
+        "Available to agent-task tooling after scaffold via knowledge/_custom_scenarios.",
+      );
     }
     return;
   }
 
   const normalizeImportedScenario = (spec: Record<string, unknown>) => {
     const name = typeof spec.name === "string" ? spec.name.trim() : "";
-    const taskPrompt = typeof spec.taskPrompt === "string" ? spec.taskPrompt.trim() : "";
+    const taskPrompt =
+      typeof spec.taskPrompt === "string" ? spec.taskPrompt.trim() : "";
     const rubric = typeof spec.rubric === "string" ? spec.rubric.trim() : "";
-    const description = typeof spec.description === "string" ? spec.description : "";
+    const description =
+      typeof spec.description === "string" ? spec.description : "";
 
     if (!name || !taskPrompt || !rubric) {
-      console.error("Error: spec must contain name, taskPrompt, and rubric fields");
+      console.error(
+        "Error: spec must contain name, taskPrompt, and rubric fields",
+      );
       process.exit(1);
     }
 
-    let family = detectScenarioFamily([description, taskPrompt].filter(Boolean).join("\n"));
+    let family = detectScenarioFamily(
+      [description, taskPrompt].filter(Boolean).join("\n"),
+    );
     if (typeof spec.family === "string" && spec.family.trim()) {
       const requestedFamily = spec.family.trim();
       if (!isScenarioFamilyName(requestedFamily)) {
-        console.error(`Error: family must be one of ${validFamilies.join(", ")}`);
+        console.error(
+          `Error: family must be one of ${validFamilies.join(", ")}`,
+        );
         process.exit(1);
       }
       family = requestedFamily;
@@ -1688,14 +1891,18 @@ Options:
   };
 
   const failMaterialization = (errors: string[]): never => {
-    const message = errors.length > 0
-      ? errors.join("; ")
-      : "scenario materialization did not produce a runnable custom artifact";
+    const message =
+      errors.length > 0
+        ? errors.join("; ")
+        : "scenario materialization did not produce a runnable custom artifact";
     console.error(`Error: ${message}`);
     process.exit(1);
   };
 
-  const ensureMaterialized = (result: { persisted: boolean; errors: string[] }): void => {
+  const ensureMaterialized = (result: {
+    persisted: boolean;
+    errors: string[];
+  }): void => {
     if (result.persisted && result.errors.length === 0) return;
     failMaterialization(result.errors);
   };
@@ -1734,7 +1941,9 @@ Options:
         ),
       );
     } else {
-      console.log(`Materialized scenario: ${parsed.name} (family: ${parsed.family})`);
+      console.log(
+        `Materialized scenario: ${parsed.name} (family: ${parsed.family})`,
+      );
       console.log(`  Directory: ${matResult.scenarioDir}`);
       if (matResult.generatedSource) console.log(`  Generated: scenario.js`);
     }
@@ -1779,7 +1988,9 @@ Options:
         ),
       );
     } else {
-      console.log(`Materialized scenario: ${parsed.name} (family: ${parsed.family})`);
+      console.log(
+        `Materialized scenario: ${parsed.name} (family: ${parsed.family})`,
+      );
       console.log(`  Directory: ${matResult.scenarioDir}`);
       if (matResult.generatedSource) console.log(`  Generated: scenario.js`);
     }
@@ -1799,7 +2010,9 @@ Options:
 
   // Default: --description mode (requires LLM)
   if (!values.description) {
-    console.error("Error: --list, --template, --description, --from-spec, --from-stdin, or --prompt-only is required");
+    console.error(
+      "Error: --list, --template, --description, --from-spec, --from-stdin, or --prompt-only is required",
+    );
     process.exit(1);
   }
 
@@ -1808,11 +2021,15 @@ Options:
     const result = await getProvider();
     provider = result.provider;
   } catch {
-    const { DeterministicProvider } = await import("../providers/deterministic.js");
+    const { DeterministicProvider } =
+      await import("../providers/deterministic.js");
     provider = new DeterministicProvider();
   }
 
-  const result = await createScenarioFromDescription(values.description, provider);
+  const result = await createScenarioFromDescription(
+    values.description,
+    provider,
+  );
 
   // Materialize the created scenario to disk (AC-433)
   const { materializeScenario } = await import("../scenarios/materialize.js");
@@ -1826,14 +2043,22 @@ Options:
   ensureMaterialized(matResult);
 
   if (values.json) {
-    console.log(JSON.stringify({
-      ...result,
-      scenarioDir: matResult.scenarioDir,
-      generatedSource: matResult.generatedSource,
-      persisted: matResult.persisted,
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          ...result,
+          scenarioDir: matResult.scenarioDir,
+          generatedSource: matResult.generatedSource,
+          persisted: matResult.persisted,
+        },
+        null,
+        2,
+      ),
+    );
   } else {
-    console.log(`Materialized scenario: ${result.name} (family: ${result.family})`);
+    console.log(
+      `Materialized scenario: ${result.name} (family: ${result.family})`,
+    );
     console.log(`  Directory: ${matResult.scenarioDir}`);
     console.log(`  Task prompt: ${result.spec.taskPrompt}`);
     console.log(`  Rubric: ${result.spec.rubric}`);
@@ -1883,7 +2108,8 @@ See also: run, login, capabilities`);
   }
 
   const { existsSync, mkdirSync, writeFileSync } = await import("node:fs");
-  const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
+  const { loadPersistedCredentials, loadProjectConfig } =
+    await import("../config/index.js");
   const { resolveProviderConfig } = await import("../providers/index.js");
   const targetDir = resolve(values.dir ?? ".");
   const configPath = join(targetDir, ".autoctx.json");
@@ -1917,7 +2143,8 @@ See also: run, login, capabilities`);
   }
 
   const config: Record<string, unknown> = {
-    default_scenario: values.scenario ?? projectDefaults?.defaultScenario ?? "grid_ctf",
+    default_scenario:
+      values.scenario ?? projectDefaults?.defaultScenario ?? "grid_ctf",
     provider: detectedProvider ?? "deterministic",
     gens: parsePositiveInteger(values.gens ?? "3", "--gens"),
     knowledge_dir: "./knowledge",
@@ -1933,7 +2160,11 @@ See also: run, login, capabilities`);
   const agentsMdUpdated = await writeAgentsGuide(targetDir);
 
   console.log(`Created ${configPath}`);
-  console.log(agentsMdUpdated ? `Updated ${join(targetDir, "AGENTS.md")}` : `AGENTS.md already contained AutoContext guidance`);
+  console.log(
+    agentsMdUpdated
+      ? `Updated ${join(targetDir, "AGENTS.md")}`
+      : `AGENTS.md already contained AutoContext guidance`,
+  );
 }
 
 async function cmdCapabilities(): Promise<void> {
@@ -1944,11 +2175,31 @@ async function cmdCapabilities(): Promise<void> {
   const capabilities = {
     ...baseCapabilities,
     commands: [
-      "init", "run", "list", "replay", "benchmark", "export",
-      "export-training-data", "import-package", "new-scenario",
-      "capabilities", "login", "whoami", "logout", "providers", "models",
-      "mission", "tui", "judge", "improve",
-      "repl", "queue", "status", "serve", "mcp-serve", "version",
+      "init",
+      "run",
+      "list",
+      "replay",
+      "benchmark",
+      "export",
+      "export-training-data",
+      "import-package",
+      "new-scenario",
+      "capabilities",
+      "login",
+      "whoami",
+      "logout",
+      "providers",
+      "models",
+      "mission",
+      "tui",
+      "judge",
+      "improve",
+      "repl",
+      "queue",
+      "status",
+      "serve",
+      "mcp-serve",
+      "version",
     ],
     features: {
       mcp_server: true,
@@ -1991,7 +2242,7 @@ Without flags, prompts interactively for provider and key.
 Keys starting with ! are executed as shell commands (e.g. !security find-generic-password).
 
 Examples:
-  autoctx login --provider anthropic --key sk-ant-...
+  autoctx login --provider anthropic --key YOUR_ANTHROPIC_API_KEY
   autoctx login --provider ollama --base-url http://localhost:11434
   autoctx login                            # interactive prompt
 
@@ -2017,9 +2268,9 @@ See also: whoami, logout, providers, models`);
   if (provider === "ollama") {
     baseUrl = normalizeOllamaBaseUrl(
       baseUrl ??
-      process.env.AUTOCONTEXT_AGENT_BASE_URL ??
-      process.env.AUTOCONTEXT_BASE_URL ??
-      "http://localhost:11434",
+        process.env.AUTOCONTEXT_AGENT_BASE_URL ??
+        process.env.AUTOCONTEXT_BASE_URL ??
+        "http://localhost:11434",
     );
     await validateOllamaConnection(baseUrl);
   } else {
@@ -2034,7 +2285,8 @@ See also: whoami, logout, providers, models`);
 
   // Validate API key format before saving (AC-430)
   if (apiKey) {
-    const { validateApiKey, resolveApiKeyValue } = await import("../config/credentials.js");
+    const { validateApiKey, resolveApiKeyValue } =
+      await import("../config/credentials.js");
     // Resolve shell-command escape hatch (e.g. "!security find-generic-password -ws 'anthropic'")
     const resolvedKey = resolveApiKeyValue(apiKey);
     const validation = await validateApiKey(provider, resolvedKey);
@@ -2060,14 +2312,20 @@ See also: whoami, logout, providers, models`);
 }
 
 async function cmdWhoami(): Promise<void> {
-  const { loadPersistedCredentials, loadProjectConfig } = await import("../config/index.js");
+  const { loadPersistedCredentials, loadProjectConfig } =
+    await import("../config/index.js");
   const { resolveProviderConfig } = await import("../providers/index.js");
   const { resolveConfigDir } = await import("../config/index.js");
 
   const projectConfig = loadProjectConfig();
   const configDir = resolveConfigDir();
   const defaultPersistedCredentials = loadPersistedCredentials(configDir);
-  let resolvedConfig: { providerType: string; apiKey?: string; model?: string; baseUrl?: string } | null = null;
+  let resolvedConfig: {
+    providerType: string;
+    apiKey?: string;
+    model?: string;
+    baseUrl?: string;
+  } | null = null;
 
   try {
     resolvedConfig = resolveProviderConfig();
@@ -2096,24 +2354,32 @@ async function cmdWhoami(): Promise<void> {
     persistedCredentials?.baseUrl ??
     process.env.AUTOCONTEXT_AGENT_BASE_URL ??
     process.env.AUTOCONTEXT_BASE_URL;
-  const authenticated = provider === "ollama" || Boolean(
-    resolvedConfig?.apiKey ??
-    process.env.ANTHROPIC_API_KEY ??
-    process.env.OPENAI_API_KEY ??
-    persistedCredentials?.apiKey,
-  );
+  const authenticated =
+    provider === "ollama" ||
+    Boolean(
+      resolvedConfig?.apiKey ??
+      process.env.ANTHROPIC_API_KEY ??
+      process.env.OPENAI_API_KEY ??
+      persistedCredentials?.apiKey,
+    );
 
   // Also list all configured providers (AC-430)
   const { listConfiguredProviders } = await import("../config/credentials.js");
   const configuredProviders = listConfiguredProviders(configDir);
 
-  console.log(JSON.stringify({
-    provider,
-    model,
-    authenticated,
-    ...(baseUrl ? { baseUrl } : {}),
-    ...(configuredProviders.length > 0 ? { configuredProviders } : {}),
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        provider,
+        model,
+        authenticated,
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(configuredProviders.length > 0 ? { configuredProviders } : {}),
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function cmdLogout(): Promise<void> {
@@ -2132,7 +2398,8 @@ async function cmdLogout(): Promise<void> {
   }
 
   const { existsSync, unlinkSync } = await import("node:fs");
-  const { loadPersistedCredentials, resolveConfigDir } = await import("../config/index.js");
+  const { loadPersistedCredentials, resolveConfigDir } =
+    await import("../config/index.js");
   const configDir = resolveConfigDir(values["config-dir"]);
   const credentialsPath = join(configDir, "credentials.json");
   const existing = loadPersistedCredentials(configDir);
@@ -2143,11 +2410,14 @@ async function cmdLogout(): Promise<void> {
   }
 
   unlinkSync(credentialsPath);
-  console.log(existing?.provider ? `Logged out from ${existing.provider}` : "Logged out.");
+  console.log(
+    existing?.provider ? `Logged out from ${existing.provider}` : "Logged out.",
+  );
 }
 
 async function cmdProviders(): Promise<void> {
-  const { KNOWN_PROVIDERS, discoverAllProviders } = await import("../config/credentials.js");
+  const { KNOWN_PROVIDERS, discoverAllProviders } =
+    await import("../config/credentials.js");
   const { resolveConfigDir } = await import("../config/index.js");
   const configDir = resolveConfigDir();
   const discovered = discoverAllProviders(configDir);
@@ -2159,7 +2429,7 @@ async function cmdProviders(): Promise<void> {
       id: p.id,
       displayName: p.displayName,
       requiresKey: p.requiresKey,
-      authenticated: d ? (d.hasApiKey || !p.requiresKey) : !p.requiresKey,
+      authenticated: d ? d.hasApiKey || !p.requiresKey : !p.requiresKey,
       ...(d?.source ? { source: d.source } : {}),
       ...(d?.model ? { model: d.model } : {}),
       ...(d?.baseUrl ? { baseUrl: d.baseUrl } : {}),
@@ -2177,7 +2447,9 @@ async function cmdModels(): Promise<void> {
 
   if (models.length === 0) {
     console.log(JSON.stringify([]));
-    console.log("\nNo authenticated providers found. Run `autoctx login` to configure a provider.");
+    console.log(
+      "\nNo authenticated providers found. Run `autoctx login` to configure a provider.",
+    );
     return;
   }
 
@@ -2246,24 +2518,29 @@ See also: run, improve, judge`);
           },
         });
         if (!values.name || !values.goal) {
-          console.error("Usage: autoctx mission create --name <name> --goal <goal> [--type code --repo-path <path> --test-command <cmd> [--lint-command <cmd>] [--build-command <cmd>]] [--max-steps N]");
+          console.error(
+            "Usage: autoctx mission create --name <name> --goal <goal> [--type code --repo-path <path> --test-command <cmd> [--lint-command <cmd>] [--build-command <cmd>]] [--max-steps N]",
+          );
           process.exit(1);
         }
         const budget = values["max-steps"]
           ? { maxSteps: parseInt(values["max-steps"], 10) }
           : undefined;
-        const missionType = values.type === "code"
-          || values["repo-path"]
-          || values["test-command"]
-          || values["lint-command"]
-          || values["build-command"]
-          ? "code"
-          : "generic";
+        const missionType =
+          values.type === "code" ||
+          values["repo-path"] ||
+          values["test-command"] ||
+          values["lint-command"] ||
+          values["build-command"]
+            ? "code"
+            : "generic";
 
         let id: string;
         if (missionType === "code") {
           if (!values["repo-path"] || !values["test-command"]) {
-            console.error("Code missions require --repo-path and --test-command.");
+            console.error(
+              "Code missions require --repo-path and --test-command.",
+            );
             process.exit(1);
           }
           id = createCodeMission(manager, {
@@ -2280,10 +2557,16 @@ See also: run, improve, judge`);
           id = manager.create({ name: values.name, goal: values.goal, budget });
         }
         const checkpointPath = writeMissionCheckpoint(manager, id, runsRoot);
-        console.log(JSON.stringify({
-          ...buildMissionStatusPayload(manager, id),
-          checkpointPath,
-        }, null, 2));
+        console.log(
+          JSON.stringify(
+            {
+              ...buildMissionStatusPayload(manager, id),
+              checkpointPath,
+            },
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "run": {
@@ -2296,22 +2579,34 @@ See also: run, improve, judge`);
           },
         });
         if (!values.id) {
-          console.error("Usage: autoctx mission run --id <mission-id> [--max-iterations N] [--step-description <text>]");
+          console.error(
+            "Usage: autoctx mission run --id <mission-id> [--max-iterations N] [--step-description <text>]",
+          );
           process.exit(1);
         }
         const mission = requireMission(manager, values.id);
-        const missionType = (mission.metadata as Record<string, unknown> | undefined)?.missionType;
-        const needsAdaptivePlanning = missionType !== "code" && missionType !== "proof";
+        const missionType = (
+          mission.metadata as Record<string, unknown> | undefined
+        )?.missionType;
+        const needsAdaptivePlanning =
+          missionType !== "code" && missionType !== "proof";
         let provider: import("../types/index.js").LLMProvider | undefined;
         if (needsAdaptivePlanning) {
-          const { createProvider, resolveProviderConfig } = await import("../providers/index.js");
+          const { createProvider, resolveProviderConfig } =
+            await import("../providers/index.js");
           provider = createProvider(resolveProviderConfig());
         }
-        const payload = await runMissionLoop(manager, values.id, runsRoot, resolve(settings.knowledgeRoot), {
-          maxIterations: parseInt(values["max-iterations"] ?? "1", 10),
-          stepDescription: values["step-description"],
-          provider,
-        });
+        const payload = await runMissionLoop(
+          manager,
+          values.id,
+          runsRoot,
+          resolve(settings.knowledgeRoot),
+          {
+            maxIterations: parseInt(values["max-iterations"] ?? "1", 10),
+            stepDescription: values["step-description"],
+            provider,
+          },
+        );
         console.log(JSON.stringify(payload, null, 2));
         break;
       }
@@ -2324,7 +2619,13 @@ See also: run, improve, judge`);
           console.error("Usage: autoctx mission status --id <mission-id>");
           process.exit(1);
         }
-        console.log(JSON.stringify(buildMissionStatusPayload(manager, values.id), null, 2));
+        console.log(
+          JSON.stringify(
+            buildMissionStatusPayload(manager, values.id),
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "list": {
@@ -2346,7 +2647,13 @@ See also: run, improve, judge`);
           console.error("Usage: autoctx mission artifacts --id <mission-id>");
           process.exit(1);
         }
-        console.log(JSON.stringify(buildMissionArtifactsPayload(manager, values.id, runsRoot), null, 2));
+        console.log(
+          JSON.stringify(
+            buildMissionArtifactsPayload(manager, values.id, runsRoot),
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "pause": {
@@ -2354,14 +2661,27 @@ See also: run, improve, judge`);
           args: process.argv.slice(4),
           options: { id: { type: "string" } },
         });
-        if (!values.id) { console.error("Usage: autoctx mission pause --id <mission-id>"); process.exit(1); }
+        if (!values.id) {
+          console.error("Usage: autoctx mission pause --id <mission-id>");
+          process.exit(1);
+        }
         requireMission(manager, values.id);
         manager.pause(values.id);
-        const checkpointPath = writeMissionCheckpoint(manager, values.id, runsRoot);
-        console.log(JSON.stringify({
-          ...buildMissionStatusPayload(manager, values.id),
-          checkpointPath,
-        }, null, 2));
+        const checkpointPath = writeMissionCheckpoint(
+          manager,
+          values.id,
+          runsRoot,
+        );
+        console.log(
+          JSON.stringify(
+            {
+              ...buildMissionStatusPayload(manager, values.id),
+              checkpointPath,
+            },
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "resume": {
@@ -2369,14 +2689,27 @@ See also: run, improve, judge`);
           args: process.argv.slice(4),
           options: { id: { type: "string" } },
         });
-        if (!values.id) { console.error("Usage: autoctx mission resume --id <mission-id>"); process.exit(1); }
+        if (!values.id) {
+          console.error("Usage: autoctx mission resume --id <mission-id>");
+          process.exit(1);
+        }
         requireMission(manager, values.id);
         manager.resume(values.id);
-        const checkpointPath = writeMissionCheckpoint(manager, values.id, runsRoot);
-        console.log(JSON.stringify({
-          ...buildMissionStatusPayload(manager, values.id),
-          checkpointPath,
-        }, null, 2));
+        const checkpointPath = writeMissionCheckpoint(
+          manager,
+          values.id,
+          runsRoot,
+        );
+        console.log(
+          JSON.stringify(
+            {
+              ...buildMissionStatusPayload(manager, values.id),
+              checkpointPath,
+            },
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "cancel": {
@@ -2384,18 +2717,33 @@ See also: run, improve, judge`);
           args: process.argv.slice(4),
           options: { id: { type: "string" } },
         });
-        if (!values.id) { console.error("Usage: autoctx mission cancel --id <mission-id>"); process.exit(1); }
+        if (!values.id) {
+          console.error("Usage: autoctx mission cancel --id <mission-id>");
+          process.exit(1);
+        }
         requireMission(manager, values.id);
         manager.cancel(values.id);
-        const checkpointPath = writeMissionCheckpoint(manager, values.id, runsRoot);
-        console.log(JSON.stringify({
-          ...buildMissionStatusPayload(manager, values.id),
-          checkpointPath,
-        }, null, 2));
+        const checkpointPath = writeMissionCheckpoint(
+          manager,
+          values.id,
+          runsRoot,
+        );
+        console.log(
+          JSON.stringify(
+            {
+              ...buildMissionStatusPayload(manager, values.id),
+              checkpointPath,
+            },
+            null,
+            2,
+          ),
+        );
         break;
       }
       default:
-        console.error(`Unknown mission subcommand: ${subcommand}. Run 'autoctx mission --help'.`);
+        console.error(
+          `Unknown mission subcommand: ${subcommand}. Run 'autoctx mission --help'.`,
+        );
         process.exit(1);
     }
   } finally {
@@ -2468,20 +2816,30 @@ Examples:
     process.exit(0);
   }
 
-  const hasCompareLeft = typeof values["compare-left"] === "string" && values["compare-left"].length > 0;
-  const hasCompareRight = typeof values["compare-right"] === "string" && values["compare-right"].length > 0;
-  const hasExport = typeof values.export === "string" && values.export.length > 0;
+  const hasCompareLeft =
+    typeof values["compare-left"] === "string" &&
+    values["compare-left"].length > 0;
+  const hasCompareRight =
+    typeof values["compare-right"] === "string" &&
+    values["compare-right"].length > 0;
+  const hasExport =
+    typeof values.export === "string" && values.export.length > 0;
   if (hasCompareLeft !== hasCompareRight) {
-    console.error("Error: --compare-left and --compare-right must be provided together. Run 'autoctx simulate --help' for usage.");
+    console.error(
+      "Error: --compare-left and --compare-right must be provided together. Run 'autoctx simulate --help' for usage.",
+    );
     process.exit(1);
   }
 
   if (!values.description && !values.replay && !hasCompareLeft && !hasExport) {
-    console.error("Error: --description, --replay, --compare-left/--compare-right, or --export is required. Run 'autoctx simulate --help' for usage.");
+    console.error(
+      "Error: --description, --replay, --compare-left/--compare-right, or --export is required. Run 'autoctx simulate --help' for usage.",
+    );
     process.exit(1);
   }
 
-  const { SimulationEngine, parseVariableOverrides, parseSweepSpec } = await import("../simulation/engine.js");
+  const { SimulationEngine, parseVariableOverrides, parseSweepSpec } =
+    await import("../simulation/engine.js");
   const { loadSettings } = await import("../config/index.js");
   const { resolve } = await import("node:path");
   const settings = loadSettings();
@@ -2490,7 +2848,9 @@ Examples:
   if (values.export) {
     const { exportSimulation } = await import("../simulation/export.js");
     if (values.format && !["json", "markdown", "csv"].includes(values.format)) {
-      console.error(`Export failed: Unsupported export format '${values.format}'. Use json, markdown, or csv.`);
+      console.error(
+        `Export failed: Unsupported export format '${values.format}'. Use json, markdown, or csv.`,
+      );
       process.exit(1);
     }
     const format = (values.format ?? "json") as "json" | "markdown" | "csv";
@@ -2513,46 +2873,62 @@ Examples:
 
   // Compare mode (AC-451)
   if (hasCompareLeft && hasCompareRight) {
-    const noopProvider = { name: "local-compare" } as unknown as import("../types/index.js").LLMProvider;
-    const compareEngine = new SimulationEngine(noopProvider, resolve(settings.knowledgeRoot));
+    const noopProvider = {
+      name: "local-compare",
+    } as unknown as import("../types/index.js").LLMProvider;
+    const compareEngine = new SimulationEngine(
+      noopProvider,
+      resolve(settings.knowledgeRoot),
+    );
     const result = await compareEngine.compare({
       left: values["compare-left"]!,
       right: values["compare-right"]!,
     });
-    if (values.json) {
-      console.log(JSON.stringify(result, null, 2));
-    } else if (result.status === "failed") {
-      console.error(`Compare failed: ${result.error}`);
-      process.exit(1);
-    } else {
-      console.log(`Compare: ${result.left.name} vs ${result.right.name}`);
-      console.log(`Score: ${result.left.score.toFixed(2)} → ${result.right.score.toFixed(2)} (delta: ${result.scoreDelta.toFixed(4)})`);
-      if (result.likelyDrivers.length > 0) {
-        console.log(`Likely drivers: ${result.likelyDrivers.join(", ")}`);
-      }
-      console.log(result.summary);
-    }
+    emitEngineResult(result, {
+      json: !!values.json,
+      label: "Compare",
+      renderSuccess: (r) => {
+        console.log(`Compare: ${r.left.name} vs ${r.right.name}`);
+        console.log(
+          `Score: ${r.left.score.toFixed(2)} → ${r.right.score.toFixed(2)} (delta: ${r.scoreDelta.toFixed(4)})`,
+        );
+        if (r.likelyDrivers.length > 0) {
+          console.log(`Likely drivers: ${r.likelyDrivers.join(", ")}`);
+        }
+        console.log(r.summary);
+      },
+    });
     return;
   }
 
   // Replay mode (AC-450)
   if (values.replay) {
-    const replayProvider = { name: "local-replay" } as unknown as import("../types/index.js").LLMProvider;
-    const engine = new SimulationEngine(replayProvider, resolve(settings.knowledgeRoot));
+    const replayProvider = {
+      name: "local-replay",
+    } as unknown as import("../types/index.js").LLMProvider;
+    const engine = new SimulationEngine(
+      replayProvider,
+      resolve(settings.knowledgeRoot),
+    );
     const result = await engine.replay({
       id: values.replay,
-      variables: values.variables ? parseVariableOverrides(values.variables) : undefined,
-      maxSteps: values["max-steps"] ? parseInt(values["max-steps"], 10) : undefined,
+      variables: values.variables
+        ? parseVariableOverrides(values.variables)
+        : undefined,
+      maxSteps: values["max-steps"]
+        ? parseInt(values["max-steps"], 10)
+        : undefined,
     });
-    if (values.json) {
-      console.log(JSON.stringify(result, null, 2));
-    } else if (result.status === "failed") {
-      console.error(`Replay failed: ${result.error}`);
-      process.exit(1);
-    } else {
-      console.log(`Replay: ${result.name} (original score: ${result.originalScore?.toFixed(2)}, replay score: ${result.summary.score.toFixed(2)}, delta: ${result.scoreDelta?.toFixed(4)})`);
-      console.log(`Artifacts: ${result.artifacts.scenarioDir}`);
-    }
+    emitEngineResult(result, {
+      json: !!values.json,
+      label: "Replay",
+      renderSuccess: (r) => {
+        console.log(
+          `Replay: ${r.name} (original score: ${r.originalScore?.toFixed(2)}, replay score: ${r.summary.score.toFixed(2)}, delta: ${r.scoreDelta?.toFixed(4)})`,
+        );
+        console.log(`Artifacts: ${r.artifacts.scenarioDir}`);
+      },
+    });
     return;
   }
 
@@ -2564,18 +2940,28 @@ Examples:
   }
 
   // Build variables from --variables and/or --preset (AC-454)
-  const hasPreset = typeof values.preset === "string" && values.preset.length > 0;
-  const hasPresetFile = typeof values["preset-file"] === "string" && values["preset-file"].length > 0;
+  const hasPreset =
+    typeof values.preset === "string" && values.preset.length > 0;
+  const hasPresetFile =
+    typeof values["preset-file"] === "string" &&
+    values["preset-file"].length > 0;
   if (hasPreset !== hasPresetFile) {
-    console.error("Error: --preset and --preset-file must be provided together. Run 'autoctx simulate --help' for usage.");
+    console.error(
+      "Error: --preset and --preset-file must be provided together. Run 'autoctx simulate --help' for usage.",
+    );
     process.exit(1);
   }
 
-  let variables = values.variables ? parseVariableOverrides(values.variables) : undefined;
+  let variables = values.variables
+    ? parseVariableOverrides(values.variables)
+    : undefined;
   if (values.preset && values["preset-file"]) {
     const { readFileSync: readFile } = await import("node:fs");
     const { parsePreset } = await import("../simulation/sweep-dsl.js");
-    const presetVars = parsePreset(values.preset, readFile(values["preset-file"], "utf-8"));
+    const presetVars = parsePreset(
+      values.preset,
+      readFile(values["preset-file"], "utf-8"),
+    );
     if (!presetVars) {
       console.error(
         `Error: preset '${values.preset}' was not found or '${values["preset-file"]}' is not valid preset JSON.`,
@@ -2586,39 +2972,46 @@ Examples:
   }
 
   const { provider } = await getProvider();
-  const engine = new SimulationEngine(provider, resolve(settings.knowledgeRoot));
+  const engine = new SimulationEngine(
+    provider,
+    resolve(settings.knowledgeRoot),
+  );
 
   const result = await engine.run({
     description: values.description!,
     variables,
     sweep,
     runs: values.runs ? parseInt(values.runs, 10) : undefined,
-    maxSteps: values["max-steps"] ? parseInt(values["max-steps"], 10) : undefined,
+    maxSteps: values["max-steps"]
+      ? parseInt(values["max-steps"], 10)
+      : undefined,
     saveAs: values["save-as"],
   });
 
-  if (values.json) {
-    console.log(JSON.stringify(result, null, 2));
-  } else {
-    if (result.status === "failed") {
-      console.error(`Simulation failed: ${result.error}`);
-      process.exit(1);
-    }
-    console.log(`Simulation: ${result.name} (family: ${result.family})`);
-    console.log(`Score: ${result.summary.score}`);
-    console.log(`Reasoning: ${result.summary.reasoning}`);
-    if (result.sweep) {
-      console.log(`Sweep: ${result.sweep.runs} runs across ${result.sweep.dimensions.length} dimension(s)`);
-    }
-    if (result.summary.mostSensitiveVariables?.length) {
-      console.log(`Most sensitive: ${result.summary.mostSensitiveVariables.join(", ")}`);
-    }
-    console.log(`\nAssumptions:`);
-    for (const a of result.assumptions) console.log(`  - ${a}`);
-    console.log(`\nWarnings:`);
-    for (const w of result.warnings) console.log(`  ⚠ ${w}`);
-    console.log(`\nArtifacts: ${result.artifacts.scenarioDir}`);
-  }
+  emitEngineResult(result, {
+    json: !!values.json,
+    label: "Simulation",
+    renderSuccess: (r) => {
+      console.log(`Simulation: ${r.name} (family: ${r.family})`);
+      console.log(`Score: ${r.summary.score}`);
+      console.log(`Reasoning: ${r.summary.reasoning}`);
+      if (r.sweep) {
+        console.log(
+          `Sweep: ${r.sweep.runs} runs across ${r.sweep.dimensions.length} dimension(s)`,
+        );
+      }
+      if (r.summary.mostSensitiveVariables?.length) {
+        console.log(
+          `Most sensitive: ${r.summary.mostSensitiveVariables.join(", ")}`,
+        );
+      }
+      console.log(`\nAssumptions:`);
+      for (const a of r.assumptions) console.log(`  - ${a}`);
+      console.log(`\nWarnings:`);
+      for (const w of r.warnings) console.log(`  ⚠ ${w}`);
+      console.log(`\nArtifacts: ${r.artifacts.scenarioDir}`);
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2660,7 +3053,9 @@ Examples:
   }
 
   if (!values.description) {
-    console.error("Error: --description is required. Run 'autoctx investigate --help' for usage.");
+    console.error(
+      "Error: --description is required. Run 'autoctx investigate --help' for usage.",
+    );
     process.exit(1);
   }
 
@@ -2671,41 +3066,53 @@ Examples:
   const { provider } = await getProvider();
 
   const settings = loadSettings();
-  const engine = new InvestigationEngine(provider, resolve(settings.knowledgeRoot));
+  const engine = new InvestigationEngine(
+    provider,
+    resolve(settings.knowledgeRoot),
+  );
 
   const result = await engine.run({
     description: values.description,
-    maxSteps: values["max-steps"] ? parseInt(values["max-steps"], 10) : undefined,
-    maxHypotheses: values.hypotheses ? parseInt(values.hypotheses, 10) : undefined,
+    maxSteps: values["max-steps"]
+      ? parseInt(values["max-steps"], 10)
+      : undefined,
+    maxHypotheses: values.hypotheses
+      ? parseInt(values.hypotheses, 10)
+      : undefined,
     saveAs: values["save-as"],
   });
 
-  if (values.json) {
-    console.log(JSON.stringify(result, null, 2));
-  } else {
-    if (result.status === "failed") {
-      console.error(`Investigation failed: ${result.error}`);
-      process.exit(1);
-    }
-    console.log(`Investigation: ${result.name}`);
-    console.log(`Question: ${result.question}`);
-    console.log(`\nHypotheses:`);
-    for (const h of result.hypotheses) {
-      const icon = h.status === "supported" ? "✓" : h.status === "contradicted" ? "✗" : "?";
-      console.log(`  ${icon} ${h.statement} (confidence: ${h.confidence.toFixed(2)}, ${h.status})`);
-    }
-    console.log(`\nConclusion: ${result.conclusion.bestExplanation}`);
-    console.log(`Confidence: ${result.conclusion.confidence.toFixed(2)}`);
-    if (result.unknowns.length > 0) {
-      console.log(`\nUnknowns:`);
-      for (const u of result.unknowns) console.log(`  - ${u}`);
-    }
-    if (result.recommendedNextSteps.length > 0) {
-      console.log(`\nNext steps:`);
-      for (const s of result.recommendedNextSteps) console.log(`  → ${s}`);
-    }
-    console.log(`\nArtifacts: ${result.artifacts.investigationDir}`);
-  }
+  emitEngineResult(result, {
+    json: !!values.json,
+    label: "Investigation",
+    renderSuccess: (r) => {
+      console.log(`Investigation: ${r.name}`);
+      console.log(`Question: ${r.question}`);
+      console.log(`\nHypotheses:`);
+      for (const h of r.hypotheses) {
+        const icon =
+          h.status === "supported"
+            ? "✓"
+            : h.status === "contradicted"
+              ? "✗"
+              : "?";
+        console.log(
+          `  ${icon} ${h.statement} (confidence: ${h.confidence.toFixed(2)}, ${h.status})`,
+        );
+      }
+      console.log(`\nConclusion: ${r.conclusion.bestExplanation}`);
+      console.log(`Confidence: ${r.conclusion.confidence.toFixed(2)}`);
+      if (r.unknowns.length > 0) {
+        console.log(`\nUnknowns:`);
+        for (const u of r.unknowns) console.log(`  - ${u}`);
+      }
+      if (r.recommendedNextSteps.length > 0) {
+        console.log(`\nNext steps:`);
+        for (const s of r.recommendedNextSteps) console.log(`  → ${s}`);
+      }
+      console.log(`\nArtifacts: ${r.artifacts.investigationDir}`);
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2761,7 +3168,11 @@ Examples:
     runsRoot: resolve(settings.runsRoot),
     dbPath: resolve(settings.dbPath),
   });
-  const type = (values.type ?? "simulation") as "run" | "simulation" | "investigation" | "mission";
+  const type = (values.type ?? "simulation") as
+    | "run"
+    | "simulation"
+    | "investigation"
+    | "mission";
 
   let result;
   if (values.left && values.right) {
@@ -2773,7 +3184,9 @@ Examples:
   } else if (values.id) {
     result = engine.analyze({ id: values.id, type, focus: values.focus });
   } else {
-    console.error("Error: --id or --left/--right required. Run 'autoctx analyze --help'.");
+    console.error(
+      "Error: --id or --left/--right required. Run 'autoctx analyze --help'.",
+    );
     process.exit(1);
   }
 
@@ -2785,17 +3198,25 @@ Examples:
     if (result.findings.length > 0) {
       console.log(`\nFindings:`);
       for (const f of result.findings) {
-        const icon = f.kind === "improvement" ? "↑" : f.kind === "regression" ? "↓" : f.kind === "conclusion" ? "→" : "•";
+        const icon =
+          f.kind === "improvement"
+            ? "↑"
+            : f.kind === "regression"
+              ? "↓"
+              : f.kind === "conclusion"
+                ? "→"
+                : "•";
         console.log(`  ${icon} [${f.kind}] ${f.statement}`);
       }
     }
     if (result.regressions.length > 0) {
       console.log(`\nRegressions:`);
-      for (const r of result.regressions) console.log(`  ↓ ${r}`);
+      for (const reg of result.regressions) console.log(`  ↓ ${reg}`);
     }
     if (result.attribution) {
       console.log(`\nAttribution:`);
-      for (const f of result.attribution.topFactors) console.log(`  ${f.name}: ${f.weight.toFixed(2)}`);
+      for (const f of result.attribution.topFactors)
+        console.log(`  ${f.name}: ${f.weight.toFixed(2)}`);
     }
     if (result.limitations.length > 0) {
       console.log(`\nLimitations:`);
@@ -2850,7 +3271,9 @@ Notes:
   }
 
   if (!values.scenario || !values.dataset) {
-    console.error("Error: --scenario and --dataset are required. Run 'autoctx train --help'.");
+    console.error(
+      "Error: --scenario and --dataset are required. Run 'autoctx train --help'.",
+    );
     process.exit(1);
   }
 
@@ -2862,8 +3285,8 @@ Notes:
   const runner = new TrainingRunner();
   if (runner.usesSyntheticExecutor()) {
     console.error(
-      "Training failed: no real training executor is configured in the TypeScript package. "
-      + "Use the Python package's 'autoctx train' command or inject a TrainingRunner executor via the package API.",
+      "Training failed: no real training executor is configured in the TypeScript package. " +
+        "Use the Python package's 'autoctx train' command or inject a TrainingRunner executor via the package API.",
     );
     process.exit(1);
   }
@@ -2872,23 +3295,27 @@ Notes:
     family: values.family ?? "agent_task",
     datasetPath: resolve(values.dataset),
     heldOutPath: values["held-out"] ? resolve(values["held-out"]) : undefined,
-    outputDir: values.output ? resolve(values.output) : resolve(settings.runsRoot),
+    outputDir: values.output
+      ? resolve(values.output)
+      : resolve(settings.runsRoot),
     backend: values.backend ?? "cuda",
-    trainingMode: (values.mode ?? "from_scratch") as "from_scratch" | "adapter_finetune" | "full_finetune",
+    trainingMode: (values.mode ?? "from_scratch") as
+      | "from_scratch"
+      | "adapter_finetune"
+      | "full_finetune",
     baseModel: values["base-model"],
   });
 
-  if (values.json) {
-    console.log(JSON.stringify(result, null, 2));
-  } else if (result.status === "failed") {
-    console.error(`Training failed: ${result.error}`);
-    process.exit(1);
-  } else {
-    console.log(`Training completed: ${result.artifact?.artifactId}`);
-    console.log(`  Backend: ${result.backend}`);
-    console.log(`  Checkpoint: ${result.checkpointDir}`);
-    console.log(`  Duration: ${(result.durationMs / 1000).toFixed(1)}s`);
-  }
+  emitEngineResult(result, {
+    json: !!values.json,
+    label: "Training",
+    renderSuccess: (r) => {
+      console.log(`Training completed: ${r.artifact?.artifactId}`);
+      console.log(`  Backend: ${r.backend}`);
+      console.log(`  Checkpoint: ${r.checkpointDir}`);
+      console.log(`  Duration: ${(r.durationMs / 1000).toFixed(1)}s`);
+    },
+  });
 }
 
 main().catch((err) => {

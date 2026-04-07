@@ -21,6 +21,23 @@ def _coerce_text_list(values: Any) -> list[str]:
     return [_coerce_text(value) for value in values]
 
 
+def _coerce_precondition_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ("action", "name", "condition", "description"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate
+    return str(value)
+
+
+def _coerce_precondition_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [_coerce_precondition_text(value) for value in values]
+
+
 @dataclass(slots=True)
 class SimulationActionSpecModel:
     name: str
@@ -30,7 +47,7 @@ class SimulationActionSpecModel:
     effects: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "SimulationActionSpecModel":
+    def from_dict(cls, raw: dict[str, Any]) -> SimulationActionSpecModel:
         postconditions = raw.get("postconditions") or raw.get("post_conditions") or []
         effects = raw.get("effects")
         normalized_effects = _coerce_text_list(effects) if isinstance(effects, list) else _coerce_text_list(postconditions)
@@ -43,7 +60,7 @@ class SimulationActionSpecModel:
             name=_coerce_text(raw.get("name", "")),
             description=_coerce_text(raw.get("description", "")),
             parameters=parameters,
-            preconditions=_coerce_text_list(raw.get("preconditions", [])),
+            preconditions=_coerce_precondition_list(raw.get("preconditions", [])),
             effects=normalized_effects,
         )
 
@@ -57,7 +74,9 @@ class SimulationActionSpecModel:
         }
 
 
-def parse_simulation_actions(raw_actions: list[dict[str, Any]] | list[SimulationActionSpecModel]) -> list[SimulationActionSpecModel]:
+def parse_simulation_actions(
+    raw_actions: list[dict[str, Any]] | list[SimulationActionSpecModel],
+) -> list[SimulationActionSpecModel]:
     actions: list[SimulationActionSpecModel] = []
     for action in raw_actions:
         if isinstance(action, SimulationActionSpecModel):

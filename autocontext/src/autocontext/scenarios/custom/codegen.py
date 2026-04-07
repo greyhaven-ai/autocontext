@@ -4,7 +4,7 @@ import re
 
 from autocontext.scenarios.custom.spec import ScenarioSpec
 
-I1 = "    "      # 1 level indent (class body)
+I1 = "    "  # 1 level indent (class body)
 I2 = "        "  # 2 levels (method body)
 I3 = "            "  # 3 levels
 
@@ -28,11 +28,13 @@ def _gen_initial_state(spec: ScenarioSpec) -> list[str]:
     for env in spec.environment_variables:
         safe = _safe_identifier(env.name)
         lines.append(f'{I3}"{safe}": round(rng.uniform({env.low}, {env.high}), 3),')
-    lines.extend([
-        f'{I3}"terminal": False,',
-        f'{I3}"timeline": [],',
-        f"{I2}}}",
-    ])
+    lines.extend(
+        [
+            f'{I3}"terminal": False,',
+            f'{I3}"timeline": [],',
+            f"{I2}}}",
+        ]
+    )
     return lines
 
 
@@ -43,7 +45,7 @@ def _gen_get_observation(spec: ScenarioSpec) -> list[str]:
         f"{I2}return Observation(",
         f"{I2}    narrative=(",
         f'{I2}        f"{{player_id}} observes: " + ", ".join(',
-        f'{I2}            f"{{k}}={{state.get(k, \'N/A\')}}" for k in {state_keys!r}',
+        f"{I2}            f\"{{k}}={{state.get(k, 'N/A')}}\" for k in {state_keys!r}",
         f"{I2}        )",
         f"{I2}    ),",
         f"{I2}    state={{",
@@ -54,10 +56,12 @@ def _gen_get_observation(spec: ScenarioSpec) -> list[str]:
     lines.append(f"{I2}    constraints=[")
     for c in spec.observation_constraints:
         lines.append(f'{I2}        "{c}",')
-    lines.extend([
-        f"{I2}    ],",
-        f"{I2})",
-    ])
+    lines.extend(
+        [
+            f"{I2}    ],",
+            f"{I2})",
+        ]
+    )
     return lines
 
 
@@ -132,28 +136,34 @@ def _gen_step(spec: ScenarioSpec) -> list[str]:
     score_expr = " + ".join(score_terms) if score_terms else "0.0"
     lines.append(f"{I2}score = max(0.0, min(1.0, {score_expr}))")
 
-    lines.extend([
-        f'{I2}timeline = list(state["timeline"])',
-        f"{I2}timeline.append({{",
-        f'{I3}"event": "turn_complete",',
-    ])
+    lines.extend(
+        [
+            f'{I2}timeline = list(state["timeline"])',
+            f"{I2}timeline.append({{",
+            f'{I3}"event": "turn_complete",',
+        ]
+    )
     for cn in comp_names:
         lines.append(f'{I3}"{cn}": round({cn}, 4),')
-    lines.extend([
-        f"{I2}}})",
-        f"{I2}return {{",
-        f"{I3}**dict(state),",
-        f'{I3}"terminal": True,',
-        f'{I3}"score": round(score, 4),',
-        f'{I3}"metrics": {{',
-    ])
+    lines.extend(
+        [
+            f"{I2}}})",
+            f"{I2}return {{",
+            f"{I3}**dict(state),",
+            f'{I3}"terminal": True,',
+            f'{I3}"score": round(score, 4),',
+            f'{I3}"metrics": {{',
+        ]
+    )
     for cn in comp_names:
         lines.append(f'{I3}    "{cn}": round({cn}, 4),')
-    lines.extend([
-        f"{I3}}},",
-        f'{I3}"timeline": timeline,',
-        f"{I2}}}",
-    ])
+    lines.extend(
+        [
+            f"{I3}}},",
+            f'{I3}"timeline": timeline,',
+            f"{I2}}}",
+        ]
+    )
     return lines
 
 
@@ -252,7 +262,6 @@ def generate_scenario_class(spec: ScenarioSpec) -> str:
         "\n"
         "\n"
         f"class {cls_name}(ScenarioInterface):\n"
-        f'    name = "{spec.name}"\n'
-        "\n"
+        f'    name = "{spec.name}"\n' + (f'    family = "{spec.family}"\n' if spec.family else "") + "\n"
         f"{body}\n"
     )

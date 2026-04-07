@@ -336,6 +336,70 @@ class TestStageKnowledgeSetup:
         assert "The latest analyst output over-indexes on offense" in result.prompts.analyst
         assert "Try aggression <= 0.4 next generation" not in result.prompts.analyst
 
+    def test_includes_environment_snapshot_in_prompt_context(self) -> None:
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        ctx = _make_ctx()
+        ctx.environment_snapshot = "## Environment\nPython 3.13 | macOS"
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "## Environment" in result.prompts.competitor
+        assert "Python 3.13" in result.prompts.analyst
+
+    def test_materializes_evidence_workspace_and_injects_manifest(self, tmp_path) -> None:
+        settings = AppSettings(
+            agent_provider="deterministic",
+            evidence_workspace_enabled=True,
+            evidence_workspace_budget_mb=1,
+        )
+        artifacts = MagicMock()
+        artifacts.runs_root = tmp_path / "runs"
+        artifacts.knowledge_root = tmp_path / "knowledge"
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+
+        prior_run_dir = artifacts.runs_root / "run_prior"
+        prior_run_dir.mkdir(parents=True)
+        (prior_run_dir / "events.ndjson").write_text('{"event":"start"}\n', encoding="utf-8")
+
+        snapshots_dir = artifacts.knowledge_root / "test_scenario" / "snapshots" / "run_prior"
+        snapshots_dir.mkdir(parents=True)
+        (artifacts.knowledge_root / "test_scenario" / "playbook.md").parent.mkdir(parents=True, exist_ok=True)
+        (artifacts.knowledge_root / "test_scenario" / "playbook.md").write_text("# Playbook\n", encoding="utf-8")
+
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        ctx = _make_ctx(settings=settings)
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        manifest_path = artifacts.knowledge_root / "test_scenario" / "_evidence" / "manifest.json"
+        assert manifest_path.exists()
+        assert result.prompts is not None
+        assert "## Prior-Run Evidence" in result.prompts.analyst
+        assert "## Prior-Run Evidence" not in result.prompts.competitor
+
     def test_includes_prior_analyst_feedback_in_analyst_prompt(self) -> None:
         artifacts = MagicMock()
         artifacts.read_playbook.return_value = ""

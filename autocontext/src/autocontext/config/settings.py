@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 class HarnessMode(StrEnum):
     """How the harness interacts with strategy execution."""
 
-    NONE = "none"        # No harness intervention (existing behavior)
-    FILTER = "filter"    # Enumerate valid moves, LLM selects by index
-    VERIFY = "verify"    # LLM proposes, code validates, retry on invalid
-    POLICY = "policy"    # Pure code strategy (alias for CODE_STRATEGIES_ENABLED)
+    NONE = "none"  # No harness intervention (existing behavior)
+    FILTER = "filter"  # Enumerate valid moves, LLM selects by index
+    VERIFY = "verify"  # LLM proposes, code validates, retry on invalid
+    POLICY = "policy"  # Pure code strategy (alias for CODE_STRATEGIES_ENABLED)
 
 
 class AppSettings(BaseModel):
@@ -204,18 +204,24 @@ class AppSettings(BaseModel):
     use_pipeline_engine: bool = Field(default=False)
     # Monty sandbox executor
     monty_max_execution_time_seconds: float = Field(
-        default=30.0, ge=1.0, description="Max wall-clock seconds for Monty sandbox execution",
+        default=30.0,
+        ge=1.0,
+        description="Max wall-clock seconds for Monty sandbox execution",
     )
     monty_max_external_calls: int = Field(
-        default=100, ge=10, description="Max external function calls per Monty execution",
+        default=100,
+        ge=10,
+        description="Max external function calls per Monty execution",
     )
     # Code strategies (Phase 2)
     code_strategies_enabled: bool = Field(
-        default=False, description="Competitor emits Python code instead of JSON params",
+        default=False,
+        description="Competitor emits Python code instead of JSON params",
     )
     # Policy refinement (AC-156)
     policy_refinement_enabled: bool = Field(
-        default=False, description="Refine code strategies via iterative zero-LLM evaluation",
+        default=False,
+        description="Refine code strategies via iterative zero-LLM evaluation",
     )
     policy_refinement_max_iterations: int = Field(default=50, ge=1)
     policy_refinement_matches_per_iteration: int = Field(default=5, ge=1)
@@ -266,29 +272,42 @@ class AppSettings(BaseModel):
     judge_api_key: str | None = Field(default=None)
     # Evaluator disagreement (AC-330)
     judge_disagreement_threshold: float = Field(
-        default=0.15, ge=0.0, le=1.0, description="Std dev threshold for flagging judge disagreement",
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description="Std dev threshold for flagging judge disagreement",
     )
     judge_bias_probes_enabled: bool = Field(
-        default=False, description="Run bias probes on judge evaluations",
+        default=False,
+        description="Run bias probes on judge evaluations",
     )
     # Notification settings
     notify_webhook_url: str | None = Field(default=None)
     notify_on: str = Field(default="threshold_met,failure")
     # Stagnation detection
     stagnation_reset_enabled: bool = Field(
-        default=False, description="Enable stagnation detection and fresh start",
+        default=False,
+        description="Enable stagnation detection and fresh start",
     )
     stagnation_rollback_threshold: int = Field(
-        default=5, ge=1, description="Consecutive rollbacks before fresh start",
+        default=5,
+        ge=1,
+        description="Consecutive rollbacks before fresh start",
     )
     stagnation_plateau_window: int = Field(
-        default=5, ge=2, description="Window size for score plateau detection",
+        default=5,
+        ge=2,
+        description="Window size for score plateau detection",
     )
     stagnation_plateau_epsilon: float = Field(
-        default=0.01, ge=0.0, description="Max variance for plateau detection",
+        default=0.01,
+        ge=0.0,
+        description="Max variance for plateau detection",
     )
     stagnation_distill_top_lessons: int = Field(
-        default=5, ge=1, description="Top lessons to retain in fresh start",
+        default=5,
+        ge=1,
+        description="Top lessons to retain in fresh start",
     )
     # Progress JSON
     progress_json_enabled: bool = Field(default=True, description="Inject structured progress JSON into prompts")
@@ -301,53 +320,76 @@ class AppSettings(BaseModel):
     # Strategy pre-validation
     prevalidation_enabled: bool = Field(default=False, description="Run self-play dry-run before tournament")
     prevalidation_max_retries: int = Field(
-        default=2, ge=0, le=5, description="Max revision attempts on pre-validation failure",
+        default=2,
+        ge=0,
+        le=5,
+        description="Max revision attempts on pre-validation failure",
     )
     prevalidation_dry_run_enabled: bool = Field(
-        default=True, description="Run self-play dry-run match during pre-validation",
+        default=True,
+        description="Run self-play dry-run match during pre-validation",
     )
     # Harness validators (Phase B P3)
     harness_validators_enabled: bool = Field(
-        default=False, description="Run architect-generated harness validators before tournament",
+        default=False,
+        description="Run architect-generated harness validators before tournament",
     )
     harness_timeout_seconds: float = Field(
-        default=5.0, ge=0.5, le=60.0, description="Timeout for harness code execution",
+        default=5.0,
+        ge=0.5,
+        le=60.0,
+        description="Timeout for harness code execution",
     )
     harness_inheritance_enabled: bool = Field(
-        default=True, description="Inherit harness files across runs (requires harness_validators_enabled)",
+        default=True,
+        description="Inherit harness files across runs (requires harness_validators_enabled)",
     )
     harness_mode: HarnessMode = Field(
-        default=HarnessMode.NONE, description="Harness interaction mode: none, filter, verify, policy",
+        default=HarnessMode.NONE,
+        description="Harness interaction mode: none, filter, verify, policy",
     )
     # Probe matches (Phase 4)
     probe_matches: int = Field(default=0, ge=0, description="Probe matches before full tournament (0=disabled)")
     # Ecosystem convergence (Phase 4)
     ecosystem_convergence_enabled: bool = Field(
-        default=False, description="Track playbook divergence between ecosystem phases",
+        default=False,
+        description="Track playbook divergence between ecosystem phases",
     )
     ecosystem_divergence_threshold: float = Field(
-        default=0.3, ge=0.0, le=1.0, description="Divergence ratio above which phases are oscillating",
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Divergence ratio above which phases are oscillating",
     )
     ecosystem_oscillation_window: int = Field(
-        default=3, ge=2, description="Consecutive high-divergence cycles to trigger lock",
+        default=3,
+        ge=2,
+        description="Consecutive high-divergence cycles to trigger lock",
     )
     # Dead-end registry (AR-2)
     dead_end_tracking_enabled: bool = Field(
-        default=False, description="Track dead-end strategies that consistently fail",
+        default=False,
+        description="Track dead-end strategies that consistently fail",
     )
     dead_end_max_entries: int = Field(
-        default=20, ge=1, description="Max dead-end entries before oldest are pruned",
+        default=20,
+        ge=1,
+        description="Max dead-end entries before oldest are pruned",
     )
     # Research protocol (AR-3)
     protocol_enabled: bool = Field(
-        default=False, description="Enable research protocol meta-document for architect steering",
+        default=False,
+        description="Enable research protocol meta-document for architect steering",
     )
     # Exploration mode (AR-4)
     exploration_mode: Literal["linear", "rapid", "tree"] = Field(
-        default="linear", description="Exploration mode: linear, rapid, or tree",
+        default="linear",
+        description="Exploration mode: linear, rapid, or tree",
     )
     rapid_gens: int = Field(
-        default=0, ge=0, description="Auto-transition from rapid to linear after N gens (0=manual)",
+        default=0,
+        ge=0,
+        description="Auto-transition from rapid to linear after N gens (0=manual)",
     )
     novelty_enabled: bool = Field(
         default=True,
@@ -401,42 +443,59 @@ class AppSettings(BaseModel):
     )
     # Tree search (P4, activates when exploration_mode="tree")
     tree_max_hypotheses: int = Field(
-        default=8, ge=1, description="Max concurrent strategy variants in tree search",
+        default=8,
+        ge=1,
+        description="Max concurrent strategy variants in tree search",
     )
     tree_sampling_temperature: float = Field(
-        default=1.0, gt=0.0, description="Thompson sampling temperature for tree search",
+        default=1.0,
+        gt=0.0,
+        description="Thompson sampling temperature for tree search",
     )
     # Session reports (AR-5)
     session_reports_enabled: bool = Field(
-        default=True, description="Generate cross-session summary reports",
+        default=True,
+        description="Generate cross-session summary reports",
     )
     # Config-adaptive loop (AR-6)
     config_adaptive_enabled: bool = Field(
-        default=False, description="Allow architect to propose meta-parameter tuning",
+        default=False,
+        description="Allow architect to propose meta-parameter tuning",
     )
     # Staged validation (AC-200)
     staged_validation_enabled: bool = Field(
-        default=True, description="Use staged validation pipeline for pre-tournament checks",
+        default=True,
+        description="Use staged validation pipeline for pre-tournament checks",
     )
     # Pre-flight harness synthesis (AC-150)
     harness_preflight_enabled: bool = Field(
-        default=False, description="Run pre-flight harness synthesis before generation 1",
+        default=False,
+        description="Run pre-flight harness synthesis before generation 1",
     )
     harness_preflight_max_iterations: int = Field(
-        default=30, ge=1, description="Max synthesis iterations for pre-flight",
+        default=30,
+        ge=1,
+        description="Max synthesis iterations for pre-flight",
     )
     harness_preflight_target_accuracy: float = Field(
-        default=0.9, ge=0.0, le=1.0, description="Target accuracy threshold for pre-flight convergence",
+        default=0.9,
+        ge=0.0,
+        le=1.0,
+        description="Target accuracy threshold for pre-flight convergence",
     )
     harness_preflight_force: bool = Field(
-        default=False, description="Force re-synthesis even if harness exists",
+        default=False,
+        description="Force re-synthesis even if harness exists",
     )
     # Two-tier gating (AC-160)
     two_tier_gating_enabled: bool = Field(
-        default=False, description="Enable two-tier validity+quality gating in tournament",
+        default=False,
+        description="Enable two-tier validity+quality gating in tournament",
     )
     validity_max_retries: int = Field(
-        default=3, ge=0, description="Max validity retries before falling through to tournament",
+        default=3,
+        ge=0,
+        description="Max validity retries before falling through to tournament",
     )
     # Role routing (AC-204) -- "auto" or "off"
     role_routing: str = Field(default="off", description="Role routing mode: 'auto' or 'off'")
@@ -549,10 +608,29 @@ class AppSettings(BaseModel):
     ssh_connect_timeout: int = Field(default=10, ge=1, description="SSH connection timeout in seconds")
     ssh_command_timeout: float = Field(default=120.0, ge=1.0, description="Default SSH command timeout")
     ssh_allow_fallback: bool = Field(default=True, description="Fall back to local on SSH failure")
+    # Environment snapshot bootstrapping (AC-503)
+    env_snapshot_enabled: bool = Field(default=False, description="Collect environment snapshot at run start")
+    env_snapshot_redact_hostname: bool = Field(default=True, description="Redact hostname in env snapshot")
+    env_snapshot_redact_username: bool = Field(default=True, description="Redact username in env snapshot")
+    env_snapshot_redact_paths: bool = Field(default=True, description="Redact absolute paths in env snapshot")
+    # Evidence workspace (AC-504)
+    evidence_workspace_enabled: bool = Field(default=False, description="Materialize prior-run evidence workspace")
+    evidence_workspace_budget_mb: int = Field(default=10, ge=1, description="Evidence workspace budget in MB")
+    evidence_workspace_roles: str = Field(
+        default="analyst,architect",
+        description="Comma-separated roles that receive evidence manifest",
+    )
     # Monitor conditions (AC-209)
     monitor_enabled: bool = Field(default=True, description="Enable monitor condition engine")
     monitor_heartbeat_timeout: float = Field(default=300.0, ge=1.0, description="Default heartbeat timeout (seconds)")
     monitor_max_conditions: int = Field(default=100, ge=1, description="Max active conditions")
+    # Blob store (AC-518)
+    blob_store_enabled: bool = Field(default=False, description="Enable blob store for large artifact mirroring")
+    blob_store_backend: str = Field(default="local", description="Blob store backend: 'local' or 'hf_bucket'")
+    blob_store_root: str = Field(default="./blobs", description="Root directory for local blob store")
+    blob_store_repo: str = Field(default="", description="HF repo ID for hf_bucket backend")
+    blob_store_cache_max_mb: int = Field(default=500, ge=1, description="Max hydration cache size in MB")
+    blob_store_min_size_bytes: int = Field(default=1024, ge=0, description="Min artifact size to mirror (0=all)")
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod

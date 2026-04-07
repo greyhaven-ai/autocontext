@@ -9,6 +9,7 @@ Limitation: uses a char/4 heuristic for token estimation, not a real
 tokenizer. Accurate enough for budget enforcement without adding a
 dependency.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,9 +19,19 @@ logger = logging.getLogger(__name__)
 # Trim cascade: first entry trimmed first (least critical)
 _TRIM_ORDER = (
     "session_reports",
-    "notebook_architect", "notebook_coach", "notebook_analyst", "notebook_competitor",
-    "experiment_log", "research_protocol",
-    "trajectory", "analysis", "tools", "lessons", "playbook",
+    "evidence_manifest",
+    "notebook_architect",
+    "notebook_coach",
+    "notebook_analyst",
+    "notebook_competitor",
+    "experiment_log",
+    "research_protocol",
+    "environment_snapshot",
+    "trajectory",
+    "analysis",
+    "tools",
+    "lessons",
+    "playbook",
 )
 
 # Components that are never trimmed
@@ -69,7 +80,8 @@ class ContextBudget:
 
         logger.info(
             "context budget exceeded: %d estimated tokens > %d max, trimming",
-            total, self.max_tokens,
+            total,
+            self.max_tokens,
         )
 
         result = dict(components)
@@ -88,7 +100,9 @@ class ContextBudget:
                 remaining -= old_tokens - new_tokens
                 logger.debug(
                     "trimmed %s from %d to %d est. tokens",
-                    key, old_tokens, new_tokens,
+                    key,
+                    old_tokens,
+                    new_tokens,
                 )
 
         return result

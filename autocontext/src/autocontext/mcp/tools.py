@@ -42,6 +42,8 @@ from autocontext.mcp.knowledge_tools import (  # noqa: F401
     export_package,
     export_skill,
     get_capabilities,
+    get_env_snapshot,
+    get_evidence_list,
     get_feedback,
     import_package,
     list_runs,
@@ -88,10 +90,12 @@ def list_scenarios() -> list[dict[str, str]]:
     for name, cls in SCENARIO_REGISTRY.items():
         instance = cls()
         preview = get_description(instance)[:200]
-        results.append({
-            "name": name,
-            "rules_preview": preview,
-        })
+        results.append(
+            {
+                "name": name,
+                "rules_preview": preview,
+            }
+        )
     return results
 
 
@@ -139,6 +143,7 @@ def run_tournament(name: str, strategy: dict[str, Any], matches: int, seed_base:
         "mean_score": sum(scores) / len(scores) if scores else 0.0,
         "best_score": max(scores) if scores else 0.0,
     }
+
 
 # -- Knowledge reading --
 
@@ -189,6 +194,7 @@ def skill_scenario_artifact_lookup(ctx: MtsToolContext, scenario_name: str) -> l
     artifacts = scenario_artifact_lookup(ctx, scenario_name)
     return [a.model_dump() for a in artifacts]
 
+
 # -- ClawHub skill wrapper functions (AC-192) --
 
 
@@ -237,5 +243,6 @@ def skill_discover_artifacts(
 
     results = MtsSkillWrapper(ctx).discover_artifacts(scenario, artifact_type)
     return [r.model_dump() for r in results]
+
 
 # -- Monitor conditions (AC-209) --

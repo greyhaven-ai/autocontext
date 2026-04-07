@@ -52,3 +52,14 @@ class TestSimulationActionSpecModelNormalization:
         assert normalized["actions"][0]["effects"] == ["Evidence collected"]
         assert "postconditions" not in normalized["actions"][0]
         assert "steps" not in normalized["actions"][0]
+
+    def test_from_dict_prefers_action_ids_for_structured_preconditions(self) -> None:
+        action = SimulationActionSpecModel.from_dict({
+            "name": "step_b",
+            "description": "Second",
+            "parameters": {},
+            "preconditions": [{"action": "step_a", "description": "after step a"}],
+            "effects": ["b_done"],
+        })
+
+        assert action.preconditions == ["step_a"]
