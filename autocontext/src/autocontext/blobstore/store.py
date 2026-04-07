@@ -8,7 +8,7 @@ string paths.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 
@@ -47,3 +47,48 @@ class BlobStore(ABC):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
         return True
+
+
+def normalize_blob_key(key: str, *, allow_empty: bool = False) -> str:
+    """Normalize a blob key and reject absolute or escaping paths."""
+    if not key:
+        if allow_empty:
+            return ""
+        raise ValueError("blob key must not be empty")
+
+    for path_cls in (PurePosixPath, PureWindowsPath):
+        candidate = path_cls(key)
+        if candidate.is_absolute():
+            raise ValueError(f"invalid blob key: {key!r}")
+
+    normalized = key.replace("\\", "/")
+    parts = [part for part in PurePosixPath(normalized).parts if part not in ("", ".")]
+    if any(part == ".." for part in parts):
+        raise ValueError(f"invalid blob key: {key!r}")
+
+    joined = "/".join(parts)
+    if not joined and not allow_empty:
+        raise ValueError("blob key must not be empty")
+    return joined
+
+
+def resolve_blob_path(root: Path, key: str) -> Path:
+    """Resolve a normalized key under root and reject directory escapes."""
+    normalized = normalize_blob_key(key)
+    root_resolved = root.resolve()
+    candidate = (root / normalized).resolve()
+    try:
+        candidate.relative_to(root_resolved)
+    except ValueError as exc:
+        raise ValueError(f"invalid blob key: {key!r}") from exc
+    return candidate
+
+
+def prefix_matches(key: str, prefix: str) -> bool:
+    """Return True if a normalized key matches a normalized prefix."""
+    normalized_prefix = normalize_blob_key(prefix, allow_empty=True)
+    if not normalized_prefix:
+        return True
+    if prefix.endswith(("/", "\\")):
+        return key == normalized_prefix or key.startswith(normalized_prefix + "/")
+    return key.startswith(normalized_prefix)

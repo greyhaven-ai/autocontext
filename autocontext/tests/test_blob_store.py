@@ -47,7 +47,6 @@ class TestBlobRef:
     def test_is_hydrated(self) -> None:
         from autocontext.blobstore.ref import BlobRef
 
-        ref = BlobRef(kind="trace", local_path="/tmp/exists.json", digest="sha256:x", size_bytes=10)
         # is_hydrated checks if local_path exists — use tmpfile for positive
         with tempfile.NamedTemporaryFile() as f:
             ref_with_file = BlobRef(kind="trace", local_path=f.name, digest="sha256:x", size_bytes=10)
@@ -157,6 +156,14 @@ class TestLocalBlobStore:
             d2 = store.put("key2", data)
             assert d1 == d2  # same content = same digest
 
+    def test_put_rejects_directory_escape(self) -> None:
+        from autocontext.blobstore.local import LocalBlobStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalBlobStore(root=Path(tmp) / "root")
+            with pytest.raises(ValueError, match="invalid blob key"):
+                store.put("../escape.txt", b"x")
+
 
 # ---------------------------------------------------------------------------
 # HfBucketStore (mocked)
@@ -164,6 +171,30 @@ class TestLocalBlobStore:
 
 
 class TestHfBucketStore:
+    @staticmethod
+    def _fake_hf(remote: dict[str, bytes]):
+        def runner(cmd: list[str]) -> str:
+            if cmd[1] == "upload":
+                local_path = Path(cmd[3])
+                key = cmd[4]
+                remote[key] = local_path.read_bytes()
+                return ""
+            if cmd[1] == "download":
+                key = cmd[3]
+                local_dir = Path(cmd[cmd.index("--local-dir") + 1])
+                if key not in remote:
+                    raise RuntimeError("missing remote key")
+                local_dir.mkdir(parents=True, exist_ok=True)
+                (local_dir / Path(key).name).write_bytes(remote[key])
+                return ""
+            if cmd[1:3] == ["repo-files", "delete"]:
+                key = cmd[4]
+                remote.pop(key, None)
+                return ""
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        return runner
+
     def test_put_calls_hf_upload(self) -> None:
         from autocontext.blobstore.hf_bucket import HfBucketStore
 
@@ -172,7 +203,7 @@ class TestHfBucketStore:
             with patch.object(store, "_run_hf_command") as mock_hf:
                 mock_hf.return_value = ""
                 store.put("test/file.txt", b"hello")
-                mock_hf.assert_called_once()
+                assert mock_hf.call_count >= 2
 
     def test_get_calls_hf_download(self) -> None:
         from autocontext.blobstore.hf_bucket import HfBucketStore
@@ -194,6 +225,37 @@ class TestHfBucketStore:
             with patch.object(store, "_run_hf_command", side_effect=RuntimeError("no auth")):
                 keys = store.list_prefix("runs/")
                 assert keys == []
+
+    def test_head_uses_remote_index_for_fresh_instance(self) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            first = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "cache1")
+            second = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "cache2")
+            runner = self._fake_hf(remote)
+            with patch.object(first, "_run_hf_command", side_effect=runner):
+                first.put("nested/remote.txt", b"remote data")
+            with patch.object(second, "_run_hf_command", side_effect=runner):
+                meta = second.head("nested/remote.txt")
+                assert meta is not None
+                assert meta["size_bytes"] == len(b"remote data")
+                assert second.list_prefix("nested/") == ["nested/remote.txt"]
+
+    def test_delete_uses_remote_index_for_uncached_key(self) -> None:
+        from autocontext.blobstore.hf_bucket import HfBucketStore
+
+        remote: dict[str, bytes] = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            first = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "cache1")
+            second = HfBucketStore(repo_id="org/repo", cache_dir=Path(tmp) / "cache2")
+            runner = self._fake_hf(remote)
+            with patch.object(first, "_run_hf_command", side_effect=runner):
+                first.put("nested/remote.txt", b"remote data")
+            with patch.object(second, "_run_hf_command", side_effect=runner):
+                assert second.delete("nested/remote.txt") is True
+                assert second.head("nested/remote.txt") is None
+                assert second.list_prefix("nested/") == []
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from autocontext.blobstore.store import BlobStore
+from autocontext.blobstore.store import BlobStore, prefix_matches, resolve_blob_path
 
 
 class LocalBlobStore(BlobStore):
@@ -25,19 +25,19 @@ class LocalBlobStore(BlobStore):
 
     def put(self, key: str, data: bytes) -> str:
         digest = _sha256(data)
-        path = self.root / key
+        path = resolve_blob_path(self.root, key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return digest
 
     def get(self, key: str) -> bytes | None:
-        path = self.root / key
+        path = resolve_blob_path(self.root, key)
         if not path.is_file():
             return None
         return path.read_bytes()
 
     def head(self, key: str) -> dict[str, Any] | None:
-        path = self.root / key
+        path = resolve_blob_path(self.root, key)
         if not path.is_file():
             return None
         data = path.read_bytes()
@@ -48,33 +48,33 @@ class LocalBlobStore(BlobStore):
         }
 
     def list_prefix(self, prefix: str) -> list[str]:
-        prefix_path = self.root / prefix
+        prefix_path = self.root / prefix.replace("\\", "/")
         base = prefix_path.parent if not prefix_path.is_dir() else prefix_path
         if not base.is_dir():
             return []
         results: list[str] = []
         for path in sorted(base.rglob("*")):
             if path.is_file():
-                rel = str(path.relative_to(self.root))
-                if rel.startswith(prefix):
+                rel = path.relative_to(self.root).as_posix()
+                if prefix_matches(rel, prefix):
                     results.append(rel)
         return results
 
     def delete(self, key: str) -> bool:
-        path = self.root / key
+        path = resolve_blob_path(self.root, key)
         if not path.is_file():
             return False
         path.unlink()
         return True
 
     def put_file(self, key: str, path: Path) -> str:
-        dest = self.root / key
+        dest = resolve_blob_path(self.root, key)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(path), str(dest))
         return _sha256(dest.read_bytes())
 
     def get_file(self, key: str, dest: Path) -> bool:
-        src = self.root / key
+        src = resolve_blob_path(self.root, key)
         if not src.is_file():
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
