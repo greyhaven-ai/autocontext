@@ -7,7 +7,7 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from autocontext.agents.feedback_loops import (
     AnalystRating,
@@ -23,10 +23,14 @@ from autocontext.harness.storage.versioned_store import VersionedFileStore
 from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
+from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from autocontext.blobstore.store import BlobStore
 
 
 @runtime_checkable
@@ -47,6 +51,8 @@ class ArtifactStore:
         claude_skills_path: Path,
         max_playbook_versions: int = 5,
         enable_buffered_writes: bool = False,
+        blob_store: BlobStore | None = None,
+        blob_store_min_size_bytes: int = 1024,
     ) -> None:
         self.runs_root = runs_root
         self.knowledge_root = knowledge_root
@@ -54,10 +60,25 @@ class ArtifactStore:
         self.claude_skills_path = claude_skills_path
         self._max_playbook_versions = max_playbook_versions
         self._playbook_stores: dict[str, VersionedFileStore] = {}
+        self._blob_writer = BlobAwareWriter(
+            blob_store=blob_store,
+            min_size_bytes=blob_store_min_size_bytes,
+        )
         self._writer: BufferedWriter | None = None
         if enable_buffered_writes:
             self._writer = BufferedWriter()
             self._writer.start()
+
+    def _mirror_bytes(self, path: Path, data: bytes) -> None:
+        mirror_path_bytes(
+            self._blob_writer,
+            path,
+            data,
+            runs_root=self.runs_root,
+            knowledge_root=self.knowledge_root,
+            skills_root=self.skills_root,
+            claude_skills_path=self.claude_skills_path,
+        )
 
     @property
     def mutation_log(self) -> MutationLog:
@@ -121,11 +142,15 @@ class ArtifactStore:
 
     def write_json(self, path: Path, payload: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(path, payload)
+        content = json.dumps(payload, indent=2, sort_keys=True)
+        path.write_text(content, encoding="utf-8")
+        self._mirror_bytes(path, content.encode("utf-8"))
 
     def write_markdown(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.strip() + "\n", encoding="utf-8")
+        rendered = content.strip() + "\n"
+        path.write_text(rendered, encoding="utf-8")
+        self._mirror_bytes(path, rendered.encode("utf-8"))
 
     def append_markdown(self, path: Path, content: str, heading: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -149,16 +174,21 @@ class ArtifactStore:
 
     def buffered_write_json(self, path: Path, payload: dict[str, Any]) -> None:
         """Write JSON via buffer if available, otherwise synchronous."""
+        content = json.dumps(payload, indent=2, sort_keys=True)
         if self._writer is not None:
-            self._writer.write_json(path, payload)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._writer.write_text(path, content)
+            self._mirror_bytes(path, content.encode("utf-8"))
         else:
             self.write_json(path, payload)
 
     def buffered_write_markdown(self, path: Path, content: str) -> None:
         """Write markdown via buffer if available, otherwise synchronous."""
+        rendered = content.strip() + "\n"
         if self._writer is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._writer.write_text(path, content.strip() + "\n")
+            self._writer.write_text(path, rendered)
+            self._mirror_bytes(path, rendered.encode("utf-8"))
         else:
             self.write_markdown(path, content)
 
@@ -296,14 +326,16 @@ class ArtifactStore:
         if path.exists():
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(chunk)
-        else:
-            path.write_text(chunk.lstrip("\n"), encoding="utf-8")
+            self._mirror_bytes(path, path.read_bytes())
+            return
+        rendered = chunk.lstrip("\n")
+        path.write_text(rendered, encoding="utf-8")
+        self._mirror_bytes(path, rendered.encode("utf-8"))
 
     def replace_dead_ends(self, scenario_name: str, content: str) -> None:
         """Overwrite the entire dead_ends.md file (for curator consolidation)."""
         path = self.knowledge_root / scenario_name / "dead_ends.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        self.write_markdown(path, content)
 
     def read_research_protocol(self, scenario_name: str) -> str:
         """Read research protocol, or empty string if none."""
@@ -313,8 +345,7 @@ class ArtifactStore:
     def write_research_protocol(self, scenario_name: str, content: str) -> None:
         """Write research protocol."""
         path = self.knowledge_root / scenario_name / "research_protocol.md"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        self.write_markdown(path, content)
 
     def write_progress(self, scenario_name: str, snapshot_dict: dict[str, Any]) -> None:
         """Write progress snapshot JSON."""
@@ -1211,8 +1242,7 @@ class ArtifactStore:
     def write_notebook(self, session_id: str, notebook: dict[str, Any]) -> None:
         """Write notebook JSON to runs/sessions/<session_id>/notebook.json."""
         path = self.runs_root / "sessions" / session_id / "notebook.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(path, notebook)
+        self.write_json(path, notebook)
         scenario_name = str(notebook.get("scenario_name", "")).strip()
         if scenario_name:
             self._append_mutation(
@@ -1254,6 +1284,7 @@ class ArtifactStore:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         raw_output = str(trace_dict.get("raw_output", ""))
         output_path.write_text(raw_output, encoding="utf-8")
+        self._mirror_bytes(output_path, raw_output.encode("utf-8"))
         return session_path
 
     def read_pi_session(self, run_id: str, generation: int, *, role: str = "") -> dict[str, Any] | None:

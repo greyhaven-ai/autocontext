@@ -314,6 +314,13 @@ export const AppSettingsSchema = z.object({
   monitorEnabled: z.boolean().default(true),
   monitorHeartbeatTimeout: z.number().min(1).default(300.0),
   monitorMaxConditions: z.number().int().min(1).default(100),
+  // Blob store (AC-518)
+  blobStoreEnabled: z.boolean().default(false),
+  blobStoreBackend: z.string().default("local"),
+  blobStoreRoot: z.string().default("./blobs"),
+  blobStoreRepo: z.string().default(""),
+  blobStoreCacheMaxMb: z.number().int().min(1).default(500),
+  blobStoreMinSizeBytes: z.number().int().min(0).default(1024),
 });
 
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
@@ -448,26 +455,40 @@ function findProjectConfigSource(startDir = process.cwd()): {
   }
 }
 
-export function findProjectConfigLocation(startDir = process.cwd()): ProjectConfigLocation | null {
+export function findProjectConfigLocation(
+  startDir = process.cwd(),
+): ProjectConfigLocation | null {
   return findProjectConfigSource(startDir)?.location ?? null;
 }
 
-export function loadProjectConfig(startDir = process.cwd()): ProjectConfig | null {
+export function loadProjectConfig(
+  startDir = process.cwd(),
+): ProjectConfig | null {
   const configSource = findProjectConfigSource(startDir);
   if (!configSource) {
     return null;
   }
-  return parseProjectConfigRaw(configSource.raw, dirname(configSource.location.path));
+  return parseProjectConfigRaw(
+    configSource.raw,
+    dirname(configSource.location.path),
+  );
 }
 
-function parseProjectConfigRaw(raw: Record<string, unknown>, rootDir: string): ProjectConfig {
+function parseProjectConfigRaw(
+  raw: Record<string, unknown>,
+  rootDir: string,
+): ProjectConfig {
   const config: ProjectConfig = {};
 
   if (typeof raw.default_scenario === "string" && raw.default_scenario.trim()) {
     config.defaultScenario = raw.default_scenario.trim();
   }
   // Also accept camelCase (for package.json convention)
-  if (!config.defaultScenario && typeof raw.defaultScenario === "string" && (raw.defaultScenario as string).trim()) {
+  if (
+    !config.defaultScenario &&
+    typeof raw.defaultScenario === "string" &&
+    (raw.defaultScenario as string).trim()
+  ) {
     config.defaultScenario = (raw.defaultScenario as string).trim();
   }
   if (typeof raw.provider === "string" && raw.provider.trim()) {
@@ -479,13 +500,21 @@ function parseProjectConfigRaw(raw: Record<string, unknown>, rootDir: string): P
   if (typeof raw.knowledge_dir === "string" && raw.knowledge_dir.trim()) {
     config.knowledgeDir = resolve(rootDir, raw.knowledge_dir.trim());
   }
-  if (!config.knowledgeDir && typeof raw.knowledgeDir === "string" && raw.knowledgeDir.trim()) {
+  if (
+    !config.knowledgeDir &&
+    typeof raw.knowledgeDir === "string" &&
+    raw.knowledgeDir.trim()
+  ) {
     config.knowledgeDir = resolve(rootDir, raw.knowledgeDir.trim());
   }
   if (typeof raw.runs_dir === "string" && raw.runs_dir.trim()) {
     config.runsDir = resolve(rootDir, raw.runs_dir.trim());
   }
-  if (!config.runsDir && typeof raw.runsDir === "string" && raw.runsDir.trim()) {
+  if (
+    !config.runsDir &&
+    typeof raw.runsDir === "string" &&
+    raw.runsDir.trim()
+  ) {
     config.runsDir = resolve(rootDir, raw.runsDir.trim());
   }
   if (typeof raw.db_path === "string" && raw.db_path.trim()) {
@@ -503,7 +532,11 @@ function parseProjectConfigRaw(raw: Record<string, unknown>, rootDir: string): P
 }
 
 export function resolveConfigDir(explicit?: string): string {
-  return explicit ?? process.env.AUTOCONTEXT_CONFIG_DIR ?? join(process.env.HOME ?? "~", ".config", "autoctx");
+  return (
+    explicit ??
+    process.env.AUTOCONTEXT_CONFIG_DIR ??
+    join(process.env.HOME ?? "~", ".config", "autoctx")
+  );
 }
 
 function readStoredCredentialEntry(
@@ -545,7 +578,9 @@ export function loadPersistedCredentials(
     if (names.length === 0) return null;
 
     if (requestedProvider) {
-      const matchedName = names.find((name) => name.toLowerCase() === requestedProvider);
+      const matchedName = names.find(
+        (name) => name.toLowerCase() === requestedProvider,
+      );
       if (!matchedName) {
         return null;
       }
@@ -562,7 +597,11 @@ export function loadPersistedCredentials(
   if (typeof raw.provider === "string" && raw.provider.trim()) {
     credentials.provider = raw.provider.trim();
   }
-  if (requestedProvider && credentials.provider && credentials.provider.toLowerCase() !== requestedProvider) {
+  if (
+    requestedProvider &&
+    credentials.provider &&
+    credentials.provider.toLowerCase() !== requestedProvider
+  ) {
     return null;
   }
   if (requestedProvider && !credentials.provider) {
@@ -618,14 +657,22 @@ export type {
 
 // OAuth (AC-430 Phase 4)
 export {
-  generatePKCE, generateState, buildAuthorizationUrl,
-  waitForCallback, isOAuthProvider,
-  saveOAuthTokens, loadOAuthTokens, isTokenExpired,
+  generatePKCE,
+  generateState,
+  buildAuthorizationUrl,
+  waitForCallback,
+  isOAuthProvider,
+  saveOAuthTokens,
+  loadOAuthTokens,
+  isTokenExpired,
   OAUTH_PROVIDERS,
 } from "./oauth.js";
 export type {
-  PKCEPair, OAuthFlow, OAuthProviderConfig,
-  CallbackResult, WaitForCallbackOpts,
+  PKCEPair,
+  OAuthFlow,
+  OAuthProviderConfig,
+  CallbackResult,
+  WaitForCallbackOpts,
   OAuthTokens,
 } from "./oauth.js";
 
@@ -677,7 +724,10 @@ export function loadSettings(): AppSettings {
     const envKey = `AUTOCONTEXT_${camelToScreamingSnake(key)}`;
     const envVal = process.env[envKey];
     if (envVal !== undefined) {
-      kwargs[key] = coerceEnvValue(envVal, (defaults as Record<string, unknown>)[key]);
+      kwargs[key] = coerceEnvValue(
+        envVal,
+        (defaults as Record<string, unknown>)[key],
+      );
     }
   }
 

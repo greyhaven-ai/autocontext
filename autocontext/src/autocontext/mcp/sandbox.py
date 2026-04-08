@@ -11,7 +11,7 @@ from typing import Any
 from autocontext.config.settings import AppSettings
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
-from autocontext.storage.artifacts import ArtifactStore
+from autocontext.storage import artifact_store_from_settings
 
 
 @dataclass(slots=True)
@@ -176,13 +176,7 @@ class SandboxManager:
         sandbox = self._active.get(sandbox_id)
         if sandbox is None:
             raise ValueError(f"Sandbox '{sandbox_id}' not found")
-        artifacts = ArtifactStore(
-            sandbox.settings.runs_root,
-            sandbox.settings.knowledge_root,
-            sandbox.settings.skills_root,
-            sandbox.settings.claude_skills_path,
-            max_playbook_versions=sandbox.settings.playbook_max_versions,
-        )
+        artifacts = artifact_store_from_settings(sandbox.settings)
         return artifacts.read_playbook(sandbox.scenario_name)
 
     def list_sandboxes(self) -> list[dict[str, str]]:
