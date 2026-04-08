@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 Changes in this section are on the branch/repo after `0.3.6` and are not part of the last published release until the next version is cut.
 
+### Added
+
+- TypeScript `autoctx campaign` CLI with create, status, list, add-mission, progress, pause, resume, and cancel subcommands, completing the CLI surface for CampaignManager (AC-533).
+- Campaign API endpoints and MCP tools for multi-mission coordination with budget tracking and dependency graphs.
+
 ### Fixed
 
 - Python `autoctx simulate` now resolves live generation through the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER` and other role-routing overrides are honored instead of being bypassed by the raw client builder.
