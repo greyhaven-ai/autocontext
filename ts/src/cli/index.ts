@@ -117,6 +117,9 @@ async function main(): Promise<void> {
     case "mission":
       await cmdMission(await getDbPath());
       break;
+    case "campaign":
+      await cmdCampaign(await getDbPath());
+      break;
     case "run":
       await cmdRun(await getDbPath());
       break;
@@ -2748,6 +2751,197 @@ See also: run, improve, judge`);
     }
   } finally {
     manager.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// campaign command (AC-533)
+// ---------------------------------------------------------------------------
+
+async function cmdCampaign(dbPath: string): Promise<void> {
+  const subcommand = process.argv[3];
+  const { MissionManager } = await import("../mission/manager.js");
+  const { CampaignManager } = await import("../mission/campaign.js");
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    console.log(`autoctx campaign — Manage multi-mission campaigns
+
+Subcommands:
+  create       Create a new campaign
+  status       Show campaign details with progress
+  list         List all campaigns
+  add-mission  Add a mission to a campaign
+  progress     Show campaign progress and budget usage
+  pause        Pause an active campaign
+  resume       Resume a paused campaign
+  cancel       Cancel a campaign
+
+Examples:
+  autoctx campaign create --name "Q2 Goals" --goal "Ship OAuth and billing"
+  autoctx campaign create --name "Budgeted" --goal "Test" --max-missions 5 --max-steps 50
+  autoctx campaign list --status active
+  autoctx campaign status --id <campaign-id>
+  autoctx campaign add-mission --id <campaign-id> --mission-id <mission-id>
+  autoctx campaign progress --id <campaign-id>
+
+See also: mission, run`);
+    process.exit(0);
+  }
+
+  const missionManager = new MissionManager(dbPath);
+  const manager = new CampaignManager(missionManager);
+
+  function requireCampaign(id: string) {
+    const campaign = manager.get(id);
+    if (!campaign) {
+      console.error(`Campaign not found: ${id}`);
+      process.exit(1);
+    }
+    return campaign;
+  }
+
+  function requireIdArg(usage: string): string {
+    const { values } = parseArgs({
+      args: process.argv.slice(4),
+      options: { id: { type: "string" } },
+    });
+    if (!values.id) {
+      console.error(usage);
+      process.exit(1);
+    }
+    return values.id;
+  }
+
+  function lifecycleAction(action: "pause" | "resume" | "cancel"): void {
+    const id = requireIdArg(
+      `Usage: autoctx campaign ${action} --id <campaign-id>`,
+    );
+    requireCampaign(id);
+    manager[action](id);
+    console.log(JSON.stringify(manager.get(id), null, 2));
+  }
+
+  try {
+    switch (subcommand) {
+      case "create": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: {
+            name: { type: "string" },
+            goal: { type: "string" },
+            "max-missions": { type: "string" },
+            "max-steps": { type: "string" },
+          },
+        });
+        if (!values.name || !values.goal) {
+          console.error(
+            "Usage: autoctx campaign create --name <name> --goal <goal> [--max-missions N] [--max-steps N]",
+          );
+          process.exit(1);
+        }
+        const budget =
+          values["max-missions"] || values["max-steps"]
+            ? {
+                ...(values["max-missions"]
+                  ? { maxMissions: parseInt(values["max-missions"], 10) }
+                  : {}),
+                ...(values["max-steps"]
+                  ? { maxTotalSteps: parseInt(values["max-steps"], 10) }
+                  : {}),
+              }
+            : undefined;
+        const id = manager.create({
+          name: values.name,
+          goal: values.goal,
+          budget,
+        });
+        console.log(JSON.stringify(manager.get(id), null, 2));
+        break;
+      }
+      case "status": {
+        const id = requireIdArg(
+          "Usage: autoctx campaign status --id <campaign-id>",
+        );
+        const campaign = requireCampaign(id);
+        const progress = manager.progress(id);
+        const missions = manager.missions(id);
+        console.log(
+          JSON.stringify({ ...campaign, progress, missions }, null, 2),
+        );
+        break;
+      }
+      case "list": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { status: { type: "string" } },
+        });
+        type CampaignStatusParam = Parameters<typeof manager.list>[0];
+        const campaigns = manager.list(values.status as CampaignStatusParam);
+        console.log(JSON.stringify(campaigns, null, 2));
+        break;
+      }
+      case "add-mission": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: {
+            id: { type: "string" },
+            "mission-id": { type: "string" },
+            priority: { type: "string" },
+            "depends-on": { type: "string" },
+          },
+        });
+        if (!values.id || !values["mission-id"]) {
+          console.error(
+            "Usage: autoctx campaign add-mission --id <campaign-id> --mission-id <mission-id> [--priority N] [--depends-on <id>]",
+          );
+          process.exit(1);
+        }
+        requireCampaign(values.id);
+        manager.addMission(values.id, values["mission-id"], {
+          ...(values.priority
+            ? { priority: parseInt(values.priority, 10) }
+            : {}),
+          ...(values["depends-on"]
+            ? { dependsOn: [values["depends-on"]] }
+            : {}),
+        });
+        console.log(
+          JSON.stringify(
+            {
+              ok: true,
+              campaignId: values.id,
+              missionId: values["mission-id"],
+            },
+            null,
+            2,
+          ),
+        );
+        break;
+      }
+      case "progress": {
+        const id = requireIdArg(
+          "Usage: autoctx campaign progress --id <campaign-id>",
+        );
+        requireCampaign(id);
+        const progress = manager.progress(id);
+        const budgetUsage = manager.budgetUsage(id);
+        console.log(JSON.stringify({ ...progress, budgetUsage }, null, 2));
+        break;
+      }
+      case "pause":
+      case "resume":
+      case "cancel":
+        lifecycleAction(subcommand);
+        break;
+      default:
+        console.error(
+          `Unknown campaign subcommand: ${subcommand}. Run 'autoctx campaign --help'.`,
+        );
+        process.exit(1);
+    }
+  } finally {
+    manager.close();
+    missionManager.close();
   }
 }
 
