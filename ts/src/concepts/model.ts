@@ -58,7 +58,7 @@ const CONCEPT_MODEL: ConceptModel = {
     {
       name: "Campaign",
       description:
-        "A planned grouping of missions, runs, and scenarios used to coordinate broader work over time.",
+        "A planned grouping of missions, runs, and scenarios used to coordinate broader work over time. Partial support exists today through TypeScript API/MCP surfaces; there is not yet a top-level campaign CLI workflow.",
       status: "partial",
     },
   ],

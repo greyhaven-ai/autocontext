@@ -240,7 +240,7 @@ The TypeScript package includes the current 0.3.x operator-facing surfaces:
 - `mission`
 - `train` as a validation plus executor-hook surface
 
-`campaign` is still part of the concept model, but it is not yet a shipped first-class workflow.
+`campaign` now has partial TypeScript API and MCP support for multi-mission coordination, but it is not yet a shipped first-class CLI workflow.
 
 For end-to-end local MLX/CUDA training, the Python package is still the canonical out-of-the-box runtime.
 
