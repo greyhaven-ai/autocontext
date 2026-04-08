@@ -10,6 +10,11 @@ import json
 import tempfile
 from pathlib import Path
 
+from autocontext.blobstore.local import LocalBlobStore
+from autocontext.config.settings import AppSettings
+from autocontext.storage.artifacts import ArtifactStore, artifact_store_from_settings
+from autocontext.storage.blob_integration import classify_artifact_kind
+
 # ---------------------------------------------------------------------------
 # ArtifactStore blob integration
 # ---------------------------------------------------------------------------
@@ -18,48 +23,44 @@ from pathlib import Path
 class TestArtifactStoreBlobIntegration:
     """When blob_store_enabled, ArtifactStore writes mirror to blob store."""
 
-    def test_write_json_mirrors_when_enabled(self) -> None:
-        from autocontext.storage.blob_integration import BlobAwareWriter
-
-        from autocontext.blobstore.local import LocalBlobStore
-
+    def test_artifact_store_write_json_mirrors_when_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            blob_store = LocalBlobStore(root=Path(tmp) / "blobs")
-            writer = BlobAwareWriter(blob_store=blob_store, min_size_bytes=0)
+            root = Path(tmp)
+            blob_store = LocalBlobStore(root=root / "blobs")
+            store = ArtifactStore(
+                runs_root=root / "runs",
+                knowledge_root=root / "knowledge",
+                skills_root=root / "skills",
+                claude_skills_path=root / ".claude" / "skills",
+                blob_store=blob_store,
+                blob_store_min_size_bytes=0,
+            )
 
             data = {"score": 0.85, "reasoning": "Good strategy"}
-            content = json.dumps(data, indent=2).encode("utf-8")
-            ref = writer.mirror_write(
-                key="runs/run_001/gen_1/metrics.json",
-                data=content,
-                kind="trace",
-            )
-            assert ref is not None
-            assert ref.digest.startswith("sha256:")
+            path = root / "runs" / "run_001" / "gen_1" / "metrics.json"
+            store.write_json(path, data)
+            content = json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
             assert blob_store.get("runs/run_001/gen_1/metrics.json") == content
 
-    def test_write_skips_small_artifacts(self) -> None:
-        from autocontext.storage.blob_integration import BlobAwareWriter
-
-        from autocontext.blobstore.local import LocalBlobStore
-
+    def test_artifact_store_from_settings_enables_blob_writer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            blob_store = LocalBlobStore(root=Path(tmp) / "blobs")
-            writer = BlobAwareWriter(blob_store=blob_store, min_size_bytes=1000)
-
-            ref = writer.mirror_write(key="small.txt", data=b"tiny", kind="report")
-            assert ref is None
-
-    def test_writer_disabled_when_no_store(self) -> None:
-        from autocontext.storage.blob_integration import BlobAwareWriter
-
-        writer = BlobAwareWriter(blob_store=None, min_size_bytes=0)
-        ref = writer.mirror_write(key="test.txt", data=b"data", kind="trace")
-        assert ref is None
+            root = Path(tmp)
+            settings = AppSettings(
+                runs_root=root / "runs",
+                knowledge_root=root / "knowledge",
+                skills_root=root / "skills",
+                claude_skills_path=root / ".claude" / "skills",
+                blob_store_enabled=True,
+                blob_store_backend="local",
+                blob_store_root=str(root / "blobs"),
+                blob_store_min_size_bytes=0,
+            )
+            store = artifact_store_from_settings(settings)
+            path = root / "runs" / "run_002" / "events.ndjson"
+            store.write_markdown(path, '{"event":"start"}')
+            assert (root / "blobs" / "runs" / "run_002" / "events.ndjson").exists()
 
     def test_classify_artifact_kind(self) -> None:
-        from autocontext.storage.blob_integration import classify_artifact_kind
-
         assert classify_artifact_kind(Path("runs/r1/gen_1/metrics.json")) == "trace"
         assert classify_artifact_kind(Path("runs/r1/gen_1/replays/grid_ctf_1.json")) == "trace"
         assert classify_artifact_kind(Path("knowledge/grid_ctf/playbook.md")) == "report"
@@ -77,7 +78,6 @@ class TestBlobCli:
     """Tests for autoctx blob sync/status/hydrate commands."""
 
     def test_sync_command_syncs_run(self) -> None:
-        from autocontext.blobstore.local import LocalBlobStore
         from autocontext.blobstore.sync import SyncManager
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -98,7 +98,6 @@ class TestBlobCli:
 
     def test_hydrate_retrieves_from_store(self) -> None:
         from autocontext.blobstore.cache import HydrationCache
-        from autocontext.blobstore.local import LocalBlobStore
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

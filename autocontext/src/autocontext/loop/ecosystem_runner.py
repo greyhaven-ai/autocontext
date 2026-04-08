@@ -9,7 +9,7 @@ from pathlib import Path
 from autocontext.config import AppSettings
 from autocontext.loop.events import EventStreamEmitter
 from autocontext.loop.generation_runner import GenerationRunner, RunSummary
-from autocontext.storage import ArtifactStore, SQLiteStore
+from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
 logger = logging.getLogger(__name__)
@@ -93,12 +93,7 @@ class EcosystemRunner:
     def _get_artifacts(self) -> ArtifactStore:
         """Lazy-initialized shared ArtifactStore for convergence tracking."""
         if self._artifacts is None:
-            self._artifacts = ArtifactStore(
-                self.base_settings.runs_root,
-                self.base_settings.knowledge_root,
-                self.base_settings.skills_root,
-                self.base_settings.claude_skills_path,
-            )
+            self._artifacts = artifact_store_from_settings(self.base_settings)
         return self._artifacts
 
     def migrate(self, migrations_dir: Path) -> None:

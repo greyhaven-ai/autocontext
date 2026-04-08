@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { resolveBlobPath } from "./store.js";
 
 export class HydrationCache {
   private maxBytes: number;
@@ -23,14 +24,14 @@ export class HydrationCache {
   }
 
   put(key: string, data: Buffer, _digest: string): void {
-    const path = join(this.root, key);
+    const path = resolveBlobPath(this.root, key);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, data);
     this.evictIfNeeded();
   }
 
   get(key: string, expectedDigest?: string): Buffer | null {
-    const path = join(this.root, key);
+    const path = resolveBlobPath(this.root, key);
     if (!existsSync(path)) return null;
     const data = readFileSync(path);
     if (expectedDigest) {

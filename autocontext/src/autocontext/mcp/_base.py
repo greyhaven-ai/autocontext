@@ -13,7 +13,7 @@ from autocontext.execution.verification_dataset import (
     resolve_objective_verification_config,
 )
 from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
-from autocontext.storage import ArtifactStore, SQLiteStore
+from autocontext.storage import SQLiteStore, artifact_store_from_settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,7 @@ class MtsToolContext:
         self.sqlite = SQLiteStore(settings.db_path)
         migrations_dir = Path(__file__).resolve().parents[3] / "migrations"
         self.sqlite.migrate(migrations_dir)
-        self.artifacts = ArtifactStore(
-            settings.runs_root,
-            settings.knowledge_root,
-            settings.skills_root,
-            settings.claude_skills_path,
-            max_playbook_versions=settings.playbook_max_versions,
-        )
+        self.artifacts = artifact_store_from_settings(settings)
         self.trajectory = ScoreTrajectoryBuilder(self.sqlite)
 
 

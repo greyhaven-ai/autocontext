@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
+  mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
@@ -86,6 +87,13 @@ describe("LocalBlobStore", () => {
     expect(store.getFile("test.bin", dest)).toBe(true);
     expect(readFileSync(dest, "utf-8")).toBe("binary data");
   });
+
+  it("rejects escaping blob keys", () => {
+    const store = new LocalBlobStore(join(tmpDir, "blobs"));
+    expect(() => store.put("../escape.txt", Buffer.from("x"))).toThrow(
+      "invalid blob key",
+    );
+  });
 });
 
 describe("BlobRegistry", () => {
@@ -131,6 +139,15 @@ describe("HydrationCache", () => {
     writeFileSync(join(tmpDir, "cache", "test.txt"), "corrupted");
     expect(cache.get("test.txt", digest)).toBeNull();
   });
+
+  it("rejects escaping cache keys", () => {
+    const cache = new HydrationCache(join(tmpDir, "cache"), 100);
+    const data = Buffer.from("cached");
+    const digest = "sha256:" + createHash("sha256").update(data).digest("hex");
+    expect(() => cache.put("../escape.txt", data, digest)).toThrow(
+      "invalid blob key",
+    );
+  });
 });
 
 describe("BlobMirror", () => {
@@ -155,7 +172,6 @@ describe("BlobMirror", () => {
 describe("SyncManager", () => {
   it("syncs a run directory", () => {
     const runDir = join(tmpDir, "runs", "r1");
-    const { mkdirSync } = require("node:fs");
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, "events.ndjson"), '{"e":"start"}');
     const store = new LocalBlobStore(join(tmpDir, "blobs"));
@@ -163,6 +179,22 @@ describe("SyncManager", () => {
     const result = mgr.syncRun("r1");
     expect(result.syncedCount).toBeGreaterThanOrEqual(1);
     expect(mgr.status().runCount).toBe(1);
+  });
+
+  it("re-uploads files that changed since the last sync", () => {
+    const runDir = join(tmpDir, "runs", "r1");
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, "events.ndjson"), "v1");
+    const store = new LocalBlobStore(join(tmpDir, "blobs"));
+    const mgr = new SyncManager(store, join(tmpDir, "runs"));
+
+    expect(mgr.syncRun("r1").syncedCount).toBe(1);
+
+    writeFileSync(join(runDir, "events.ndjson"), "v2");
+    const second = mgr.syncRun("r1");
+    expect(second.syncedCount).toBe(1);
+    expect(second.skippedCount).toBe(0);
+    expect(store.get("runs/r1/events.ndjson")?.toString("utf-8")).toBe("v2");
   });
 });
 

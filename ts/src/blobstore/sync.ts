@@ -1,6 +1,7 @@
 /** SyncManager — bulk sync local runs to blob store (AC-518). */
 
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { BlobStore } from "./store.js";
 
@@ -43,13 +44,20 @@ export class SyncManager {
         }
         const key = `runs/${runId}/${relative(runDir, full)}`;
         try {
-          if (this.store.head(key)) {
+          const meta = this.store.head(key);
+          const localSize = statSync(full).size;
+          const localDigest = digestFile(full);
+          if (
+            meta &&
+            meta.sizeBytes === localSize &&
+            meta.digest === localDigest
+          ) {
             skipped++;
             continue;
           }
           this.store.putFile(key, full);
           synced++;
-          totalBytes += statSync(full).size;
+          totalBytes += localSize;
         } catch (e) {
           errors.push(`${key}: ${e}`);
         }
@@ -87,4 +95,8 @@ export class SyncManager {
       runCount: runs.size,
     };
   }
+}
+
+function digestFile(path: string): string {
+  return "sha256:" + createHash("sha256").update(readFileSync(path)).digest("hex");
 }

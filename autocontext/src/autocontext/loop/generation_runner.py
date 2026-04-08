@@ -57,7 +57,7 @@ from autocontext.loop.events import EventStreamEmitter
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.families import detect_family
-from autocontext.storage import ArtifactStore, SQLiteStore
+from autocontext.storage import SQLiteStore, artifact_store_from_settings
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +84,8 @@ class GenerationRunner:
         self.settings = settings
         self.sqlite = SQLiteStore(settings.db_path)
         self.trajectory_builder = ScoreTrajectoryBuilder(self.sqlite)
-        self.artifacts = ArtifactStore(
-            settings.runs_root,
-            settings.knowledge_root,
-            settings.skills_root,
-            settings.claude_skills_path,
-            max_playbook_versions=settings.playbook_max_versions,
+        self.artifacts = artifact_store_from_settings(
+            settings,
             enable_buffered_writes=True,
         )
         self.agents = AgentOrchestrator.from_settings(

@@ -12,7 +12,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import type { BlobStore, BlobStoreMeta } from "./store.js";
+import {
+  type BlobStore,
+  type BlobStoreMeta,
+  prefixMatches,
+  resolveBlobPath,
+} from "./store.js";
 
 export class LocalBlobStore implements BlobStore {
   constructor(private root: string) {
@@ -20,20 +25,20 @@ export class LocalBlobStore implements BlobStore {
   }
 
   put(key: string, data: Buffer): string {
-    const path = join(this.root, key);
+    const path = resolveBlobPath(this.root, key);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, data);
     return sha256(data);
   }
 
   get(key: string): Buffer | null {
-    const path = join(this.root, key);
+    const path = resolveBlobPath(this.root, key);
     if (!existsSync(path)) return null;
     return readFileSync(path);
   }
 
   head(key: string): BlobStoreMeta | null {
-    const path = join(this.root, key);
+    const path = resolveBlobPath(this.root, key);
     if (!existsSync(path)) return null;
     const data = readFileSync(path);
     return {
@@ -53,30 +58,30 @@ export class LocalBlobStore implements BlobStore {
           walk(full);
           continue;
         }
-        const rel = relative(this.root, full);
-        if (rel.startsWith(prefix)) results.push(rel);
+        const rel = relative(this.root, full).replace(/\\/g, "/");
+        if (prefixMatches(rel, prefix)) results.push(rel);
       }
     };
-    walk(join(this.root, prefix.split("/").slice(0, -1).join("/")));
+    walk(this.root);
     return results.sort();
   }
 
   delete(key: string): boolean {
-    const path = join(this.root, key);
+    const path = resolveBlobPath(this.root, key);
     if (!existsSync(path)) return false;
     unlinkSync(path);
     return true;
   }
 
   putFile(key: string, path: string): string {
-    const dest = join(this.root, key);
+    const dest = resolveBlobPath(this.root, key);
     mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(path, dest);
     return sha256(readFileSync(dest));
   }
 
   getFile(key: string, dest: string): boolean {
-    const src = join(this.root, key);
+    const src = resolveBlobPath(this.root, key);
     if (!existsSync(src)) return false;
     mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(src, dest);

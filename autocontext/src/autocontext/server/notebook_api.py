@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from autocontext.config import load_settings
-from autocontext.storage.artifacts import ArtifactStore
+from autocontext.storage.artifacts import ArtifactStore, artifact_store_from_settings
 from autocontext.storage.sqlite_store import SQLiteStore
 
 notebook_router = APIRouter(prefix="/api/notebooks", tags=["notebooks"])
@@ -37,12 +37,7 @@ def _get_store(request: Request) -> SQLiteStore:
 
 def _get_artifacts(request: Request) -> ArtifactStore:
     settings = getattr(request.app.state, "app_settings", None) or load_settings()
-    return ArtifactStore(
-        runs_root=settings.runs_root,
-        knowledge_root=settings.knowledge_root,
-        skills_root=settings.skills_root,
-        claude_skills_path=settings.claude_skills_path,
-    )
+    return artifact_store_from_settings(settings)
 
 
 @notebook_router.get("/")

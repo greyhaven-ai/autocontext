@@ -25,7 +25,7 @@ from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
-from autocontext.storage import ArtifactStore, SQLiteStore
+from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
@@ -98,12 +98,8 @@ def _sqlite_from_settings(settings: AppSettings) -> SQLiteStore:
 
 
 def _artifacts_from_settings(settings: AppSettings) -> ArtifactStore:
-    return ArtifactStore(
-        settings.runs_root,
-        settings.knowledge_root,
-        settings.skills_root,
-        settings.claude_skills_path,
-        max_playbook_versions=settings.playbook_max_versions,
+    return artifact_store_from_settings(
+        settings,
         enable_buffered_writes=True,
     )
 
@@ -884,7 +880,6 @@ def export_training_data_cmd(
 ) -> None:
     """Export strategy-level training data as JSONL."""
 
-    from autocontext.storage.artifacts import ArtifactStore
     from autocontext.training.export import export_training_data
 
     if not output:
@@ -913,7 +908,8 @@ def export_training_data_cmd(
         )
     )
 
-    artifacts = ArtifactStore(
+    artifacts = artifact_store_from_settings(
+        settings,
         runs_root=resolved_runs_root,
         knowledge_root=resolved_knowledge_root,
         skills_root=resolved_skills_root,
@@ -1019,8 +1015,6 @@ def export_cmd(
     """Export a portable strategy package for a scenario."""
     from autocontext.knowledge.export import export_strategy_package
     from autocontext.mcp.tools import MtsToolContext
-    from autocontext.storage.artifacts import ArtifactStore
-
     settings = load_settings()
     resolved_db = Path(db_path) if db_path is not None else settings.db_path
     resolved_runs, resolved_knowledge, resolved_skills, resolved_claude = _resolve_export_artifact_roots(
@@ -1035,7 +1029,8 @@ def export_cmd(
     sqlite = SQLiteStore(resolved_db)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
     sqlite.migrate(migrations_dir)
-    artifacts = ArtifactStore(
+    artifacts = artifact_store_from_settings(
+        settings,
         runs_root=resolved_runs,
         knowledge_root=resolved_knowledge,
         skills_root=resolved_skills,
@@ -1302,8 +1297,6 @@ def import_package_cmd(
 ) -> None:
     """Import a strategy package into scenario knowledge."""
     from autocontext.knowledge.package import ConflictPolicy, StrategyPackage, import_strategy_package
-    from autocontext.storage.artifacts import ArtifactStore
-
     pkg_path = Path(package_file)
     if not pkg_path.exists():
         if json_output:
@@ -1339,11 +1332,11 @@ def import_package_cmd(
     sqlite = SQLiteStore(resolved_db)
     migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
     sqlite.migrate(migrations_dir)
-    artifacts = ArtifactStore(
-        runs_root=settings.runs_root,
-        knowledge_root=Path(knowledge_root) if knowledge_root else settings.knowledge_root,
-        skills_root=Path(skills_root) if skills_root else settings.skills_root,
-        claude_skills_path=Path(claude_skills_path) if claude_skills_path else settings.claude_skills_path,
+    artifacts = artifact_store_from_settings(
+        settings,
+        knowledge_root=Path(knowledge_root) if knowledge_root else None,
+        skills_root=Path(skills_root) if skills_root else None,
+        claude_skills_path=Path(claude_skills_path) if claude_skills_path else None,
     )
 
     result = import_strategy_package(artifacts, pkg, sqlite=sqlite, conflict_policy=policy)

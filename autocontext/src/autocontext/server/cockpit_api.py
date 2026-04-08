@@ -17,7 +17,7 @@ from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.changelog import build_changelog
 from autocontext.server.writeup import generate_writeup
-from autocontext.storage.artifacts import ArtifactStore
+from autocontext.storage.artifacts import ArtifactStore, artifact_store_from_settings
 from autocontext.storage.sqlite_store import SQLiteStore
 
 logger = logging.getLogger(__name__)
@@ -37,12 +37,7 @@ def _get_artifacts(request: Request) -> ArtifactStore:
     settings = getattr(request.app.state, "app_settings", None)
     if settings is None:
         raise HTTPException(status_code=500, detail="Application settings are not configured")
-    return ArtifactStore(
-        runs_root=settings.runs_root,
-        knowledge_root=settings.knowledge_root,
-        skills_root=settings.skills_root,
-        claude_skills_path=settings.claude_skills_path,
-    )
+    return artifact_store_from_settings(settings)
 
 
 def _build_effective_notebook_preview(
