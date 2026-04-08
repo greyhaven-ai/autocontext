@@ -13,9 +13,13 @@ The North Star is to move from one-off frontier-model exploration toward workflo
 The intended use is mostly hands-off: point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
 
 <!-- autocontext-whats-new:start -->
-## Recent Changes
+## What's New
 
-For the latest shipped release notes and in-progress changes, see [CHANGELOG.md](CHANGELOG.md).
+- GEPA-inspired ASI/Pareto optimizer wired into improvement loop
+- Component sensitivity profiling and credit assignment
+- Pluggable scoring backends with Elo and Glicko support
+- Novelty exploration and multi-basin playbook branching
+- Cost-aware loop control and long-run presets
 <!-- autocontext-whats-new:end -->
 
 ## What actually is autocontext?
