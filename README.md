@@ -68,16 +68,16 @@ Strategies are then evaluated through scenario execution, staged validation, and
 
 ## Which Surface Fits Which Job
 
-| Surface       | When to use it                                                                      |
-| ------------- | ----------------------------------------------------------------------------------- |
-| `run`         | Improve behavior inside a reusable scenario or task across generations              |
-| `simulate`    | Model a system, explore parameter sweeps, or compare replayable outcomes            |
-| `investigate` | Evidence-driven diagnosis with hypotheses and confidence scoring                    |
-| `analyze`     | Inspect or compare runs, simulations, investigations, or missions after the fact    |
-| `mission`     | Verifier-driven goal advanced step by step with checkpoints and completion criteria |
+| Surface       | When to use it                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `run`         | Improve behavior inside a reusable scenario or task across generations                    |
+| `simulate`    | Model a system, explore parameter sweeps, or compare replayable outcomes                  |
+| `investigate` | Evidence-driven diagnosis with hypotheses and confidence scoring                          |
+| `analyze`     | Inspect or compare runs, simulations, investigations, or missions after the fact          |
+| `mission`     | Verifier-driven goal advanced step by step with checkpoints and completion criteria       |
 | `campaign`    | Coordinate multiple missions with budget tracking, dependencies, and progress aggregation |
-| `train`       | Distill stable exported data into a cheaper local runtime                           |
-| `replay`      | Inspect what happened before deciding what knowledge should persist                 |
+| `train`       | Distill stable exported data into a cheaper local runtime                                 |
+| `replay`      | Inspect what happened before deciding what knowledge should persist                       |
 
 `campaign` now ships as a TypeScript CLI/API/MCP workflow for multi-mission coordination. The Python package still does not expose a campaign control-plane surface.
 
@@ -188,7 +188,7 @@ The repo publishes two installable packages with different scopes:
 
 - Python package: `pip install autocontext`
 - TypeScript package: `npm install autoctx`
-- Current release line: `autocontext==0.3.6` and `autoctx@0.3.6`
+- Current release line: `autocontext==0.3.7` and `autoctx@0.3.7`
 
 Important:
 
@@ -257,6 +257,10 @@ MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenCl
 - MLX host training and OpenClaw bridge: [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md)
 - Sandbox and executor notes: [autocontext/docs/sandbox.md](autocontext/docs/sandbox.md)
 - License: [LICENSE](LICENSE)
+
+## Acknowledgments
+
+Thanks to [George](https://github.com/GeorgeH87) for generously donating the `autocontext` name on PyPI.
 
 ## Project Signals
 

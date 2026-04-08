@@ -25,7 +25,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 npm install autoctx
 ```
 
-The current npm release line is `autoctx@0.3.6`.
+The current npm release line is `autoctx@0.3.7`.
 Important: use `autoctx`, not `autocontext`.
 `autocontext` on npm is a different package and not this project.
 

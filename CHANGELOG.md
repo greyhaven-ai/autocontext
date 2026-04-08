@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.3.6` and are not part of the last published release until the next version is cut.
+Changes in this section are on the branch/repo after `0.3.7` and are not part of the last published release until the next version is cut.
+
+## [0.3.7] - 2026-04-08
 
 ### Added
 
@@ -162,6 +164,7 @@ Changes in this section are on the branch/repo after `0.3.6` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.3.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.6...py-v0.3.7
 [0.3.6]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.5...py-v0.3.6
 [0.3.5]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.4...py-v0.3.5
 [0.3.4]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.3...py-v0.3.4
