@@ -182,6 +182,9 @@ async function main(): Promise<void> {
     case "analyze":
       await cmdAnalyze();
       break;
+    case "blob":
+      await cmdBlob();
+      break;
     default:
       console.error(`Unknown command: ${command}\n`);
       console.log(HELP);
@@ -2852,7 +2855,9 @@ See also: mission, run`);
     }
   }
 
-  function parseCampaignStatus(raw: string | undefined): CampaignStatus | undefined {
+  function parseCampaignStatus(
+    raw: string | undefined,
+  ): CampaignStatus | undefined {
     if (!raw) return undefined;
     const allowed: CampaignStatus[] = [
       "active",
@@ -2862,9 +2867,7 @@ See also: mission, run`);
       "canceled",
     ];
     if (!allowed.includes(raw as CampaignStatus)) {
-      console.error(
-        `Error: --status must be one of ${allowed.join(", ")}`,
-      );
+      console.error(`Error: --status must be one of ${allowed.join(", ")}`);
       process.exit(1);
     }
     return raw as CampaignStatus;
@@ -3573,6 +3576,137 @@ Notes:
       console.log(`  Duration: ${(r.durationMs / 1000).toFixed(1)}s`);
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// blob command (AC-518 Phase 4)
+// ---------------------------------------------------------------------------
+
+async function cmdBlob(): Promise<void> {
+  const { parseArgs } = await import("node:util");
+  const { resolve } = await import("node:path");
+  const { loadSettings } = await import("../config/index.js");
+
+  const subcommand = process.argv[3];
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    console.log(`autoctx blob — Manage blob store for large artifacts
+
+Subcommands:
+  sync       Sync a run's artifacts to the blob store
+  status     Show blob store status (total blobs, bytes, synced runs)
+  hydrate    Download a remote blob into the local cache
+
+Examples:
+  autoctx blob status --json
+  autoctx blob sync --run-id run_001 --json
+  autoctx blob hydrate --key runs/run_001/events.ndjson
+
+Requires AUTOCONTEXT_BLOB_STORE_ENABLED=true`);
+    process.exit(0);
+  }
+
+  const settings = loadSettings();
+
+  if (!settings.blobStoreEnabled) {
+    console.error(
+      "Error: blob store is not enabled. Set AUTOCONTEXT_BLOB_STORE_ENABLED=true",
+    );
+    process.exit(1);
+  }
+
+  const { createBlobStore } = await import("../blobstore/factory.js");
+  const store = createBlobStore({
+    backend: settings.blobStoreBackend ?? "local",
+    root: resolve(settings.blobStoreRoot ?? "./blobs"),
+  });
+
+  switch (subcommand) {
+    case "status": {
+      const { values } = parseArgs({
+        args: process.argv.slice(4),
+        options: { json: { type: "boolean" } },
+      });
+      const { SyncManager } = await import("../blobstore/sync.js");
+      const mgr = new SyncManager(store, resolve(settings.runsRoot));
+      const result = mgr.status();
+      if (values.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(
+          `Blob store: ${result.totalBlobs} blobs, ${result.totalBytes} bytes`,
+        );
+        console.log(
+          `Synced runs: ${result.runCount} (${result.syncedRuns.join(", ") || "none"})`,
+        );
+      }
+      break;
+    }
+    case "sync": {
+      const { values } = parseArgs({
+        args: process.argv.slice(4),
+        options: {
+          "run-id": { type: "string" },
+          json: { type: "boolean" },
+        },
+      });
+      if (!values["run-id"]) {
+        console.error("Usage: autoctx blob sync --run-id <run-id> [--json]");
+        process.exit(1);
+      }
+      const { SyncManager } = await import("../blobstore/sync.js");
+      const mgr = new SyncManager(store, resolve(settings.runsRoot));
+      const result = mgr.syncRun(values["run-id"]);
+      if (values.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(
+          `Synced ${result.syncedCount} artifacts (${result.totalBytes} bytes), skipped ${result.skippedCount}`,
+        );
+        if (result.errors.length > 0) {
+          for (const err of result.errors) console.error(`  Error: ${err}`);
+        }
+      }
+      break;
+    }
+    case "hydrate": {
+      const { values } = parseArgs({
+        args: process.argv.slice(4),
+        options: {
+          key: { type: "string" },
+          output: { type: "string", short: "o" },
+        },
+      });
+      if (!values.key) {
+        console.error(
+          "Usage: autoctx blob hydrate --key <blob-key> [-o <output-path>]",
+        );
+        process.exit(1);
+      }
+      const data = store.get(values.key);
+      if (!data) {
+        console.error(`Blob not found: ${values.key}`);
+        process.exit(1);
+      }
+      if (values.output) {
+        const { writeFileSync, mkdirSync } = await import("node:fs");
+        const { dirname } = await import("node:path");
+        mkdirSync(dirname(resolve(values.output)), { recursive: true });
+        writeFileSync(resolve(values.output), data);
+        console.log(
+          `Hydrated ${values.key} → ${values.output} (${data.length} bytes)`,
+        );
+      } else {
+        process.stdout.write(data);
+      }
+      break;
+    }
+    default:
+      console.error(
+        `Unknown blob subcommand: ${subcommand}. Run 'autoctx blob --help'`,
+      );
+      process.exit(1);
+  }
 }
 
 main().catch((err) => {
