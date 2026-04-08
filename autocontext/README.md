@@ -42,6 +42,8 @@ Some newer operator-facing surfaces are currently TypeScript-first:
 - `autoctx analyze`
 - the interactive terminal UI via `npx autoctx tui`
 
+`campaign` currently lives in that same bucket: it has partial TypeScript API/MCP support, but the Python package does not expose a campaign control-plane workflow yet.
+
 ## Quick Start
 
 From the repo root:

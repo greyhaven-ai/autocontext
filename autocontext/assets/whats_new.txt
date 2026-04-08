@@ -1,5 +1,5 @@
 All 11 scenario families executable in both Python and TypeScript
-Campaign surfaces shipped: API endpoints and MCP tools for multi-mission coordination
+TypeScript campaign API and MCP surfaces shipped for multi-mission coordination
 Provider expansion: Gemini, Mistral, Groq, OpenRouter, and Azure OpenAI
 Evidence and privacy hardening with TruffleHog integration and redaction
 Session-runtime parity across Python and TypeScript surfaces

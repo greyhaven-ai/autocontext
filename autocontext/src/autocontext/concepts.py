@@ -29,7 +29,12 @@ _CONCEPT_MODEL: dict[str, Any] = {
         },
         {
             "name": "Campaign",
-            "description": "A planned grouping of missions, runs, and scenarios used to coordinate broader work over time.",
+            "description": (
+                "A planned grouping of missions, runs, and scenarios used to "
+                "coordinate broader work over time. Partial support exists "
+                "today through TypeScript API/MCP surfaces; the Python "
+                "package does not expose campaign workflows yet."
+            ),
             "status": "partial",
         },
     ],
