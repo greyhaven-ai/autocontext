@@ -12,7 +12,7 @@ from pathlib import Path
 
 from autocontext.blobstore.local import LocalBlobStore
 from autocontext.config.settings import AppSettings
-from autocontext.storage.artifacts import ArtifactStore, artifact_store_from_settings
+from autocontext.storage import ArtifactStore, artifact_store_from_settings
 from autocontext.storage.blob_integration import classify_artifact_kind
 
 # ---------------------------------------------------------------------------

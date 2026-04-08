@@ -11,7 +11,7 @@ from typing import Any
 from autocontext.config.settings import AppSettings
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.scenarios import SCENARIO_REGISTRY
-from autocontext.storage.artifacts import artifact_store_from_settings
+from autocontext.storage import artifact_store_from_settings
 
 
 @dataclass(slots=True)

@@ -11,8 +11,7 @@ from pydantic import BaseModel, Field
 from autocontext.config import load_settings
 from autocontext.knowledge.package import ConflictPolicy
 from autocontext.knowledge.research_hub import HubStore, PromotionEvent, ResearchSession
-from autocontext.storage.artifacts import ArtifactStore, artifact_store_from_settings
-from autocontext.storage.sqlite_store import SQLiteStore
+from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
 
 hub_router = APIRouter(prefix="/api/hub", tags=["hub"])
 

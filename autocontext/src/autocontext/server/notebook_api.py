@@ -9,8 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from autocontext.config import load_settings
-from autocontext.storage.artifacts import ArtifactStore, artifact_store_from_settings
-from autocontext.storage.sqlite_store import SQLiteStore
+from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
 
 notebook_router = APIRouter(prefix="/api/notebooks", tags=["notebooks"])
 

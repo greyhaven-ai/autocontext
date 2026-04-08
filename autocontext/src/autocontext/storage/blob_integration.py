@@ -73,3 +73,58 @@ def classify_artifact_kind(path: Path) -> str:
     if name.endswith(".jsonl") or "export" in parts or "training" in parts:
         return "export"
     return "artifact"
+
+
+def blob_key_for_path(
+    path: Path,
+    *,
+    runs_root: Path,
+    knowledge_root: Path,
+    skills_root: Path,
+    claude_skills_path: Path,
+) -> str | None:
+    """Return the blob key for a filesystem path under known artifact roots."""
+    resolved = path.resolve()
+    roots = (
+        ("runs", runs_root),
+        ("knowledge", knowledge_root),
+        ("skills", skills_root),
+        (".claude/skills", claude_skills_path),
+    )
+    for prefix, root in roots:
+        try:
+            relative = resolved.relative_to(root.resolve())
+        except ValueError:
+            continue
+        relative_text = relative.as_posix()
+        if not relative_text:
+            return prefix
+        return f"{prefix}/{relative_text}"
+    return None
+
+
+def mirror_path_bytes(
+    writer: BlobAwareWriter,
+    path: Path,
+    data: bytes,
+    *,
+    runs_root: Path,
+    knowledge_root: Path,
+    skills_root: Path,
+    claude_skills_path: Path,
+) -> BlobRef | None:
+    """Mirror a rendered file payload when it lives under a known artifact root."""
+    key = blob_key_for_path(
+        path,
+        runs_root=runs_root,
+        knowledge_root=knowledge_root,
+        skills_root=skills_root,
+        claude_skills_path=claude_skills_path,
+    )
+    if key is None:
+        return None
+    return writer.mirror_write(
+        key=key,
+        data=data,
+        kind=classify_artifact_kind(path),
+    )

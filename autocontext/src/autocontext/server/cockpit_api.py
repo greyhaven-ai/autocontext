@@ -17,8 +17,7 @@ from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.changelog import build_changelog
 from autocontext.server.writeup import generate_writeup
-from autocontext.storage.artifacts import ArtifactStore, artifact_store_from_settings
-from autocontext.storage.sqlite_store import SQLiteStore
+from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
 
 logger = logging.getLogger(__name__)
 

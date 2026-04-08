@@ -23,7 +23,7 @@ from autocontext.harness.storage.versioned_store import VersionedFileStore
 from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
-from autocontext.storage.blob_integration import BlobAwareWriter, classify_artifact_kind
+from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.util.json_io import read_json, write_json
 
@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from autocontext.blobstore.store import BlobStore
-    from autocontext.config.settings import AppSettings
 
 
 @runtime_checkable
@@ -70,33 +69,15 @@ class ArtifactStore:
             self._writer = BufferedWriter()
             self._writer.start()
 
-    def _blob_key_for_path(self, path: Path) -> str | None:
-        resolved = path.resolve()
-        roots = (
-            ("runs", self.runs_root),
-            ("knowledge", self.knowledge_root),
-            ("skills", self.skills_root),
-            (".claude/skills", self.claude_skills_path),
-        )
-        for prefix, root in roots:
-            try:
-                relative = resolved.relative_to(root.resolve())
-            except ValueError:
-                continue
-            relative_text = relative.as_posix()
-            if not relative_text:
-                return prefix
-            return f"{prefix}/{relative_text}"
-        return None
-
     def _mirror_bytes(self, path: Path, data: bytes) -> None:
-        key = self._blob_key_for_path(path)
-        if key is None:
-            return
-        self._blob_writer.mirror_write(
-            key=key,
-            data=data,
-            kind=classify_artifact_kind(path),
+        mirror_path_bytes(
+            self._blob_writer,
+            path,
+            data,
+            runs_root=self.runs_root,
+            knowledge_root=self.knowledge_root,
+            skills_root=self.skills_root,
+            claude_skills_path=self.claude_skills_path,
         )
 
     @property
@@ -340,7 +321,16 @@ class ArtifactStore:
     def append_dead_end(self, scenario_name: str, entry: str) -> None:
         """Append a dead-end entry to the registry file."""
         path = self.knowledge_root / scenario_name / "dead_ends.md"
-        self.append_markdown(path, entry, heading="Dead End")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        chunk = f"\n### Dead End\n\n{entry}\n"
+        if path.exists():
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(chunk)
+            self._mirror_bytes(path, path.read_bytes())
+            return
+        rendered = chunk.lstrip("\n")
+        path.write_text(rendered, encoding="utf-8")
+        self._mirror_bytes(path, rendered.encode("utf-8"))
 
     def replace_dead_ends(self, scenario_name: str, content: str) -> None:
         """Overwrite the entire dead_ends.md file (for curator consolidation)."""
@@ -1304,35 +1294,3 @@ class ArtifactStore:
         if not session_path.exists():
             return None
         return read_json(session_path)  # type: ignore[no-any-return]
-
-
-def artifact_store_from_settings(
-    settings: AppSettings,
-    *,
-    runs_root: Path | None = None,
-    knowledge_root: Path | None = None,
-    skills_root: Path | None = None,
-    claude_skills_path: Path | None = None,
-    enable_buffered_writes: bool = False,
-) -> ArtifactStore:
-    """Build an ArtifactStore from app settings, including blob-store wiring."""
-    blob_store = None
-    if settings.blob_store_enabled:
-        from autocontext.blobstore.factory import create_blob_store
-
-        blob_store = create_blob_store(
-            backend=settings.blob_store_backend,
-            root=settings.blob_store_root,
-            repo_id=settings.blob_store_repo,
-        )
-
-    return ArtifactStore(
-        runs_root=runs_root or settings.runs_root,
-        knowledge_root=knowledge_root or settings.knowledge_root,
-        skills_root=skills_root or settings.skills_root,
-        claude_skills_path=claude_skills_path or settings.claude_skills_path,
-        max_playbook_versions=settings.playbook_max_versions,
-        enable_buffered_writes=enable_buffered_writes,
-        blob_store=blob_store,
-        blob_store_min_size_bytes=settings.blob_store_min_size_bytes,
-    )
