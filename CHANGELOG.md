@@ -157,12 +157,12 @@ Changes in this section are on the branch/repo after `0.3.6` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[0.3.6]: https://github.com/greyhaven-ai/autocontext/compare/v0.3.5...v0.3.6
-[0.3.5]: https://github.com/greyhaven-ai/autocontext/compare/v0.3.4...v0.3.5
-[0.3.4]: https://github.com/greyhaven-ai/autocontext/compare/v0.3.3...v0.3.4
-[0.3.3]: https://github.com/greyhaven-ai/autocontext/compare/v0.3.2...v0.3.3
-[0.3.2]: https://github.com/greyhaven-ai/autocontext/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/greyhaven-ai/autocontext/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/greyhaven-ai/autocontext/compare/v0.2.4...v0.3.0
-[0.2.4]: https://github.com/greyhaven-ai/autocontext/compare/v0.2.0...v0.2.4
+[0.3.6]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.5...py-v0.3.6
+[0.3.5]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.4...py-v0.3.5
+[0.3.4]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.3...py-v0.3.4
+[0.3.3]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.2...py-v0.3.3
+[0.3.2]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.1...py-v0.3.2
+[0.3.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.0...py-v0.3.1
+[0.3.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.2.4...py-v0.3.0
+[0.2.4]: https://github.com/greyhaven-ai/autocontext/compare/v0.2.0...py-v0.2.4
 [0.2.0]: https://github.com/greyhaven-ai/autocontext/releases/tag/v0.2.0

@@ -9,7 +9,6 @@
 autocontext runs LLM agents through structured scenarios, evaluates their outputs, and accumulates the knowledge that improved results — so repeated runs get better, not just different. Point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
 
 <!-- autocontext-whats-new:start -->
-
 ## What's New
 
 - GEPA-inspired ASI/Pareto optimizer wired into improvement loop
@@ -19,7 +18,7 @@ autocontext runs LLM agents through structured scenarios, evaluates their output
 - Cost-aware loop control and long-run presets
 <!-- autocontext-whats-new:end -->
 
-## What actually is autocontext?
+## North Star
 
 Most agent systems still start every run cold. They do not reliably preserve what worked, separate signal from noise, or turn repeated success into a reusable asset.
 
@@ -50,7 +49,7 @@ The product model centers on a few stable ideas:
 - `Scenario`: a reusable environment or evaluation context with stable rules and scoring
 - `Task`: a prompt-centric unit of work that can be evaluated directly or embedded elsewhere
 - `Mission`: a long-running goal advanced step by step until a verifier says it is done
-- `Campaign`: a planned grouping of missions under long-term goals with budget tracking and dependencies
+- `Campaign`: a planned grouping of missions under long-term goals with budget tracking and dependencies (library abstraction; no standalone CLI command yet)
 - `Run`: a concrete execution instance of a scenario or task
 - `Verifier`: the runtime check that decides whether a mission, step, or output is acceptable
 - `Knowledge`: validated lessons that should carry forward across runs
@@ -69,16 +68,15 @@ Strategies are then evaluated through scenario execution, staged validation, and
 
 ## Which Surface Fits Which Job
 
-| Surface       | When to use it                                                                           |
-| ------------- | ---------------------------------------------------------------------------------------- |
-| `run`         | Improve behavior inside a reusable scenario or task across generations                   |
-| `simulate`    | Model a system, explore parameter sweeps, or compare replayable outcomes                 |
-| `investigate` | Evidence-driven diagnosis with hypotheses and confidence scoring                         |
-| `analyze`     | Inspect or compare runs, simulations, investigations, or missions after the fact         |
-| `mission`     | Verifier-driven goal advanced step by step with checkpoints and completion criteria      |
-| `campaign`    | Coordinate multiple missions under long-term goals with budget tracking and dependencies |
-| `train`       | Distill stable exported data into a cheaper local runtime                                |
-| `replay`      | Inspect what happened before deciding what knowledge should persist                      |
+| Surface       | When to use it                                                                      |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `run`         | Improve behavior inside a reusable scenario or task across generations              |
+| `simulate`    | Model a system, explore parameter sweeps, or compare replayable outcomes            |
+| `investigate` | Evidence-driven diagnosis with hypotheses and confidence scoring                    |
+| `analyze`     | Inspect or compare runs, simulations, investigations, or missions after the fact    |
+| `mission`     | Verifier-driven goal advanced step by step with checkpoints and completion criteria |
+| `train`       | Distill stable exported data into a cheaper local runtime                           |
+| `replay`      | Inspect what happened before deciding what knowledge should persist                 |
 
 ## Choose An Entry Point
 
@@ -89,7 +87,7 @@ Strategies are then evaluated through scenario execution, staged validation, and
 
 ## Scenario Families
 
-All 11 families are executable in both Python and TypeScript via V8 isolate codegen.
+All 11 families are executable in both Python and TypeScript. TypeScript uses V8 isolate codegen for secure execution; Python uses subprocess-based executors.
 
 | Family             | Evaluation              | What it tests                                                           |
 | ------------------ | ----------------------- | ----------------------------------------------------------------------- |
