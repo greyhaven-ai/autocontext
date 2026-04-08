@@ -20,6 +20,7 @@ import { loadSettings } from "../config/index.js";
 import { SolveManager } from "../knowledge/solver.js";
 import { runAgentTaskRlmSession } from "../rlm/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
+import { registerCampaignTools } from "./campaign-tools.js";
 import { registerMissionTools } from "./mission-tools.js";
 
 export interface MtsServerOpts {
@@ -1053,6 +1054,9 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
   registerMissionTools(server, {
     dbPath: opts.dbPath ?? settings.dbPath,
     runsRoot,
+  });
+  registerCampaignTools(server, {
+    dbPath: opts.dbPath ?? settings.dbPath,
   });
 
   return server;

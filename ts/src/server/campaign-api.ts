@@ -62,7 +62,7 @@ export function buildCampaignApiRoutes(
               ...(opts.budgetTokens
                 ? { maxTotalSteps: opts.budgetTokens }
                 : {}),
-              ...(opts.budgetCost ? { maxMissions: opts.budgetCost } : {}),
+              ...(opts.budgetCost ? { maxTotalCostUsd: opts.budgetCost } : {}),
             }
           : undefined;
       const id = manager.create({ name: opts.name, goal: opts.goal, budget });

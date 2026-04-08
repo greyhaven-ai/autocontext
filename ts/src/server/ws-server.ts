@@ -9,8 +9,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
 import { URL, fileURLToPath } from "node:url";
 import { MissionEventEmitter, type MissionCreatedEvent, type MissionStepEvent, type MissionStatusChangedEvent, type MissionVerifiedEvent } from "../mission/events.js";
+import { CampaignManager } from "../mission/campaign.js";
 import { MissionManager } from "../mission/manager.js";
 import { buildMissionStatusPayload, requireMission, runMissionLoop, writeMissionCheckpoint } from "../mission/control-plane.js";
+import { buildCampaignApiRoutes } from "./campaign-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
 import { MissionProgressMsgSchema, parseClientMessage } from "./protocol.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
@@ -42,6 +44,7 @@ export class PortInUseError extends Error {
 export class InteractiveServer {
   private readonly runManager: RunManager;
   private readonly missionManager: MissionManager;
+  private readonly campaignManager: CampaignManager;
   private readonly missionEvents: MissionEventEmitter;
   private readonly host: string;
   private readonly requestedPort: number;
@@ -56,6 +59,7 @@ export class InteractiveServer {
     this.missionManager = new MissionManager(this.runManager["opts"].dbPath, {
       events: this.missionEvents,
     });
+    this.campaignManager = new CampaignManager(this.missionManager);
     this.host = opts.host ?? "127.0.0.1";
     this.requestedPort = opts.port ?? 8000;
     // Dashboard removed (AC-467)
@@ -131,6 +135,7 @@ export class InteractiveServer {
     const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const url = requestUrl.pathname;
     const method = req.method ?? "GET";
+    const campaignApi = buildCampaignApiRoutes(this.campaignManager);
     const missionApi = buildMissionApiRoutes(this.missionManager, this.runManager["opts"].runsRoot);
 
     // CORS headers for dashboard
@@ -159,6 +164,7 @@ export class InteractiveServer {
           runs: "/api/runs",
           scenarios: "/api/scenarios",
           knowledge: "/api/knowledge/playbook/:scenario",
+          campaigns: "/api/campaigns",
           missions: "/api/missions",
           websocket: "/ws/interactive",
           events: "/ws/events",
@@ -243,6 +249,95 @@ export class InteractiveServer {
     // GET /api/scenarios
     if (url === "/api/scenarios") {
       json(200, this.runManager.getEnvironmentInfo().scenarios);
+      return;
+    }
+
+    // GET /api/campaigns
+    if (method === "GET" && url === "/api/campaigns") {
+      json(200, campaignApi.listCampaigns(requestUrl.searchParams.get("status") ?? undefined));
+      return;
+    }
+
+    // POST /api/campaigns
+    if (method === "POST" && url === "/api/campaigns") {
+      const body = await this.readJsonBody(req);
+      const result = campaignApi.createCampaign({
+        name: String(body.name ?? ""),
+        goal: String(body.goal ?? ""),
+        budgetTokens:
+          typeof body.budgetTokens === "number" ? body.budgetTokens : undefined,
+        budgetCost:
+          typeof body.budgetCost === "number" ? body.budgetCost : undefined,
+      });
+      json(200, result);
+      return;
+    }
+
+    // GET /api/campaigns/:id
+    const campaignMatch = url.match(/^\/api\/campaigns\/([^/]+)$/);
+    if (method === "GET" && campaignMatch) {
+      const [, campaignId] = campaignMatch;
+      const campaign = campaignApi.getCampaign(campaignId!);
+      if (!campaign) {
+        json(404, { error: `Campaign '${campaignId}' not found` });
+        return;
+      }
+      json(200, campaign);
+      return;
+    }
+
+    // GET /api/campaigns/:id/progress
+    const campaignProgressMatch = url.match(/^\/api\/campaigns\/([^/]+)\/progress$/);
+    if (method === "GET" && campaignProgressMatch) {
+      const [, campaignId] = campaignProgressMatch;
+      const progress = campaignApi.getCampaignProgress(campaignId!);
+      if (!progress) {
+        json(404, { error: `Campaign '${campaignId}' not found` });
+        return;
+      }
+      json(200, {
+        progress,
+        budget: this.campaignManager.budgetUsage(campaignId!),
+      });
+      return;
+    }
+
+    // POST /api/campaigns/:id/missions
+    const campaignMissionMatch = url.match(/^\/api\/campaigns\/([^/]+)\/missions$/);
+    if (method === "POST" && campaignMissionMatch) {
+      const [, campaignId] = campaignMissionMatch;
+      const body = await this.readJsonBody(req);
+      campaignApi.addMission(campaignId!, {
+        missionId: String(body.missionId ?? ""),
+        priority:
+          typeof body.priority === "number" ? body.priority : undefined,
+        dependsOn: Array.isArray(body.dependsOn)
+          ? body.dependsOn.filter((value): value is string => typeof value === "string")
+          : undefined,
+      });
+      json(200, { ok: true });
+      return;
+    }
+
+    // POST /api/campaigns/:id/(pause|resume|cancel)
+    const campaignActionMatch = url.match(/^\/api\/campaigns\/([^/]+)\/(pause|resume|cancel)$/);
+    if (method === "POST" && campaignActionMatch) {
+      const [, campaignId, action] = campaignActionMatch;
+      const campaign = campaignApi.getCampaign(campaignId!);
+      if (!campaign) {
+        json(404, { error: `Campaign '${campaignId}' not found` });
+        return;
+      }
+      const status = action === "pause"
+        ? "paused"
+        : action === "resume"
+          ? "active"
+          : "canceled";
+      campaignApi.updateStatus(campaignId!, status);
+      json(200, {
+        ok: true,
+        status,
+      });
       return;
     }
 
@@ -442,6 +537,7 @@ export class InteractiveServer {
       });
     }
 
+    this.campaignManager.close();
     this.missionManager.close();
   }
 

@@ -8,7 +8,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { CampaignManager } from "../mission/campaign.js";
-import type { MissionManager } from "../mission/manager.js";
+import { CampaignManager as CampaignManagerImpl } from "../mission/campaign.js";
+import { MissionManager } from "../mission/manager.js";
 
 export interface CampaignToolDef {
   name: string;
@@ -136,8 +137,19 @@ export const CAMPAIGN_TOOLS: CampaignToolDef[] = [
 
 export function registerCampaignTools(
   server: McpServer,
-  getCampaignManager: () => CampaignManager,
+  opts: { dbPath: string },
 ): void {
+  const withManager = async <T>(fn: (manager: CampaignManager) => Promise<T> | T): Promise<T> => {
+    const missionManager = new MissionManager(opts.dbPath);
+    const campaignManager = new CampaignManagerImpl(missionManager);
+    try {
+      return await fn(campaignManager);
+    } finally {
+      campaignManager.close();
+      missionManager.close();
+    }
+  };
+
   server.tool(
     "create_campaign",
     {
@@ -146,8 +158,7 @@ export function registerCampaignTools(
       budget_tokens: z.number().optional(),
       budget_missions: z.number().optional(),
     },
-    async ({ name, goal, budget_tokens, budget_missions }) => {
-      const mgr = getCampaignManager();
+    async ({ name, goal, budget_tokens, budget_missions }) => withManager((mgr) => {
       const budget =
         budget_tokens || budget_missions
           ? {
@@ -159,14 +170,13 @@ export function registerCampaignTools(
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ id }) }],
       };
-    },
+    }),
   );
 
   server.tool(
     "campaign_status",
     { campaign_id: z.string() },
-    async ({ campaign_id }) => {
-      const mgr = getCampaignManager();
+    async ({ campaign_id }) => withManager((mgr) => {
       const campaign = mgr.get(campaign_id);
       if (!campaign)
         return {
@@ -187,19 +197,18 @@ export function registerCampaignTools(
           },
         ],
       };
-    },
+    }),
   );
 
   server.tool(
     "list_campaigns",
     { status: z.string().optional() },
-    async ({ status }) => {
-      const mgr = getCampaignManager();
+    async ({ status }) => withManager((mgr) => {
       const campaigns = mgr.list(status as Parameters<typeof mgr.list>[0]);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(campaigns) }],
       };
-    },
+    }),
   );
 
   server.tool(
@@ -210,8 +219,7 @@ export function registerCampaignTools(
       priority: z.number().optional(),
       depends_on: z.string().optional(),
     },
-    async ({ campaign_id, mission_id, priority, depends_on }) => {
-      const mgr = getCampaignManager();
+    async ({ campaign_id, mission_id, priority, depends_on }) => withManager((mgr) => {
       const dependsOn = depends_on
         ? depends_on.split(",").map((s) => s.trim())
         : undefined;
@@ -221,14 +229,13 @@ export function registerCampaignTools(
           { type: "text" as const, text: JSON.stringify({ ok: true }) },
         ],
       };
-    },
+    }),
   );
 
   server.tool(
     "campaign_progress",
     { campaign_id: z.string() },
-    async ({ campaign_id }) => {
-      const mgr = getCampaignManager();
+    async ({ campaign_id }) => withManager((mgr) => {
       const progress = mgr.progress(campaign_id);
       const budget = mgr.budgetUsage(campaign_id);
       return {
@@ -236,14 +243,13 @@ export function registerCampaignTools(
           { type: "text" as const, text: JSON.stringify({ progress, budget }) },
         ],
       };
-    },
+    }),
   );
 
   server.tool(
     "pause_campaign",
     { campaign_id: z.string() },
-    async ({ campaign_id }) => {
-      const mgr = getCampaignManager();
+    async ({ campaign_id }) => withManager((mgr) => {
       mgr.pause(campaign_id);
       return {
         content: [
@@ -253,14 +259,13 @@ export function registerCampaignTools(
           },
         ],
       };
-    },
+    }),
   );
 
   server.tool(
     "resume_campaign",
     { campaign_id: z.string() },
-    async ({ campaign_id }) => {
-      const mgr = getCampaignManager();
+    async ({ campaign_id }) => withManager((mgr) => {
       mgr.resume(campaign_id);
       return {
         content: [
@@ -270,14 +275,13 @@ export function registerCampaignTools(
           },
         ],
       };
-    },
+    }),
   );
 
   server.tool(
     "cancel_campaign",
     { campaign_id: z.string() },
-    async ({ campaign_id }) => {
-      const mgr = getCampaignManager();
+    async ({ campaign_id }) => withManager((mgr) => {
       mgr.cancel(campaign_id);
       return {
         content: [
@@ -287,6 +291,6 @@ export function registerCampaignTools(
           },
         ],
       };
-    },
+    }),
   );
 }
