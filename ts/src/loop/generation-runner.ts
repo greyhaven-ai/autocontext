@@ -48,7 +48,11 @@ import {
   createTournamentExecutionPlan,
   parseCompetitorStrategyResult,
 } from "./generation-execution-step.js";
-import { buildGenerationTournamentEventSequence } from "./generation-tournament-event-sequencing.js";
+import {
+  buildRoleCompletedPayload,
+  executeRoleCompletionSideEffect,
+  executeTournamentSideEffect,
+} from "./generation-side-effect-coordinator.js";
 import { GenerationJournal } from "./generation-journal.js";
 import {
   completeGenerationLoopRun,
@@ -229,9 +233,12 @@ export class GenerationRunner {
           const competitorPrompt = this.buildCompetitorPrompt(runId);
 
           // Step 1: Get strategy from provider (competitor role)
-          const competitorStartedAt = Date.now();
-          const competitorResult = await this.completeRole("competitor", competitorPrompt);
-          this.emitRoleCompleted("competitor", competitorStartedAt, competitorResult.usage);
+          const competitorCompletion = await executeRoleCompletionSideEffect({
+            role: "competitor",
+            execute: () => this.completeRole("competitor", competitorPrompt),
+          });
+          const competitorResult = competitorCompletion.result;
+          this.emit("role_completed", competitorCompletion.roleCompletedPayload);
 
           const strategy = parseCompetitorStrategyResult(competitorResult.text);
 
@@ -246,17 +253,17 @@ export class GenerationRunner {
             matchesPerGeneration: this.#matchesPerGeneration,
             currentElo: this.#runState.currentElo,
           });
-          const tournament = new TournamentRunner(
-            this.#scenario,
-            tournamentPlan.tournamentOptions,
-          );
-          const tournamentResult = tournament.run(strategy);
-          for (const event of buildGenerationTournamentEventSequence({
+          const tournamentExecution = executeTournamentSideEffect({
             runId,
             generation: gen,
             scheduledMatches: this.#matchesPerGeneration,
-            tournamentResult,
-          })) {
+            executionPlan: tournamentPlan,
+            strategy,
+            executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
+              new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
+          });
+          const tournamentResult = tournamentExecution.tournamentResult;
+          for (const event of tournamentExecution.events) {
             this.emit(event.event, event.payload);
           }
 
@@ -648,13 +655,10 @@ export class GenerationRunner {
     startedAt: number,
     usage: Record<string, number>,
   ): void {
-    const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
-    const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
-    this.emit("role_completed", {
-      role,
-      latency_ms: Date.now() - startedAt,
-      tokens: inputTokens + outputTokens,
-    });
+    this.emit(
+      "role_completed",
+      buildRoleCompletedPayload(role, Date.now() - startedAt, usage),
+    );
   }
 }
 

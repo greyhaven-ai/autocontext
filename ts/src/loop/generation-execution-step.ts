@@ -16,19 +16,21 @@ export function parseCompetitorStrategyResult(
   }
 }
 
-export function createTournamentExecutionPlan(opts: {
-  generation: number;
-  seedBase: number;
-  matchesPerGeneration: number;
-  currentElo: number;
-}): {
+export interface TournamentExecutionPlan {
   seedForGeneration: number;
   tournamentOptions: {
     matchCount: number;
     seedBase: number;
     initialElo: number;
   };
-} {
+}
+
+export function createTournamentExecutionPlan(opts: {
+  generation: number;
+  seedBase: number;
+  matchesPerGeneration: number;
+  currentElo: number;
+}): TournamentExecutionPlan {
   const seedForGeneration = opts.seedBase + (opts.generation - 1) * opts.matchesPerGeneration;
 
   return {
