@@ -40,9 +40,16 @@ import {
 import { GenerationJournal } from "./generation-journal.js";
 import { GenerationRecovery } from "./generation-recovery.js";
 import {
+  completeGenerationCycle,
+  createGenerationCycleState,
+  getActiveGenerationPhaseState,
+  hasRemainingGenerationCycles,
+  startNextGenerationCycle,
+  updateGenerationCyclePhase,
+} from "./generation-cycle-state.js";
+import {
   applyGenerationPhaseDecision,
   canContinueGenerationPhase,
-  createGenerationPhaseState,
   didAdvanceGenerationPhase,
   getFinalizedGenerationPhaseAttempt,
   markAwaitingCompetitorResult,
@@ -198,14 +205,15 @@ export class GenerationRunner {
         target_generations: generations,
       });
 
-      let previousBest = 0;
+      let cycleState = createGenerationCycleState({
+        targetGenerations: generations,
+      });
 
-      for (let gen = 1; gen <= generations; gen++) {
+      while (hasRemainingGenerationCycles(cycleState)) {
         await this.#controller?.waitIfPaused();
-        let phaseState = createGenerationPhaseState({
-          generation: gen,
-          previousBestForGeneration: previousBest,
-        });
+        cycleState = startNextGenerationCycle(cycleState);
+        let phaseState = getActiveGenerationPhaseState(cycleState);
+        const gen = phaseState.generation;
         this.emit("generation_started", { run_id: runId, generation: gen });
         this.emit("agents_started", {
           run_id: runId,
@@ -268,7 +276,7 @@ export class GenerationRunner {
 
           // Step 3: Backpressure gate
           const decision = this.#gate.evaluate(
-            previousBest,
+            cycleState.previousBestOverall,
             tournamentResult.bestScore,
             phaseState.attemptState.retryCount,
             this.#maxRetries,
@@ -290,9 +298,9 @@ export class GenerationRunner {
           });
 
           phaseState = applyGenerationPhaseDecision(phaseState, attempt);
+          cycleState = updateGenerationCyclePhase(cycleState, phaseState);
 
           if (didAdvanceGenerationPhase(phaseState)) {
-            previousBest = tournamentResult.bestScore;
             this.#runState = recordGenerationResult(this.#runState!, {
               generation: gen,
               bestScore: tournamentResult.bestScore,
@@ -315,6 +323,7 @@ export class GenerationRunner {
           elo: finalizedAttempt.tournamentResult.elo,
           gate_decision: finalizedAttempt.gateDecision,
         });
+        cycleState = completeGenerationCycle(updateGenerationCyclePhase(cycleState, phaseState));
       }
 
       this.#store.updateRunStatus(runId, "completed");
@@ -327,20 +336,20 @@ export class GenerationRunner {
       });
       this.emit("run_completed", {
         run_id: runId,
-        completed_generations: generations,
+        completed_generations: cycleState.completedGenerations,
         best_score: this.#runState.bestScore,
         elo: this.#runState.currentElo,
         session_report_path: sessionReportPath,
         dead_ends_found: this.#journal.countDeadEnds(),
       });
       await this.notify("completion", runId, this.#runState.bestScore, {
-        roundCount: generations,
+        roundCount: cycleState.completedGenerations,
         metadata: { session_report_path: sessionReportPath },
       });
 
       return {
         runId,
-        generationsCompleted: generations,
+        generationsCompleted: cycleState.completedGenerations,
         bestScore: this.#runState.bestScore,
         currentElo: this.#runState.currentElo,
       };
