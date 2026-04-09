@@ -45,4 +45,57 @@ describe("template-backed workflow codegen", () => {
     expect(source).not.toMatch(/__[A-Z0-9_]+__/);
     expect(() => new Function(source)).not.toThrow();
   });
+
+  it("preserves placeholder-like text inside workflow fields", () => {
+    const source = generateWorkflowSource(
+      {
+        description: "__MAX_STEPS__ desc",
+        environment_description: "Checkout pipeline",
+        initial_state_description: "No steps completed",
+        success_criteria: ["payment settled"],
+        failure_modes: ["rollback required"],
+        max_steps: 7,
+        steps: [
+          {
+            name: "validate",
+            description: "Validate request",
+            compensationAction: "rollback",
+            sideEffects: ["validation_logged"],
+            retryable: true,
+          },
+        ],
+        actions: [
+          {
+            name: "validate",
+            description: "Validate request",
+            parameters: {},
+            preconditions: [],
+            effects: ["validated"],
+          },
+        ],
+      },
+      "payment_flow",
+    );
+
+    expect(source).toContain('return "__MAX_STEPS__ desc";');
+    expect(source).not.toContain('return "7 desc";');
+  });
+
+  it("does not reject placeholder-like workflow data from user specs", () => {
+    expect(() =>
+      generateWorkflowSource(
+        {
+          description: "Payment flow",
+          environment_description: "Checkout pipeline",
+          initial_state_description: "No steps completed",
+          success_criteria: ["payment settled"],
+          failure_modes: ["__SAFE_MODE__"],
+          max_steps: 7,
+          steps: [],
+          actions: [],
+        },
+        "payment_flow",
+      ),
+    ).not.toThrow();
+  });
 });
