@@ -37,22 +37,9 @@ import {
   buildCuratorPrompt,
   buildSupportPrompt,
 } from "./generation-prompts.js";
-import {
-  awaitGenerationCompetitorResult,
-  awaitGenerationTournamentResult,
-  createGenerationAttemptOrchestration,
-  finalizeGenerationAttemptDecision,
-} from "./generation-attempt-orchestrator.js";
-import {
-  buildGenerationAttemptCandidate,
-  createTournamentExecutionPlan,
-  parseCompetitorStrategyResult,
-} from "./generation-execution-step.js";
-import {
-  buildRoleCompletedPayload,
-  executeRoleCompletionSideEffect,
-  executeTournamentSideEffect,
-} from "./generation-side-effect-coordinator.js";
+import { createGenerationAttemptOrchestration } from "./generation-attempt-orchestrator.js";
+import { createGenerationAttemptWorkflow, runGenerationAttemptWorkflow } from "./generation-attempt-workflow.js";
+import { buildRoleCompletedPayload } from "./generation-side-effect-coordinator.js";
 import { GenerationJournal } from "./generation-journal.js";
 import {
   completeGenerationLoopRun,
@@ -227,75 +214,45 @@ export class GenerationRunner {
         // Retry loop for this generation
         while (canContinueGenerationPhase(phaseState, this.#maxRetries)) {
           await this.#controller?.waitIfPaused();
-          attemptOrchestration = awaitGenerationCompetitorResult(attemptOrchestration);
-          phaseState = attemptOrchestration.phaseState;
-          orchestration = attemptOrchestration.orchestration;
           const competitorPrompt = this.buildCompetitorPrompt(runId);
-
-          // Step 1: Get strategy from provider (competitor role)
-          const competitorCompletion = await executeRoleCompletionSideEffect({
-            role: "competitor",
-            execute: () => this.completeRole("competitor", competitorPrompt),
-          });
-          const competitorResult = competitorCompletion.result;
-          this.emit("role_completed", competitorCompletion.roleCompletedPayload);
-
-          const strategy = parseCompetitorStrategyResult(competitorResult.text);
-
-          // Step 2: Run tournament
-          await this.#controller?.waitIfPaused();
-          attemptOrchestration = awaitGenerationTournamentResult(attemptOrchestration);
-          phaseState = attemptOrchestration.phaseState;
-          orchestration = attemptOrchestration.orchestration;
-          const tournamentPlan = createTournamentExecutionPlan({
-            generation: gen,
-            seedBase: this.#seedBase,
-            matchesPerGeneration: this.#matchesPerGeneration,
-            currentElo: this.#runState.currentElo,
-          });
-          const tournamentExecution = executeTournamentSideEffect({
-            runId,
-            generation: gen,
-            scheduledMatches: this.#matchesPerGeneration,
-            executionPlan: tournamentPlan,
-            strategy,
-            executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
-              new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
-          });
-          const tournamentResult = tournamentExecution.tournamentResult;
-          for (const event of tournamentExecution.events) {
-            this.emit(event.event, event.payload);
-          }
-
-          // Step 3: Backpressure gate
-          const decision = this.#gate.evaluate(
-            orchestration.cycleState.previousBestOverall,
-            tournamentResult.bestScore,
-            phaseState.attemptState.retryCount,
-            this.#maxRetries,
-          );
-          const gateDecision = this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
-          const attempt: GenerationAttempt = buildGenerationAttemptCandidate({
-            competitorPrompt,
-            competitorResultText: competitorResult.text,
-            strategy,
-            tournamentResult,
-            gateDecision,
-          });
-          attemptOrchestration = finalizeGenerationAttemptDecision(
-            attemptOrchestration,
-            {
+          const workflowResult = await runGenerationAttemptWorkflow(
+            createGenerationAttemptWorkflow({
+              attemptOrchestration,
               runId,
               generation: gen,
-              attempt,
-              delta: decision.delta,
-              threshold: decision.threshold,
-            },
+              competitorPrompt,
+              seedBase: this.#seedBase,
+              matchesPerGeneration: this.#matchesPerGeneration,
+              currentElo: this.#runState.currentElo,
+              executeCompetitor: () => this.completeRole("competitor", competitorPrompt),
+              beforeTournament: async () => {
+                await this.#controller?.waitIfPaused();
+              },
+              executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
+                new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
+              decideGate: ({ attemptOrchestration: currentAttemptOrchestration, tournamentResult }) => {
+                const decision = this.#gate.evaluate(
+                  currentAttemptOrchestration.orchestration.cycleState.previousBestOverall,
+                  tournamentResult.bestScore,
+                  currentAttemptOrchestration.phaseState.attemptState.retryCount,
+                  this.#maxRetries,
+                );
+                const gateDecision = this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
+                return {
+                  gateDecision,
+                  delta: decision.delta,
+                  threshold: decision.threshold,
+                };
+              },
+            }),
           );
+          attemptOrchestration = workflowResult.attemptOrchestration;
           phaseState = attemptOrchestration.phaseState;
           orchestration = attemptOrchestration.orchestration;
           this.#runState = orchestration.runState;
-          this.emit("gate_decided", attemptOrchestration.events.gateDecided!);
+          for (const event of workflowResult.events) {
+            this.emit(event.event, event.payload);
+          }
         }
 
         const finalizedAttempt = getFinalizedGenerationPhaseAttempt(phaseState);
