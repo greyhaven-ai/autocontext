@@ -1,19 +1,10 @@
 import type { MissionStatus, VerifierResult } from "./types.js";
 
-export interface MissionStatusTransition {
-  nextStatus: MissionStatus;
-  shouldEmitStatusChange: boolean;
-}
-
-export function resolveMissionStatusTransition(
-  previousStatus: MissionStatus | undefined,
-  nextStatus: MissionStatus,
-): MissionStatusTransition {
-  return {
-    nextStatus,
-    shouldEmitStatusChange: previousStatus !== undefined && previousStatus !== nextStatus,
-  };
-}
+export {
+  canTransitionMissionStatus,
+  resolveMissionStatusTransition,
+  type MissionStatusTransition,
+} from "./status-transitions.js";
 
 export function deriveMissionStatusFromVerifierResult(
   result: VerifierResult,
