@@ -37,13 +37,13 @@ import {
   buildCuratorPrompt,
   buildSupportPrompt,
 } from "./generation-prompts.js";
-import { buildTournamentCompletedPayload } from "./generation-event-coordinator.js";
 import {
   awaitGenerationCompetitorResult,
   awaitGenerationTournamentResult,
   createGenerationAttemptOrchestration,
   finalizeGenerationAttemptDecision,
 } from "./generation-attempt-orchestrator.js";
+import { buildGenerationTournamentEventSequence } from "./generation-tournament-event-sequencing.js";
 import { GenerationJournal } from "./generation-journal.js";
 import {
   completeGenerationLoopRun,
@@ -246,25 +246,15 @@ export class GenerationRunner {
             seedBase: seedForGen,
             initialElo: this.#runState.currentElo,
           });
-          this.emit("tournament_started", {
-            run_id: runId,
-            generation: gen,
-            matches: this.#matchesPerGeneration,
-          });
           const tournamentResult = tournament.run(strategy);
-          tournamentResult.matches.forEach((match, matchIndex) => {
-            this.emit("match_completed", {
-              run_id: runId,
-              generation: gen,
-              match_index: matchIndex,
-              score: match.score,
-              winner: match.winner ?? "",
-            });
-          });
-          this.emit(
-            "tournament_completed",
-            buildTournamentCompletedPayload(runId, gen, tournamentResult),
-          );
+          for (const event of buildGenerationTournamentEventSequence({
+            runId,
+            generation: gen,
+            scheduledMatches: this.#matchesPerGeneration,
+            tournamentResult,
+          })) {
+            this.emit(event.event, event.payload);
+          }
 
           // Step 3: Backpressure gate
           const decision = this.#gate.evaluate(
