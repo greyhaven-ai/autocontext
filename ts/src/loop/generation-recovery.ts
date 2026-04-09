@@ -62,6 +62,11 @@ export class GenerationRecovery {
     this.#stagnationDetector = opts.stagnationDetector;
   }
 
+  reset(): void {
+    this.#gateHistory = [];
+    this.#scoreHistory = [];
+  }
+
   handleAttempt(runId: string, attempt: GenerationRecoveryAttempt): GenerationRecoveryOutcome {
     const events: GenerationRecoveryEvent[] = [];
     let deadEndRecorded = false;

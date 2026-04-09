@@ -648,6 +648,53 @@ describe("GenerationRunner", () => {
 
     store.close();
   });
+
+  it("resets stagnation history between separate runs on the same runner", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    const dbPath = join(dir, "reuse.db");
+    const runsRoot = join(dir, "runs");
+    const knowledgeRoot = join(dir, "knowledge");
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+
+    const runner = new GenerationRunner({
+      provider: new DeterministicProvider(),
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot,
+      knowledgeRoot,
+      matchesPerGeneration: 2,
+      maxRetries: 0,
+      minDelta: 5.0,
+      deadEndTrackingEnabled: true,
+      deadEndMaxEntries: 5,
+      stagnationResetEnabled: true,
+      stagnationRollbackThreshold: 2,
+      stagnationPlateauWindow: 3,
+      stagnationPlateauEpsilon: 0.0001,
+    });
+
+    await runner.run("run-one", 1);
+    await runner.run("run-two", 2);
+
+    const promptPath = join(
+      runsRoot,
+      "run-two",
+      "generations",
+      "gen_2",
+      "competitor_prompt.md",
+    );
+    expect(existsSync(promptPath)).toBe(true);
+    const prompt = readFileSync(promptPath, "utf-8");
+    expect(prompt).not.toContain("Fresh Start Guidance");
+    expect(prompt).not.toContain("2 consecutive rollbacks");
+
+    store.close();
+  });
 });
 
 // ---------------------------------------------------------------------------

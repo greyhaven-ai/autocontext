@@ -167,6 +167,7 @@ export class GenerationRunner {
   async run(runId: string, generations: number): Promise<RunResult> {
     // Create run record
     this.#store.createRun(runId, this.#scenario.name, generations, "local");
+    this.#recovery.reset();
     this.#pendingFreshStartHint = null;
     this.#runStartedAtMs = Date.now();
     let currentElo = 1000;
