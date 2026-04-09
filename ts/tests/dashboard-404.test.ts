@@ -1,8 +1,8 @@
 /**
- * AC-467: Dashboard removed — server is API-only.
+ * API root remains JSON while the simulation dashboard is served as HTML.
  *
- * These tests verify that the server no longer serves HTML dashboards
- * and instead returns useful API info at the root endpoint.
+ * These tests verify the server still exposes API discovery at `/`
+ * and the simulation dashboard at `/dashboard`.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -40,7 +40,7 @@ async function createTestServer(dir: string) {
   return { server, mgr, url: server.url };
 }
 
-describe("API-only server (AC-467)", () => {
+describe("Server root + dashboard surfaces", () => {
   let dir: string;
   let server: Awaited<ReturnType<typeof createTestServer>>["server"];
   let httpUrl: string;
@@ -56,12 +56,13 @@ describe("API-only server (AC-467)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("GET / returns JSON API info, not HTML", async () => {
+  it("GET / returns JSON API info", async () => {
     const res = await fetch(`${httpUrl}/`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.service).toBe("autocontext");
     expect(body.endpoints).toBeDefined();
+    expect(body.endpoints.dashboard).toBe("/dashboard");
   });
 
   it("GET /health still works", async () => {
@@ -76,10 +77,11 @@ describe("API-only server (AC-467)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("GET /dashboard returns API info JSON (no HTML)", async () => {
+  it("GET /dashboard returns simulation dashboard HTML", async () => {
     const res = await fetch(`${httpUrl}/dashboard`);
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.service).toBe("autocontext");
+    const body = await res.text();
+    expect(body).toContain("<!DOCTYPE html>");
+    expect(body).toContain("simulation dashboard");
   });
 });

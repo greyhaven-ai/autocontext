@@ -14,6 +14,8 @@ import { MissionManager } from "../mission/manager.js";
 import { buildMissionStatusPayload, requireMission, runMissionLoop, writeMissionCheckpoint } from "../mission/control-plane.js";
 import { buildCampaignApiRoutes } from "./campaign-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
+import { buildSimulationApiRoutes } from "./simulation-api.js";
+import { renderDashboardHtml } from "./simulation-dashboard.js";
 import { MissionProgressMsgSchema, parseClientMessage } from "./protocol.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { RunManager } from "./run-manager.js";
@@ -137,6 +139,7 @@ export class InteractiveServer {
     const method = req.method ?? "GET";
     const campaignApi = buildCampaignApiRoutes(this.campaignManager);
     const missionApi = buildMissionApiRoutes(this.missionManager, this.runManager["opts"].runsRoot);
+    const simulationApi = buildSimulationApiRoutes(this.runManager["opts"].knowledgeRoot);
 
     // CORS headers for dashboard
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -154,14 +157,16 @@ export class InteractiveServer {
       res.end(JSON.stringify(body, null, 2));
     };
 
-    // Root endpoint — API info (AC-467: dashboard removed, server is API-only)
-    if (url === "/" || url === "/dashboard" || url.startsWith("/dashboard/")) {
+    // Root endpoint — API info.
+    if (url === "/") {
       json(200, {
         service: "autocontext",
         version: "0.2.4",
         endpoints: {
           health: "/health",
+          dashboard: "/dashboard",
           runs: "/api/runs",
+          simulations: "/api/simulations",
           scenarios: "/api/scenarios",
           knowledge: "/api/knowledge/playbook/:scenario",
           campaigns: "/api/campaigns",
@@ -170,6 +175,13 @@ export class InteractiveServer {
           events: "/ws/events",
         },
       });
+      return;
+    }
+
+    // Simulation dashboard HTML
+    if (url === "/dashboard" || url === "/dashboard/") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderDashboardHtml());
       return;
     }
 
@@ -249,6 +261,44 @@ export class InteractiveServer {
     // GET /api/scenarios
     if (url === "/api/scenarios") {
       json(200, this.runManager.getEnvironmentInfo().scenarios);
+      return;
+    }
+
+    // GET /api/simulations
+    if (method === "GET" && url === "/api/simulations") {
+      json(200, simulationApi.listSimulations());
+      return;
+    }
+
+    // GET /api/simulations/:name
+    const simulationMatch = url.match(/^\/api\/simulations\/([^/]+)$/);
+    if (method === "GET" && simulationMatch) {
+      const [, rawName] = simulationMatch;
+      const simulation = simulationApi.getSimulation(
+        decodeURIComponent(rawName!),
+      );
+      if (!simulation) {
+        json(404, { error: `Simulation '${rawName}' not found` });
+        return;
+      }
+      json(200, simulation);
+      return;
+    }
+
+    // GET /api/simulations/:name/dashboard
+    const simulationDashboardMatch = url.match(
+      /^\/api\/simulations\/([^/]+)\/dashboard$/,
+    );
+    if (method === "GET" && simulationDashboardMatch) {
+      const [, rawName] = simulationDashboardMatch;
+      const dashboard = simulationApi.getDashboardData(
+        decodeURIComponent(rawName!),
+      );
+      if (!dashboard) {
+        json(404, { error: `Simulation '${rawName}' not found` });
+        return;
+      }
+      json(200, dashboard);
       return;
     }
 
