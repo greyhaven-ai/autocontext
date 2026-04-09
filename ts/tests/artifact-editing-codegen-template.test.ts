@@ -32,4 +32,47 @@ describe("template-backed artifact-editing codegen", () => {
     expect(source).not.toMatch(/__[A-Z0-9_]+__/);
     expect(() => new Function(source)).not.toThrow();
   });
+
+  it("preserves placeholder-like text inside artifact-editing fields", () => {
+    const source = generateArtifactEditingSource(
+      {
+        description: "__EDIT_INSTRUCTIONS__ desc",
+        rubric: "Check validity",
+        edit_instructions: "Follow steps",
+        artifacts: [
+          {
+            name: "config.yaml",
+            content: "kind: ConfigMap",
+            format: "yaml",
+            validationRules: ["kind"],
+          },
+        ],
+      },
+      "edit_config",
+    );
+
+    expect(source).toContain('return "__EDIT_INSTRUCTIONS__ desc";');
+    expect(source).not.toContain('return ""Follow steps" desc";');
+  });
+
+  it("does not reject placeholder-like artifact-editing data from user specs", () => {
+    expect(() =>
+      generateArtifactEditingSource(
+        {
+          description: "Edit config",
+          rubric: "__SAFE_MODE__",
+          edit_instructions: "Follow steps",
+          artifacts: [
+            {
+              name: "config.yaml",
+              content: "__SCENARIO_NAME__ content",
+              format: "yaml",
+              validationRules: [],
+            },
+          ],
+        },
+        "edit_config",
+      ),
+    ).not.toThrow();
+  });
 });
