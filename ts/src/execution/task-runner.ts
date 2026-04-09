@@ -12,7 +12,7 @@ import type {
   ImprovementResult,
 } from "../types/index.js";
 import { ImprovementLoop } from "./improvement-loop.js";
-import { LLMJudge } from "../judge/index.js";
+import { LLMJudge } from "../judge/llm-judge.js";
 import { SequentialDelegatedJudge, type DelegatedResult, type JudgeInterface } from "../judge/delegated.js";
 import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";

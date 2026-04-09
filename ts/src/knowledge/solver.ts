@@ -14,7 +14,7 @@ import {
   generateAndValidateScenarioSource,
   hasCodegen,
   CodegenUnsupportedFamilyError,
-} from "../scenarios/codegen/index.js";
+} from "../scenarios/codegen/registry.js";
 import { executeGeneratedScenarioSource } from "../scenarios/codegen/executor.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
 import { ArtifactStore } from "./artifact-store.js";

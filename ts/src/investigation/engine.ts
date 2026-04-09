@@ -12,7 +12,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
-import { generateScenarioSource } from "../scenarios/codegen/index.js";
+import { generateScenarioSource } from "../scenarios/codegen/registry.js";
 import { validateGeneratedScenario } from "../scenarios/codegen/execution-validator.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
 import { getScenarioTypeMarker } from "../scenarios/families.js";
