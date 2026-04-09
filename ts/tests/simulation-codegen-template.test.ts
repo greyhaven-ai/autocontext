@@ -36,4 +36,39 @@ describe("template-backed simulation codegen", () => {
     expect(source).not.toMatch(/__[A-Z0-9_]+__/);
     expect(() => new Function(source)).not.toThrow();
   });
+
+  it("preserves placeholder-like text inside spec fields", () => {
+    const source = generateSimulationSource(
+      {
+        description: "__MAX_STEPS__ marker",
+        environment_description: "",
+        initial_state_description: "",
+        success_criteria: [],
+        failure_modes: [],
+        max_steps: 7,
+        actions: [],
+      },
+      "template_sim",
+    );
+
+    expect(source).toContain('return "__MAX_STEPS__ marker";');
+    expect(source).not.toContain('return "7 marker";');
+  });
+
+  it("does not reject placeholder-like text that comes from user data", () => {
+    expect(() =>
+      generateSimulationSource(
+        {
+          description: "__SAFE_MODE__",
+          environment_description: "",
+          initial_state_description: "",
+          success_criteria: [],
+          failure_modes: [],
+          max_steps: 7,
+          actions: [],
+        },
+        "template_sim",
+      ),
+    ).not.toThrow();
+  });
 });
