@@ -16,14 +16,14 @@ export interface StagnationDetectorOpts {
 }
 
 export class StagnationDetector {
-  private rollbackThreshold: number;
-  private plateauWindow: number;
-  private plateauEpsilon: number;
+  #rollbackThreshold: number;
+  #plateauWindow: number;
+  #plateauEpsilon: number;
 
   constructor(opts: StagnationDetectorOpts = {}) {
-    this.rollbackThreshold = opts.rollbackThreshold ?? 5;
-    this.plateauWindow = opts.plateauWindow ?? 5;
-    this.plateauEpsilon = opts.plateauEpsilon ?? 0.01;
+    this.#rollbackThreshold = opts.rollbackThreshold ?? 5;
+    this.#plateauWindow = opts.plateauWindow ?? 5;
+    this.#plateauEpsilon = opts.plateauEpsilon ?? 0.01;
   }
 
   detect(gateHistory: string[], scoreHistory: number[]): StagnationReport {
@@ -37,7 +37,7 @@ export class StagnationDetector {
       }
     }
 
-    if (consecutiveRollbacks >= this.rollbackThreshold) {
+    if (consecutiveRollbacks >= this.#rollbackThreshold) {
       return {
         isStagnated: true,
         trigger: "consecutive_rollbacks",
@@ -46,18 +46,18 @@ export class StagnationDetector {
     }
 
     // Check score plateau
-    if (scoreHistory.length >= this.plateauWindow) {
-      const window = scoreHistory.slice(-this.plateauWindow);
+    if (scoreHistory.length >= this.#plateauWindow) {
+      const window = scoreHistory.slice(-this.#plateauWindow);
       const mean = window.reduce((a, b) => a + b, 0) / window.length;
       const variance = window.reduce((sum, s) => sum + (s - mean) ** 2, 0) / window.length;
       const stddev = Math.sqrt(variance);
-      if (stddev < this.plateauEpsilon) {
+      if (stddev < this.#plateauEpsilon) {
         return {
           isStagnated: true,
           trigger: "score_plateau",
           detail:
-            `score stddev ${stddev.toFixed(6)} < epsilon ${this.plateauEpsilon} ` +
-            `over last ${this.plateauWindow} gens`,
+            `score stddev ${stddev.toFixed(6)} < epsilon ${this.#plateauEpsilon} ` +
+            `over last ${this.#plateauWindow} gens`,
         };
       }
     }

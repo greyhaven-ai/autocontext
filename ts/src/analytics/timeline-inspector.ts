@@ -24,16 +24,16 @@ export interface TimelineSummary {
 }
 
 export class TimelineInspector {
-  private events: TimelineEvent[] = [];
+  #events: TimelineEvent[] = [];
 
   addEvent(event: TimelineEvent): void {
-    this.events.push(event);
+    this.#events.push(event);
   }
 
   summarize(): TimelineSummary {
     const genMap = new Map<number, TimelineEvent[]>();
 
-    for (const event of this.events) {
+    for (const event of this.#events) {
       const gen = event.generation;
       const existing = genMap.get(gen) ?? [];
       existing.push(event);
@@ -55,7 +55,7 @@ export class TimelineInspector {
 
     return {
       generations,
-      totalEvents: this.events.length,
+      totalEvents: this.#events.length,
     };
   }
 }

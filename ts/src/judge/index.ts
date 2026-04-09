@@ -58,30 +58,30 @@ export function detectGeneratedDimensions(
 }
 
 export class LLMJudge {
-  private provider: LLMProvider;
+  #provider: LLMProvider;
   readonly model: string;
   readonly rubric: string;
-  private samples: number;
-  private temperature: number;
-  private _rubricWarnings: string[];
+  #samples: number;
+  #temperature: number;
+  #rubricWarnings: string[];
 
   constructor(opts: LLMJudgeOpts) {
-    this.provider = opts.provider;
+    this.#provider = opts.provider;
     this.model = opts.model || opts.provider.defaultModel();
     this.rubric = opts.rubric;
-    this.samples = Math.max(1, opts.samples ?? 1);
-    this.temperature = opts.temperature ?? 0;
+    this.#samples = Math.max(1, opts.samples ?? 1);
+    this.#temperature = opts.temperature ?? 0;
 
     if (opts.checkCoherence) {
       const result = checkRubricCoherence(opts.rubric);
-      this._rubricWarnings = result.warnings;
+      this.#rubricWarnings = result.warnings;
     } else {
-      this._rubricWarnings = [];
+      this.#rubricWarnings = [];
     }
   }
 
   get rubricWarnings(): string[] {
-    return this._rubricWarnings;
+    return this.#rubricWarnings;
   }
 
   async evaluate(opts: {
@@ -120,7 +120,7 @@ export class LLMJudge {
     let totalInternalRetries = 0;
     let lastParseMethod: ParseMethod = "none";
 
-    for (let s = 0; s < this.samples; s++) {
+    for (let s = 0; s < this.#samples; s++) {
       let score = 0;
       let reasoning = "";
       let dims: Record<string, number> = {};
@@ -128,11 +128,11 @@ export class LLMJudge {
 
       // Retry up to 2 times on parse failure
       for (let attempt = 0; attempt < 2; attempt++) {
-        const result = await this.provider.complete({
+        const result = await this.#provider.complete({
           systemPrompt,
           userPrompt,
           model: this.model,
-          temperature: this.temperature,
+          temperature: this.#temperature,
         });
         rawResponses.push(result.text);
 

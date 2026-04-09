@@ -31,10 +31,10 @@ export interface Notifier {
 // ---------------------------------------------------------------------------
 
 export class StdoutNotifier implements Notifier {
-  private logger: (msg: string) => void;
+  #logger: (msg: string) => void;
 
   constructor(logger?: (msg: string) => void) {
-    this.logger = logger ?? console.log;
+    this.#logger = logger ?? console.log;
   }
 
   async notify(event: NotificationEvent): Promise<void> {
@@ -45,7 +45,7 @@ export class StdoutNotifier implements Notifier {
     ];
     if (event.roundCount != null) parts.push(`rounds=${event.roundCount}`);
     if (event.error) parts.push(`error=${event.error}`);
-    this.logger(parts.join(" "));
+    this.#logger(parts.join(" "));
   }
 }
 
@@ -54,14 +54,14 @@ export class StdoutNotifier implements Notifier {
 // ---------------------------------------------------------------------------
 
 export class CallbackNotifier implements Notifier {
-  private callback: (event: NotificationEvent) => void;
+  #callback: (event: NotificationEvent) => void;
 
   constructor(callback: (event: NotificationEvent) => void) {
-    this.callback = callback;
+    this.#callback = callback;
   }
 
   async notify(event: NotificationEvent): Promise<void> {
-    this.callback(event);
+    this.#callback(event);
   }
 }
 
@@ -70,19 +70,19 @@ export class CallbackNotifier implements Notifier {
 // ---------------------------------------------------------------------------
 
 export class CompositeNotifier implements Notifier {
-  private notifiers: Notifier[];
-  private eventFilter?: Set<EventType>;
+  #notifiers: Notifier[];
+  #eventFilter?: Set<EventType>;
 
   constructor(notifiers: Notifier[], eventFilter?: EventType[]) {
-    this.notifiers = notifiers;
-    this.eventFilter = eventFilter ? new Set(eventFilter) : undefined;
+    this.#notifiers = notifiers;
+    this.#eventFilter = eventFilter ? new Set(eventFilter) : undefined;
   }
 
   async notify(event: NotificationEvent): Promise<void> {
-    if (this.eventFilter && !this.eventFilter.has(event.type)) return;
+    if (this.#eventFilter && !this.#eventFilter.has(event.type)) return;
 
     await Promise.all(
-      this.notifiers.map((n) =>
+      this.#notifiers.map((n) =>
         n.notify(event).catch(() => {
           // Notifier errors must never crash the loop
         }),
@@ -96,18 +96,18 @@ export class CompositeNotifier implements Notifier {
 // ---------------------------------------------------------------------------
 
 export class HTTPNotifier implements Notifier {
-  private url: string;
-  private headers: Record<string, string>;
+  #url: string;
+  #headers: Record<string, string>;
 
   constructor(url: string, headers?: Record<string, string>) {
-    this.url = url;
-    this.headers = headers ?? {};
+    this.#url = url;
+    this.#headers = headers ?? {};
   }
 
   async notify(event: NotificationEvent): Promise<void> {
-    await fetch(this.url, {
+    await fetch(this.#url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...this.headers },
+      headers: { "Content-Type": "application/json", ...this.#headers },
       body: JSON.stringify(event),
     });
   }
@@ -125,10 +125,10 @@ const EMOJI_MAP: Record<string, string> = {
 };
 
 export class SlackWebhookNotifier implements Notifier {
-  private webhookUrl: string;
+  #webhookUrl: string;
 
   constructor(webhookUrl: string) {
-    this.webhookUrl = webhookUrl;
+    this.#webhookUrl = webhookUrl;
   }
 
   async notify(event: NotificationEvent): Promise<void> {
@@ -151,7 +151,7 @@ export class SlackWebhookNotifier implements Notifier {
       });
     }
 
-    await fetch(this.webhookUrl, {
+    await fetch(this.#webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ blocks }),

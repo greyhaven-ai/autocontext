@@ -38,16 +38,16 @@ export interface HumanFeedbackRow {
 }
 
 export class SQLiteStore {
-  private db: Database.Database;
+  #db: Database.Database;
 
   constructor(dbPath: string) {
-    this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
+    this.#db = new Database(dbPath);
+    this.#db.pragma("journal_mode = WAL");
+    this.#db.pragma("foreign_keys = ON");
   }
 
   migrate(migrationsDir: string): void {
-    this.db.exec(
+    this.#db.exec(
       `CREATE TABLE IF NOT EXISTS schema_version (
          filename TEXT PRIMARY KEY,
          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -55,7 +55,7 @@ export class SQLiteStore {
     );
 
     const applied = new Set(
-      (this.db.prepare("SELECT filename FROM schema_version").all() as Array<{ filename: string }>)
+      (this.#db.prepare("SELECT filename FROM schema_version").all() as Array<{ filename: string }>)
         .map(r => r.filename),
     );
 
@@ -66,8 +66,8 @@ export class SQLiteStore {
     for (const file of files) {
       if (applied.has(file)) continue;
       const sql = readFileSync(join(migrationsDir, file), "utf8");
-      this.db.exec(sql);
-      this.db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
+      this.#db.exec(sql);
+      this.#db.prepare("INSERT INTO schema_version(filename) VALUES (?)").run(file);
     }
   }
 
@@ -79,7 +79,7 @@ export class SQLiteStore {
     scheduledAt?: string,
   ): void {
     const configJson = config ? JSON.stringify(config) : null;
-    this.db
+    this.#db
       .prepare(
         `INSERT INTO task_queue(id, spec_name, priority, config_json, scheduled_at)
          VALUES (?, ?, ?, ?, ?)`,
@@ -88,8 +88,8 @@ export class SQLiteStore {
   }
 
   dequeueTask(): TaskQueueRow | null {
-    const tx = this.db.transaction(() => {
-      const row = this.db
+    const tx = this.#db.transaction(() => {
+      const row = this.#db
         .prepare(
           `SELECT id FROM task_queue
            WHERE status = 'pending'
@@ -101,7 +101,7 @@ export class SQLiteStore {
 
       if (!row) return null;
 
-      const changes = this.db
+      const changes = this.#db
         .prepare(
           `UPDATE task_queue
            SET status = 'running',
@@ -113,7 +113,7 @@ export class SQLiteStore {
 
       if (changes.changes === 0) return null;
 
-      return this.db
+      return this.#db
         .prepare("SELECT * FROM task_queue WHERE id = ?")
         .get(row.id) as TaskQueueRow | undefined ?? null;
     });
@@ -129,7 +129,7 @@ export class SQLiteStore {
     metThreshold: boolean,
     resultJson?: string,
   ): void {
-    this.db
+    this.#db
       .prepare(
         `UPDATE task_queue
          SET status = 'completed',
@@ -146,7 +146,7 @@ export class SQLiteStore {
   }
 
   failTask(taskId: string, error: string): void {
-    this.db
+    this.#db
       .prepare(
         `UPDATE task_queue
          SET status = 'failed',
@@ -159,7 +159,7 @@ export class SQLiteStore {
   }
 
   pendingTaskCount(): number {
-    const row = this.db
+    const row = this.#db
       .prepare("SELECT COUNT(*) as cnt FROM task_queue WHERE status = 'pending'")
       .get() as { cnt: number };
     return row.cnt;
@@ -167,7 +167,7 @@ export class SQLiteStore {
 
   getTask(taskId: string): TaskQueueRow | null {
     return (
-      (this.db
+      (this.#db
         .prepare("SELECT * FROM task_queue WHERE id = ?")
         .get(taskId) as TaskQueueRow | undefined) ?? null
     );
@@ -185,7 +185,7 @@ export class SQLiteStore {
     if (humanScore != null && (humanScore < 0 || humanScore > 1)) {
       throw new Error(`human_score must be in [0.0, 1.0], got ${humanScore}`);
     }
-    const result = this.db
+    const result = this.#db
       .prepare(
         `INSERT INTO human_feedback(scenario_name, generation_id, agent_output, human_score, human_notes)
          VALUES (?, ?, ?, ?, ?)`,
@@ -195,7 +195,7 @@ export class SQLiteStore {
   }
 
   getHumanFeedback(scenarioName: string, limit = 10): HumanFeedbackRow[] {
-    return this.db
+    return this.#db
       .prepare(
         `SELECT id, scenario_name, generation_id, agent_output, human_score, human_notes, created_at
          FROM human_feedback
@@ -207,7 +207,7 @@ export class SQLiteStore {
   }
 
   getCalibrationExamples(scenarioName: string, limit = 5): HumanFeedbackRow[] {
-    return this.db
+    return this.#db
       .prepare(
         `SELECT id, scenario_name, agent_output, human_score, human_notes, created_at
          FROM human_feedback
@@ -227,7 +227,7 @@ export class SQLiteStore {
     executorMode: string,
     agentProvider = "",
   ): void {
-    this.db
+    this.#db
       .prepare(
         `INSERT OR IGNORE INTO runs(run_id, scenario, target_generations, executor_mode, status, agent_provider)
          VALUES (?, ?, ?, ?, 'running', ?)`,
@@ -237,14 +237,14 @@ export class SQLiteStore {
 
   getRun(runId: string): RunRow | null {
     return (
-      (this.db
+      (this.#db
         .prepare("SELECT * FROM runs WHERE run_id = ?")
         .get(runId) as RunRow | undefined) ?? null
     );
   }
 
   updateRunStatus(runId: string, status: string): void {
-    this.db
+    this.#db
       .prepare(
         `UPDATE runs
          SET status = ?,
@@ -259,7 +259,7 @@ export class SQLiteStore {
     generationIndex: number,
     opts: UpsertGenerationOpts,
   ): void {
-    this.db
+    this.#db
       .prepare(
         `INSERT INTO generations(
            run_id, generation_index, mean_score, best_score, elo, wins, losses,
@@ -299,7 +299,7 @@ export class SQLiteStore {
   }
 
   getGenerations(runId: string): GenerationRow[] {
-    return this.db
+    return this.#db
       .prepare(
         `SELECT * FROM generations WHERE run_id = ? ORDER BY generation_index`,
       )
@@ -307,7 +307,7 @@ export class SQLiteStore {
   }
 
   countCompletedRuns(scenario: string): number {
-    const row = this.db
+    const row = this.#db
       .prepare(
         `SELECT COUNT(*) as cnt
          FROM runs
@@ -321,7 +321,7 @@ export class SQLiteStore {
     scenario: string,
   ): (GenerationRow & { run_id: string }) | null {
     return (
-      (this.db
+      (this.#db
         .prepare(
           `SELECT g.*
            FROM generations g
@@ -338,7 +338,7 @@ export class SQLiteStore {
 
   getBestMatchForScenario(scenario: string): MatchRow | null {
     return (
-      (this.db
+      (this.#db
         .prepare(
           `SELECT m.*
            FROM matches m
@@ -358,7 +358,7 @@ export class SQLiteStore {
     generationIndex: number,
     opts: RecordMatchOpts,
   ): void {
-    this.db
+    this.#db
       .prepare(
         `INSERT INTO matches(
            run_id, generation_index, seed, score,
@@ -381,7 +381,7 @@ export class SQLiteStore {
   }
 
   getMatchesForRun(runId: string): MatchRow[] {
-    return this.db
+    return this.#db
       .prepare("SELECT * FROM matches WHERE run_id = ? ORDER BY id")
       .all(runId) as MatchRow[];
   }
@@ -392,7 +392,7 @@ export class SQLiteStore {
     role: string,
     content: string,
   ): void {
-    this.db
+    this.#db
       .prepare(
         `INSERT INTO agent_outputs(run_id, generation_index, role, content)
          VALUES (?, ?, ?, ?)`,
@@ -404,7 +404,7 @@ export class SQLiteStore {
     runId: string,
     generationIndex: number,
   ): AgentOutputRow[] {
-    return this.db
+    return this.#db
       .prepare(
         `SELECT * FROM agent_outputs
          WHERE run_id = ? AND generation_index = ?
@@ -414,7 +414,7 @@ export class SQLiteStore {
   }
 
   getScoreTrajectory(runId: string): TrajectoryRow[] {
-    const rows = this.db
+    const rows = this.#db
       .prepare(
         `SELECT
            generation_index, mean_score, best_score, elo,
@@ -460,19 +460,19 @@ export class SQLiteStore {
 
   listRuns(limit = 50, scenario?: string): RunRow[] {
     if (scenario) {
-      return this.db
+      return this.#db
         .prepare(
           `SELECT * FROM runs WHERE scenario = ? ORDER BY created_at DESC LIMIT ?`,
         )
         .all(scenario, limit) as RunRow[];
     }
-    return this.db
+    return this.#db
       .prepare(`SELECT * FROM runs ORDER BY created_at DESC LIMIT ?`)
       .all(limit) as RunRow[];
   }
 
   listRunsForScenario(scenario: string): RunRow[] {
-    return this.db
+    return this.#db
       .prepare(
         `SELECT * FROM runs WHERE scenario = ? ORDER BY created_at ASC`,
       )
@@ -480,7 +480,7 @@ export class SQLiteStore {
   }
 
   getMatchesForGeneration(runId: string, generationIndex: number): MatchRow[] {
-    return this.db
+    return this.#db
       .prepare(
         `SELECT * FROM matches WHERE run_id = ? AND generation_index = ? ORDER BY id`,
       )
@@ -488,7 +488,7 @@ export class SQLiteStore {
   }
 
   close(): void {
-    this.db.close();
+    this.#db.close();
   }
 }
 

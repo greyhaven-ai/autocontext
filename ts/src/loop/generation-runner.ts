@@ -32,6 +32,12 @@ import {
 import type { LoopController } from "./controller.js";
 import type { EventStreamEmitter } from "./events.js";
 import { StagnationDetector, type StagnationReport } from "./stagnation.js";
+import {
+  buildCompetitorPrompt,
+  buildCuratorConsolidationPrompt,
+  buildCuratorPrompt,
+  buildSupportPrompt,
+} from "./generation-prompts.js";
 import { join } from "node:path";
 import type { GenerationRole } from "../providers/index.js";
 
@@ -75,94 +81,94 @@ export interface RunResult {
 }
 
 export class GenerationRunner {
-  private provider: LLMProvider;
-  private roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
-  private roleModels: Partial<Record<GenerationRole, string>>;
-  private scenario: ScenarioInterface;
-  private store: SQLiteStore;
-  private artifactStore: ArtifactStore;
-  private matchesPerGeneration: number;
-  private maxRetries: number;
-  private gate: BackpressureGate;
-  private seedBase: number;
-  private playbookGuard: PlaybookGuard;
-  private contextBudget: ContextBudget;
-  private curatorEnabled: boolean;
-  private curatorConsolidateEveryNGens: number;
-  private skillMaxLessons: number;
-  private deadEndTrackingEnabled: boolean;
-  private deadEndMaxEntries: number;
-  private stagnationResetEnabled: boolean;
-  private stagnationDistillTopLessons: number;
-  private stagnationDetector: StagnationDetector;
-  private explorationMode: string;
-  private notifier: Notifier | null;
-  private notifyOn: Set<EventType>;
-  private controller: LoopController | null;
-  private events: EventStreamEmitter | null;
-  private gateHistory: string[] = [];
-  private scoreHistory: number[] = [];
-  private pendingFreshStartHint: string | null = null;
-  private runStartedAtMs = 0;
+  #provider: LLMProvider;
+  #roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
+  #roleModels: Partial<Record<GenerationRole, string>>;
+  #scenario: ScenarioInterface;
+  #store: SQLiteStore;
+  #artifactStore: ArtifactStore;
+  #matchesPerGeneration: number;
+  #maxRetries: number;
+  #gate: BackpressureGate;
+  #seedBase: number;
+  #playbookGuard: PlaybookGuard;
+  #contextBudget: ContextBudget;
+  #curatorEnabled: boolean;
+  #curatorConsolidateEveryNGens: number;
+  #skillMaxLessons: number;
+  #deadEndTrackingEnabled: boolean;
+  #deadEndMaxEntries: number;
+  #stagnationResetEnabled: boolean;
+  #stagnationDistillTopLessons: number;
+  #stagnationDetector: StagnationDetector;
+  #explorationMode: string;
+  #notifier: Notifier | null;
+  #notifyOn: Set<EventType>;
+  #controller: LoopController | null;
+  #events: EventStreamEmitter | null;
+  #gateHistory: string[] = [];
+  #scoreHistory: number[] = [];
+  #pendingFreshStartHint: string | null = null;
+  #runStartedAtMs = 0;
 
   constructor(opts: GenerationRunnerOpts) {
-    this.provider = opts.provider;
-    this.roleProviders = opts.roleProviders ?? {};
-    this.roleModels = opts.roleModels ?? {};
-    this.scenario = opts.scenario;
-    this.store = opts.store;
-    this.artifactStore = new ArtifactStore({
+    this.#provider = opts.provider;
+    this.#roleProviders = opts.roleProviders ?? {};
+    this.#roleModels = opts.roleModels ?? {};
+    this.#scenario = opts.scenario;
+    this.#store = opts.store;
+    this.#artifactStore = new ArtifactStore({
       runsRoot: opts.runsRoot,
       knowledgeRoot: opts.knowledgeRoot,
       maxPlaybookVersions: opts.playbookMaxVersions,
     });
-    this.matchesPerGeneration = opts.matchesPerGeneration ?? 3;
-    this.maxRetries = opts.maxRetries ?? 2;
-    this.gate = new BackpressureGate(opts.minDelta ?? 0.005);
-    this.seedBase = opts.seedBase ?? 1000;
-    this.playbookGuard = new PlaybookGuard();
-    this.contextBudget = new ContextBudget(opts.contextBudgetTokens ?? 100_000);
-    this.curatorEnabled = opts.curatorEnabled ?? false;
-    this.curatorConsolidateEveryNGens = opts.curatorConsolidateEveryNGens ?? 3;
-    this.skillMaxLessons = opts.skillMaxLessons ?? 30;
-    this.deadEndTrackingEnabled = opts.deadEndTrackingEnabled ?? false;
-    this.deadEndMaxEntries = opts.deadEndMaxEntries ?? 20;
-    this.stagnationResetEnabled = opts.stagnationResetEnabled ?? false;
-    this.stagnationDistillTopLessons = opts.stagnationDistillTopLessons ?? 5;
-    this.stagnationDetector = new StagnationDetector({
+    this.#matchesPerGeneration = opts.matchesPerGeneration ?? 3;
+    this.#maxRetries = opts.maxRetries ?? 2;
+    this.#gate = new BackpressureGate(opts.minDelta ?? 0.005);
+    this.#seedBase = opts.seedBase ?? 1000;
+    this.#playbookGuard = new PlaybookGuard();
+    this.#contextBudget = new ContextBudget(opts.contextBudgetTokens ?? 100_000);
+    this.#curatorEnabled = opts.curatorEnabled ?? false;
+    this.#curatorConsolidateEveryNGens = opts.curatorConsolidateEveryNGens ?? 3;
+    this.#skillMaxLessons = opts.skillMaxLessons ?? 30;
+    this.#deadEndTrackingEnabled = opts.deadEndTrackingEnabled ?? false;
+    this.#deadEndMaxEntries = opts.deadEndMaxEntries ?? 20;
+    this.#stagnationResetEnabled = opts.stagnationResetEnabled ?? false;
+    this.#stagnationDistillTopLessons = opts.stagnationDistillTopLessons ?? 5;
+    this.#stagnationDetector = new StagnationDetector({
       rollbackThreshold: opts.stagnationRollbackThreshold,
       plateauWindow: opts.stagnationPlateauWindow,
       plateauEpsilon: opts.stagnationPlateauEpsilon,
     });
-    this.explorationMode = opts.explorationMode ?? "linear";
-    this.notifyOn = parseNotificationFilter(opts.notifyOn);
-    this.notifier =
+    this.#explorationMode = opts.explorationMode ?? "linear";
+    this.#notifyOn = parseNotificationFilter(opts.notifyOn);
+    this.#notifier =
       opts.notifier
-      ?? buildConfiguredNotifier(opts.notifyWebhookUrl ?? null, [...this.notifyOn]);
-    this.controller = opts.controller ?? null;
-    this.events = opts.events ?? null;
+      ?? buildConfiguredNotifier(opts.notifyWebhookUrl ?? null, [...this.#notifyOn]);
+    this.#controller = opts.controller ?? null;
+    this.#events = opts.events ?? null;
   }
 
   async run(runId: string, generations: number): Promise<RunResult> {
     // Create run record
-    this.store.createRun(runId, this.scenario.name, generations, "local");
-    this.gateHistory = [];
-    this.scoreHistory = [];
-    this.pendingFreshStartHint = null;
-    this.runStartedAtMs = Date.now();
+    this.#store.createRun(runId, this.#scenario.name, generations, "local");
+    this.#gateHistory = [];
+    this.#scoreHistory = [];
+    this.#pendingFreshStartHint = null;
+    this.#runStartedAtMs = Date.now();
     let currentElo = 1000;
     let bestScoreOverall = 0;
     try {
       this.emit("run_started", {
         run_id: runId,
-        scenario: this.scenario.name,
+        scenario: this.#scenario.name,
         target_generations: generations,
       });
 
       let previousBest = 0;
 
       for (let gen = 1; gen <= generations; gen++) {
-        await this.controller?.waitIfPaused();
+        await this.#controller?.waitIfPaused();
         let retryCount = 0;
         let finalizedAttempt: GenerationAttempt | null = null;
         const previousBestForGeneration = previousBest;
@@ -170,14 +176,14 @@ export class GenerationRunner {
         this.emit("agents_started", {
           run_id: runId,
           generation: gen,
-          roles: this.curatorEnabled
+          roles: this.#curatorEnabled
             ? ["competitor", "analyst", "coach", "curator"]
             : ["competitor", "analyst", "coach"],
         });
 
         // Retry loop for this generation
-        while (retryCount <= this.maxRetries) {
-          await this.controller?.waitIfPaused();
+        while (retryCount <= this.#maxRetries) {
+          await this.#controller?.waitIfPaused();
           const competitorPrompt = this.buildCompetitorPrompt(runId);
 
           // Step 1: Get strategy from provider (competitor role)
@@ -193,17 +199,17 @@ export class GenerationRunner {
           }
 
           // Step 2: Run tournament
-          await this.controller?.waitIfPaused();
-          const seedForGen = this.seedBase + (gen - 1) * this.matchesPerGeneration;
-          const tournament = new TournamentRunner(this.scenario, {
-            matchCount: this.matchesPerGeneration,
+          await this.#controller?.waitIfPaused();
+          const seedForGen = this.#seedBase + (gen - 1) * this.#matchesPerGeneration;
+          const tournament = new TournamentRunner(this.#scenario, {
+            matchCount: this.#matchesPerGeneration,
             seedBase: seedForGen,
             initialElo: currentElo,
           });
           this.emit("tournament_started", {
             run_id: runId,
             generation: gen,
-            matches: this.matchesPerGeneration,
+            matches: this.#matchesPerGeneration,
           });
           const tournamentResult = tournament.run(strategy);
           tournamentResult.matches.forEach((match, matchIndex) => {
@@ -225,13 +231,13 @@ export class GenerationRunner {
           });
 
           // Step 3: Backpressure gate
-          const decision = this.gate.evaluate(
+          const decision = this.#gate.evaluate(
             previousBest,
             tournamentResult.bestScore,
             retryCount,
-            this.maxRetries,
+            this.#maxRetries,
           );
-          const gateDecision = this.controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
+          const gateDecision = this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
           const attempt: GenerationAttempt = {
             competitorPrompt,
             competitorResultText: competitorResult.text,
@@ -273,7 +279,7 @@ export class GenerationRunner {
         }
 
         this.persistGeneration(runId, gen, finalizedAttempt);
-        await this.controller?.waitIfPaused();
+        await this.#controller?.waitIfPaused();
         await this.runSupportRoles(runId, gen, finalizedAttempt);
         await this.applyAdvancedFeatures(runId, gen, finalizedAttempt, previousBestForGeneration);
         this.emit("generation_completed", {
@@ -286,7 +292,7 @@ export class GenerationRunner {
         });
       }
 
-      this.store.updateRunStatus(runId, "completed");
+      this.#store.updateRunStatus(runId, "completed");
       const sessionReportPath = this.persistSessionReport(runId);
       this.emit("run_completed", {
         run_id: runId,
@@ -308,13 +314,13 @@ export class GenerationRunner {
         currentElo,
       };
     } catch (error) {
-      this.store.updateRunStatus(runId, "failed");
+      this.#store.updateRunStatus(runId, "failed");
       this.emit("run_failed", {
         run_id: runId,
         error: error instanceof Error ? error.message : String(error),
       });
       await this.notify("failure", runId, bestScoreOverall, {
-        roundCount: this.scoreHistory.length,
+        roundCount: this.#scoreHistory.length,
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -322,49 +328,28 @@ export class GenerationRunner {
   }
 
   private buildCompetitorPrompt(runId: string): string {
-    const freshStartHint = this.pendingFreshStartHint;
-    this.pendingFreshStartHint = null;
-    const trimmed = this.contextBudget.apply({
-      playbook: this.artifactStore.readPlaybook(this.scenario.name),
-      trajectory: new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build(),
-      dead_ends: this.artifactStore.readDeadEnds(this.scenario.name),
-      session_reports: this.artifactStore.readSessionReports(this.scenario.name),
+    const freshStartHint = this.#pendingFreshStartHint;
+    this.#pendingFreshStartHint = null;
+    const trimmed = this.#contextBudget.apply({
+      playbook: this.#artifactStore.readPlaybook(this.#scenario.name),
+      trajectory: new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build(),
+      dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
+      session_reports: this.#artifactStore.readSessionReports(this.#scenario.name),
     });
-    const injectedHint = this.controller?.takeHint();
+    const injectedHint = this.#controller?.takeHint();
 
-    const sections = [
-      "Describe your strategy for the " + this.scenario.name + " scenario. Return JSON with the strategy parameters.",
-      `Scenario Rules:\n${this.scenario.describeRules()}`,
-      `Strategy Interface:\n${this.scenario.describeStrategyInterface()}`,
-      `Evaluation Criteria:\n${this.scenario.describeEvaluationCriteria()}`,
-      `Current Playbook:\n${trimmed.playbook}`,
-    ];
-
-    if (trimmed.trajectory) {
-      sections.push(`Recent Score Trajectory:\n${trimmed.trajectory}`);
-    }
-
-    if (trimmed.dead_ends) {
-      sections.push(`Known Dead Ends (do not repeat these approaches):\n${trimmed.dead_ends}`);
-    }
-
-    if (trimmed.session_reports) {
-      sections.push(`Prior Session Reports:\n${trimmed.session_reports}`);
-    }
-
-    if (freshStartHint) {
-      sections.push(`Fresh Start Guidance:\n${freshStartHint}`);
-    }
-
-    if (injectedHint) {
-      sections.push(`Operator Hint:\n${injectedHint}`);
-    }
-
-    sections.push(
-      "Respond with JSON only. Include the strategy fields required by the strategy interface.",
-    );
-
-    return sections.join("\n\n");
+    return buildCompetitorPrompt({
+      scenarioName: this.#scenario.name,
+      scenarioRules: this.#scenario.describeRules(),
+      strategyInterface: this.#scenario.describeStrategyInterface(),
+      evaluationCriteria: this.#scenario.describeEvaluationCriteria(),
+      playbook: trimmed.playbook,
+      trajectory: trimmed.trajectory,
+      deadEnds: trimmed.dead_ends,
+      sessionReports: trimmed.session_reports,
+      freshStartHint,
+      operatorHint: injectedHint,
+    });
   }
 
   private buildSupportPrompt(
@@ -372,40 +357,28 @@ export class GenerationRunner {
     runId: string,
     attempt: GenerationAttempt,
   ): string {
-    const trimmed = this.contextBudget.apply({
-      playbook: this.artifactStore.readPlaybook(this.scenario.name),
-      trajectory: new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build(),
+    const trimmed = this.#contextBudget.apply({
+      playbook: this.#artifactStore.readPlaybook(this.#scenario.name),
+      trajectory: new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build(),
       analysis:
         `Gate decision: ${attempt.gateDecision}\n` +
         `Best score: ${attempt.tournamentResult.bestScore.toFixed(4)}\n` +
         `Mean score: ${attempt.tournamentResult.meanScore.toFixed(4)}\n` +
         `Wins/Losses: ${attempt.tournamentResult.wins}/${attempt.tournamentResult.losses}`,
-      dead_ends: this.artifactStore.readDeadEnds(this.scenario.name),
+      dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
     });
 
-    const intro =
-      role === "analyst"
-        ? `Analyze strengths/failures of the current strategy for ${this.scenario.name}.`
-        : `You are the playbook coach. Update the playbook for ${this.scenario.name}.`;
-
-    const sections = [
-      intro,
-      `Scenario Rules:\n${this.scenario.describeRules()}`,
-      `Strategy Interface:\n${this.scenario.describeStrategyInterface()}`,
-      `Current Strategy JSON:\n${JSON.stringify(attempt.strategy, null, 2)}`,
-      `Tournament Summary:\n${trimmed.analysis}`,
-      `Current Playbook:\n${trimmed.playbook}`,
-    ];
-
-    if (trimmed.trajectory) {
-      sections.push(`Recent Score Trajectory:\n${trimmed.trajectory}`);
-    }
-
-    if (trimmed.dead_ends) {
-      sections.push(`Known Dead Ends:\n${trimmed.dead_ends}`);
-    }
-
-    return sections.join("\n\n");
+    return buildSupportPrompt({
+      role,
+      scenarioName: this.#scenario.name,
+      scenarioRules: this.#scenario.describeRules(),
+      strategyInterface: this.#scenario.describeStrategyInterface(),
+      strategyJson: attempt.strategy,
+      analysisSummary: trimmed.analysis,
+      playbook: trimmed.playbook,
+      trajectory: trimmed.trajectory,
+      deadEnds: trimmed.dead_ends,
+    });
   }
 
   private buildCuratorPrompt(
@@ -414,47 +387,30 @@ export class GenerationRunner {
     proposedPlaybook: string,
     attempt: GenerationAttempt,
   ): string {
-    const trajectory = new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build();
-    const sections = [
-      "You are a curator assessing playbook quality. Compare the CURRENT and PROPOSED playbooks.",
-      "Respond with reasoning, then include the following markers:",
-      "<!-- CURATOR_DECISION: accept|reject|merge -->",
-      "<!-- CURATOR_SCORE: 0-10 -->",
-      "If merging, include:",
-      "<!-- CURATOR_PLAYBOOK_START -->",
-      "...merged playbook...",
-      "<!-- CURATOR_PLAYBOOK_END -->",
-      `Tournament Summary:\nGate=${attempt.gateDecision}, Best=${attempt.tournamentResult.bestScore.toFixed(4)}, Mean=${attempt.tournamentResult.meanScore.toFixed(4)}`,
-      `Current Playbook:\n${currentPlaybook}`,
-      `Proposed Playbook:\n${proposedPlaybook}`,
-    ];
+    const trajectory = new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build();
 
-    if (trajectory) {
-      sections.push(`Recent Score Trajectory:\n${trajectory}`);
-    }
-
-    return sections.join("\n\n");
+    return buildCuratorPrompt({
+      tournamentSummary:
+        `Gate=${attempt.gateDecision}, Best=${attempt.tournamentResult.bestScore.toFixed(4)}, Mean=${attempt.tournamentResult.meanScore.toFixed(4)}`,
+      currentPlaybook,
+      proposedPlaybook,
+      trajectory,
+    });
   }
 
   private buildCuratorConsolidationPrompt(lessons: string): string {
-    return [
-      "You are a curator consolidating operational lessons.",
-      `Reduce duplication and keep at most ${this.skillMaxLessons} lessons.`,
-      "Respond with reasoning, then include the following markers:",
-      "<!-- CONSOLIDATED_LESSONS_START -->",
-      "...bullet lessons...",
-      "<!-- CONSOLIDATED_LESSONS_END -->",
-      "<!-- LESSONS_REMOVED: N -->",
-      `Existing Lessons:\n${lessons}`,
-    ].join("\n\n");
+    return buildCuratorConsolidationPrompt({
+      lessons,
+      skillMaxLessons: this.#skillMaxLessons,
+    });
   }
 
   private providerForRole(role: GenerationRole): LLMProvider {
-    return this.roleProviders[role] ?? this.provider;
+    return this.#roleProviders[role] ?? this.#provider;
   }
 
   private modelForRole(role: GenerationRole): string | undefined {
-    return this.roleModels[role];
+    return this.#roleModels[role];
   }
 
   private completeRole(role: GenerationRole, userPrompt: string, systemPrompt = "") {
@@ -466,7 +422,7 @@ export class GenerationRunner {
   }
 
   private persistGeneration(runId: string, gen: number, attempt: GenerationAttempt): void {
-    this.store.upsertGeneration(runId, gen, {
+    this.#store.upsertGeneration(runId, gen, {
       meanScore: attempt.tournamentResult.meanScore,
       bestScore: attempt.tournamentResult.bestScore,
       elo: attempt.tournamentResult.elo,
@@ -477,7 +433,7 @@ export class GenerationRunner {
     });
 
     for (const match of attempt.tournamentResult.matches) {
-      this.store.recordMatch(runId, gen, {
+      this.#store.recordMatch(runId, gen, {
         seed: match.seed,
         score: match.score,
         passedValidation: match.passedValidation,
@@ -488,32 +444,32 @@ export class GenerationRunner {
       });
     }
 
-    this.store.appendAgentOutput(runId, gen, "competitor", attempt.competitorResultText);
+    this.#store.appendAgentOutput(runId, gen, "competitor", attempt.competitorResultText);
 
-    const generationDir = this.artifactStore.generationDir(runId, gen);
-    this.artifactStore.writeMarkdown(
+    const generationDir = this.#artifactStore.generationDir(runId, gen);
+    this.#artifactStore.writeMarkdown(
       join(generationDir, "competitor_prompt.md"),
       attempt.competitorPrompt,
     );
-    this.artifactStore.writeMarkdown(
+    this.#artifactStore.writeMarkdown(
       join(generationDir, "competitor_output.md"),
       attempt.competitorResultText,
     );
-    this.artifactStore.writeMarkdown(
+    this.#artifactStore.writeMarkdown(
       join(generationDir, "trajectory.md"),
-      new ScoreTrajectoryBuilder(this.store.getScoreTrajectory(runId)).build() || "No prior trajectory yet.",
+      new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build() || "No prior trajectory yet.",
     );
     const bestReplayMatch = attempt.tournamentResult.matches.reduce((best, current) => (
       current.score > best.score ? current : best
     ));
-    this.artifactStore.writeJson(join(generationDir, "replays", `${this.scenario.name}_${gen}.json`), {
+    this.#artifactStore.writeJson(join(generationDir, "replays", `${this.#scenario.name}_${gen}.json`), {
       run_id: runId,
       generation: gen,
-      scenario: this.scenario.name,
+      scenario: this.#scenario.name,
       seed: bestReplayMatch.seed,
       score: bestReplayMatch.score,
       winner: bestReplayMatch.winner,
-      narrative: this.scenario.replayToNarrative(bestReplayMatch.replay),
+      narrative: this.#scenario.replayToNarrative(bestReplayMatch.replay),
       timeline: bestReplayMatch.replay,
       matches: attempt.tournamentResult.matches.map((match) => ({
         seed: match.seed,
@@ -524,7 +480,7 @@ export class GenerationRunner {
         timeline: match.replay,
       })),
     });
-    this.artifactStore.writeJson(join(generationDir, "tournament_summary.json"), {
+    this.#artifactStore.writeJson(join(generationDir, "tournament_summary.json"), {
       gate_decision: attempt.gateDecision,
       mean_score: attempt.tournamentResult.meanScore,
       best_score: attempt.tournamentResult.bestScore,
@@ -548,24 +504,24 @@ export class GenerationRunner {
     this.emitRoleCompleted("analyst", analystStartedAt, analystResult.usage);
     this.emitRoleCompleted("coach", coachStartedAt, coachResult.usage);
 
-    this.store.appendAgentOutput(runId, gen, "analyst", analystResult.text);
-    this.store.appendAgentOutput(runId, gen, "coach", coachResult.text);
+    this.#store.appendAgentOutput(runId, gen, "analyst", analystResult.text);
+    this.#store.appendAgentOutput(runId, gen, "coach", coachResult.text);
 
-    const generationDir = this.artifactStore.generationDir(runId, gen);
-    this.artifactStore.writeMarkdown(join(generationDir, "analyst.md"), analystResult.text);
-    this.artifactStore.writeMarkdown(join(generationDir, "coach.md"), coachResult.text);
-    this.artifactStore.appendMarkdown(
-      join(this.artifactStore.runsRoot, runId, "support_log.md"),
+    const generationDir = this.#artifactStore.generationDir(runId, gen);
+    this.#artifactStore.writeMarkdown(join(generationDir, "analyst.md"), analystResult.text);
+    this.#artifactStore.writeMarkdown(join(generationDir, "coach.md"), coachResult.text);
+    this.#artifactStore.appendMarkdown(
+      join(this.#artifactStore.runsRoot, runId, "support_log.md"),
       analystResult.text,
       `Generation ${gen} Analyst`,
     );
-    this.artifactStore.appendMarkdown(
-      join(this.artifactStore.runsRoot, runId, "support_log.md"),
+    this.#artifactStore.appendMarkdown(
+      join(this.#artifactStore.runsRoot, runId, "support_log.md"),
       coachResult.text,
       `Generation ${gen} Coach`,
     );
 
-    const currentPlaybook = this.artifactStore.readPlaybook(this.scenario.name);
+    const currentPlaybook = this.#artifactStore.readPlaybook(this.#scenario.name);
     const normalizedPlaybook =
       currentPlaybook === EMPTY_PLAYBOOK_SENTINEL ? "" : currentPlaybook;
     const hasStructuredPlaybook =
@@ -575,14 +531,14 @@ export class GenerationRunner {
       coachResult.text.includes(PLAYBOOK_MARKERS.LESSONS_END) &&
       coachResult.text.includes(PLAYBOOK_MARKERS.HINTS_START) &&
       coachResult.text.includes(PLAYBOOK_MARKERS.HINTS_END);
-    const playbookCheck = this.playbookGuard.check(normalizedPlaybook, coachResult.text);
+    const playbookCheck = this.#playbookGuard.check(normalizedPlaybook, coachResult.text);
 
     let nextPlaybook = "";
     if (hasStructuredPlaybook && playbookCheck.approved) {
       nextPlaybook = coachResult.text;
     }
 
-    if (nextPlaybook && this.curatorEnabled && normalizedPlaybook) {
+    if (nextPlaybook && this.#curatorEnabled && normalizedPlaybook) {
       this.emit("curator_started", { run_id: runId, generation: gen });
       const curatorStartedAt = Date.now();
       const curatorResult = await this.completeRole(
@@ -590,10 +546,10 @@ export class GenerationRunner {
         this.buildCuratorPrompt(runId, normalizedPlaybook, nextPlaybook, attempt),
       );
       this.emitRoleCompleted("curator", curatorStartedAt, curatorResult.usage);
-      this.store.appendAgentOutput(runId, gen, "curator", curatorResult.text);
-      this.artifactStore.writeMarkdown(join(generationDir, "curator.md"), curatorResult.text);
-      this.artifactStore.appendMarkdown(
-        join(this.artifactStore.runsRoot, runId, "support_log.md"),
+      this.#store.appendAgentOutput(runId, gen, "curator", curatorResult.text);
+      this.#artifactStore.writeMarkdown(join(generationDir, "curator.md"), curatorResult.text);
+      this.#artifactStore.appendMarkdown(
+        join(this.#artifactStore.runsRoot, runId, "support_log.md"),
         curatorResult.text,
         `Generation ${gen} Curator`,
       );
@@ -612,20 +568,20 @@ export class GenerationRunner {
     }
 
     if (nextPlaybook) {
-      this.artifactStore.writePlaybook(this.scenario.name, nextPlaybook);
+      this.#artifactStore.writePlaybook(this.#scenario.name, nextPlaybook);
     }
 
     if (
-      this.curatorEnabled
-      && this.curatorConsolidateEveryNGens > 0
-      && gen % this.curatorConsolidateEveryNGens === 0
+      this.#curatorEnabled
+      && this.#curatorConsolidateEveryNGens > 0
+      && gen % this.#curatorConsolidateEveryNGens === 0
     ) {
       await this.runCuratorConsolidation(runId, gen);
     }
   }
 
   private async runCuratorConsolidation(runId: string, gen: number): Promise<void> {
-    const playbook = this.artifactStore.readPlaybook(this.scenario.name);
+    const playbook = this.#artifactStore.readPlaybook(this.#scenario.name);
     if (!playbook || playbook === EMPTY_PLAYBOOK_SENTINEL) return;
 
     const lessons = extractMarkedSection(
@@ -639,13 +595,13 @@ export class GenerationRunner {
       "curator",
       this.buildCuratorConsolidationPrompt(lessons),
     );
-    this.store.appendAgentOutput(runId, gen, "curator_consolidation", result.text);
-    this.artifactStore.writeMarkdown(
-      join(this.artifactStore.generationDir(runId, gen), "curator_consolidation.md"),
+    this.#store.appendAgentOutput(runId, gen, "curator_consolidation", result.text);
+    this.#artifactStore.writeMarkdown(
+      join(this.#artifactStore.generationDir(runId, gen), "curator_consolidation.md"),
       result.text,
     );
-    this.artifactStore.appendMarkdown(
-      join(this.artifactStore.runsRoot, runId, "support_log.md"),
+    this.#artifactStore.appendMarkdown(
+      join(this.#artifactStore.runsRoot, runId, "support_log.md"),
       result.text,
       `Generation ${gen} Curator Consolidation`,
     );
@@ -659,7 +615,7 @@ export class GenerationRunner {
       PLAYBOOK_MARKERS.LESSONS_END,
       parsed.consolidatedLessons,
     );
-    this.artifactStore.writePlaybook(this.scenario.name, updatedPlaybook);
+    this.#artifactStore.writePlaybook(this.#scenario.name, updatedPlaybook);
   }
 
   private async applyAdvancedFeatures(
@@ -668,21 +624,21 @@ export class GenerationRunner {
     attempt: GenerationAttempt,
     previousBestForGeneration: number,
   ): Promise<void> {
-    this.gateHistory.push(attempt.gateDecision);
-    this.scoreHistory.push(attempt.tournamentResult.bestScore);
+    this.#gateHistory.push(attempt.gateDecision);
+    this.#scoreHistory.push(attempt.tournamentResult.bestScore);
 
-    if (attempt.gateDecision === "rollback" && this.deadEndTrackingEnabled) {
+    if (attempt.gateDecision === "rollback" && this.#deadEndTrackingEnabled) {
       const entry = DeadEndEntry.fromRollback(
         gen,
         JSON.stringify(attempt.strategy, null, 0),
         attempt.tournamentResult.bestScore,
       );
-      this.artifactStore.appendDeadEnd(this.scenario.name, entry.toMarkdown());
-      const deadEnds = this.artifactStore.readDeadEnds(this.scenario.name);
+      this.#artifactStore.appendDeadEnd(this.#scenario.name, entry.toMarkdown());
+      const deadEnds = this.#artifactStore.readDeadEnds(this.#scenario.name);
       if (deadEnds) {
-        this.artifactStore.replaceDeadEnds(
-          this.scenario.name,
-          consolidateDeadEnds(deadEnds, this.deadEndMaxEntries),
+        this.#artifactStore.replaceDeadEnds(
+          this.#scenario.name,
+          consolidateDeadEnds(deadEnds, this.#deadEndMaxEntries),
         );
       }
       this.emit("dead_end_recorded", {
@@ -705,12 +661,12 @@ export class GenerationRunner {
       });
     }
 
-    if (!this.stagnationResetEnabled) return;
+    if (!this.#stagnationResetEnabled) return;
 
-    const report = this.stagnationDetector.detect(this.gateHistory, this.scoreHistory);
+    const report = this.#stagnationDetector.detect(this.#gateHistory, this.#scoreHistory);
     if (!report.isStagnated) return;
 
-    this.pendingFreshStartHint = this.buildFreshStartHint(report);
+    this.#pendingFreshStartHint = this.buildFreshStartHint(report);
     this.emit("fresh_start", {
       run_id: runId,
       generation: gen,
@@ -720,7 +676,7 @@ export class GenerationRunner {
   }
 
   private buildFreshStartHint(report: StagnationReport): string {
-    const playbook = this.artifactStore.readPlaybook(this.scenario.name);
+    const playbook = this.#artifactStore.readPlaybook(this.#scenario.name);
     const lessons = extractMarkedSection(
       playbook,
       PLAYBOOK_MARKERS.LESSONS_START,
@@ -729,9 +685,9 @@ export class GenerationRunner {
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.startsWith("-"))
-      .slice(0, this.stagnationDistillTopLessons);
+      .slice(0, this.#stagnationDistillTopLessons);
 
-    const deadEnds = this.artifactStore.readDeadEnds(this.scenario.name)
+    const deadEnds = this.#artifactStore.readDeadEnds(this.#scenario.name)
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.startsWith("- **Gen"))
@@ -758,23 +714,23 @@ export class GenerationRunner {
   private persistSessionReport(runId: string): string {
     const report = generateSessionReport(
       runId,
-      this.scenario.name,
-      this.store.getScoreTrajectory(runId) as unknown as Array<Record<string, unknown>>,
+      this.#scenario.name,
+      this.#store.getScoreTrajectory(runId) as unknown as Array<Record<string, unknown>>,
       {
-        durationSeconds: (Date.now() - this.runStartedAtMs) / 1000,
+        durationSeconds: (Date.now() - this.#runStartedAtMs) / 1000,
         deadEndsFound: this.countDeadEnds(),
-        explorationMode: this.explorationMode,
+        explorationMode: this.#explorationMode,
       },
     );
     const markdown = report.toMarkdown();
-    const runPath = join(this.artifactStore.runsRoot, runId, "session_report.md");
-    this.artifactStore.writeMarkdown(runPath, markdown);
-    this.artifactStore.writeSessionReport(this.scenario.name, runId, markdown);
+    const runPath = join(this.#artifactStore.runsRoot, runId, "session_report.md");
+    this.#artifactStore.writeMarkdown(runPath, markdown);
+    this.#artifactStore.writeSessionReport(this.#scenario.name, runId, markdown);
     return runPath;
   }
 
   private countDeadEnds(): number {
-    const content = this.artifactStore.readDeadEnds(this.scenario.name);
+    const content = this.#artifactStore.readDeadEnds(this.#scenario.name);
     if (!content) return 0;
     return content.split("\n").filter((line) => line.startsWith("### Dead End")).length;
   }
@@ -790,11 +746,11 @@ export class GenerationRunner {
       metadata?: Record<string, unknown>;
     } = {},
   ): Promise<void> {
-    if (!this.notifier || !this.notifyOn.has(type)) return;
+    if (!this.#notifier || !this.#notifyOn.has(type)) return;
     try {
-      await this.notifier.notify({
+      await this.#notifier.notify({
         type,
-        taskName: this.scenario.name,
+        taskName: this.#scenario.name,
         taskId: runId,
         score,
         previousBest: extras.previousBest,
@@ -808,7 +764,7 @@ export class GenerationRunner {
   }
 
   private emit(event: string, payload: Record<string, unknown>): void {
-    this.events?.emit(event, payload);
+    this.#events?.emit(event, payload);
   }
 
   private emitRoleCompleted(

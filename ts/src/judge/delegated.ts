@@ -51,20 +51,20 @@ function toJudgeResult(
  * Use when an external agent has already evaluated the output.
  */
 export class DelegatedJudge implements JudgeInterface {
-  private result: DelegatedResult;
+  #result: DelegatedResult;
   readonly rubric: string;
 
   constructor(result: DelegatedResult, rubric = "(delegated — externally evaluated)") {
-    this.result = result;
+    this.#result = result;
     this.rubric = rubric;
   }
 
   setResult(result: DelegatedResult): void {
-    this.result = result;
+    this.#result = result;
   }
 
   async evaluate(_opts: EvaluateOpts): Promise<JudgeResult> {
-    return toJudgeResult(this.result, "delegated");
+    return toJudgeResult(this.#result, "delegated");
   }
 }
 
@@ -75,16 +75,16 @@ export type CallbackEvaluateFn = (opts: EvaluateOpts) => Promise<DelegatedResult
  * Use when the calling agent wants to provide scoring logic dynamically.
  */
 export class CallbackJudge implements JudgeInterface {
-  private callback: CallbackEvaluateFn;
+  #callback: CallbackEvaluateFn;
   readonly rubric: string;
 
   constructor(callback: CallbackEvaluateFn, rubric = "(callback — externally evaluated)") {
-    this.callback = callback;
+    this.#callback = callback;
     this.rubric = rubric;
   }
 
   async evaluate(opts: EvaluateOpts): Promise<JudgeResult> {
-    const result = await this.callback(opts);
+    const result = await this.#callback(opts);
     return toJudgeResult(result, "callback");
   }
 }
@@ -94,22 +94,24 @@ export class CallbackJudge implements JudgeInterface {
  * Each evaluate() call advances to the next supplied result.
  */
 export class SequentialDelegatedJudge implements JudgeInterface {
-  private index = 0;
+  #index = 0;
   readonly rubric: string;
+  readonly #results: DelegatedResult[];
 
   constructor(
-    private readonly results: DelegatedResult[],
+    results: DelegatedResult[],
     rubric = "(delegated sequence — externally evaluated)",
   ) {
+    this.#results = results;
     this.rubric = rubric;
   }
 
   async evaluate(_opts: EvaluateOpts): Promise<JudgeResult> {
-    const current = this.results[this.index];
+    const current = this.#results[this.#index];
     if (!current) {
-      throw new Error(`No delegated evaluation available for round ${this.index + 1}`);
+      throw new Error(`No delegated evaluation available for round ${this.#index + 1}`);
     }
-    this.index += 1;
+    this.#index += 1;
     return toJudgeResult(current, "delegated");
   }
 }

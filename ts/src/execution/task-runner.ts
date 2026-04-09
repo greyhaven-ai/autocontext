@@ -12,8 +12,8 @@ import type {
   ImprovementResult,
 } from "../types/index.js";
 import { ImprovementLoop } from "./improvement-loop.js";
-import { LLMJudge, SequentialDelegatedJudge } from "../judge/index.js";
-import type { DelegatedResult, JudgeInterface } from "../judge/index.js";
+import { LLMJudge } from "../judge/index.js";
+import { SequentialDelegatedJudge, type DelegatedResult, type JudgeInterface } from "../judge/delegated.js";
 import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { renderAgentTaskPrompt, resolveCustomAgentTask } from "../scenarios/custom-loader.js";
@@ -21,8 +21,8 @@ import {
   RlmTaskConfigSchema,
   type RlmSessionRecord,
   type RlmTaskConfig,
-} from "../rlm/index.js";
-import { runAgentTaskRlmSession } from "../rlm/index.js";
+} from "../rlm/types.js";
+import { runAgentTaskRlmSession } from "../rlm/agent-task.js";
 
 export interface TaskConfig {
   maxRounds?: number;

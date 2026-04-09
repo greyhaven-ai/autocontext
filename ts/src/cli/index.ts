@@ -1009,7 +1009,7 @@ async function cmdRepl(_dbPath: string): Promise<void> {
   }
 
   const { provider, model } = await getProvider();
-  const { runAgentTaskRlmSession } = await import("../rlm/index.js");
+  const { runAgentTaskRlmSession } = await import("../rlm/agent-task.js");
   const savedScenario = values.scenario
     ? await loadSavedAgentTaskScenario(values.scenario)
     : null;
