@@ -628,7 +628,7 @@ describe("GenerationRunner", () => {
       stagnationPlateauEpsilon: 0.0001,
     });
 
-    await runner.run("stagnation-run", 3);
+    const result = await runner.run("stagnation-run", 3);
 
     const deadEndsPath = join(knowledgeRoot, "grid_ctf", "dead_ends.md");
     expect(existsSync(deadEndsPath)).toBe(true);
@@ -645,6 +645,13 @@ describe("GenerationRunner", () => {
     const prompt = readFileSync(promptPath, "utf-8");
     expect(prompt).toContain("Fresh Start Guidance");
     expect(prompt).toContain("Avoid repeating these recent dead ends");
+
+    const generations = store.getGenerations("stagnation-run");
+    const finalElo = generations.at(-1)?.elo;
+    expect(result.bestScore).toBeGreaterThan(0);
+    expect(finalElo).toBeDefined();
+    expect(result.currentElo).toBe(finalElo);
+    expect(result.currentElo).toBeGreaterThan(1000);
 
     store.close();
   });

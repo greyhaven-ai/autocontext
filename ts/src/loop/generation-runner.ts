@@ -293,8 +293,14 @@ export class GenerationRunner {
             continue;
           }
 
-          // rollback — don't update previousBest, move to next gen
+          // rollback — don't update previousBest, but this finalized attempt
+          // still becomes the generation's public result and run summary input.
           finalizedAttempt = attempt;
+          this.#runState = recordGenerationResult(this.#runState!, {
+            generation: gen,
+            bestScore: tournamentResult.bestScore,
+            elo: tournamentResult.elo,
+          });
           break;
         }
 
