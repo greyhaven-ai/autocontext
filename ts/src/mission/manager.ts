@@ -8,6 +8,11 @@
 
 import { MissionStore } from "./store.js";
 import { saveCheckpoint } from "./checkpoint.js";
+import {
+  buildVerifierErrorResult,
+  deriveMissionStatusFromVerifierResult,
+  resolveMissionStatusTransition,
+} from "./lifecycle.js";
 import type { MissionEventEmitter } from "./events.js";
 import type { Mission, MissionBudget, MissionStatus, MissionStep, MissionSubgoal, MissionVerifier, VerifierResult } from "./types.js";
 
@@ -75,22 +80,18 @@ export class MissionManager {
       this.store.recordVerification(missionId, result);
       this.events?.emitVerified(missionId, result.passed, result.reason);
 
-      if (result.passed) {
-        this.transitionMissionStatus(missionId, "completed");
+      const nextStatus = deriveMissionStatusFromVerifierResult(result);
+      if (nextStatus) {
+        this.transitionMissionStatus(missionId, nextStatus);
       }
 
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const result: VerifierResult = {
-        passed: false,
-        reason: `Verifier error: ${message}`,
-        suggestions: [],
-        metadata: {
-          verifierThrew: true,
-          errorName: error instanceof Error ? error.name : "Error",
-        },
-      };
+      const result: VerifierResult = buildVerifierErrorResult(
+        message,
+        error instanceof Error ? error.name : "Error",
+      );
       this.store.recordVerification(missionId, result);
       this.events?.emitVerified(missionId, result.passed, result.reason);
       return result;
@@ -140,9 +141,10 @@ export class MissionManager {
   private transitionMissionStatus(missionId: string, status: MissionStatus): void {
     const mission = this.store.getMission(missionId);
     const previousStatus = mission?.status;
-    this.store.updateMissionStatus(missionId, status);
-    if (previousStatus && previousStatus !== status) {
-      this.events?.emitStatusChange(missionId, previousStatus, status);
+    const transition = resolveMissionStatusTransition(previousStatus, status);
+    this.store.updateMissionStatus(missionId, transition.nextStatus);
+    if (previousStatus && transition.shouldEmitStatusChange) {
+      this.events?.emitStatusChange(missionId, previousStatus, transition.nextStatus);
     }
   }
 
