@@ -40,6 +40,14 @@ import {
 import { GenerationJournal } from "./generation-journal.js";
 import { GenerationRecovery } from "./generation-recovery.js";
 import {
+  applyGenerationAttemptDecision,
+  canContinueGenerationAttempt,
+  createGenerationAttemptState,
+  didAdvanceGenerationAttempt,
+  getFinalizedGenerationAttempt,
+  type GenerationAttempt,
+} from "./generation-attempt-state.js";
+import {
   completeGenerationRun,
   consumeFreshStartHint,
   createGenerationRunState,
@@ -192,9 +200,11 @@ export class GenerationRunner {
 
       for (let gen = 1; gen <= generations; gen++) {
         await this.#controller?.waitIfPaused();
-        let retryCount = 0;
-        let finalizedAttempt: GenerationAttempt | null = null;
         const previousBestForGeneration = previousBest;
+        let attemptState = createGenerationAttemptState({
+          generation: gen,
+          previousBestForGeneration,
+        });
         this.emit("generation_started", { run_id: runId, generation: gen });
         this.emit("agents_started", {
           run_id: runId,
@@ -205,7 +215,7 @@ export class GenerationRunner {
         });
 
         // Retry loop for this generation
-        while (retryCount <= this.#maxRetries) {
+        while (canContinueGenerationAttempt(attemptState, this.#maxRetries)) {
           await this.#controller?.waitIfPaused();
           const competitorPrompt = this.buildCompetitorPrompt(runId);
 
@@ -257,7 +267,7 @@ export class GenerationRunner {
           const decision = this.#gate.evaluate(
             previousBest,
             tournamentResult.bestScore,
-            retryCount,
+            attemptState.retryCount,
             this.#maxRetries,
           );
           const gateDecision = this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
@@ -276,31 +286,19 @@ export class GenerationRunner {
             threshold: decision.threshold,
           });
 
-          // Step 5: Apply gate decision
-          if (gateDecision === "advance") {
-            finalizedAttempt = attempt;
+          attemptState = applyGenerationAttemptDecision(attemptState, attempt);
+
+          if (didAdvanceGenerationAttempt(attemptState)) {
             previousBest = tournamentResult.bestScore;
             this.#runState = recordGenerationResult(this.#runState!, {
               generation: gen,
               bestScore: tournamentResult.bestScore,
               elo: tournamentResult.elo,
             });
-            break;
           }
-
-          if (gateDecision === "retry") {
-            retryCount++;
-            continue;
-          }
-
-          // rollback — don't update previousBest, move to next gen
-          finalizedAttempt = attempt;
-          break;
         }
 
-        if (!finalizedAttempt) {
-          throw new Error(`generation ${gen} finished without a finalized attempt`);
-        }
+        const finalizedAttempt = getFinalizedGenerationAttempt(attemptState);
 
         this.#journal.persistGeneration(runId, gen, finalizedAttempt);
         await this.#controller?.waitIfPaused();
@@ -670,14 +668,6 @@ export class GenerationRunner {
       tokens: inputTokens + outputTokens,
     });
   }
-}
-
-interface GenerationAttempt {
-  competitorPrompt: string;
-  competitorResultText: string;
-  strategy: Record<string, unknown>;
-  tournamentResult: ReturnType<TournamentRunner["run"]>;
-  gateDecision: "advance" | "retry" | "rollback";
 }
 
 function parseNotificationFilter(spec?: string): Set<EventType> {

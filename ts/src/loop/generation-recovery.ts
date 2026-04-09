@@ -1,6 +1,7 @@
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { DeadEndEntry, consolidateDeadEnds } from "../knowledge/dead-end.js";
 import { PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
+import type { GenerationGateDecision } from "./generation-attempt-state.js";
 import type { StagnationDetector, StagnationReport } from "./stagnation.js";
 
 export interface GenerationRecoveryOpts {
@@ -15,7 +16,7 @@ export interface GenerationRecoveryOpts {
 
 export interface GenerationRecoveryAttempt {
   generation: number;
-  gateDecision: "advance" | "retry" | "rollback";
+  gateDecision: GenerationGateDecision;
   bestScore: number;
   strategy: Record<string, unknown>;
   previousBestForGeneration: number;
