@@ -23,7 +23,7 @@ def _ensure_generated_package(custom_dir: Path) -> None:
         package.__package__ = _GENERATED_PACKAGE_NAME
         package.__path__ = [custom_dir_str]  # type: ignore[attr-defined]
         sys.modules[_GENERATED_PACKAGE_NAME] = package
-        setattr(custom_pkg, "generated", package)
+        custom_pkg.generated = package
         return
 
     paths = list(getattr(package, "__path__", []))
