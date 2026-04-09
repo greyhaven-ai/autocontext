@@ -8,11 +8,12 @@
 
 import { MissionStore } from "./store.js";
 import { saveCheckpoint } from "./checkpoint.js";
+import { resolveMissionStatusTransition } from "./lifecycle.js";
 import {
-  buildVerifierErrorResult,
-  deriveMissionStatusFromVerifierResult,
-  resolveMissionStatusTransition,
-} from "./lifecycle.js";
+  buildMissingVerifierOutcome,
+  resolveMissionVerificationErrorOutcome,
+  resolveMissionVerificationOutcome,
+} from "./verification-workflow.js";
 import type { MissionEventEmitter } from "./events.js";
 import type { Mission, MissionBudget, MissionStatus, MissionStep, MissionSubgoal, MissionVerifier, VerifierResult } from "./types.js";
 
@@ -68,34 +69,18 @@ export class MissionManager {
 
   async verify(missionId: string): Promise<VerifierResult> {
     const verifier = this.verifiers.get(missionId);
-    if (!verifier) {
-      const result: VerifierResult = { passed: false, reason: "No verifier registered", suggestions: [], metadata: {} };
-      this.store.recordVerification(missionId, result);
-      this.events?.emitVerified(missionId, result.passed, result.reason);
-      return result;
+    const outcome = !verifier
+      ? buildMissingVerifierOutcome()
+      : await this.#runVerifierWorkflow(missionId, verifier);
+
+    this.store.recordVerification(missionId, outcome.result);
+    this.events?.emitVerified(missionId, outcome.result.passed, outcome.result.reason);
+
+    if (outcome.nextStatus) {
+      this.transitionMissionStatus(missionId, outcome.nextStatus);
     }
 
-    try {
-      const result = await verifier(missionId);
-      this.store.recordVerification(missionId, result);
-      this.events?.emitVerified(missionId, result.passed, result.reason);
-
-      const nextStatus = deriveMissionStatusFromVerifierResult(result);
-      if (nextStatus) {
-        this.transitionMissionStatus(missionId, nextStatus);
-      }
-
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const result: VerifierResult = buildVerifierErrorResult(
-        message,
-        error instanceof Error ? error.name : "Error",
-      );
-      this.store.recordVerification(missionId, result);
-      this.events?.emitVerified(missionId, result.passed, result.reason);
-      return result;
-    }
+    return outcome.result;
   }
 
   pause(missionId: string): void {
@@ -136,6 +121,21 @@ export class MissionManager {
 
   saveCheckpoint(missionId: string, checkpointDir: string): string {
     return saveCheckpoint(this.store, missionId, checkpointDir);
+  }
+
+  async #runVerifierWorkflow(
+    missionId: string,
+    verifier: MissionVerifier,
+  ): Promise<ReturnType<typeof resolveMissionVerificationOutcome>> {
+    try {
+      return resolveMissionVerificationOutcome(await verifier(missionId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return resolveMissionVerificationErrorOutcome(
+        message,
+        error instanceof Error ? error.name : "Error",
+      );
+    }
   }
 
   private transitionMissionStatus(missionId: string, status: MissionStatus): void {
