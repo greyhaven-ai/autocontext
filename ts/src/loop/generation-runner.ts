@@ -18,7 +18,6 @@ import { BackpressureGate } from "./backpressure.js";
 import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "../knowledge/artifact-store.js";
 import { PlaybookGuard, PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
-import { DeadEndEntry, consolidateDeadEnds } from "../knowledge/dead-end.js";
 import { generateSessionReport } from "../knowledge/session-report.js";
 import { ContextBudget } from "../prompts/context-budget.js";
 import { parseCuratorLessonResult, parseCuratorPlaybookDecision } from "../agents/curator-parser.js";
@@ -31,7 +30,7 @@ import {
 } from "../notifications/index.js";
 import type { LoopController } from "./controller.js";
 import type { EventStreamEmitter } from "./events.js";
-import { StagnationDetector, type StagnationReport } from "./stagnation.js";
+import { StagnationDetector } from "./stagnation.js";
 import {
   buildCompetitorPrompt,
   buildCuratorConsolidationPrompt,
@@ -39,6 +38,7 @@ import {
   buildSupportPrompt,
 } from "./generation-prompts.js";
 import { GenerationJournal } from "./generation-journal.js";
+import { GenerationRecovery } from "./generation-recovery.js";
 import { join } from "node:path";
 import type { GenerationRole } from "../providers/index.js";
 
@@ -89,6 +89,7 @@ export class GenerationRunner {
   #store: SQLiteStore;
   #artifactStore: ArtifactStore;
   #journal: GenerationJournal;
+  #recovery: GenerationRecovery;
   #matchesPerGeneration: number;
   #maxRetries: number;
   #gate: BackpressureGate;
@@ -108,8 +109,6 @@ export class GenerationRunner {
   #notifyOn: Set<EventType>;
   #controller: LoopController | null;
   #events: EventStreamEmitter | null;
-  #gateHistory: string[] = [];
-  #scoreHistory: number[] = [];
   #pendingFreshStartHint: string | null = null;
   #runStartedAtMs = 0;
 
@@ -147,6 +146,15 @@ export class GenerationRunner {
       plateauWindow: opts.stagnationPlateauWindow,
       plateauEpsilon: opts.stagnationPlateauEpsilon,
     });
+    this.#recovery = new GenerationRecovery({
+      artifacts: this.#artifactStore,
+      scenarioName: this.#scenario.name,
+      deadEndTrackingEnabled: this.#deadEndTrackingEnabled,
+      deadEndMaxEntries: this.#deadEndMaxEntries,
+      stagnationResetEnabled: this.#stagnationResetEnabled,
+      stagnationDistillTopLessons: this.#stagnationDistillTopLessons,
+      stagnationDetector: this.#stagnationDetector,
+    });
     this.#explorationMode = opts.explorationMode ?? "linear";
     this.#notifyOn = parseNotificationFilter(opts.notifyOn);
     this.#notifier =
@@ -159,8 +167,6 @@ export class GenerationRunner {
   async run(runId: string, generations: number): Promise<RunResult> {
     // Create run record
     this.#store.createRun(runId, this.#scenario.name, generations, "local");
-    this.#gateHistory = [];
-    this.#scoreHistory = [];
     this.#pendingFreshStartHint = null;
     this.#runStartedAtMs = Date.now();
     let currentElo = 1000;
@@ -330,7 +336,7 @@ export class GenerationRunner {
         error: error instanceof Error ? error.message : String(error),
       });
       await this.notify("failure", runId, bestScoreOverall, {
-        roundCount: this.#scoreHistory.length,
+        roundCount: this.#store.getScoreTrajectory(runId).length,
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -566,28 +572,19 @@ export class GenerationRunner {
     attempt: GenerationAttempt,
     previousBestForGeneration: number,
   ): Promise<void> {
-    this.#gateHistory.push(attempt.gateDecision);
-    this.#scoreHistory.push(attempt.tournamentResult.bestScore);
+    const outcome = this.#recovery.handleAttempt(runId, {
+      generation: gen,
+      gateDecision: attempt.gateDecision,
+      bestScore: attempt.tournamentResult.bestScore,
+      strategy: attempt.strategy,
+      previousBestForGeneration,
+    });
 
-    if (attempt.gateDecision === "rollback" && this.#deadEndTrackingEnabled) {
-      const entry = DeadEndEntry.fromRollback(
-        gen,
-        JSON.stringify(attempt.strategy, null, 0),
-        attempt.tournamentResult.bestScore,
-      );
-      this.#artifactStore.appendDeadEnd(this.#scenario.name, entry.toMarkdown());
-      const deadEnds = this.#artifactStore.readDeadEnds(this.#scenario.name);
-      if (deadEnds) {
-        this.#artifactStore.replaceDeadEnds(
-          this.#scenario.name,
-          consolidateDeadEnds(deadEnds, this.#deadEndMaxEntries),
-        );
-      }
-      this.emit("dead_end_recorded", {
-        run_id: runId,
-        generation: gen,
-        score: attempt.tournamentResult.bestScore,
-      });
+    for (const event of outcome.events) {
+      this.emit(event.event, event.payload);
+    }
+
+    if (outcome.shouldNotifyRegression) {
       await this.notify("regression", runId, attempt.tournamentResult.bestScore, {
         previousBest: previousBestForGeneration,
         roundCount: gen,
@@ -595,7 +592,7 @@ export class GenerationRunner {
       });
     }
 
-    if (attempt.gateDecision === "advance" && attempt.tournamentResult.bestScore > previousBestForGeneration) {
+    if (outcome.shouldNotifyThreshold) {
       await this.notify("threshold_met", runId, attempt.tournamentResult.bestScore, {
         previousBest: previousBestForGeneration,
         roundCount: gen,
@@ -603,54 +600,9 @@ export class GenerationRunner {
       });
     }
 
-    if (!this.#stagnationResetEnabled) return;
-
-    const report = this.#stagnationDetector.detect(this.#gateHistory, this.#scoreHistory);
-    if (!report.isStagnated) return;
-
-    this.#pendingFreshStartHint = this.buildFreshStartHint(report);
-    this.emit("fresh_start", {
-      run_id: runId,
-      generation: gen,
-      trigger: report.trigger,
-      detail: report.detail,
-    });
-  }
-
-  private buildFreshStartHint(report: StagnationReport): string {
-    const playbook = this.#artifactStore.readPlaybook(this.#scenario.name);
-    const lessons = extractMarkedSection(
-      playbook,
-      PLAYBOOK_MARKERS.LESSONS_START,
-      PLAYBOOK_MARKERS.LESSONS_END,
-    )
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("-"))
-      .slice(0, this.#stagnationDistillTopLessons);
-
-    const deadEnds = this.#artifactStore.readDeadEnds(this.#scenario.name)
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("- **Gen"))
-      .slice(-2);
-
-    const sections = [
-      `Stagnation detected via ${report.trigger}: ${report.detail}.`,
-      "Treat the next generation as a fresh start rather than a small local tweak.",
-    ];
-
-    if (lessons.length > 0) {
-      sections.push("Retain only these distilled lessons:");
-      sections.push(...lessons);
+    if (outcome.freshStartHint) {
+      this.#pendingFreshStartHint = outcome.freshStartHint;
     }
-
-    if (deadEnds.length > 0) {
-      sections.push("Avoid repeating these recent dead ends:");
-      sections.push(...deadEnds);
-    }
-
-    return sections.join("\n");
   }
 
 
