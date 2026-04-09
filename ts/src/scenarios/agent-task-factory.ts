@@ -3,7 +3,7 @@
  */
 
 import type { AgentTaskInterface, AgentTaskResult } from "../types/index.js";
-import { LLMJudge } from "../judge/index.js";
+import { LLMJudge } from "../judge/llm-judge.js";
 import type { LLMProvider } from "../types/index.js";
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { assertFamilyContract } from "./family-interfaces.js";

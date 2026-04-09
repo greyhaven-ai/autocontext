@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { LLMProvider } from "../types/index.js";
-import { LLMJudge } from "../judge/index.js";
+import { LLMJudge } from "../judge/llm-judge.js";
 import { DelegatedJudge, SequentialDelegatedJudge, type DelegatedResult } from "../judge/delegated.js";
 import { ImprovementLoop } from "../execution/improvement-loop.js";
 import { enqueueTask } from "../execution/task-runner.js";

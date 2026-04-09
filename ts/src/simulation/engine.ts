@@ -20,7 +20,7 @@ import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
 import { detectScenarioFamily } from "../scenarios/scenario-creator.js";
-import { generateScenarioSource } from "../scenarios/codegen/index.js";
+import { generateScenarioSource } from "../scenarios/codegen/registry.js";
 import { validateGeneratedScenario } from "../scenarios/codegen/execution-validator.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
 import {
