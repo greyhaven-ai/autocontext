@@ -37,10 +37,13 @@ import {
   buildCuratorPrompt,
   buildSupportPrompt,
 } from "./generation-prompts.js";
+import { buildTournamentCompletedPayload } from "./generation-event-coordinator.js";
 import {
-  buildGateDecidedPayload,
-  buildTournamentCompletedPayload,
-} from "./generation-event-coordinator.js";
+  awaitGenerationCompetitorResult,
+  awaitGenerationTournamentResult,
+  createGenerationAttemptOrchestration,
+  finalizeGenerationAttemptDecision,
+} from "./generation-attempt-orchestrator.js";
 import { GenerationJournal } from "./generation-journal.js";
 import {
   completeGenerationLoopRun,
@@ -48,30 +51,18 @@ import {
   failGenerationLoopRun,
   finalizeGenerationCycle,
   getActiveGenerationPhase,
-  recordAdvancedGenerationResult,
   startNextGeneration,
 } from "./generation-loop-orchestrator.js";
 import { GenerationRecovery } from "./generation-recovery.js";
+import { hasRemainingGenerationCycles } from "./generation-cycle-state.js";
 import {
-  hasRemainingGenerationCycles,
-  updateGenerationCyclePhase,
-} from "./generation-cycle-state.js";
-import {
-  applyGenerationPhaseDecision,
   canContinueGenerationPhase,
-  didAdvanceGenerationPhase,
   getFinalizedGenerationPhaseAttempt,
-  markAwaitingCompetitorResult,
-  markAwaitingTournamentResult,
   type GenerationAttempt,
 } from "./generation-phase-state.js";
 import {
-  completeGenerationRun,
   consumeFreshStartHint,
-  createGenerationRunState,
-  failGenerationRun,
   queueFreshStartHint,
-  recordGenerationResult,
   type GenerationRunState,
 } from "./generation-run-state.js";
 import { join } from "node:path";
@@ -219,10 +210,17 @@ export class GenerationRunner {
         this.emit("generation_started", orchestration.events.generationStarted!);
         this.emit("agents_started", orchestration.events.agentsStarted!);
 
+        let attemptOrchestration = createGenerationAttemptOrchestration(
+          orchestration,
+          phaseState,
+        );
+
         // Retry loop for this generation
         while (canContinueGenerationPhase(phaseState, this.#maxRetries)) {
           await this.#controller?.waitIfPaused();
-          phaseState = markAwaitingCompetitorResult(phaseState);
+          attemptOrchestration = awaitGenerationCompetitorResult(attemptOrchestration);
+          phaseState = attemptOrchestration.phaseState;
+          orchestration = attemptOrchestration.orchestration;
           const competitorPrompt = this.buildCompetitorPrompt(runId);
 
           // Step 1: Get strategy from provider (competitor role)
@@ -239,7 +237,9 @@ export class GenerationRunner {
 
           // Step 2: Run tournament
           await this.#controller?.waitIfPaused();
-          phaseState = markAwaitingTournamentResult(phaseState);
+          attemptOrchestration = awaitGenerationTournamentResult(attemptOrchestration);
+          phaseState = attemptOrchestration.phaseState;
+          orchestration = attemptOrchestration.orchestration;
           const seedForGen = this.#seedBase + (gen - 1) * this.#matchesPerGeneration;
           const tournament = new TournamentRunner(this.#scenario, {
             matchCount: this.#matchesPerGeneration,
@@ -281,31 +281,20 @@ export class GenerationRunner {
             tournamentResult,
             gateDecision,
           };
-          this.emit(
-            "gate_decided",
-            buildGateDecidedPayload(
+          attemptOrchestration = finalizeGenerationAttemptDecision(
+            attemptOrchestration,
+            {
               runId,
-              gen,
-              gateDecision,
-              decision.delta,
-              decision.threshold,
-            ),
-          );
-
-          phaseState = applyGenerationPhaseDecision(phaseState, attempt);
-          orchestration = {
-            ...orchestration,
-            cycleState: updateGenerationCyclePhase(orchestration.cycleState, phaseState),
-          };
-
-          if (didAdvanceGenerationPhase(phaseState)) {
-            orchestration = recordAdvancedGenerationResult(orchestration, {
               generation: gen,
-              bestScore: tournamentResult.bestScore,
-              elo: tournamentResult.elo,
-            });
-            this.#runState = orchestration.runState;
-          }
+              attempt,
+              delta: decision.delta,
+              threshold: decision.threshold,
+            },
+          );
+          phaseState = attemptOrchestration.phaseState;
+          orchestration = attemptOrchestration.orchestration;
+          this.#runState = orchestration.runState;
+          this.emit("gate_decided", attemptOrchestration.events.gateDecided!);
         }
 
         const finalizedAttempt = getFinalizedGenerationPhaseAttempt(phaseState);
