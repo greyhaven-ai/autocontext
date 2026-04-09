@@ -37,6 +37,16 @@ import {
   buildCuratorPrompt,
   buildSupportPrompt,
 } from "./generation-prompts.js";
+import {
+  buildAgentsStartedPayload,
+  buildGateDecidedPayload,
+  buildGenerationCompletedPayload,
+  buildGenerationStartedPayload,
+  buildRunCompletedPayload,
+  buildRunFailedPayload,
+  buildRunStartedPayload,
+  buildTournamentCompletedPayload,
+} from "./generation-event-coordinator.js";
 import { GenerationJournal } from "./generation-journal.js";
 import { GenerationRecovery } from "./generation-recovery.js";
 import {
@@ -199,11 +209,14 @@ export class GenerationRunner {
       startedAtMs: Date.now(),
     });
     try {
-      this.emit("run_started", {
-        run_id: runId,
-        scenario: this.#scenario.name,
-        target_generations: generations,
-      });
+      this.emit(
+        "run_started",
+        buildRunStartedPayload({
+          runId,
+          scenarioName: this.#scenario.name,
+          targetGenerations: generations,
+        }),
+      );
 
       let cycleState = createGenerationCycleState({
         targetGenerations: generations,
@@ -214,14 +227,11 @@ export class GenerationRunner {
         cycleState = startNextGenerationCycle(cycleState);
         let phaseState = getActiveGenerationPhaseState(cycleState);
         const gen = phaseState.generation;
-        this.emit("generation_started", { run_id: runId, generation: gen });
-        this.emit("agents_started", {
-          run_id: runId,
-          generation: gen,
-          roles: this.#curatorEnabled
-            ? ["competitor", "analyst", "coach", "curator"]
-            : ["competitor", "analyst", "coach"],
-        });
+        this.emit("generation_started", buildGenerationStartedPayload(runId, gen));
+        this.emit(
+          "agents_started",
+          buildAgentsStartedPayload(runId, gen, this.#curatorEnabled),
+        );
 
         // Retry loop for this generation
         while (canContinueGenerationPhase(phaseState, this.#maxRetries)) {
@@ -265,14 +275,10 @@ export class GenerationRunner {
               winner: match.winner ?? "",
             });
           });
-          this.emit("tournament_completed", {
-            run_id: runId,
-            generation: gen,
-            mean_score: tournamentResult.meanScore,
-            best_score: tournamentResult.bestScore,
-            wins: tournamentResult.wins,
-            losses: tournamentResult.losses,
-          });
+          this.emit(
+            "tournament_completed",
+            buildTournamentCompletedPayload(runId, gen, tournamentResult),
+          );
 
           // Step 3: Backpressure gate
           const decision = this.#gate.evaluate(
@@ -289,13 +295,16 @@ export class GenerationRunner {
             tournamentResult,
             gateDecision,
           };
-          this.emit("gate_decided", {
-            run_id: runId,
-            generation: gen,
-            decision: gateDecision,
-            delta: decision.delta,
-            threshold: decision.threshold,
-          });
+          this.emit(
+            "gate_decided",
+            buildGateDecidedPayload(
+              runId,
+              gen,
+              gateDecision,
+              decision.delta,
+              decision.threshold,
+            ),
+          );
 
           phaseState = applyGenerationPhaseDecision(phaseState, attempt);
           cycleState = updateGenerationCyclePhase(cycleState, phaseState);
@@ -315,14 +324,15 @@ export class GenerationRunner {
         await this.#controller?.waitIfPaused();
         await this.runSupportRoles(runId, gen, finalizedAttempt);
         await this.applyAdvancedFeatures(runId, gen, finalizedAttempt, phaseState.previousBestForGeneration);
-        this.emit("generation_completed", {
-          run_id: runId,
-          generation: gen,
-          mean_score: finalizedAttempt.tournamentResult.meanScore,
-          best_score: finalizedAttempt.tournamentResult.bestScore,
-          elo: finalizedAttempt.tournamentResult.elo,
-          gate_decision: finalizedAttempt.gateDecision,
-        });
+        this.emit(
+          "generation_completed",
+          buildGenerationCompletedPayload(runId, gen, {
+            meanScore: finalizedAttempt.tournamentResult.meanScore,
+            bestScore: finalizedAttempt.tournamentResult.bestScore,
+            elo: finalizedAttempt.tournamentResult.elo,
+            gateDecision: finalizedAttempt.gateDecision,
+          }),
+        );
         cycleState = completeGenerationCycle(updateGenerationCyclePhase(cycleState, phaseState));
       }
 
@@ -334,14 +344,17 @@ export class GenerationRunner {
         runStartedAtMs: this.#runState.startedAtMs,
         explorationMode: this.#explorationMode,
       });
-      this.emit("run_completed", {
-        run_id: runId,
-        completed_generations: cycleState.completedGenerations,
-        best_score: this.#runState.bestScore,
-        elo: this.#runState.currentElo,
-        session_report_path: sessionReportPath,
-        dead_ends_found: this.#journal.countDeadEnds(),
-      });
+      this.emit(
+        "run_completed",
+        buildRunCompletedPayload({
+          runId,
+          completedGenerations: cycleState.completedGenerations,
+          bestScore: this.#runState.bestScore,
+          currentElo: this.#runState.currentElo,
+          sessionReportPath,
+          deadEndsFound: this.#journal.countDeadEnds(),
+        }),
+      );
       await this.notify("completion", runId, this.#runState.bestScore, {
         roundCount: cycleState.completedGenerations,
         metadata: { session_report_path: sessionReportPath },
@@ -359,10 +372,13 @@ export class GenerationRunner {
         error: error instanceof Error ? error.message : String(error),
       });
       this.#store.updateRunStatus(runId, "failed");
-      this.emit("run_failed", {
-        run_id: runId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      this.emit(
+        "run_failed",
+        buildRunFailedPayload(
+          runId,
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
       await this.notify("failure", runId, this.#runState.bestScore, {
         roundCount: this.#store.getScoreTrajectory(runId).length,
         error: error instanceof Error ? error.message : String(error),
