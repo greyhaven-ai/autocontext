@@ -39,6 +39,15 @@ import {
 } from "./generation-prompts.js";
 import { GenerationJournal } from "./generation-journal.js";
 import { GenerationRecovery } from "./generation-recovery.js";
+import {
+  completeGenerationRun,
+  consumeFreshStartHint,
+  createGenerationRunState,
+  failGenerationRun,
+  queueFreshStartHint,
+  recordGenerationResult,
+  type GenerationRunState,
+} from "./generation-run-state.js";
 import { join } from "node:path";
 import type { GenerationRole } from "../providers/index.js";
 
@@ -109,8 +118,7 @@ export class GenerationRunner {
   #notifyOn: Set<EventType>;
   #controller: LoopController | null;
   #events: EventStreamEmitter | null;
-  #pendingFreshStartHint: string | null = null;
-  #runStartedAtMs = 0;
+  #runState: GenerationRunState | null = null;
 
   constructor(opts: GenerationRunnerOpts) {
     this.#provider = opts.provider;
@@ -167,10 +175,12 @@ export class GenerationRunner {
   async run(runId: string, generations: number): Promise<RunResult> {
     // Create run record
     this.#store.createRun(runId, this.#scenario.name, generations, "local");
-    this.#pendingFreshStartHint = null;
-    this.#runStartedAtMs = Date.now();
-    let currentElo = 1000;
-    let bestScoreOverall = 0;
+    this.#runState = createGenerationRunState({
+      runId,
+      scenarioName: this.#scenario.name,
+      targetGenerations: generations,
+      startedAtMs: Date.now(),
+    });
     try {
       this.emit("run_started", {
         run_id: runId,
@@ -217,7 +227,7 @@ export class GenerationRunner {
           const tournament = new TournamentRunner(this.#scenario, {
             matchCount: this.#matchesPerGeneration,
             seedBase: seedForGen,
-            initialElo: currentElo,
+            initialElo: this.#runState.currentElo,
           });
           this.emit("tournament_started", {
             run_id: runId,
@@ -270,10 +280,11 @@ export class GenerationRunner {
           if (gateDecision === "advance") {
             finalizedAttempt = attempt;
             previousBest = tournamentResult.bestScore;
-            currentElo = tournamentResult.elo;
-            if (tournamentResult.bestScore > bestScoreOverall) {
-              bestScoreOverall = tournamentResult.bestScore;
-            }
+            this.#runState = recordGenerationResult(this.#runState!, {
+              generation: gen,
+              bestScore: tournamentResult.bestScore,
+              elo: tournamentResult.elo,
+            });
             break;
           }
 
@@ -306,19 +317,22 @@ export class GenerationRunner {
       }
 
       this.#store.updateRunStatus(runId, "completed");
+      this.#runState = completeGenerationRun(this.#runState!, {
+        finishedAtMs: Date.now(),
+      });
       const sessionReportPath = this.#journal.persistSessionReport(runId, {
-        runStartedAtMs: this.#runStartedAtMs,
+        runStartedAtMs: this.#runState.startedAtMs,
         explorationMode: this.#explorationMode,
       });
       this.emit("run_completed", {
         run_id: runId,
         completed_generations: generations,
-        best_score: bestScoreOverall,
-        elo: currentElo,
+        best_score: this.#runState.bestScore,
+        elo: this.#runState.currentElo,
         session_report_path: sessionReportPath,
         dead_ends_found: this.#journal.countDeadEnds(),
       });
-      await this.notify("completion", runId, bestScoreOverall, {
+      await this.notify("completion", runId, this.#runState.bestScore, {
         roundCount: generations,
         metadata: { session_report_path: sessionReportPath },
       });
@@ -326,16 +340,20 @@ export class GenerationRunner {
       return {
         runId,
         generationsCompleted: generations,
-        bestScore: bestScoreOverall,
-        currentElo,
+        bestScore: this.#runState.bestScore,
+        currentElo: this.#runState.currentElo,
       };
     } catch (error) {
+      this.#runState = failGenerationRun(this.#runState!, {
+        finishedAtMs: Date.now(),
+        error: error instanceof Error ? error.message : String(error),
+      });
       this.#store.updateRunStatus(runId, "failed");
       this.emit("run_failed", {
         run_id: runId,
         error: error instanceof Error ? error.message : String(error),
       });
-      await this.notify("failure", runId, bestScoreOverall, {
+      await this.notify("failure", runId, this.#runState.bestScore, {
         roundCount: this.#store.getScoreTrajectory(runId).length,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -344,8 +362,9 @@ export class GenerationRunner {
   }
 
   private buildCompetitorPrompt(runId: string): string {
-    const freshStartHint = this.#pendingFreshStartHint;
-    this.#pendingFreshStartHint = null;
+    const consumedHint = consumeFreshStartHint(this.#runState!);
+    this.#runState = consumedHint.state;
+    const freshStartHint = consumedHint.hint;
     const trimmed = this.#contextBudget.apply({
       playbook: this.#artifactStore.readPlaybook(this.#scenario.name),
       trajectory: new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build(),
@@ -601,7 +620,7 @@ export class GenerationRunner {
     }
 
     if (outcome.freshStartHint) {
-      this.#pendingFreshStartHint = outcome.freshStartHint;
+      this.#runState = queueFreshStartHint(this.#runState!, outcome.freshStartHint);
     }
   }
 
