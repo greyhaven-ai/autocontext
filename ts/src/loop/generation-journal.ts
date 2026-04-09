@@ -3,21 +3,15 @@ import { join } from "node:path";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { generateSessionReport } from "../knowledge/session-report.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
-import type { TournamentResult } from "../execution/tournament.js";
 import type { SQLiteStore } from "../storage/index.js";
+import type { GenerationAttempt } from "./generation-attempt-state.js";
 
 export interface GenerationJournalScenario {
   name: string;
   replayToNarrative(replay: Array<Record<string, unknown>>): string;
 }
 
-export interface GenerationJournalAttempt {
-  competitorPrompt: string;
-  competitorResultText: string;
-  strategy: Record<string, unknown>;
-  tournamentResult: TournamentResult;
-  gateDecision: "advance" | "retry" | "rollback";
-}
+export type GenerationJournalAttempt = GenerationAttempt;
 
 export interface SessionReportContext {
   runStartedAtMs: number;
