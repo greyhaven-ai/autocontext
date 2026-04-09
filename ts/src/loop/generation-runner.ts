@@ -38,6 +38,7 @@ import {
   buildCuratorPrompt,
   buildSupportPrompt,
 } from "./generation-prompts.js";
+import { GenerationJournal } from "./generation-journal.js";
 import { join } from "node:path";
 import type { GenerationRole } from "../providers/index.js";
 
@@ -87,6 +88,7 @@ export class GenerationRunner {
   #scenario: ScenarioInterface;
   #store: SQLiteStore;
   #artifactStore: ArtifactStore;
+  #journal: GenerationJournal;
   #matchesPerGeneration: number;
   #maxRetries: number;
   #gate: BackpressureGate;
@@ -121,6 +123,11 @@ export class GenerationRunner {
       runsRoot: opts.runsRoot,
       knowledgeRoot: opts.knowledgeRoot,
       maxPlaybookVersions: opts.playbookMaxVersions,
+    });
+    this.#journal = new GenerationJournal({
+      store: this.#store,
+      artifacts: this.#artifactStore,
+      scenario: this.#scenario,
     });
     this.#matchesPerGeneration = opts.matchesPerGeneration ?? 3;
     this.#maxRetries = opts.maxRetries ?? 2;
@@ -278,7 +285,7 @@ export class GenerationRunner {
           throw new Error(`generation ${gen} finished without a finalized attempt`);
         }
 
-        this.persistGeneration(runId, gen, finalizedAttempt);
+        this.#journal.persistGeneration(runId, gen, finalizedAttempt);
         await this.#controller?.waitIfPaused();
         await this.runSupportRoles(runId, gen, finalizedAttempt);
         await this.applyAdvancedFeatures(runId, gen, finalizedAttempt, previousBestForGeneration);
@@ -293,14 +300,17 @@ export class GenerationRunner {
       }
 
       this.#store.updateRunStatus(runId, "completed");
-      const sessionReportPath = this.persistSessionReport(runId);
+      const sessionReportPath = this.#journal.persistSessionReport(runId, {
+        runStartedAtMs: this.#runStartedAtMs,
+        explorationMode: this.#explorationMode,
+      });
       this.emit("run_completed", {
         run_id: runId,
         completed_generations: generations,
         best_score: bestScoreOverall,
         elo: currentElo,
         session_report_path: sessionReportPath,
-        dead_ends_found: this.countDeadEnds(),
+        dead_ends_found: this.#journal.countDeadEnds(),
       });
       await this.notify("completion", runId, bestScoreOverall, {
         roundCount: generations,
@@ -421,74 +431,6 @@ export class GenerationRunner {
     });
   }
 
-  private persistGeneration(runId: string, gen: number, attempt: GenerationAttempt): void {
-    this.#store.upsertGeneration(runId, gen, {
-      meanScore: attempt.tournamentResult.meanScore,
-      bestScore: attempt.tournamentResult.bestScore,
-      elo: attempt.tournamentResult.elo,
-      wins: attempt.tournamentResult.wins,
-      losses: attempt.tournamentResult.losses,
-      gateDecision: attempt.gateDecision,
-      status: "completed",
-    });
-
-    for (const match of attempt.tournamentResult.matches) {
-      this.#store.recordMatch(runId, gen, {
-        seed: match.seed,
-        score: match.score,
-        passedValidation: match.passedValidation,
-        validationErrors: match.validationErrors.join("; "),
-        winner: match.winner ?? "",
-        strategyJson: JSON.stringify(attempt.strategy),
-        replayJson: JSON.stringify(match.replay),
-      });
-    }
-
-    this.#store.appendAgentOutput(runId, gen, "competitor", attempt.competitorResultText);
-
-    const generationDir = this.#artifactStore.generationDir(runId, gen);
-    this.#artifactStore.writeMarkdown(
-      join(generationDir, "competitor_prompt.md"),
-      attempt.competitorPrompt,
-    );
-    this.#artifactStore.writeMarkdown(
-      join(generationDir, "competitor_output.md"),
-      attempt.competitorResultText,
-    );
-    this.#artifactStore.writeMarkdown(
-      join(generationDir, "trajectory.md"),
-      new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build() || "No prior trajectory yet.",
-    );
-    const bestReplayMatch = attempt.tournamentResult.matches.reduce((best, current) => (
-      current.score > best.score ? current : best
-    ));
-    this.#artifactStore.writeJson(join(generationDir, "replays", `${this.#scenario.name}_${gen}.json`), {
-      run_id: runId,
-      generation: gen,
-      scenario: this.#scenario.name,
-      seed: bestReplayMatch.seed,
-      score: bestReplayMatch.score,
-      winner: bestReplayMatch.winner,
-      narrative: this.#scenario.replayToNarrative(bestReplayMatch.replay),
-      timeline: bestReplayMatch.replay,
-      matches: attempt.tournamentResult.matches.map((match) => ({
-        seed: match.seed,
-        score: match.score,
-        winner: match.winner,
-        passed_validation: match.passedValidation,
-        validation_errors: match.validationErrors,
-        timeline: match.replay,
-      })),
-    });
-    this.#artifactStore.writeJson(join(generationDir, "tournament_summary.json"), {
-      gate_decision: attempt.gateDecision,
-      mean_score: attempt.tournamentResult.meanScore,
-      best_score: attempt.tournamentResult.bestScore,
-      elo: attempt.tournamentResult.elo,
-      wins: attempt.tournamentResult.wins,
-      losses: attempt.tournamentResult.losses,
-    });
-  }
 
   private async runSupportRoles(
     runId: string,
@@ -711,29 +653,6 @@ export class GenerationRunner {
     return sections.join("\n");
   }
 
-  private persistSessionReport(runId: string): string {
-    const report = generateSessionReport(
-      runId,
-      this.#scenario.name,
-      this.#store.getScoreTrajectory(runId) as unknown as Array<Record<string, unknown>>,
-      {
-        durationSeconds: (Date.now() - this.#runStartedAtMs) / 1000,
-        deadEndsFound: this.countDeadEnds(),
-        explorationMode: this.#explorationMode,
-      },
-    );
-    const markdown = report.toMarkdown();
-    const runPath = join(this.#artifactStore.runsRoot, runId, "session_report.md");
-    this.#artifactStore.writeMarkdown(runPath, markdown);
-    this.#artifactStore.writeSessionReport(this.#scenario.name, runId, markdown);
-    return runPath;
-  }
-
-  private countDeadEnds(): number {
-    const content = this.#artifactStore.readDeadEnds(this.#scenario.name);
-    if (!content) return 0;
-    return content.split("\n").filter((line) => line.startsWith("### Dead End")).length;
-  }
 
   private async notify(
     type: EventType,
