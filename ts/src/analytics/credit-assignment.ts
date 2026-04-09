@@ -4,9 +4,7 @@
  * TS port of autocontext.analytics.credit_assignment (AC-381).
  */
 
-function round(value: number, digits = 6): number {
-  return Number(value.toFixed(digits));
-}
+import { roundToDecimals } from "./number-utils.js";
 
 function textChangeMagnitude(oldValue: string, newValue: string): number {
   if (oldValue === newValue) {
@@ -27,7 +25,7 @@ function textChangeMagnitude(oldValue: string, newValue: string): number {
       common += 1;
     }
   }
-  return round(1 - common / maxLen, 4);
+  return roundToDecimals(1 - common / maxLen, 4);
 }
 
 function listChangeMagnitude(oldValues: unknown[], newValues: unknown[]): number {
@@ -48,7 +46,7 @@ function listChangeMagnitude(oldValues: unknown[], newValues: unknown[]): number
       diff += 1;
     }
   }
-  return round(diff / union.size, 4);
+  return roundToDecimals(diff / union.size, 4);
 }
 
 export class ComponentChange {
@@ -107,7 +105,7 @@ export class GenerationChangeVector {
   }
 
   get totalChangeMagnitude(): number {
-    return round(this.changes.reduce((sum, change) => sum + change.magnitude, 0), 6);
+    return roundToDecimals(this.changes.reduce((sum, change) => sum + change.magnitude, 0), 6);
   }
 
   toDict(): Record<string, unknown> {
@@ -273,7 +271,7 @@ export function attributeCredit(vector: GenerationChangeVector): AttributionResu
 
   const credits: Record<string, number> = {};
   for (const change of vector.changes) {
-    credits[change.component] = round(vector.scoreDelta * (change.magnitude / totalMagnitude), 6);
+    credits[change.component] = roundToDecimals(vector.scoreDelta * (change.magnitude / totalMagnitude), 6);
   }
   return new AttributionResult(vector.generation, vector.scoreDelta, credits);
 }
@@ -363,16 +361,16 @@ export function summarizeCreditPatterns(records: CreditAssignmentRecord[]): Reco
       };
 
       bucket.generationCount = Number(bucket.generationCount) + 1;
-      bucket.totalChangeMagnitude = round(Number(bucket.totalChangeMagnitude) + change.magnitude, 6);
+      bucket.totalChangeMagnitude = roundToDecimals(Number(bucket.totalChangeMagnitude) + change.magnitude, 6);
 
       const credit = Number(record.attribution.credits[change.component] ?? 0);
       if (credit > 0) {
         bucket.positiveGenerationCount = Number(bucket.positiveGenerationCount) + 1;
       }
-      bucket.totalCredit = round(Number(bucket.totalCredit) + credit, 6);
+      bucket.totalCredit = roundToDecimals(Number(bucket.totalCredit) + credit, 6);
 
       if (totalDelta > 0) {
-        bucket.averageShare = round(Number(bucket.averageShare) + credit / totalDelta, 6);
+        bucket.averageShare = roundToDecimals(Number(bucket.averageShare) + credit / totalDelta, 6);
       }
       componentRollup.set(change.component, bucket);
     }
@@ -381,8 +379,8 @@ export function summarizeCreditPatterns(records: CreditAssignmentRecord[]): Reco
   const components = [...componentRollup.values()].map((bucket) => {
     const generationCount = Number(bucket.generationCount);
     if (generationCount > 0) {
-      bucket.averageCredit = round(Number(bucket.totalCredit) / generationCount, 6);
-      bucket.averageShare = round(Number(bucket.averageShare) / generationCount, 6);
+      bucket.averageCredit = roundToDecimals(Number(bucket.totalCredit) / generationCount, 6);
+      bucket.averageShare = roundToDecimals(Number(bucket.averageShare) / generationCount, 6);
     }
     return { ...bucket };
   });
@@ -404,17 +402,17 @@ export function summarizeCreditPatterns(records: CreditAssignmentRecord[]): Reco
 }
 
 export class CreditAssigner {
-  private contributions: Map<string, number[]> = new Map();
+  #contributions: Map<string, number[]> = new Map();
 
   recordContribution(component: string, scoreDelta: number): void {
-    const existing = this.contributions.get(component) ?? [];
+    const existing = this.#contributions.get(component) ?? [];
     existing.push(scoreDelta);
-    this.contributions.set(component, existing);
+    this.#contributions.set(component, existing);
   }
 
   getCredits(): Record<string, number> {
     const credits: Record<string, number> = {};
-    for (const [component, deltas] of this.contributions) {
+    for (const [component, deltas] of this.#contributions) {
       credits[component] = deltas.reduce((sum, delta) => sum + delta, 0);
     }
     return credits;

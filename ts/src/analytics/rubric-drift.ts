@@ -4,9 +4,7 @@
  * TS port of autocontext.analytics.rubric_drift (AC-381).
  */
 
-function round(value: number, digits = 4): number {
-  return Number(value.toFixed(digits));
-}
+import { roundToDecimals } from "./number-utils.js";
 
 function mean(values: number[]): number {
   if (values.length === 0) {
@@ -147,8 +145,8 @@ function makeWarning(
     description,
     snapshotId: snapshot.snapshotId,
     metricName,
-    metricValue: round(metricValue, 4),
-    thresholdValue: round(thresholdValue, 4),
+    metricValue: roundToDecimals(metricValue, 4),
+    thresholdValue: roundToDecimals(thresholdValue, 4),
     affectedScenarios,
     affectedProviders,
     affectedReleases,
@@ -157,18 +155,18 @@ function makeWarning(
 }
 
 export class RubricDriftMonitor {
-  private readonly thresholds: DriftThresholds;
-  private readonly recordedFacets: RunFacetLike[] = [];
+  readonly #thresholds: DriftThresholds;
+  readonly #recordedFacets: RunFacetLike[] = [];
 
   constructor(thresholds: Partial<DriftThresholds> = {}) {
-    this.thresholds = { ...DEFAULT_THRESHOLDS, ...thresholds };
+    this.#thresholds = { ...DEFAULT_THRESHOLDS, ...thresholds };
   }
 
   recordScore(score: number): void {
-    this.recordedFacets.push({
+    this.#recordedFacets.push({
       scenario: "",
       bestScore: score,
-      createdAt: syntheticTimestamp(this.recordedFacets.length),
+      createdAt: syntheticTimestamp(this.#recordedFacets.length),
       totalGenerations: 1,
       delightSignals: [],
       retries: 0,
@@ -240,16 +238,16 @@ export class RubricDriftMonitor {
       windowStart: timestamps[0] ?? "",
       windowEnd: timestamps[timestamps.length - 1] ?? "",
       runCount: facets.length,
-      meanScore: round(mean(scores), 4),
-      medianScore: round(median(scores), 4),
-      stddevScore: round(populationStddev(scores), 4),
+      meanScore: roundToDecimals(mean(scores), 4),
+      medianScore: roundToDecimals(median(scores), 4),
+      stddevScore: roundToDecimals(populationStddev(scores), 4),
       minScore: Math.min(...scores),
       maxScore: Math.max(...scores),
-      scoreInflationRate: round(scoreInflationRate, 4),
-      perfectScoreRate: round(perfectCount / facets.length, 4),
-      revisionJumpRate: round(totalGenerations > 0 ? strongImprovements / totalGenerations : 0, 4),
-      retryRate: round(totalGenerations > 0 ? retryCount / totalGenerations : 0, 4),
-      rollbackRate: round(totalGenerations > 0 ? rollbackCount / totalGenerations : 0, 4),
+      scoreInflationRate: roundToDecimals(scoreInflationRate, 4),
+      perfectScoreRate: roundToDecimals(perfectCount / facets.length, 4),
+      revisionJumpRate: roundToDecimals(totalGenerations > 0 ? strongImprovements / totalGenerations : 0, 4),
+      retryRate: roundToDecimals(totalGenerations > 0 ? retryCount / totalGenerations : 0, 4),
+      rollbackRate: roundToDecimals(totalGenerations > 0 ? rollbackCount / totalGenerations : 0, 4),
       release,
       scenarioFamily,
       agentProvider,
@@ -265,22 +263,22 @@ export class RubricDriftMonitor {
     const warnings: DriftWarning[] = [];
     const now = new Date().toISOString();
 
-    if (current.scoreInflationRate > this.thresholds.maxScoreInflation) {
+    if (current.scoreInflationRate > this.#thresholds.maxScoreInflation) {
       warnings.push(makeWarning(
         now,
         "score_inflation",
         "high",
-        `Score inflation rate ${current.scoreInflationRate.toFixed(2)} exceeds threshold ${this.thresholds.maxScoreInflation.toFixed(2)}`,
+        `Score inflation rate ${current.scoreInflationRate.toFixed(2)} exceeds threshold ${this.#thresholds.maxScoreInflation.toFixed(2)}`,
         current,
         "score_inflation_rate",
         current.scoreInflationRate,
-        this.thresholds.maxScoreInflation,
+        this.#thresholds.maxScoreInflation,
       ));
     }
 
     if (baseline) {
       const delta = current.meanScore - baseline.meanScore;
-      if (delta > this.thresholds.maxScoreInflation) {
+      if (delta > this.#thresholds.maxScoreInflation) {
         warnings.push(makeWarning(
           now,
           "score_inflation",
@@ -289,73 +287,73 @@ export class RubricDriftMonitor {
           current,
           "mean_score_delta",
           delta,
-          this.thresholds.maxScoreInflation,
+          this.#thresholds.maxScoreInflation,
         ));
       }
     }
 
-    if (current.perfectScoreRate > this.thresholds.maxPerfectRate) {
+    if (current.perfectScoreRate > this.#thresholds.maxPerfectRate) {
       warnings.push(makeWarning(
         now,
         "perfect_rate_high",
         "high",
-        `Perfect score rate ${(current.perfectScoreRate * 100).toFixed(0)}% exceeds threshold ${(this.thresholds.maxPerfectRate * 100).toFixed(0)}%`,
+        `Perfect score rate ${(current.perfectScoreRate * 100).toFixed(0)}% exceeds threshold ${(this.#thresholds.maxPerfectRate * 100).toFixed(0)}%`,
         current,
         "perfect_score_rate",
         current.perfectScoreRate,
-        this.thresholds.maxPerfectRate,
+        this.#thresholds.maxPerfectRate,
       ));
     }
 
-    if (current.stddevScore < this.thresholds.minStddev && current.runCount > 1) {
+    if (current.stddevScore < this.#thresholds.minStddev && current.runCount > 1) {
       warnings.push(makeWarning(
         now,
         "score_compression",
         "medium",
-        `Score stddev ${current.stddevScore.toFixed(4)} below minimum ${this.thresholds.minStddev.toFixed(4)}`,
+        `Score stddev ${current.stddevScore.toFixed(4)} below minimum ${this.#thresholds.minStddev.toFixed(4)}`,
         current,
         "stddev_score",
         current.stddevScore,
-        this.thresholds.minStddev,
+        this.#thresholds.minStddev,
       ));
     }
 
-    if (current.revisionJumpRate > this.thresholds.maxRevisionJumpRate) {
+    if (current.revisionJumpRate > this.#thresholds.maxRevisionJumpRate) {
       warnings.push(makeWarning(
         now,
         "revision_jump_rate_high",
         "medium",
-        `Revision jump rate ${(current.revisionJumpRate * 100).toFixed(0)}% exceeds threshold ${(this.thresholds.maxRevisionJumpRate * 100).toFixed(0)}%`,
+        `Revision jump rate ${(current.revisionJumpRate * 100).toFixed(0)}% exceeds threshold ${(this.#thresholds.maxRevisionJumpRate * 100).toFixed(0)}%`,
         current,
         "revision_jump_rate",
         current.revisionJumpRate,
-        this.thresholds.maxRevisionJumpRate,
+        this.#thresholds.maxRevisionJumpRate,
       ));
     }
 
-    if (current.retryRate > this.thresholds.maxRetryRate) {
+    if (current.retryRate > this.#thresholds.maxRetryRate) {
       warnings.push(makeWarning(
         now,
         "retry_rate_high",
         "medium",
-        `Retry rate ${(current.retryRate * 100).toFixed(0)}% exceeds threshold ${(this.thresholds.maxRetryRate * 100).toFixed(0)}%`,
+        `Retry rate ${(current.retryRate * 100).toFixed(0)}% exceeds threshold ${(this.#thresholds.maxRetryRate * 100).toFixed(0)}%`,
         current,
         "retry_rate",
         current.retryRate,
-        this.thresholds.maxRetryRate,
+        this.#thresholds.maxRetryRate,
       ));
     }
 
-    if (current.rollbackRate > this.thresholds.maxRollbackRate) {
+    if (current.rollbackRate > this.#thresholds.maxRollbackRate) {
       warnings.push(makeWarning(
         now,
         "rollback_rate_high",
         "high",
-        `Rollback rate ${(current.rollbackRate * 100).toFixed(0)}% exceeds threshold ${(this.thresholds.maxRollbackRate * 100).toFixed(0)}%`,
+        `Rollback rate ${(current.rollbackRate * 100).toFixed(0)}% exceeds threshold ${(this.#thresholds.maxRollbackRate * 100).toFixed(0)}%`,
         current,
         "rollback_rate",
         current.rollbackRate,
-        this.thresholds.maxRollbackRate,
+        this.#thresholds.maxRollbackRate,
       ));
     }
 
@@ -363,7 +361,7 @@ export class RubricDriftMonitor {
   }
 
   analyze(
-    facets: readonly RunFacetLike[] = this.recordedFacets,
+    facets: readonly RunFacetLike[] = this.#recordedFacets,
     options: {
       release?: string;
       scenarioFamily?: string;

@@ -16,10 +16,10 @@ export interface GateDecision {
 // ---------------------------------------------------------------------------
 
 export class BackpressureGate {
-  private minDelta: number;
+  #minDelta: number;
 
   constructor(minDelta = 0.005) {
-    this.minDelta = minDelta;
+    this.#minDelta = minDelta;
   }
 
   evaluate(
@@ -30,11 +30,11 @@ export class BackpressureGate {
   ): GateDecision {
     const delta = Number((currentBest - previousBest).toFixed(6));
 
-    if (delta >= this.minDelta) {
+    if (delta >= this.#minDelta) {
       return {
         decision: "advance",
         delta,
-        threshold: this.minDelta,
+        threshold: this.#minDelta,
         reason: "score improved",
         metadata: {},
       };
@@ -43,7 +43,7 @@ export class BackpressureGate {
       return {
         decision: "retry",
         delta,
-        threshold: this.minDelta,
+        threshold: this.#minDelta,
         reason: "insufficient improvement; retry permitted",
         metadata: {},
       };
@@ -51,7 +51,7 @@ export class BackpressureGate {
     return {
       decision: "rollback",
       delta,
-      threshold: this.minDelta,
+      threshold: this.#minDelta,
       reason: "insufficient improvement and retries exhausted",
       metadata: {},
     };

@@ -4,6 +4,26 @@
  * TS port of autocontext.analytics.run_trace (AC-381).
  */
 
+export interface ActorRefDict {
+  actor_type: string;
+  actor_id: string;
+  actor_name: string;
+}
+
+export interface TraceEventDict {
+  event_type: string;
+  actor: ActorRefDict;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface RunTraceDict {
+  run_id: string;
+  scenario_type: string;
+  events: TraceEventDict[];
+  created_at: string;
+}
+
 export class ActorRef {
   readonly actorType: string;
   readonly actorId: string;
@@ -15,7 +35,7 @@ export class ActorRef {
     this.actorName = actorName;
   }
 
-  toDict(): Record<string, string> {
+  toDict(): ActorRefDict {
     return {
       actor_type: this.actorType,
       actor_id: this.actorId,
@@ -23,7 +43,7 @@ export class ActorRef {
     };
   }
 
-  static fromDict(data: Record<string, string>): ActorRef {
+  static fromDict(data: ActorRefDict): ActorRef {
     return new ActorRef(
       data.actor_type ?? "",
       data.actor_id ?? "",
@@ -52,7 +72,7 @@ export class TraceEvent {
     this.timestamp = init.timestamp ?? new Date().toISOString();
   }
 
-  toDict(): Record<string, unknown> {
+  toDict(): TraceEventDict {
     return {
       event_type: this.eventType,
       actor: this.actor.toDict(),
@@ -61,12 +81,12 @@ export class TraceEvent {
     };
   }
 
-  static fromDict(data: Record<string, unknown>): TraceEvent {
+  static fromDict(data: TraceEventDict): TraceEvent {
     return new TraceEvent({
-      eventType: (data.event_type as string) ?? "",
-      actor: ActorRef.fromDict(data.actor as Record<string, string>),
-      payload: (data.payload as Record<string, unknown>) ?? {},
-      timestamp: (data.timestamp as string) ?? undefined,
+      eventType: data.event_type ?? "",
+      actor: ActorRef.fromDict(data.actor),
+      payload: data.payload ?? {},
+      timestamp: data.timestamp ?? undefined,
     });
   }
 }
@@ -87,11 +107,11 @@ export class RunTrace {
     this.events.push(event);
   }
 
-  toDict(): Record<string, unknown> {
+  toDict(): RunTraceDict {
     return {
       run_id: this.runId,
       scenario_type: this.scenarioType,
-      events: this.events.map((e) => e.toDict()),
+      events: this.events.map((event) => event.toDict()),
       created_at: this.createdAt,
     };
   }
@@ -100,13 +120,13 @@ export class RunTrace {
     return JSON.stringify(this.toDict());
   }
 
-  static fromDict(data: Record<string, unknown>): RunTrace {
+  static fromDict(data: RunTraceDict): RunTrace {
     const trace = new RunTrace(
-      (data.run_id as string) ?? "",
-      (data.scenario_type as string) ?? "",
-      (data.created_at as string) ?? undefined,
+      data.run_id ?? "",
+      data.scenario_type ?? "",
+      data.created_at ?? undefined,
     );
-    const events = (data.events as Record<string, unknown>[]) ?? [];
+    const events = data.events ?? [];
     for (const event of events) {
       trace.addEvent(TraceEvent.fromDict(event));
     }
@@ -114,6 +134,6 @@ export class RunTrace {
   }
 
   static fromJSON(json: string): RunTrace {
-    return RunTrace.fromDict(JSON.parse(json) as Record<string, unknown>);
+    return RunTrace.fromDict(JSON.parse(json) as RunTraceDict);
   }
 }
