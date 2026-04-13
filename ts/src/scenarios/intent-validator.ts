@@ -3,6 +3,8 @@
  * Uses keyword overlap to estimate how well the generated spec captures the original request.
  */
 
+import { normalizeConfidence } from "../analytics/number-utils.js";
+
 export interface IntentValidationResult {
   valid: boolean;
   confidence: number;
@@ -85,7 +87,7 @@ export class IntentValidator {
       }
     }
 
-    const confidence = matchCount / intentKeywords.size;
+    const confidence = normalizeConfidence(matchCount / intentKeywords.size);
     const issues: string[] = [];
 
     if (confidence < this.minConfidence) {

@@ -2,15 +2,8 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  AgentTaskSpecSchema,
-  parseRawSpec,
-} from "../src/scenarios/agent-task-spec.js";
-import {
-  parseAgentTaskSpec,
-  SPEC_START,
-  SPEC_END,
-} from "../src/scenarios/agent-task-designer.js";
+import { AgentTaskSpecSchema, parseRawSpec } from "../src/scenarios/agent-task-spec.js";
+import { parseAgentTaskSpec, SPEC_START, SPEC_END } from "../src/scenarios/agent-task-designer.js";
 import {
   ARTIFACT_SPEC_END,
   ARTIFACT_SPEC_START,
@@ -35,18 +28,12 @@ import {
   SCHEMA_EVOLUTION_SPEC_END,
   SCHEMA_EVOLUTION_SPEC_START,
 } from "../src/scenarios/schema-evolution-designer.js";
-import {
-  SIM_SPEC_END,
-  SIM_SPEC_START,
-} from "../src/scenarios/simulation-designer.js";
+import { SIM_SPEC_END, SIM_SPEC_START } from "../src/scenarios/simulation-designer.js";
 import {
   TOOL_FRAGILITY_SPEC_END,
   TOOL_FRAGILITY_SPEC_START,
 } from "../src/scenarios/tool-fragility-designer.js";
-import {
-  WORKFLOW_SPEC_END,
-  WORKFLOW_SPEC_START,
-} from "../src/scenarios/workflow-designer.js";
+import { WORKFLOW_SPEC_END, WORKFLOW_SPEC_START } from "../src/scenarios/workflow-designer.js";
 import { classifyScenarioFamily } from "../src/scenarios/family-classifier.js";
 import { UnsupportedFamilyError, validateForFamily } from "../src/scenarios/family-pipeline.js";
 import { getScenarioTypeMarker } from "../src/scenarios/families.js";
@@ -137,7 +124,8 @@ function mockArtifactEditingResponse(): string {
 
 function mockInvestigationResponse(): string {
   const data = {
-    description: "Investigate a production outage by gathering evidence and identifying the root cause.",
+    description:
+      "Investigate a production outage by gathering evidence and identifying the root cause.",
     environment_description: "Mock service environment with logs and dashboards.",
     initial_state_description: "An outage is active and only partial evidence is visible.",
     evidence_pool_description:
@@ -178,8 +166,10 @@ function mockInvestigationResponse(): string {
 
 function mockWorkflowResponse(): string {
   const data = {
-    description: "Execute an order-processing workflow with compensation when downstream steps fail.",
-    environment_description: "Mock commerce workflow with payment, inventory, and notification side effects.",
+    description:
+      "Execute an order-processing workflow with compensation when downstream steps fail.",
+    environment_description:
+      "Mock commerce workflow with payment, inventory, and notification side effects.",
     initial_state_description: "No workflow steps have run yet.",
     workflow_steps: [
       {
@@ -288,7 +278,11 @@ function mockToolFragilityResponse(): string {
     environment_description: "Versioned services with unstable response formats.",
     initial_state_description: "All tools initially operate at stable version 1.",
     tool_contracts: [
-      { tool_name: "search_api", version: 1, description: "Search endpoint returning a flat list." },
+      {
+        tool_name: "search_api",
+        version: 1,
+        description: "Search endpoint returning a flat list.",
+      },
       { tool_name: "transform_api", version: 1, description: "Data transform endpoint." },
     ],
     success_criteria: ["detect tool drift", "adapt without wasted attempts"],
@@ -421,7 +415,12 @@ function mockCoordinationResponse(): string {
 
 function makeMockProvider(response = "mock output"): LLMProvider {
   return {
-    complete: async () => ({ text: response, model: "mock", usage: { inputTokens: 0, outputTokens: 0 } }) as CompletionResult,
+    complete: async () =>
+      ({
+        text: response,
+        model: "mock",
+        usage: { inputTokens: 0, outputTokens: 0 },
+      }) as CompletionResult,
     defaultModel: () => "mock-model",
   };
 }
@@ -475,7 +474,9 @@ describe("AgentTaskSpec", () => {
       judge_rubric: "Check completeness",
       sample_input: "Service X went down at 3am due to a memory leak in the cache layer.",
     });
-    expect(spec.sampleInput).toBe("Service X went down at 3am due to a memory leak in the cache layer.");
+    expect(spec.sampleInput).toBe(
+      "Service X went down at 3am due to a memory leak in the cache layer.",
+    );
   });
 
   it("sample_input defaults to null when not provided", () => {
@@ -595,8 +596,20 @@ describe("FamilyPipeline", () => {
       failureModes: ["following the red herring"],
       maxSteps: 6,
       actions: [
-        { name: "inspect_logs", description: "Inspect logs", parameters: { service: "string" }, preconditions: [], effects: ["log_evidence"] },
-        { name: "record_diagnosis", description: "Record diagnosis", parameters: { diagnosis: "string" }, preconditions: ["inspect_logs"], effects: ["diagnosis_recorded"] },
+        {
+          name: "inspect_logs",
+          description: "Inspect logs",
+          parameters: { service: "string" },
+          preconditions: [],
+          effects: ["log_evidence"],
+        },
+        {
+          name: "record_diagnosis",
+          description: "Record diagnosis",
+          parameters: { diagnosis: "string" },
+          preconditions: ["inspect_logs"],
+          effects: ["diagnosis_recorded"],
+        },
       ],
     };
     expect(validateForFamily("investigation", spec)).toEqual([]);
@@ -608,15 +621,39 @@ describe("FamilyPipeline", () => {
       environmentDescription: "Mock commerce workflow.",
       initialStateDescription: "Nothing has run yet.",
       workflowSteps: [
-        { name: "charge_payment", description: "Charge payment", idempotent: false, reversible: true, compensation: "refund_payment" },
-        { name: "reserve_inventory", description: "Reserve inventory", idempotent: true, reversible: true, compensation: "release_inventory" },
+        {
+          name: "charge_payment",
+          description: "Charge payment",
+          idempotent: false,
+          reversible: true,
+          compensation: "refund_payment",
+        },
+        {
+          name: "reserve_inventory",
+          description: "Reserve inventory",
+          idempotent: true,
+          reversible: true,
+          compensation: "release_inventory",
+        },
       ],
       successCriteria: ["steps complete in order", "compensation contains side effects"],
       failureModes: ["payment failure"],
       maxSteps: 6,
       actions: [
-        { name: "charge_payment", description: "Charge payment", parameters: { payment_id: "string" }, preconditions: [], effects: ["payment_captured"] },
-        { name: "reserve_inventory", description: "Reserve inventory", parameters: { sku: "string" }, preconditions: ["charge_payment"], effects: ["inventory_reserved"] },
+        {
+          name: "charge_payment",
+          description: "Charge payment",
+          parameters: { payment_id: "string" },
+          preconditions: [],
+          effects: ["payment_captured"],
+        },
+        {
+          name: "reserve_inventory",
+          description: "Reserve inventory",
+          parameters: { sku: "string" },
+          preconditions: ["charge_payment"],
+          effects: ["inventory_reserved"],
+        },
       ],
     };
     expect(validateForFamily("workflow", spec)).toEqual([]);
@@ -628,15 +665,41 @@ describe("FamilyPipeline", () => {
       environmentDescription: "Versioned API environment.",
       initialStateDescription: "Schema v1 is active.",
       mutations: [
-        { version: 2, description: "Add priority.", breaking: false, fieldsAdded: ["priority"], fieldsRemoved: [], fieldsModified: {} },
-        { version: 3, description: "Rename status.", breaking: true, fieldsAdded: ["state"], fieldsRemoved: ["status"], fieldsModified: {} },
+        {
+          version: 2,
+          description: "Add priority.",
+          breaking: false,
+          fieldsAdded: ["priority"],
+          fieldsRemoved: [],
+          fieldsModified: {},
+        },
+        {
+          version: 3,
+          description: "Rename status.",
+          breaking: true,
+          fieldsAdded: ["state"],
+          fieldsRemoved: ["status"],
+          fieldsModified: {},
+        },
       ],
       successCriteria: ["detect changes"],
       failureModes: ["using removed fields"],
       maxSteps: 8,
       actions: [
-        { name: "query_api", description: "Query schema", parameters: { endpoint: "string" }, preconditions: [], effects: ["schema_observed"] },
-        { name: "validate_schema", description: "Validate schema", parameters: {}, preconditions: ["query_api"], effects: ["schema_validated"] },
+        {
+          name: "query_api",
+          description: "Query schema",
+          parameters: { endpoint: "string" },
+          preconditions: [],
+          effects: ["schema_observed"],
+        },
+        {
+          name: "validate_schema",
+          description: "Validate schema",
+          parameters: {},
+          preconditions: ["query_api"],
+          effects: ["schema_validated"],
+        },
       ],
     };
     expect(validateForFamily("schema_evolution", spec)).toEqual([]);
@@ -655,8 +718,20 @@ describe("FamilyPipeline", () => {
       failureModes: ["using stale responses"],
       maxSteps: 8,
       actions: [
-        { name: "call_search", description: "Call search", parameters: { query: "string" }, preconditions: [], effects: ["search_results"] },
-        { name: "call_transform", description: "Call transform", parameters: { data: "string" }, preconditions: ["call_search"], effects: ["transform_complete"] },
+        {
+          name: "call_search",
+          description: "Call search",
+          parameters: { query: "string" },
+          preconditions: [],
+          effects: ["search_results"],
+        },
+        {
+          name: "call_transform",
+          description: "Call transform",
+          parameters: { data: "string" },
+          preconditions: ["call_search"],
+          effects: ["transform_complete"],
+        },
       ],
     };
     expect(validateForFamily("tool_fragility", spec)).toEqual([]);
@@ -677,8 +752,20 @@ describe("FamilyPipeline", () => {
       successCriteria: ["reach agreement", "model opponent priorities"],
       failureModes: ["deadlock"],
       actions: [
-        { name: "make_offer", description: "Make an offer", parameters: { terms: "dict" }, preconditions: [], effects: ["offer_on_table"] },
-        { name: "accept", description: "Accept an offer", parameters: {}, preconditions: ["make_offer"], effects: ["deal_closed"] },
+        {
+          name: "make_offer",
+          description: "Make an offer",
+          parameters: { terms: "dict" },
+          preconditions: [],
+          effects: ["offer_on_table"],
+        },
+        {
+          name: "accept",
+          description: "Accept an offer",
+          parameters: {},
+          preconditions: ["make_offer"],
+          effects: ["deal_closed"],
+        },
       ],
       maxSteps: 10,
     };
@@ -697,8 +784,20 @@ describe("FamilyPipeline", () => {
       successCriteria: ["resolve or correctly escalate"],
       failureModes: ["over-escalation", "under-escalation"],
       actions: [
-        { name: "respond", description: "Reply to the customer", parameters: { message: "string" }, preconditions: [], effects: ["response_sent"] },
-        { name: "escalate_ticket", description: "Escalate to a human", parameters: { reason: "string" }, preconditions: [], effects: ["escalated"] },
+        {
+          name: "respond",
+          description: "Reply to the customer",
+          parameters: { message: "string" },
+          preconditions: [],
+          effects: ["response_sent"],
+        },
+        {
+          name: "escalate_ticket",
+          description: "Escalate to a human",
+          parameters: { reason: "string" },
+          preconditions: [],
+          effects: ["escalated"],
+        },
       ],
       maxSteps: 10,
     };
@@ -717,8 +816,20 @@ describe("FamilyPipeline", () => {
       successCriteria: ["coherent merged output"],
       failureModes: ["duplicate work"],
       actions: [
-        { name: "research", description: "Gather data", parameters: { topic: "string" }, preconditions: [], effects: ["data_gathered"] },
-        { name: "write_section", description: "Write section", parameters: { section: "string" }, preconditions: ["research"], effects: ["section_written"] },
+        {
+          name: "research",
+          description: "Gather data",
+          parameters: { topic: "string" },
+          preconditions: [],
+          effects: ["data_gathered"],
+        },
+        {
+          name: "write_section",
+          description: "Write section",
+          parameters: { section: "string" },
+          preconditions: ["research"],
+          effects: ["section_written"],
+        },
       ],
       maxSteps: 10,
     };
@@ -788,6 +899,20 @@ describe("Factory", () => {
 });
 
 describe("AgentTaskCreator", () => {
+  it("uses real #private fields for creator internals", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "scenarios", "agent-task-creator.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("#provider");
+    expect(source).toContain("#model");
+    expect(source).toContain("#knowledgeRoot");
+    expect(source).not.toContain("private provider:");
+    expect(source).not.toContain("private model:");
+    expect(source).not.toContain("private knowledgeRoot:");
+  });
+
   it("derives name from description — uses the improved domain-preserving heuristic", () => {
     const provider = makeMockProvider(mockLlmResponse(SAMPLE_SPEC));
     const creator = new AgentTaskCreator({
@@ -796,7 +921,9 @@ describe("AgentTaskCreator", () => {
     });
     const name = creator.deriveName("Write a haiku about testing software");
     expect(name.split("_")).toEqual(
-      expect.arrayContaining(["haiku", "testing", "software"].filter((word) => name.includes(word))),
+      expect.arrayContaining(
+        ["haiku", "testing", "software"].filter((word) => name.includes(word)),
+      ),
     );
     // Single meaningful word
     expect(creator.deriveName("Create something")).toBe("something");
@@ -809,7 +936,9 @@ describe("AgentTaskCreator", () => {
       knowledgeRoot: "/tmp/unused",
     });
     // "I want an agent that writes incident postmortems" -> should contain "incident"
-    const name1 = creator.deriveName("I want an agent that can write clear, well-structured incident postmortems for production outages");
+    const name1 = creator.deriveName(
+      "I want an agent that can write clear, well-structured incident postmortems for production outages",
+    );
     expect(name1).toContain("incident");
     expect(name1).not.toContain("want");
     expect(name1).not.toContain("agent");
@@ -858,7 +987,9 @@ describe("AgentTaskCreator", () => {
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "agent_task_spec.json"))).toBe(true);
     expect(existsSync(join(scenarioDir, "scenario_type.txt"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("agent_task"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("agent_task"),
+    );
 
     const specData = JSON.parse(readFileSync(join(scenarioDir, "agent_task_spec.json"), "utf-8"));
     expect(specData.task_prompt).toBe(SAMPLE_SPEC.taskPrompt);
@@ -920,14 +1051,18 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-sim-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Build a stateful API orchestration workflow with rollback");
+    const scenario = await creator.create(
+      "Build a stateful API orchestration workflow with rollback",
+    );
     expect("family" in scenario && scenario.family).toBe("simulation");
 
     const name = creator.deriveName("Build a stateful API orchestration workflow with rollback");
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("simulation"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("simulation"),
+    );
   });
 
   it("routes artifact-editing descriptions into an artifact-editing scaffold", async () => {
@@ -942,7 +1077,9 @@ describe("AgentTaskCreator", () => {
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("artifact_editing"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("artifact_editing"),
+    );
   });
 
   it("routes investigation descriptions into an investigation scaffold", async () => {
@@ -950,14 +1087,20 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-investigation-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause");
+    const scenario = await creator.create(
+      "Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause",
+    );
     expect("family" in scenario && scenario.family).toBe("investigation");
 
-    const name = creator.deriveName("Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause");
+    const name = creator.deriveName(
+      "Create an investigation where the agent gathers evidence, avoids red herrings, and finds the root cause",
+    );
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("investigation"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("investigation"),
+    );
   });
 
   it("routes workflow descriptions into a workflow scaffold", async () => {
@@ -965,14 +1108,20 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-workflow-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Create a transactional workflow with compensation and side effects");
+    const scenario = await creator.create(
+      "Create a transactional workflow with compensation and side effects",
+    );
     expect("family" in scenario && scenario.family).toBe("workflow");
 
-    const name = creator.deriveName("Create a transactional workflow with compensation and side effects");
+    const name = creator.deriveName(
+      "Create a transactional workflow with compensation and side effects",
+    );
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("workflow"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("workflow"),
+    );
   });
 
   it("routes schema-evolution descriptions into a schema-evolution scaffold", async () => {
@@ -980,14 +1129,20 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-schema-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Create a schema evolution scenario with stale context after breaking field changes");
+    const scenario = await creator.create(
+      "Create a schema evolution scenario with stale context after breaking field changes",
+    );
     expect("family" in scenario && scenario.family).toBe("schema_evolution");
 
-    const name = creator.deriveName("Create a schema evolution scenario with stale context after breaking field changes");
+    const name = creator.deriveName(
+      "Create a schema evolution scenario with stale context after breaking field changes",
+    );
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("schema_evolution"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("schema_evolution"),
+    );
   });
 
   it("routes tool-fragility descriptions into a tool-fragility scaffold", async () => {
@@ -995,14 +1150,20 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-tool-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Create a tool fragility scenario with API contract drift and environment changes");
+    const scenario = await creator.create(
+      "Create a tool fragility scenario with API contract drift and environment changes",
+    );
     expect("family" in scenario && scenario.family).toBe("tool_fragility");
 
-    const name = creator.deriveName("Create a tool fragility scenario with API contract drift and environment changes");
+    const name = creator.deriveName(
+      "Create a tool fragility scenario with API contract drift and environment changes",
+    );
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("tool_fragility"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("tool_fragility"),
+    );
   });
 
   it("routes negotiation descriptions into a negotiation scaffold", async () => {
@@ -1010,14 +1171,20 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-negotiation-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences");
+    const scenario = await creator.create(
+      "Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences",
+    );
     expect("family" in scenario && scenario.family).toBe("negotiation");
 
-    const name = creator.deriveName("Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences");
+    const name = creator.deriveName(
+      "Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences",
+    );
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("negotiation"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("negotiation"),
+    );
   });
 
   it("routes operator-loop descriptions into an operator_loop scaffold (AC-432)", async () => {
@@ -1025,15 +1192,21 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-operator-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Create an operator-in-the-loop scenario for support triage with escalation judgment");
+    const scenario = await creator.create(
+      "Create an operator-in-the-loop scenario for support triage with escalation judgment",
+    );
     expect("family" in scenario && scenario.family).toBe("operator_loop");
     expect("generatedSource" in scenario && typeof scenario.generatedSource).toBe("string");
 
-    const name = creator.deriveName("Create an operator-in-the-loop scenario for support triage with escalation judgment");
+    const name = creator.deriveName(
+      "Create an operator-in-the-loop scenario for support triage with escalation judgment",
+    );
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.js"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("operator_loop"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("operator_loop"),
+    );
   });
 
   it("routes coordination descriptions into a coordination scaffold", async () => {
@@ -1041,14 +1214,20 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-coordination-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    const scenario = await creator.create("Create a multi-agent coordination scenario with handoffs and partial context");
+    const scenario = await creator.create(
+      "Create a multi-agent coordination scenario with handoffs and partial context",
+    );
     expect("family" in scenario && scenario.family).toBe("coordination");
 
-    const name = creator.deriveName("Create a multi-agent coordination scenario with handoffs and partial context");
+    const name = creator.deriveName(
+      "Create a multi-agent coordination scenario with handoffs and partial context",
+    );
     const scenarioDir = join(tmpDir, "_custom_scenarios", name);
     expect(existsSync(join(scenarioDir, "scenario.py"))).toBe(true);
     expect(existsSync(join(scenarioDir, "spec.json"))).toBe(true);
-    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(getScenarioTypeMarker("coordination"));
+    expect(readFileSync(join(scenarioDir, "scenario_type.txt"), "utf-8")).toBe(
+      getScenarioTypeMarker("coordination"),
+    );
   });
 
   it("rejects classified-but-unsupported game families", async () => {
@@ -1056,10 +1235,12 @@ describe("AgentTaskCreator", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "autocontext-creator-game-"));
     const creator = new AgentTaskCreator({ provider, knowledgeRoot: tmpDir });
 
-    expect(classifyScenarioFamily("Create a competitive two-player board game").familyName).toBe("game");
-    await expect(
-      creator.create("Create a competitive two-player board game"),
-    ).rejects.toThrow("not yet supported for custom scaffolding");
+    expect(classifyScenarioFamily("Create a competitive two-player board game").familyName).toBe(
+      "game",
+    );
+    await expect(creator.create("Create a competitive two-player board game")).rejects.toThrow(
+      "not yet supported for custom scaffolding",
+    );
   });
 
   it("classifies artifact-editing descriptions into the artifact_editing family", () => {
@@ -1070,43 +1251,56 @@ describe("AgentTaskCreator", () => {
 
   it("classifies investigation descriptions into the investigation family", () => {
     expect(
-      classifyScenarioFamily("Create an investigation where the agent gathers evidence and avoids red herrings").familyName,
+      classifyScenarioFamily(
+        "Create an investigation where the agent gathers evidence and avoids red herrings",
+      ).familyName,
     ).toBe("investigation");
   });
 
   it("classifies workflow descriptions into the workflow family", () => {
     expect(
-      classifyScenarioFamily("Create a transactional workflow with compensation and side effects").familyName,
+      classifyScenarioFamily("Create a transactional workflow with compensation and side effects")
+        .familyName,
     ).toBe("workflow");
   });
 
   it("classifies schema-evolution descriptions into the schema_evolution family", () => {
     expect(
-      classifyScenarioFamily("Create a schema evolution scenario with stale context after breaking field changes").familyName,
+      classifyScenarioFamily(
+        "Create a schema evolution scenario with stale context after breaking field changes",
+      ).familyName,
     ).toBe("schema_evolution");
   });
 
   it("classifies tool-fragility descriptions into the tool_fragility family", () => {
     expect(
-      classifyScenarioFamily("Create a tool fragility scenario with API contract drift and environment changes").familyName,
+      classifyScenarioFamily(
+        "Create a tool fragility scenario with API contract drift and environment changes",
+      ).familyName,
     ).toBe("tool_fragility");
   });
 
   it("classifies negotiation descriptions into the negotiation family", () => {
     expect(
-      classifyScenarioFamily("Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences").familyName,
+      classifyScenarioFamily(
+        "Create a negotiation scenario with hidden BATNA, counteroffers, and adversarial preferences",
+      ).familyName,
     ).toBe("negotiation");
   });
 
   it("classifies operator-loop descriptions into the operator_loop family", () => {
     expect(
-      classifyScenarioFamily("Create an operator-in-the-loop scenario for support triage with escalation judgment").familyName,
+      classifyScenarioFamily(
+        "Create an operator-in-the-loop scenario for support triage with escalation judgment",
+      ).familyName,
     ).toBe("operator_loop");
   });
 
   it("classifies coordination descriptions into the coordination family", () => {
     expect(
-      classifyScenarioFamily("Create a multi-agent coordination scenario with handoffs and partial context").familyName,
+      classifyScenarioFamily(
+        "Create a multi-agent coordination scenario with handoffs and partial context",
+      ).familyName,
     ).toBe("coordination");
   });
 });

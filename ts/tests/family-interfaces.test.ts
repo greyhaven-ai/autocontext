@@ -2,6 +2,8 @@
  * Tests for AC-380: runtime interface contracts for all 11 scenario families.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const simulationBase = {
@@ -136,7 +138,8 @@ describe("Scenario family interfaces", () => {
   });
 
   it("detects agent-task and game families via the existing runtime contracts", async () => {
-    const { detectFamily, isAgentTask, isGameScenario } = await import("../src/scenarios/family-interfaces.js");
+    const { detectFamily, isAgentTask, isGameScenario } =
+      await import("../src/scenarios/family-interfaces.js");
     const { createAgentTask } = await import("../src/scenarios/agent-task-factory.js");
     const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
 
@@ -157,6 +160,15 @@ describe("Scenario family interfaces", () => {
     expect(isGameScenario(game)).toBe(true);
     expect(detectFamily(agentTask)).toBe("agent_task");
     expect(detectFamily(game)).toBe("game");
+  });
+
+  it("exports family contracts directly instead of routing through a facade barrel", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "scenarios", "family-interfaces.ts"),
+      "utf-8",
+    );
+
+    expect(source).not.toContain('export * from "./family-interface-public-facade.js";');
   });
 
   it("assertFamilyContract throws a helpful error for mismatched families", async () => {
