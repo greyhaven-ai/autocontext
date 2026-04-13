@@ -28,6 +28,10 @@ export function namingCallout(): string {
   );
 }
 
+function childExecArgvFor(realCli: string): string[] {
+  return extname(realCli) === ".ts" ? process.execArgv : [];
+}
+
 function isDirectExecution(metaUrl: string, argvPath = process.argv[1]): boolean {
   if (!argvPath) return false;
   return resolve(fileURLToPath(metaUrl)) === resolve(argvPath);
@@ -38,7 +42,7 @@ export function main(currentFile = fileURLToPath(import.meta.url), args = proces
   console.error(namingCallout());
 
   try {
-    execFileSync(process.execPath, [realCli, ...args], {
+    execFileSync(process.execPath, [...childExecArgvFor(realCli), realCli, ...args], {
       stdio: ["inherit", "inherit", "inherit"],
       env: process.env,
     });

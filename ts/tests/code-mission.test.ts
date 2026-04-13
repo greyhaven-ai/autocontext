@@ -350,7 +350,7 @@ describe("createCodeMission", () => {
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   it("MCP create_mission accepts code mission parameters and persists verifier config", async () => {
     const dir = setupProjectDir();

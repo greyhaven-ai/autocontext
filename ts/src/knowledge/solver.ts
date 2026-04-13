@@ -8,18 +8,16 @@ import { join } from "node:path";
 import type { LLMProvider } from "../types/index.js";
 import type { SQLiteStore } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
-import { AgentTaskSpecSchema, type AgentTaskSpec } from "../scenarios/agent-task-spec.js";
 import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
-import {
-  generateAndValidateScenarioSource,
-  hasCodegen,
-  CodegenUnsupportedFamilyError,
-} from "../scenarios/codegen/registry.js";
+import * as codegen from "../scenarios/codegen/index.js";
 import { executeGeneratedScenarioSource } from "../scenarios/codegen/executor.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
 import { ArtifactStore } from "./artifact-store.js";
 import { exportStrategyPackage, serializeSkillPackage } from "./package.js";
 import { SkillPackage } from "./skill-package.js";
+import { buildAgentTaskSolveSpec, executeAgentTaskSolve } from "./agent-task-solve-execution.js";
+
+export { buildAgentTaskSolveSpec } from "./agent-task-solve-execution.js";
 
 export interface SolveManagerOpts {
   provider: LLMProvider;
@@ -38,79 +36,6 @@ export interface SolveJob {
   progress?: number;
   result?: Record<string, unknown>;
   error?: string;
-}
-
-function readString(spec: Record<string, unknown>, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = spec[key];
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-  return null;
-}
-
-function readStringArray(spec: Record<string, unknown>, ...keys: string[]): string[] | null {
-  for (const key of keys) {
-    const value = spec[key];
-    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
-      return value;
-    }
-  }
-  return null;
-}
-
-function readRecordArray(
-  spec: Record<string, unknown>,
-  ...keys: string[]
-): Array<Record<string, unknown>> | null {
-  for (const key of keys) {
-    const value = spec[key];
-    if (Array.isArray(value) && value.every((entry) => entry != null && typeof entry === "object")) {
-      return value as Array<Record<string, unknown>>;
-    }
-  }
-  return null;
-}
-
-function readNumber(spec: Record<string, unknown>, fallback: number, ...keys: string[]): number {
-  for (const key of keys) {
-    const value = spec[key];
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === "string" && value.trim()) {
-      const parsed = Number(value);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
-    }
-  }
-  return fallback;
-}
-
-export function buildAgentTaskSolveSpec(
-  rawSpec: Record<string, unknown>,
-  fallbackRounds: number,
-): AgentTaskSpec {
-  const outputFormat = readString(rawSpec, "outputFormat", "output_format");
-  return AgentTaskSpecSchema.parse({
-    taskPrompt: readString(rawSpec, "taskPrompt", "task_prompt") ?? "",
-    judgeRubric: readString(rawSpec, "judgeRubric", "judge_rubric", "rubric") ?? "Evaluate the response.",
-    outputFormat: outputFormat === "json_schema" || outputFormat === "code" ? outputFormat : "free_text",
-    judgeModel: readString(rawSpec, "judgeModel", "judge_model") ?? "",
-    difficultyTiers: readRecordArray(rawSpec, "difficultyTiers", "difficulty_tiers"),
-    referenceContext: readString(rawSpec, "referenceContext", "reference_context"),
-    referenceSources: readStringArray(rawSpec, "referenceSources", "reference_sources"),
-    requiredConcepts: readStringArray(rawSpec, "requiredConcepts", "required_concepts"),
-    calibrationExamples: readRecordArray(rawSpec, "calibrationExamples", "calibration_examples"),
-    contextPreparation: readString(rawSpec, "contextPreparation", "context_preparation"),
-    requiredContextKeys: readStringArray(rawSpec, "requiredContextKeys", "required_context_keys"),
-    maxRounds: readNumber(rawSpec, fallbackRounds, "maxRounds", "max_rounds"),
-    qualityThreshold: readNumber(rawSpec, 0.9, "qualityThreshold", "quality_threshold"),
-    revisionPrompt: readString(rawSpec, "revisionPrompt", "revision_prompt"),
-    sampleInput: readString(rawSpec, "sampleInput", "sample_input"),
-  });
 }
 
 export class SolveManager {
@@ -173,10 +98,16 @@ export class SolveManager {
       const { createScenarioFromDescription } = await import("../scenarios/scenario-creator.js");
       const created = await createScenarioFromDescription(job.description, this.provider);
       const family = this.coerceFamily(created.family);
+      const healedSpec = healSpec(created.spec, family, job.description);
       const prepared = {
         ...created,
         family,
-        spec: healSpec(created.spec as Record<string, unknown>, family, job.description) as typeof created.spec,
+        spec: {
+          ...healedSpec,
+          taskPrompt: typeof healedSpec.taskPrompt === "string" ? healedSpec.taskPrompt : created.spec.taskPrompt,
+          rubric: typeof healedSpec.rubric === "string" ? healedSpec.rubric : created.spec.rubric,
+          description: typeof healedSpec.description === "string" ? healedSpec.description : created.spec.description,
+        },
       };
       job.scenarioName = prepared.name;
       job.family = prepared.family;
@@ -195,12 +126,12 @@ export class SolveManager {
       } else if (family === "agent_task") {
         this.persistScenarioScaffold(prepared);
         await this.runAgentTaskScenario(job, prepared);
-      } else if (hasCodegen(family)) {
+      } else if (codegen.hasCodegen(family)) {
         this.persistScenarioScaffold(prepared);
         await this.runCodegenScenario(job, prepared, family);
       } else {
         this.persistScenarioScaffold(prepared);
-        throw new CodegenUnsupportedFamilyError(family);
+        throw new codegen.CodegenUnsupportedFamilyError(family);
       }
     } catch (err) {
       job.status = "failed";
@@ -253,92 +184,14 @@ export class SolveManager {
     created: { name: string; spec: Record<string, unknown> },
   ): Promise<void> {
     job.status = "running";
-    const { ImprovementLoop } = await import("../execution/improvement-loop.js");
-    const { createAgentTask } = await import("../scenarios/agent-task-factory.js");
-    const spec = buildAgentTaskSolveSpec(created.spec, job.generations);
-
-    const task = createAgentTask({
-      spec,
-      name: created.name,
+    const execution = await executeAgentTaskSolve({
       provider: this.provider,
+      created,
+      generations: job.generations,
     });
-
-    const loop = new ImprovementLoop({
-      task,
-      maxRounds: spec.maxRounds,
-      qualityThreshold: spec.qualityThreshold,
-    });
-
-    const initialState = task.prepareContext
-      ? await task.prepareContext(task.initialState())
-      : task.initialState();
-    const contextErrors = task.validateContext
-      ? task.validateContext(initialState)
-      : [];
-    if (contextErrors.length > 0) {
-      throw new Error(`agent_task context preparation failed: ${contextErrors.join("; ")}`);
-    }
-    const initialOutput = await this.provider.complete({
-      systemPrompt: "You are a helpful assistant.",
-      userPrompt: task.getTaskPrompt(initialState),
-    });
-
-    const result = await loop.run({
-      initialOutput: initialOutput.text,
-      state: initialState,
-      referenceContext: spec.referenceContext ?? undefined,
-      requiredConcepts: spec.requiredConcepts ?? undefined,
-      calibrationExamples: spec.calibrationExamples ?? undefined,
-    });
-
-    job.progress = result.totalRounds;
+    job.progress = execution.progress;
     job.status = "completed";
-    const bestRound = result.rounds.find((round) => round.roundNumber === result.bestRound);
-    const pkg = new SkillPackage({
-      scenarioName: created.name,
-      displayName: this.humanizeScenarioName(created.name),
-      description: String(created.spec.description ?? `Agent task: ${created.name}`),
-      playbook: [
-        "## Improvement Summary",
-        "",
-        `- Best round: ${result.bestRound}`,
-        `- Total rounds: ${result.totalRounds}`,
-        `- Termination reason: ${result.terminationReason}`,
-        `- Best score: ${result.bestScore.toFixed(4)}`,
-        "",
-        "## Best Output",
-        "",
-        result.bestOutput,
-      ].join("\n"),
-      lessons: this.buildAgentTaskLessons(result, bestRound?.reasoning ?? ""),
-      bestStrategy: {
-        family: "agent_task",
-        best_round: result.bestRound,
-        termination_reason: result.terminationReason,
-      },
-      bestScore: result.bestScore,
-      bestElo: 1500,
-      hints: "",
-      metadata: {
-        family: "agent_task",
-        total_rounds: result.totalRounds,
-        termination_reason: result.terminationReason,
-        judge_failures: result.judgeFailures,
-      },
-      taskPrompt: spec.taskPrompt,
-      judgeRubric: spec.judgeRubric,
-      exampleOutputs: [{
-        output: result.bestOutput,
-        score: result.bestScore,
-        reasoning: bestRound?.reasoning ?? "Best output from improvement loop.",
-      }],
-      outputFormat: spec.outputFormat,
-      referenceContext: spec.referenceContext ?? null,
-      contextPreparation: spec.contextPreparation ?? null,
-      maxRounds: spec.maxRounds,
-      qualityThreshold: spec.qualityThreshold,
-    });
-    job.result = serializeSkillPackage(pkg);
+    job.result = execution.result;
   }
 
   /**
@@ -353,7 +206,7 @@ export class SolveManager {
   ): Promise<void> {
     // Generate executable JS source from spec and fail fast if it does not
     // survive a real method-execution sanity pass.
-    const { source, validation } = await generateAndValidateScenarioSource(
+    const { source, validation } = await codegen.generateAndValidateScenarioSource(
       family,
       created.spec,
       created.name,
@@ -439,7 +292,7 @@ export class SolveManager {
     );
 
     if (family === "agent_task") {
-      const agentTaskSpec = buildAgentTaskSolveSpec(created.spec as Record<string, unknown>, 1);
+      const agentTaskSpec = buildAgentTaskSolveSpec(created.spec, 1);
       writeFileSync(
         join(scenarioDir, "agent_task_spec.json"),
         JSON.stringify(
@@ -499,21 +352,6 @@ export class SolveManager {
 
   private humanizeScenarioName(name: string): string {
     return name.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-  }
-
-  private buildAgentTaskLessons(result: {
-    bestScore: number;
-    totalRounds: number;
-    terminationReason: string;
-  }, bestReasoning: string): string[] {
-    const lessons = [
-      `The best output reached ${result.bestScore.toFixed(4)} quality after ${result.totalRounds} rounds.`,
-      `The loop stopped because '${result.terminationReason}'.`,
-    ];
-    if (bestReasoning.trim()) {
-      lessons.push(bestReasoning.trim());
-    }
-    return lessons;
   }
 
   private buildGeneratedScenarioPlaybook(

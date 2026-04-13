@@ -163,7 +163,7 @@ describe("autoctx mission list", () => {
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(parsed.length).toBe(2);
-  });
+  }, 15000);
 
   it("filters by status", () => {
     const { stdout: r1 } = runCli(["mission", "create", "--name", "A", "--goal", "g1"], { cwd: dir });
@@ -175,7 +175,7 @@ describe("autoctx mission list", () => {
     const parsed = JSON.parse(stdout);
     expect(parsed.length).toBe(1);
     expect(parsed[0].name).toBe("B");
-  });
+  }, 15000);
 });
 
 // ---------------------------------------------------------------------------

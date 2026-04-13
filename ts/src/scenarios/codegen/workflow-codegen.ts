@@ -27,13 +27,36 @@ export function generateWorkflowSource(
     preconditions: string[];
     effects: string[];
   }>;
-  const steps = (spec.steps ?? spec.workflow_steps ?? []) as Array<{
+  const stepsFromSpec = (spec.steps ?? spec.workflow_steps ?? []) as Array<{
     name: string;
     description: string;
     compensationAction?: string;
     sideEffects?: string[];
     retryable?: boolean;
   }>;
+  const defaultStep = {
+    name: "complete_task",
+    description: String((spec.taskPrompt ?? spec.task_prompt ?? description) || "Complete the workflow task"),
+    sideEffects: [],
+  };
+  const steps = stepsFromSpec.length > 0
+    ? stepsFromSpec
+    : actions.length > 0
+      ? actions.map((action) => ({
+        name: action.name,
+        description: action.description,
+        sideEffects: action.effects ?? [],
+      }))
+      : [defaultStep];
+  const workflowActions = actions.length > 0
+    ? actions
+    : steps.map((step) => ({
+      name: step.name,
+      description: step.description,
+      parameters: {},
+      preconditions: [],
+      effects: step.sideEffects ?? [],
+    }));
 
   return renderCodegenTemplate(WORKFLOW_SCENARIO_TEMPLATE, {
     __SCENARIO_NAME_COMMENT__: name,
@@ -44,7 +67,7 @@ export function generateWorkflowSource(
     __SUCCESS_CRITERIA__: JSON.stringify(successCriteria),
     __FAILURE_MODES__: JSON.stringify(failureModes),
     __MAX_STEPS__: String(maxSteps),
-    __ACTIONS__: JSON.stringify(actions, null, 2),
+    __ACTIONS__: JSON.stringify(workflowActions, null, 2),
     __WORKFLOW_STEPS__: JSON.stringify(steps, null, 2),
   });
 }

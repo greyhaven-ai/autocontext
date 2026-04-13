@@ -23,6 +23,8 @@ import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { registerCampaignTools } from "./campaign-tools.js";
 import { registerMissionTools } from "./mission-tools.js";
 import { registerSandboxTools } from "./sandbox-tools.js";
+import { registerAgentTaskPackageTools } from "./agent-task-package-tools.js";
+import { registerScenarioRevisionTools } from "./scenario-revision-tools.js";
 
 export interface MtsServerOpts {
   store: SQLiteStore;
@@ -445,35 +447,7 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     },
   );
 
-  // -- revise_scenario (AC-441) --
-  server.tool(
-    "revise_scenario",
-    "Revise a scenario spec based on user feedback. Takes the current spec and feedback, returns an updated spec via LLM.",
-    {
-      currentSpec: z.record(z.unknown()).describe("The current scenario spec to revise"),
-      feedback: z.string().describe("User feedback describing what to change"),
-      family: z.string().default("agent_task").describe("Scenario family (agent_task, simulation, etc.)"),
-    },
-    async (args) => {
-      const { reviseSpec } = await import("../scenarios/scenario-revision.js");
-      const result = await reviseSpec({
-        currentSpec: args.currentSpec,
-        feedback: args.feedback,
-        family: args.family,
-        provider,
-      });
-      return {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            changesApplied: result.changesApplied,
-            revised: result.revised,
-            error: result.error ?? null,
-          }, null, 2),
-        }],
-      };
-    },
-  );
+  registerScenarioRevisionTools(server, { provider });
 
   // -- list_runs (AC-312) --
   server.tool(
@@ -896,86 +870,13 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
 
   registerSandboxTools(server, { sandboxManager });
 
-  // -- create_agent_task (AC-370) --
-  server.tool(
-    "create_agent_task",
-    "Create a named agent task spec for evaluation",
-    { name: z.string(), taskPrompt: z.string(), rubric: z.string(), referenceContext: z.string().optional() },
-    async (args) => {
-      const { AgentTaskStore } = await import("../scenarios/agent-task-store.js");
-      const taskStore = new AgentTaskStore(join(knowledgeRoot, "_agent_tasks"));
-      taskStore.create({ name: args.name, taskPrompt: args.taskPrompt, rubric: args.rubric, referenceContext: args.referenceContext });
-      return { content: [{ type: "text" as const, text: JSON.stringify({ name: args.name, created: true }) }] };
-    },
-  );
-
-  // -- list_agent_tasks (AC-370) --
-  server.tool(
-    "list_agent_tasks",
-    "List created agent task specs",
-    {},
-    async () => {
-      const { AgentTaskStore } = await import("../scenarios/agent-task-store.js");
-      const taskStore = new AgentTaskStore(join(knowledgeRoot, "_agent_tasks"));
-      return { content: [{ type: "text" as const, text: JSON.stringify(taskStore.list(), null, 2) }] };
-    },
-  );
-
-  // -- get_agent_task (AC-370) --
-  server.tool(
-    "get_agent_task",
-    "Get a specific agent task spec by name",
-    { name: z.string() },
-    async (args) => {
-      const { AgentTaskStore } = await import("../scenarios/agent-task-store.js");
-      const taskStore = new AgentTaskStore(join(knowledgeRoot, "_agent_tasks"));
-      const task = taskStore.get(args.name);
-      if (!task) return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Task not found" }) }] };
-      return { content: [{ type: "text" as const, text: JSON.stringify(task, null, 2) }] };
-    },
-  );
-
-  // -- generate_output (AC-370) --
-  server.tool(
-    "generate_output",
-    "Generate an initial agent output for a task prompt",
-    { taskPrompt: z.string(), systemPrompt: z.string().default("") },
-    async (args) => {
-      const result = await provider.complete({ systemPrompt: args.systemPrompt, userPrompt: args.taskPrompt });
-      return { content: [{ type: "text" as const, text: JSON.stringify({ output: result.text, model: result.model }) }] };
-    },
-  );
-
-  // -- export_package (AC-370) --
-  server.tool(
-    "export_package",
-    "Export a versioned strategy package for a scenario",
-    { scenario: z.string() },
-    async (args) => {
-      const { ArtifactStore } = await import("../knowledge/artifact-store.js");
-      const { exportStrategyPackage } = await import("../knowledge/package.js");
-      const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
-      const pkg = exportStrategyPackage({ scenarioName: args.scenario, artifacts, store });
-      return { content: [{ type: "text" as const, text: JSON.stringify(pkg, null, 2) }] };
-    },
-  );
-
-  // -- import_package (AC-370) --
-  server.tool(
-    "import_package",
-    "Import a strategy package into scenario knowledge",
-    { packageData: z.string(), conflictPolicy: z.string().default("merge") },
-    async (args) => {
-      const { ArtifactStore } = await import("../knowledge/artifact-store.js");
-      const { importStrategyPackage } = await import("../knowledge/package.js");
-      const { loadSettings } = await import("../config/index.js");
-      const settings = loadSettings();
-      const artifacts = new ArtifactStore({ runsRoot, knowledgeRoot });
-      const pkg = JSON.parse(args.packageData) as Record<string, unknown>;
-      const result = importStrategyPackage({ rawPackage: pkg, artifacts, skillsRoot: settings.skillsRoot, conflictPolicy: args.conflictPolicy as "overwrite" | "merge" | "skip" });
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
-    },
-  );
+  registerAgentTaskPackageTools(server, {
+    provider,
+    store,
+    runsRoot,
+    knowledgeRoot,
+    skillsRoot: settings.skillsRoot,
+  });
 
   // -- capabilities (AC-370) --
   server.tool(
