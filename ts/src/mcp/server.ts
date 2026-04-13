@@ -22,6 +22,7 @@ import { runAgentTaskRlmSession } from "../rlm/agent-task.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import { registerCampaignTools } from "./campaign-tools.js";
 import { registerMissionTools } from "./mission-tools.js";
+import { registerSandboxTools } from "./sandbox-tools.js";
 
 export interface MtsServerOpts {
   store: SQLiteStore;
@@ -893,71 +894,7 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
     },
   );
 
-  // -- sandbox_create (AC-370) --
-  server.tool(
-    "sandbox_create",
-    "Create an isolated sandbox for scenario execution",
-    { scenario: z.string(), userId: z.string().default("anonymous") },
-    async (args) => {
-      const sb = sandboxManager.create(args.scenario, args.userId);
-      return { content: [{ type: "text" as const, text: JSON.stringify(sb, null, 2) }] };
-    },
-  );
-
-  // -- sandbox_run (AC-370) --
-  server.tool(
-    "sandbox_run",
-    "Run generation(s) in a sandbox",
-    { sandboxId: z.string(), generations: z.number().int().default(1) },
-    async (args) => {
-      const result = await sandboxManager.run(args.sandboxId, args.generations);
-      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
-    },
-  );
-
-  // -- sandbox_status (AC-370) --
-  server.tool(
-    "sandbox_status",
-    "Get sandbox status",
-    { sandboxId: z.string() },
-    async (args) => {
-      const sandbox = sandboxManager.getStatus(args.sandboxId);
-      if (!sandbox) {
-        return { content: [{ type: "text" as const, text: JSON.stringify({ error: `Sandbox '${args.sandboxId}' not found` }) }] };
-      }
-      return { content: [{ type: "text" as const, text: JSON.stringify(sandbox, null, 2) }] };
-    },
-  );
-
-  // -- sandbox_playbook (AC-370) --
-  server.tool(
-    "sandbox_playbook",
-    "Read the current playbook for a sandbox",
-    { sandboxId: z.string() },
-    async (args) => {
-      return { content: [{ type: "text" as const, text: sandboxManager.readPlaybook(args.sandboxId) }] };
-    },
-  );
-
-  // -- sandbox_list (AC-370) --
-  server.tool(
-    "sandbox_list",
-    "List active sandboxes",
-    {},
-    async () => {
-      return { content: [{ type: "text" as const, text: JSON.stringify(sandboxManager.list(), null, 2) }] };
-    },
-  );
-
-  // -- sandbox_destroy (AC-370) --
-  server.tool(
-    "sandbox_destroy",
-    "Destroy a sandbox and clean up its data",
-    { sandboxId: z.string() },
-    async (args) => {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ destroyed: sandboxManager.destroy(args.sandboxId), sandboxId: args.sandboxId }) }] };
-    },
-  );
+  registerSandboxTools(server, { sandboxManager });
 
   // -- create_agent_task (AC-370) --
   server.tool(
