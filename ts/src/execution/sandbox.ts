@@ -27,24 +27,24 @@ export interface Sandbox {
 }
 
 export class SandboxManager {
-  private provider: LLMProvider;
-  private store: SQLiteStore;
-  private runsRoot: string;
-  private knowledgeRoot: string;
-  private maxSandboxes: number;
-  private sandboxes = new Map<string, Sandbox>();
+  #provider: LLMProvider;
+  #store: SQLiteStore;
+  #runsRoot: string;
+  #knowledgeRoot: string;
+  #maxSandboxes: number;
+  #sandboxes = new Map<string, Sandbox>();
 
   constructor(opts: SandboxManagerOpts) {
-    this.provider = opts.provider;
-    this.store = opts.store;
-    this.runsRoot = opts.runsRoot;
-    this.knowledgeRoot = opts.knowledgeRoot;
-    this.maxSandboxes = opts.maxSandboxes ?? 10;
+    this.#provider = opts.provider;
+    this.#store = opts.store;
+    this.#runsRoot = opts.runsRoot;
+    this.#knowledgeRoot = opts.knowledgeRoot;
+    this.#maxSandboxes = opts.maxSandboxes ?? 10;
   }
 
   create(scenarioName: string, userId = "anonymous"): Sandbox {
-    if (this.sandboxes.size >= this.maxSandboxes) {
-      throw new Error(`Maximum sandbox limit (${this.maxSandboxes}) reached`);
+    if (this.#sandboxes.size >= this.#maxSandboxes) {
+      throw new Error(`Maximum sandbox limit (${this.#maxSandboxes}) reached`);
     }
     if (!(scenarioName in SCENARIO_REGISTRY)) {
       const supported = Object.keys(SCENARIO_REGISTRY).sort().join(", ");
@@ -58,20 +58,20 @@ export class SandboxManager {
       createdAt: new Date().toISOString(),
       status: "active",
     };
-    this.sandboxes.set(sandboxId, sandbox);
+    this.#sandboxes.set(sandboxId, sandbox);
     return sandbox;
   }
 
   getStatus(sandboxId: string): Sandbox | null {
-    return this.sandboxes.get(sandboxId) ?? null;
+    return this.#sandboxes.get(sandboxId) ?? null;
   }
 
   list(): Sandbox[] {
-    return [...this.sandboxes.values()].filter((s) => s.status !== "destroyed");
+    return [...this.#sandboxes.values()].filter((s) => s.status !== "destroyed");
   }
 
   async run(sandboxId: string, generations = 1): Promise<Record<string, unknown>> {
-    const sandbox = this.sandboxes.get(sandboxId);
+    const sandbox = this.#sandboxes.get(sandboxId);
     if (!sandbox) throw new Error(`Sandbox ${sandboxId} not found`);
     if (sandbox.status === "destroyed") throw new Error(`Sandbox ${sandboxId} is destroyed`);
 
@@ -87,11 +87,11 @@ export class SandboxManager {
       assertFamilyContract(scenario, "game", `scenario '${sandbox.scenarioName}'`);
 
       const runner = new GenerationRunner({
-        provider: this.provider,
+        provider: this.#provider,
         scenario,
-        store: this.store,
-        runsRoot: this.runsRoot,
-        knowledgeRoot: this.knowledgeRoot,
+        store: this.#store,
+        runsRoot: this.#runsRoot,
+        knowledgeRoot: this.#knowledgeRoot,
         matchesPerGeneration: 2,
       });
 
@@ -105,19 +105,22 @@ export class SandboxManager {
   }
 
   readPlaybook(sandboxId: string): string {
-    const sandbox = this.sandboxes.get(sandboxId);
+    const sandbox = this.#sandboxes.get(sandboxId);
     if (!sandbox) {
       throw new Error(`Sandbox ${sandboxId} not found`);
     }
-    const artifacts = new ArtifactStore({ runsRoot: this.runsRoot, knowledgeRoot: this.knowledgeRoot });
+    const artifacts = new ArtifactStore({
+      runsRoot: this.#runsRoot,
+      knowledgeRoot: this.#knowledgeRoot,
+    });
     return artifacts.readPlaybook(sandbox.scenarioName);
   }
 
   destroy(sandboxId: string): boolean {
-    const sandbox = this.sandboxes.get(sandboxId);
+    const sandbox = this.#sandboxes.get(sandboxId);
     if (!sandbox) return false;
     sandbox.status = "destroyed";
-    this.sandboxes.delete(sandboxId);
+    this.#sandboxes.delete(sandboxId);
     return true;
   }
 }

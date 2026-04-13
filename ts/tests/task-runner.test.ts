@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SQLiteStore } from "../src/storage/index.js";
@@ -93,6 +93,21 @@ describe("enqueueTask", () => {
     enqueueTask(store, "high", { priority: 10 });
     const task = store.dequeueTask();
     expect(task!.spec_name).toBe("high");
+  });
+});
+
+describe("TaskRunner encapsulation", () => {
+  it("uses real #private fields for runner and simple task internals", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "execution", "task-runner.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("#taskPrompt");
+    expect(source).toContain("#store");
+    expect(source).toContain("#tasksProcessed");
+    expect(source).not.toContain("private taskPrompt:");
+    expect(source).not.toContain("private store:");
   });
 });
 
@@ -345,10 +360,14 @@ describe("SimpleAgentTask", () => {
       { enabled: true, maxTurns: 2 },
     );
 
-    await task.evaluateOutput("Original draft", {}, {
-      referenceContext: "Trusted facts",
-      requiredConcepts: ["clarity"],
-    });
+    await task.evaluateOutput(
+      "Original draft",
+      {},
+      {
+        referenceContext: "Trusted facts",
+        requiredConcepts: ["clarity"],
+      },
+    );
 
     const revised = await task.reviseOutput(
       "Original draft",

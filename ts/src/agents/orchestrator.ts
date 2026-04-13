@@ -13,12 +13,7 @@ import {
   parseCoachOutput,
   parseCompetitorOutput,
 } from "./roles.js";
-import type {
-  AnalystOutput,
-  ArchitectOutput,
-  CoachOutput,
-  CompetitorOutput,
-} from "./roles.js";
+import type { AnalystOutput, ArchitectOutput, CoachOutput, CompetitorOutput } from "./roles.js";
 
 export interface GenerationPrompts {
   competitorPrompt: string;
@@ -40,31 +35,31 @@ export interface AgentOrchestratorOpts {
 }
 
 export class AgentOrchestrator {
-  private provider: LLMProvider;
-  private roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
-  private roleModels: Partial<Record<GenerationRole, string>>;
+  #provider: LLMProvider;
+  #roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
+  #roleModels: Partial<Record<GenerationRole, string>>;
 
   constructor(provider: LLMProvider, opts: AgentOrchestratorOpts = {}) {
-    this.provider = provider;
-    this.roleProviders = opts.roleProviders ?? {};
-    this.roleModels = opts.roleModels ?? {};
+    this.#provider = provider;
+    this.#roleProviders = opts.roleProviders ?? {};
+    this.#roleModels = opts.roleModels ?? {};
   }
 
-  private providerForRole(role: GenerationRole): LLMProvider {
-    return this.roleProviders[role] ?? this.provider;
+  #providerForRole(role: GenerationRole): LLMProvider {
+    return this.#roleProviders[role] ?? this.#provider;
   }
 
-  private completeRole(role: GenerationRole, userPrompt: string) {
-    return this.providerForRole(role).complete({
+  #completeRole(role: GenerationRole, userPrompt: string) {
+    return this.#providerForRole(role).complete({
       systemPrompt: "",
       userPrompt,
-      model: this.roleModels[role],
+      model: this.#roleModels[role],
     });
   }
 
   async runGeneration(prompts: GenerationPrompts): Promise<GenerationResult> {
     // Phase 1: Competitor
-    const competitorResult = await this.completeRole("competitor", prompts.competitorPrompt);
+    const competitorResult = await this.#completeRole("competitor", prompts.competitorPrompt);
     let strategy: Record<string, unknown> = {};
     try {
       strategy = JSON.parse(competitorResult.text);
@@ -75,10 +70,10 @@ export class AgentOrchestrator {
 
     // Phase 2: Analyst, Coach, Architect in parallel
     const [analystResult, coachResult, architectResult] = await Promise.all([
-      this.completeRole("analyst", prompts.analystPrompt),
-      this.completeRole("coach", prompts.coachPrompt),
+      this.#completeRole("analyst", prompts.analystPrompt),
+      this.#completeRole("coach", prompts.coachPrompt),
       prompts.architectPrompt
-        ? this.completeRole("architect", prompts.architectPrompt)
+        ? this.#completeRole("architect", prompts.architectPrompt)
         : Promise.resolve({ text: "", usage: {} }),
     ]);
 

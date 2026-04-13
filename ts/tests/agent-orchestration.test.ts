@@ -86,7 +86,8 @@ describe("Output parsing", () => {
 
   it("parseArchitectOutput extracts tool specs from JSON", async () => {
     const { parseArchitectOutput } = await import("../src/agents/roles.js");
-    const md = 'Here are tools:\n```json\n{"tools": [{"name": "validator", "description": "validates", "code": "def f(): pass"}]}\n```';
+    const md =
+      'Here are tools:\n```json\n{"tools": [{"name": "validator", "description": "validates", "code": "def f(): pass"}]}\n```';
     const output = parseArchitectOutput(md);
     expect(output.toolSpecs).toHaveLength(1);
     expect(output.toolSpecs[0].name).toBe("validator");
@@ -197,7 +198,10 @@ describe("RetryProvider", () => {
     const inner = {
       name: "test",
       defaultModel: () => "model",
-      complete: async () => { calls++; return { text: "ok", usage: {} }; },
+      complete: async () => {
+        calls++;
+        return { text: "ok", usage: {} };
+      },
     };
     const provider = new RetryProvider(inner as any, { maxRetries: 3 });
     const result = await provider.complete({ systemPrompt: "", userPrompt: "test" });
@@ -228,10 +232,14 @@ describe("RetryProvider", () => {
     const inner = {
       name: "test",
       defaultModel: () => "model",
-      complete: async () => { throw new Error("permanent"); },
+      complete: async () => {
+        throw new Error("permanent");
+      },
     };
     const provider = new RetryProvider(inner as any, { maxRetries: 2, baseDelay: 0 });
-    await expect(provider.complete({ systemPrompt: "", userPrompt: "test" })).rejects.toThrow("permanent");
+    await expect(provider.complete({ systemPrompt: "", userPrompt: "test" })).rejects.toThrow(
+      "permanent",
+    );
   });
 });
 
@@ -250,7 +258,9 @@ describe("ModelRouter", () => {
     const { ModelRouter, TierConfig } = await import("../src/agents/model-router.js");
     const config = new TierConfig({ enabled: false });
     const router = new ModelRouter(config);
-    expect(router.select("competitor", { generation: 1, retryCount: 0, isPlateau: false })).toBeNull();
+    expect(
+      router.select("competitor", { generation: 1, retryCount: 0, isPlateau: false }),
+    ).toBeNull();
   });
 
   it("routes competitor to haiku for early generations", async () => {
@@ -318,7 +328,7 @@ describe("CodexCLIRuntime", () => {
     const runtime = new CodexCLIRuntime();
     // Access internal parser for testing
     const result = runtime.parseOutput(
-      '{"type": "item.message", "content": [{"text": "hello world"}]}\n'
+      '{"type": "item.message", "content": [{"text": "hello world"}]}\n',
     );
     expect(result.text).toBe("hello world");
   });
@@ -362,6 +372,27 @@ describe("CodexCLIRuntime", () => {
 // ---------------------------------------------------------------------------
 // Task 18: Agent Orchestrator
 // ---------------------------------------------------------------------------
+
+describe("AgentOrchestrator encapsulation", () => {
+  it("uses real #private fields and helpers for role-routing internals", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "agents", "orchestrator.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("#provider");
+    expect(source).toContain("#roleProviders");
+    expect(source).toContain("#roleModels");
+    expect(source).toContain("#providerForRole");
+    expect(source).toContain("#completeRole");
+    expect(source).not.toContain("private provider:");
+    expect(source).not.toContain("private roleProviders:");
+    expect(source).not.toContain("private roleModels:");
+  });
+});
 
 describe("AgentOrchestrator", () => {
   it("exports AgentOrchestrator", async () => {
@@ -480,7 +511,10 @@ describe("AgentOrchestrator", () => {
       roleProviders: {
         competitor: providerFor("competitor", '{"aggression": 0.9}') as any,
         analyst: providerFor("analyst", "## Findings\n- Strong opening") as any,
-        coach: providerFor("coach", "<!-- PLAYBOOK_START -->\nplaybook\n<!-- PLAYBOOK_END -->") as any,
+        coach: providerFor(
+          "coach",
+          "<!-- PLAYBOOK_START -->\nplaybook\n<!-- PLAYBOOK_END -->",
+        ) as any,
         architect: providerFor("architect", "No tools needed.") as any,
       },
       roleModels: {

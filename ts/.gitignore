@@ -1,3 +1,8 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Local agent / superpowers workflow artifacts
+.pi/
+.pi-lens/
+/superpowers/

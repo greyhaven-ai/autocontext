@@ -19,8 +19,11 @@ __pycache__/
 # Node
 node_modules/
 
-# Claude Code / superpowers workflow artifacts
+# Local agent / superpowers workflow artifacts
 .claude/projects/
+.pi/
+.pi-lens/
+/superpowers/
 docs/superpowers/
 
 # OS/editor

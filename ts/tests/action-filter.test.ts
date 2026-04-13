@@ -1,8 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect, vi } from "vitest";
-import {
-  ActionFilterHarness,
-  ActionDictSchema,
-} from "../src/execution/action-filter.js";
+import { ActionFilterHarness, ActionDictSchema } from "../src/execution/action-filter.js";
 import type {
   ActionDict,
   ScenarioLike,
@@ -22,14 +21,16 @@ function mockScenario(
 ): ScenarioLike {
   return {
     enumerateLegalActions: vi.fn().mockReturnValue(actions),
-    validateActions: vi.fn().mockImplementation(
-      (_state: Record<string, unknown>, _pid: string, acts: Record<string, unknown>) => {
-        if (acts.action === "move_up" || acts.action === "move_down") {
-          return [true, "ok"] as [boolean, string];
-        }
-        return [false, "invalid action"] as [boolean, string];
-      },
-    ),
+    validateActions: vi
+      .fn()
+      .mockImplementation(
+        (_state: Record<string, unknown>, _pid: string, acts: Record<string, unknown>) => {
+          if (acts.action === "move_up" || acts.action === "move_down") {
+            return [true, "ok"] as [boolean, string];
+          }
+          return [false, "invalid action"] as [boolean, string];
+        },
+      ),
   };
 }
 
@@ -43,6 +44,20 @@ function noEnumerateScenario(): ScenarioLike {
 // ---------------------------------------------------------------------------
 // getLegalActions
 // ---------------------------------------------------------------------------
+
+describe("ActionFilterHarness encapsulation", () => {
+  it("uses real #private fields for harness state", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "execution", "action-filter.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("#scenario");
+    expect(source).toContain("#harnessLoader");
+    expect(source).not.toContain("private readonly scenario:");
+    expect(source).not.toContain("private readonly harnessLoader:");
+  });
+});
 
 describe("ActionFilterHarness — getLegalActions", () => {
   it("returns scenario actions", () => {
@@ -65,7 +80,11 @@ describe("ActionFilterHarness — getLegalActions", () => {
   it("falls back to harness loader", () => {
     const loader: HarnessLoaderLike = {
       validators: [
-        { enumerate_legal_actions: vi.fn().mockReturnValue([{ action: "from_harness", description: "harness" }]) },
+        {
+          enumerate_legal_actions: vi
+            .fn()
+            .mockReturnValue([{ action: "from_harness", description: "harness" }]),
+        },
       ],
     };
     const h = new ActionFilterHarness(noEnumerateScenario(), loader);
@@ -77,7 +96,11 @@ describe("ActionFilterHarness — getLegalActions", () => {
   it("prefers scenario over harness", () => {
     const loader: HarnessLoaderLike = {
       validators: [
-        { enumerate_legal_actions: vi.fn().mockReturnValue([{ action: "harness", description: "x" }]) },
+        {
+          enumerate_legal_actions: vi
+            .fn()
+            .mockReturnValue([{ action: "harness", description: "x" }]),
+        },
       ],
     };
     const h = new ActionFilterHarness(mockScenario(), loader);
