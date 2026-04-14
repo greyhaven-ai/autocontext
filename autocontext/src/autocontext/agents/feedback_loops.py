@@ -15,10 +15,11 @@ Key types:
 
 from __future__ import annotations
 
+import json
 import statistics
 from typing import Any
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 # ---------------------------------------------------------------------------
 # AC-336: Analyst quality scoring
@@ -38,6 +39,17 @@ class AnalystRating(BaseModel):
     @computed_field(return_type=float)
     def overall(self) -> float:
         return round(statistics.mean([self.actionability, self.specificity, self.correctness]), 2)
+
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def _coerce_rationale(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict | list):
+            return json.dumps(value, sort_keys=True)
+        return str(value)
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -90,8 +102,7 @@ class ToolUsageTracker:
     def __init__(self, known_tools: list[str]) -> None:
         self._tools = known_tools
         self._records: dict[str, ToolUsageRecord] = {
-            name: ToolUsageRecord(tool_name=name, used_in_gens=[], last_used=0, total_refs=0)
-            for name in known_tools
+            name: ToolUsageRecord(tool_name=name, used_in_gens=[], last_used=0, total_refs=0) for name in known_tools
         }
 
     def record_generation(self, generation: int, strategy_text: str) -> None:
@@ -110,10 +121,7 @@ class ToolUsageTracker:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "records": {
-                name: record.to_dict()
-                for name, record in sorted(self._records.items())
-            },
+            "records": {name: record.to_dict() for name, record in sorted(self._records.items())},
         }
 
     @classmethod

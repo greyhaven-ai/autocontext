@@ -44,6 +44,25 @@ class TestAnalystRating:
         assert restored.specificity == 4
         assert restored.generation == 3
 
+    def test_from_dict_coerces_structured_rationale_to_string(self) -> None:
+        from autocontext.agents.feedback_loops import AnalystRating
+
+        restored = AnalystRating.from_dict(
+            {
+                "actionability": 4,
+                "specificity": 4,
+                "correctness": 4,
+                "rationale": {
+                    "actionability": "Concrete next steps.",
+                    "correctness": "Aligned with evidence.",
+                },
+                "generation": 2,
+            }
+        )
+
+        assert "Concrete next steps." in restored.rationale
+        assert restored.generation == 2
+
 
 # ===========================================================================
 # AC-336: format_analyst_feedback
@@ -55,7 +74,9 @@ class TestFormatAnalystFeedback:
         from autocontext.agents.feedback_loops import AnalystRating, format_analyst_feedback
 
         rating = AnalystRating(
-            actionability=2, specificity=2, correctness=4,
+            actionability=2,
+            specificity=2,
+            correctness=4,
             rationale="Findings were too vague to act on.",
             generation=4,
         )
@@ -68,7 +89,9 @@ class TestFormatAnalystFeedback:
         from autocontext.agents.feedback_loops import AnalystRating, format_analyst_feedback
 
         rating = AnalystRating(
-            actionability=5, specificity=5, correctness=5,
+            actionability=5,
+            specificity=5,
+            correctness=5,
             rationale="Excellent analysis with concrete evidence.",
             generation=7,
         )
@@ -121,7 +144,7 @@ class TestToolUsageTracker:
         tracker = ToolUsageTracker(known_tools=["cluster_evaluator", "move_predictor", "path_optimizer"])
         tracker.record_generation(
             generation=3,
-            strategy_text='Using cluster_evaluator to analyze positions and path_optimizer for routing.',
+            strategy_text="Using cluster_evaluator to analyze positions and path_optimizer for routing.",
         )
 
         stats = tracker.get_stats()
