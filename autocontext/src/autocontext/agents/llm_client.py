@@ -529,7 +529,11 @@ def build_client_from_settings(
 ) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
     if settings.agent_provider == "anthropic":
-        api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        api_key = (
+            settings.anthropic_api_key
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY", "")
+        )
         if not api_key:
             raise ValueError(
                 "AUTOCONTEXT_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY is required "

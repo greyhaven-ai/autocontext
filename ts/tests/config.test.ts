@@ -195,6 +195,13 @@ describe("loadSettings", () => {
     expect(settings.anthropicApiKey).toBe("sk-test-123");
   });
 
+  it("should read ANTHROPIC_API_KEY as a standard alias", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-standard-123";
+    const { loadSettings } = await import("../src/config/index.js");
+    const settings = loadSettings();
+    expect(settings.anthropicApiKey).toBe("sk-standard-123");
+  });
+
   it("should read AUTOCONTEXT_OPENCLAW_* env vars", async () => {
     process.env.AUTOCONTEXT_OPENCLAW_RUNTIME_KIND = "http";
     process.env.AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT = "http://127.0.0.1:8001/run";

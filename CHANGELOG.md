@@ -21,6 +21,11 @@ Changes in this section are on the branch/repo after `0.4.0` and are not part of
 - TypeScript `autoctx campaign` CLI with create, status, list, add-mission, progress, pause, resume, and cancel subcommands, completing the CLI surface for CampaignManager (AC-533).
 - Campaign API endpoints and MCP tools for multi-mission coordination with budget tracking and dependency graphs.
 
+### Changed
+
+- Standardized Anthropic credential loading around `ANTHROPIC_API_KEY` while keeping `AUTOCONTEXT_ANTHROPIC_API_KEY` as a compatibility alias across Python and TypeScript settings.
+- Added optional role-scoped credential and endpoint overrides (`AUTOCONTEXT_{ROLE}_API_KEY`, `AUTOCONTEXT_{ROLE}_BASE_URL`) for `competitor`, `analyst`, `coach`, and `architect`, falling back to the global provider configuration when unset.
+
 ### Fixed
 
 - Python `autoctx simulate` now resolves live generation through the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER` and other role-routing overrides are honored instead of being bypassed by the raw client builder.

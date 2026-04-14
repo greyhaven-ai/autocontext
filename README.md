@@ -167,9 +167,11 @@ Run with Anthropic:
 ```bash
 cd autocontext
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
-AUTOCONTEXT_ANTHROPIC_API_KEY=your-key \
+ANTHROPIC_API_KEY=your-key \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
+
+`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
 Start the API server:
 
@@ -180,7 +182,7 @@ uv run autoctx serve --host 127.0.0.1 --port 8000
 
 Then inspect `http://127.0.0.1:8000/` for the API index, or use `npx autoctx tui` for the interactive terminal UI.
 
-Use the repo-level `.env.example` as the reference for available `AUTOCONTEXT_*` settings.
+Use the repo-level `.env.example` as the reference for available `AUTOCONTEXT_*` settings and supported provider-native credential aliases such as `ANTHROPIC_API_KEY`.
 
 ## Installable Packages
 

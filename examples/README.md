@@ -52,7 +52,7 @@ Add this to your project-level `.claude/settings.json` and replace `/ABSOLUTE/PA
       ],
       "env": {
         "AUTOCONTEXT_AGENT_PROVIDER": "anthropic",
-        "AUTOCONTEXT_ANTHROPIC_API_KEY": "sk-ant-..."
+        "ANTHROPIC_API_KEY": "sk-ant-..."
       }
     }
   }

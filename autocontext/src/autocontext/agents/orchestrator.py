@@ -82,6 +82,7 @@ def _resolve_rlm_backend(settings: AppSettings) -> _RlmBackendConfig:
                 ARCHITECT_MONTY_RLM_SYSTEM_CONSTRAINED,
                 COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED,
             )
+
             return _RlmBackendConfig(
                 worker_cls=MontyReplWorker,
                 competitor_tpl=COMPETITOR_MONTY_RLM_SYSTEM_CONSTRAINED,
@@ -93,6 +94,7 @@ def _resolve_rlm_backend(settings: AppSettings) -> _RlmBackendConfig:
             ARCHITECT_MONTY_RLM_SYSTEM,
             COMPETITOR_MONTY_RLM_SYSTEM,
         )
+
         return _RlmBackendConfig(
             worker_cls=MontyReplWorker,
             competitor_tpl=COMPETITOR_MONTY_RLM_SYSTEM,
@@ -108,6 +110,7 @@ def _resolve_rlm_backend(settings: AppSettings) -> _RlmBackendConfig:
             ARCHITECT_RLM_SYSTEM_CONSTRAINED,
             COMPETITOR_RLM_SYSTEM_CONSTRAINED,
         )
+
         return _RlmBackendConfig(
             worker_cls=ReplWorker,
             competitor_tpl=COMPETITOR_RLM_SYSTEM_CONSTRAINED,
@@ -147,20 +150,8 @@ def apply_dag_changes(dag: RoleDAG, changes: Sequence[dict[str, Any]]) -> tuple[
 
 
 def _apply_role_overrides(orch: AgentOrchestrator, settings: AppSettings) -> None:
-    """Apply per-role provider overrides to an orchestrator's runners.
-
-    For each role with a non-empty ``{role}_provider`` setting, create a
-    dedicated LanguageModelClient and SubagentRuntime, then reassign the
-    runner to use it.
-    """
-    from autocontext.agents.provider_bridge import create_role_client
-
-    role_overrides: dict[str, str] = {
-        "competitor": settings.competitor_provider,
-        "analyst": settings.analyst_provider,
-        "coach": settings.coach_provider,
-        "architect": settings.architect_provider,
-    }
+    """Apply per-role provider and credential overrides to an orchestrator."""
+    from autocontext.agents.provider_bridge import configured_role_provider, create_role_client, has_role_client_override
 
     runner_map = {
         "competitor": "competitor",
@@ -169,17 +160,18 @@ def _apply_role_overrides(orch: AgentOrchestrator, settings: AppSettings) -> Non
         "architect": "architect",
     }
 
-    for role, provider_type in role_overrides.items():
-        if not provider_type:
+    for role, runner_name in runner_map.items():
+        if not has_role_client_override(role, settings):
             continue
-        client = create_role_client(provider_type, settings)
+        provider_type = configured_role_provider(role, settings) or settings.agent_provider
+        client = create_role_client(provider_type, settings, role=role)
         if client is None:
             continue
         orch._role_clients[role] = client
         runtime = SubagentRuntime(client=client)
-        runner = getattr(orch, runner_map[role])
+        runner = getattr(orch, runner_name)
         runner.runtime = runtime
-        logger.info("role '%s' using per-role provider: %s", role, provider_type)
+        logger.info("role '%s' using dedicated provider config: %s", role, provider_type)
 
 
 class AgentOrchestrator:
@@ -196,7 +188,7 @@ class AgentOrchestrator:
         self.settings = settings
         self._artifacts = artifacts
         self._harness_coverage_cache: dict[str, HarnessCoverage | None] = {}
-        self._routed_clients: dict[tuple[str, str | None, str | None], LanguageModelClient] = {}
+        self._routed_clients: dict[tuple[str, str | None, str | None, str | None], LanguageModelClient] = {}
         runtime = SubagentRuntime(client=client)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor)
         self.translator = StrategyTranslator(runtime, settings.model_translator)
@@ -212,15 +204,17 @@ class AgentOrchestrator:
         self._role_clients: dict[str, LanguageModelClient] = {}
         self._role_router = RoleRouter(settings)
 
-        self._model_router = ModelRouter(TierConfig(
-            enabled=settings.tier_routing_enabled,
-            tier_haiku_model=settings.tier_haiku_model,
-            tier_sonnet_model=settings.tier_sonnet_model,
-            tier_opus_model=settings.tier_opus_model,
-            competitor_haiku_max_gen=settings.tier_competitor_haiku_max_gen,
-            harness_aware_tiering_enabled=settings.tier_harness_aware_enabled,
-            harness_coverage_demotion_threshold=settings.tier_harness_coverage_demotion_threshold,
-        ))
+        self._model_router = ModelRouter(
+            TierConfig(
+                enabled=settings.tier_routing_enabled,
+                tier_haiku_model=settings.tier_haiku_model,
+                tier_sonnet_model=settings.tier_sonnet_model,
+                tier_opus_model=settings.tier_opus_model,
+                competitor_haiku_max_gen=settings.tier_competitor_haiku_max_gen,
+                harness_aware_tiering_enabled=settings.tier_harness_aware_enabled,
+                harness_coverage_demotion_threshold=settings.tier_harness_coverage_demotion_threshold,
+            )
+        )
 
         self._rlm_loader = None
         if settings.rlm_enabled and settings.agent_provider != "agent_sdk":
@@ -250,13 +244,9 @@ class AgentOrchestrator:
         return self._role_clients.get(role, self.client)
 
     def _configured_role_provider(self, role: str) -> str:
-        providers = {
-            "competitor": self.settings.competitor_provider,
-            "analyst": self.settings.analyst_provider,
-            "coach": self.settings.coach_provider,
-            "architect": self.settings.architect_provider,
-        }
-        return providers.get(role, "").strip().lower()
+        from autocontext.agents.provider_bridge import configured_role_provider
+
+        return configured_role_provider(role, self.settings)
 
     def _available_local_models(self, scenario_name: str = "", runtime_type: str = "provider") -> list[str]:
         model_path = self.settings.mlx_model_path.strip()
@@ -301,7 +291,7 @@ class AgentOrchestrator:
 
         from autocontext.agents.provider_bridge import create_role_client
 
-        key = (f"{provider_type}:{role}", None, scenario_name)
+        key = (provider_type.lower(), None, scenario_name, role)
         cached = self._routed_clients.get(key)
         if cached is not None:
             return cached
@@ -310,6 +300,7 @@ class AgentOrchestrator:
             provider_type,
             self.settings,
             scenario_name=scenario_name,
+            role=role,
         )
         if client is not None:
             self._routed_clients[key] = client
@@ -377,12 +368,9 @@ class AgentOrchestrator:
             config.provider_type == self.settings.agent_provider
             and config.provider_class != ProviderClass.LOCAL
             and not self._configured_role_provider(role)
-            and (
-                not openai_like_default
-                or config.model in (None, "", self.settings.agent_default_model)
-            )
+            and (not openai_like_default or config.model in (None, "", self.settings.agent_default_model))
         ):
-            return default_scenario_client or self.client
+            return default_scenario_client or self._client_for_role(role)
 
         explicit_provider = self._configured_role_provider(role)
         if explicit_provider and explicit_provider == config.provider_type.lower():
@@ -392,8 +380,7 @@ class AgentOrchestrator:
                 if scenario_client is not None:
                     return scenario_client
             if explicit_client is not None and (
-                config.provider_class != ProviderClass.LOCAL
-                or config.model == self.settings.mlx_model_path
+                config.provider_class != ProviderClass.LOCAL or config.model == self.settings.mlx_model_path
             ):
                 return explicit_client
 
@@ -403,11 +390,11 @@ class AgentOrchestrator:
             and config.model == self.settings.mlx_model_path
             and not explicit_provider
         ):
-            return default_scenario_client or self.client
+            return default_scenario_client or self._client_for_role(role)
 
         from autocontext.agents.provider_bridge import create_role_client
 
-        key = (config.provider_type.lower(), config.model, scenario_name or None)
+        key = (config.provider_type.lower(), config.model, scenario_name or None, role)
         cached = self._routed_clients.get(key)
         if cached is not None:
             return cached
@@ -416,6 +403,7 @@ class AgentOrchestrator:
             self.settings,
             model_override=config.model,
             scenario_name=scenario_name,
+            role=role,
         )
         if client is None:
             return self._client_for_role(role)
@@ -521,11 +509,14 @@ class AgentOrchestrator:
         current_strategy: dict[str, Any] | None = None,
     ) -> AgentOutputs:
         # Feature-gated pipeline codepath (skips RLM path when active)
-        if self.settings.use_pipeline_engine and not (
-            self.settings.rlm_enabled and self._rlm_loader is not None
-        ):
+        if self.settings.use_pipeline_engine and not (self.settings.rlm_enabled and self._rlm_loader is not None):
             return self._run_via_pipeline(
-                prompts, generation_index, scenario_name, tool_context, strategy_interface, on_role_event,
+                prompts,
+                generation_index,
+                scenario_name,
+                tool_context,
+                strategy_interface,
+                on_role_event,
             )
 
         def _notify(role: str, status: str) -> None:
@@ -533,11 +524,14 @@ class AgentOrchestrator:
                 on_role_event(role, status)
 
         # --- Competitor phase ---
-        competitor_model = self.resolve_model(
-            "competitor",
-            generation=generation_index,
-            scenario_name=scenario_name,
-        ) or self.competitor.model
+        competitor_model = (
+            self.resolve_model(
+                "competitor",
+                generation=generation_index,
+                scenario_name=scenario_name,
+            )
+            or self.competitor.model
+        )
         use_competitor_rlm = (
             self.settings.rlm_enabled
             and self.settings.rlm_competitor_enabled
@@ -548,7 +542,9 @@ class AgentOrchestrator:
         if use_competitor_rlm:
             _notify("competitor", "started")
             raw_text, competitor_exec = self._run_rlm_competitor(
-                run_id, scenario_name, generation_index,
+                run_id,
+                scenario_name,
+                generation_index,
                 model=competitor_model,
                 strategy_interface=strategy_interface,
                 scenario_rules=scenario_rules,
@@ -560,6 +556,7 @@ class AgentOrchestrator:
             competitor_prompt = prompts.competitor
             if self.settings.code_strategies_enabled:
                 from autocontext.prompts.templates import code_strategy_competitor_suffix
+
                 competitor_prompt += code_strategy_competitor_suffix(strategy_interface)
             with self._use_role_runtime(
                 "competitor",
@@ -590,7 +587,11 @@ class AgentOrchestrator:
             _notify("analyst", "started")
             _notify("architect", "started")
             analyst_exec, architect_exec = self._run_rlm_roles(
-                run_id, scenario_name, generation_index, strategy, architect_prompt,
+                run_id,
+                scenario_name,
+                generation_index,
+                strategy,
+                architect_prompt,
                 scenario_rules=scenario_rules,
             )
             _notify("analyst", "completed")
@@ -649,7 +650,9 @@ class AgentOrchestrator:
 
         # Parse typed contracts
         competitor_typed = parse_competitor_output(
-            raw_text, strategy, is_code_strategy=self.settings.code_strategies_enabled,
+            raw_text,
+            strategy,
+            is_code_strategy=self.settings.code_strategies_enabled,
         )
         analyst_typed = parse_analyst_output(analyst_exec.content)
         coach_typed = parse_coach_output(coach_exec.content)
@@ -722,7 +725,8 @@ class AgentOrchestrator:
         coach_playbook, coach_lessons, coach_hints = parse_coach_sections(results["coach"].content)
 
         competitor_typed = parse_competitor_output(
-            results["competitor"].content, strategy,
+            results["competitor"].content,
+            strategy,
             is_code_strategy=self.settings.code_strategies_enabled,
         )
         analyst_typed = parse_analyst_output(results["analyst"].content)
@@ -739,9 +743,7 @@ class AgentOrchestrator:
             architect_markdown=results["architect"].content,
             architect_tools=tools,
             architect_harness_specs=harness_specs,
-            role_executions=[
-                results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]
-            ],
+            role_executions=[results[r] for r in ["competitor", "translator", "analyst", "coach", "architect"]],
             competitor_output=competitor_typed,
             analyst_output=analyst_typed,
             coach_output=coach_typed,
@@ -868,7 +870,9 @@ class AgentOrchestrator:
             competitor_client.reset_rlm_turns()
 
         competitor_ctx = self._rlm_loader.load_for_competitor(
-            run_id, scenario_name, generation_index,
+            run_id,
+            scenario_name,
+            generation_index,
             strategy_interface=strategy_interface,
             scenario_rules=scenario_rules,
             current_strategy=current_strategy,
@@ -888,7 +892,10 @@ class AgentOrchestrator:
             summary = _build_trial_summary(generation_index, exec_history, competitor_exec)
             try:
                 self._rlm_loader.sqlite.append_agent_output(
-                    run_id, generation_index, "competitor_rlm_trials", summary,
+                    run_id,
+                    generation_index,
+                    "competitor_rlm_trials",
+                    summary,
                 )
             except Exception:
                 logger.debug("failed to store RLM trial summary", exc_info=True)
@@ -923,7 +930,9 @@ class AgentOrchestrator:
 
         # --- Analyst ---
         analyst_ctx = self._rlm_loader.load_for_analyst(
-            run_id, scenario_name, generation_index,
+            run_id,
+            scenario_name,
+            generation_index,
             scenario_rules=scenario_rules,
             current_strategy=strategy,
         )
@@ -947,7 +956,9 @@ class AgentOrchestrator:
 
         # --- Architect ---
         architect_ctx = self._rlm_loader.load_for_architect(
-            run_id, scenario_name, generation_index,
+            run_id,
+            scenario_name,
+            generation_index,
             scenario_rules=scenario_rules,
         )
         architect_exec, _ = self._run_single_rlm_session(

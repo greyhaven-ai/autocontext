@@ -55,7 +55,7 @@ source .venv/bin/activate
 uv sync --group dev
 ```
 
-Use the repo-level `.env.example` as the reference for available `AUTOCONTEXT_*` settings.
+Use the repo-level `.env.example` as the reference for available `AUTOCONTEXT_*` settings and supported provider-native credential aliases such as `ANTHROPIC_API_KEY`.
 
 `operator-in-the-loop` is a runnable scenario family for escalation and clarification experiments. Use it when you want executable operator-loop simulations, judgment evaluation, and live-agent escalation workflow testing.
 
@@ -70,9 +70,11 @@ Run with Anthropic:
 
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
-AUTOCONTEXT_ANTHROPIC_API_KEY=... \
+ANTHROPIC_API_KEY=... \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
+
+`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
 Run with Pi CLI (local Pi agent runtime):
 
@@ -139,7 +141,14 @@ uv run autoctx wait <condition_id> --json
 Useful variants:
 
 ```bash
-AUTOCONTEXT_AGENT_PROVIDER=anthropic AUTOCONTEXT_ANTHROPIC_API_KEY=... \
+AUTOCONTEXT_AGENT_PROVIDER=anthropic ANTHROPIC_API_KEY=... \
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+
+AUTOCONTEXT_AGENT_PROVIDER=anthropic \
+ANTHROPIC_API_KEY=sk-ant-primary \
+AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
+AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
+AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 
 AUTOCONTEXT_AGENT_PROVIDER=deterministic AUTOCONTEXT_RLM_ENABLED=true \

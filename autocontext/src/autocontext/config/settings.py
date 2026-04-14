@@ -13,6 +13,10 @@ from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
+_ENV_ALIASES: dict[str, tuple[str, ...]] = {
+    "anthropic_api_key": ("ANTHROPIC_API_KEY", "AUTOCONTEXT_ANTHROPIC_API_KEY"),
+}
+
 
 class HarnessMode(StrEnum):
     """How the harness interacts with strategy execution."""
@@ -504,6 +508,14 @@ class AppSettings(BaseModel):
     analyst_provider: str = Field(default="", description="Provider override for analyst role")
     coach_provider: str = Field(default="", description="Provider override for coach role")
     architect_provider: str = Field(default="", description="Provider override for architect role")
+    competitor_api_key: str = Field(default="", description="API key override for competitor role")
+    competitor_base_url: str = Field(default="", description="Base URL override for competitor role")
+    analyst_api_key: str = Field(default="", description="API key override for analyst role")
+    analyst_base_url: str = Field(default="", description="Base URL override for analyst role")
+    coach_api_key: str = Field(default="", description="API key override for coach role")
+    coach_base_url: str = Field(default="", description="Base URL override for coach role")
+    architect_api_key: str = Field(default="", description="API key override for architect role")
+    architect_base_url: str = Field(default="", description="Base URL override for architect role")
     # MLX local model inference (AC-182)
     mlx_model_path: str = Field(default="", description="Path to trained MLX model checkpoint directory")
     mlx_temperature: float = Field(default=0.8, ge=0.0, le=2.0, description="Sampling temperature for MLX model")
@@ -653,8 +665,8 @@ def load_settings() -> AppSettings:
 
     kwargs: dict[str, Any] = {}
     for field_name in AppSettings.model_fields:
-        env_key = f"AUTOCONTEXT_{field_name.upper()}"
-        env_val = os.getenv(env_key)
+        env_keys = _ENV_ALIASES.get(field_name, (f"AUTOCONTEXT_{field_name.upper()}",))
+        env_val = next((value for key in env_keys if (value := os.getenv(key)) is not None), None)
         if env_val is not None:
             kwargs[field_name] = env_val
         elif field_name in preset:

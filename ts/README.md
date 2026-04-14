@@ -106,6 +106,14 @@ AUTOCONTEXT_AGENT_API_KEY=sk-... \
 AUTOCONTEXT_AGENT_BASE_URL=https://api.openai.com/v1 \
 autoctx run --scenario support_triage --json
 
+# Role-scoped override: competitor uses a separate gateway/key
+AUTOCONTEXT_AGENT_PROVIDER=anthropic \
+ANTHROPIC_API_KEY=sk-ant-primary \
+AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
+AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
+AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
+autoctx run --scenario support_triage --json
+
 # Ollama (local)
 AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run --scenario support_triage --json
 
@@ -127,6 +135,8 @@ AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario support_triage --json
 AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario support_triage --json
 ```
 
+`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
+
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
 
 `autoctx simulate` and `autoctx investigate` require a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
@@ -136,9 +146,13 @@ Key environment variables:
 | Variable | Purpose |
 |----------|---------|
 | `AUTOCONTEXT_AGENT_PROVIDER` | Agent provider selection |
-| `AUTOCONTEXT_AGENT_API_KEY` | API key (or use provider-specific env vars) |
-| `AUTOCONTEXT_AGENT_BASE_URL` | Base URL for compatible providers |
+| `AUTOCONTEXT_AGENT_API_KEY` | Global API key override (or use provider-specific env vars) |
+| `AUTOCONTEXT_AGENT_BASE_URL` | Global base URL override for compatible providers |
 | `AUTOCONTEXT_AGENT_DEFAULT_MODEL` | Override default model |
+| `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential/endpoint override |
+| `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL` | Optional analyst-specific credential/endpoint override |
+| `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL` | Optional coach-specific credential/endpoint override |
+| `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL` | Optional architect-specific credential/endpoint override |
 | `AUTOCONTEXT_CONFIG_DIR` | Override where `login` / `whoami` read saved credentials |
 | `AUTOCONTEXT_DB_PATH` | SQLite database path |
 

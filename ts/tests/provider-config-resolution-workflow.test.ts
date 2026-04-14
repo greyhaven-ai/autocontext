@@ -50,6 +50,17 @@ describe("provider config resolution workflow", () => {
     });
   });
 
+  it("keeps AUTOCONTEXT_ANTHROPIC_API_KEY as an Anthropic compatibility alias", () => {
+    saveAndClear();
+    process.env.AUTOCONTEXT_AGENT_PROVIDER = "anthropic";
+    process.env.AUTOCONTEXT_ANTHROPIC_API_KEY = "sk-compat-key";
+
+    expect(resolveProviderConfig()).toMatchObject({
+      providerType: "anthropic",
+      apiKey: "sk-compat-key",
+    });
+  });
+
   it("preserves keyless provider families and anthropic guardrails", () => {
     saveAndClear();
     process.env.AUTOCONTEXT_AGENT_PROVIDER = "pi";

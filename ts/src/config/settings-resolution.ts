@@ -16,6 +16,10 @@ const SETTINGS_ENV_ALIASES: Partial<Record<string, string[]>> = {
     "AUTOCONTEXT_AGENT_PROVIDER",
     "AUTOCONTEXT_PROVIDER",
   ],
+  anthropicApiKey: [
+    "ANTHROPIC_API_KEY",
+    "AUTOCONTEXT_ANTHROPIC_API_KEY",
+  ],
   modelCompetitor: [
     "AUTOCONTEXT_MODEL_COMPETITOR",
     "AUTOCONTEXT_AGENT_DEFAULT_MODEL",

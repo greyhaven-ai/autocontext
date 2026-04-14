@@ -211,6 +211,14 @@ export const AppSettingsSchema = z.object({
   analystProvider: z.string().default(""),
   coachProvider: z.string().default(""),
   architectProvider: z.string().default(""),
+  competitorApiKey: z.string().default(""),
+  competitorBaseUrl: z.string().default(""),
+  analystApiKey: z.string().default(""),
+  analystBaseUrl: z.string().default(""),
+  coachApiKey: z.string().default(""),
+  coachBaseUrl: z.string().default(""),
+  architectApiKey: z.string().default(""),
+  architectBaseUrl: z.string().default(""),
 
   // Monitor
   monitorEnabled: z.boolean().default(true),

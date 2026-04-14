@@ -3,6 +3,7 @@
 Allows different providers per agent role so MLX can handle competitor
 while frontier models handle reasoning roles.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -25,11 +26,16 @@ class _StubProvider(LLMProvider):
         self._response = response
 
     def complete(
-        self, system_prompt: str, user_prompt: str,
-        model: str | None = None, temperature: float = 0.0, max_tokens: int = 4096,
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
     ) -> CompletionResult:
         return CompletionResult(
-            text=self._response, model=model or "stub",
+            text=self._response,
+            model=model or "stub",
             usage={"input_tokens": 10, "output_tokens": 5},
         )
 
@@ -43,27 +49,44 @@ class _StubProvider(LLMProvider):
 class TestPerRoleConfigFields:
     def test_competitor_provider_field_exists(self) -> None:
         from autocontext.config.settings import AppSettings
+
         settings = AppSettings()
         assert hasattr(settings, "competitor_provider")
         assert settings.competitor_provider == ""
 
     def test_analyst_provider_field_exists(self) -> None:
         from autocontext.config.settings import AppSettings
+
         settings = AppSettings()
         assert hasattr(settings, "analyst_provider")
         assert settings.analyst_provider == ""
 
     def test_coach_provider_field_exists(self) -> None:
         from autocontext.config.settings import AppSettings
+
         settings = AppSettings()
         assert hasattr(settings, "coach_provider")
         assert settings.coach_provider == ""
 
     def test_architect_provider_field_exists(self) -> None:
         from autocontext.config.settings import AppSettings
+
         settings = AppSettings()
         assert hasattr(settings, "architect_provider")
         assert settings.architect_provider == ""
+
+    def test_role_credential_fields_exist(self) -> None:
+        from autocontext.config.settings import AppSettings
+
+        settings = AppSettings()
+        assert settings.competitor_api_key == ""
+        assert settings.competitor_base_url == ""
+        assert settings.analyst_api_key == ""
+        assert settings.analyst_base_url == ""
+        assert settings.coach_api_key == ""
+        assert settings.coach_base_url == ""
+        assert settings.architect_api_key == ""
+        assert settings.architect_base_url == ""
 
     def test_claude_cli_settings_fields_exist(self) -> None:
         from autocontext.config.settings import AppSettings
@@ -92,6 +115,7 @@ class TestPerRoleConfigFields:
 class TestProviderBridgeClient:
     def test_bridge_exists(self) -> None:
         from autocontext.agents.provider_bridge import ProviderBridgeClient
+
         assert issubclass(ProviderBridgeClient, LanguageModelClient)
 
     def test_bridge_generate_returns_model_response(self) -> None:
@@ -100,8 +124,10 @@ class TestProviderBridgeClient:
         provider = _StubProvider("hello world")
         bridge = ProviderBridgeClient(provider)
         response = bridge.generate(
-            model="test-model", prompt="test prompt",
-            max_tokens=100, temperature=0.5,
+            model="test-model",
+            prompt="test prompt",
+            max_tokens=100,
+            temperature=0.5,
         )
         assert isinstance(response, ModelResponse)
         assert response.text == "hello world"
@@ -111,7 +137,9 @@ class TestProviderBridgeClient:
 
         provider = MagicMock(spec=LLMProvider)
         provider.complete.return_value = CompletionResult(
-            text="ok", model="m", usage={"input_tokens": 1, "output_tokens": 1},
+            text="ok",
+            model="m",
+            usage={"input_tokens": 1, "output_tokens": 1},
         )
         bridge = ProviderBridgeClient(provider)
         bridge.generate(model="m", prompt="p", max_tokens=256, temperature=0.7)
@@ -202,6 +230,29 @@ class TestCreateClientForProvider:
             provider_type="openai",
             api_key="openai-key",
             base_url="http://localhost:8000/v1",
+            model="gpt-4o",
+        )
+
+    @patch("autocontext.providers.registry.create_provider")
+    def test_role_scoped_openai_credentials_override_global_defaults(self, mock_create: MagicMock) -> None:
+        from autocontext.agents.provider_bridge import create_role_client
+        from autocontext.config.settings import AppSettings
+
+        mock_create.return_value = _StubProvider()
+        settings = AppSettings(
+            agent_api_key="global-key",
+            agent_base_url="http://global.local:8000/v1",
+            competitor_api_key="role-key",
+            competitor_base_url="http://role.local:8000/v1",
+        )
+
+        client = create_role_client("openai-compatible", settings, role="competitor")
+
+        assert isinstance(client, LanguageModelClient)
+        mock_create.assert_called_once_with(
+            provider_type="openai-compatible",
+            api_key="role-key",
+            base_url="http://role.local:8000/v1",
             model="gpt-4o",
         )
 
@@ -332,6 +383,26 @@ class TestOrchestratorPerRoleWiring:
         assert orch.coach.runtime.client is orch.architect.runtime.client
 
     @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_role_credentials_create_dedicated_client_without_provider_override(self, mock_create: MagicMock) -> None:
+        """Role-scoped credentials should isolate a role even when provider type is inherited."""
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        mock_client = MagicMock(spec=LanguageModelClient)
+        mock_create.return_value = mock_client
+
+        settings = AppSettings(
+            agent_provider="anthropic",
+            anthropic_api_key="global-key",
+            competitor_api_key="role-key",
+        )
+        orch = AgentOrchestrator.from_settings(settings)
+
+        assert orch.competitor.runtime.client is mock_client
+        assert orch.analyst.runtime.client is orch.coach.runtime.client
+        mock_create.assert_called_once_with("anthropic", settings, role="competitor")
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
     def test_pi_override_rebuilds_client_with_scenario_context(self, mock_create: MagicMock) -> None:
         """Pi overrides are rebound at execution time so scenario-specific handoff can run."""
         from autocontext.agents.orchestrator import AgentOrchestrator
@@ -352,8 +423,9 @@ class TestOrchestratorPerRoleWiring:
 
         assert client is scenario_client
         assert mock_create.call_args_list[0].args == ("pi", settings)
+        assert mock_create.call_args_list[0].kwargs == {"role": "competitor"}
         assert mock_create.call_args_list[1].args == ("pi", settings)
-        assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf"}
+        assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf", "role": "competitor"}
 
     @patch("autocontext.agents.provider_bridge.create_role_client")
     def test_default_pi_rpc_provider_rebinds_per_role_with_scenario_context(self, mock_create: MagicMock) -> None:
@@ -392,9 +464,9 @@ class TestOrchestratorPerRoleWiring:
         assert competitor_resolved is not analyst_resolved
         assert competitor_resolved_again is competitor_client
         assert mock_create.call_args_list[0].args == ("pi-rpc", settings)
-        assert mock_create.call_args_list[0].kwargs == {"scenario_name": "grid_ctf"}
+        assert mock_create.call_args_list[0].kwargs == {"scenario_name": "grid_ctf", "role": "competitor"}
         assert mock_create.call_args_list[1].args == ("pi-rpc", settings)
-        assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf"}
+        assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf", "role": "analyst"}
 
     @patch("autocontext.agents.provider_bridge.create_role_client")
     def test_override_does_not_affect_unset_roles(self, mock_create: MagicMock) -> None:

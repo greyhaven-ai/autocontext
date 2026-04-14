@@ -4,6 +4,7 @@ Enables per-role provider overrides (AC-184) by allowing any LLMProvider
 (e.g. MLXProvider) to be used where the agent system expects a
 LanguageModelClient.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -109,9 +110,37 @@ class RuntimeBridgeClient(LanguageModelClient):
         )
 
 
-def _provider_api_key(provider_type: str, settings: AppSettings) -> str | None:
+def _role_setting(settings: AppSettings, role: str, suffix: str) -> str:
+    if not role:
+        return ""
+    value = getattr(settings, f"{role}_{suffix}", "")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def configured_role_provider(role: str, settings: AppSettings) -> str:
+    return _role_setting(settings, role, "provider").lower()
+
+
+def has_role_client_override(role: str, settings: AppSettings) -> bool:
+    return any(
+        (
+            configured_role_provider(role, settings),
+            _role_setting(settings, role, "api_key"),
+            _role_setting(settings, role, "base_url"),
+        )
+    )
+
+
+def _provider_api_key(provider_type: str, settings: AppSettings, *, role: str = "") -> str | None:
+    role_api_key = _role_setting(settings, role, "api_key")
+    if role_api_key:
+        return role_api_key
     if provider_type == "anthropic":
-        return settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+        return (
+            settings.anthropic_api_key
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
+        )
     if provider_type in ("openai", "openai-compatible"):
         return settings.agent_api_key or settings.judge_api_key or os.getenv("OPENAI_API_KEY")
     if provider_type == "vllm":
@@ -119,11 +148,19 @@ def _provider_api_key(provider_type: str, settings: AppSettings) -> str | None:
     return settings.agent_api_key or settings.judge_api_key
 
 
+def _provider_base_url(settings: AppSettings, *, role: str = "") -> str | None:
+    role_base_url = _role_setting(settings, role, "base_url")
+    if role_base_url:
+        return role_base_url
+    return settings.agent_base_url or settings.judge_base_url
+
+
 def _create_provider_bridge(
     provider_type: str,
     settings: AppSettings,
     *,
     model_override: str | None = None,
+    role: str = "",
 ) -> LanguageModelClient:
     """Create a ProviderBridgeClient for a given provider type."""
     from autocontext.providers.registry import create_provider
@@ -141,8 +178,8 @@ def _create_provider_bridge(
     else:
         provider = create_provider(
             provider_type=provider_type,
-            api_key=_provider_api_key(provider_type, settings),
-            base_url=settings.agent_base_url or settings.judge_base_url,
+            api_key=_provider_api_key(provider_type, settings, role=role),
+            base_url=_provider_base_url(settings, role=role),
             model=model_override or settings.agent_default_model,
         )
         use_provider_default_model = True
@@ -206,6 +243,7 @@ def create_role_client(
     *,
     model_override: str | None = None,
     scenario_name: str = "",
+    role: str = "",
 ) -> LanguageModelClient | None:
     """Create a LanguageModelClient for a per-role provider override.
 
@@ -235,9 +273,12 @@ def create_role_client(
     if provider_type == "anthropic":
         from autocontext.agents.llm_client import AnthropicClient
 
-        api_key = _provider_api_key(provider_type, settings)
+        api_key = _provider_api_key(provider_type, settings, role=role)
         if not api_key:
-            raise ValueError("Anthropic per-role override requires AUTOCONTEXT_ANTHROPIC_API_KEY")
+            role_key = f"AUTOCONTEXT_{role.upper()}_API_KEY, " if role else ""
+            raise ValueError(
+                f"Anthropic client requires {role_key}AUTOCONTEXT_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY",
+            )
         return AnthropicClient(api_key=api_key)
 
     if provider_type == "agent_sdk":
@@ -307,8 +348,8 @@ def create_role_client(
             model=model_override or settings.hermes_model,
             timeout=settings.hermes_timeout,
             workspace=settings.hermes_workspace,
-            base_url=settings.hermes_base_url,
-            api_key=settings.hermes_api_key,
+            base_url=_role_setting(settings, role, "base_url") or settings.hermes_base_url,
+            api_key=_role_setting(settings, role, "api_key") or settings.hermes_api_key,
             toolsets=settings.hermes_toolsets,
             skills=settings.hermes_skills,
             worktree=settings.hermes_worktree,
@@ -319,7 +360,7 @@ def create_role_client(
 
     # LLMProvider-based providers — use the bridge
     if provider_type in ("mlx", "openai", "openai-compatible", "ollama", "vllm"):
-        return _create_provider_bridge(provider_type, settings, model_override=model_override)
+        return _create_provider_bridge(provider_type, settings, model_override=model_override, role=role)
 
     raise ValueError(f"unsupported role provider: {provider_type!r}")
 

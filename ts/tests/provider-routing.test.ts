@@ -2,7 +2,7 @@
  * Tests for AC-367: Non-Pi provider, runtime, and config-routing parity.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -200,6 +200,69 @@ describe("Per-role provider configuration", () => {
     expect(settings.analystProvider).toBe("");
     expect(settings.coachProvider).toBe("");
     expect(settings.architectProvider).toBe("");
+  });
+
+  it("loadSettings reads AUTOCONTEXT_COMPETITOR_API_KEY and AUTOCONTEXT_COMPETITOR_BASE_URL", async () => {
+    saveAndClearProviderEnv();
+    process.env.AUTOCONTEXT_COMPETITOR_API_KEY = "role-key";
+    process.env.AUTOCONTEXT_COMPETITOR_BASE_URL = "http://role.local:8080/v1";
+
+    const { loadSettings } = await import("../src/config/index.js");
+    const settings = loadSettings();
+
+    expect(settings.competitorApiKey).toBe("role-key");
+    expect(settings.competitorBaseUrl).toBe("http://role.local:8080/v1");
+  });
+
+  it("buildRoleProviderBundle prefers role-specific API keys and base URLs over AUTOCONTEXT_AGENT_* defaults", async () => {
+    saveAndClearProviderEnv();
+    process.env.AUTOCONTEXT_AGENT_PROVIDER = "openai-compatible";
+    process.env.AUTOCONTEXT_AGENT_API_KEY = "global-key";
+    process.env.AUTOCONTEXT_AGENT_BASE_URL = "http://global.local:8080/v1";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => (
+      new Response(JSON.stringify({
+        choices: [{ message: { content: "ok" } }],
+        model: "gpt-4o",
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    ));
+
+    const { buildRoleProviderBundle } = await import("../src/providers/index.js");
+    const bundle = buildRoleProviderBundle({
+      agentProvider: "openai-compatible",
+      competitorApiKey: "role-key",
+      competitorBaseUrl: "http://role.local:8080/v1",
+    });
+
+    await bundle.defaultProvider.complete({
+      systemPrompt: "",
+      userPrompt: "default",
+      model: "gpt-4o",
+      temperature: 0,
+      maxTokens: 16,
+    });
+    await bundle.roleProviders.competitor?.complete({
+      systemPrompt: "",
+      userPrompt: "role",
+      model: "gpt-4o",
+      temperature: 0,
+      maxTokens: 16,
+    });
+
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe("http://global.local:8080/v1/chat/completions");
+    expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({
+      headers: expect.objectContaining({ Authorization: "Bearer global-key" }),
+    });
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe("http://role.local:8080/v1/chat/completions");
+    expect(fetchSpy.mock.calls[1]?.[1]).toMatchObject({
+      headers: expect.objectContaining({ Authorization: "Bearer role-key" }),
+    });
+
+    fetchSpy.mockRestore();
   });
 
   it("buildRoleProviderBundle applies AUTOCONTEXT_AGENT_* defaults and per-role overrides", async () => {

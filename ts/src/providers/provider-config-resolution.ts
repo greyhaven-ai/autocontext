@@ -12,6 +12,8 @@ export interface ProviderConfig {
 export interface ResolveProviderConfigOpts {
   preferProviderOverride?: boolean;
   preferModelOverride?: boolean;
+  preferApiKeyOverride?: boolean;
+  preferBaseUrlOverride?: boolean;
 }
 
 export function resolveProviderConfig(
@@ -26,6 +28,12 @@ export function resolveProviderConfig(
   const envModel =
     process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ??
     process.env.AUTOCONTEXT_MODEL;
+  const envBaseUrl =
+    process.env.AUTOCONTEXT_AGENT_BASE_URL ??
+    process.env.AUTOCONTEXT_BASE_URL;
+  const envGenericKey =
+    process.env.AUTOCONTEXT_AGENT_API_KEY ??
+    process.env.AUTOCONTEXT_API_KEY;
 
   const providerType =
     (opts.preferProviderOverride ? overrides.providerType : undefined) ??
@@ -42,13 +50,13 @@ export function resolveProviderConfig(
     projectConfig?.model ??
     persistedCredentials?.model;
   const baseUrl =
-    process.env.AUTOCONTEXT_AGENT_BASE_URL ??
-    process.env.AUTOCONTEXT_BASE_URL ??
+    (opts.preferBaseUrlOverride ? overrides.baseUrl : undefined) ??
+    envBaseUrl ??
     overrides.baseUrl ??
     persistedCredentials?.baseUrl;
   const genericKey =
-    process.env.AUTOCONTEXT_AGENT_API_KEY ??
-    process.env.AUTOCONTEXT_API_KEY ??
+    (opts.preferApiKeyOverride ? overrides.apiKey : undefined) ??
+    envGenericKey ??
     overrides.apiKey ??
     persistedCredentials?.apiKey;
 
@@ -59,7 +67,10 @@ export function resolveProviderConfig(
   }
 
   if (type === "anthropic") {
-    const apiKey = genericKey ?? process.env.ANTHROPIC_API_KEY;
+    const apiKey =
+      genericKey ??
+      process.env.ANTHROPIC_API_KEY ??
+      process.env.AUTOCONTEXT_ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new ProviderError(
         "ANTHROPIC_API_KEY environment variable required (or set AUTOCONTEXT_API_KEY / AUTOCONTEXT_AGENT_API_KEY)",

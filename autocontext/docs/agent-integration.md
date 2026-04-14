@@ -223,7 +223,7 @@ Configure which LLM provider autocontext uses via environment variables:
 ```bash
 # Anthropic (default)
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
-AUTOCONTEXT_ANTHROPIC_API_KEY=sk-ant-... \
+ANTHROPIC_API_KEY=sk-ant-... \
 autoctx run --scenario my_task --json
 
 # OpenAI-compatible
@@ -267,13 +267,29 @@ AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
 AUTOCONTEXT_PI_RPC_ENDPOINT=http://localhost:3284 \
 AUTOCONTEXT_PI_RPC_API_KEY=your-key \
 autoctx run --scenario my_task --json
+
+# Role-scoped override: competitor uses a separate gateway/key
+AUTOCONTEXT_AGENT_PROVIDER=anthropic \
+ANTHROPIC_API_KEY=sk-ant-primary \
+AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
+AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
+AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
+autoctx run --scenario my_task --json
 ```
+
+`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
 Key environment variables:
 
 | Variable | Purpose |
 |---|---|
 | `AUTOCONTEXT_AGENT_PROVIDER` | Agent provider: `anthropic`, `openai-compatible`, `ollama`, `vllm`, `pi`, `pi-rpc`, `deterministic` |
+| `AUTOCONTEXT_AGENT_API_KEY` | Global agent API key override (or use provider-native env vars such as `ANTHROPIC_API_KEY`) |
+| `AUTOCONTEXT_AGENT_BASE_URL` | Global base URL for OpenAI-compatible agent endpoints |
+| `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential and endpoint override |
+| `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL` | Optional analyst-specific credential and endpoint override |
+| `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL` | Optional coach-specific credential and endpoint override |
+| `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL` | Optional architect-specific credential and endpoint override |
 | `AUTOCONTEXT_JUDGE_PROVIDER` | Judge provider (defaults to `anthropic`) |
 | `AUTOCONTEXT_JUDGE_API_KEY` | API key for the judge provider |
 | `AUTOCONTEXT_JUDGE_BASE_URL` | Base URL for OpenAI-compatible judge endpoints |
@@ -530,7 +546,7 @@ Add to your project's `.claude/settings.json`:
       "args": ["run", "--directory", "/path/to/autocontext", "autoctx", "mcp-serve"],
       "env": {
         "AUTOCONTEXT_AGENT_PROVIDER": "anthropic",
-        "AUTOCONTEXT_ANTHROPIC_API_KEY": "sk-ant-..."
+        "ANTHROPIC_API_KEY": "sk-ant-..."
       }
     }
   }

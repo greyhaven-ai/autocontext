@@ -36,6 +36,29 @@ class TestApiKeyFallback:
 
         assert client is not None
 
+    def test_load_settings_reads_anthropic_api_key_alias(self) -> None:
+        from autocontext.config.settings import load_settings
+
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-standard-key"}, clear=False):
+            settings = load_settings()
+
+        assert settings.anthropic_api_key == "sk-standard-key"
+
+    def test_load_settings_prefers_standard_anthropic_api_key(self) -> None:
+        from autocontext.config.settings import load_settings
+
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "sk-standard-key",
+                "AUTOCONTEXT_ANTHROPIC_API_KEY": "sk-compat-key",
+            },
+            clear=False,
+        ):
+            settings = load_settings()
+
+        assert settings.anthropic_api_key == "sk-standard-key"
+
     def test_raises_when_no_key_at_all(self) -> None:
         import pytest
 
@@ -49,7 +72,13 @@ class TestApiKeyFallback:
 
         with (
             patch.dict(os.environ, {}, clear=False),
-            patch.object(os, "getenv", side_effect=lambda k, d=None: None if k == "ANTHROPIC_API_KEY" else os.environ.get(k, d)),
+            patch.object(
+                os,
+                "getenv",
+                side_effect=lambda k, d=None: None
+                if k in {"ANTHROPIC_API_KEY", "AUTOCONTEXT_ANTHROPIC_API_KEY"}
+                else os.environ.get(k, d),
+            ),
             pytest.raises(ValueError, match="ANTHROPIC_API_KEY"),
         ):
             build_client_from_settings(settings)

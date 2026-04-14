@@ -38,10 +38,14 @@ def create_provider(
         from autocontext.providers.anthropic import AnthropicProvider
         from autocontext.providers.retry import RetryProvider
 
-        return RetryProvider(AnthropicProvider(
-            api_key=api_key or os.getenv("ANTHROPIC_API_KEY"),
-            default_model_name=model or "claude-sonnet-4-20250514",
-        ))
+        return RetryProvider(
+            AnthropicProvider(
+                api_key=api_key
+                or os.getenv("ANTHROPIC_API_KEY")
+                or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY"),
+                default_model_name=model or "claude-sonnet-4-20250514",
+            )
+        )
 
     if provider_type in ("openai", "openai-compatible"):
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
@@ -117,7 +121,11 @@ def get_provider(settings: AppSettings) -> LLMProvider:
         if provider_type in ("openai", "openai-compatible"):
             api_key = os.getenv("OPENAI_API_KEY")
         else:
-            api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
+            api_key = (
+                settings.anthropic_api_key
+                or os.getenv("ANTHROPIC_API_KEY")
+                or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
+            )
 
     return create_provider(
         provider_type=provider_type,
