@@ -105,7 +105,13 @@ class TestBuildRoleHandler:
         assert result.role == "competitor"
         assert seen["client"] is mock_local_client
         assert seen["model"] == str(local_model)
-        mock_create.assert_called_once_with("mlx", settings, model_override=str(local_model), scenario_name="grid_ctf")
+        mock_create.assert_called_once_with(
+            "mlx",
+            settings,
+            model_override=str(local_model),
+            scenario_name="grid_ctf",
+            role="competitor",
+        )
 
 
 class TestPipelineOrchestratorIntegration:
