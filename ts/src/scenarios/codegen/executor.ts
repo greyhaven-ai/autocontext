@@ -89,6 +89,90 @@ async function executeActionScenario(
   };
 }
 
+async function executeOperatorLoopScenario(
+  proxy: ScenarioProxy,
+  opts: { seed?: number; maxSteps?: number },
+): Promise<GeneratedScenarioExecutionResult> {
+  let state = await proxy.call<Record<string, unknown>>("initialState", opts.seed ?? 42);
+  const records: GeneratedScenarioActionRecord[] = [];
+  const maxSteps = await resolveMaxSteps(proxy, opts.maxSteps ?? 20);
+  let requestedClarification = false;
+  let escalated = false;
+
+  while (records.length < maxSteps) {
+    const terminal = await proxy.call<boolean>("isTerminal", state);
+    if (terminal) break;
+
+    if (!requestedClarification) {
+      state = await proxy.call<Record<string, unknown>>("requestClarification", state, {
+        question: "Clarify the current uncertainty before continuing.",
+        urgency: "medium",
+      });
+      requestedClarification = true;
+    }
+
+    const actions = await proxy.call<Array<{ name: string; parameters?: Record<string, unknown> }>>(
+      "getAvailableActions",
+      state,
+    );
+    if (!actions || actions.length === 0) break;
+
+    const action = {
+      name: String(actions[0]?.name ?? "unknown"),
+      parameters:
+        actions[0]?.parameters && typeof actions[0].parameters === "object"
+          ? actions[0].parameters
+          : {},
+    };
+    const actionResult = await proxy.call<{
+      result: Record<string, unknown>;
+      state: Record<string, unknown>;
+    }>("executeAction", state, action);
+    records.push({
+      action,
+      result: actionResult.result ?? {},
+    });
+    state = actionResult.state ?? state;
+
+    const situations = Array.isArray(state.situationsRequiringEscalation)
+      ? (state.situationsRequiringEscalation as Array<Record<string, unknown>>)
+      : [];
+    const latest = situations[situations.length - 1];
+    if (latest) {
+      state = await proxy.call<Record<string, unknown>>("escalate", state, {
+        reason: String(latest.reason ?? "action failure"),
+        severity: String(latest.severity ?? "high"),
+        wasNecessary: true,
+      });
+      escalated = true;
+    }
+  }
+
+  if (!escalated) {
+    state = await proxy.call<Record<string, unknown>>("escalate", state, {
+      reason: "Mandatory operator review checkpoint.",
+      severity: "low",
+      wasNecessary: true,
+    });
+  }
+
+  const result = await proxy.call<{
+    score: number;
+    reasoning: string;
+    dimensionScores?: Record<string, number>;
+  }>("getResult", state, { records });
+
+  return {
+    family: "operator_loop",
+    stepsExecuted: records.length,
+    finalState: state,
+    records,
+    score: result.score,
+    reasoning: result.reasoning,
+    dimensionScores: result.dimensionScores ?? {},
+  };
+}
+
 async function executeArtifactEditingScenario(
   proxy: ScenarioProxy,
   opts: { seed?: number },
@@ -136,9 +220,10 @@ async function executeGeneratedScenarioProxy(
     case "tool_fragility":
     case "coordination":
       return executeActionScenario(proxy, family, opts);
+    case "operator_loop":
+      return executeOperatorLoopScenario(proxy, opts);
     case "agent_task":
     case "game":
-    case "operator_loop":
       throw new CodegenUnsupportedFamilyError(family);
   }
 }

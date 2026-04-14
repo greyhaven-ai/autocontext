@@ -82,6 +82,12 @@ const REQUIRED_METHODS: Record<string, readonly string[]> = {
     "getAvailableActions", "executeAction", "isTerminal", "getResult",
     "getWorkerContexts", "getHandoffLog", "recordHandoff", "mergeOutputs",
   ],
+  operator_loop: [
+    "describeScenario", "describeEnvironment", "initialState",
+    "getAvailableActions", "executeAction", "isTerminal", "getResult",
+    "getEscalationLog", "getClarificationLog", "escalate",
+    "requestClarification", "evaluateJudgment",
+  ],
 };
 
 export class CodegenUnsupportedFamilyError extends Error {
@@ -89,10 +95,7 @@ export class CodegenUnsupportedFamilyError extends Error {
   constructor(family: string) {
     super(
       `Scenario family '${family}' is not supported for codegen execution. ` +
-      (family === "operator_loop"
-        ? "operator_loop scenarios are intentionally not scaffolded into executable runtimes; " +
-          "use family metadata, datasets, tools, or live-agent experiments instead."
-        : family === "game"
+      (family === "game"
         ? "Built-in game scenarios should be used directly from SCENARIO_REGISTRY."
         : `No codegen pipeline registered for '${family}'.`),
     );
@@ -168,7 +171,7 @@ export class ScenarioRuntime {
     family: ScenarioFamilyName,
     name: string,
   ): Promise<ScenarioProxy> {
-    if (family === "operator_loop" || family === "game") {
+    if (family === "game") {
       throw new CodegenUnsupportedFamilyError(family);
     }
 
