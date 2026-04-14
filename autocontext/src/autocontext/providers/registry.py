@@ -99,7 +99,7 @@ def get_provider(settings: AppSettings) -> LLMProvider:
     ``settings.judge_api_key``. Falls back to provider-specific env vars
     (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``) when ``judge_api_key`` is not set.
     """
-    provider_type = settings.judge_provider
+    provider_type = settings.judge_provider.lower().strip()
     base_url = settings.judge_base_url
 
     # MLX provider has its own construction path using mlx_* settings
@@ -113,6 +113,58 @@ def get_provider(settings: AppSettings) -> LLMProvider:
             model_path=model_path,
             temperature=settings.mlx_temperature,
             max_tokens=settings.mlx_max_tokens,
+        )
+
+    if provider_type == "claude-cli":
+        from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
+        from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
+
+        claude_runtime = ClaudeCLIRuntime(ClaudeCLIConfig(
+            model=settings.claude_model,
+            tools=settings.claude_tools,
+            permission_mode=settings.claude_permission_mode,
+            session_persistence=settings.claude_session_persistence,
+            timeout=settings.claude_timeout,
+        ))
+        return RuntimeBridgeProvider(claude_runtime, default_model_name=settings.claude_model)
+
+    if provider_type == "codex":
+        from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
+        from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime
+
+        codex_runtime = CodexCLIRuntime(CodexCLIConfig(
+            model=settings.codex_model,
+            approval_mode=settings.codex_approval_mode,
+            timeout=settings.codex_timeout,
+            workspace=settings.codex_workspace,
+            quiet=settings.codex_quiet,
+        ))
+        return RuntimeBridgeProvider(codex_runtime, default_model_name=settings.codex_model)
+
+    if provider_type == "pi":
+        from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
+        from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
+
+        pi_runtime = PiCLIRuntime(PiCLIConfig(
+            pi_command=settings.pi_command,
+            timeout=settings.pi_timeout,
+            workspace=settings.pi_workspace,
+            model=settings.pi_model,
+        ))
+        return RuntimeBridgeProvider(pi_runtime, default_model_name=settings.pi_model or "pi-default")
+
+    if provider_type == "pi-rpc":
+        from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
+        from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
+
+        pi_rpc_runtime = PiRPCRuntime(PiRPCConfig(
+            pi_command=settings.pi_command,
+            model=settings.pi_model or settings.judge_model,
+            session_persistence=settings.pi_rpc_session_persistence,
+        ))
+        return RuntimeBridgeProvider(
+            pi_rpc_runtime,
+            default_model_name=settings.pi_model or settings.judge_model or "pi-rpc-default",
         )
 
     # Use judge_api_key if set, otherwise fall back to provider-specific keys

@@ -10,9 +10,9 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 
 const PACKAGE_ROOT = join(import.meta.dirname, "..");
-const PACKAGE_JSON = JSON.parse(
-  readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8"),
-) as { bin: { autoctx: string } };
+const PACKAGE_JSON = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8")) as {
+  bin: { autoctx: string };
+};
 let didBuild = false;
 
 function ensureBuiltPackage(): void {
@@ -33,7 +33,11 @@ function createConsumerWorkspace(): string {
   );
   mkdirSync(join(workspace, "node_modules"), { recursive: true });
   symlinkSync(PACKAGE_ROOT, join(workspace, "node_modules", "autoctx"), "dir");
-  writeFileSync(join(workspace, "package.json"), JSON.stringify({ name: "package-parity-fixture", type: "module" }), "utf-8");
+  writeFileSync(
+    join(workspace, "package.json"),
+    JSON.stringify({ name: "package-parity-fixture", type: "module" }),
+    "utf-8",
+  );
   return workspace;
 }
 
@@ -118,6 +122,8 @@ describe("README positioning", () => {
     const readme = readFileSync(join(import.meta.dirname, "..", "README.md"), "utf-8");
     expect(readme).toContain("anthropic");
     expect(readme).toContain("hermes");
+    expect(readme).toContain("claude-cli");
+    expect(readme).toContain("codex");
     expect(readme).toContain("pi");
     expect(readme).toContain("pi-rpc");
     expect(readme).toContain("deterministic");
@@ -140,10 +146,28 @@ describe("CLI help matches README", () => {
   it("lists all documented commands in help", () => {
     const help = runCli(["--help"]);
     const expected = [
-      "init", "capabilities", "login", "whoami", "logout",
-      "run", "list", "replay", "benchmark", "export", "export-training-data",
-      "import-package", "new-scenario", "tui", "judge", "improve", "repl",
-      "queue", "status", "serve", "mcp-serve", "version",
+      "init",
+      "capabilities",
+      "login",
+      "whoami",
+      "logout",
+      "run",
+      "list",
+      "replay",
+      "benchmark",
+      "export",
+      "export-training-data",
+      "import-package",
+      "new-scenario",
+      "tui",
+      "judge",
+      "improve",
+      "repl",
+      "queue",
+      "status",
+      "serve",
+      "mcp-serve",
+      "version",
     ];
     for (const cmd of expected) {
       expect(help).toContain(cmd);

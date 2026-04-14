@@ -1,6 +1,8 @@
 import { ProviderError } from "../types/index.js";
 import type { CompletionResult, LLMProvider } from "../types/index.js";
 import { DeterministicProvider } from "./deterministic.js";
+import { ClaudeCLIRuntime } from "../runtimes/claude-cli.js";
+import { CodexCLIRuntime, CodexCLIConfig } from "../runtimes/codex-cli.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
 import { RuntimeBridgeProvider } from "../agents/provider-bridge.js";
@@ -111,11 +113,14 @@ export function createOpenAICompatibleProvider(opts: OpenAICompatibleProviderOpt
   };
 }
 
-export const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<string, {
-  baseUrl?: string;
-  envVar: string;
-  defaultModel: string;
-}> = {
+export const OPENAI_COMPATIBLE_PROVIDER_DEFAULTS: Record<
+  string,
+  {
+    baseUrl?: string;
+    envVar: string;
+    defaultModel: string;
+  }
+> = {
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     envVar: "GEMINI_API_KEY",
@@ -147,6 +152,17 @@ export interface CreateProviderOpts {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  claudeModel?: string;
+  claudeFallbackModel?: string;
+  claudeTools?: string;
+  claudePermissionMode?: string;
+  claudeSessionPersistence?: boolean;
+  claudeTimeout?: number;
+  codexModel?: string;
+  codexApprovalMode?: string;
+  codexTimeout?: number;
+  codexWorkspace?: string;
+  codexQuiet?: boolean;
   piCommand?: string;
   piTimeout?: number;
   piWorkspace?: string;
@@ -168,6 +184,8 @@ export const SUPPORTED_PROVIDER_TYPES = [
   "groq",
   "openrouter",
   "azure-openai",
+  "claude-cli",
+  "codex",
   "pi",
   "pi-rpc",
   "deterministic",
@@ -216,23 +234,54 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
     return { ...inner, name: "hermes-gateway" };
   }
 
+  if (type === "claude-cli") {
+    const resolvedModel = opts.claudeModel ?? opts.model;
+    const runtime = new ClaudeCLIRuntime({
+      model: resolvedModel,
+      fallbackModel: opts.claudeFallbackModel,
+      tools: opts.claudeTools,
+      permissionMode: opts.claudePermissionMode,
+      sessionPersistence: opts.claudeSessionPersistence,
+      timeout: opts.claudeTimeout ? opts.claudeTimeout * 1000 : undefined,
+    });
+    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "sonnet");
+  }
+
+  if (type === "codex") {
+    const resolvedModel = opts.codexModel ?? opts.model;
+    const runtime = new CodexCLIRuntime(
+      new CodexCLIConfig({
+        model: resolvedModel,
+        approvalMode: opts.codexApprovalMode,
+        timeout: opts.codexTimeout,
+        workspace: opts.codexWorkspace,
+        quiet: opts.codexQuiet,
+      }),
+    );
+    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "o4-mini");
+  }
+
   if (type === "pi") {
     const resolvedModel = opts.model ?? opts.piModel;
-    const runtime = new PiCLIRuntime(new PiCLIConfig({
-      piCommand: opts.piCommand,
-      timeout: opts.piTimeout,
-      workspace: opts.piWorkspace,
-      model: resolvedModel,
-    }));
+    const runtime = new PiCLIRuntime(
+      new PiCLIConfig({
+        piCommand: opts.piCommand,
+        timeout: opts.piTimeout,
+        workspace: opts.piWorkspace,
+        model: resolvedModel,
+      }),
+    );
     return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "pi-default");
   }
 
   if (type === "pi-rpc") {
-    const runtime = new PiRPCRuntime(new PiRPCConfig({
-      endpoint: opts.piRpcEndpoint ?? opts.baseUrl,
-      apiKey: opts.piRpcApiKey ?? opts.apiKey,
-      sessionPersistence: opts.piRpcSessionPersistence,
-    }));
+    const runtime = new PiRPCRuntime(
+      new PiRPCConfig({
+        endpoint: opts.piRpcEndpoint ?? opts.baseUrl,
+        apiKey: opts.piRpcApiKey ?? opts.apiKey,
+        sessionPersistence: opts.piRpcSessionPersistence,
+      }),
+    );
     return new RuntimeBridgeProvider(runtime as never, opts.model ?? "pi-rpc-default");
   }
 

@@ -173,6 +173,24 @@ uv run autoctx solve --description "improve customer-support replies for billing
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
+Run with Claude CLI:
+
+```bash
+cd autocontext
+AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
+AUTOCONTEXT_CLAUDE_MODEL=sonnet \
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+```
+
+Run with Codex CLI:
+
+```bash
+cd autocontext
+AUTOCONTEXT_AGENT_PROVIDER=codex \
+AUTOCONTEXT_CODEX_MODEL=o4-mini \
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+```
+
 Start the API server:
 
 ```bash

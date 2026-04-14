@@ -21,6 +21,8 @@ const EXPECTED_PROVIDER_IDS = [
   "ollama",
   "vllm",
   "hermes",
+  "claude-cli",
+  "codex",
   "pi",
   "pi-rpc",
   "deterministic",
@@ -65,20 +67,36 @@ describe("Provider surface consistency", () => {
   it("new compat providers use provider-specific default models", async () => {
     const { createProvider } = await import("../src/providers/index.js");
 
-    expect(createProvider({ providerType: "gemini", apiKey: "gem-key" }).defaultModel()).toBe("gemini-2.5-pro");
-    expect(createProvider({ providerType: "mistral", apiKey: "mistral-key" }).defaultModel()).toBe("mistral-large-latest");
-    expect(createProvider({ providerType: "groq", apiKey: "groq-key" }).defaultModel()).toBe("llama-3.3-70b-versatile");
-    expect(createProvider({ providerType: "openrouter", apiKey: "openrouter-key" }).defaultModel()).toBe("anthropic/claude-sonnet-4");
-    expect(createProvider({ providerType: "azure-openai", apiKey: "azure-key", baseUrl: "https://azure.example.com/openai/v1" }).defaultModel()).toBe("gpt-4o");
+    expect(createProvider({ providerType: "gemini", apiKey: "gem-key" }).defaultModel()).toBe(
+      "gemini-2.5-pro",
+    );
+    expect(createProvider({ providerType: "mistral", apiKey: "mistral-key" }).defaultModel()).toBe(
+      "mistral-large-latest",
+    );
+    expect(createProvider({ providerType: "groq", apiKey: "groq-key" }).defaultModel()).toBe(
+      "llama-3.3-70b-versatile",
+    );
+    expect(
+      createProvider({ providerType: "openrouter", apiKey: "openrouter-key" }).defaultModel(),
+    ).toBe("anthropic/claude-sonnet-4");
+    expect(
+      createProvider({
+        providerType: "azure-openai",
+        apiKey: "azure-key",
+        baseUrl: "https://azure.example.com/openai/v1",
+      }).defaultModel(),
+    ).toBe("gpt-4o");
   });
 
-  it("KNOWN_PROVIDERS has entries for pi, pi-rpc, hermes", async () => {
+  it("KNOWN_PROVIDERS has entries for subscription-backed CLI runtimes and gateway providers", async () => {
     const { KNOWN_PROVIDERS } = await import("../src/config/credentials.js");
     const ids = KNOWN_PROVIDERS.map((p: { id: string }) => p.id);
 
+    expect(ids).toContain("hermes");
+    expect(ids).toContain("claude-cli");
+    expect(ids).toContain("codex");
     expect(ids).toContain("pi");
     expect(ids).toContain("pi-rpc");
-    expect(ids).toContain("hermes");
   });
 
   it("KNOWN_PROVIDERS has all expected provider entries", async () => {
