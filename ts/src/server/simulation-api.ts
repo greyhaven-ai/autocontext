@@ -42,6 +42,57 @@ export interface SimulationApiRoutes {
   getDashboardData(name: string): SimulationDashboardData | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readJsonRecord(path: string): Record<string, unknown> | null {
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+  return isRecord(parsed) ? parsed : null;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function toNumberRecord(value: unknown): Record<string, number> {
+  const output: Record<string, number> = {};
+  if (!isRecord(value)) {
+    return output;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "number") {
+      output[key] = entry;
+    }
+  }
+  return output;
+}
+
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+function toSimulationCase(
+  value: unknown,
+): { score: number; variables: Record<string, unknown> } | undefined {
+  if (!isRecord(value) || typeof value.score !== "number") {
+    return undefined;
+  }
+  return {
+    score: value.score,
+    variables: toRecord(value.variables),
+  };
+}
+
+function toSweepResults(value: unknown): Array<Record<string, unknown>> | undefined {
+  if (!isRecord(value) || !Array.isArray(value.results)) {
+    return undefined;
+  }
+  return value.results.filter(isRecord);
+}
+
 export function buildSimulationApiRoutes(
   knowledgeRoot: string,
 ): SimulationApiRoutes {
@@ -75,10 +126,9 @@ export function buildSimulationApiRoutes(
           const reportPath = join(dir, "report.json");
           if (!existsSync(reportPath)) continue;
           try {
-            const data = JSON.parse(
-              readFileSync(reportPath, "utf-8"),
-            ) as Record<string, unknown>;
-            const summary = data.summary as Record<string, unknown> | undefined;
+            const data = readJsonRecord(reportPath);
+            if (!data) continue;
+            const summary = toRecord(data.summary);
             entries.push({
               name: String(data.name ?? name),
               family: String(data.family ?? "simulation"),
@@ -100,10 +150,7 @@ export function buildSimulationApiRoutes(
       if (!reportPath) return null;
       if (!existsSync(reportPath)) return null;
       try {
-        return JSON.parse(readFileSync(reportPath, "utf-8")) as Record<
-          string,
-          unknown
-        >;
+        return readJsonRecord(reportPath);
       } catch {
         return null;
       }
@@ -113,13 +160,11 @@ export function buildSimulationApiRoutes(
       const raw = this.getSimulation(name);
       if (!raw) return null;
 
-      const summary = (raw.summary ?? {}) as Record<string, unknown>;
-      const sweep = raw.sweep as
-        | { results?: Array<Record<string, unknown>> }
-        | undefined;
+      const summary = toRecord(raw.summary);
+      const sweepResults = toSweepResults(raw.sweep);
 
-      const sweepChart = sweep?.results?.map((r) => ({
-        variables: (r.variables ?? {}) as Record<string, unknown>,
+      const sweepChart = sweepResults?.map((r) => ({
+        variables: toRecord(r.variables),
         score: Number(r.score ?? 0),
         reasoning: String(r.reasoning ?? ""),
       }));
@@ -130,20 +175,13 @@ export function buildSimulationApiRoutes(
         status: String(raw.status ?? "unknown"),
         overallScore: Number(summary.score ?? 0),
         reasoning: String(summary.reasoning ?? ""),
-        dimensionScores: (summary.dimensionScores ?? {}) as Record<
-          string,
-          number
-        >,
-        sensitivityRanking: (summary.mostSensitiveVariables ?? []) as string[],
-        bestCase: summary.bestCase as
-          | { score: number; variables: Record<string, unknown> }
-          | undefined,
-        worstCase: summary.worstCase as
-          | { score: number; variables: Record<string, unknown> }
-          | undefined,
+        dimensionScores: toNumberRecord(summary.dimensionScores),
+        sensitivityRanking: toStringArray(summary.mostSensitiveVariables),
+        bestCase: toSimulationCase(summary.bestCase),
+        worstCase: toSimulationCase(summary.worstCase),
         sweepChart,
-        assumptions: (raw.assumptions ?? []) as string[],
-        warnings: (raw.warnings ?? []) as string[],
+        assumptions: toStringArray(raw.assumptions),
+        warnings: toStringArray(raw.warnings),
       };
     },
   };

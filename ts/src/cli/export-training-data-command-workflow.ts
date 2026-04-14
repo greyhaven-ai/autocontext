@@ -1,12 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import type {
-  ExportOpts,
-  ExportProgress,
-  TrainingExportRecord,
-} from "../training/export-types.js";
-
 export const EXPORT_TRAINING_DATA_HELP_TEXT = [
   "autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only]",
   "",
@@ -33,9 +27,14 @@ export interface ExportTrainingDataCommandPlan {
   keptOnly: boolean;
 }
 
-export interface ExportTrainingDataCommandResult {
-  stdout: string;
-  stderrLines: string[];
+export interface ExportTrainingDataProgress {
+  phase: "start" | "run" | "generation";
+  totalRuns: number;
+  runIndex: number;
+  runId: string;
+  scenario: string;
+  generationIndex?: number;
+  recordsEmitted: number;
 }
 
 export function planExportTrainingDataCommand(
@@ -52,15 +51,15 @@ export function planExportTrainingDataCommand(
   return {
     runId: values["run-id"],
     scenario: values.scenario,
-    allRuns: Boolean(values["all-runs"]),
+    allRuns: !!values["all-runs"],
     output: values.output,
-    includeMatches: Boolean(values["include-matches"]),
-    keptOnly: Boolean(values["kept-only"]),
+    includeMatches: !!values["include-matches"],
+    keptOnly: !!values["kept-only"],
   };
 }
 
 export function renderExportTrainingDataProgress(
-  progress: ExportProgress,
+  progress: ExportTrainingDataProgress,
 ): string | null {
   if (progress.phase === "start") {
     return `Scanning ${progress.totalRuns} run(s)...`;
@@ -71,23 +70,33 @@ export function renderExportTrainingDataProgress(
   return null;
 }
 
-function writeOutputFileWithParents(path: string, contents: string): void {
+function writeOutputFileWithParents(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, contents, "utf-8");
+  writeFileSync(path, content, "utf-8");
 }
 
-export function executeExportTrainingDataCommandWorkflow<Store, Artifacts>(opts: {
+export function executeExportTrainingDataCommandWorkflow<
+  TStore,
+  TArtifacts,
+  TRecord,
+>(opts: {
   plan: ExportTrainingDataCommandPlan;
-  store: Store;
-  artifacts: Artifacts;
+  store: TStore;
+  artifacts: TArtifacts;
   exportTrainingData: (
-    store: Store,
-    artifacts: Artifacts,
-    opts: ExportOpts,
-  ) => TrainingExportRecord[];
-  writeOutputFile?: (path: string, contents: string) => void;
-}): ExportTrainingDataCommandResult {
-  const stderrLines: string[] = [
+    store: TStore,
+    artifacts: TArtifacts,
+    request: {
+      runId?: string;
+      scenario?: string;
+      includeMatches: boolean;
+      keptOnly: boolean;
+      onProgress: (progress: ExportTrainingDataProgress) => void;
+    },
+  ) => TRecord[];
+  writeOutputFile?: (path: string, content: string) => void;
+}): { stdout: string; stderrLines: string[] } {
+  const stderrLines = [
     `Exporting training data${opts.plan.runId ? ` for run ${opts.plan.runId}` : ` for scenario ${opts.plan.scenario}`}...`,
   ];
 
@@ -97,9 +106,9 @@ export function executeExportTrainingDataCommandWorkflow<Store, Artifacts>(opts:
     includeMatches: opts.plan.includeMatches,
     keptOnly: opts.plan.keptOnly,
     onProgress: (progress) => {
-      const rendered = renderExportTrainingDataProgress(progress);
-      if (rendered) {
-        stderrLines.push(rendered);
+      const line = renderExportTrainingDataProgress(progress);
+      if (line) {
+        stderrLines.push(line);
       }
     },
   });

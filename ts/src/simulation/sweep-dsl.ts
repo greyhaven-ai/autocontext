@@ -9,6 +9,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { normalizeSimulationSweepValue } from "./score-normalization.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -142,7 +143,7 @@ function parseLinearRange(name: string, valuePart: string): SweepDimension | nul
 
   const values: number[] = [];
   for (let v = min; v <= max + step / 2; v += step) {
-    values.push(Math.round(v * 10000) / 10000);
+    values.push(normalizeSimulationSweepValue(v));
   }
   return { name, values, scale: "linear" };
 }
@@ -161,7 +162,7 @@ function parseLogRange(name: string, valuePart: string): SweepDimension | null {
   const values: number[] = [];
   for (let i = 0; i < steps; i++) {
     const logVal = logMin + (logMax - logMin) * i / (steps - 1);
-    values.push(Math.round(Math.pow(10, logVal) * 10000) / 10000);
+    values.push(normalizeSimulationSweepValue(Math.pow(10, logVal)));
   }
   return { name, values, scale: "log" };
 }

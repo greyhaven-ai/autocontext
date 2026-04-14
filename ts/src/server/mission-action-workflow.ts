@@ -1,43 +1,52 @@
+import {
+  buildMissionStatusPayload,
+  runMissionLoop,
+  writeMissionCheckpoint,
+} from "../mission/control-plane.js";
 import type { LLMProvider } from "../types/index.js";
-import type { MissionManager } from "../mission/manager.js";
 
-export type MissionAction = "run" | "pause" | "resume" | "cancel";
+export type MissionActionName = "run" | "pause" | "resume" | "cancel";
 
-export interface MissionActionResponse {
-  status: number;
-  body: unknown;
+export interface MissionActionRecord {
+  id: string;
+  metadata?: Record<string, unknown>;
 }
 
-type MissionManagerLike = {
-  get: (missionId: string) => { id?: string; metadata?: Record<string, unknown> } | null;
-  pause: (missionId: string) => void;
-  resume: (missionId: string) => void;
-  cancel: (missionId: string) => void;
-};
+export interface MissionActionManager {
+  get(missionId: string): MissionActionRecord | null;
+  pause(missionId: string): void;
+  resume(missionId: string): void;
+  cancel(missionId: string): void;
+}
+
+export interface MissionActionRunManager {
+  getRunsRoot(): string;
+  getKnowledgeRoot(): string;
+  buildMissionProvider(): LLMProvider;
+}
+
+export interface MissionActionWorkflowDeps {
+  runMissionLoop: typeof runMissionLoop;
+  buildMissionStatusPayload: typeof buildMissionStatusPayload;
+  writeMissionCheckpoint: typeof writeMissionCheckpoint;
+}
 
 export function buildMissionRunRequest(opts: {
   body: Record<string, unknown>;
-  mission: { metadata?: Record<string, unknown> };
+  mission: Pick<MissionActionRecord, "metadata">;
   buildMissionProvider: () => LLMProvider;
 }): {
   maxIterations: number;
-  stepDescription?: string;
-  provider?: LLMProvider;
+  stepDescription: string | undefined;
+  provider: LLMProvider | undefined;
 } {
-  const rawMaxIterations = opts.body.maxIterations;
-  const parsedMaxIterations = typeof rawMaxIterations === "number"
-    ? rawMaxIterations
-    : Number.parseInt(String(rawMaxIterations ?? "1"), 10);
+  const maxIterations = typeof opts.body.maxIterations === "number"
+    ? opts.body.maxIterations
+    : Number.parseInt(String(opts.body.maxIterations ?? "1"), 10);
   const missionType = opts.mission.metadata?.missionType;
-  const maxIterations = Number.isInteger(parsedMaxIterations) && parsedMaxIterations > 0
-    ? parsedMaxIterations
-    : 1;
-
   return {
-    maxIterations,
-    stepDescription: typeof opts.body.stepDescription === "string"
-      ? opts.body.stepDescription
-      : undefined,
+    maxIterations: Number.isInteger(maxIterations) && maxIterations > 0 ? maxIterations : 1,
+    stepDescription: typeof opts.body.stepDescription === "string" ? opts.body.stepDescription : undefined,
     provider: missionType !== "code" && missionType !== "proof"
       ? opts.buildMissionProvider()
       : undefined,
@@ -45,38 +54,13 @@ export function buildMissionRunRequest(opts: {
 }
 
 export async function executeMissionActionRequest(opts: {
-  action: MissionAction;
+  action: MissionActionName;
   missionId: string;
   body: Record<string, unknown>;
-  missionManager: MissionManagerLike;
-  runManager: {
-    getRunsRoot: () => string;
-    getKnowledgeRoot: () => string;
-    buildMissionProvider: () => LLMProvider;
-  };
-  deps?: {
-    runMissionLoop?: (
-      missionManager: unknown,
-      missionId: string,
-      runsRoot: string,
-      knowledgeRoot: string,
-      request: {
-        maxIterations: number;
-        stepDescription?: string;
-        provider?: LLMProvider;
-      },
-    ) => Promise<Record<string, unknown>>;
-    buildMissionStatusPayload?: (
-      missionManager: unknown,
-      missionId: string,
-    ) => Record<string, unknown>;
-    writeMissionCheckpoint?: (
-      missionManager: unknown,
-      missionId: string,
-      runsRoot: string,
-    ) => string;
-  };
-}): Promise<MissionActionResponse> {
+  missionManager: MissionActionManager;
+  runManager: MissionActionRunManager;
+  deps?: Partial<MissionActionWorkflowDeps>;
+}): Promise<{ status: number; body: Record<string, unknown> }> {
   const mission = opts.missionManager.get(opts.missionId);
   if (!mission) {
     return {
@@ -85,56 +69,48 @@ export async function executeMissionActionRequest(opts: {
     };
   }
 
+  const deps: MissionActionWorkflowDeps = {
+    runMissionLoop: opts.deps?.runMissionLoop ?? runMissionLoop,
+    buildMissionStatusPayload: opts.deps?.buildMissionStatusPayload ?? buildMissionStatusPayload,
+    writeMissionCheckpoint: opts.deps?.writeMissionCheckpoint ?? writeMissionCheckpoint,
+  };
+
   if (opts.action === "run") {
-    const { runMissionLoop } = await import("../mission/control-plane.js");
-    const executeRunMissionLoop = opts.deps?.runMissionLoop ?? (
-      async (manager, missionId, runsRoot, knowledgeRoot, request) => runMissionLoop(
-        manager as MissionManager,
-        missionId,
-        runsRoot,
-        knowledgeRoot,
-        request,
-      )
-    );
+    const runRequest = buildMissionRunRequest({
+      body: opts.body,
+      mission,
+      buildMissionProvider: () => opts.runManager.buildMissionProvider(),
+    });
     return {
       status: 200,
-      body: await executeRunMissionLoop(
-        opts.missionManager,
+      body: await deps.runMissionLoop(
+        opts.missionManager as never,
         opts.missionId,
         opts.runManager.getRunsRoot(),
         opts.runManager.getKnowledgeRoot(),
-        buildMissionRunRequest({
-          body: opts.body,
-          mission,
-          buildMissionProvider: opts.runManager.buildMissionProvider,
-        }),
+        runRequest,
       ),
     };
   }
 
-  opts.missionManager[opts.action](opts.missionId);
-  const { buildMissionStatusPayload, writeMissionCheckpoint } =
-    await import("../mission/control-plane.js");
-  const buildPayload = opts.deps?.buildMissionStatusPayload ?? (
-    (manager, missionId) => buildMissionStatusPayload(
-      manager as MissionManager,
-      missionId,
-    )
-  );
-  const writeCheckpoint = opts.deps?.writeMissionCheckpoint ?? (
-    (manager, missionId, runsRoot) => writeMissionCheckpoint(
-      manager as MissionManager,
-      missionId,
-      runsRoot,
-    )
-  );
-  const runsRoot = opts.runManager.getRunsRoot();
+  if (opts.action === "pause") {
+    opts.missionManager.pause(mission.id);
+  } else if (opts.action === "resume") {
+    opts.missionManager.resume(mission.id);
+  } else {
+    opts.missionManager.cancel(mission.id);
+  }
 
+  const checkpointPath = deps.writeMissionCheckpoint(
+    opts.missionManager as never,
+    mission.id,
+    opts.runManager.getRunsRoot(),
+  );
   return {
     status: 200,
     body: {
-      ...buildPayload(opts.missionManager, opts.missionId),
-      checkpointPath: writeCheckpoint(opts.missionManager, opts.missionId, runsRoot),
+      ...deps.buildMissionStatusPayload(opts.missionManager as never, mission.id),
+      checkpointPath,
     },
   };
 }

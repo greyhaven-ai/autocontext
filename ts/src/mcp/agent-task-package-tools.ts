@@ -1,6 +1,6 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { join } from "node:path";
 import { z } from "zod";
+
 import { AgentTaskStore } from "../scenarios/agent-task-store.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import {
@@ -11,44 +11,49 @@ import {
 import type { SQLiteStore } from "../storage/index.js";
 import type { LLMProvider } from "../types/index.js";
 
-interface AgentTaskPackageToolResult {
-  [key: string]: unknown;
-  content: Array<{ type: "text"; text: string }>;
+interface JsonToolResponse {
+  content: Array<{
+    type: "text";
+    text: string;
+  }>;
 }
 
-interface AgentTaskPackageToolServer {
-  tool(
-    name: string,
-    description: string,
-    schema: Record<string, z.ZodTypeAny>,
-    handler: (args: Record<string, unknown>) =>
-      | Promise<AgentTaskPackageToolResult>
-      | AgentTaskPackageToolResult,
-  ): unknown;
-}
-
-type AgentTaskPackageToolRegistrar = McpServer | AgentTaskPackageToolServer;
-
-interface AgentTaskPackageToolInternals {
-  createAgentTaskStore(root: string): AgentTaskStore;
-  createArtifactStore(opts: { runsRoot: string; knowledgeRoot: string }): ArtifactStore;
-  exportStrategyPackage: typeof exportStrategyPackage;
-  importStrategyPackage: typeof importStrategyPackage;
-}
-
-const defaultInternals: AgentTaskPackageToolInternals = {
-  createAgentTaskStore: (root) => new AgentTaskStore(root),
-  createArtifactStore: (opts) => new ArtifactStore(opts),
-  exportStrategyPackage,
-  importStrategyPackage,
+type McpToolRegistrar = {
+  tool: (...args: any[]) => unknown;
 };
 
-function jsonContent(payload: unknown): AgentTaskPackageToolResult {
+type AgentTaskStoreLike = Pick<AgentTaskStore, "create" | "list" | "get">;
+type ArtifactStoreLike = ArtifactStore;
+
+interface AgentTaskPackageInternals {
+  createAgentTaskStore(dir: string): AgentTaskStoreLike;
+  createArtifactStore(opts: { runsRoot: string; knowledgeRoot: string }): ArtifactStoreLike;
+  exportStrategyPackage(opts: {
+    scenarioName: string;
+    artifacts: ArtifactStore;
+    store: SQLiteStore;
+  }): Record<string, unknown>;
+  importStrategyPackage(opts: {
+    rawPackage: Record<string, unknown>;
+    artifacts: ArtifactStore;
+    skillsRoot: string;
+    conflictPolicy?: ConflictPolicy;
+  }): object;
+}
+
+const defaultInternals: AgentTaskPackageInternals = {
+  createAgentTaskStore: (dir) => new AgentTaskStore(dir),
+  createArtifactStore: (opts) => new ArtifactStore(opts),
+  exportStrategyPackage: (opts) => exportStrategyPackage(opts),
+  importStrategyPackage: (opts) => importStrategyPackage(opts),
+};
+
+function jsonText(payload: unknown, indent?: number): JsonToolResponse {
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify(payload, null, 2),
+        text: JSON.stringify(payload, null, indent),
       },
     ],
   };
@@ -65,42 +70,29 @@ function normalizeConflictPolicy(value: unknown): ConflictPolicy {
   return "merge";
 }
 
-function registerTool(
-  server: AgentTaskPackageToolRegistrar,
-  name: string,
-  description: string,
-  schema: Record<string, z.ZodTypeAny>,
-  handler: (args: Record<string, unknown>) =>
-    | Promise<AgentTaskPackageToolResult>
-    | AgentTaskPackageToolResult,
-): void {
-  if (server instanceof McpServer) {
-    server.tool(name, description, schema, handler);
-    return;
-  }
-  server.tool(name, description, schema, handler);
-}
-
-export function buildAgentTaskNotFoundPayload(): Record<string, string> {
+export function buildAgentTaskNotFoundPayload(): { error: string } {
   return { error: "Task not found" };
 }
 
 export function registerAgentTaskPackageTools(
-  server: AgentTaskPackageToolRegistrar,
+  server: McpToolRegistrar,
   opts: {
-    provider: LLMProvider;
+    provider: Pick<LLMProvider, "complete">;
     store: SQLiteStore;
     runsRoot: string;
     knowledgeRoot: string;
     skillsRoot: string;
-    internals?: Partial<AgentTaskPackageToolInternals>;
+    internals?: Partial<AgentTaskPackageInternals>;
   },
 ): void {
-  const internals = { ...defaultInternals, ...opts.internals };
-  const taskStoreRoot = join(opts.knowledgeRoot, "_agent_tasks");
+  const internals: AgentTaskPackageInternals = {
+    ...defaultInternals,
+    ...opts.internals,
+  };
 
-  registerTool(
-    server,
+  const taskStoreDir = join(opts.knowledgeRoot, "_agent_tasks");
+
+  server.tool(
     "create_agent_task",
     "Create a named agent task spec for evaluation",
     {
@@ -109,8 +101,8 @@ export function registerAgentTaskPackageTools(
       rubric: z.string(),
       referenceContext: z.string().optional(),
     },
-    async (args) => {
-      const taskStore = internals.createAgentTaskStore(taskStoreRoot);
+    async (args: Record<string, unknown>) => {
+      const taskStore = internals.createAgentTaskStore(taskStoreDir);
       taskStore.create({
         name: String(args.name),
         taskPrompt: String(args.taskPrompt),
@@ -119,79 +111,83 @@ export function registerAgentTaskPackageTools(
           ? args.referenceContext
           : undefined,
       });
-      return jsonContent({ name: args.name, created: true });
+      return jsonText({ name: args.name, created: true });
     },
   );
 
-  registerTool(
-    server,
+  server.tool(
     "list_agent_tasks",
     "List created agent task specs",
     {},
-    async () => jsonContent(internals.createAgentTaskStore(taskStoreRoot).list()),
-  );
-
-  registerTool(
-    server,
-    "get_agent_task",
-    "Get a specific agent task spec by name",
-    { name: z.string() },
-    async (args) => {
-      const task = internals.createAgentTaskStore(taskStoreRoot).get(String(args.name));
-      return jsonContent(task ?? buildAgentTaskNotFoundPayload());
+    async () => {
+      const taskStore = internals.createAgentTaskStore(taskStoreDir);
+      return jsonText(taskStore.list(), 2);
     },
   );
 
-  registerTool(
-    server,
+  server.tool(
+    "get_agent_task",
+    "Get a specific agent task spec by name",
+    { name: z.string() },
+    async (args: Record<string, unknown>) => {
+      const taskStore = internals.createAgentTaskStore(taskStoreDir);
+      const task = taskStore.get(String(args.name));
+      return jsonText(task ?? buildAgentTaskNotFoundPayload(), task ? 2 : undefined);
+    },
+  );
+
+  server.tool(
     "generate_output",
     "Generate an initial agent output for a task prompt",
     { taskPrompt: z.string(), systemPrompt: z.string().default("") },
-    async (args) => {
+    async (args: Record<string, unknown>) => {
       const result = await opts.provider.complete({
         systemPrompt: String(args.systemPrompt ?? ""),
         userPrompt: String(args.taskPrompt),
       });
-      return jsonContent({ output: result.text, model: result.model });
+      return jsonText({ output: result.text, model: result.model });
     },
   );
 
-  registerTool(
-    server,
+  server.tool(
     "export_package",
     "Export a versioned strategy package for a scenario",
     { scenario: z.string() },
-    async (args) => {
+    async (args: Record<string, unknown>) => {
       const artifacts = internals.createArtifactStore({
         runsRoot: opts.runsRoot,
         knowledgeRoot: opts.knowledgeRoot,
       });
-      return jsonContent(internals.exportStrategyPackage({
-        scenarioName: String(args.scenario),
-        artifacts,
-        store: opts.store,
-      }));
+      return jsonText(
+        internals.exportStrategyPackage({
+          scenarioName: String(args.scenario),
+          artifacts,
+          store: opts.store,
+        }),
+        2,
+      );
     },
   );
 
-  registerTool(
-    server,
+  server.tool(
     "import_package",
     "Import a strategy package into scenario knowledge",
     { packageData: z.string(), conflictPolicy: z.string().default("merge") },
-    async (args) => {
+    async (args: Record<string, unknown>) => {
       const artifacts = internals.createArtifactStore({
         runsRoot: opts.runsRoot,
         knowledgeRoot: opts.knowledgeRoot,
       });
       const parsedPackage: unknown = JSON.parse(String(args.packageData));
-      const rawPackage = isRecord(parsedPackage) ? parsedPackage : {};
-      return jsonContent(internals.importStrategyPackage({
-        rawPackage,
-        artifacts,
-        skillsRoot: opts.skillsRoot,
-        conflictPolicy: normalizeConflictPolicy(args.conflictPolicy),
-      }));
+      return jsonText(
+        internals.importStrategyPackage({
+          rawPackage: isRecord(parsedPackage) ? parsedPackage : {},
+          artifacts,
+          skillsRoot: opts.skillsRoot,
+          conflictPolicy: normalizeConflictPolicy(args.conflictPolicy),
+        }),
+        2,
+      );
     },
   );
 }

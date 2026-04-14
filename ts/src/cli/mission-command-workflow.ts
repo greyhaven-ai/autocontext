@@ -1,6 +1,3 @@
-export const MISSION_CREATE_USAGE =
-  "Usage: autoctx mission create --name <name> --goal <goal> [--type code --repo-path <path> --test-command <cmd> [--lint-command <cmd>] [--build-command <cmd>]] [--max-steps N]";
-
 export const MISSION_HELP_TEXT = `autoctx mission — Manage verifier-driven missions
 
 Subcommands:
@@ -34,35 +31,10 @@ export interface MissionCreateValues {
   "build-command"?: string;
 }
 
-export type PlannedMissionCreate =
-  | {
-      missionType: "generic";
-      name: string;
-      goal: string;
-      budget?: { maxSteps: number };
-    }
-  | {
-      missionType: "code";
-      name: string;
-      goal: string;
-      budget?: { maxSteps: number };
-      repoPath: string;
-      testCommand: string;
-      lintCommand?: string;
-      buildCommand?: string;
-    };
-
 export interface MissionRunValues {
   id?: string;
   "max-iterations"?: string;
   "step-description"?: string;
-}
-
-export interface PlannedMissionRun {
-  id: string;
-  maxIterations: number;
-  stepDescription?: string;
-  needsAdaptivePlanning: boolean;
 }
 
 function parseOptionalPositiveInteger(raw: string | undefined, label: string): number | undefined {
@@ -84,52 +56,6 @@ function parsePositiveIntegerWithDefault(
   return parseOptionalPositiveInteger(raw, label) ?? fallback;
 }
 
-function shouldCreateCodeMission(values: MissionCreateValues): boolean {
-  return Boolean(
-    values.type === "code" ||
-      values["repo-path"] ||
-      values["test-command"] ||
-      values["lint-command"] ||
-      values["build-command"],
-  );
-}
-
-export function planMissionCreate(
-  values: MissionCreateValues,
-  resolvePath: (value: string) => string,
-): PlannedMissionCreate {
-  if (!values.name || !values.goal) {
-    throw new Error(MISSION_CREATE_USAGE);
-  }
-
-  const budgetMaxSteps = parseOptionalPositiveInteger(values["max-steps"], "--max-steps");
-  const budget = budgetMaxSteps ? { maxSteps: budgetMaxSteps } : undefined;
-
-  if (!shouldCreateCodeMission(values)) {
-    return {
-      missionType: "generic",
-      name: values.name,
-      goal: values.goal,
-      ...(budget ? { budget } : {}),
-    };
-  }
-
-  if (!values["repo-path"] || !values["test-command"]) {
-    throw new Error("Code missions require --repo-path and --test-command.");
-  }
-
-  return {
-    missionType: "code",
-    name: values.name,
-    goal: values.goal,
-    ...(budget ? { budget } : {}),
-    repoPath: resolvePath(values["repo-path"]),
-    testCommand: values["test-command"],
-    ...(values["lint-command"] ? { lintCommand: values["lint-command"] } : {}),
-    ...(values["build-command"] ? { buildCommand: values["build-command"] } : {}),
-  };
-}
-
 export function getMissionIdOrThrow(
   values: { id?: string },
   usage: string,
@@ -140,10 +66,76 @@ export function getMissionIdOrThrow(
   return values.id;
 }
 
+export function planMissionCreate(
+  values: MissionCreateValues,
+  resolvePath: (value: string) => string,
+):
+  | {
+      missionType: "generic";
+      name: string;
+      goal: string;
+      budget?: { maxSteps: number };
+    }
+  | {
+      missionType: "code";
+      name: string;
+      goal: string;
+      budget?: { maxSteps: number };
+      repoPath: string;
+      testCommand: string;
+      lintCommand?: string;
+      buildCommand?: string;
+    } {
+  if (!values.name || !values.goal) {
+    throw new Error(
+      "Usage: autoctx mission create --name <name> --goal <goal> [--type code --repo-path <path> --test-command <cmd> [--lint-command <cmd>] [--build-command <cmd>]] [--max-steps N]",
+    );
+  }
+
+  const budgetMaxSteps = parseOptionalPositiveInteger(values["max-steps"], "--max-steps");
+  const budget = budgetMaxSteps ? { maxSteps: budgetMaxSteps } : undefined;
+  const missionType =
+    values.type === "code" ||
+    values["repo-path"] ||
+    values["test-command"] ||
+    values["lint-command"] ||
+    values["build-command"]
+      ? "code"
+      : "generic";
+
+  if (missionType === "code") {
+    if (!values["repo-path"] || !values["test-command"]) {
+      throw new Error("Code missions require --repo-path and --test-command.");
+    }
+    return {
+      missionType,
+      name: values.name,
+      goal: values.goal,
+      ...(budget ? { budget } : {}),
+      repoPath: resolvePath(values["repo-path"]),
+      testCommand: values["test-command"],
+      ...(values["lint-command"] ? { lintCommand: values["lint-command"] } : {}),
+      ...(values["build-command"] ? { buildCommand: values["build-command"] } : {}),
+    };
+  }
+
+  return {
+    missionType,
+    name: values.name,
+    goal: values.goal,
+    ...(budget ? { budget } : {}),
+  };
+}
+
 export function planMissionRun(
   values: MissionRunValues,
   mission: { metadata?: Record<string, unknown> },
-): PlannedMissionRun {
+): {
+  id: string;
+  maxIterations: number;
+  stepDescription?: string;
+  needsAdaptivePlanning: boolean;
+} {
   const id = getMissionIdOrThrow(
     values,
     "Usage: autoctx mission run --id <mission-id> [--max-iterations N] [--step-description <text>]",
@@ -161,14 +153,16 @@ export function planMissionRun(
   };
 }
 
-export function planMissionList(values: { status?: string }): { status?: string } {
-  return values.status ? { status: values.status } : { status: undefined };
+export function planMissionList(values: { status?: string }): {
+  status?: string;
+} {
+  return { status: values.status };
 }
 
-export function buildMissionCheckpointPayload(
-  payload: Record<string, unknown>,
+export function buildMissionCheckpointPayload<TPayload extends Record<string, unknown>>(
+  payload: TPayload,
   checkpointPath: string,
-): Record<string, unknown> {
+): TPayload & { checkpointPath: string } {
   return {
     ...payload,
     checkpointPath,

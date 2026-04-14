@@ -3,6 +3,8 @@
  * Mirrors Python's harness/pipeline/gate.py and trend_gate.py.
  */
 
+import { normalizeDecisionMetric } from "../analytics/number-utils.js";
+
 export interface GateDecision {
   decision: "advance" | "retry" | "rollback";
   delta: number;
@@ -28,7 +30,7 @@ export class BackpressureGate {
     retryCount: number,
     maxRetries: number,
   ): GateDecision {
-    const delta = Number((currentBest - previousBest).toFixed(6));
+    const delta = normalizeDecisionMetric(currentBest - previousBest);
 
     if (delta >= this.#minDelta) {
       return {
@@ -122,7 +124,7 @@ export class TrendAwareGate {
       }
     }
 
-    const delta = Number((currentBest - previousBest).toFixed(6));
+    const delta = normalizeDecisionMetric(currentBest - previousBest);
     const metadata = customMetrics ?? {};
 
     if (delta >= effectiveDelta) {

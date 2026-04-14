@@ -96,6 +96,12 @@ describe("linear sweeps (regression)", () => {
     expect(typeof dims[0].values[0]).toBe("number");
   });
 
+  it("normalizes repeating linear step values to stable four-decimal sweep cells", () => {
+    const dims = parseSweepSpec("threshold=0:1:0.3333333333");
+    expect(dims).toHaveLength(1);
+    expect(dims[0].values).toEqual([0, 0.3333, 0.6667, 1]);
+  });
+
   it("parses multiple dimensions", () => {
     const dims = parseSweepSpec("threshold=0.4:0.9:0.1,budget=50:200:50");
     expect(dims.length).toBe(2);

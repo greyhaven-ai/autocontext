@@ -26,7 +26,7 @@ export interface ExportCommandPlan {
 
 export async function planExportCommand(
   values: ExportCommandValues,
-  resolveScenarioOption: (explicit?: string) => Promise<string | undefined>,
+  resolveScenarioOption: (scenario: string | undefined) => Promise<string | undefined>,
 ): Promise<ExportCommandPlan> {
   const scenarioName = await resolveScenarioOption(values.scenario);
   if (!scenarioName) {
@@ -35,41 +35,47 @@ export async function planExportCommand(
   return {
     scenarioName,
     output: values.output,
-    json: Boolean(values.json),
+    json: !!values.json,
   };
 }
 
-function writeOutputFileWithParents(path: string, contents: string): void {
+function writeOutputFileWithParents(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, contents, "utf-8");
+  writeFileSync(path, content, "utf-8");
 }
 
-export function executeExportCommandWorkflow<Store, Artifacts>(opts: {
+export function executeExportCommandWorkflow<
+  TResult extends Record<string, unknown>,
+  TArtifacts,
+  TStore,
+>(opts: {
   scenarioName: string;
   output?: string;
   json?: boolean;
-  store: Store;
-  artifacts: Artifacts;
-  exportStrategyPackage: (request: {
+  exportStrategyPackage: (args: {
     scenarioName: string;
-    artifacts: Artifacts;
-    store: Store;
-  }) => unknown;
-  writeOutputFile?: (path: string, contents: string) => void;
+    artifacts: TArtifacts;
+    store: TStore;
+  }) => TResult;
+  artifacts: TArtifacts;
+  store: TStore;
+  writeOutputFile?: (path: string, content: string) => void;
 }): string {
   const result = opts.exportStrategyPackage({
     scenarioName: opts.scenarioName,
     artifacts: opts.artifacts,
     store: opts.store,
   });
+  const serialized = `${JSON.stringify(result, null, 2)}\n`;
 
   if (!opts.output) {
-    return JSON.stringify(result, null, 2);
+    return serialized.trimEnd();
   }
 
   const writeOutputFile = opts.writeOutputFile ?? writeOutputFileWithParents;
-  writeOutputFile(opts.output, `${JSON.stringify(result, null, 2)}\n`);
-  return opts.json
-    ? JSON.stringify({ output: opts.output })
-    : `Exported to ${opts.output}`;
+  writeOutputFile(opts.output, serialized);
+  if (opts.json) {
+    return JSON.stringify({ output: opts.output });
+  }
+  return `Exported to ${opts.output}`;
 }

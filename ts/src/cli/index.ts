@@ -16,41 +16,6 @@ import { parseArgs } from "node:util";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emitEngineResult } from "./emit-engine-result.js";
-import {
-  EXPORT_HELP_TEXT,
-  executeExportCommandWorkflow,
-  planExportCommand,
-} from "./export-command-workflow.js";
-import type { ExportCommandPlan } from "./export-command-workflow.js";
-import {
-  EXPORT_TRAINING_DATA_HELP_TEXT,
-  executeExportTrainingDataCommandWorkflow,
-  planExportTrainingDataCommand,
-} from "./export-training-data-command-workflow.js";
-import type { ExportTrainingDataCommandPlan } from "./export-training-data-command-workflow.js";
-import {
-  NEW_SCENARIO_HELP_TEXT,
-  ensureNewScenarioDescription,
-  executeCreatedScenarioMaterialization,
-  executeImportedScenarioMaterialization,
-  executeTemplateScaffoldWorkflow,
-  renderTemplateList,
-} from "./new-scenario-command-workflow.js";
-import {
-  MISSION_HELP_TEXT,
-  getMissionIdOrThrow,
-  planMissionCreate,
-  planMissionList,
-  planMissionRun,
-} from "./mission-command-workflow.js";
-import {
-  executeMissionArtifactsCommand,
-  executeMissionCreateCommand,
-  executeMissionLifecycleCommand,
-  executeMissionListCommand,
-  executeMissionRunCommand,
-  executeMissionStatusCommand,
-} from "./mission-command-execution.js";
 import type { CampaignStatus } from "../mission/campaign.js";
 
 function getMigrationsDir(): string {
@@ -236,6 +201,10 @@ function formatFatalCliError(err: unknown): string {
     return `Error: ${err.message}`;
   }
   return String(err);
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function parsePositiveInteger(raw: string | undefined, label: string): number {
@@ -506,35 +475,17 @@ async function cmdRun(dbPath: string): Promise<void> {
     },
   });
 
-  const scenarioName = await resolveScenarioOption(values.scenario);
+  const {
+    executeRunCommandWorkflow,
+    planRunCommand,
+    renderRunResult,
+    resolveRunScenario,
+    RUN_HELP_TEXT,
+  } = await import("./run-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx run — Run the generation loop for a scenario
-
-Usage: autoctx run [options]
-
-Options:
-  --scenario <name>    Scenario to run (current built-in: grid_ctf)
-  --gens N             Number of generations to run (default: from config or 1)
-  --run-id <id>        Custom run identifier (default: auto-generated)
-  --provider <type>    LLM provider: anthropic, openai, ollama, deterministic, etc.
-  --matches N          Matches per generation (default: 3)
-  --json               Output results as JSON
-
-If project config (.autoctx.json) exists, --scenario and --gens default from it.
-
-Examples:
-  autoctx run --scenario grid_ctf --provider deterministic --gens 3
-  autoctx run --scenario grid_ctf --gens 5 --matches 5
-  autoctx run                          # uses defaults from .autoctx.json
-
-See also: list, replay, export, benchmark`);
+    console.log(RUN_HELP_TEXT);
     process.exit(0);
-  }
-  if (!scenarioName) {
-    console.error(
-      "Error: no scenario configured. Run `autoctx init` or pass --scenario <name>.",
-    );
-    process.exit(1);
   }
 
   const { SQLiteStore } = await import("../storage/index.js");
@@ -546,95 +497,58 @@ See also: list, replay, export, benchmark`);
   const { buildRoleProviderBundle } = await import("../providers/index.js");
 
   const settings = loadSettings();
-  const providerBundle = buildRoleProviderBundle(
-    settings,
-    values.provider ? { providerType: values.provider } : {},
-  );
-
-  // Resolve game scenario
-  const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
-  if (!ScenarioClass) {
-    const allScenarios = Object.keys(SCENARIO_REGISTRY).sort();
-    console.error(
-      `Unknown scenario: ${scenarioName}. Available: ${allScenarios.join(", ")}`,
+  let plan;
+  try {
+    plan = await planRunCommand(
+      values,
+      resolveScenarioOption,
+      {
+        defaultGenerations: settings.defaultGenerations,
+        matchesPerGeneration: settings.matchesPerGeneration,
+      },
+      Date.now,
+      parsePositiveInteger,
     );
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
-  const scenario = new ScenarioClass();
-  assertFamilyContract(scenario, "game", `scenario '${scenarioName}'`);
 
-  // Setup storage
-  const store = new SQLiteStore(dbPath);
-  store.migrate(getMigrationsDir());
-
-  const runId = values["run-id"] ?? `run-${Date.now()}`;
-  const gens = values.gens
-    ? parsePositiveInteger(values.gens, "--gens")
-    : settings.defaultGenerations;
-  const matches = parsePositiveInteger(
-    values.matches ?? String(settings.matchesPerGeneration),
-    "--matches",
+  const providerBundle = buildRoleProviderBundle(
+    settings,
+    plan.providerType ? { providerType: plan.providerType } : {},
   );
 
-  const runner = new GenerationRunner({
-    provider: providerBundle.defaultProvider,
-    roleProviders: providerBundle.roleProviders,
-    roleModels: providerBundle.roleModels,
-    scenario,
-    store,
+  let ScenarioClass;
+  try {
+    ScenarioClass = resolveRunScenario(plan.scenarioName, SCENARIO_REGISTRY);
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
+
+  const result = await executeRunCommandWorkflow({
+    dbPath,
+    migrationsDir: getMigrationsDir(),
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
-    matchesPerGeneration: matches,
-    maxRetries: settings.maxRetries,
-    minDelta: settings.backpressureMinDelta,
-    playbookMaxVersions: settings.playbookMaxVersions,
-    contextBudgetTokens: settings.contextBudgetTokens,
-    curatorEnabled: settings.curatorEnabled,
-    curatorConsolidateEveryNGens: settings.curatorConsolidateEveryNGens,
-    skillMaxLessons: settings.skillMaxLessons,
-    deadEndTrackingEnabled: settings.deadEndTrackingEnabled,
-    deadEndMaxEntries: settings.deadEndMaxEntries,
-    stagnationResetEnabled: settings.stagnationResetEnabled,
-    stagnationRollbackThreshold: settings.stagnationRollbackThreshold,
-    stagnationPlateauWindow: settings.stagnationPlateauWindow,
-    stagnationPlateauEpsilon: settings.stagnationPlateauEpsilon,
-    stagnationDistillTopLessons: settings.stagnationDistillTopLessons,
-    explorationMode: settings.explorationMode,
-    notifyWebhookUrl: settings.notifyWebhookUrl,
-    notifyOn: settings.notifyOn,
+    settings,
+    plan,
+    providerBundle,
+    ScenarioClass,
+    assertFamilyContract,
+    createStore: (runDbPath) => new SQLiteStore(runDbPath),
+    createRunner: (runnerOpts) =>
+      new GenerationRunner(
+        runnerOpts as import("../loop/generation-runner.js").GenerationRunnerOpts,
+      ),
   });
 
-  const resolvedProvider = providerBundle.defaultConfig.providerType;
-  const isSynthetic = resolvedProvider === "deterministic";
-
-  if (isSynthetic && !values.json) {
-    console.error(
-      "Note: Running with deterministic provider — results are synthetic.",
-    );
+  const rendered = renderRunResult(result, plan.json);
+  if (rendered.stderr) {
+    console.error(rendered.stderr);
   }
-
-  try {
-    const result = await runner.run(runId, gens);
-    if (values.json) {
-      console.log(
-        JSON.stringify(
-          {
-            ...result,
-            provider: resolvedProvider,
-            ...(isSynthetic ? { synthetic: true } : {}),
-          },
-          null,
-          2,
-        ),
-      );
-    } else {
-      console.log(
-        `Run ${result.runId}: ${result.generationsCompleted} generations, best score ${result.bestScore.toFixed(4)}, Elo ${result.currentElo.toFixed(1)}`,
-      );
-    }
-  } finally {
-    store.close();
-  }
+  console.log(rendered.stdout);
 }
 
 async function cmdTui(dbPath: string): Promise<void> {
@@ -647,15 +561,19 @@ async function cmdTui(dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    buildHeadlessTuiOutput,
+    buildInteractiveTuiRequest,
+    planTuiCommand,
+    TUI_HELP_TEXT,
+  } = await import("./tui-command-workflow.js");
+
   if (values.help) {
-    console.log("autoctx tui [--port 8000] [--headless]");
-    console.log(
-      "Starts the interactive WebSocket server and bundled terminal UI.",
-    );
+    console.log(TUI_HELP_TEXT);
     process.exit(0);
   }
 
-  const port = parseInt(values.port ?? "8000", 10);
+  const plan = planTuiCommand(values, !!process.stdout.isTTY);
 
   const { RunManager, InteractiveServer } = await import("../server/index.js");
   const { loadSettings } = await import("../config/index.js");
@@ -672,13 +590,16 @@ async function cmdTui(dbPath: string): Promise<void> {
     baseUrl: providerConfig.baseUrl,
     model: providerConfig.model,
   });
-  const server = new InteractiveServer({ runManager: mgr, port });
+  const server = new InteractiveServer({ runManager: mgr, port: plan.port });
   await server.start();
 
-  const headless = values.headless || !process.stdout.isTTY;
-  if (headless) {
-    console.log(`autocontext interactive server listening at ${server.url}`);
-    console.log(`Scenarios: ${mgr.listScenarios().join(", ")}`);
+  if (plan.headless) {
+    for (const line of buildHeadlessTuiOutput({
+      serverUrl: server.url,
+      scenarios: mgr.listScenarios(),
+    })) {
+      console.log(line);
+    }
     await new Promise<void>((resolve) => {
       const cleanup = () => {
         process.off("SIGINT", cleanup);
@@ -697,10 +618,13 @@ async function cmdTui(dbPath: string): Promise<void> {
   const { InteractiveTui } = await import("../tui/app.js");
 
   const app = render(
-    React.createElement(InteractiveTui, {
-      manager: mgr,
-      serverUrl: server.url,
-    }),
+    React.createElement(
+      InteractiveTui,
+      buildInteractiveTuiRequest({
+        manager: mgr,
+        serverUrl: server.url,
+      }),
+    ),
   );
 
   try {
@@ -723,33 +647,19 @@ async function cmdJudge(_dbPath: string): Promise<void> {
     },
   });
 
-  if (
-    values.help ||
-    (!values["from-stdin"] &&
-      (!values.output ||
-        (!values.scenario && (!values.prompt || !values.rubric))))
-  ) {
-    console.log(`autoctx judge — One-shot evaluation of output against a rubric
+  const {
+    executeJudgeCommandWorkflow,
+    getJudgeUsageExitCode,
+    JUDGE_HELP_TEXT,
+    parseDelegatedJudgeInput,
+    planJudgeCommand,
+    renderJudgeResult,
+  } = await import("./judge-command-workflow.js");
 
-Usage: autoctx judge [options]
-
-Options:
-  -s, --scenario <name>  Use a saved custom scenario (provides prompt + rubric)
-  -p, --prompt <text>    Task prompt (what was asked of the agent)
-  -o, --output <text>    Agent output to evaluate (required)
-  -r, --rubric <text>    Evaluation rubric/criteria
-  --from-stdin           Read a pre-computed evaluation JSON from stdin
-
-Provide either --scenario or both --prompt and --rubric.
-Use --from-stdin to accept a pre-computed evaluation (agent-as-judge pattern).
-
-Examples:
-  autoctx judge -p "Summarize this doc" -o "The doc covers..." -r "Score clarity 0-1"
-  autoctx judge -s my_saved_task -o "Agent response here"
-  echo '{"score":0.85,"reasoning":"Good"}' | autoctx judge --from-stdin
-
-See also: improve, queue, run`);
-    process.exit(values.help ? 0 : 1);
+  const usageExitCode = getJudgeUsageExitCode(values);
+  if (usageExitCode !== null) {
+    console.log(JUDGE_HELP_TEXT);
+    process.exit(usageExitCode);
   }
 
   // AC-409: Agent-as-judge — accept pre-computed evaluation from stdin
@@ -759,35 +669,13 @@ See also: improve, queue, run`);
       chunks.push(chunk as Buffer);
     }
     const input = Buffer.concat(chunks).toString("utf-8").trim();
-    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(input) as Record<string, unknown>;
-    } catch {
-      console.error("Invalid JSON on stdin");
+      console.log(renderJudgeResult(parseDelegatedJudgeInput(input)));
+      process.exit(0);
+    } catch (error) {
+      console.error(errorMessage(error));
       process.exit(1);
     }
-    const score = parsed.score as number;
-    if (typeof score !== "number" || score < 0 || score > 1) {
-      console.error("Invalid score: must be a number between 0 and 1");
-      process.exit(1);
-    }
-    const reasoning = (parsed.reasoning as string) ?? "";
-    const dimensions = (parsed.dimensions ??
-      parsed.dimensionScores ??
-      {}) as Record<string, number>;
-    console.log(
-      JSON.stringify(
-        {
-          score,
-          reasoning,
-          dimensionScores: dimensions,
-          source: "delegated",
-        },
-        null,
-        2,
-      ),
-    );
-    process.exit(0);
   }
 
   const { provider, model } = await getProvider();
@@ -799,36 +687,30 @@ See also: improve, queue, run`);
     console.error(`Unknown saved custom scenario: ${values.scenario}`);
     process.exit(1);
   }
-  const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
-  const rubric = values.rubric ?? savedScenario?.rubric;
-  const agentOutput = values.output;
-  if (!taskPrompt || !rubric || !agentOutput) {
-    console.error(
-      "Error: judge requires either --scenario <name> or both --prompt and --rubric.",
-    );
+
+  let plan;
+  try {
+    plan = planJudgeCommand(values, savedScenario);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
-  const judge = new LLMJudge({ provider, model, rubric });
-  const result = await judge.evaluate({
-    taskPrompt,
-    agentOutput,
-    referenceContext: savedScenario?.referenceContext,
-    requiredConcepts: savedScenario?.requiredConcepts,
-    calibrationExamples: savedScenario?.calibrationExamples,
+  const result = await executeJudgeCommandWorkflow({
+    plan,
+    provider,
+    model: model ?? undefined,
+    createJudge: (judgeOpts) => {
+      const provider = judgeOpts.provider as import("../types/index.js").LLMProvider;
+      return new LLMJudge({
+        provider,
+        model: judgeOpts.model ?? provider.defaultModel(),
+        rubric: judgeOpts.rubric,
+      });
+    },
   });
 
-  console.log(
-    JSON.stringify(
-      {
-        score: result.score,
-        reasoning: result.reasoning,
-        dimensionScores: result.dimensionScores,
-      },
-      null,
-      2,
-    ),
-  );
+  console.log(renderJudgeResult(result));
 }
 
 async function cmdImprove(_dbPath: string): Promise<void> {
@@ -855,35 +737,18 @@ async function cmdImprove(_dbPath: string): Promise<void> {
     },
   });
 
-  if (
-    values.help ||
-    (!values.scenario && (!values.prompt || !values.rubric)) ||
-    (!values.output && !values.rlm && !values.scenario)
-  ) {
-    console.log(`autoctx improve — Run multi-round improvement loop
+  const {
+    executeImproveCommandWorkflow,
+    getImproveUsageExitCode,
+    IMPROVE_HELP_TEXT,
+    planImproveCommand,
+    renderImproveResult,
+  } = await import("./improve-command-workflow.js");
 
-Usage: autoctx improve [options]
-
-Options:
-  -s, --scenario <name>   Use a saved custom scenario (provides prompt + rubric)
-  -p, --prompt <text>     Task prompt
-  -o, --output <text>     Initial agent output to improve
-  -r, --rubric <text>     Evaluation rubric/criteria
-  -n, --rounds N          Maximum improvement rounds (default: 5)
-  -t, --threshold N       Quality threshold to stop early (default: 0.9)
-  --min-rounds N          Minimum rounds before early stop (default: 1)
-  --rlm                   Use REPL-loop mode (agent writes + runs code)
-  --rlm-turns N           Max REPL turns per round
-  -v, --verbose           Show detailed round-by-round output
-
-Provide either --scenario or both --prompt and --rubric.
-
-Examples:
-  autoctx improve -p "Write a summary" -o "Draft here" -r "Score clarity" -n 3
-  autoctx improve -s my_task -o "Initial draft" --threshold 0.95
-
-See also: judge, queue, run`);
-    process.exit(values.help ? 0 : 1);
+  const usageExitCode = getImproveUsageExitCode(values);
+  if (usageExitCode !== null) {
+    console.log(IMPROVE_HELP_TEXT);
+    process.exit(usageExitCode);
   }
 
   const { provider, model } = await getProvider();
@@ -896,114 +761,41 @@ See also: judge, queue, run`);
     console.error(`Unknown saved custom scenario: ${values.scenario}`);
     process.exit(1);
   }
-  const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
-  const rubric = values.rubric ?? savedScenario?.rubric;
-  if (!taskPrompt || !rubric) {
-    console.error(
-      "Error: improve requires either --scenario <name> or both --prompt and --rubric.",
-    );
+
+  let plan;
+  try {
+    plan = planImproveCommand(values, savedScenario, parsePositiveInteger);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
-  const maxRounds = values.rounds
-    ? parsePositiveInteger(values.rounds, "--rounds")
-    : (savedScenario?.maxRounds ?? 5);
-  const qualityThreshold = values.threshold
-    ? parseFloat(values.threshold)
-    : (savedScenario?.qualityThreshold ?? 0.9);
-  const minRounds = values["min-rounds"]
-    ? parsePositiveInteger(values["min-rounds"], "--min-rounds")
-    : 1;
 
-  const task = new SimpleAgentTask(
-    taskPrompt,
-    rubric,
+  const result = await executeImproveCommandWorkflow({
+    plan,
     provider,
     model,
-    savedScenario?.revisionPrompt,
-    {
-      enabled: values.rlm ?? false,
-      model: values["rlm-model"],
-      ...(values["rlm-turns"]
-        ? { maxTurns: parseInt(values["rlm-turns"], 10) }
-        : {}),
-      ...(values["rlm-max-tokens"]
-        ? { maxTokensPerTurn: parseInt(values["rlm-max-tokens"], 10) }
-        : {}),
-      ...(values["rlm-temperature"]
-        ? { temperature: parseFloat(values["rlm-temperature"]) }
-        : {}),
-      ...(values["rlm-max-stdout"]
-        ? { maxStdoutChars: parseInt(values["rlm-max-stdout"], 10) }
-        : {}),
-      ...(values["rlm-timeout-ms"]
-        ? { codeTimeoutMs: parseInt(values["rlm-timeout-ms"], 10) }
-        : {}),
-      ...(values["rlm-memory-mb"]
-        ? { memoryLimitMb: parseInt(values["rlm-memory-mb"], 10) }
-        : {}),
-    },
-  );
-  const loop = new ImprovementLoop({
-    task,
-    maxRounds,
-    qualityThreshold,
-    minRounds,
+    savedScenario,
+    createTask: (taskPrompt, rubric, taskProvider, taskModel, revisionPrompt, rlmConfig) =>
+      new SimpleAgentTask(
+        taskPrompt,
+        rubric,
+        taskProvider as import("../types/index.js").LLMProvider,
+        taskModel ?? undefined,
+        revisionPrompt ?? undefined,
+        rlmConfig,
+      ),
+    createLoop: (loopOpts) =>
+      new ImprovementLoop(
+        loopOpts as import("../execution/improvement-loop.js").ImprovementLoopOpts,
+      ),
+    now: () => performance.now(),
   });
 
-  const startTime = performance.now();
-  const initialOutput =
-    values.output ??
-    (await task.generateOutput({
-      referenceContext: savedScenario?.referenceContext,
-      requiredConcepts: savedScenario?.requiredConcepts,
-    }));
-  const result = await loop.run({
-    initialOutput,
-    state: {},
-    referenceContext: savedScenario?.referenceContext,
-    requiredConcepts: savedScenario?.requiredConcepts,
-    calibrationExamples: savedScenario?.calibrationExamples,
-  });
-  const durationMs = Math.round(performance.now() - startTime);
-  const rlmSessions = task.getRlmSessions();
-
-  if (values.verbose) {
-    for (const round of result.rounds) {
-      console.error(
-        JSON.stringify({
-          round: round.roundNumber,
-          score: round.score,
-          dimensionScores: round.dimensionScores,
-          reasoning:
-            round.reasoning.length > 200
-              ? round.reasoning.slice(0, 200) + "..."
-              : round.reasoning,
-          isRevision: round.isRevision,
-          judgeFailed: round.judgeFailed,
-        }),
-      );
-    }
+  const rendered = renderImproveResult(result, plan.verbose);
+  for (const line of rendered.stderrLines) {
+    console.error(line);
   }
-
-  console.log(
-    JSON.stringify(
-      {
-        totalRounds: result.totalRounds,
-        metThreshold: result.metThreshold,
-        bestScore: result.bestScore,
-        bestRound: result.bestRound,
-        judgeFailures: result.judgeFailures,
-        terminationReason: result.terminationReason,
-        totalInternalRetries: result.totalInternalRetries,
-        dimensionTrajectory: result.dimensionTrajectory,
-        bestOutput: result.bestOutput,
-        durationMs,
-        ...(rlmSessions.length > 0 ? { rlmSessions } : {}),
-      },
-      null,
-      2,
-    ),
-  );
+  console.log(rendered.stdout);
 }
 
 async function cmdRepl(_dbPath: string): Promise<void> {
@@ -1028,19 +820,16 @@ async function cmdRepl(_dbPath: string): Promise<void> {
     },
   });
 
-  if (values.help || (!values.scenario && (!values.prompt || !values.rubric))) {
-    console.log(
-      "autoctx repl (-s <saved-scenario> | -p <task-prompt>) [-r <rubric>] " +
-        "[--phase generate|revise] [-o <current-output>] [--reference-context TEXT] " +
-        "[--required-concept C]... [-m model] [-n turns]",
-    );
-    process.exit(values.help ? 0 : 1);
-  }
+  const {
+    buildReplSessionRequest,
+    getReplUsageExitCode,
+    planReplCommand,
+    REPL_HELP_TEXT,
+  } = await import("./repl-command-workflow.js");
 
-  const phase = values.phase === "revise" ? "revise" : "generate";
-  if (phase === "revise" && !values.output) {
-    console.error("autoctx repl --phase revise requires -o/--output");
-    process.exit(1);
+  if (values.help || (!values.scenario && (!values.prompt || !values.rubric))) {
+    console.log(REPL_HELP_TEXT);
+    process.exit(getReplUsageExitCode(!!values.help));
   }
 
   const { provider, model } = await getProvider();
@@ -1052,40 +841,21 @@ async function cmdRepl(_dbPath: string): Promise<void> {
     console.error(`Unknown saved custom scenario: ${values.scenario}`);
     process.exit(1);
   }
-  const taskPrompt = values.prompt ?? savedScenario?.taskPrompt;
-  const rubric = values.rubric ?? savedScenario?.rubric;
-  if (!taskPrompt || !rubric) {
-    console.error(
-      "Error: repl requires either --scenario <name> or both --prompt and --rubric.",
-    );
+  let plan;
+  try {
+    plan = planReplCommand(values, savedScenario);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
-  const requiredConcepts = mergeUniqueStrings(
-    savedScenario?.requiredConcepts,
-    values["required-concept"],
-  );
 
-  const result = await runAgentTaskRlmSession({
-    provider,
-    model,
-    config: {
-      enabled: true,
-      model: values.model,
-      maxTurns: parseInt(values.turns ?? "6", 10),
-      maxTokensPerTurn: parseInt(values["max-tokens"] ?? "2048", 10),
-      temperature: parseFloat(values.temperature ?? "0.2"),
-      maxStdoutChars: parseInt(values["max-stdout"] ?? "8192", 10),
-      codeTimeoutMs: parseInt(values["timeout-ms"] ?? "10000", 10),
-      memoryLimitMb: parseInt(values["memory-mb"] ?? "64", 10),
-    },
-    phase,
-    taskPrompt,
-    rubric,
-    currentOutput: values.output,
-    referenceContext:
-      values["reference-context"] ?? savedScenario?.referenceContext,
-    requiredConcepts,
-  });
+  const result = await runAgentTaskRlmSession(
+    buildReplSessionRequest({
+      provider,
+      model,
+      plan,
+    }),
+  );
 
   console.log(JSON.stringify(result, null, 2));
 }
@@ -1111,12 +881,16 @@ async function cmdQueue(dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    getQueueUsageExitCode,
+    planQueueCommand,
+    QUEUE_HELP_TEXT,
+    renderQueuedTaskResult,
+  } = await import("./queue-status-command-workflow.js");
+
   if (values.help || !values.spec) {
-    console.log(
-      "autoctx queue -s <spec-name> [-p prompt] [-r rubric] [--priority N] " +
-        "[--min-rounds N] [--rlm] [--rlm-turns N]",
-    );
-    process.exit(values.help ? 0 : 1);
+    console.log(QUEUE_HELP_TEXT);
+    process.exit(getQueueUsageExitCode(!!values.help));
   }
 
   const { SQLiteStore } = await import("../storage/index.js");
@@ -1127,57 +901,27 @@ async function cmdQueue(dbPath: string): Promise<void> {
   const migrationsDir = getMigrationsDir();
   store.migrate(migrationsDir);
 
-  const id = enqueueTask(store, values.spec, {
-    taskPrompt: values.prompt ?? savedScenario?.taskPrompt,
-    rubric: values.rubric ?? savedScenario?.rubric,
-    referenceContext: savedScenario?.referenceContext,
-    requiredConcepts: savedScenario?.requiredConcepts,
-    maxRounds: savedScenario?.maxRounds,
-    qualityThreshold: savedScenario?.qualityThreshold,
-    priority: parseInt(values.priority!, 10),
-    ...(values["min-rounds"]
-      ? { minRounds: parseInt(values["min-rounds"], 10) }
-      : {}),
-    rlmEnabled: values.rlm,
-    rlmModel: values["rlm-model"],
-    ...(values["rlm-turns"]
-      ? { rlmMaxTurns: parseInt(values["rlm-turns"], 10) }
-      : {}),
-    ...(values["rlm-max-tokens"]
-      ? { rlmMaxTokensPerTurn: parseInt(values["rlm-max-tokens"], 10) }
-      : {}),
-    ...(values["rlm-temperature"]
-      ? { rlmTemperature: parseFloat(values["rlm-temperature"]) }
-      : {}),
-    ...(values["rlm-max-stdout"]
-      ? { rlmMaxStdoutChars: parseInt(values["rlm-max-stdout"], 10) }
-      : {}),
-    ...(values["rlm-timeout-ms"]
-      ? { rlmCodeTimeoutMs: parseInt(values["rlm-timeout-ms"], 10) }
-      : {}),
-    ...(values["rlm-memory-mb"]
-      ? { rlmMemoryLimitMb: parseInt(values["rlm-memory-mb"], 10) }
-      : {}),
-  });
+  const plan = planQueueCommand(values, savedScenario);
+  const id = enqueueTask(store, plan.specName, plan.request);
 
-  console.log(
-    JSON.stringify({ taskId: id, specName: values.spec, status: "queued" }),
-  );
+  console.log(renderQueuedTaskResult({ taskId: id, specName: plan.specName }));
   store.close();
 }
 
 async function cmdStatus(dbPath: string): Promise<void> {
+  const { executeStatusCommandWorkflow, renderStatusResult } =
+    await import("./queue-status-command-workflow.js");
   const { SQLiteStore } = await import("../storage/index.js");
   const store = new SQLiteStore(dbPath);
 
-  try {
-    const migrationsDir = getMigrationsDir();
-    store.migrate(migrationsDir);
-    const pending = store.pendingTaskCount();
-    console.log(JSON.stringify({ pendingCount: pending }));
-  } finally {
-    store.close();
-  }
+  console.log(
+    renderStatusResult(
+      executeStatusCommandWorkflow({
+        store,
+        migrationsDir: getMigrationsDir(),
+      }),
+    ),
+  );
 }
 
 async function cmdServeHttp(dbPath: string): Promise<void> {
@@ -1191,17 +935,18 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    planServeCommand,
+    renderServeStartup,
+    SERVE_HELP_TEXT,
+  } = await import("./serve-command-workflow.js");
+
   if (values.help) {
-    console.log("autoctx serve [--port 8000] [--host 127.0.0.1] [--json]");
-    console.log("Starts the HTTP API server (matches Python 'autoctx serve').");
-    console.log(
-      "With --json, prints a machine-parseable JSON line on startup.",
-    );
+    console.log(SERVE_HELP_TEXT);
     process.exit(0);
   }
 
-  const port = parseInt(values.port ?? "8000", 10);
-  const host = values.host ?? "127.0.0.1";
+  const plan = planServeCommand(values);
 
   const { RunManager, InteractiveServer } = await import("../server/index.js");
   const { loadSettings } = await import("../config/index.js");
@@ -1214,25 +959,24 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
     knowledgeRoot: resolve(settings.knowledgeRoot),
     providerType: settings.agentProvider,
   });
-  const server = new InteractiveServer({ runManager: mgr, port, host });
+  const server = new InteractiveServer({
+    runManager: mgr,
+    port: plan.port,
+    host: plan.host,
+  });
   await server.start();
 
   const startupInfo = {
-    url: `http://${host}:${server.port}`,
-    apiUrl: `http://${host}:${server.port}/api/runs`,
-    wsUrl: `ws://${host}:${server.port}/ws/interactive`,
-    host,
+    url: `http://${plan.host}:${server.port}`,
+    apiUrl: `http://${plan.host}:${server.port}/api/runs`,
+    wsUrl: `ws://${plan.host}:${server.port}/ws/interactive`,
+    host: plan.host,
     port: server.port,
     scenarios: mgr.listScenarios(),
   };
 
-  if (values.json) {
-    console.log(JSON.stringify(startupInfo));
-  } else {
-    console.log(`autocontext server listening at ${startupInfo.url}`);
-    console.log(`API: ${startupInfo.apiUrl}`);
-    console.log(`WebSocket: ${startupInfo.wsUrl}`);
-    console.log(`Scenarios: ${startupInfo.scenarios.join(", ")}`);
+  for (const line of renderServeStartup(startupInfo, plan.json)) {
+    console.log(line);
   }
 
   await new Promise<void>((res) => {
@@ -1255,29 +999,11 @@ async function cmdMcpServe(dbPath: string): Promise<void> {
     },
   });
 
+  const { buildMcpServeRequest, MCP_SERVE_HELP_TEXT } =
+    await import("./mcp-serve-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx mcp-serve — Start MCP server on stdio
-
-Starts the Model Context Protocol server on stdio for integration with
-Claude Code, Cursor, and other MCP-compatible editors.
-
-Core exported tools:
-  evaluate_output       Evaluate output against a rubric
-  run_improvement_loop  Multi-round improvement loop
-  queue_task            Enqueue a task for background evaluation
-  get_queue_status      Check task queue status
-  list_runs             List recent runs
-  get_run_status        Get detailed run status
-  run_replay            Replay a generation
-  list_scenarios        List available scenarios
-  export_package        Export strategy package data
-  create_agent_task     Create a saved agent-task scenario
-
-Additional tools cover playbooks, sandboxing, tournaments, and package import/export.
-
-Transport: stdio (JSON-RPC over stdin/stdout)
-
-See also: serve, judge, improve`);
+    console.log(MCP_SERVE_HELP_TEXT);
     process.exit(0);
   }
 
@@ -1291,14 +1017,16 @@ See also: serve, judge, improve`);
   const { provider, model } = await getProvider();
   const settings = loadSettings();
 
-  await startServer({
-    store,
-    provider,
-    model,
-    dbPath,
-    runsRoot: resolve(settings.runsRoot),
-    knowledgeRoot: resolve(settings.knowledgeRoot),
-  });
+  await startServer(
+    buildMcpServeRequest({
+      store,
+      provider,
+      model,
+      dbPath,
+      runsRoot: resolve(settings.runsRoot),
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1316,17 +1044,14 @@ async function cmdList(dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    executeListCommandWorkflow,
+    LIST_HELP_TEXT,
+    planListCommand,
+  } = await import("./list-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx list — List recent runs
-
-Usage: autoctx list [options]
-
-Options:
-  --limit N            Maximum number of runs to show (default: 50)
-  --scenario <name>    Filter runs by scenario name
-  --json               Output as JSON array
-
-See also: run, replay, status`);
+    console.log(LIST_HELP_TEXT);
     process.exit(0);
   }
 
@@ -1335,23 +1060,13 @@ See also: run, replay, status`);
   store.migrate(getMigrationsDir());
 
   try {
-    const runs = store.listRuns(
-      parseInt(values.limit ?? "50", 10),
-      values.scenario,
+    const plan = planListCommand(values);
+    console.log(
+      executeListCommandWorkflow({
+        plan,
+        listRuns: (limit, scenario) => store.listRuns(limit, scenario),
+      }),
     );
-    if (values.json) {
-      console.log(JSON.stringify(runs, null, 2));
-    } else {
-      if (runs.length === 0) {
-        console.log("No runs found.");
-      } else {
-        for (const run of runs) {
-          console.log(
-            `${run.run_id}  ${run.scenario}  ${run.status}  ${run.created_at}`,
-          );
-        }
-      }
-    }
   } finally {
     store.close();
   }
@@ -1367,80 +1082,44 @@ async function cmdReplay(_dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    executeReplayCommandWorkflow,
+    planReplayCommand,
+    REPLAY_HELP_TEXT,
+  } = await import("./replay-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx replay — Print replay JSON for a generation
-
-Usage: autoctx replay [options]
-
-Options:
-  --run-id <id>        Run to replay (required)
-  --generation N       Generation number to replay (default: 1)
-
-See also: run, list, export`);
+    console.log(REPLAY_HELP_TEXT);
     process.exit(0);
   }
 
-  if (!values["run-id"]) {
-    console.error("Error: --run-id is required");
+  let plan;
+  try {
+    plan = planReplayCommand(values);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
   const { existsSync, readdirSync, readFileSync } = await import("node:fs");
   const { loadSettings } = await import("../config/index.js");
 
-  const gen = parseInt(values.generation ?? "1", 10);
   const settings = loadSettings();
-  const generationsDir = join(
-    resolve(settings.runsRoot),
-    values["run-id"],
-    "generations",
-  );
-  const availableGenerations = existsSync(generationsDir)
-    ? readdirSync(generationsDir)
-        .map((name) => {
-          const match = /^gen_(\d+)$/.exec(name);
-          return match ? parseInt(match[1] ?? "", 10) : null;
-        })
-        .filter((value): value is number => value !== null)
-        .sort((a, b) => a - b)
-    : [];
-  const replayDir = join(
-    resolve(settings.runsRoot),
-    values["run-id"],
-    "generations",
-    `gen_${gen}`,
-    "replays",
-  );
-  if (!existsSync(replayDir)) {
-    const available =
-      availableGenerations.length > 0
-        ? ` Available generations: ${availableGenerations.join(", ")}.`
-        : "";
-    console.error(`No replay files found under ${replayDir}.${available}`);
+  try {
+    const replay = executeReplayCommandWorkflow({
+      runId: plan.runId,
+      generation: plan.generation,
+      runsRoot: settings.runsRoot,
+      existsSync,
+      readdirSync,
+      readFileSync: (path, encoding) => readFileSync(path, encoding),
+    });
+    console.error(replay.stderr);
+    console.log(replay.stdout);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
-  const replayFiles = readdirSync(replayDir)
-    .filter((name) => name.endsWith(".json"))
-    .sort();
-  if (replayFiles.length === 0) {
-    const available =
-      availableGenerations.length > 0
-        ? ` Available generations: ${availableGenerations.join(", ")}.`
-        : "";
-    console.error(`No replay files found under ${replayDir}.${available}`);
-    process.exit(1);
-  }
-  const payload = JSON.parse(
-    readFileSync(join(replayDir, replayFiles[0]), "utf-8"),
-  );
-  const available =
-    availableGenerations.length > 0
-      ? availableGenerations.join(", ")
-      : String(gen);
-  console.error(
-    `Replaying generation ${gen}. Available generations: ${available}`,
-  );
-  console.log(JSON.stringify(payload, null, 2));
 }
 
 async function cmdBenchmark(dbPath: string): Promise<void> {
@@ -1456,23 +1135,15 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    BENCHMARK_HELP_TEXT,
+    executeBenchmarkCommandWorkflow,
+    planBenchmarkCommand,
+    renderBenchmarkResult,
+  } = await import("./benchmark-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx benchmark — Run benchmark (multiple runs, aggregate stats)
-
-Usage: autoctx benchmark [options]
-
-Options:
-  --scenario <name>    Scenario to benchmark (default: grid_ctf)
-  --runs N             Number of independent runs (default: 3)
-  --gens N             Generations per run (default: 1)
-  --provider <type>    LLM provider to use
-  --json               Output aggregate stats as JSON
-
-Examples:
-  autoctx benchmark --scenario grid_ctf --runs 5 --gens 3
-  autoctx benchmark --provider deterministic --json
-
-See also: run, list`);
+    console.log(BENCHMARK_HELP_TEXT);
     process.exit(0);
   }
 
@@ -1484,70 +1155,35 @@ See also: run, list`);
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
 
-  const scenarioName =
-    (await resolveScenarioOption(values.scenario)) ?? "grid_ctf";
-  const ScenarioClass = SCENARIO_REGISTRY[scenarioName];
+  const plan = await planBenchmarkCommand(values, resolveScenarioOption);
+  const ScenarioClass = SCENARIO_REGISTRY[plan.scenarioName];
   if (!ScenarioClass) {
-    console.error(`Unknown scenario: ${scenarioName}`);
+    console.error(`Unknown scenario: ${plan.scenarioName}`);
     process.exit(1);
   }
 
-  const numRuns = parseInt(values.runs ?? "3", 10);
-  const numGens = parseInt(values.gens ?? "1", 10);
   const settings = loadSettings();
   const providerBundle = buildRoleProviderBundle(
     settings,
-    values.provider ? { providerType: values.provider } : {},
+    plan.providerType ? { providerType: plan.providerType } : {},
   );
-  const scores: number[] = [];
-
-  for (let i = 0; i < numRuns; i++) {
-    const store = new SQLiteStore(dbPath);
-    store.migrate(getMigrationsDir());
-    const runId = `bench_${Date.now()}_${i}`;
-    const scenario = new ScenarioClass();
-    assertFamilyContract(scenario, "game", `scenario '${scenarioName}'`);
-    const runner = new GenerationRunner({
-      provider: providerBundle.defaultProvider,
-      roleProviders: providerBundle.roleProviders,
-      roleModels: providerBundle.roleModels,
-      scenario,
-      store,
-      runsRoot: resolve(settings.runsRoot),
-      knowledgeRoot: resolve(settings.knowledgeRoot),
-    });
-    const result = await runner.run(runId, numGens);
-    scores.push(result.bestScore);
-    store.close();
+  const result = await executeBenchmarkCommandWorkflow({
+    dbPath,
+    migrationsDir: getMigrationsDir(),
+    runsRoot: resolve(settings.runsRoot),
+    knowledgeRoot: resolve(settings.knowledgeRoot),
+    plan,
+    providerBundle,
+    ScenarioClass,
+    assertFamilyContract,
+    createStore: (benchmarkDbPath) => new SQLiteStore(benchmarkDbPath),
+    createRunner: (runnerOpts) => new GenerationRunner(runnerOpts),
+  });
+  const rendered = renderBenchmarkResult(result, plan.json);
+  if (rendered.stderr) {
+    console.error(rendered.stderr);
   }
-
-  const resolvedBenchProvider = providerBundle.defaultConfig.providerType;
-  const isBenchSynthetic = resolvedBenchProvider === "deterministic";
-
-  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-  const output = {
-    scenario: scenarioName,
-    runs: numRuns,
-    generations: numGens,
-    scores,
-    meanBestScore: mean,
-    provider: resolvedBenchProvider,
-    ...(isBenchSynthetic ? { synthetic: true } : {}),
-  };
-  if (values.json) {
-    console.log(JSON.stringify(output, null, 2));
-  } else {
-    if (isBenchSynthetic) {
-      console.error(
-        "Note: Running with deterministic provider — results are synthetic.",
-      );
-    }
-    console.log(
-      `Benchmark: ${scenarioName}, ${numRuns} runs x ${numGens} gens`,
-    );
-    console.log(`Scores: ${scores.map((s) => s.toFixed(4)).join(", ")}`);
-    console.log(`Mean best score: ${mean.toFixed(4)}`);
-  }
+  console.log(rendered.stdout);
 }
 
 async function cmdExport(dbPath: string): Promise<void> {
@@ -1561,23 +1197,22 @@ async function cmdExport(dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    executeExportCommandWorkflow,
+    EXPORT_HELP_TEXT,
+    planExportCommand,
+  } = await import("./export-command-workflow.js");
+
   if (values.help) {
     console.log(EXPORT_HELP_TEXT);
     process.exit(0);
   }
 
-  let plan: ExportCommandPlan;
+  let plan;
   try {
-    plan = await planExportCommand(
-      {
-        scenario: values.scenario,
-        output: values.output,
-        json: Boolean(values.json),
-      },
-      resolveScenarioOption,
-    );
+    plan = await planExportCommand(values, resolveScenarioOption);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
@@ -1594,12 +1229,19 @@ async function cmdExport(dbPath: string): Promise<void> {
     knowledgeRoot: resolve(settings.knowledgeRoot),
   });
   try {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
     console.log(
       executeExportCommandWorkflow({
-        ...plan,
+        scenarioName: plan.scenarioName,
+        output: plan.output,
+        json: plan.json,
         exportStrategyPackage,
         artifacts,
         store,
+        writeOutputFile: (path, content) => {
+          mkdirSync(dirname(path), { recursive: true });
+          writeFileSync(path, content, "utf-8");
+        },
       }),
     );
   } finally {
@@ -1621,23 +1263,22 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    executeExportTrainingDataCommandWorkflow,
+    EXPORT_TRAINING_DATA_HELP_TEXT,
+    planExportTrainingDataCommand,
+  } = await import("./export-training-data-command-workflow.js");
+
   if (values.help) {
     console.log(EXPORT_TRAINING_DATA_HELP_TEXT);
     process.exit(0);
   }
 
-  let plan: ExportTrainingDataCommandPlan;
+  let plan;
   try {
-    plan = planExportTrainingDataCommand({
-      "run-id": values["run-id"],
-      scenario: values.scenario,
-      "all-runs": Boolean(values["all-runs"]),
-      output: values.output,
-      "include-matches": Boolean(values["include-matches"]),
-      "kept-only": Boolean(values["kept-only"]),
-    });
+    plan = planExportTrainingDataCommand(values);
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
@@ -1655,11 +1296,16 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
   });
 
   try {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
     const result = executeExportTrainingDataCommandWorkflow({
       plan,
       store,
       artifacts,
       exportTrainingData,
+      writeOutputFile: (path, content) => {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, content, "utf-8");
+      },
     });
     for (const line of result.stderrLines) {
       console.error(line);
@@ -1682,15 +1328,22 @@ async function cmdImportPackage(_dbPath: string): Promise<void> {
     },
   });
 
+  const {
+    executeImportPackageCommandWorkflow,
+    IMPORT_PACKAGE_HELP_TEXT,
+    planImportPackageCommand,
+  } = await import("./import-package-command-workflow.js");
+
   if (values.help) {
-    console.log(
-      "autoctx import-package --file <path> [--scenario <name>] [--conflict overwrite|merge|skip] [--json]",
-    );
+    console.log(IMPORT_PACKAGE_HELP_TEXT);
     process.exit(0);
   }
 
-  if (!values.file) {
-    console.error("Error: --file is required");
+  let plan;
+  try {
+    plan = planImportPackageCommand(values);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
@@ -1700,27 +1353,21 @@ async function cmdImportPackage(_dbPath: string): Promise<void> {
   const { importStrategyPackage } = await import("../knowledge/package.js");
 
   const settings = loadSettings();
-  const raw = readFileSync(values.file, "utf-8");
+  const raw = readFileSync(plan.file, "utf-8");
   const artifacts = new ArtifactStore({
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
   });
-  const conflict = (values.conflict ?? "overwrite") as
-    | "overwrite"
-    | "merge"
-    | "skip";
-  if (!["overwrite", "merge", "skip"].includes(conflict)) {
-    console.error("Error: --conflict must be one of overwrite, merge, skip");
-    process.exit(1);
-  }
-  const result = importStrategyPackage({
-    rawPackage: JSON.parse(raw) as Record<string, unknown>,
-    artifacts,
-    skillsRoot: resolve(settings.skillsRoot),
-    scenarioOverride: values.scenario,
-    conflictPolicy: conflict,
-  });
-  console.log(JSON.stringify(result, null, 2));
+  console.log(
+    executeImportPackageCommandWorkflow({
+      rawPackage: raw,
+      artifacts,
+      skillsRoot: resolve(settings.skillsRoot),
+      scenarioOverride: plan.scenarioOverride,
+      conflictPolicy: plan.conflictPolicy,
+      importStrategyPackage,
+    }),
+  );
 }
 
 async function cmdNewScenario(_dbPath: string): Promise<void> {
@@ -1738,6 +1385,15 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
       help: { type: "boolean", short: "h" },
     },
   });
+
+  const {
+    NEW_SCENARIO_HELP_TEXT,
+    ensureNewScenarioDescription,
+    executeCreatedScenarioMaterialization,
+    executeImportedScenarioMaterialization,
+    executeTemplateScaffoldWorkflow,
+    renderTemplateList,
+  } = await import("./new-scenario-command-workflow.js");
 
   if (values.help) {
     console.log(NEW_SCENARIO_HELP_TEXT);
@@ -1758,26 +1414,27 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
   // Mode 0: --list
   if (values.list) {
     const loader = new TemplateLoader();
-    console.log(renderTemplateList({ templates: loader.listTemplates(), json: Boolean(values.json) }));
+    const templates = loader.listTemplates();
+    console.log(renderTemplateList({ templates, json: !!values.json }));
     return;
   }
 
   // Mode 0b: --template <name> --name <scenario>
   if (values.template || values.name) {
     const loader = new TemplateLoader();
+    const settings = loadSettings();
     try {
-      const settings = loadSettings();
       console.log(
         executeTemplateScaffoldWorkflow({
           template: values.template,
           name: values.name,
           knowledgeRoot: resolve(settings.knowledgeRoot),
-          json: Boolean(values.json),
+          json: !!values.json,
           templateLoader: loader,
         }),
       );
     } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+      console.error(errorMessage(error));
       process.exit(1);
     }
     return;
@@ -1791,11 +1448,11 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
     try {
       spec = JSON.parse(readFileSync(values["from-spec"], "utf-8"));
     } catch (err) {
-      console.error(`Error reading spec file: ${(err as Error).message}`);
+      console.error(`Error reading spec file: ${errorMessage(err)}`);
       process.exit(1);
     }
+    const settings = loadSettings();
     try {
-      const settings = loadSettings();
       console.log(
         await executeImportedScenarioMaterialization({
           spec,
@@ -1804,11 +1461,11 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
           validFamilies,
           materializeScenario,
           knowledgeRoot: resolve(settings.knowledgeRoot),
-          json: Boolean(values.json),
+          json: !!values.json,
         }),
       );
     } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+      console.error(errorMessage(error));
       process.exit(1);
     }
     return;
@@ -1829,8 +1486,8 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
       console.error("Error: stdin must contain valid JSON");
       process.exit(1);
     }
+    const settings = loadSettings();
     try {
-      const settings = loadSettings();
       console.log(
         await executeImportedScenarioMaterialization({
           spec,
@@ -1839,11 +1496,11 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
           validFamilies,
           materializeScenario,
           knowledgeRoot: resolve(settings.knowledgeRoot),
-          json: Boolean(values.json),
+          json: !!values.json,
         }),
       );
     } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+      console.error(errorMessage(error));
       process.exit(1);
     }
     return;
@@ -1851,16 +1508,18 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
 
   // Mode 3: --prompt-only (output the prompt, no LLM call)
   if (values["prompt-only"]) {
+    let description: string;
     try {
-      const description = ensureNewScenarioDescription({
+      description = ensureNewScenarioDescription({
         description: values.description,
         errorMessage: "Error: --description is required with --prompt-only",
       });
-      console.log(buildScenarioCreationPrompt(description));
     } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+      console.error(errorMessage(error));
       process.exit(1);
     }
+    const prompt = buildScenarioCreationPrompt(description);
+    console.log(prompt);
     return;
   }
 
@@ -1873,7 +1532,7 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
         "Error: --list, --template, --description, --from-spec, --from-stdin, or --prompt-only is required",
     });
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
@@ -1887,11 +1546,9 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
     provider = new DeterministicProvider();
   }
 
-  const result = await createScenarioFromDescription(
-    description,
-    provider,
-  );
+  const result = await createScenarioFromDescription(description, provider);
 
+  // Materialize the created scenario to disk (AC-433)
   const { materializeScenario } = await import("../scenarios/materialize.js");
   const settings = loadSettings();
   try {
@@ -1900,11 +1557,11 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
         created: result,
         materializeScenario,
         knowledgeRoot: resolve(settings.knowledgeRoot),
-        json: Boolean(values.json),
+        json: !!values.json,
       }),
     );
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(errorMessage(error));
     process.exit(1);
   }
 }
@@ -1927,26 +1584,11 @@ async function cmdInit(): Promise<void> {
     },
   });
 
+  const { buildInitSuccessMessages, INIT_HELP_TEXT, planInitCommand } =
+    await import("./init-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx init — Scaffold project config and AGENTS guidance
-
-Usage: autoctx init [options]
-
-Options:
-  --dir <path>         Directory to initialize (default: current directory)
-  --scenario <name>    Default scenario (default: grid_ctf)
-  --provider <type>    Default provider (default: deterministic)
-  --model <name>       Default model for the provider
-  --gens N             Default generations per run (default: 3)
-
-Creates .autoctx.json, AGENTS.md, runs/, and knowledge/ directories.
-
-Examples:
-  autoctx init
-  autoctx init --scenario grid_ctf --provider anthropic --gens 5
-  autoctx init --dir ./my-project
-
-See also: run, login, capabilities`);
+    console.log(INIT_HELP_TEXT);
     process.exit(0);
   }
 
@@ -1954,107 +1596,59 @@ See also: run, login, capabilities`);
   const { loadPersistedCredentials, loadProjectConfig } =
     await import("../config/index.js");
   const { resolveProviderConfig } = await import("../providers/index.js");
-  const targetDir = resolve(values.dir ?? ".");
-  const configPath = join(targetDir, ".autoctx.json");
-  const projectDefaults = loadProjectConfig(targetDir);
-  const persistedCredentials = loadPersistedCredentials();
 
-  if (existsSync(configPath)) {
-    console.error("Error: .autoctx.json already exists in " + targetDir);
+  let plan;
+  try {
+    const targetDir = resolve(values.dir ?? ".");
+    plan = planInitCommand(values, {
+      resolvePath: resolve,
+      joinPath: join,
+      configExists: existsSync(join(targetDir, ".autoctx.json")),
+      projectDefaults: loadProjectConfig(targetDir),
+      persistedCredentials: loadPersistedCredentials(),
+      env: process.env,
+      resolveProviderConfig,
+      parsePositiveInteger,
+    });
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
-  mkdirSync(targetDir, { recursive: true });
-  let detectedProvider =
-    values.provider?.trim() ??
-    projectDefaults?.provider ??
-    process.env.AUTOCONTEXT_AGENT_PROVIDER?.trim() ??
-    process.env.AUTOCONTEXT_PROVIDER?.trim() ??
-    persistedCredentials?.provider;
-  let detectedModel =
-    values.model?.trim() ??
-    projectDefaults?.model ??
-    process.env.AUTOCONTEXT_AGENT_DEFAULT_MODEL?.trim() ??
-    process.env.AUTOCONTEXT_MODEL?.trim() ??
-    persistedCredentials?.model;
-  try {
-    const resolved = resolveProviderConfig();
-    detectedProvider = detectedProvider ?? resolved.providerType;
-    detectedModel = detectedModel ?? resolved.model;
-  } catch {
-    detectedProvider = detectedProvider ?? "deterministic";
-  }
-
-  const config: Record<string, unknown> = {
-    default_scenario:
-      values.scenario ?? projectDefaults?.defaultScenario ?? "grid_ctf",
-    provider: detectedProvider ?? "deterministic",
-    gens: parsePositiveInteger(values.gens ?? "3", "--gens"),
-    knowledge_dir: "./knowledge",
-    runs_dir: "./runs",
-  };
-  if (detectedModel) {
-    config.model = detectedModel;
-  }
-  mkdirSync(join(targetDir, "runs"), { recursive: true });
-  mkdirSync(join(targetDir, "knowledge"), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
-
-  const agentsMdUpdated = await writeAgentsGuide(targetDir);
-
-  console.log(`Created ${configPath}`);
-  console.log(
-    agentsMdUpdated
-      ? `Updated ${join(targetDir, "AGENTS.md")}`
-      : `AGENTS.md already contained AutoContext guidance`,
+  mkdirSync(plan.targetDir, { recursive: true });
+  mkdirSync(join(plan.targetDir, "runs"), { recursive: true });
+  mkdirSync(join(plan.targetDir, "knowledge"), { recursive: true });
+  writeFileSync(
+    plan.configPath,
+    JSON.stringify(plan.config, null, 2) + "\n",
+    "utf-8",
   );
+
+  const agentsMdUpdated = await writeAgentsGuide(plan.targetDir);
+
+  for (const line of buildInitSuccessMessages({
+    configPath: plan.configPath,
+    agentsPath: join(plan.targetDir, "AGENTS.md"),
+    agentsMdUpdated,
+  })) {
+    console.log(line);
+  }
 }
 
 async function cmdCapabilities(): Promise<void> {
+  const { buildCapabilitiesPayload } =
+    await import("./capabilities-command-workflow.js");
   const { getCapabilities } = await import("../mcp/capabilities.js");
   const projectConfig = await buildProjectConfigSummary();
   const baseCapabilities = getCapabilities();
 
-  const capabilities = {
-    ...baseCapabilities,
-    commands: [
-      "init",
-      "run",
-      "list",
-      "replay",
-      "benchmark",
-      "export",
-      "export-training-data",
-      "import-package",
-      "new-scenario",
-      "capabilities",
-      "login",
-      "whoami",
-      "logout",
-      "providers",
-      "models",
-      "mission",
-      "campaign",
-      "tui",
-      "judge",
-      "improve",
-      "repl",
-      "queue",
-      "status",
-      "serve",
-      "mcp-serve",
-      "version",
-    ],
-    features: {
-      mcp_server: true,
-      training_export: true,
-      custom_scenarios: true,
-      interactive_server: true,
-      playbook_versioning: true,
-    },
-    project_config: projectConfig,
-  };
-  console.log(JSON.stringify(capabilities, null, 2));
+  console.log(
+    JSON.stringify(
+      buildCapabilitiesPayload(baseCapabilities, projectConfig),
+      null,
+      2,
+    ),
+  );
 }
 
 async function cmdLogin(): Promise<void> {
@@ -2070,70 +1664,39 @@ async function cmdLogin(): Promise<void> {
     },
   });
 
+  const {
+    buildLoginSuccessMessage,
+    buildStoredProviderCredentials,
+    LOGIN_HELP_TEXT,
+    resolveLoginCommandRequest,
+  } = await import("./auth-provider-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx login — Store provider credentials persistently
-
-Usage: autoctx login [options]
-
-Options:
-  --provider <type>    Provider name: anthropic, openai, gemini, ollama, groq, etc.
-  --key <api-key>      API key (omit to be prompted interactively)
-  --model <name>       Default model for this provider
-  --base-url <url>     Custom base URL (for Ollama, vLLM, proxies)
-  --config-dir <path>  Config directory (default: ~/.config/autoctx)
-
-Without flags, prompts interactively for provider and key.
-Keys starting with ! are executed as shell commands (e.g. !security find-generic-password).
-
-Examples:
-  autoctx login --provider anthropic --key YOUR_ANTHROPIC_API_KEY
-  autoctx login --provider ollama --base-url http://localhost:11434
-  autoctx login                            # interactive prompt
-
-See also: whoami, logout, providers, models`);
+    console.log(LOGIN_HELP_TEXT);
     process.exit(0);
   }
 
-  let provider = values.provider?.trim();
-  if (!provider) {
-    provider = await promptForValue("Provider");
-  }
-  if (!provider) {
-    console.error("Error: provider is required");
-    process.exit(1);
-  }
-  provider = provider.toLowerCase();
-
   const { resolveConfigDir } = await import("../config/index.js");
-  let apiKey = values.key?.trim();
-  let baseUrl = values["base-url"]?.trim();
-  const model = values.model?.trim();
-
-  if (provider === "ollama") {
-    baseUrl = normalizeOllamaBaseUrl(
-      baseUrl ??
-        process.env.AUTOCONTEXT_AGENT_BASE_URL ??
-        process.env.AUTOCONTEXT_BASE_URL ??
-        "http://localhost:11434",
-    );
-    await validateOllamaConnection(baseUrl);
-  } else {
-    if (!apiKey) {
-      apiKey = await promptForValue("API key");
-    }
-    if (!apiKey) {
-      console.error("Error: --key is required for this provider");
-      process.exit(1);
-    }
+  let request;
+  try {
+    request = await resolveLoginCommandRequest(values, {
+      promptForValue,
+      normalizeOllamaBaseUrl,
+      validateOllamaConnection,
+      env: process.env,
+    });
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
   }
 
   // Validate API key format before saving (AC-430)
-  if (apiKey) {
+  if (request.apiKey) {
     const { validateApiKey, resolveApiKeyValue } =
       await import("../config/credentials.js");
     // Resolve shell-command escape hatch (e.g. "!security find-generic-password -ws 'anthropic'")
-    const resolvedKey = resolveApiKeyValue(apiKey);
-    const validation = await validateApiKey(provider, resolvedKey);
+    const resolvedKey = resolveApiKeyValue(request.apiKey);
+    const validation = await validateApiKey(request.provider, resolvedKey);
     if (!validation.valid) {
       console.error(`Warning: ${validation.error}`);
     }
@@ -2141,21 +1704,19 @@ See also: whoami, logout, providers, models`);
 
   // Save to multi-provider credential store with 0600 permissions (AC-430)
   const { saveProviderCredentials } = await import("../config/credentials.js");
-  const configDir = resolveConfigDir(values["config-dir"]);
-  const creds: Record<string, string | undefined> = {};
-  if (apiKey) creds.apiKey = apiKey;
-  if (model) creds.model = model;
-  if (baseUrl) creds.baseUrl = baseUrl;
-  saveProviderCredentials(configDir, provider, creds);
+  const configDir = resolveConfigDir(request.configDir);
+  saveProviderCredentials(
+    configDir,
+    request.provider,
+    buildStoredProviderCredentials(request),
+  );
 
-  if (provider === "ollama") {
-    console.log(`Connected to Ollama at ${baseUrl}`);
-  } else {
-    console.log(`Credentials saved for ${provider}`);
-  }
+  console.log(buildLoginSuccessMessage(request));
 }
 
 async function cmdWhoami(): Promise<void> {
+  const { buildWhoamiPayload } =
+    await import("./auth-provider-command-workflow.js");
   const { loadPersistedCredentials, loadProjectConfig } =
     await import("../config/index.js");
   const { resolveProviderConfig } = await import("../providers/index.js");
@@ -2213,13 +1774,13 @@ async function cmdWhoami(): Promise<void> {
 
   console.log(
     JSON.stringify(
-      {
+      buildWhoamiPayload({
         provider,
         model,
         authenticated,
-        ...(baseUrl ? { baseUrl } : {}),
-        ...(configuredProviders.length > 0 ? { configuredProviders } : {}),
-      },
+        baseUrl,
+        configuredProviders,
+      }),
       null,
       2,
     ),
@@ -2235,9 +1796,11 @@ async function cmdLogout(): Promise<void> {
     },
   });
 
+  const { buildLogoutMessage, LOGOUT_HELP_TEXT } =
+    await import("./auth-provider-command-workflow.js");
+
   if (values.help) {
-    console.log("autoctx logout [--config-dir <path>]");
-    console.log("Clears stored provider credentials.");
+    console.log(LOGOUT_HELP_TEXT);
     process.exit(0);
   }
 
@@ -2254,50 +1817,34 @@ async function cmdLogout(): Promise<void> {
   }
 
   unlinkSync(credentialsPath);
-  console.log(
-    existing?.provider ? `Logged out from ${existing.provider}` : "Logged out.",
-  );
+  console.log(buildLogoutMessage(existing?.provider));
 }
 
 async function cmdProviders(): Promise<void> {
+  const { buildProvidersPayload } =
+    await import("./auth-provider-command-workflow.js");
   const { KNOWN_PROVIDERS, discoverAllProviders } =
     await import("../config/credentials.js");
   const { resolveConfigDir } = await import("../config/index.js");
   const configDir = resolveConfigDir();
   const discovered = discoverAllProviders(configDir);
-  const discoveredMap = new Map(discovered.map((d) => [d.provider, d]));
 
-  const result = KNOWN_PROVIDERS.map((p) => {
-    const d = discoveredMap.get(p.id);
-    return {
-      id: p.id,
-      displayName: p.displayName,
-      requiresKey: p.requiresKey,
-      authenticated: d ? d.hasApiKey || !p.requiresKey : !p.requiresKey,
-      ...(d?.source ? { source: d.source } : {}),
-      ...(d?.model ? { model: d.model } : {}),
-      ...(d?.baseUrl ? { baseUrl: d.baseUrl } : {}),
-    };
-  });
-
-  console.log(JSON.stringify(result, null, 2));
+  console.log(
+    JSON.stringify(buildProvidersPayload(KNOWN_PROVIDERS, discovered), null, 2),
+  );
 }
 
 async function cmdModels(): Promise<void> {
+  const { renderModelsResult } =
+    await import("./auth-provider-command-workflow.js");
   const { listAuthenticatedModels } = await import("../config/credentials.js");
   const { resolveConfigDir } = await import("../config/index.js");
   const configDir = resolveConfigDir();
   const models = listAuthenticatedModels(configDir);
 
-  if (models.length === 0) {
-    console.log(JSON.stringify([]));
-    console.log(
-      "\nNo authenticated providers found. Run `autoctx login` to configure a provider.",
-    );
-    return;
+  for (const line of renderModelsResult(models)) {
+    console.log(line);
   }
-
-  console.log(JSON.stringify(models, null, 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -2315,6 +1862,21 @@ async function cmdMission(dbPath: string): Promise<void> {
     runMissionLoop,
     writeMissionCheckpoint,
   } = await import("../mission/control-plane.js");
+  const {
+    getMissionIdOrThrow,
+    MISSION_HELP_TEXT,
+    planMissionCreate,
+    planMissionList,
+    planMissionRun,
+  } = await import("./mission-command-workflow.js");
+  const {
+    executeMissionArtifactsCommand,
+    executeMissionCreateCommand,
+    executeMissionLifecycleCommand,
+    executeMissionListCommand,
+    executeMissionRunCommand,
+    executeMissionStatusCommand,
+  } = await import("./mission-command-execution.js");
   const { loadSettings } = await import("../config/index.js");
   const settings = loadSettings();
   const runsRoot = resolve(settings.runsRoot);
@@ -2341,6 +1903,14 @@ async function cmdMission(dbPath: string): Promise<void> {
             "build-command": { type: "string" },
           },
         });
+        let plan;
+        try {
+          plan = planMissionCreate(values, resolve);
+        } catch (error) {
+          console.error(errorMessage(error));
+          process.exit(1);
+        }
+
         console.log(
           JSON.stringify(
             executeMissionCreateCommand({
@@ -2349,7 +1919,7 @@ async function cmdMission(dbPath: string): Promise<void> {
               buildMissionStatusPayload,
               writeMissionCheckpoint,
               runsRoot,
-              plan: planMissionCreate(values, resolve),
+              plan,
             }),
             null,
             2,
@@ -2366,31 +1936,28 @@ async function cmdMission(dbPath: string): Promise<void> {
             "step-description": { type: "string" },
           },
         });
-        const mission = requireMission(manager, getMissionIdOrThrow(
+        const missionId = getMissionIdOrThrow(
           values,
           "Usage: autoctx mission run --id <mission-id> [--max-iterations N] [--step-description <text>]",
-        ));
+        );
+        const mission = requireMission(manager, missionId);
         const plan = planMissionRun(values, mission);
-        let createAdaptiveProvider: () => import("../types/index.js").LLMProvider = () => {
-          throw new Error("Adaptive mission provider was not initialized.");
-        };
-        if (plan.needsAdaptivePlanning) {
-          const { createProvider, resolveProviderConfig } =
-            await import("../providers/index.js");
-          createAdaptiveProvider = () => createProvider(resolveProviderConfig());
-        }
-        console.log(JSON.stringify(
-          await executeMissionRunCommand({
-            manager,
-            plan,
-            runsRoot,
-            knowledgeRoot: resolve(settings.knowledgeRoot),
-            createAdaptiveProvider,
-            runMissionLoop,
-          }),
-          null,
-          2,
-        ));
+        const payload = await executeMissionRunCommand({
+          manager,
+          plan,
+          runsRoot,
+          knowledgeRoot: resolve(settings.knowledgeRoot),
+          createAdaptiveProvider: async () => {
+            if (!plan.needsAdaptivePlanning) {
+              return undefined;
+            }
+            const { createProvider, resolveProviderConfig } =
+              await import("../providers/index.js");
+            return createProvider(resolveProviderConfig());
+          },
+          runMissionLoop,
+        });
+        console.log(JSON.stringify(payload, null, 2));
         break;
       }
       case "status": {
@@ -2398,14 +1965,15 @@ async function cmdMission(dbPath: string): Promise<void> {
           args: process.argv.slice(4),
           options: { id: { type: "string" } },
         });
+        const missionId = getMissionIdOrThrow(
+          values,
+          "Usage: autoctx mission status --id <mission-id>",
+        );
         console.log(
           JSON.stringify(
             executeMissionStatusCommand({
               manager,
-              missionId: getMissionIdOrThrow(
-                values,
-                "Usage: autoctx mission status --id <mission-id>",
-              ),
+              missionId,
               buildMissionStatusPayload,
             }),
             null,
@@ -2420,13 +1988,17 @@ async function cmdMission(dbPath: string): Promise<void> {
           options: { status: { type: "string" } },
         });
         type MissionStatusParam = Parameters<typeof manager.list>[0];
-        const { status } = planMissionList(values);
-        const missions = executeMissionListCommand({
-          listMissions: (missionStatus?: string) =>
-            manager.list(missionStatus as MissionStatusParam),
-          status,
-        });
-        console.log(JSON.stringify(missions, null, 2));
+        const plan = planMissionList(values);
+        console.log(
+          JSON.stringify(
+            executeMissionListCommand({
+              listMissions: (status) => manager.list(status as MissionStatusParam),
+              status: plan.status as MissionStatusParam,
+            }),
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "artifacts": {
@@ -2434,14 +2006,15 @@ async function cmdMission(dbPath: string): Promise<void> {
           args: process.argv.slice(4),
           options: { id: { type: "string" } },
         });
+        const missionId = getMissionIdOrThrow(
+          values,
+          "Usage: autoctx mission artifacts --id <mission-id>",
+        );
         console.log(
           JSON.stringify(
             executeMissionArtifactsCommand({
               manager,
-              missionId: getMissionIdOrThrow(
-                values,
-                "Usage: autoctx mission artifacts --id <mission-id>",
-              ),
+              missionId,
               runsRoot,
               buildMissionArtifactsPayload,
             }),
@@ -2548,29 +2121,24 @@ async function cmdCampaign(dbPath: string): Promise<void> {
   const subcommand = process.argv[3];
   const { MissionManager } = await import("../mission/manager.js");
   const { CampaignManager } = await import("../mission/campaign.js");
+  const {
+    CAMPAIGN_HELP_TEXT,
+    getCampaignIdOrThrow,
+    parseCampaignStatus,
+    planCampaignAddMission,
+    planCampaignCreate,
+  } = await import("./campaign-command-workflow.js");
+  const {
+    executeCampaignAddMissionCommand,
+    executeCampaignCreateCommand,
+    executeCampaignLifecycleCommand,
+    executeCampaignListCommand,
+    executeCampaignProgressCommand,
+    executeCampaignStatusCommand,
+  } = await import("./campaign-command-execution.js");
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    console.log(`autoctx campaign — Manage multi-mission campaigns
-
-Subcommands:
-  create       Create a new campaign
-  status       Show campaign details with progress
-  list         List all campaigns
-  add-mission  Add a mission to a campaign
-  progress     Show campaign progress and budget usage
-  pause        Pause an active campaign
-  resume       Resume a paused campaign
-  cancel       Cancel a campaign
-
-Examples:
-  autoctx campaign create --name "Q2 Goals" --goal "Ship OAuth and billing"
-  autoctx campaign create --name "Budgeted" --goal "Test" --max-missions 5 --max-steps 50
-  autoctx campaign list --status active
-  autoctx campaign status --id <campaign-id>
-  autoctx campaign add-mission --id <campaign-id> --mission-id <mission-id>
-  autoctx campaign progress --id <campaign-id>
-
-See also: mission, run`);
+    console.log(CAMPAIGN_HELP_TEXT);
     process.exit(0);
   }
 
@@ -2586,43 +2154,6 @@ See also: mission, run`);
     return campaign;
   }
 
-  function requireIdArg(usage: string): string {
-    const { values } = parseArgs({
-      args: process.argv.slice(4),
-      options: { id: { type: "string" } },
-    });
-    if (!values.id) {
-      console.error(usage);
-      process.exit(1);
-    }
-    return values.id;
-  }
-
-  function lifecycleAction(action: "pause" | "resume" | "cancel"): void {
-    const id = requireIdArg(
-      `Usage: autoctx campaign ${action} --id <campaign-id>`,
-    );
-    const campaign = requireCampaign(id);
-    if (action === "pause" && campaign.status !== "active") {
-      console.error(`Cannot pause campaign in status: ${campaign.status}`);
-      process.exit(1);
-    }
-    if (action === "resume" && campaign.status !== "paused") {
-      console.error(`Cannot resume campaign in status: ${campaign.status}`);
-      process.exit(1);
-    }
-    if (
-      action === "cancel" &&
-      campaign.status !== "active" &&
-      campaign.status !== "paused"
-    ) {
-      console.error(`Cannot cancel campaign in status: ${campaign.status}`);
-      process.exit(1);
-    }
-    manager[action](id);
-    console.log(JSON.stringify(manager.get(id), null, 2));
-  }
-
   function parseCampaignPositiveInteger(
     raw: string | undefined,
     label: string,
@@ -2633,24 +2164,6 @@ See also: mission, run`);
       console.error(formatFatalCliError(error));
       process.exit(1);
     }
-  }
-
-  function parseCampaignStatus(
-    raw: string | undefined,
-  ): CampaignStatus | undefined {
-    if (!raw) return undefined;
-    const allowed: CampaignStatus[] = [
-      "active",
-      "paused",
-      "completed",
-      "failed",
-      "canceled",
-    ];
-    if (!allowed.includes(raw as CampaignStatus)) {
-      console.error(`Error: --status must be one of ${allowed.join(", ")}`);
-      process.exit(1);
-    }
-    return raw as CampaignStatus;
   }
 
   try {
@@ -2665,50 +2178,52 @@ See also: mission, run`);
             "max-steps": { type: "string" },
           },
         });
-        if (!values.name || !values.goal) {
-          console.error(
-            "Usage: autoctx campaign create --name <name> --goal <goal> [--max-missions N] [--max-steps N]",
-          );
+        let plan;
+        try {
+          plan = planCampaignCreate(values, parseCampaignPositiveInteger);
+        } catch (error) {
+          console.error(errorMessage(error));
           process.exit(1);
         }
-        const budget =
-          values["max-missions"] || values["max-steps"]
-            ? {
-                ...(values["max-missions"]
-                  ? {
-                      maxMissions: parseCampaignPositiveInteger(
-                        values["max-missions"],
-                        "--max-missions",
-                      ),
-                    }
-                  : {}),
-                ...(values["max-steps"]
-                  ? {
-                      maxTotalSteps: parseCampaignPositiveInteger(
-                        values["max-steps"],
-                        "--max-steps",
-                      ),
-                    }
-                  : {}),
-              }
-            : undefined;
-        const id = manager.create({
-          name: values.name,
-          goal: values.goal,
-          budget,
-        });
-        console.log(JSON.stringify(manager.get(id), null, 2));
+        console.log(
+          JSON.stringify(
+            executeCampaignCreateCommand({
+              manager,
+              plan,
+            }),
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "status": {
-        const id = requireIdArg(
-          "Usage: autoctx campaign status --id <campaign-id>",
-        );
-        const campaign = requireCampaign(id);
-        const progress = manager.progress(id);
-        const missions = manager.missions(id);
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        let id: string;
+        try {
+          id = getCampaignIdOrThrow(
+            values,
+            "Usage: autoctx campaign status --id <campaign-id>",
+          );
+        } catch (error) {
+          console.error(errorMessage(error));
+          process.exit(1);
+        }
+        requireCampaign(id);
         console.log(
-          JSON.stringify({ ...campaign, progress, missions }, null, 2),
+          JSON.stringify(
+            executeCampaignStatusCommand({
+              campaignId: id,
+              getCampaign: requireCampaign,
+              getProgress: (campaignId) => manager.progress(campaignId),
+              getMissions: (campaignId) => manager.missions(campaignId),
+            }),
+            null,
+            2,
+          ),
         );
         break;
       }
@@ -2717,8 +2232,23 @@ See also: mission, run`);
           args: process.argv.slice(4),
           options: { status: { type: "string" } },
         });
-        const campaigns = manager.list(parseCampaignStatus(values.status));
-        console.log(JSON.stringify(campaigns, null, 2));
+        let status: CampaignStatus | undefined;
+        try {
+          status = parseCampaignStatus(values.status);
+        } catch (error) {
+          console.error(errorMessage(error));
+          process.exit(1);
+        }
+        console.log(
+          JSON.stringify(
+            executeCampaignListCommand({
+              listCampaigns: (campaignStatus) => manager.list(campaignStatus),
+              status,
+            }),
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "add-mission": {
@@ -2731,33 +2261,21 @@ See also: mission, run`);
             "depends-on": { type: "string" },
           },
         });
-        if (!values.id || !values["mission-id"]) {
-          console.error(
-            "Usage: autoctx campaign add-mission --id <campaign-id> --mission-id <mission-id> [--priority N] [--depends-on <id>]",
-          );
+        let plan;
+        try {
+          plan = planCampaignAddMission(values, parseCampaignPositiveInteger);
+        } catch (error) {
+          console.error(errorMessage(error));
           process.exit(1);
         }
-        requireCampaign(values.id);
-        manager.addMission(values.id, values["mission-id"], {
-          ...(values.priority
-            ? {
-                priority: parseCampaignPositiveInteger(
-                  values.priority,
-                  "--priority",
-                ),
-              }
-            : {}),
-          ...(values["depends-on"]
-            ? { dependsOn: [values["depends-on"]] }
-            : {}),
-        });
+        requireCampaign(plan.campaignId);
         console.log(
           JSON.stringify(
-            {
-              ok: true,
-              campaignId: values.id,
-              missionId: values["mission-id"],
-            },
+            executeCampaignAddMissionCommand({
+              addMission: (campaignId, missionId, options) =>
+                manager.addMission(campaignId, missionId, options),
+              plan,
+            }),
             null,
             2,
           ),
@@ -2765,20 +2283,75 @@ See also: mission, run`);
         break;
       }
       case "progress": {
-        const id = requireIdArg(
-          "Usage: autoctx campaign progress --id <campaign-id>",
-        );
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        let id: string;
+        try {
+          id = getCampaignIdOrThrow(
+            values,
+            "Usage: autoctx campaign progress --id <campaign-id>",
+          );
+        } catch (error) {
+          console.error(errorMessage(error));
+          process.exit(1);
+        }
         requireCampaign(id);
-        const progress = manager.progress(id);
-        const budgetUsage = manager.budgetUsage(id);
-        console.log(JSON.stringify({ ...progress, budgetUsage }, null, 2));
+        console.log(
+          JSON.stringify(
+            executeCampaignProgressCommand({
+              campaignId: id,
+              getProgress: (campaignId) => manager.progress(campaignId),
+              getBudgetUsage: (campaignId) => manager.budgetUsage(campaignId),
+            }),
+            null,
+            2,
+          ),
+        );
         break;
       }
       case "pause":
       case "resume":
-      case "cancel":
-        lifecycleAction(subcommand);
+      case "cancel": {
+        const { values } = parseArgs({
+          args: process.argv.slice(4),
+          options: { id: { type: "string" } },
+        });
+        let id: string;
+        try {
+          id = getCampaignIdOrThrow(
+            values,
+            `Usage: autoctx campaign ${subcommand} --id <campaign-id>`,
+          );
+        } catch (error) {
+          console.error(errorMessage(error));
+          process.exit(1);
+        }
+        requireCampaign(id);
+        try {
+          console.log(
+            JSON.stringify(
+              executeCampaignLifecycleCommand({
+                action: subcommand,
+                campaignId: id,
+                manager: {
+                  get: requireCampaign,
+                  pause: (campaignId) => manager.pause(campaignId),
+                  resume: (campaignId) => manager.resume(campaignId),
+                  cancel: (campaignId) => manager.cancel(campaignId),
+                },
+              }),
+              null,
+              2,
+            ),
+          );
+        } catch (error) {
+          console.error(errorMessage(error));
+          process.exit(1);
+        }
         break;
+      }
       default:
         console.error(
           `Unknown campaign subcommand: ${subcommand}. Run 'autoctx campaign --help'.`,
@@ -2819,62 +2392,29 @@ async function cmdSimulate(): Promise<void> {
     },
   });
 
+  const {
+    executeSimulateCompareWorkflow,
+    executeSimulateExportWorkflow,
+    executeSimulateReplayWorkflow,
+    executeSimulateRunWorkflow,
+    SIMULATE_HELP_TEXT,
+    planSimulateCommand,
+    planSimulateInputs,
+    renderCompareSuccess,
+    renderReplaySuccess,
+    renderSimulationSuccess,
+  } = await import("./simulate-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx simulate — run a plain-language simulation
-
-Usage:
-  autoctx simulate --description "..." [options]
-  autoctx simulate --replay <id> [--variables ...] [--max-steps N]
-  autoctx simulate --compare-left <id> --compare-right <id>
-
-Options:
-  -d, --description <text>   Plain-language description of what to simulate
-  --replay <id>              Replay a previously saved simulation
-  --compare-left <id>        Left simulation for comparison
-  --compare-right <id>       Right simulation for comparison
-  --export <id>              Export a saved simulation as a portable package
-  --format <fmt>             Export format: json (default), markdown, csv
-  --sweep-file <path>        Load sweep config from JSON file
-  --preset <name>            Apply a named variable preset
-  --preset-file <path>       JSON file with named presets
-  --variables <key=val,...>   Variable overrides (e.g., threshold=0.7,budget=100)
-  --sweep <key=min:max:step>  Parameter sweep (e.g., threshold=0.4:0.9:0.1)
-  --runs <N>                  Number of runs (default: 1, or determined by sweep)
-  --max-steps <N>             Maximum steps per run (default: 20)
-  --save-as <name>            Name for the saved simulation
-  --json                      Output as JSON
-  -h, --help                  Show this help
-
-Examples:
-  autoctx simulate -d "simulate deploying a web service with rollback"
-  autoctx simulate -d "simulate a pricing war" --variables max_steps=12
-  autoctx simulate --replay deploy_sim
-  autoctx simulate --replay deploy_sim --variables threshold=0.9 --json
-  autoctx simulate --compare-left sim_a --compare-right sim_b --json
-  autoctx simulate --export deploy_sim --format markdown
-  autoctx simulate --export deploy_sim --format csv`);
+    console.log(SIMULATE_HELP_TEXT);
     process.exit(0);
   }
 
-  const hasCompareLeft =
-    typeof values["compare-left"] === "string" &&
-    values["compare-left"].length > 0;
-  const hasCompareRight =
-    typeof values["compare-right"] === "string" &&
-    values["compare-right"].length > 0;
-  const hasExport =
-    typeof values.export === "string" && values.export.length > 0;
-  if (hasCompareLeft !== hasCompareRight) {
-    console.error(
-      "Error: --compare-left and --compare-right must be provided together. Run 'autoctx simulate --help' for usage.",
-    );
-    process.exit(1);
-  }
-
-  if (!values.description && !values.replay && !hasCompareLeft && !hasExport) {
-    console.error(
-      "Error: --description, --replay, --compare-left/--compare-right, or --export is required. Run 'autoctx simulate --help' for usage.",
-    );
+  let plan;
+  try {
+    plan = planSimulateCommand(values);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
@@ -2885,171 +2425,113 @@ Examples:
   const settings = loadSettings();
 
   // Export mode (AC-452)
-  if (values.export) {
+  if (plan.mode === "export") {
     const { exportSimulation } = await import("../simulation/export.js");
-    if (values.format && !["json", "markdown", "csv"].includes(values.format)) {
-      console.error(
-        `Export failed: Unsupported export format '${values.format}'. Use json, markdown, or csv.`,
+    try {
+      console.log(
+        executeSimulateExportWorkflow({
+          exportId: plan.exportId!,
+          format: values.format,
+          knowledgeRoot: resolve(settings.knowledgeRoot),
+          json: !!values.json,
+          exportSimulation,
+        }),
       );
+    } catch (error) {
+      console.error(errorMessage(error));
       process.exit(1);
-    }
-    const format = (values.format ?? "json") as "json" | "markdown" | "csv";
-    const result = exportSimulation({
-      id: values.export,
-      knowledgeRoot: resolve(settings.knowledgeRoot),
-      format,
-    });
-    if (result.status === "failed") {
-      console.error(`Export failed: ${result.error}`);
-      process.exit(1);
-    }
-    if (values.json) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`Exported: ${result.outputPath}`);
     }
     return;
   }
 
   // Compare mode (AC-451)
-  if (hasCompareLeft && hasCompareRight) {
-    const noopProvider = {
-      name: "local-compare",
-    } as unknown as import("../types/index.js").LLMProvider;
-    const compareEngine = new SimulationEngine(
-      noopProvider,
-      resolve(settings.knowledgeRoot),
-    );
-    const result = await compareEngine.compare({
-      left: values["compare-left"]!,
-      right: values["compare-right"]!,
+  if (plan.mode === "compare") {
+    const result = await executeSimulateCompareWorkflow({
+      compareLeft: plan.compareLeft!,
+      compareRight: plan.compareRight!,
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+      createEngine: (provider, knowledgeRoot) =>
+        new SimulationEngine(
+          provider as unknown as import("../types/index.js").LLMProvider,
+          knowledgeRoot,
+        ),
     });
     emitEngineResult(result, {
       json: !!values.json,
       label: "Compare",
       renderSuccess: (r) => {
-        console.log(`Compare: ${r.left.name} vs ${r.right.name}`);
-        console.log(
-          `Score: ${r.left.score.toFixed(2)} → ${r.right.score.toFixed(2)} (delta: ${r.scoreDelta.toFixed(4)})`,
-        );
-        if (r.likelyDrivers.length > 0) {
-          console.log(`Likely drivers: ${r.likelyDrivers.join(", ")}`);
-        }
-        console.log(r.summary);
+        console.log(renderCompareSuccess(r));
       },
     });
     return;
   }
 
   // Replay mode (AC-450)
-  if (values.replay) {
-    const replayProvider = {
-      name: "local-replay",
-    } as unknown as import("../types/index.js").LLMProvider;
-    const engine = new SimulationEngine(
-      replayProvider,
-      resolve(settings.knowledgeRoot),
-    );
-    const result = await engine.replay({
-      id: values.replay,
-      variables: values.variables
-        ? parseVariableOverrides(values.variables)
-        : undefined,
-      maxSteps: values["max-steps"]
-        ? parseInt(values["max-steps"], 10)
-        : undefined,
+  if (plan.mode === "replay") {
+    const result = await executeSimulateReplayWorkflow({
+      replayId: plan.replayId!,
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+      variables: values.variables,
+      maxSteps: values["max-steps"],
+      createEngine: (provider, knowledgeRoot) =>
+        new SimulationEngine(
+          provider as unknown as import("../types/index.js").LLMProvider,
+          knowledgeRoot,
+        ),
+      parseVariableOverrides,
     });
     emitEngineResult(result, {
       json: !!values.json,
       label: "Replay",
       renderSuccess: (r) => {
-        console.log(
-          `Replay: ${r.name} (original score: ${r.originalScore?.toFixed(2)}, replay score: ${r.summary.score.toFixed(2)}, delta: ${r.scoreDelta?.toFixed(4)})`,
-        );
-        console.log(`Artifacts: ${r.artifacts.scenarioDir}`);
+        console.log(renderReplaySuccess(r));
       },
     });
     return;
   }
 
-  // Build sweep from --sweep or --sweep-file (AC-454)
-  let sweep = values.sweep ? parseSweepSpec(values.sweep) : undefined;
-  if (!sweep && values["sweep-file"]) {
-    const { loadSweepFile } = await import("../simulation/sweep-dsl.js");
-    sweep = loadSweepFile(values["sweep-file"]);
-  }
+  // Build sweep from --sweep or --sweep-file, and variables from --variables/--preset (AC-454)
+  const { loadSweepFile, parsePreset } = await import("../simulation/sweep-dsl.js");
+  const { readFileSync: readFile } = await import("node:fs");
 
-  // Build variables from --variables and/or --preset (AC-454)
-  const hasPreset =
-    typeof values.preset === "string" && values.preset.length > 0;
-  const hasPresetFile =
-    typeof values["preset-file"] === "string" &&
-    values["preset-file"].length > 0;
-  if (hasPreset !== hasPresetFile) {
-    console.error(
-      "Error: --preset and --preset-file must be provided together. Run 'autoctx simulate --help' for usage.",
-    );
+  let sweep;
+  let variables;
+  try {
+    const inputPlan = await planSimulateInputs({
+      values,
+      parseSweepSpec,
+      loadSweepFile,
+      parseVariableOverrides,
+      readPresetFile: (path) => readFile(path, "utf-8"),
+      parsePreset,
+    });
+    sweep = inputPlan.sweep;
+    variables = inputPlan.variables;
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
 
-  let variables = values.variables
-    ? parseVariableOverrides(values.variables)
-    : undefined;
-  if (values.preset && values["preset-file"]) {
-    const { readFileSync: readFile } = await import("node:fs");
-    const { parsePreset } = await import("../simulation/sweep-dsl.js");
-    const presetVars = parsePreset(
-      values.preset,
-      readFile(values["preset-file"], "utf-8"),
-    );
-    if (!presetVars) {
-      console.error(
-        `Error: preset '${values.preset}' was not found or '${values["preset-file"]}' is not valid preset JSON.`,
-      );
-      process.exit(1);
-    }
-    variables = { ...presetVars, ...(variables ?? {}) };
-  }
-
   const { provider } = await getProvider();
-  const engine = new SimulationEngine(
-    provider,
-    resolve(settings.knowledgeRoot),
-  );
 
-  const result = await engine.run({
-    description: values.description!,
+  const result = await executeSimulateRunWorkflow({
+    description: plan.description!,
+    provider,
+    knowledgeRoot: resolve(settings.knowledgeRoot),
     variables,
     sweep,
-    runs: values.runs ? parseInt(values.runs, 10) : undefined,
-    maxSteps: values["max-steps"]
-      ? parseInt(values["max-steps"], 10)
-      : undefined,
+    runs: values.runs,
+    maxSteps: values["max-steps"],
     saveAs: values["save-as"],
+    createEngine: (runProvider, knowledgeRoot) =>
+      new SimulationEngine(runProvider, knowledgeRoot),
   });
 
   emitEngineResult(result, {
     json: !!values.json,
     label: "Simulation",
     renderSuccess: (r) => {
-      console.log(`Simulation: ${r.name} (family: ${r.family})`);
-      console.log(`Score: ${r.summary.score}`);
-      console.log(`Reasoning: ${r.summary.reasoning}`);
-      if (r.sweep) {
-        console.log(
-          `Sweep: ${r.sweep.runs} runs across ${r.sweep.dimensions.length} dimension(s)`,
-        );
-      }
-      if (r.summary.mostSensitiveVariables?.length) {
-        console.log(
-          `Most sensitive: ${r.summary.mostSensitiveVariables.join(", ")}`,
-        );
-      }
-      console.log(`\nAssumptions:`);
-      for (const a of r.assumptions) console.log(`  - ${a}`);
-      console.log(`\nWarnings:`);
-      for (const w of r.warnings) console.log(`  ⚠ ${w}`);
-      console.log(`\nArtifacts: ${r.artifacts.scenarioDir}`);
+      console.log(renderSimulationSuccess(r));
     },
   });
 }
@@ -3072,31 +2554,15 @@ async function cmdInvestigate(): Promise<void> {
     },
   });
 
+  const {
+    INVESTIGATE_HELP_TEXT,
+    executeInvestigateCommandWorkflow,
+    renderInvestigationSuccess,
+  } = await import("./investigate-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx investigate — run a plain-language investigation
-
-Usage: autoctx investigate --description "..." [options]
-
-Options:
-  -d, --description <text>   Plain-language problem to investigate (required)
-  --max-steps <N>            Maximum investigation steps (default: 8)
-  --hypotheses <N>           Maximum hypotheses to generate (default: 5)
-  --save-as <name>           Name for the saved investigation
-  --json                     Output as JSON
-  -h, --help                 Show this help
-
-Examples:
-  autoctx investigate -d "why did conversion drop after Tuesday's release"
-  autoctx investigate -d "intermittent CI failures" --max-steps 12 --json
-  autoctx investigate -d "model benchmark improved but real performance fell" --save-as benchmark_rca`);
+    console.log(INVESTIGATE_HELP_TEXT);
     process.exit(0);
-  }
-
-  if (!values.description) {
-    console.error(
-      "Error: --description is required. Run 'autoctx investigate --help' for usage.",
-    );
-    process.exit(1);
   }
 
   const { InvestigationEngine } = await import("../investigation/engine.js");
@@ -3111,46 +2577,19 @@ Examples:
     resolve(settings.knowledgeRoot),
   );
 
-  const result = await engine.run({
-    description: values.description,
-    maxSteps: values["max-steps"]
-      ? parseInt(values["max-steps"], 10)
-      : undefined,
-    maxHypotheses: values.hypotheses
-      ? parseInt(values.hypotheses, 10)
-      : undefined,
-    saveAs: values["save-as"],
-  });
+  let result;
+  try {
+    result = await executeInvestigateCommandWorkflow({ values, engine });
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
 
   emitEngineResult(result, {
     json: !!values.json,
     label: "Investigation",
     renderSuccess: (r) => {
-      console.log(`Investigation: ${r.name}`);
-      console.log(`Question: ${r.question}`);
-      console.log(`\nHypotheses:`);
-      for (const h of r.hypotheses) {
-        const icon =
-          h.status === "supported"
-            ? "✓"
-            : h.status === "contradicted"
-              ? "✗"
-              : "?";
-        console.log(
-          `  ${icon} ${h.statement} (confidence: ${h.confidence.toFixed(2)}, ${h.status})`,
-        );
-      }
-      console.log(`\nConclusion: ${r.conclusion.bestExplanation}`);
-      console.log(`Confidence: ${r.conclusion.confidence.toFixed(2)}`);
-      if (r.unknowns.length > 0) {
-        console.log(`\nUnknowns:`);
-        for (const u of r.unknowns) console.log(`  - ${u}`);
-      }
-      if (r.recommendedNextSteps.length > 0) {
-        console.log(`\nNext steps:`);
-        for (const s of r.recommendedNextSteps) console.log(`  → ${s}`);
-      }
-      console.log(`\nArtifacts: ${r.artifacts.investigationDir}`);
+      console.log(renderInvestigationSuccess(r));
     },
   });
 }
@@ -3287,73 +2726,47 @@ async function cmdTrain(): Promise<void> {
     },
   });
 
+  const {
+    executeTrainCommandWorkflow,
+    planTrainCommand,
+    renderTrainSuccess,
+    TRAIN_HELP_TEXT,
+  } = await import("./train-command-workflow.js");
+
   if (values.help) {
-    console.log(`autoctx train — train a distilled model from curated dataset
-
-Usage: autoctx train --scenario <name> --dataset <path> [options]
-
-Options:
-  -s, --scenario <name>    Scenario name (required)
-  --family <name>          Scenario family (default: agent_task)
-  -d, --dataset <path>     Training dataset JSONL path (required)
-  --held-out <path>        Held-out evaluation JSONL path
-  --backend <name>         Training backend: cuda, mlx (default: cuda)
-  --mode <mode>            from_scratch, adapter_finetune, full_finetune
-  --base-model <id>        Base model for adapter/full fine-tune
-  -o, --output <dir>       Output directory
-  --json                   Output as JSON
-  -h, --help               Show this help
-
-Notes:
-  The TypeScript package requires an injected training executor for real MLX/CUDA training.
-  For end-to-end local training, prefer the Python package's \`autoctx train\` command.`);
+    console.log(TRAIN_HELP_TEXT);
     process.exit(0);
   }
 
-  if (!values.scenario || !values.dataset) {
-    console.error(
-      "Error: --scenario and --dataset are required. Run 'autoctx train --help'.",
-    );
-    process.exit(1);
-  }
-
-  const { TrainingRunner } = await import("../training/backends.js");
   const { loadSettings } = await import("../config/index.js");
   const { resolve } = await import("node:path");
   const settings = loadSettings();
 
-  const runner = new TrainingRunner();
-  if (runner.usesSyntheticExecutor()) {
-    console.error(
-      "Training failed: no real training executor is configured in the TypeScript package. " +
-        "Use the Python package's 'autoctx train' command or inject a TrainingRunner executor via the package API.",
-    );
+  let plan;
+  try {
+    plan = planTrainCommand(values, settings.runsRoot, resolve);
+  } catch (error) {
+    console.error(errorMessage(error));
     process.exit(1);
   }
-  const result = await runner.train({
-    scenario: values.scenario,
-    family: values.family ?? "agent_task",
-    datasetPath: resolve(values.dataset),
-    heldOutPath: values["held-out"] ? resolve(values["held-out"]) : undefined,
-    outputDir: values.output
-      ? resolve(values.output)
-      : resolve(settings.runsRoot),
-    backend: values.backend ?? "cuda",
-    trainingMode: (values.mode ?? "from_scratch") as
-      | "from_scratch"
-      | "adapter_finetune"
-      | "full_finetune",
-    baseModel: values["base-model"],
-  });
+
+  const { TrainingRunner } = await import("../training/backends.js");
+  let result;
+  try {
+    result = await executeTrainCommandWorkflow({
+      plan,
+      createRunner: () => new TrainingRunner(),
+    });
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
 
   emitEngineResult(result, {
     json: !!values.json,
     label: "Training",
     renderSuccess: (r) => {
-      console.log(`Training completed: ${r.artifact?.artifactId}`);
-      console.log(`  Backend: ${r.backend}`);
-      console.log(`  Checkpoint: ${r.checkpointDir}`);
-      console.log(`  Duration: ${(r.durationMs / 1000).toFixed(1)}s`);
+      console.log(renderTrainSuccess(r));
     },
   });
 }
@@ -3366,25 +2779,22 @@ async function cmdBlob(): Promise<void> {
   const { parseArgs } = await import("node:util");
   const { resolve } = await import("node:path");
   const { loadSettings } = await import("../config/index.js");
+  const {
+    BLOB_HELP_TEXT,
+    executeBlobHydrateWorkflow,
+    executeBlobStatusWorkflow,
+    executeBlobSyncWorkflow,
+    getBlobSubcommand,
+  } = await import("./blob-command-workflow.js");
 
-  const subcommand = process.argv[3];
+  const subcommandPlan = getBlobSubcommand(process.argv[3]);
 
-  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    console.log(`autoctx blob — Manage blob store for large artifacts
-
-Subcommands:
-  sync       Sync a run's artifacts to the blob store
-  status     Show blob store status (total blobs, bytes, synced runs)
-  hydrate    Download a remote blob into the local cache
-
-Examples:
-  autoctx blob status --json
-  autoctx blob sync --run-id run_001 --json
-  autoctx blob hydrate --key runs/run_001/events.ndjson
-
-Requires AUTOCONTEXT_BLOB_STORE_ENABLED=true`);
+  if (subcommandPlan.kind === "help") {
+    console.log(BLOB_HELP_TEXT);
     process.exit(0);
   }
+
+  const subcommand = subcommandPlan.subcommand;
 
   const settings = loadSettings();
 
@@ -3408,18 +2818,12 @@ Requires AUTOCONTEXT_BLOB_STORE_ENABLED=true`);
         options: { json: { type: "boolean" } },
       });
       const { SyncManager } = await import("../blobstore/sync.js");
-      const mgr = new SyncManager(store, resolve(settings.runsRoot));
-      const result = mgr.status();
-      if (values.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log(
-          `Blob store: ${result.totalBlobs} blobs, ${result.totalBytes} bytes`,
-        );
-        console.log(
-          `Synced runs: ${result.runCount} (${result.syncedRuns.join(", ") || "none"})`,
-        );
-      }
+      console.log(
+        executeBlobStatusWorkflow({
+          json: !!values.json,
+          createSyncManager: () => new SyncManager(store, resolve(settings.runsRoot)),
+        }),
+      );
       break;
     }
     case "sync": {
@@ -3430,22 +2834,20 @@ Requires AUTOCONTEXT_BLOB_STORE_ENABLED=true`);
           json: { type: "boolean" },
         },
       });
-      if (!values["run-id"]) {
-        console.error("Usage: autoctx blob sync --run-id <run-id> [--json]");
-        process.exit(1);
-      }
-      const { SyncManager } = await import("../blobstore/sync.js");
-      const mgr = new SyncManager(store, resolve(settings.runsRoot));
-      const result = mgr.syncRun(values["run-id"]);
-      if (values.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        console.log(
-          `Synced ${result.syncedCount} artifacts (${result.totalBytes} bytes), skipped ${result.skippedCount}`,
-        );
-        if (result.errors.length > 0) {
-          for (const err of result.errors) console.error(`  Error: ${err}`);
+      try {
+        const { SyncManager } = await import("../blobstore/sync.js");
+        const result = executeBlobSyncWorkflow({
+          runId: values["run-id"],
+          json: !!values.json,
+          createSyncManager: () => new SyncManager(store, resolve(settings.runsRoot)),
+        });
+        if (result.stderrLines) {
+          for (const line of result.stderrLines) console.error(line);
         }
+        console.log(result.stdout);
+      } catch (error) {
+        console.error(errorMessage(error));
+        process.exit(1);
       }
       break;
     }
@@ -3457,27 +2859,26 @@ Requires AUTOCONTEXT_BLOB_STORE_ENABLED=true`);
           output: { type: "string", short: "o" },
         },
       });
-      if (!values.key) {
-        console.error(
-          "Usage: autoctx blob hydrate --key <blob-key> [-o <output-path>]",
-        );
-        process.exit(1);
-      }
-      const data = store.get(values.key);
-      if (!data) {
-        console.error(`Blob not found: ${values.key}`);
-        process.exit(1);
-      }
-      if (values.output) {
+      try {
         const { writeFileSync, mkdirSync } = await import("node:fs");
         const { dirname } = await import("node:path");
-        mkdirSync(dirname(resolve(values.output)), { recursive: true });
-        writeFileSync(resolve(values.output), data);
-        console.log(
-          `Hydrated ${values.key} → ${values.output} (${data.length} bytes)`,
-        );
-      } else {
-        process.stdout.write(data);
+        const result = executeBlobHydrateWorkflow({
+          key: values.key,
+          output: values.output,
+          store,
+          writeOutputFile: (outputPath, data) => {
+            mkdirSync(dirname(resolve(outputPath)), { recursive: true });
+            writeFileSync(resolve(outputPath), data);
+          },
+        });
+        if (result.stdoutBuffer) {
+          process.stdout.write(result.stdoutBuffer);
+        } else if (result.stdout) {
+          console.log(result.stdout);
+        }
+      } catch (error) {
+        console.error(errorMessage(error));
+        process.exit(1);
       }
       break;
     }

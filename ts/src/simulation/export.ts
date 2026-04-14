@@ -5,9 +5,10 @@
  * Each format includes spec, variables, results, assumptions, and warnings.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { SimulationResult } from "./engine.js";
+import { loadPersistedSimulationSpec, resolveSimulationArtifact } from "./artifact-store.js";
+import type { SimulationResult } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,12 +28,6 @@ export interface SimulationExportResult {
   format: ExportFormat;
   outputPath?: string;
   error?: string;
-}
-
-interface ResolvedSimulationArtifact {
-  scenarioDir: string;
-  reportPath: string;
-  report: SimulationResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,12 +54,7 @@ export function exportSimulation(opts: SimulationExportOpts): SimulationExportRe
 
   // Load spec if available
   const specPath = join(scenarioDir, "spec.json");
-  let spec: Record<string, unknown> = {};
-  if (existsSync(specPath)) {
-    try {
-      spec = JSON.parse(readFileSync(specPath, "utf-8")) as Record<string, unknown>;
-    } catch { /* use empty */ }
-  }
+  const spec = loadPersistedSimulationSpec(specPath) ?? {};
 
   const outputDir = opts.outputDir ?? join(scenarioDir, "exports");
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
@@ -270,43 +260,6 @@ function normalizeExportFormat(format?: ExportFormat | string): ExportFormat | n
   if (format === "json" || format === "markdown" || format === "csv") {
     return format;
   }
-  return null;
-}
-
-function resolveSimulationArtifact(knowledgeRoot: string, id: string): ResolvedSimulationArtifact | null {
-  const simulationsRoot = join(knowledgeRoot, "_simulations");
-  const baseReportPath = join(simulationsRoot, id, "report.json");
-  if (existsSync(baseReportPath)) {
-    try {
-      const report = JSON.parse(readFileSync(baseReportPath, "utf-8")) as SimulationResult;
-      return {
-        scenarioDir: join(simulationsRoot, id),
-        reportPath: baseReportPath,
-        report,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  if (!existsSync(simulationsRoot)) return null;
-
-  for (const entry of readdirSync(simulationsRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith("_")) continue;
-    const replayReportPath = join(simulationsRoot, entry.name, `replay_${id}.json`);
-    if (!existsSync(replayReportPath)) continue;
-    try {
-      const report = JSON.parse(readFileSync(replayReportPath, "utf-8")) as SimulationResult;
-      return {
-        scenarioDir: join(simulationsRoot, entry.name),
-        reportPath: replayReportPath,
-        report,
-      };
-    } catch {
-      return null;
-    }
-  }
-
   return null;
 }
 

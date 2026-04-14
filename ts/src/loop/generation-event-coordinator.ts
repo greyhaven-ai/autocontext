@@ -1,10 +1,75 @@
 import type { GenerationGateDecision } from "./generation-attempt-state.js";
 
+export interface RunStartedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  scenario: string;
+  target_generations: number;
+}
+
+export interface GenerationStartedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  generation: number;
+}
+
+export interface AgentsStartedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  generation: number;
+  roles: Array<"competitor" | "analyst" | "coach" | "curator">;
+}
+
+export interface TournamentCompletedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  generation: number;
+  mean_score: number;
+  best_score: number;
+  wins: number;
+  losses: number;
+}
+
+export interface GateDecidedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  generation: number;
+  decision: GenerationGateDecision;
+  delta: number;
+  threshold: number;
+}
+
+export interface GenerationCompletedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  generation: number;
+  mean_score: number;
+  best_score: number;
+  elo: number;
+  gate_decision: GenerationGateDecision;
+}
+
+export interface RunCompletedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  completed_generations: number;
+  best_score: number;
+  elo: number;
+  session_report_path: string;
+  dead_ends_found: number;
+}
+
+export interface RunFailedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  error: string;
+}
+
 export function buildRunStartedPayload(opts: {
   runId: string;
   scenarioName: string;
   targetGenerations: number;
-}): Record<string, unknown> {
+}): RunStartedPayload {
   return {
     run_id: opts.runId,
     scenario: opts.scenarioName,
@@ -15,7 +80,7 @@ export function buildRunStartedPayload(opts: {
 export function buildGenerationStartedPayload(
   runId: string,
   generation: number,
-): Record<string, unknown> {
+): GenerationStartedPayload {
   return {
     run_id: runId,
     generation,
@@ -26,7 +91,7 @@ export function buildAgentsStartedPayload(
   runId: string,
   generation: number,
   curatorEnabled: boolean,
-): Record<string, unknown> {
+): AgentsStartedPayload {
   return {
     run_id: runId,
     generation,
@@ -45,7 +110,7 @@ export function buildTournamentCompletedPayload(
     wins: number;
     losses: number;
   },
-): Record<string, unknown> {
+): TournamentCompletedPayload {
   return {
     run_id: runId,
     generation,
@@ -62,7 +127,7 @@ export function buildGateDecidedPayload(
   decision: GenerationGateDecision,
   delta: number,
   threshold: number,
-): Record<string, unknown> {
+): GateDecidedPayload {
   return {
     run_id: runId,
     generation,
@@ -81,7 +146,7 @@ export function buildGenerationCompletedPayload(
     elo: number;
     gateDecision: GenerationGateDecision;
   },
-): Record<string, unknown> {
+): GenerationCompletedPayload {
   return {
     run_id: runId,
     generation,
@@ -99,7 +164,7 @@ export function buildRunCompletedPayload(opts: {
   currentElo: number;
   sessionReportPath: string;
   deadEndsFound: number;
-}): Record<string, unknown> {
+}): RunCompletedPayload {
   return {
     run_id: opts.runId,
     completed_generations: opts.completedGenerations,
@@ -113,7 +178,7 @@ export function buildRunCompletedPayload(opts: {
 export function buildRunFailedPayload(
   runId: string,
   error: string,
-): Record<string, unknown> {
+): RunFailedPayload {
   return {
     run_id: runId,
     error,

@@ -1,6 +1,13 @@
 import type { TournamentOpts, TournamentResult } from "../execution/tournament.js";
 import type { CompletionResult } from "../types/index.js";
 import type { GenerationRole } from "../providers/index.js";
+
+export interface RoleCompletedPayload {
+  [key: string]: unknown;
+  role: "competitor" | "analyst" | "coach" | "curator";
+  latency_ms: number;
+  tokens: number;
+}
 import type { TournamentExecutionPlan } from "./generation-execution-step.js";
 import {
   buildGenerationTournamentEventSequence,
@@ -13,7 +20,7 @@ export function buildRoleCompletedPayload(
   role: "competitor" | "analyst" | "coach" | "curator",
   latencyMs: number,
   usage: Record<string, number>,
-): Record<string, unknown> {
+): RoleCompletedPayload {
   const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
   const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
 
@@ -30,7 +37,7 @@ export async function executeRoleCompletionSideEffect(opts: {
   now?: () => number;
 }): Promise<{
   result: CompletionResult;
-  roleCompletedPayload: Record<string, unknown>;
+  roleCompletedPayload: RoleCompletedPayload;
 }> {
   const now = opts.now ?? Date.now;
   const startedAt = now();

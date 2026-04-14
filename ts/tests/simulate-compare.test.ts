@@ -120,12 +120,12 @@ describe("simulate compare", () => {
     await engine.run({
       description: "Sweep left",
       saveAs: "sweep_left",
-      sweep: [{ name: "max_steps", values: [1, 2] }],
+      sweep: [{ name: "max_steps", values: [1, 2], scale: "linear" }],
     });
     await engine.run({
       description: "Sweep right",
       saveAs: "sweep_right",
-      sweep: [{ name: "max_steps", values: [3, 4] }],
+      sweep: [{ name: "max_steps", values: [3, 4], scale: "linear" }],
     });
 
     const result = await engine.compare({ left: "sweep_left", right: "sweep_right" });
@@ -182,6 +182,50 @@ describe("simulate compare", () => {
 
     expect(result.status).toBe("failed");
     expect(result.error).toContain("not found");
+  });
+
+  it("normalizes score, variable, and dimension deltas to stable four-decimal values", async () => {
+    const engine = new SimulationEngine(mockProvider(), tmpDir);
+
+    const leftDir = join(tmpDir, "_simulations", "normalized_left");
+    const rightDir = join(tmpDir, "_simulations", "normalized_right");
+    mkdirSync(leftDir, { recursive: true });
+    mkdirSync(rightDir, { recursive: true });
+
+    const leftReport: SimulationResult = {
+      id: "sim_left",
+      name: "normalized_left",
+      family: "simulation",
+      status: "completed",
+      description: "left",
+      assumptions: [],
+      variables: { threshold: 0.1111 },
+      summary: { score: 0.22224, reasoning: "left", dimensionScores: { completion: 0.11111 } },
+      artifacts: { scenarioDir: leftDir, reportPath: join(leftDir, "report.json") },
+      warnings: [],
+    };
+    const rightReport: SimulationResult = {
+      id: "sim_right",
+      name: "normalized_right",
+      family: "simulation",
+      status: "completed",
+      description: "right",
+      assumptions: [],
+      variables: { threshold: 0.4445 },
+      summary: { score: 0.55559, reasoning: "right", dimensionScores: { completion: 0.44446 } },
+      artifacts: { scenarioDir: rightDir, reportPath: join(rightDir, "report.json") },
+      warnings: [],
+    };
+
+    writeFileSync(join(leftDir, "report.json"), JSON.stringify(leftReport, null, 2), "utf-8");
+    writeFileSync(join(rightDir, "report.json"), JSON.stringify(rightReport, null, 2), "utf-8");
+
+    const result = await engine.compare({ left: "normalized_left", right: "normalized_right" });
+
+    expect(result.status).toBe("completed");
+    expect(result.scoreDelta).toBe(0.3334);
+    expect(result.variableDeltas.threshold.delta).toBe(0.3334);
+    expect(result.dimensionDeltas.completion.delta).toBe(0.3334);
   });
 
   it("fails when comparing simulations from different families", async () => {

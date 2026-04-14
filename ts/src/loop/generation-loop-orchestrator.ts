@@ -5,6 +5,12 @@ import {
   buildRunCompletedPayload,
   buildRunFailedPayload,
   buildRunStartedPayload,
+  type AgentsStartedPayload,
+  type GenerationCompletedPayload,
+  type GenerationStartedPayload,
+  type RunCompletedPayload,
+  type RunFailedPayload,
+  type RunStartedPayload,
 } from "./generation-event-coordinator.js";
 import {
   completeGenerationCycle,
@@ -28,12 +34,12 @@ export interface GenerationLoopOrchestration {
   runState: GenerationRunState;
   cycleState: GenerationCycleState;
   events: {
-    runStarted?: Record<string, unknown>;
-    generationStarted?: Record<string, unknown>;
-    agentsStarted?: Record<string, unknown>;
-    generationCompleted?: Record<string, unknown>;
-    runCompleted?: Record<string, unknown>;
-    runFailed?: Record<string, unknown>;
+    runStarted?: RunStartedPayload;
+    generationStarted?: GenerationStartedPayload;
+    agentsStarted?: AgentsStartedPayload;
+    generationCompleted?: GenerationCompletedPayload;
+    runCompleted?: RunCompletedPayload;
+    runFailed?: RunFailedPayload;
   };
 }
 

@@ -1,113 +1,115 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-interface SandboxToolResult {
-  content: Array<{ type: "text"; text: string }>;
+interface JsonToolResponse {
+  content: Array<{
+    type: "text";
+    text: string;
+  }>;
 }
 
-interface SandboxToolServer {
-  tool(
-    name: string,
-    description: string,
-    schema: Record<string, unknown>,
-    handler: (args: Record<string, unknown>) => Promise<SandboxToolResult> | SandboxToolResult,
-  ): void;
-}
+type McpToolRegistrar = {
+  tool: (...args: any[]) => unknown;
+};
 
-type SandboxToolRegistrar = McpServer | SandboxToolServer;
-
-interface SandboxManagerLike {
-  create(scenarioName: string, userId?: string): unknown;
-  run(sandboxId: string, generations?: number): Promise<unknown>;
-  getStatus(sandboxId: string): unknown | null;
+interface SandboxToolManager {
+  create(scenarioName: string, userId?: string): object;
+  run(sandboxId: string, generations?: number): Promise<object>;
+  getStatus(sandboxId: string): object | null;
   readPlaybook(sandboxId: string): string;
-  list(): unknown[];
+  list(): object[];
   destroy(sandboxId: string): boolean;
 }
 
-function jsonContent(payload: unknown): SandboxToolResult {
+function jsonText(payload: unknown, indent?: number): JsonToolResponse {
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify(payload, null, 2),
+        text: JSON.stringify(payload, null, indent),
       },
     ],
   };
 }
 
-export function buildSandboxNotFoundPayload(sandboxId: string): Record<string, string> {
+export function buildSandboxNotFoundPayload(sandboxId: string): { error: string } {
   return { error: `Sandbox '${sandboxId}' not found` };
 }
 
 export function registerSandboxTools(
-  server: SandboxToolRegistrar,
-  opts: { sandboxManager: SandboxManagerLike },
+  server: McpToolRegistrar,
+  opts: {
+    sandboxManager: SandboxToolManager;
+  },
 ): void {
-  const { sandboxManager } = opts;
-  const toolServer = server as SandboxToolServer;
-
-  toolServer.tool(
+  server.tool(
     "sandbox_create",
     "Create an isolated sandbox for scenario execution",
     { scenario: z.string(), userId: z.string().default("anonymous") },
-    async (args) => jsonContent(
-      sandboxManager.create(String(args.scenario), String(args.userId ?? "anonymous")),
-    ),
+    async (args: Record<string, unknown>) =>
+      jsonText(
+        opts.sandboxManager.create(
+          args.scenario as string,
+          args.userId as string | undefined,
+        ),
+        2,
+      ),
   );
 
-  toolServer.tool(
+  server.tool(
     "sandbox_run",
     "Run generation(s) in a sandbox",
     { sandboxId: z.string(), generations: z.number().int().default(1) },
-    async (args) => jsonContent(
-      await sandboxManager.run(String(args.sandboxId), Number(args.generations ?? 1)),
-    ),
+    async (args: Record<string, unknown>) =>
+      jsonText(
+        await opts.sandboxManager.run(
+          args.sandboxId as string,
+          args.generations as number | undefined,
+        ),
+        2,
+      ),
   );
 
-  toolServer.tool(
+  server.tool(
     "sandbox_status",
     "Get sandbox status",
     { sandboxId: z.string() },
-    async (args) => {
-      const sandboxId = String(args.sandboxId);
-      return jsonContent(
-        sandboxManager.getStatus(sandboxId) ?? buildSandboxNotFoundPayload(sandboxId),
-      );
+    async (args: Record<string, unknown>) => {
+      const sandboxId = args.sandboxId as string;
+      const sandbox = opts.sandboxManager.getStatus(sandboxId);
+      return jsonText(sandbox ?? buildSandboxNotFoundPayload(sandboxId), 2);
     },
   );
 
-  toolServer.tool(
+  server.tool(
     "sandbox_playbook",
     "Read the current playbook for a sandbox",
     { sandboxId: z.string() },
-    async (args) => ({
-      content: [
-        {
-          type: "text",
-          text: sandboxManager.readPlaybook(String(args.sandboxId)),
-        },
-      ],
+    async (args: Record<string, unknown>) => ({
+      content: [{
+        type: "text",
+        text: opts.sandboxManager.readPlaybook(args.sandboxId as string),
+      }],
     }),
   );
 
-  toolServer.tool(
+  server.tool(
     "sandbox_list",
     "List active sandboxes",
     {},
-    async () => jsonContent(sandboxManager.list()),
+    async () => jsonText(opts.sandboxManager.list(), 2),
   );
 
-  toolServer.tool(
+  server.tool(
     "sandbox_destroy",
     "Destroy a sandbox and clean up its data",
     { sandboxId: z.string() },
-    async (args) => {
-      const sandboxId = String(args.sandboxId);
-      return jsonContent({
-        destroyed: sandboxManager.destroy(sandboxId),
-        sandboxId,
-      });
-    },
+    async (args: Record<string, unknown>) =>
+      jsonText(
+        {
+          destroyed: opts.sandboxManager.destroy(args.sandboxId as string),
+          sandboxId: args.sandboxId,
+        },
+        2,
+      ),
   );
 }
