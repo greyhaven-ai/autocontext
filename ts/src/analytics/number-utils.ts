@@ -21,20 +21,12 @@ export function normalizeDecisionMetric(value: number, digits = 6): number {
 }
 
 export function normalizeConfidence(value: number, digits = 4): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
   return roundToDecimals(clamp(value, 0, 1), digits);
 }
 
 export function normalizePreviewThreshold(value: number, digits = 3): number {
   return normalizeConfidence(value, digits);
-}
-
-export function normalizeConfidence(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return roundToDecimals(Math.min(1, Math.max(0, value)), 4);
-}
-
-export function normalizePreviewThreshold(value: number): number {
-  return normalizeConfidence(value);
 }
