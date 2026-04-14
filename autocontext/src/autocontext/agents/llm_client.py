@@ -572,26 +572,26 @@ def build_client_from_settings(
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
 
-        config = ClaudeCLIConfig(
+        claude_config = ClaudeCLIConfig(
             model=settings.claude_model,
             tools=settings.claude_tools,
             permission_mode=settings.claude_permission_mode,
             session_persistence=settings.claude_session_persistence,
             timeout=settings.claude_timeout,
         )
-        return RuntimeBridgeClient(ClaudeCLIRuntime(config))
+        return RuntimeBridgeClient(ClaudeCLIRuntime(claude_config))
     if settings.agent_provider == "codex":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime
 
-        config = CodexCLIConfig(
+        codex_config = CodexCLIConfig(
             model=settings.codex_model,
             approval_mode=settings.codex_approval_mode,
             timeout=settings.codex_timeout,
             workspace=settings.codex_workspace,
             quiet=settings.codex_quiet,
         )
-        return RuntimeBridgeClient(CodexCLIRuntime(config))
+        return RuntimeBridgeClient(CodexCLIRuntime(codex_config))
     if settings.agent_provider == "pi":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.providers.scenario_routing import resolve_pi_model
@@ -613,13 +613,13 @@ def build_client_from_settings(
             if handoff is not None:
                 resolved_model = handoff.checkpoint_path
 
-        config = PiCLIConfig(
+        pi_config = PiCLIConfig(
             pi_command=settings.pi_command,
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             model=resolved_model,
         )
-        return RuntimeBridgeClient(PiCLIRuntime(config))
+        return RuntimeBridgeClient(PiCLIRuntime(pi_config))
     if settings.agent_provider == "pi-rpc":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime

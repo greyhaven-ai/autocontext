@@ -119,50 +119,53 @@ def get_provider(settings: AppSettings) -> LLMProvider:
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
         from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
 
-        runtime = ClaudeCLIRuntime(ClaudeCLIConfig(
+        claude_runtime = ClaudeCLIRuntime(ClaudeCLIConfig(
             model=settings.claude_model,
             tools=settings.claude_tools,
             permission_mode=settings.claude_permission_mode,
             session_persistence=settings.claude_session_persistence,
             timeout=settings.claude_timeout,
         ))
-        return RuntimeBridgeProvider(runtime, default_model_name=settings.claude_model)
+        return RuntimeBridgeProvider(claude_runtime, default_model_name=settings.claude_model)
 
     if provider_type == "codex":
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
         from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime
 
-        runtime = CodexCLIRuntime(CodexCLIConfig(
+        codex_runtime = CodexCLIRuntime(CodexCLIConfig(
             model=settings.codex_model,
             approval_mode=settings.codex_approval_mode,
             timeout=settings.codex_timeout,
             workspace=settings.codex_workspace,
             quiet=settings.codex_quiet,
         ))
-        return RuntimeBridgeProvider(runtime, default_model_name=settings.codex_model)
+        return RuntimeBridgeProvider(codex_runtime, default_model_name=settings.codex_model)
 
     if provider_type == "pi":
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
         from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
 
-        runtime = PiCLIRuntime(PiCLIConfig(
+        pi_runtime = PiCLIRuntime(PiCLIConfig(
             pi_command=settings.pi_command,
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             model=settings.pi_model,
         ))
-        return RuntimeBridgeProvider(runtime, default_model_name=settings.pi_model or "pi-default")
+        return RuntimeBridgeProvider(pi_runtime, default_model_name=settings.pi_model or "pi-default")
 
     if provider_type == "pi-rpc":
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
         from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
 
-        runtime = PiRPCRuntime(PiRPCConfig(
+        pi_rpc_runtime = PiRPCRuntime(PiRPCConfig(
             pi_command=settings.pi_command,
             model=settings.pi_model or settings.judge_model,
             session_persistence=settings.pi_rpc_session_persistence,
         ))
-        return RuntimeBridgeProvider(runtime, default_model_name=settings.pi_model or settings.judge_model or "pi-rpc-default")
+        return RuntimeBridgeProvider(
+            pi_rpc_runtime,
+            default_model_name=settings.pi_model or settings.judge_model or "pi-rpc-default",
+        )
 
     # Use judge_api_key if set, otherwise fall back to provider-specific keys
     api_key = settings.judge_api_key
