@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
+import { saveProviderCredentials } from "../src/config/index.js";
 import { buildRoleProviderBundle } from "../src/providers/role-provider-bundle.js";
 
 const savedEnv: Record<string, string | undefined> = {};
@@ -51,5 +55,25 @@ describe("role provider bundle workflow", () => {
     expect(bundle.roleProviders.competitor?.name).toBe("deterministic");
     expect(bundle.roleModels.analyst).toBe("analyst-model");
     expect(bundle.roleModels.coach).toBe("coach-model");
+  });
+
+  it("treats blank per-role credential overrides as unset", () => {
+    saveAndClear();
+    const configDir = mkdtempSync(join(tmpdir(), "role-provider-credentials-"));
+    process.env.AUTOCONTEXT_CONFIG_DIR = configDir;
+    saveProviderCredentials(configDir, "anthropic", { apiKey: "sk-test-123" });
+
+    try {
+      const bundle = buildRoleProviderBundle({
+        agentProvider: "anthropic",
+        competitorApiKey: "",
+        competitorBaseUrl: "",
+      });
+
+      expect(bundle.defaultConfig.apiKey).toBe("sk-test-123");
+      expect(bundle.roleProviders.competitor?.name).toBe("anthropic");
+    } finally {
+      rmSync(configDir, { recursive: true, force: true });
+    }
   });
 });

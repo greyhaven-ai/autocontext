@@ -68,22 +68,31 @@ interface RoleConfigInput {
   baseUrl?: string;
 }
 
+function normalizeOptionalOverride(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function resolveRoleConfig(
   defaultConfig: ProviderConfig,
   overrides: Partial<ProviderConfig>,
   roleConfig: RoleConfigInput,
 ): ProviderConfig {
+  const providerType = normalizeOptionalOverride(roleConfig.providerType);
+  const model = normalizeOptionalOverride(roleConfig.model);
+  const apiKey = normalizeOptionalOverride(roleConfig.apiKey);
+  const baseUrl = normalizeOptionalOverride(roleConfig.baseUrl);
   return resolveProviderConfig({
     ...overrides,
-    providerType: roleConfig.providerType || defaultConfig.providerType,
-    model: roleConfig.model ?? defaultConfig.model,
-    apiKey: roleConfig.apiKey ?? overrides.apiKey,
-    baseUrl: roleConfig.baseUrl ?? overrides.baseUrl,
+    providerType: providerType ?? defaultConfig.providerType,
+    model: model ?? defaultConfig.model,
+    apiKey: apiKey ?? overrides.apiKey,
+    baseUrl: baseUrl ?? overrides.baseUrl,
   }, {
-    preferProviderOverride: Boolean(roleConfig.providerType),
-    preferModelOverride: Boolean(roleConfig.model),
-    preferApiKeyOverride: Boolean(roleConfig.apiKey),
-    preferBaseUrlOverride: Boolean(roleConfig.baseUrl),
+    preferProviderOverride: Boolean(providerType),
+    preferModelOverride: Boolean(model),
+    preferApiKeyOverride: Boolean(apiKey),
+    preferBaseUrlOverride: Boolean(baseUrl),
   });
 }
 
