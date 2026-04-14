@@ -151,6 +151,8 @@ class PiCLIRuntime(AgentRuntime):
             try:
                 data = json.loads(raw)
                 text = data.get("result", data.get("output", ""))
+                if not isinstance(text, str) or not text.strip():
+                    text = json.dumps(data)
                 return AgentOutput(
                     text=text,
                     cost_usd=data.get("cost_usd", 0.0),

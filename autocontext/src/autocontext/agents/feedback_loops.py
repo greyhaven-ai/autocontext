@@ -15,6 +15,7 @@ Key types:
 
 from __future__ import annotations
 
+import json
 import statistics
 from typing import Any
 
@@ -44,7 +45,14 @@ class AnalystRating(BaseModel):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AnalystRating:
-        return cls.model_validate(data)
+        payload = dict(data)
+        rationale = payload.get("rationale", "")
+        if not isinstance(rationale, str):
+            if isinstance(rationale, dict | list):
+                payload["rationale"] = json.dumps(rationale, sort_keys=True)
+            else:
+                payload["rationale"] = str(rationale)
+        return cls.model_validate(payload)
 
 
 def format_analyst_feedback(rating: AnalystRating | None) -> str:
@@ -90,8 +98,7 @@ class ToolUsageTracker:
     def __init__(self, known_tools: list[str]) -> None:
         self._tools = known_tools
         self._records: dict[str, ToolUsageRecord] = {
-            name: ToolUsageRecord(tool_name=name, used_in_gens=[], last_used=0, total_refs=0)
-            for name in known_tools
+            name: ToolUsageRecord(tool_name=name, used_in_gens=[], last_used=0, total_refs=0) for name in known_tools
         }
 
     def record_generation(self, generation: int, strategy_text: str) -> None:
@@ -110,10 +117,7 @@ class ToolUsageTracker:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "records": {
-                name: record.to_dict()
-                for name, record in sorted(self._records.items())
-            },
+            "records": {name: record.to_dict() for name, record in sorted(self._records.items())},
         }
 
     @classmethod

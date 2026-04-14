@@ -84,6 +84,27 @@ def test_generate_raw_text_fallback() -> None:
     assert output.model == "pi"
 
 
+def test_generate_json_object_without_result_serializes_full_payload() -> None:
+    runtime = PiCLIRuntime(PiCLIConfig())
+    raw_payload = {
+        "actions": [
+            {"name": "review_request", "parameters": {}, "reasoning": "Start with intake."},
+        ],
+    }
+    mock_result = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout=json.dumps(raw_payload),
+        stderr="",
+    )
+
+    with patch("subprocess.run", return_value=mock_result), patch("shutil.which", return_value="/usr/bin/pi"):
+        output = runtime.generate("test prompt")
+
+    assert json.loads(output.text) == raw_payload
+    assert output.metadata["raw_json"] == raw_payload
+
+
 def test_generate_json_output_disabled() -> None:
     runtime = PiCLIRuntime(PiCLIConfig(json_output=False))
     mock_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="raw output\n", stderr="")

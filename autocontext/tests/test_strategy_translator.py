@@ -23,13 +23,18 @@ def _make_runtime(response_text: str) -> MagicMock:
     return runtime
 
 
-OTHELLO_INTERFACE = (
-    "Return JSON object with `mobility_weight`, `corner_weight`, and `stability_weight` "
-    "as floats in [0,1]."
-)
+OTHELLO_INTERFACE = "Return JSON object with `mobility_weight`, `corner_weight`, and `stability_weight` as floats in [0,1]."
 
-GRID_CTF_INTERFACE = (
-    "Return JSON object with `aggression`, `defense`, and `path_bias` as floats in [0,1]."
+GRID_CTF_INTERFACE = "Return JSON object with `aggression`, `defense`, and `path_bias` as floats in [0,1]."
+
+ACTION_PLAN_INTERFACE = (
+    "Return JSON with an ordered action plan:\n"
+    "{\n"
+    '  "actions": [\n'
+    '    {"name": "action_name", "parameters": {...}, "reasoning": "why this step now"}\n'
+    "  ]\n"
+    "}\n\n"
+    "Allowed action names: review_request, escalate_to_human_operator, continue_with_operator_guidance"
 )
 
 
@@ -174,3 +179,21 @@ class TestStrategyTranslator:
         assert result == {"mobility_weight": 0.25, "corner_weight": 0.6, "stability_weight": 0.15}
         assert execution.subagent_id == "translator-abc123"
         runtime.run_task.assert_called_once()
+
+    def test_translate_action_plan_prompt_allows_nested_non_numeric_values(self) -> None:
+        raw_json = '{"actions": [{"name": "review_request", "parameters": {}, "reasoning": "Start with intake."}]}'
+        runtime = _make_runtime(raw_json)
+        translator = StrategyTranslator(runtime, model="test-model")
+
+        result, _ = translator.translate(
+            raw_output="Review the request, then escalate if needed.",
+            strategy_interface=ACTION_PLAN_INTERFACE,
+        )
+
+        prompt = runtime.run_task.call_args[0][0].prompt
+        task = runtime.run_task.call_args[0][0]
+
+        assert result["actions"][0]["name"] == "review_request"
+        assert "Include only numeric values" not in prompt
+        assert "Preserve strings, arrays, and nested objects" in prompt
+        assert task.max_tokens == 400

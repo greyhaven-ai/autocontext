@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from autocontext.prompts.context_budget import ContextBudget
 from autocontext.scenarios.base import Observation
+from autocontext.strategy_interface import is_action_plan_interface
 
 
 @dataclass(frozen=True)
@@ -183,12 +184,15 @@ def build_prompt_bundle(
     analyst_nb = f"Session notebook context:\n{_nb['analyst']}\n\n" if _nb.get("analyst") else ""
     coach_nb = f"Session notebook context:\n{_nb['coach']}\n\n" if _nb.get("coach") else ""
     architect_nb = f"Session notebook context:\n{_nb['architect']}\n\n" if _nb.get("architect") else ""
+    competitor_task = (
+        "Return ONLY a JSON object that matches the strategy interface. "
+        "Encode your reasoning inside each action's `reasoning` field and do not add prose outside the JSON."
+        if is_action_plan_interface(strategy_interface)
+        else "Describe your strategy reasoning and recommend specific parameter values."
+    )
+
     return PromptBundle(
-        competitor=base_context
-        + hints_block
-        + competitor_nb
-        + competitor_constraint
-        + "Describe your strategy reasoning and recommend specific parameter values.",
+        competitor=base_context + hints_block + competitor_nb + competitor_constraint + competitor_task,
         analyst=base_context
         + evidence_block
         + analyst_feedback_block

@@ -12,6 +12,7 @@ from autocontext.agents.translator_simplification import extract_strategy_determ
 from autocontext.agents.types import RoleExecution
 from autocontext.harness.core.output_parser import strip_json_fences as _harness_strip_fences
 from autocontext.harness.core.types import RoleUsage
+from autocontext.strategy_interface import is_action_plan_interface
 
 
 class StrategyTranslator:
@@ -38,20 +39,25 @@ class StrategyTranslator:
             )
             return deterministic, execution
 
+        action_plan_interface = is_action_plan_interface(strategy_interface)
         prompt = (
             "Extract the strategy from the following competitor analysis as a JSON object.\n\n"
             f"Strategy interface (expected format):\n{strategy_interface}\n\n"
             f"Competitor output:\n{raw_output}\n\n"
             "Return ONLY a valid JSON object with no markdown fences or explanation. "
-            "Map any abbreviated or alternative field names "
-            "to match the strategy interface. Include only numeric values."
+            "Map any abbreviated or alternative field names to match the strategy interface. "
+            + (
+                "Preserve strings, arrays, and nested objects exactly as needed by the strategy interface."
+                if action_plan_interface
+                else "Include only numeric values."
+            )
         )
         execution = self.runtime.run_task(
             SubagentTask(
                 role="translator",
                 model=self.model,
                 prompt=prompt,
-                max_tokens=200,
+                max_tokens=400 if action_plan_interface else 200,
                 temperature=0.0,
             )
         )
@@ -78,10 +84,7 @@ class StrategyTranslator:
         }
         if interface_keys:
             return all(key in interface_keys for key in keys)
-        return all(
-            re.search(rf"\b{re.escape(key)}\b", strategy_interface) is not None
-            for key in keys
-        )
+        return all(re.search(rf"\b{re.escape(key)}\b", strategy_interface) is not None for key in keys)
 
     def translate_code(self, raw_output: str) -> tuple[dict[str, Any], RoleExecution]:
         """Extract executable Python code from competitor output.

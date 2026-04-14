@@ -8,8 +8,9 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from autocontext.agents.types import LlmFn
 from autocontext.config.settings import AppSettings
 from autocontext.knowledge.export import SkillPackage, export_skill_package
 from autocontext.mcp.tools import MtsToolContext
@@ -28,6 +29,78 @@ class SolveJob:
     error: str | None = None
     result: SkillPackage | None = None
     created_at: float = field(default_factory=time.time)
+
+
+@dataclass(slots=True)
+class SolveScenarioBuildResult:
+    scenario_name: str
+    family_name: str
+
+
+class SolveScenarioBuilder:
+    """Create solve scenarios through the correct family-specific pipeline."""
+
+    def __init__(
+        self,
+        *,
+        runtime: Any,
+        llm_fn: LlmFn,
+        model: str,
+        knowledge_root: Path,
+    ) -> None:
+        self._runtime = runtime
+        self._llm_fn = llm_fn
+        self._model = model
+        self._knowledge_root = knowledge_root
+
+    def build(self, description: str) -> SolveScenarioBuildResult:
+        from autocontext.scenarios import SCENARIO_REGISTRY
+        from autocontext.scenarios.custom.agent_task_creator import AgentTaskCreator
+        from autocontext.scenarios.custom.creator import ScenarioCreator
+        from autocontext.scenarios.custom.family_classifier import classify_scenario_family, route_to_family
+
+        classification = classify_scenario_family(description)
+        family = route_to_family(classification)
+
+        if family.name == "game":
+            creator = ScenarioCreator(
+                runtime=self._runtime,
+                model=self._model,
+                knowledge_root=self._knowledge_root,
+            )
+            spec = creator.generate_spec(description)
+            build = creator.build_and_validate(spec)
+            SCENARIO_REGISTRY[spec.name] = build.scenario_class
+            return SolveScenarioBuildResult(
+                scenario_name=spec.name,
+                family_name=family.name,
+            )
+
+        creator = AgentTaskCreator(
+            llm_fn=self._llm_fn,
+            knowledge_root=self._knowledge_root,
+        )
+        scenario = creator.create(description)
+        scenario_name = str(cast(Any, scenario).name)
+        SCENARIO_REGISTRY[scenario_name] = scenario.__class__
+        return SolveScenarioBuildResult(
+            scenario_name=scenario_name,
+            family_name=family.name,
+        )
+
+
+def _llm_fn_from_client(client: Any, model: str) -> LlmFn:
+    def llm_fn(system: str, user: str) -> str:
+        response = client.generate(
+            model=model,
+            prompt=f"{system}\n\n{user}",
+            max_tokens=3000,
+            temperature=0.3,
+            role="scenario_designer",
+        )
+        return response.text.strip()
+
+    return llm_fn
 
 
 class SolveManager:
@@ -68,19 +141,14 @@ class SolveManager:
         try:
             # 1. Create scenario
             job.status = "creating_scenario"
-            creator = self._build_creator()
-            if creator is None:
+            builder = self._build_creator()
+            if builder is None:
                 job.status = "failed"
-                job.error = "ScenarioCreator unavailable (no API key or unsupported provider)"
+                job.error = "Scenario creation pipeline unavailable (no API key or unsupported provider)"
                 return
 
-            spec = creator.generate_spec(job.description)
-            build = creator.build_and_validate(spec)
-
-            from autocontext.scenarios import SCENARIO_REGISTRY
-
-            SCENARIO_REGISTRY[spec.name] = build.scenario_class
-            job.scenario_name = spec.name
+            created = builder.build(job.description)
+            job.scenario_name = created.scenario_name
 
             # 2. Run generations
             job.status = "running"
@@ -88,13 +156,13 @@ class SolveManager:
 
             runner = GenerationRunner(self._settings)
             runner.migrate(self._migrations_dir)
-            run_id = f"solve_{spec.name}_{uuid.uuid4().hex[:8]}"
-            summary = runner.run(spec.name, job.generations, run_id)
+            run_id = f"solve_{created.scenario_name}_{uuid.uuid4().hex[:8]}"
+            summary = runner.run(created.scenario_name, job.generations, run_id)
             job.progress = summary.generations_executed
 
             # 3. Export skill package
             ctx = MtsToolContext(self._settings)
-            job.result = export_skill_package(ctx, spec.name)
+            job.result = export_skill_package(ctx, created.scenario_name)
             job.status = "completed"
 
         except Exception as exc:
@@ -102,22 +170,23 @@ class SolveManager:
             job.status = "failed"
             job.error = str(exc)
 
-    def _build_creator(self) -> Any:
-        """Build a ScenarioCreator following the same pattern as server/app.py."""
+    def _build_creator(self) -> SolveScenarioBuilder | None:
+        """Build a family-aware solve scenario creator."""
         try:
             from autocontext.agents.llm_client import build_client_from_settings
             from autocontext.agents.subagent_runtime import SubagentRuntime
-            from autocontext.scenarios.custom.creator import ScenarioCreator
 
             client = build_client_from_settings(self._settings)
             runtime = SubagentRuntime(client)
-            return ScenarioCreator(
+            llm_fn = _llm_fn_from_client(client, self._settings.model_architect)
+            return SolveScenarioBuilder(
                 runtime=runtime,
+                llm_fn=llm_fn,
                 model=self._settings.model_architect,
                 knowledge_root=self._settings.knowledge_root,
             )
         except Exception:
-            logger.warning("failed to build ScenarioCreator for solve job", exc_info=True)
+            logger.warning("failed to build solve scenario creator", exc_info=True)
             return None
 
     def get_status(self, job_id: str) -> dict[str, Any]:
