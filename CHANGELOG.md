@@ -4,7 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.4.0` and are not part of the last published release until the next version is cut.
+Changes in this section are on the branch/repo after `0.4.1` and are not part of the last published release until the next version is cut.
+
+## [0.4.1] - 2026-04-14
+
+### Fixed
+
+- Restored operator-loop escalation accounting when explicit escalation actions also mention clarification, so generated Python scenarios preserve both escalation and clarification signals.
+- Preserved operator-loop family routing through Python solve creation and replay-safe feedback validation without violating the Pydantic serialization convention.
+- Routed TypeScript `new-scenario` operator-loop requests through the dedicated family designer and allowed generated operator-loop scenarios to execute through the solve codegen path.
+- Python and TypeScript package metadata are bumped to `0.4.1`.
 
 ## [0.4.0] - 2026-04-14
 
@@ -177,6 +186,7 @@ Changes in this section are on the branch/repo after `0.4.0` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.4.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.0...py-v0.4.1
 [0.4.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.7...py-v0.4.0
 [0.3.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.6...py-v0.3.7
 [0.3.6]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.5...py-v0.3.6
