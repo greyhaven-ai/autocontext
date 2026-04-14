@@ -59,16 +59,16 @@ npm pack --dry-run
 
 ## 5. Sanity-Check Publishing Inputs
 
-- Confirm `.github/workflows/publish.yml` still matches the intended publish surfaces.
-- Treat `.github/workflows/publish.yml` as the only supported release workflow. Do not add a parallel publish path without updating the trusted publisher configuration first.
+- Confirm `.github/workflows/publish-python.yml` and `.github/workflows/publish-ts.yml` still match the intended publish surfaces.
+- Treat `.github/workflows/publish-python.yml` and `.github/workflows/publish-ts.yml` as the supported release workflows. Do not add a parallel publish path without updating the trusted publisher configuration first.
 - Confirm release notes in `CHANGELOG.md` reflect the tagged version.
 - Confirm any install commands in the READMEs still match the package names and binaries.
 
 ## 6. Publish
 
 - Merge the release prep to the intended branch.
-- Create and push a tag in the format `vX.Y.Z`.
-- Watch the tag-triggered GitHub Actions `publish` workflow for both PyPI and npm.
+- Create and push package-specific tags in the format `py-vX.Y.Z` and `ts-vX.Y.Z`.
+- Watch the tag-triggered GitHub Actions `publish-python` and `publish-ts` workflows for PyPI and npm.
 - Approve the `release` environment when the trusted publish jobs pause for deployment review.
 
 ## 7. Post-Release
