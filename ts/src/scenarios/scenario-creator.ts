@@ -3,10 +3,12 @@
  * Converts a natural language description into a scenario spec via LLM.
  */
 
-import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
-import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
-import { healSpec } from "./spec-auto-heal.js";
 import type { LLMProvider } from "../types/index.js";
+import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
+import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
+import { designOperatorLoop } from "./operator-loop-designer.js";
+import type { OperatorLoopSpec } from "./operator-loop-spec.js";
+import { healSpec } from "./spec-auto-heal.js";
 
 export interface CreatedScenarioResult {
   name: string;
@@ -23,13 +25,15 @@ export interface CreatedScenarioResult {
  * Derive a snake_case scenario name from a description.
  */
 export function deriveScenarioName(description: string): string {
-  return description
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .split(/\s+/)
-    .filter((w) => w.length > 2)
-    .slice(0, 4)
-    .join("_") || "custom_task";
+  return (
+    description
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+      .slice(0, 4)
+      .join("_") || "custom_task"
+  );
 }
 
 /**
@@ -77,11 +81,48 @@ function scenarioCreationInstructions(): string {
 }
 
 export function buildScenarioCreationPrompt(description: string): string {
-  return [
-    scenarioCreationInstructions(),
-    "",
-    `User description: ${description}`,
-  ].join("\n");
+  return [scenarioCreationInstructions(), "", `User description: ${description}`].join("\n");
+}
+
+function buildOperatorLoopCreatedSpec(
+  description: string,
+  spec: OperatorLoopSpec,
+): CreatedScenarioResult["spec"] {
+  return {
+    taskPrompt: description,
+    rubric: "Evaluate escalation judgment, safe autonomy, and clarification quality.",
+    description: spec.description,
+    environment_description: spec.environmentDescription,
+    initial_state_description: spec.initialStateDescription,
+    escalation_policy: {
+      escalation_threshold: spec.escalationPolicy.escalationThreshold,
+      max_escalations: spec.escalationPolicy.maxEscalations,
+    },
+    success_criteria: spec.successCriteria,
+    failure_modes: spec.failureModes,
+    actions: spec.actions,
+    max_steps: spec.maxSteps,
+  };
+}
+
+async function createOperatorLoopScenarioFromDescription(
+  description: string,
+  provider: LLMProvider,
+  name: string,
+): Promise<CreatedScenarioResult> {
+  const llmFn = async (system: string, user: string): Promise<string> => {
+    const result = await provider.complete({
+      systemPrompt: system,
+      userPrompt: user,
+    });
+    return result.text;
+  };
+  const spec = await designOperatorLoop(description, llmFn);
+  return {
+    name,
+    family: "operator_loop",
+    spec: buildOperatorLoopCreatedSpec(description, spec),
+  };
 }
 
 /**
@@ -94,6 +135,22 @@ export async function createScenarioFromDescription(
 ): Promise<CreatedScenarioResult> {
   const defaultName = deriveScenarioName(description);
   const defaultFamily = detectScenarioFamily(description);
+
+  if (defaultFamily === "operator_loop") {
+    const created = await createOperatorLoopScenarioFromDescription(
+      description,
+      provider,
+      defaultName,
+    );
+    return {
+      ...created,
+      spec: healSpec(
+        created.spec as Record<string, unknown>,
+        created.family,
+        description,
+      ) as CreatedScenarioResult["spec"],
+    };
+  }
 
   const result = await provider.complete({
     systemPrompt: scenarioCreationInstructions(),
@@ -124,12 +181,11 @@ export async function createScenarioFromDescription(
   if (!spec.taskPrompt) spec.taskPrompt = description;
   if (!spec.rubric) spec.rubric = `Evaluate the quality of the response.`;
   if (!spec.description) spec.description = `Custom scenario: ${description}`;
-  const name = typeof spec.name === "string" && spec.name.trim()
-    ? spec.name.trim()
-    : defaultName;
-  const family = typeof spec.family === "string" && isScenarioFamilyName(spec.family)
-    ? spec.family
-    : defaultFamily;
+  const name = typeof spec.name === "string" && spec.name.trim() ? spec.name.trim() : defaultName;
+  const family =
+    typeof spec.family === "string" && isScenarioFamilyName(spec.family)
+      ? spec.family
+      : defaultFamily;
   const { name: _ignoredName, family: _ignoredFamily, ...specFields } = spec;
 
   return {
