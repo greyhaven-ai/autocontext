@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.3.7` and are not part of the last published release until the next version is cut.
+Changes in this section are on the branch/repo after `0.4.0` and are not part of the last published release until the next version is cut.
+
+## [0.4.0] - 2026-04-14
+
+### Changed
+
+- Refactored the TypeScript platform foundation, analytics/trace/training, and control-plane integration surfaces into thinner workflow modules while preserving CLI, MCP, and package parity.
+- Hardened the extracted package-surface workflows around typed MCP tool boundaries, simulation dashboard report parsing, and deterministic simulation score normalization.
+- Python and TypeScript package metadata are bumped to `0.4.0`.
 
 ## [0.3.7] - 2026-04-08
 
@@ -164,6 +172,7 @@ Changes in this section are on the branch/repo after `0.3.7` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.4.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.7...py-v0.4.0
 [0.3.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.6...py-v0.3.7
 [0.3.6]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.5...py-v0.3.6
 [0.3.5]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.4...py-v0.3.5
