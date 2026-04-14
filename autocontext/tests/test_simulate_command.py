@@ -315,6 +315,58 @@ class TestSimulationEngine:
         assert "Escalations: 1" in result["summary"]["reasoning"]
         assert result.get("missing_signals") is None
 
+    def test_operator_loop_escalation_for_clarification_records_both_signals(
+        self,
+        tmp_knowledge: Path,
+    ) -> None:
+        from autocontext.scenarios.custom.operator_loop_designer import OPERATOR_LOOP_SPEC_END, OPERATOR_LOOP_SPEC_START
+        from autocontext.simulation.engine import SimulationEngine
+
+        operator_loop_spec = {
+            "description": "Support escalation requiring operator clarification before a response is sent.",
+            "environment_description": "A support agent must defer to a human operator for clarification.",
+            "initial_state_description": "The customer request is high-risk and ambiguous.",
+            "escalation_policy": {"escalation_threshold": "high", "max_escalations": 3},
+            "success_criteria": ["human operator clarified the request", "response sent with operator guidance"],
+            "failure_modes": ["responding without operator clarification"],
+            "max_steps": 4,
+            "actions": [
+                {
+                    "name": "escalate_for_clarification",
+                    "description": "Escalate to the human operator for clarification and guidance.",
+                    "parameters": {},
+                    "preconditions": [],
+                    "effects": ["operator_clarified"],
+                },
+                {
+                    "name": "continue_with_operator_guidance",
+                    "description": "Continue handling the case after the operator responds.",
+                    "parameters": {},
+                    "preconditions": ["escalate_for_clarification"],
+                    "effects": ["case_resolved"],
+                },
+            ],
+        }
+
+        def operator_loop_llm(system: str, user: str) -> str:
+            return f"{OPERATOR_LOOP_SPEC_START}\n{json.dumps(operator_loop_spec)}\n{OPERATOR_LOOP_SPEC_END}"
+
+        engine = SimulationEngine(llm_fn=operator_loop_llm, knowledge_root=tmp_knowledge)
+        result = engine.run(
+            description=(
+                "simulate a support case that must escalate to a human operator "
+                "for clarification before responding"
+            )
+        )
+
+        assert result["family"] == "operator_loop"
+        assert result["status"] == "completed"
+        assert result["summary"]["escalation_count"] == 1
+        assert result["summary"]["clarification_count"] == 1
+        assert "Escalations: 1" in result["summary"]["reasoning"]
+        assert "Clarifications: 1" in result["summary"]["reasoning"]
+        assert result.get("missing_signals") is None
+
     def test_operator_loop_multi_run_preserves_contract_signal_counts(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine
 

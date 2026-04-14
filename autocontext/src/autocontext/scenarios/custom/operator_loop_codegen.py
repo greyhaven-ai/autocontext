@@ -164,20 +164,10 @@ class {class_name}(OperatorLoopInterface):
 
         next_state["completed_actions"].append(action.name)
 
-        if self._is_explicit_clarification_action(action):
-            next_state["clarification_log"].append({{
-                "question": self._action_description(action.name),
-                "context": f"Clarification requested via {{action.name}}",
-                "urgency": "medium",
-                "metadata": {{"source": "explicit_action", "action": action.name}},
-            }})
-            next_state["timeline"].append({{
-                "type": "clarification",
-                "action": action.name,
-                "question": self._action_description(action.name),
-                "urgency": "medium",
-            }})
-        elif self._is_explicit_escalation_action(action):
+        is_escalation = self._is_explicit_escalation_action(action)
+        is_clarification = self._is_explicit_clarification_action(action)
+
+        if is_escalation:
             next_state["escalation_log"].append({{
                 "step": next_state["step"],
                 "reason": f"Executed escalation action {{action.name}}",
@@ -193,7 +183,22 @@ class {class_name}(OperatorLoopInterface):
                 "severity": state.get("escalation_policy", {{}}).get("escalation_threshold", "medium"),
                 "was_necessary": True,
             }})
-        else:
+
+        if is_clarification:
+            next_state["clarification_log"].append({{
+                "question": self._action_description(action.name),
+                "context": f"Clarification requested via {{action.name}}",
+                "urgency": "medium",
+                "metadata": {{"source": "explicit_action", "action": action.name}},
+            }})
+            next_state["timeline"].append({{
+                "type": "clarification",
+                "action": action.name,
+                "question": self._action_description(action.name),
+                "urgency": "medium",
+            }})
+
+        if not is_escalation and not is_clarification:
             next_state["autonomous_actions"] = state.get("autonomous_actions", 0) + 1
             next_state["timeline"].append({{"action": action.name, "parameters": action.parameters}})
 
