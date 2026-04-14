@@ -1,12 +1,6 @@
 import type { LLMProvider } from "../types/index.js";
-import {
-  createProvider,
-  type CreateProviderOpts,
-} from "./provider-factory.js";
-import {
-  resolveProviderConfig,
-  type ProviderConfig,
-} from "./provider-config-resolution.js";
+import { createProvider, type CreateProviderOpts } from "./provider-factory.js";
+import { resolveProviderConfig, type ProviderConfig } from "./provider-config-resolution.js";
 
 export type GenerationRole = "competitor" | "analyst" | "coach" | "architect" | "curator";
 
@@ -29,6 +23,17 @@ export interface RoleProviderSettings {
   modelCoach?: string;
   modelArchitect?: string;
   modelCurator?: string;
+  claudeModel?: string;
+  claudeFallbackModel?: string;
+  claudeTools?: string | null;
+  claudePermissionMode?: string;
+  claudeSessionPersistence?: boolean;
+  claudeTimeout?: number;
+  codexModel?: string;
+  codexApprovalMode?: string;
+  codexTimeout?: number;
+  codexWorkspace?: string;
+  codexQuiet?: boolean;
   piCommand?: string;
   piTimeout?: number;
   piWorkspace?: string;
@@ -51,6 +56,17 @@ export function withRuntimeSettings(
 ): CreateProviderOpts {
   return {
     ...config,
+    claudeModel: settings.claudeModel,
+    claudeFallbackModel: settings.claudeFallbackModel,
+    claudeTools: settings.claudeTools ?? undefined,
+    claudePermissionMode: settings.claudePermissionMode,
+    claudeSessionPersistence: settings.claudeSessionPersistence,
+    claudeTimeout: settings.claudeTimeout,
+    codexModel: settings.codexModel,
+    codexApprovalMode: settings.codexApprovalMode,
+    codexTimeout: settings.codexTimeout,
+    codexWorkspace: settings.codexWorkspace,
+    codexQuiet: settings.codexQuiet,
     piCommand: settings.piCommand,
     piTimeout: settings.piTimeout,
     piWorkspace: settings.piWorkspace,

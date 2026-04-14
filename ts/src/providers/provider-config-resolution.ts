@@ -106,26 +106,28 @@ export function resolveProviderConfig(
     };
   }
 
+  if (type === "claude-cli") {
+    return { providerType: type, model: model ?? process.env.AUTOCONTEXT_CLAUDE_MODEL ?? "sonnet" };
+  }
+
+  if (type === "codex") {
+    return { providerType: type, model: model ?? process.env.AUTOCONTEXT_CODEX_MODEL ?? "o4-mini" };
+  }
+
   if (type === "pi" || type === "pi-rpc") {
     return { providerType: type, apiKey: genericKey, baseUrl, model };
   }
 
   const providerSpecificEnvVar =
-    OPENAI_COMPATIBLE_PROVIDER_DEFAULTS[type]?.envVar ??
-    getKnownProvider(type)?.envVar;
+    OPENAI_COMPATIBLE_PROVIDER_DEFAULTS[type]?.envVar ?? getKnownProvider(type)?.envVar;
   const providerSpecificKey = providerSpecificEnvVar
     ? process.env[providerSpecificEnvVar]
     : undefined;
   const openaiFallbackKey =
-    type === "openai" || type === "openai-compatible"
-      ? process.env.OPENAI_API_KEY
-      : undefined;
+    type === "openai" || type === "openai-compatible" ? process.env.OPENAI_API_KEY : undefined;
   const apiKey = genericKey ?? providerSpecificKey ?? openaiFallbackKey;
   if (!apiKey) {
-    const keyVars = [
-      "AUTOCONTEXT_API_KEY",
-      "AUTOCONTEXT_AGENT_API_KEY",
-    ];
+    const keyVars = ["AUTOCONTEXT_API_KEY", "AUTOCONTEXT_AGENT_API_KEY"];
     if (providerSpecificEnvVar) {
       keyVars.push(providerSpecificEnvVar);
     } else if (type === "openai" || type === "openai-compatible") {

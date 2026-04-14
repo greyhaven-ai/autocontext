@@ -94,6 +94,21 @@ export const AppSettingsSchema = z.object({
   openclawDistillSidecarFactory: z.string().default(""),
   openclawDistillSidecarCommand: z.string().default(""),
 
+  // Claude CLI runtime
+  claudeModel: z.string().default("sonnet"),
+  claudeFallbackModel: z.string().default("haiku"),
+  claudeTools: z.string().nullable().default(null),
+  claudePermissionMode: z.string().default("bypassPermissions"),
+  claudeSessionPersistence: z.boolean().default(false),
+  claudeTimeout: z.number().min(1).default(120.0),
+
+  // Codex CLI runtime
+  codexModel: z.string().default("o4-mini"),
+  codexTimeout: z.number().min(1).default(120.0),
+  codexWorkspace: z.string().default(""),
+  codexApprovalMode: z.string().default("full-auto"),
+  codexQuiet: z.boolean().default(false),
+
   // Pi CLI runtime
   piCommand: z.string().default("pi"),
   piTimeout: z.number().min(1).default(120.0),

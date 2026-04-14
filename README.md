@@ -9,6 +9,7 @@
 autocontext runs LLM agents through structured scenarios, evaluates their outputs, and accumulates the knowledge that improved results — so repeated runs get better, not just different. Point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
 
 <!-- autocontext-whats-new:start -->
+
 ## What's New
 
 - All 11 scenario families executable in both Python and TypeScript
@@ -172,6 +173,24 @@ uv run autoctx solve --description "improve customer-support replies for billing
 ```
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
+
+Run with Claude CLI:
+
+```bash
+cd autocontext
+AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
+AUTOCONTEXT_CLAUDE_MODEL=sonnet \
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+```
+
+Run with Codex CLI:
+
+```bash
+cd autocontext
+AUTOCONTEXT_AGENT_PROVIDER=codex \
+AUTOCONTEXT_CODEX_MODEL=o4-mini \
+uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+```
 
 Start the API server:
 

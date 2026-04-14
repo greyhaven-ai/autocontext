@@ -3,13 +3,15 @@
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 
 vi.mock("node:child_process", () => ({
+  execFile: vi.fn(),
   execFileSync: vi.fn(),
 }));
 
 const execFileSyncMock = vi.mocked(execFileSync);
+void execFile;
 
 // ---------------------------------------------------------------------------
 // Pi config in AppSettingsSchema
@@ -74,7 +76,11 @@ describe("resolveProviderConfig Pi", () => {
 
   function saveAndClear(): void {
     for (const key of Object.keys(process.env)) {
-      if (key.startsWith("AUTOCONTEXT_") || key === "ANTHROPIC_API_KEY" || key === "OPENAI_API_KEY") {
+      if (
+        key.startsWith("AUTOCONTEXT_") ||
+        key === "ANTHROPIC_API_KEY" ||
+        key === "OPENAI_API_KEY"
+      ) {
         saved[key] = process.env[key];
         delete process.env[key];
       }
@@ -83,7 +89,11 @@ describe("resolveProviderConfig Pi", () => {
 
   afterEach(() => {
     for (const key of Object.keys(process.env)) {
-      if (key.startsWith("AUTOCONTEXT_") || key === "ANTHROPIC_API_KEY" || key === "OPENAI_API_KEY") {
+      if (
+        key.startsWith("AUTOCONTEXT_") ||
+        key === "ANTHROPIC_API_KEY" ||
+        key === "OPENAI_API_KEY"
+      ) {
         if (key in saved) {
           process.env[key] = saved[key];
         } else {

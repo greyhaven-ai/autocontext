@@ -568,6 +568,30 @@ def build_client_from_settings(
             model=settings.agent_default_model,
         )
         return ProviderBridgeClient(provider, use_provider_default_model=True)
+    if settings.agent_provider == "claude-cli":
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient
+        from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
+
+        config = ClaudeCLIConfig(
+            model=settings.claude_model,
+            tools=settings.claude_tools,
+            permission_mode=settings.claude_permission_mode,
+            session_persistence=settings.claude_session_persistence,
+            timeout=settings.claude_timeout,
+        )
+        return RuntimeBridgeClient(ClaudeCLIRuntime(config))
+    if settings.agent_provider == "codex":
+        from autocontext.agents.provider_bridge import RuntimeBridgeClient
+        from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime
+
+        config = CodexCLIConfig(
+            model=settings.codex_model,
+            approval_mode=settings.codex_approval_mode,
+            timeout=settings.codex_timeout,
+            workspace=settings.codex_workspace,
+            quiet=settings.codex_quiet,
+        )
+        return RuntimeBridgeClient(CodexCLIRuntime(config))
     if settings.agent_provider == "pi":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.providers.scenario_routing import resolve_pi_model

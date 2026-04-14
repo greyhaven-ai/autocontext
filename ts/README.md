@@ -128,6 +128,16 @@ AUTOCONTEXT_AGENT_PROVIDER=hermes \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 autoctx run --scenario support_triage --json
 
+# Claude CLI (local authenticated Claude Code runtime)
+AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
+AUTOCONTEXT_CLAUDE_MODEL=sonnet \
+autoctx run --scenario support_triage --json
+
+# Codex CLI (local authenticated Codex runtime)
+AUTOCONTEXT_AGENT_PROVIDER=codex \
+AUTOCONTEXT_CODEX_MODEL=o4-mini \
+autoctx run --scenario support_triage --json
+
 # Pi CLI
 AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario support_triage --json
 
@@ -137,7 +147,7 @@ AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario support_triage -
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
 
-Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `pi`, `pi-rpc`, `deterministic`.
+Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
 
 `autoctx simulate` and `autoctx investigate` require a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
 
@@ -153,6 +163,8 @@ Key environment variables:
 | `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL` | Optional analyst-specific credential/endpoint override |
 | `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL` | Optional coach-specific credential/endpoint override |
 | `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL` | Optional architect-specific credential/endpoint override |
+| `AUTOCONTEXT_CLAUDE_MODEL` | Claude CLI model alias override |
+| `AUTOCONTEXT_CODEX_MODEL` | Codex CLI model override |
 | `AUTOCONTEXT_CONFIG_DIR` | Override where `login` / `whoami` read saved credentials |
 | `AUTOCONTEXT_DB_PATH` | SQLite database path |
 
