@@ -17,6 +17,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 
 import { join } from "node:path";
 import { SQLiteStore } from "../storage/index.js";
 import { MissionManager } from "../mission/manager.js";
+import { normalizeConfidence } from "../analytics/number-utils.js";
 
 interface AnalysisEngineOpts {
   knowledgeRoot: string;
@@ -516,7 +517,7 @@ export class AnalysisEngine {
       const conclusion = artifact.conclusion as Record<string, unknown> | undefined;
       return {
         headline: String(conclusion?.bestExplanation ?? "Investigation analyzed"),
-        confidence: Number(conclusion?.confidence ?? 0.5),
+        confidence: normalizeConfidence(Number(conclusion?.confidence ?? 0.5)),
       };
     }
     if (type === "run") {
@@ -679,7 +680,9 @@ export class AnalysisEngine {
     const summary = artifact.summary as Record<string, unknown> | undefined;
     if (summary && typeof summary.score === "number") return summary.score;
     const conclusion = artifact.conclusion as Record<string, unknown> | undefined;
-    if (conclusion && typeof conclusion.confidence === "number") return conclusion.confidence;
+    if (conclusion && typeof conclusion.confidence === "number") {
+      return normalizeConfidence(conclusion.confidence);
+    }
     return null;
   }
 

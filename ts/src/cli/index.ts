@@ -17,6 +17,18 @@ import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emitEngineResult } from "./emit-engine-result.js";
 import {
+  EXPORT_HELP_TEXT,
+  executeExportCommandWorkflow,
+  planExportCommand,
+} from "./export-command-workflow.js";
+import type { ExportCommandPlan } from "./export-command-workflow.js";
+import {
+  EXPORT_TRAINING_DATA_HELP_TEXT,
+  executeExportTrainingDataCommandWorkflow,
+  planExportTrainingDataCommand,
+} from "./export-training-data-command-workflow.js";
+import type { ExportTrainingDataCommandPlan } from "./export-training-data-command-workflow.js";
+import {
   NEW_SCENARIO_HELP_TEXT,
   ensureNewScenarioDescription,
   executeCreatedScenarioMaterialization,
@@ -1550,22 +1562,22 @@ async function cmdExport(dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log(`autoctx export — Export strategy package for a scenario
-
-Usage: autoctx export [options]
-
-Options:
-  --scenario <name>    Scenario to export (required)
-  --output <file>      Output file path (default: stdout)
-  --json               Force JSON output format
-
-See also: import-package, run, replay`);
+    console.log(EXPORT_HELP_TEXT);
     process.exit(0);
   }
 
-  const scenarioName = await resolveScenarioOption(values.scenario);
-  if (!scenarioName) {
-    console.error("Error: --scenario is required");
+  let plan: ExportCommandPlan;
+  try {
+    plan = await planExportCommand(
+      {
+        scenario: values.scenario,
+        output: values.output,
+        json: Boolean(values.json),
+      },
+      resolveScenarioOption,
+    );
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 
@@ -1582,24 +1594,14 @@ See also: import-package, run, replay`);
     knowledgeRoot: resolve(settings.knowledgeRoot),
   });
   try {
-    const result = exportStrategyPackage({
-      scenarioName,
-      artifacts,
-      store,
-    });
-
-    if (values.output) {
-      const { writeFileSync, mkdirSync } = await import("node:fs");
-      mkdirSync(dirname(values.output), { recursive: true });
-      writeFileSync(values.output, JSON.stringify(result, null, 2), "utf-8");
-      console.log(
-        values.json
-          ? JSON.stringify({ output: values.output })
-          : `Exported to ${values.output}`,
-      );
-    } else {
-      console.log(JSON.stringify(result, null, 2));
-    }
+    console.log(
+      executeExportCommandWorkflow({
+        ...plan,
+        exportStrategyPackage,
+        artifacts,
+        store,
+      }),
+    );
   } finally {
     store.close();
   }
@@ -1620,25 +1622,22 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
   });
 
   if (values.help) {
-    console.log(
-      "autoctx export-training-data --run-id <id> [--scenario <name> --all-runs] [--output <file>] [--include-matches] [--kept-only]",
-    );
-    console.log(
-      "\nExports training data as JSONL with Python-compatible snake_case fields.",
-    );
-    console.log(
-      "\nUnsupported Python commands: train, trigger-distillation (require MLX/CUDA backends)",
-    );
+    console.log(EXPORT_TRAINING_DATA_HELP_TEXT);
     process.exit(0);
   }
 
-  if (!values["run-id"] && !values.scenario) {
-    console.error("Error: --run-id or --scenario is required");
-    process.exit(1);
-  }
-
-  if (values.scenario && !values["run-id"] && !values["all-runs"]) {
-    console.error("Error: --all-runs is required with --scenario");
+  let plan: ExportTrainingDataCommandPlan;
+  try {
+    plan = planExportTrainingDataCommand({
+      "run-id": values["run-id"],
+      scenario: values.scenario,
+      "all-runs": Boolean(values["all-runs"]),
+      output: values.output,
+      "include-matches": Boolean(values["include-matches"]),
+      "kept-only": Boolean(values["kept-only"]),
+    });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 
@@ -1656,43 +1655,16 @@ async function cmdExportTrainingData(dbPath: string): Promise<void> {
   });
 
   try {
-    console.error(
-      `Exporting training data${values["run-id"] ? ` for run ${values["run-id"]}` : ` for scenario ${values.scenario}`}...`,
-    );
-    const records = exportTrainingData(store, artifacts, {
-      runId: values["run-id"],
-      scenario: values.scenario,
-      includeMatches: values["include-matches"],
-      keptOnly: values["kept-only"],
-      onProgress: (progress) => {
-        if (progress.phase === "start") {
-          console.error(`Scanning ${progress.totalRuns} run(s)...`);
-          return;
-        }
-        if (
-          progress.phase === "generation" &&
-          progress.generationIndex !== undefined
-        ) {
-          console.error(
-            `Processed run ${progress.runId} generation ${progress.generationIndex} (${progress.recordsEmitted} records)`,
-          );
-        }
-      },
+    const result = executeExportTrainingDataCommandWorkflow({
+      plan,
+      store,
+      artifacts,
+      exportTrainingData,
     });
-
-    const jsonl = records.map((r) => JSON.stringify(r)).join("\n");
-    console.error(`Exported ${records.length} record(s).`);
-
-    if (values.output) {
-      const { writeFileSync, mkdirSync } = await import("node:fs");
-      mkdirSync(dirname(values.output), { recursive: true });
-      writeFileSync(values.output, jsonl + "\n", "utf-8");
-      console.log(
-        JSON.stringify({ output: values.output, records: records.length }),
-      );
-    } else {
-      console.log(jsonl);
+    for (const line of result.stderrLines) {
+      console.error(line);
     }
+    console.log(result.stdout);
   } finally {
     store.close();
   }
