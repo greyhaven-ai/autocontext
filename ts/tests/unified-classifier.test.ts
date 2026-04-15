@@ -18,16 +18,41 @@ import type { ScenarioFamilyName } from "../src/scenarios/families.js";
 
 describe("classifyScenarioFamily (sophisticated)", () => {
   const familyTestCases: Array<{ description: string; expected: ScenarioFamilyName }> = [
-    { description: "Deploy a multi-stage pipeline with rollback and fault injection", expected: "simulation" },
+    {
+      description: "Deploy a multi-stage pipeline with rollback and fault injection",
+      expected: "simulation",
+    },
     { description: "Write a comprehensive code review for a pull request", expected: "agent_task" },
-    { description: "Investigate a production crash by gathering logs and diagnosing root cause", expected: "investigation" },
-    { description: "Edit a YAML config file to add new service endpoints", expected: "artifact_editing" },
-    { description: "Execute a multi-step payment processing workflow with compensation", expected: "workflow" },
+    {
+      description: "Investigate a production crash by gathering logs and diagnosing root cause",
+      expected: "investigation",
+    },
+    {
+      description: "Edit a YAML config file to add new service endpoints",
+      expected: "artifact_editing",
+    },
+    {
+      description: "Execute a multi-step payment processing workflow with compensation",
+      expected: "workflow",
+    },
     { description: "Negotiate a price between buyer and seller agents", expected: "negotiation" },
-    { description: "Handle schema evolution when the data model changes and context becomes stale", expected: "schema_evolution" },
-    { description: "Test agent behavior when tool drift causes API contract changes requiring adaptation", expected: "tool_fragility" },
-    { description: "Test when agents should escalate to a human operator vs act autonomously", expected: "operator_loop" },
-    { description: "Coordinate multiple agents with partial context doing handoffs and merges", expected: "coordination" },
+    {
+      description: "Handle schema evolution when the data model changes and context becomes stale",
+      expected: "schema_evolution",
+    },
+    {
+      description:
+        "Test agent behavior when tool drift causes API contract changes requiring adaptation",
+      expected: "tool_fragility",
+    },
+    {
+      description: "Test when agents should escalate to a human operator vs act autonomously",
+      expected: "operator_loop",
+    },
+    {
+      description: "Coordinate multiple agents with partial context doing handoffs and merges",
+      expected: "coordination",
+    },
   ];
 
   for (const { description, expected } of familyTestCases) {
@@ -55,6 +80,13 @@ describe("detectScenarioFamily routes all custom-scenario families (AC-437)", ()
   it("routes schema_evolution descriptions correctly", () => {
     const family = detectScenarioFamily(
       "Handle schema evolution when the data model changes and stale context must be detected",
+    );
+    expect(family).toBe("schema_evolution");
+  });
+
+  it("routes the AC-269 schema-mutation stress prompt to schema_evolution", () => {
+    const family = detectScenarioFamily(
+      "Create a schema-evolution scenario for a structured-output task that starts with five required fields, then applies a breaking mutation that adds two required fields, removes one field, changes another field's type, and tests stale-assumption detection, knowledge migration, and recovery after the schema change.",
     );
     expect(family).toBe("schema_evolution");
   });
@@ -87,17 +119,23 @@ describe("detectScenarioFamily routes all custom-scenario families (AC-437)", ()
   });
 
   it("routes investigation descriptions correctly", () => {
-    const family = detectScenarioFamily("Investigate a crash by debugging and diagnosing root cause");
+    const family = detectScenarioFamily(
+      "Investigate a crash by debugging and diagnosing root cause",
+    );
     expect(family).toBe("investigation");
   });
 
   it("routes workflow descriptions correctly", () => {
-    const family = detectScenarioFamily("Execute a multi-step transaction workflow with compensation and rollback");
+    const family = detectScenarioFamily(
+      "Execute a multi-step transaction workflow with compensation and rollback",
+    );
     expect(family).toBe("workflow");
   });
 
   it("routes negotiation descriptions correctly", () => {
-    const family = detectScenarioFamily("Negotiate a trade deal between two parties bargaining over price");
+    const family = detectScenarioFamily(
+      "Negotiate a trade deal between two parties bargaining over price",
+    );
     expect(family).toBe("negotiation");
   });
 
@@ -107,9 +145,7 @@ describe("detectScenarioFamily routes all custom-scenario families (AC-437)", ()
   });
 
   it("does not auto-route unsupported custom game creation into game", () => {
-    const family = detectScenarioFamily(
-      "Create a two-player board game with scoring and turns",
-    );
+    const family = detectScenarioFamily("Create a two-player board game with scoring and turns");
     expect(family).toBe("agent_task");
   });
 });
