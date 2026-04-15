@@ -230,6 +230,7 @@ function buildWorkflowCreatedSpec(
   description: string,
   spec: WorkflowSpec,
 ): CreatedScenarioResult["spec"] {
+  const actionsByName = new Map(spec.actions.map((action) => [action.name, action]));
   return buildSimulationLikeCreatedSpec({
     descriptionPrompt: description,
     rubric: "Evaluate workflow ordering, compensation logic, and side-effect handling.",
@@ -241,7 +242,11 @@ function buildWorkflowCreatedSpec(
     actions: spec.actions,
     maxSteps: spec.maxSteps,
     extras: {
-      workflow_steps: spec.workflowSteps,
+      workflow_steps: spec.workflowSteps.map((step) => ({
+        ...step,
+        compensationAction: step.compensation ?? undefined,
+        sideEffects: actionsByName.get(step.name)?.effects ?? [],
+      })),
     },
   });
 }
@@ -352,34 +357,22 @@ async function createFamilyAwareScenarioFromDescription(
   };
 }
 
-/**
- * Create a scenario spec from a natural language description.
- * Uses the provider to generate a task prompt and rubric from the description.
- */
-export async function createScenarioFromDescription(
+function shouldFallbackFromFamilyAwareCreation(error: unknown): boolean {
+  if (error instanceof SyntaxError) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.name === "ZodError" || error.message.includes("response does not contain");
+}
+
+async function createGenericScenarioFromDescription(
   description: string,
   provider: LLMProvider,
+  defaultName: string,
+  defaultFamily: ScenarioFamilyName,
 ): Promise<CreatedScenarioResult> {
-  const defaultName = deriveScenarioName(description);
-  const defaultFamily = detectScenarioFamily(description);
-
-  if (hasFamilyAwareScenarioFactory(defaultFamily)) {
-    const created = await createFamilyAwareScenarioFromDescription(
-      description,
-      provider,
-      defaultName,
-      defaultFamily,
-    );
-    return {
-      ...created,
-      spec: healSpec(
-        created.spec as Record<string, unknown>,
-        created.family,
-        description,
-      ) as CreatedScenarioResult["spec"],
-    };
-  }
-
   const result = await provider.complete({
     systemPrompt: scenarioCreationInstructions(),
     userPrompt: description,
@@ -425,4 +418,41 @@ export async function createScenarioFromDescription(
       description,
     ) as CreatedScenarioResult["spec"],
   };
+}
+
+/**
+ * Create a scenario spec from a natural language description.
+ * Uses the provider to generate a task prompt and rubric from the description.
+ */
+export async function createScenarioFromDescription(
+  description: string,
+  provider: LLMProvider,
+): Promise<CreatedScenarioResult> {
+  const defaultName = deriveScenarioName(description);
+  const defaultFamily = detectScenarioFamily(description);
+
+  if (hasFamilyAwareScenarioFactory(defaultFamily)) {
+    try {
+      const created = await createFamilyAwareScenarioFromDescription(
+        description,
+        provider,
+        defaultName,
+        defaultFamily,
+      );
+      return {
+        ...created,
+        spec: healSpec(
+          created.spec as Record<string, unknown>,
+          created.family,
+          description,
+        ) as CreatedScenarioResult["spec"],
+      };
+    } catch (error) {
+      if (!shouldFallbackFromFamilyAwareCreation(error)) {
+        throw error;
+      }
+    }
+  }
+
+  return createGenericScenarioFromDescription(description, provider, defaultName, defaultFamily);
 }

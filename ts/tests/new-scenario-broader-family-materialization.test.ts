@@ -11,15 +11,47 @@ import {
 } from "../src/scenarios/schema-evolution-designer.js";
 import { SIM_SPEC_END, SIM_SPEC_START } from "../src/scenarios/simulation-designer.js";
 import { createScenarioFromDescription } from "../src/scenarios/scenario-creator.js";
+import { WORKFLOW_SPEC_END, WORKFLOW_SPEC_START } from "../src/scenarios/workflow-designer.js";
 
 type StressCase = {
   issueId: string;
   prompt: string;
-  expectedFamily: "schema_evolution" | "simulation";
+  expectedFamily: "schema_evolution" | "simulation" | "workflow";
   expectedPromptFragment: string;
   responseText: string;
   assertPersistedSpec: (spec: Record<string, unknown>) => void;
+  assertGeneratedScenario?: (source: string) => void;
 };
+
+type GeneratedScenario = {
+  initialState(seed?: number): Record<string, unknown>;
+  executeAction(
+    state: Record<string, unknown>,
+    action: { name: string; parameters: Record<string, unknown> },
+  ): {
+    result: { success: boolean; sideEffects?: unknown[] };
+    state: Record<string, unknown>;
+  };
+  executeCompensation(
+    state: Record<string, unknown>,
+    stepName: string,
+  ): {
+    result?: { success: boolean };
+    success?: boolean;
+    error?: string;
+    state?: Record<string, unknown>;
+  };
+  getSideEffects(state: Record<string, unknown>): unknown[];
+};
+
+function loadGeneratedScenario(source: string): GeneratedScenario {
+  const module = { exports: {} as { scenario?: GeneratedScenario } };
+  new Function("module", "exports", source)(module, module.exports);
+  if (!module.exports.scenario) {
+    throw new Error("generated scenario did not export scenario");
+  }
+  return module.exports.scenario;
+}
 
 const STRESS_CASES: StressCase[] = [
   {
@@ -161,6 +193,92 @@ const STRESS_CASES: StressCase[] = [
       expect(spec.scenario_type).toBe("simulation");
       expect(Array.isArray(spec.actions)).toBe(true);
       expect((spec.actions as unknown[]).length).toBeGreaterThanOrEqual(3);
+    },
+  },
+  {
+    issueId: "AC-550-workflow",
+    prompt:
+      "Create a transactional workflow scenario with compensation and side effects across payment capture, inventory reservation, and customer notification.",
+    expectedFamily: "workflow",
+    expectedPromptFragment: "produce a WorkflowSpec JSON",
+    responseText: [
+      WORKFLOW_SPEC_START,
+      JSON.stringify(
+        {
+          description: "Payment workflow with reversible side effects",
+          environment_description:
+            "A checkout service coordinates payment, inventory, and notification systems.",
+          initial_state_description:
+            "No side effects have been produced and all workflow steps are pending.",
+          workflow_steps: [
+            {
+              name: "charge_payment",
+              description: "Capture the customer payment.",
+              idempotent: false,
+              reversible: true,
+              compensation: "refund_payment",
+            },
+            {
+              name: "reserve_inventory",
+              description: "Reserve the purchased inventory.",
+              idempotent: true,
+              reversible: true,
+              compensation: "release_inventory",
+            },
+          ],
+          success_criteria: [
+            "Complete workflow steps in order.",
+            "Track side effects and expose compensation for reversible steps.",
+          ],
+          failure_modes: [
+            "Payment captured without refund compensation.",
+            "Inventory side effect is not tracked.",
+          ],
+          max_steps: 6,
+          actions: [
+            {
+              name: "charge_payment",
+              description: "Capture funds for the order.",
+              parameters: { payment_id: "string" },
+              preconditions: [],
+              effects: ["payment_captured"],
+            },
+            {
+              name: "reserve_inventory",
+              description: "Reserve stock for the order.",
+              parameters: { sku: "string" },
+              preconditions: ["charge_payment"],
+              effects: ["inventory_reserved"],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      WORKFLOW_SPEC_END,
+    ].join("\n"),
+    assertPersistedSpec: (spec) => {
+      expect(spec.scenario_type).toBe("workflow");
+      const steps = spec.workflow_steps as Array<Record<string, unknown>>;
+      expect(steps[0]?.compensation).toBe("refund_payment");
+      expect(steps[0]?.compensationAction).toBe("refund_payment");
+      expect(steps[0]?.sideEffects).toEqual(["payment_captured"]);
+    },
+    assertGeneratedScenario: (source) => {
+      const scenario = loadGeneratedScenario(source);
+      const initialState = scenario.initialState(42);
+      const chargeResult = scenario.executeAction(initialState, {
+        name: "charge_payment",
+        parameters: { payment_id: "pay_123" },
+      });
+
+      expect(chargeResult.result.success).toBe(true);
+      expect(chargeResult.result.sideEffects).toContain("payment_captured");
+      expect(scenario.getSideEffects(chargeResult.state)).toContain("payment_captured");
+
+      const compensation = scenario.executeCompensation(chargeResult.state, "charge_payment");
+      expect(compensation.result?.success).toBe(true);
+      expect(compensation.error).toBeUndefined();
     },
   },
   {
@@ -311,6 +429,14 @@ describe("new-scenario broader family materialization", () => {
         readFileSync(join(knowledgeRoot, "_custom_scenarios", created.name, "spec.json"), "utf-8"),
       ) as Record<string, unknown>;
       testCase.assertPersistedSpec(persistedSpec);
+
+      if (testCase.assertGeneratedScenario) {
+        const source = readFileSync(
+          join(knowledgeRoot, "_custom_scenarios", created.name, "scenario.js"),
+          "utf-8",
+        );
+        testCase.assertGeneratedScenario(source);
+      }
     });
   }
 });
