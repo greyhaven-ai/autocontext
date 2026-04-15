@@ -177,6 +177,17 @@ class TestListJson:
         data = json.loads(result.output.strip())
         assert data == []
 
+    def test_list_json_bootstraps_fresh_workspace(self, tmp_path: Path) -> None:
+        """list --json should not crash when the workspace DB has never been initialized."""
+        settings = _make_settings(tmp_path)
+
+        with patch("autocontext.cli.load_settings", return_value=settings):
+            result = runner.invoke(app, ["list", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output.strip())
+        assert data == []
+
     def test_list_json_populated(self, tmp_path: Path) -> None:
         """list --json with seeded runs should return list of dicts."""
         settings = _make_settings(tmp_path)
@@ -259,6 +270,17 @@ class TestStatusJson:
         data = json.loads(result.output.strip())
         assert data["run_id"] == "run-empty"
         assert data["generations"] == []
+
+    def test_status_json_bootstraps_fresh_workspace(self, tmp_path: Path) -> None:
+        """status --json should not crash before the workspace DB is initialized."""
+        settings = _make_settings(tmp_path)
+
+        with patch("autocontext.cli.load_settings", return_value=settings):
+            result = runner.invoke(app, ["status", "missing-run", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output.strip())
+        assert data == {"run_id": "missing-run", "generations": []}
 
     def test_status_json_is_valid_json(self, tmp_path: Path) -> None:
         """status --json output should be parseable as JSON without error."""

@@ -528,7 +528,7 @@ def list_runs(
     """List recent runs."""
 
     settings = load_settings()
-    store = SQLiteStore(settings.db_path)
+    store = _sqlite_from_settings(settings)
     rows = store.list_runs(limit=20)
 
     if json_output:
@@ -562,13 +562,8 @@ def status(
     """Show generation status for a run."""
 
     settings = load_settings()
-    store = SQLiteStore(settings.db_path)
-    with store.connect() as conn:
-        rows = conn.execute(
-            "SELECT generation_index, mean_score, best_score, elo, wins, losses, gate_decision, status "
-            "FROM generations WHERE run_id = ? ORDER BY generation_index ASC",
-            (run_id,),
-        ).fetchall()
+    store = _sqlite_from_settings(settings)
+    rows = store.run_status(run_id)
 
     if json_output:
         generations = []
