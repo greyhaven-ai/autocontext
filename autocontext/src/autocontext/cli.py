@@ -10,7 +10,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import typer
 import uvicorn
@@ -23,6 +23,7 @@ from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
 from autocontext.execution.improvement_loop import ImprovementLoop
 from autocontext.loop.generation_runner import GenerationRunner
+from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
@@ -161,6 +162,83 @@ def _check_json_exit(result: dict[str, Any]) -> None:
     """Raise SystemExit(1) if JSON result has status=failed (AC-520)."""
     if isinstance(result, dict) and result.get("status") == "failed":
         raise SystemExit(1)
+
+
+def _runtime_timeout_field_for_provider(provider_name: str) -> str | None:
+    provider = provider_name.strip().lower()
+    if provider == "claude-cli":
+        return "claude_timeout"
+    if provider == "codex":
+        return "codex_timeout"
+    if provider in {"pi", "pi-rpc"}:
+        return "pi_timeout"
+    return None
+
+
+def _apply_judge_runtime_overrides(
+    settings: AppSettings,
+    *,
+    provider_name: str = "",
+    model: str = "",
+    timeout: float | None = None,
+) -> AppSettings:
+    updates: dict[str, Any] = {}
+    if provider_name:
+        updates["judge_provider"] = provider_name
+    if model:
+        updates["judge_model"] = model
+
+    resolved_provider = (provider_name or settings.judge_provider).strip().lower()
+    timeout_field = _runtime_timeout_field_for_provider(resolved_provider)
+    if timeout is not None and timeout_field:
+        updates[timeout_field] = timeout
+
+    if not updates:
+        return settings
+    return settings.model_copy(update=updates)
+
+
+def _format_runtime_provider_error(
+    exc: ProviderError,
+    *,
+    provider_name: str,
+    settings: AppSettings,
+) -> str:
+    message = str(exc)
+    if "timeout" not in message.lower():
+        return message
+
+    provider = provider_name.strip().lower()
+    timeout_help = {
+        "claude-cli": ("Claude CLI", settings.claude_timeout, "AUTOCONTEXT_CLAUDE_TIMEOUT"),
+        "codex": ("Codex CLI", settings.codex_timeout, "AUTOCONTEXT_CODEX_TIMEOUT"),
+        "pi": ("Pi CLI", settings.pi_timeout, "AUTOCONTEXT_PI_TIMEOUT"),
+        "pi-rpc": ("Pi RPC", settings.pi_timeout, "AUTOCONTEXT_PI_TIMEOUT"),
+    }
+    help_details = timeout_help.get(provider)
+    if help_details is None:
+        return message
+
+    label, configured_timeout, env_var = help_details
+    return (
+        f"{label} timed out after {configured_timeout:.0f}s. "
+        f"Retry with --timeout <seconds> or set {env_var}. Original error: {message}"
+    )
+
+
+def _exit_provider_error(
+    exc: ProviderError,
+    *,
+    provider_name: str,
+    settings: AppSettings,
+    json_output: bool,
+) -> NoReturn:
+    message = _format_runtime_provider_error(exc, provider_name=provider_name, settings=settings)
+    if json_output:
+        _write_json_stderr(message)
+    else:
+        console.print(f"[red]{message}[/red]")
+    raise typer.Exit(code=1) from exc
 
 
 def _is_agent_task(scenario_name: str) -> bool:
@@ -1431,25 +1509,41 @@ def judge(
     rubric: str = typer.Option(..., "--rubric", "-r", help="Evaluation rubric"),
     provider: str = typer.Option("", "--provider", help="Provider override"),
     model: str = typer.Option("", "--model", help="Model override"),
+    timeout: float | None = typer.Option(
+        None,
+        "--timeout",
+        min=1.0,
+        help="Override runtime timeout in seconds for CLI-backed providers",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """One-shot evaluation of agent output against a rubric."""
     from autocontext.execution.judge import LLMJudge
 
-    settings = load_settings()
-    if provider:
-        settings = settings.model_copy(update={"judge_provider": provider})
-    if model:
-        settings = settings.model_copy(update={"judge_model": model})
-
-    from autocontext.providers.registry import get_provider
-    judge_provider = get_provider(settings)
-    llm_judge = LLMJudge(
-        provider=judge_provider,
-        model=settings.judge_model,
-        rubric=rubric,
+    settings = _apply_judge_runtime_overrides(
+        load_settings(),
+        provider_name=provider,
+        model=model,
+        timeout=timeout,
     )
-    result = llm_judge.evaluate(task_prompt=task_prompt, agent_output=output)
+
+    try:
+        from autocontext.providers.registry import get_provider
+
+        judge_provider = get_provider(settings)
+        llm_judge = LLMJudge(
+            provider=judge_provider,
+            model=settings.judge_model,
+            rubric=rubric,
+        )
+        result = llm_judge.evaluate(task_prompt=task_prompt, agent_output=output)
+    except ProviderError as exc:
+        _exit_provider_error(
+            exc,
+            provider_name=settings.judge_provider,
+            settings=settings,
+            json_output=json_output,
+        )
 
     if json_output:
         _write_json_stdout({
@@ -1470,6 +1564,12 @@ def improve(
     max_rounds: int = typer.Option(5, "--rounds", "-n", help="Maximum improvement rounds"),
     threshold: float = typer.Option(0.9, "--threshold", "-t", help="Quality threshold to stop"),
     provider_override: str = typer.Option("", "--provider", help="Provider override"),
+    timeout: float | None = typer.Option(
+        None,
+        "--timeout",
+        min=1.0,
+        help="Override runtime timeout in seconds for CLI-backed providers",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Run multi-round improvement loop on agent output.
@@ -1481,25 +1581,35 @@ def improve(
     from autocontext.execution.task_runner import SimpleAgentTask
     from autocontext.providers.registry import get_provider as get_judge_provider
 
-    settings = load_settings()
-    if provider_override:
-        settings = settings.model_copy(update={"judge_provider": provider_override})
+    settings = _apply_judge_runtime_overrides(
+        load_settings(),
+        provider_name=provider_override,
+        timeout=timeout,
+    )
 
-    provider = get_judge_provider(settings)
-    task = SimpleAgentTask(
-        task_prompt=task_prompt,
-        rubric=rubric,
-        provider=provider,
-        model=settings.judge_model,
-    )
-    state = task.initial_state()
-    loop = ImprovementLoop(
-        task=task,
-        max_rounds=max_rounds,
-        quality_threshold=threshold,
-    )
-    starting_output = initial_output or task.generate_output(state)
-    result = loop.run(initial_output=starting_output, state=state)
+    try:
+        provider = get_judge_provider(settings)
+        task = SimpleAgentTask(
+            task_prompt=task_prompt,
+            rubric=rubric,
+            provider=provider,
+            model=settings.judge_model,
+        )
+        state = task.initial_state()
+        loop = ImprovementLoop(
+            task=task,
+            max_rounds=max_rounds,
+            quality_threshold=threshold,
+        )
+        starting_output = initial_output or task.generate_output(state)
+        result = loop.run(initial_output=starting_output, state=state)
+    except ProviderError as exc:
+        _exit_provider_error(
+            exc,
+            provider_name=settings.judge_provider,
+            settings=settings,
+            json_output=json_output,
+        )
 
     if json_output:
         _write_json_stdout({

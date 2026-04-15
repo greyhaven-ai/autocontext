@@ -81,8 +81,11 @@ Run with Claude CLI (`claude -p` via a local authenticated Claude Code runtime):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
 AUTOCONTEXT_CLAUDE_MODEL=sonnet \
+AUTOCONTEXT_CLAUDE_TIMEOUT=300 \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
+
+For longer `autoctx judge` / `autoctx improve` prompts on `claude-cli`, use `--timeout <seconds>` or set `AUTOCONTEXT_CLAUDE_TIMEOUT`.
 
 Run with Codex CLI (`codex exec` via a local authenticated Codex runtime):
 
