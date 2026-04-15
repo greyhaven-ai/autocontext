@@ -61,3 +61,13 @@ def test_detects_same_span_depth_vs_child_accessibility_conflict() -> None:
     )
     assert not result.is_coherent
     assert any("graduate-level depth" in warning for warning in result.warnings)
+
+
+def test_allows_explicit_multi_section_depth_and_beginner_rubric() -> None:
+    result = check_rubric_coherence(
+        "Provide two separate sections: an advanced treatment for experts and "
+        "a beginner explanation for newcomers. Score advanced_section and "
+        "beginner_section 0-1 each."
+    )
+    assert result.is_coherent
+    assert result.warnings == []

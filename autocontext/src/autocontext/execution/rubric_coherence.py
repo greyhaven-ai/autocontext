@@ -16,6 +16,22 @@ def _has_pattern(lower: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, lower) for pattern in patterns)
 
 
+def _allows_separate_depth_and_accessibility(lower: str) -> bool:
+    separate_surface_patterns = (
+        r"\b(?:two|2)\s+(?:separate\s+)?(?:sections|parts|versions|explanations)\b",
+        r"\bseparate\s+(?:sections|parts|versions|explanations|audiences)\b",
+    )
+    if _has_pattern(lower, separate_surface_patterns):
+        return True
+
+    advanced_unit = r"(?:advanced|expert|graduate|technical)\s+(?:section|version|treatment|explanation)"
+    beginner_unit = r"(?:beginner|child|kid|layperson)\s+(?:section|version|explanation)"
+    return bool(
+        re.search(rf"\b{advanced_unit}\b.*\b{beginner_unit}\b", lower)
+        or re.search(rf"\b{beginner_unit}\b.*\b{advanced_unit}\b", lower)
+    )
+
+
 def check_rubric_coherence(rubric: str) -> RubricCoherenceResult:
     """Check a rubric for potential coherence issues.
 
@@ -56,7 +72,11 @@ def check_rubric_coherence(rubric: str) -> RubricCoherenceResult:
         r"\blayperson\b",
         r"\baccessible to a child\b",
     )
-    if _has_pattern(lower, depth_patterns) and _has_pattern(lower, child_accessibility_patterns):
+    if (
+        _has_pattern(lower, depth_patterns)
+        and _has_pattern(lower, child_accessibility_patterns)
+        and not _allows_separate_depth_and_accessibility(lower)
+    ):
         warnings.append("Potentially contradictory criteria: graduate-level depth and child-level accessibility both appear")
 
     # Check for overly vague criteria

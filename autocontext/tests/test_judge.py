@@ -150,6 +150,30 @@ class TestLLMJudge:
         assert result.dimension_scores["child_accessibility"] <= 0.25
         assert "separate sections" in result.reasoning.lower()
 
+    def test_contradiction_guardrail_allows_explicit_two_section_rubric(self) -> None:
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.96, "reasoning": "Meets both requested sections.", '
+            '"dimensions": {"advanced_section": 0.96, "beginner_section": 0.95}}<!-- JUDGE_RESULT_END -->'
+        )
+        judge = LLMJudge(
+            model="test",
+            rubric=(
+                "Provide two separate sections: an advanced treatment for experts and "
+                "a beginner explanation for newcomers. Score advanced_section and "
+                "beginner_section 0-1 each."
+            ),
+            llm_fn=make_mock_llm(resp),
+        )
+        result = judge.evaluate(
+            "Explain quantum entanglement",
+            "## Beginner explanation\nImagine two magic coins.\n\n"
+            "## Advanced treatment for experts\nConsider Hilbert spaces and Bell inequalities.",
+        )
+        assert result.score == 0.96
+        assert result.dimension_scores["advanced_section"] == 0.96
+        assert result.dimension_scores["beginner_section"] == 0.95
+        assert "guardrail" not in result.reasoning.lower()
+
 
 class TestDetectGeneratedDimensions:
     def test_empty_keys(self) -> None:
