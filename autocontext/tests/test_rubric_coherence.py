@@ -52,3 +52,12 @@ def test_detects_multiple_contradictory_pairs() -> None:
     assert not result.is_coherent
     contradiction_warnings = [w for w in result.warnings if "contradictory" in w]
     assert len(contradiction_warnings) >= 2
+
+
+def test_detects_same_span_depth_vs_child_accessibility_conflict() -> None:
+    result = check_rubric_coherence(
+        "Must be at graduate physics seminar depth AND accessible to a 5-year-old. "
+        "Score technical_depth and child_accessibility 0-1 each."
+    )
+    assert not result.is_coherent
+    assert any("graduate-level depth" in warning for warning in result.warnings)

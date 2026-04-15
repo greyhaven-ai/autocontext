@@ -127,6 +127,29 @@ class TestLLMJudge:
         assert result.parse_method == "plaintext"
         assert result.score == 0.8
 
+    def test_contradictory_rubric_caps_dual_section_escape(self) -> None:
+        resp = (
+            '<!-- JUDGE_RESULT_START -->{"score": 0.96, "reasoning": "Both sections satisfy their target audience.", '
+            '"dimensions": {"technical_depth": 0.97, "child_accessibility": 0.95}}<!-- JUDGE_RESULT_END -->'
+        )
+        judge = LLMJudge(
+            model="test",
+            rubric=(
+                "Must be at graduate physics seminar depth AND accessible to a 5-year-old. "
+                "Score technical_depth and child_accessibility 0-1 each."
+            ),
+            llm_fn=make_mock_llm(resp),
+        )
+        result = judge.evaluate(
+            "Explain quantum entanglement",
+            "## For a Five-Year-Old\nImagine two magic coins.\n\n"
+            "## Graduate Seminar Treatment\nConsider Hilbert spaces, Bell inequalities, and Schmidt decomposition.",
+        )
+        assert result.score <= 0.25
+        assert result.dimension_scores["technical_depth"] <= 0.25
+        assert result.dimension_scores["child_accessibility"] <= 0.25
+        assert "separate sections" in result.reasoning.lower()
+
 
 class TestDetectGeneratedDimensions:
     def test_empty_keys(self) -> None:

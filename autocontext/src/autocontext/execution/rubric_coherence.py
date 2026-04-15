@@ -12,11 +12,16 @@ class RubricCoherenceResult:
     is_coherent: bool = True
 
 
+def _has_pattern(lower: str, patterns: tuple[str, ...]) -> bool:
+    return any(re.search(pattern, lower) for pattern in patterns)
+
+
 def check_rubric_coherence(rubric: str) -> RubricCoherenceResult:
     """Check a rubric for potential coherence issues.
 
-    Detects contradictory adjective pairs, overly vague criteria,
-    and underspecified rubrics. Returns warnings (non-blocking).
+    Detects contradictory adjective pairs, same-span audience/depth conflicts,
+    overly vague criteria, and underspecified rubrics. Returns warnings
+    (non-blocking).
     """
     warnings: list[str] = []
 
@@ -32,6 +37,27 @@ def check_rubric_coherence(rubric: str) -> RubricCoherenceResult:
     for a, b in contradictions:
         if re.search(rf"\b{a}\b", lower) and re.search(rf"\b{b}\b", lower):
             warnings.append(f'Potentially contradictory criteria: "{a}" and "{b}" both appear')
+
+    depth_patterns = (
+        r"\bgraduate\b",
+        r"\bgraduate-level\b",
+        r"\bseminar depth\b",
+        r"\badvanced\b",
+        r"\bexpert\b",
+        r"\btechnical depth\b",
+        r"\brigorous\b",
+    )
+    child_accessibility_patterns = (
+        r"\b5-year-old\b",
+        r"\bfive-year-old\b",
+        r"\bchild\b",
+        r"\bkid\b",
+        r"\bbeginner\b",
+        r"\blayperson\b",
+        r"\baccessible to a child\b",
+    )
+    if _has_pattern(lower, depth_patterns) and _has_pattern(lower, child_accessibility_patterns):
+        warnings.append("Potentially contradictory criteria: graduate-level depth and child-level accessibility both appear")
 
     # Check for overly vague criteria
     vague_matches = re.findall(r"\b(good|nice|appropriate|adequate|proper)\b", lower)
