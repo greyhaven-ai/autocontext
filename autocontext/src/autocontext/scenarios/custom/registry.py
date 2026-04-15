@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
 import sys
 from pathlib import Path
@@ -38,15 +39,47 @@ def _load_agent_task_class(custom_dir: Path, name: str) -> type[Any]:
 
     for attr_name in dir(mod):
         attr = getattr(mod, attr_name)
-        if (
-            isinstance(attr, type)
-            and issubclass(attr, AgentTaskInterface)
-            and attr is not AgentTaskInterface
-        ):
+        if isinstance(attr, type) and issubclass(attr, AgentTaskInterface) and attr is not AgentTaskInterface:
             attr = patch_legacy_generated_evaluate_output(attr, source_path)
             return patch_legacy_generated_revise_output(attr, source_path)
 
     raise ImportError(f"no AgentTaskInterface subclass found in {module_name}")
+
+
+def _read_persisted_marker(entry: Path) -> str:
+    type_file = entry / "scenario_type.txt"
+    if type_file.exists():
+        return type_file.read_text().strip()
+
+    spec_file = entry / "spec.json"
+    if spec_file.exists():
+        try:
+            raw = json.loads(spec_file.read_text(encoding="utf-8"))
+        except Exception:
+            return "parametric"
+        marker = raw.get("scenario_type") or raw.get("scenarioType")
+        if isinstance(marker, str) and marker.strip():
+            return marker.strip()
+
+    return "parametric"
+
+
+def _materialize_parametric_scenario_source(custom_dir: Path, name: str) -> None:
+    from autocontext.scenarios.custom.codegen import generate_scenario_class
+    from autocontext.scenarios.custom.spec import ScenarioSpec
+
+    scenario_dir = custom_dir / name
+    spec = ScenarioSpec.load(scenario_dir)
+    if spec.name != name:
+        spec.name = name
+
+    source_path = scenario_dir / "scenario.py"
+    if not source_path.exists():
+        source_path.write_text(generate_scenario_class(spec), encoding="utf-8")
+
+    type_file = scenario_dir / "scenario_type.txt"
+    if not type_file.exists():
+        type_file.write_text("parametric", encoding="utf-8")
 
 
 def _load_family_class(custom_dir: Path, name: str, marker: str) -> type[Any]:
@@ -58,12 +91,14 @@ def _load_family_class(custom_dir: Path, name: str, marker: str) -> type[Any]:
             raise FileNotFoundError(f"agent task source not found: {agent_task_file}")
         return _load_agent_task_class(custom_dir, name)
 
+    if marker == "parametric":
+        _materialize_parametric_scenario_source(custom_dir, name)
+
     cls = load_custom_scenario(custom_dir, name, family.interface_class)
     detected = detect_family(cls())
     if detected is None or detected.name != family.name:
         raise ImportError(
-            f"loaded scenario '{name}' as family '{detected.name if detected else 'unknown'}', "
-            f"expected '{family.name}'"
+            f"loaded scenario '{name}' as family '{detected.name if detected else 'unknown'}', expected '{family.name}'"
         )
     return cls
 
@@ -79,8 +114,7 @@ def load_all_custom_scenarios(knowledge_root: Path) -> dict[str, type[Any]]:
             continue
         name = entry.name
 
-        type_file = entry / "scenario_type.txt"
-        marker = type_file.read_text().strip() if type_file.exists() else "parametric"
+        marker = _read_persisted_marker(entry)
         try:
             cls = _load_family_class(custom_dir, name, marker)
             loaded[name] = cls

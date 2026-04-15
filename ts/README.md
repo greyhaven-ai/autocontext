@@ -193,7 +193,7 @@ Credential resolution order is:
 
 `autoctx replay` writes the selected generation and available generations to `stderr` before printing the replay JSON payload. `autoctx export-training-data` writes progress updates to `stderr` while keeping JSONL records on `stdout`.
 
-Saved custom agent-task scenarios under `knowledge/_custom_scenarios/` can be referenced by name in `judge`, `improve`, `repl`, and `queue`. That lets a saved scenario spec become directly usable from the TS CLI without retyping its prompt and rubric.
+Saved custom scenarios under `knowledge/_custom_scenarios/` can be reused directly from the TS CLI. Saved parametric scenarios can now be targeted by name in `run` and `benchmark`, while saved agent-task scenarios remain directly usable in `judge`, `improve`, `repl`, and `queue` without retyping their prompt and rubric.
 
 ## MCP Tools (40+)
 

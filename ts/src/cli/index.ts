@@ -479,7 +479,6 @@ async function cmdRun(dbPath: string): Promise<void> {
     executeRunCommandWorkflow,
     planRunCommand,
     renderRunResult,
-    resolveRunScenario,
     RUN_HELP_TEXT,
   } = await import("./run-command-workflow.js");
 
@@ -495,6 +494,7 @@ async function cmdRun(dbPath: string): Promise<void> {
     await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
+  const { resolveRunnableScenarioClass } = await import("./runnable-scenario-resolution.js");
 
   const settings = loadSettings();
   let plan;
@@ -521,7 +521,11 @@ async function cmdRun(dbPath: string): Promise<void> {
 
   let ScenarioClass;
   try {
-    ScenarioClass = resolveRunScenario(plan.scenarioName, SCENARIO_REGISTRY);
+    ScenarioClass = resolveRunnableScenarioClass({
+      scenarioName: plan.scenarioName,
+      builtinScenarios: SCENARIO_REGISTRY,
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+    });
   } catch (error) {
     console.error(errorMessage(error));
     process.exit(1);
@@ -1154,15 +1158,22 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
+  const { resolveRunnableScenarioClass } = await import("./runnable-scenario-resolution.js");
 
   const plan = await planBenchmarkCommand(values, resolveScenarioOption);
-  const ScenarioClass = SCENARIO_REGISTRY[plan.scenarioName];
-  if (!ScenarioClass) {
-    console.error(`Unknown scenario: ${plan.scenarioName}`);
-    process.exit(1);
-  }
 
   const settings = loadSettings();
+  let ScenarioClass;
+  try {
+    ScenarioClass = resolveRunnableScenarioClass({
+      scenarioName: plan.scenarioName,
+      builtinScenarios: SCENARIO_REGISTRY,
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+    });
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
   const providerBundle = buildRoleProviderBundle(
     settings,
     plan.providerType ? { providerType: plan.providerType } : {},

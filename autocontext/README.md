@@ -154,6 +154,8 @@ uv run autoctx mcp-serve
 uv run autoctx wait <condition_id> --json
 ```
 
+Saved custom scenarios under `knowledge/_custom_scenarios/` can be rerun and benchmarked by name once their `spec.json` has been persisted, so the `new-scenario` / `solve` workflow lines up with the named `run` and `benchmark` surfaces.
+
 Useful variants:
 
 ```bash
