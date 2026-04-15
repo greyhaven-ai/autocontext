@@ -103,7 +103,7 @@ AUTOCONTEXT_PI_COMMAND=pi \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
-`autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER` and other role-routing overrides apply to live simulation generation as well.
+`autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER`, other role-routing overrides, and per-call `--provider <name>` overrides all apply to live simulation generation.
 
 Run with Pi RPC (remote Pi agent via HTTP):
 
@@ -143,6 +143,7 @@ uv run autoctx mcp-serve
 ```bash
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
+uv run autoctx simulate --description "simulate deploying a web service with rollback" --provider claude-cli
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>

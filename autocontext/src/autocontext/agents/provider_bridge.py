@@ -336,6 +336,7 @@ def create_role_client(
 
         rpc_config = PiRPCConfig(
             pi_command=settings.pi_command,
+            timeout=settings.pi_timeout,
             session_persistence=settings.pi_rpc_session_persistence,
         )
         return RuntimeBridgeClient(PiRPCRuntime(rpc_config))

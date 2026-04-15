@@ -133,6 +133,35 @@ class TestSimulateRuntimeResolution:
             "role": "architect",
         }]
 
+    def test_simulate_provider_flag_overrides_architect_runtime(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path, agent_provider="anthropic", architect_provider="pi")
+        client = _RecordingClient(text='{"spec": "provider-override"}')
+        orchestrator = _FakeOrchestrator(client, "claude-cli-architect")
+        captured_settings: list[AppSettings] = []
+
+        def _capture_from_settings(current: AppSettings, **_: object) -> _FakeOrchestrator:
+            captured_settings.append(current)
+            return orchestrator
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._sqlite_from_settings", return_value=object()),
+            patch("autocontext.cli._artifacts_from_settings", return_value=object()),
+            patch("autocontext.cli.AgentOrchestrator.from_settings", side_effect=_capture_from_settings),
+            patch("autocontext.simulation.engine.SimulationEngine", _FakeSimulationEngine),
+        ):
+            result = runner.invoke(
+                app,
+                ["simulate", "--description", "provider override test", "--provider", "claude-cli", "--json"],
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["provider_text"] == '{"spec": "provider-override"}'
+        assert len(captured_settings) == 1
+        assert captured_settings[0].architect_provider == "claude-cli"
+        assert captured_settings[0].agent_provider == "claude-cli"
+
     def test_simulate_uses_resolved_architect_model(self, tmp_path: Path) -> None:
         settings = _settings(
             tmp_path,

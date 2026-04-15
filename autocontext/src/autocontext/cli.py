@@ -1091,6 +1091,7 @@ def simulate(
     compare_right: str = typer.Option("", "--compare-right", help="Right simulation for comparison"),
     export_id: str = typer.Option("", "--export", help="Export a saved simulation"),
     export_format: str = typer.Option("json", "--format", help="Export format: json, markdown, csv"),
+    provider_override: str = typer.Option("", "--provider", help="Provider override"),
     runs: int = typer.Option(1, "--runs", min=1, help="Number of runs"),
     max_steps: int = typer.Option(0, "--max-steps", help="Max steps per run (0 = auto)"),
     save_as: str = typer.Option("", "--save-as", help="Name for saved simulation"),
@@ -1100,6 +1101,10 @@ def simulate(
     from autocontext.simulation.engine import SimulationEngine
 
     settings = load_settings()
+    if provider_override:
+        settings = settings.model_copy(
+            update={"agent_provider": provider_override, "architect_provider": provider_override},
+        )
 
     if bool(compare_left) != bool(compare_right):
         console.print("[red]--compare-left and --compare-right must be provided together[/red]")

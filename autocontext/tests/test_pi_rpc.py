@@ -142,8 +142,10 @@ def test_revise_success() -> None:
 
 def test_create_role_client_pi_rpc() -> None:
     """create_role_client('pi-rpc') should return a RuntimeBridgeClient."""
-    settings = AppSettings()
+    settings = AppSettings(pi_timeout=240.0)
     with patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as MockRuntime:
         MockRuntime.return_value = MagicMock()
         client = create_role_client("pi-rpc", settings)
     assert isinstance(client, RuntimeBridgeClient)
+    config = MockRuntime.call_args.args[0]
+    assert config.timeout == 240.0

@@ -238,6 +238,7 @@ The Python package exposes the full `autoctx` control-plane CLI for scenario exe
 - Hand the harness a task in plain language: `uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3`
 - Run and improve a saved scenario: `uv run autoctx run --scenario support_triage --gens 3`
 - Inspect or replay outputs: `uv run autoctx list`, `uv run autoctx status <run_id>`
+- Override the simulation provider per call: `uv run autoctx simulate -d "simulate deploying a web service with rollback" --provider claude-cli`
 - Scaffold a custom scenario: `uv run autoctx new-scenario --template prompt-optimization --name my-task`
 - Export training data: `uv run autoctx export-training-data --scenario support_triage --all-runs --output training/support_triage.jsonl`
 - Train a local model: `uv run autoctx train --scenario support_triage --data training/support_triage.jsonl --time-budget 300`
