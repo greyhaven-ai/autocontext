@@ -160,6 +160,7 @@ def get_provider(settings: AppSettings) -> LLMProvider:
         pi_rpc_runtime = PiRPCRuntime(PiRPCConfig(
             pi_command=settings.pi_command,
             model=settings.pi_model or settings.judge_model,
+            timeout=settings.pi_timeout,
             session_persistence=settings.pi_rpc_session_persistence,
         ))
         return RuntimeBridgeProvider(

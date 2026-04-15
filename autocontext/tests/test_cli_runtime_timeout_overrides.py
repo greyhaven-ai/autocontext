@@ -8,8 +8,10 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from autocontext.cli import app
+from autocontext.cli_runtime_overrides import apply_judge_runtime_overrides
 from autocontext.config.settings import AppSettings
 from autocontext.providers.base import CompletionResult, ProviderError
+from autocontext.providers.registry import get_provider
 
 runner = CliRunner()
 
@@ -195,3 +197,13 @@ class TestImproveRuntimeTimeoutOverrides:
         assert "timed out" in payload["error"].lower()
         assert "--timeout" in payload["error"]
         assert "AUTOCONTEXT_CLAUDE_TIMEOUT" in payload["error"]
+
+
+class TestPiRpcRuntimeTimeoutOverrides:
+    def test_pi_rpc_provider_uses_runtime_timeout_override(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path).model_copy(update={"judge_provider": "pi-rpc"})
+        overridden = apply_judge_runtime_overrides(settings, timeout=300.0)
+
+        provider = get_provider(overridden)
+
+        assert provider._runtime._config.timeout == 300.0  # type: ignore[attr-defined]

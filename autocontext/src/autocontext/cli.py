@@ -18,6 +18,10 @@ from rich.console import Console
 from rich.table import Table
 
 from autocontext.agents.orchestrator import AgentOrchestrator
+from autocontext.cli_runtime_overrides import (
+    apply_judge_runtime_overrides,
+    format_runtime_provider_error,
+)
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
@@ -164,68 +168,6 @@ def _check_json_exit(result: dict[str, Any]) -> None:
         raise SystemExit(1)
 
 
-def _runtime_timeout_field_for_provider(provider_name: str) -> str | None:
-    provider = provider_name.strip().lower()
-    if provider == "claude-cli":
-        return "claude_timeout"
-    if provider == "codex":
-        return "codex_timeout"
-    if provider in {"pi", "pi-rpc"}:
-        return "pi_timeout"
-    return None
-
-
-def _apply_judge_runtime_overrides(
-    settings: AppSettings,
-    *,
-    provider_name: str = "",
-    model: str = "",
-    timeout: float | None = None,
-) -> AppSettings:
-    updates: dict[str, Any] = {}
-    if provider_name:
-        updates["judge_provider"] = provider_name
-    if model:
-        updates["judge_model"] = model
-
-    resolved_provider = (provider_name or settings.judge_provider).strip().lower()
-    timeout_field = _runtime_timeout_field_for_provider(resolved_provider)
-    if timeout is not None and timeout_field:
-        updates[timeout_field] = timeout
-
-    if not updates:
-        return settings
-    return settings.model_copy(update=updates)
-
-
-def _format_runtime_provider_error(
-    exc: ProviderError,
-    *,
-    provider_name: str,
-    settings: AppSettings,
-) -> str:
-    message = str(exc)
-    if "timeout" not in message.lower():
-        return message
-
-    provider = provider_name.strip().lower()
-    timeout_help = {
-        "claude-cli": ("Claude CLI", settings.claude_timeout, "AUTOCONTEXT_CLAUDE_TIMEOUT"),
-        "codex": ("Codex CLI", settings.codex_timeout, "AUTOCONTEXT_CODEX_TIMEOUT"),
-        "pi": ("Pi CLI", settings.pi_timeout, "AUTOCONTEXT_PI_TIMEOUT"),
-        "pi-rpc": ("Pi RPC", settings.pi_timeout, "AUTOCONTEXT_PI_TIMEOUT"),
-    }
-    help_details = timeout_help.get(provider)
-    if help_details is None:
-        return message
-
-    label, configured_timeout, env_var = help_details
-    return (
-        f"{label} timed out after {configured_timeout:.0f}s. "
-        f"Retry with --timeout <seconds> or set {env_var}. Original error: {message}"
-    )
-
-
 def _exit_provider_error(
     exc: ProviderError,
     *,
@@ -233,7 +175,7 @@ def _exit_provider_error(
     settings: AppSettings,
     json_output: bool,
 ) -> NoReturn:
-    message = _format_runtime_provider_error(exc, provider_name=provider_name, settings=settings)
+    message = format_runtime_provider_error(exc, provider_name=provider_name, settings=settings)
     if json_output:
         _write_json_stderr(message)
     else:
@@ -1520,7 +1462,7 @@ def judge(
     """One-shot evaluation of agent output against a rubric."""
     from autocontext.execution.judge import LLMJudge
 
-    settings = _apply_judge_runtime_overrides(
+    settings = apply_judge_runtime_overrides(
         load_settings(),
         provider_name=provider,
         model=model,
@@ -1581,7 +1523,7 @@ def improve(
     from autocontext.execution.task_runner import SimpleAgentTask
     from autocontext.providers.registry import get_provider as get_judge_provider
 
-    settings = _apply_judge_runtime_overrides(
+    settings = apply_judge_runtime_overrides(
         load_settings(),
         provider_name=provider_override,
         timeout=timeout,
