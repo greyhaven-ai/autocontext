@@ -19,3 +19,7 @@ class TestInferFamily:
             "and wait for approval before acting on ambiguous support tickets."
         )
         assert family == "operator_loop"
+
+    def test_routes_clarification_only_prompts_to_operator_loop(self) -> None:
+        assert infer_family("Handle requests with incomplete inputs before acting") == "operator_loop"
+        assert infer_family("Handle ambiguous support tickets safely before acting") == "operator_loop"

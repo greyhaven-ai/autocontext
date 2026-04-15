@@ -9,7 +9,7 @@ from typing import Any
 
 _OPERATOR_LOOP_FAMILY_TRIGGERS = re.compile(
     r"operator|human[- .]?in[- .]?the[- .]?loop|clarif|approval.required|"
-    r"ask.*question|missing.information|gather.more.info|"
+    r"ambiguous|incomplete.input|ask.*question|missing.information|gather.more.info|"
     r"when.to.escalat|over-escalat|under-escalat|triage.judgment"
 )
 
