@@ -4,11 +4,23 @@
  */
 
 import type { LLMProvider } from "../types/index.js";
+import { designCoordination } from "./coordination-designer.js";
+import type { CoordinationSpec } from "./coordination-spec.js";
 import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
 import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
+import { designInvestigation } from "./investigation-designer.js";
+import type { InvestigationSpec } from "./investigation-spec.js";
+import { designNegotiation } from "./negotiation-designer.js";
+import type { NegotiationSpec } from "./negotiation-spec.js";
 import { designOperatorLoop } from "./operator-loop-designer.js";
 import type { OperatorLoopSpec } from "./operator-loop-spec.js";
+import { designSchemaEvolution } from "./schema-evolution-designer.js";
+import type { SchemaEvolutionSpec } from "./schema-evolution-spec.js";
+import { designSimulation } from "./simulation-designer.js";
+import type { SimulationSpec } from "./simulation-spec.js";
 import { healSpec } from "./spec-auto-heal.js";
+import { designWorkflow } from "./workflow-designer.js";
+import type { WorkflowSpec } from "./workflow-spec.js";
 
 export interface CreatedScenarioResult {
   name: string;
@@ -20,6 +32,29 @@ export interface CreatedScenarioResult {
     [key: string]: unknown;
   };
 }
+
+type LlmFn = (system: string, user: string) => Promise<string>;
+type FamilyAwareScenarioFamily =
+  | "coordination"
+  | "investigation"
+  | "negotiation"
+  | "operator_loop"
+  | "schema_evolution"
+  | "simulation"
+  | "workflow";
+
+type SimulationLikeCreatedSpecInput = {
+  descriptionPrompt: string;
+  rubric: string;
+  scenarioDescription: string;
+  environmentDescription: string;
+  initialStateDescription: string;
+  successCriteria: string[];
+  failureModes: string[];
+  actions: unknown[];
+  maxSteps: number;
+  extras?: Record<string, unknown>;
+};
 
 /**
  * Derive a snake_case scenario name from a description.
@@ -84,74 +119,260 @@ export function buildScenarioCreationPrompt(description: string): string {
   return [scenarioCreationInstructions(), "", `User description: ${description}`].join("\n");
 }
 
-function buildOperatorLoopCreatedSpec(
-  description: string,
-  spec: OperatorLoopSpec,
-): CreatedScenarioResult["spec"] {
-  return {
-    taskPrompt: description,
-    rubric: "Evaluate escalation judgment, safe autonomy, and clarification quality.",
-    description: spec.description,
-    environment_description: spec.environmentDescription,
-    initial_state_description: spec.initialStateDescription,
-    escalation_policy: {
-      escalation_threshold: spec.escalationPolicy.escalationThreshold,
-      max_escalations: spec.escalationPolicy.maxEscalations,
-    },
-    success_criteria: spec.successCriteria,
-    failure_modes: spec.failureModes,
-    actions: spec.actions,
-    max_steps: spec.maxSteps,
-  };
-}
-
-async function createOperatorLoopScenarioFromDescription(
-  description: string,
-  provider: LLMProvider,
-  name: string,
-): Promise<CreatedScenarioResult> {
-  const llmFn = async (system: string, user: string): Promise<string> => {
+function createProviderLlmFn(provider: LLMProvider): LlmFn {
+  return async (system: string, user: string): Promise<string> => {
     const result = await provider.complete({
       systemPrompt: system,
       userPrompt: user,
     });
     return result.text;
   };
-  const spec = await designOperatorLoop(description, llmFn);
+}
+
+function hasFamilyAwareScenarioFactory(
+  family: ScenarioFamilyName,
+): family is FamilyAwareScenarioFamily {
+  return family in FAMILY_AWARE_SCENARIO_FACTORIES;
+}
+
+function buildSimulationLikeCreatedSpec(
+  input: SimulationLikeCreatedSpecInput,
+): CreatedScenarioResult["spec"] {
   return {
-    name,
-    family: "operator_loop",
-    spec: buildOperatorLoopCreatedSpec(description, spec),
+    taskPrompt: input.descriptionPrompt,
+    rubric: input.rubric,
+    description: input.scenarioDescription,
+    environment_description: input.environmentDescription,
+    initial_state_description: input.initialStateDescription,
+    success_criteria: input.successCriteria,
+    failure_modes: input.failureModes,
+    actions: input.actions,
+    max_steps: input.maxSteps,
+    ...input.extras,
   };
 }
 
-/**
- * Create a scenario spec from a natural language description.
- * Uses the provider to generate a task prompt and rubric from the description.
- */
-export async function createScenarioFromDescription(
+function buildSimulationCreatedSpec(
+  description: string,
+  spec: SimulationSpec,
+): CreatedScenarioResult["spec"] {
+  return buildSimulationLikeCreatedSpec({
+    descriptionPrompt: description,
+    rubric: "Evaluate action sequencing, state progression, recovery, and completion quality.",
+    scenarioDescription: spec.description,
+    environmentDescription: spec.environmentDescription,
+    initialStateDescription: spec.initialStateDescription,
+    successCriteria: spec.successCriteria,
+    failureModes: spec.failureModes,
+    actions: spec.actions,
+    maxSteps: spec.maxSteps,
+  });
+}
+
+function buildInvestigationCreatedSpec(
+  description: string,
+  spec: InvestigationSpec,
+): CreatedScenarioResult["spec"] {
+  return buildSimulationLikeCreatedSpec({
+    descriptionPrompt: description,
+    rubric: "Evaluate evidence gathering, diagnosis accuracy, and red-herring resistance.",
+    scenarioDescription: spec.description,
+    environmentDescription: spec.environmentDescription,
+    initialStateDescription: spec.initialStateDescription,
+    successCriteria: spec.successCriteria,
+    failureModes: spec.failureModes,
+    actions: spec.actions,
+    maxSteps: spec.maxSteps,
+    extras: {
+      evidence_pool_description: spec.evidencePoolDescription,
+      diagnosis_target: spec.diagnosisTarget,
+      evidencePool: [
+        {
+          id: "investigation_brief",
+          content: spec.evidencePoolDescription,
+          isRedHerring: false,
+          relevance: 1,
+        },
+      ],
+      correctDiagnosis: spec.diagnosisTarget,
+    },
+  });
+}
+
+function buildSchemaEvolutionCreatedSpec(
+  description: string,
+  spec: SchemaEvolutionSpec,
+): CreatedScenarioResult["spec"] {
+  return buildSimulationLikeCreatedSpec({
+    descriptionPrompt: description,
+    rubric: "Evaluate breaking-change detection, stale-assumption recovery, and adaptation speed.",
+    scenarioDescription: spec.description,
+    environmentDescription: spec.environmentDescription,
+    initialStateDescription: spec.initialStateDescription,
+    successCriteria: spec.successCriteria,
+    failureModes: spec.failureModes,
+    actions: spec.actions,
+    maxSteps: spec.maxSteps,
+    extras: {
+      mutations: spec.mutations.map((mutation) => ({
+        version: mutation.version,
+        description: mutation.description,
+        breaking: mutation.breaking,
+        fields_added: mutation.fieldsAdded,
+        fields_removed: mutation.fieldsRemoved,
+        fields_modified: mutation.fieldsModified,
+      })),
+    },
+  });
+}
+
+function buildWorkflowCreatedSpec(
+  description: string,
+  spec: WorkflowSpec,
+): CreatedScenarioResult["spec"] {
+  const actionsByName = new Map(spec.actions.map((action) => [action.name, action]));
+  return buildSimulationLikeCreatedSpec({
+    descriptionPrompt: description,
+    rubric: "Evaluate workflow ordering, compensation logic, and side-effect handling.",
+    scenarioDescription: spec.description,
+    environmentDescription: spec.environmentDescription,
+    initialStateDescription: spec.initialStateDescription,
+    successCriteria: spec.successCriteria,
+    failureModes: spec.failureModes,
+    actions: spec.actions,
+    maxSteps: spec.maxSteps,
+    extras: {
+      workflow_steps: spec.workflowSteps.map((step) => ({
+        ...step,
+        compensationAction: step.compensation ?? undefined,
+        sideEffects: actionsByName.get(step.name)?.effects ?? [],
+      })),
+    },
+  });
+}
+
+function buildNegotiationCreatedSpec(
+  description: string,
+  spec: NegotiationSpec,
+): CreatedScenarioResult["spec"] {
+  return buildSimulationLikeCreatedSpec({
+    descriptionPrompt: description,
+    rubric: "Evaluate negotiation quality, opponent modeling, and outcome efficiency.",
+    scenarioDescription: spec.description,
+    environmentDescription: spec.environmentDescription,
+    initialStateDescription: spec.initialStateDescription,
+    successCriteria: spec.successCriteria,
+    failureModes: spec.failureModes,
+    actions: spec.actions,
+    maxSteps: spec.maxSteps,
+    extras: {
+      hidden_preferences: {
+        priorities: spec.hiddenPreferences.priorities,
+        reservation_value: spec.hiddenPreferences.reservationValue,
+        aspiration_value: spec.hiddenPreferences.aspirationValue,
+        batna_description: spec.hiddenPreferences.batnaDescription,
+      },
+      totalRounds: spec.maxRounds,
+    },
+  });
+}
+
+function buildOperatorLoopCreatedSpec(
+  description: string,
+  spec: OperatorLoopSpec,
+): CreatedScenarioResult["spec"] {
+  return buildSimulationLikeCreatedSpec({
+    descriptionPrompt: description,
+    rubric: "Evaluate escalation judgment, safe autonomy, and clarification quality.",
+    scenarioDescription: spec.description,
+    environmentDescription: spec.environmentDescription,
+    initialStateDescription: spec.initialStateDescription,
+    successCriteria: spec.successCriteria,
+    failureModes: spec.failureModes,
+    actions: spec.actions,
+    maxSteps: spec.maxSteps,
+    extras: {
+      escalation_policy: {
+        escalation_threshold: spec.escalationPolicy.escalationThreshold,
+        max_escalations: spec.escalationPolicy.maxEscalations,
+      },
+    },
+  });
+}
+
+function buildCoordinationCreatedSpec(
+  description: string,
+  spec: CoordinationSpec,
+): CreatedScenarioResult["spec"] {
+  return buildSimulationLikeCreatedSpec({
+    descriptionPrompt: description,
+    rubric: "Evaluate worker coordination, handoff quality, and merged-output consistency.",
+    scenarioDescription: spec.description,
+    environmentDescription: spec.environmentDescription,
+    initialStateDescription: spec.initialStateDescription,
+    successCriteria: spec.successCriteria,
+    failureModes: spec.failureModes,
+    actions: spec.actions,
+    maxSteps: spec.maxSteps,
+    extras: {
+      workers: spec.workers.map((worker) => ({
+        id: worker.workerId,
+        role: worker.role,
+        partialContext: {},
+      })),
+    },
+  });
+}
+
+const FAMILY_AWARE_SCENARIO_FACTORIES: Record<
+  FamilyAwareScenarioFamily,
+  (description: string, llmFn: LlmFn) => Promise<CreatedScenarioResult["spec"]>
+> = {
+  coordination: async (description, llmFn) =>
+    buildCoordinationCreatedSpec(description, await designCoordination(description, llmFn)),
+  investigation: async (description, llmFn) =>
+    buildInvestigationCreatedSpec(description, await designInvestigation(description, llmFn)),
+  negotiation: async (description, llmFn) =>
+    buildNegotiationCreatedSpec(description, await designNegotiation(description, llmFn)),
+  operator_loop: async (description, llmFn) =>
+    buildOperatorLoopCreatedSpec(description, await designOperatorLoop(description, llmFn)),
+  schema_evolution: async (description, llmFn) =>
+    buildSchemaEvolutionCreatedSpec(description, await designSchemaEvolution(description, llmFn)),
+  simulation: async (description, llmFn) =>
+    buildSimulationCreatedSpec(description, await designSimulation(description, llmFn)),
+  workflow: async (description, llmFn) =>
+    buildWorkflowCreatedSpec(description, await designWorkflow(description, llmFn)),
+};
+
+async function createFamilyAwareScenarioFromDescription(
   description: string,
   provider: LLMProvider,
+  name: string,
+  family: FamilyAwareScenarioFamily,
 ): Promise<CreatedScenarioResult> {
-  const defaultName = deriveScenarioName(description);
-  const defaultFamily = detectScenarioFamily(description);
+  return {
+    name,
+    family,
+    spec: await FAMILY_AWARE_SCENARIO_FACTORIES[family](description, createProviderLlmFn(provider)),
+  };
+}
 
-  if (defaultFamily === "operator_loop") {
-    const created = await createOperatorLoopScenarioFromDescription(
-      description,
-      provider,
-      defaultName,
-    );
-    return {
-      ...created,
-      spec: healSpec(
-        created.spec as Record<string, unknown>,
-        created.family,
-        description,
-      ) as CreatedScenarioResult["spec"],
-    };
+function shouldFallbackFromFamilyAwareCreation(error: unknown): boolean {
+  if (error instanceof SyntaxError) {
+    return true;
   }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.name === "ZodError" || error.message.includes("response does not contain");
+}
 
+async function createGenericScenarioFromDescription(
+  description: string,
+  provider: LLMProvider,
+  defaultName: string,
+  defaultFamily: ScenarioFamilyName,
+): Promise<CreatedScenarioResult> {
   const result = await provider.complete({
     systemPrompt: scenarioCreationInstructions(),
     userPrompt: description,
@@ -179,7 +400,7 @@ export async function createScenarioFromDescription(
 
   // Ensure required fields
   if (!spec.taskPrompt) spec.taskPrompt = description;
-  if (!spec.rubric) spec.rubric = `Evaluate the quality of the response.`;
+  if (!spec.rubric) spec.rubric = "Evaluate the quality of the response.";
   if (!spec.description) spec.description = `Custom scenario: ${description}`;
   const name = typeof spec.name === "string" && spec.name.trim() ? spec.name.trim() : defaultName;
   const family =
@@ -197,4 +418,41 @@ export async function createScenarioFromDescription(
       description,
     ) as CreatedScenarioResult["spec"],
   };
+}
+
+/**
+ * Create a scenario spec from a natural language description.
+ * Uses the provider to generate a task prompt and rubric from the description.
+ */
+export async function createScenarioFromDescription(
+  description: string,
+  provider: LLMProvider,
+): Promise<CreatedScenarioResult> {
+  const defaultName = deriveScenarioName(description);
+  const defaultFamily = detectScenarioFamily(description);
+
+  if (hasFamilyAwareScenarioFactory(defaultFamily)) {
+    try {
+      const created = await createFamilyAwareScenarioFromDescription(
+        description,
+        provider,
+        defaultName,
+        defaultFamily,
+      );
+      return {
+        ...created,
+        spec: healSpec(
+          created.spec as Record<string, unknown>,
+          created.family,
+          description,
+        ) as CreatedScenarioResult["spec"],
+      };
+    } catch (error) {
+      if (!shouldFallbackFromFamilyAwareCreation(error)) {
+        throw error;
+      }
+    }
+  }
+
+  return createGenericScenarioFromDescription(description, provider, defaultName, defaultFamily);
 }
