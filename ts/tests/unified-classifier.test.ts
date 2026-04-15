@@ -50,6 +50,11 @@ describe("classifyScenarioFamily (sophisticated)", () => {
       expected: "operator_loop",
     },
     {
+      description:
+        "Create a geopolitical crisis simulation where a national security advisor manages an escalating international crisis using diplomatic, economic, military, intelligence, public communication, alliance, UN, and cyber actions under hidden adversary intentions and escalation thresholds.",
+      expected: "simulation",
+    },
+    {
       description: "Coordinate multiple agents with partial context doing handoffs and merges",
       expected: "coordination",
     },
@@ -110,6 +115,13 @@ describe("detectScenarioFamily routes all custom-scenario families (AC-437)", ()
       "Coordinate multiple agents with partial context doing handoffs and merge operations",
     );
     expect(family).toBe("coordination");
+  });
+
+  it("routes the AC-276 geopolitical crisis stress prompt to simulation", () => {
+    const family = detectScenarioFamily(
+      "Create a geopolitical crisis simulation where a national security advisor manages an escalating international crisis using diplomatic, economic, military, intelligence, public communication, alliance, UN, and cyber actions under hidden adversary intentions and escalation thresholds.",
+    );
+    expect(family).toBe("simulation");
   });
 
   // These 6 families already work — regression guard

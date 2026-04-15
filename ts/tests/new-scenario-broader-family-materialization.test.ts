@@ -196,6 +196,68 @@ const STRESS_CASES: StressCase[] = [
     },
   },
   {
+    issueId: "AC-276",
+    prompt:
+      "Create a geopolitical crisis simulation where a national security advisor manages an escalating international crisis using diplomatic, economic, military, intelligence, public communication, alliance, UN, and cyber actions under hidden adversary intentions and escalation thresholds.",
+    expectedFamily: "simulation",
+    expectedPromptFragment: "produce a SimulationSpec JSON",
+    responseText: [
+      SIM_SPEC_START,
+      JSON.stringify(
+        {
+          description: "Geopolitical crisis management under hidden adversary intentions",
+          environment_description:
+            "A multi-actor international crisis with military posture shifts, alliance politics, economic pressure, cyber disruptions, public narratives, and uncertain escalation thresholds.",
+          initial_state_description:
+            "A cross-border confrontation is intensifying, allied governments are asking for coordination, adversary intentions are partially hidden, and each move can change escalation risk.",
+          success_criteria: [
+            "Stabilize the confrontation without triggering uncontrolled escalation.",
+            "Sequence diplomatic, economic, military, intelligence, and cyber actions coherently.",
+          ],
+          failure_modes: [
+            "Escalate the crisis through poorly coordinated signaling.",
+            "Ignore hidden adversary intentions and misread the confrontation.",
+          ],
+          max_steps: 10,
+          actions: [
+            {
+              name: "update_intelligence_picture",
+              description:
+                "Refresh the intelligence picture to estimate adversary intent, readiness, and escalation thresholds.",
+              parameters: { collection_focus: "string" },
+              preconditions: [],
+              effects: ["intelligence_picture_updated"],
+            },
+            {
+              name: "open_backchannel_contact",
+              description:
+                "Use diplomatic outreach to clarify intent, test red lines, and create de-escalation options.",
+              parameters: { counterpart: "string" },
+              preconditions: ["update_intelligence_picture"],
+              effects: ["backchannel_opened"],
+            },
+            {
+              name: "synchronize_allied_response",
+              description:
+                "Coordinate military, economic, and public messaging options with allies and multilateral partners.",
+              parameters: { coalition_goal: "string" },
+              preconditions: ["open_backchannel_contact"],
+              effects: ["allied_response_synchronized"],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      SIM_SPEC_END,
+    ].join("\n"),
+    assertPersistedSpec: (spec) => {
+      expect(spec.scenario_type).toBe("simulation");
+      expect(Array.isArray(spec.actions)).toBe(true);
+      expect((spec.actions as unknown[]).length).toBeGreaterThanOrEqual(3);
+    },
+  },
+  {
     issueId: "AC-550-workflow",
     prompt:
       "Create a transactional workflow scenario with compensation and side effects across payment capture, inventory reservation, and customer notification.",

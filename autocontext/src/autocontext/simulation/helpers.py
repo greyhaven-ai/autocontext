@@ -8,8 +8,9 @@ import types
 from typing import Any
 
 _OPERATOR_LOOP_FAMILY_TRIGGERS = re.compile(
-    r"escalat|operator|human.in.the.loop|clarif|ambiguous|"
-    r"incomplete.input|ask.*question|missing.information|gather.more.info"
+    r"operator|human[- .]?in[- .]?the[- .]?loop|clarif|approval.required|"
+    r"ask.*question|missing.information|gather.more.info|"
+    r"when.to.escalat|over-escalat|under-escalat|triage.judgment"
 )
 
 
@@ -46,9 +47,21 @@ def find_scenario_class(mod: types.ModuleType) -> type | None:
 
 
 def infer_family(description: str) -> str:
-    if _OPERATOR_LOOP_FAMILY_TRIGGERS.search(description.lower()):
+    text_lower = description.lower()
+
+    if _OPERATOR_LOOP_FAMILY_TRIGGERS.search(text_lower):
         return "operator_loop"
-    return "simulation"
+
+    try:
+        from autocontext.scenarios.custom.family_classifier import (
+            classify_scenario_family,
+            route_to_family,
+        )
+
+        family = route_to_family(classify_scenario_family(description), 0.15).name
+        return "operator_loop" if family == "operator_loop" else "simulation"
+    except Exception:
+        return "simulation"
 
 
 def aggregate_contract_signal_counts(results: list[dict[str, Any]]) -> dict[str, int]:

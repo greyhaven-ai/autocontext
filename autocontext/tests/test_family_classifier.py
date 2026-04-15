@@ -119,6 +119,16 @@ class TestClassifySimulation:
         )
         assert result.family_name == "simulation"
 
+    def test_geopolitical_crisis_routes_to_simulation(self) -> None:
+        result = classify_scenario_family(
+            "Create a geopolitical crisis simulation where a national security advisor manages "
+            "an escalating international confrontation using diplomatic, economic, military, "
+            "intelligence, public communication, alliance, UN, humanitarian, and cyber actions "
+            "under hidden adversary objectives and escalation thresholds."
+        )
+        assert result.family_name == "simulation"
+        assert result.confidence >= 0.3
+
 
 class TestClassifyArtifactEditing:
     def test_config_editing(self) -> None:

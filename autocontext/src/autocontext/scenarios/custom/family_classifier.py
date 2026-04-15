@@ -104,6 +104,17 @@ _SIMULATION_SIGNALS: dict[str, float] = {
     "server log": 1.0,
     "root cause": 1.0,
     "investigat": 1.0,  # investigate, investigation
+    "geopolit": 2.0,
+    "national security": 2.0,
+    "diplomat": 1.5,
+    "public communication": 1.5,
+    "alliance": 1.5,
+    "multilateral": 1.5,
+    "international crisis": 2.0,
+    "international confrontation": 2.0,
+    "hidden adversary": 2.0,
+    "escalation threshold": 1.5,
+    "statecraft": 1.5,
 }
 
 # Agent task: evaluate output quality via LLM judge
