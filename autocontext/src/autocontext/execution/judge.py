@@ -53,6 +53,7 @@ _RESULT_START = "<!-- JUDGE_RESULT_START -->"
 _RESULT_END = "<!-- JUDGE_RESULT_END -->"
 
 DEFAULT_FACTUAL_CONFIDENCE = 0.5
+_CONTRADICTION_SCORE_CAP = 0.25
 
 
 def _detect_generated_dimensions(dimension_keys: list[str], rubric: str) -> bool:
@@ -78,6 +79,65 @@ def _detect_generated_dimensions(dimension_keys: list[str], rubric: str) -> bool
         if not any(frag in rubric_words for frag in fragments):
             return True
     return False
+
+
+def _looks_like_dual_section_escape(agent_output: str) -> bool:
+    lower = agent_output.lower()
+    child_markers = (
+        "for a five-year-old",
+        "for five-year-olds",
+        "for kids",
+        "for a child",
+        "child version",
+        "beginner version",
+    )
+    advanced_markers = (
+        "graduate seminar",
+        "graduate-level",
+        "technical treatment",
+        "advanced treatment",
+        "for experts",
+        "formal treatment",
+    )
+    heading_count = len(re.findall(r"(?m)^\s{0,3}#{1,6}\s+", agent_output))
+    has_child_section = any(marker in lower for marker in child_markers)
+    has_advanced_section = any(marker in lower for marker in advanced_markers)
+    return (has_child_section and has_advanced_section) or (
+        heading_count >= 2 and has_child_section and ("graduate" in lower or "technical" in lower)
+    )
+
+
+def _apply_same_span_contradiction_guardrail(
+    rubric: str,
+    agent_output: str,
+    score: float,
+    reasoning: str,
+    dimension_scores: dict[str, float],
+) -> tuple[float, str, dict[str, float]]:
+    coherence = check_rubric_coherence(rubric)
+    has_same_span_conflict = any(
+        "graduate-level depth and child-level accessibility" in warning for warning in coherence.warnings
+    )
+    if not has_same_span_conflict or score < 0.75:
+        return score, reasoning, dimension_scores
+
+    high_dimensions = [value for value in dimension_scores.values() if value >= 0.75]
+    dual_section_escape = _looks_like_dual_section_escape(agent_output)
+    if len(high_dimensions) < 2 and not dual_section_escape:
+        return score, reasoning, dimension_scores
+
+    escape_note = (
+        "The response appears to satisfy them in separate sections instead of one coherent span"
+        if dual_section_escape
+        else "No single span can satisfy both incompatible demands at a high score simultaneously"
+    )
+    capped_reasoning = (
+        f"{reasoning}\n\n"
+        "Rubric contradiction guardrail: this rubric asks for incompatible same-span qualities. "
+        f"{escape_note}, so the score was capped."
+    )
+    capped_dimensions = {key: min(value, _CONTRADICTION_SCORE_CAP) for key, value in dimension_scores.items()}
+    return min(score, _CONTRADICTION_SCORE_CAP), capped_reasoning, capped_dimensions
 
 
 class LLMJudge:
@@ -138,8 +198,7 @@ class LLMJudge:
     ) -> JudgeResult:
         """Evaluate agent output by calling the provider N times and averaging."""
         system_prompt = (
-            "You are an expert judge evaluating an AI agent's output. "
-            "Evaluate the output against the provided rubric. "
+            "You are an expert judge evaluating an AI agent's output. Evaluate the output against the provided rubric. "
         )
         if reference_context:
             system_prompt += (
@@ -156,7 +215,11 @@ class LLMJudge:
             'containing JSON: {"score": 0.0-1.0, "reasoning": "...", "dimensions": {"dim1": 0.0-1.0, ...}}'
         )
         user_prompt = self._build_judge_prompt(
-            task_prompt, agent_output, reference_context, required_concepts, calibration_examples,
+            task_prompt,
+            agent_output,
+            reference_context,
+            required_concepts,
+            calibration_examples,
             pinned_dimensions,
         )
 
@@ -239,9 +302,17 @@ class LLMJudge:
                 avg_dims["factual_confidence"] = DEFAULT_FACTUAL_CONFIDENCE
 
         combined_reasoning = "\n---\n".join(reasonings)
+        avg_score, combined_reasoning, avg_dims = _apply_same_span_contradiction_guardrail(
+            self.rubric,
+            agent_output,
+            avg_score,
+            combined_reasoning,
+            avg_dims,
+        )
 
         dimensions_were_generated = _detect_generated_dimensions(
-            list(avg_dims.keys()), self.rubric,
+            list(avg_dims.keys()),
+            self.rubric,
         )
 
         return JudgeResult(
@@ -268,14 +339,10 @@ class LLMJudge:
             f"## Rubric\n{self.rubric}\n",
         ]
         if reference_context:
-            parts.append(
-                f"\n## Reference Context (Authoritative)\n{reference_context}\n"
-            )
+            parts.append(f"\n## Reference Context (Authoritative)\n{reference_context}\n")
         if required_concepts:
             concepts_list = ", ".join(required_concepts)
-            parts.append(
-                f"\n## Required Concepts\nThe output MUST correctly address these concepts: {concepts_list}\n"
-            )
+            parts.append(f"\n## Required Concepts\nThe output MUST correctly address these concepts: {concepts_list}\n")
         if calibration_examples:
             cal_lines = ["\n## Calibration Examples (Human-Scored)\n"]
             cal_lines.append(
@@ -286,11 +353,7 @@ class LLMJudge:
                 score = ex.get("human_score", "N/A")
                 notes = ex.get("human_notes", "")
                 output_snippet = ex.get("agent_output", "")[:200]
-                cal_lines.append(
-                    f"**Example {i}** — Score: {score}\n"
-                    f"Human notes: {notes}\n"
-                    f"Output snippet: {output_snippet}...\n"
-                )
+                cal_lines.append(f"**Example {i}** — Score: {score}\nHuman notes: {notes}\nOutput snippet: {output_snippet}...\n")
             parts.append("\n".join(cal_lines))
         if pinned_dimensions:
             dim_list = ", ".join(pinned_dimensions)
@@ -400,9 +463,9 @@ class LLMJudge:
         """Strategy 4: Extract score from plain text patterns."""
         # Match patterns like "Score: 0.85" or "Overall score: 0.9"
         patterns = [
-            r'(?:overall\s+)?score[:\s]+([01](?:\.\d+)?)',
+            r"(?:overall\s+)?score[:\s]+([01](?:\.\d+)?)",
             r'"score"\s*:\s*([01](?:\.\d+)?)',
-            r'(\d\.\d+)\s*/\s*1\.0',
+            r"(\d\.\d+)\s*/\s*1\.0",
         ]
         for pat in patterns:
             match = re.search(pat, response, re.IGNORECASE)
@@ -419,7 +482,8 @@ class LLMJudge:
 
     @staticmethod
     def _extract_from_dict(
-        data: dict, method: ParseMethod,
+        data: dict,
+        method: ParseMethod,
     ) -> tuple[float, str, dict[str, float], ParseMethod]:
         """Extract score, reasoning, dimensions, and parse method from a parsed dict."""
         score = float(data.get("score", 0.0))

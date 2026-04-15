@@ -188,6 +188,29 @@ class TestSimpleAgentTask:
         result = task.evaluate_output("my output", {})
         assert result.score == 0.85
 
+    def test_evaluate_output_penalizes_dual_section_escape_for_contradictory_rubric(self):
+        provider = _MockProvider([
+            '<!-- JUDGE_RESULT_START -->\n'
+            '{"score": 0.96, "reasoning": "Both sections satisfy their target audience.", '
+            '"dimensions": {"technical_depth": 0.97, "child_accessibility": 0.95}}\n'
+            '<!-- JUDGE_RESULT_END -->'
+        ])
+        task = SimpleAgentTask(
+            task_prompt="Explain quantum entanglement",
+            rubric=(
+                "Must be at graduate physics seminar depth AND accessible to a 5-year-old. "
+                "Score technical_depth and child_accessibility 0-1 each."
+            ),
+            provider=provider,
+        )
+        result = task.evaluate_output(
+            "## For a Five-Year-Old\nImagine two magic coins.\n\n"
+            "## Graduate Seminar Treatment\nConsider Hilbert spaces and Bell inequalities.",
+            {},
+        )
+        assert result.score <= 0.25
+        assert "separate sections" in result.reasoning.lower()
+
     def test_revise_output(self):
         provider = _MockProvider([_judge_response(0.5, "needs work"), "Revised content"])
         task = SimpleAgentTask(task_prompt="Write something", rubric="Quality", provider=provider)
