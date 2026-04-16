@@ -34,7 +34,7 @@ from autocontext.scenarios.custom.family_pipeline import (
 from autocontext.scenarios.custom.naming import STOP_WORDS as SHARED_STOP_WORDS
 from autocontext.scenarios.custom.naming import derive_name as shared_derive_name
 from autocontext.scenarios.custom.registry import CUSTOM_SCENARIOS_DIR
-from autocontext.scenarios.families import get_family_marker
+from autocontext.scenarios.families import get_family, get_family_marker
 from autocontext.scenarios.investigation import InvestigationInterface
 from autocontext.scenarios.negotiation import NegotiationInterface
 from autocontext.scenarios.operator_loop import OperatorLoopInterface
@@ -65,11 +65,19 @@ class AgentTaskCreator:
     def create(
         self,
         description: str,
+        *,
+        family_name: str = "",
     ) -> (
-        AgentTaskInterface | ScenarioInterface | ArtifactEditingInterface
-        | InvestigationInterface | WorkflowInterface
-        | SchemaEvolutionInterface | ToolFragilityInterface
-        | NegotiationInterface | OperatorLoopInterface | CoordinationInterface
+        AgentTaskInterface
+        | ScenarioInterface
+        | ArtifactEditingInterface
+        | InvestigationInterface
+        | WorkflowInterface
+        | SchemaEvolutionInterface
+        | ToolFragilityInterface
+        | NegotiationInterface
+        | OperatorLoopInterface
+        | CoordinationInterface
     ):
         """Run the full pipeline: design → validate → codegen → validate → load → register.
 
@@ -77,16 +85,17 @@ class AgentTaskCreator:
             An instance of the generated scenario family implementation.
         """
         name = self.derive_name(description)
-        classification = classify_scenario_family(description)
-        family = route_to_family(classification)
+        if family_name:
+            family = get_family(family_name)
+        else:
+            classification = classify_scenario_family(description)
+            family = route_to_family(classification)
         if family.name in FAMILY_CONFIGS:
             logger.info("routing description to %s creator", family.name)
             creator = create_for_family(family.name, self.llm_fn, self.knowledge_root)
             return creator.create(description, name=name)
         if family.name != "agent_task":
-            raise ValueError(
-                f"Scenario family '{family.name}' is not yet supported for custom scaffolding"
-            )
+            raise ValueError(f"Scenario family '{family.name}' is not yet supported for custom scaffolding")
 
         # 1. Design
         logger.info("designing agent task from description")
@@ -166,6 +175,7 @@ class AgentTaskCreator:
         # 7. Load and register
         cls = self._load_agent_task(custom_dir, name)
         from autocontext.scenarios import SCENARIO_REGISTRY
+
         SCENARIO_REGISTRY[name] = cls
         logger.info("registered agent task '%s'", name)
 
@@ -188,11 +198,7 @@ class AgentTaskCreator:
 
         for attr_name in dir(mod):
             attr = getattr(mod, attr_name)
-            if (
-                isinstance(attr, type)
-                and issubclass(attr, AgentTaskInterface)
-                and attr is not AgentTaskInterface
-            ):
+            if isinstance(attr, type) and issubclass(attr, AgentTaskInterface) and attr is not AgentTaskInterface:
                 attr = patch_legacy_generated_evaluate_output(attr, source_path)
                 return patch_legacy_generated_revise_output(attr, source_path)
 
