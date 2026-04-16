@@ -8,6 +8,8 @@ import pytest
 from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.config.settings import AppSettings
+from autocontext.knowledge.export import export_skill_package
+from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.scenarios.artifact_editing import (
@@ -264,6 +266,7 @@ class TestSolveScenarioExecutor:
                 family_name="agent_task",
                 generations=1,
             )
+            package = export_skill_package(MtsToolContext(settings), scenario_name)
         finally:
             if previous is None:
                 SCENARIO_REGISTRY.pop(scenario_name, None)
@@ -275,7 +278,35 @@ class TestSolveScenarioExecutor:
 
         assert summary.generations_executed == 1
         assert summary.best_score == 1.0
+        assert package.best_score == 1.0
+        assert package.metadata["has_snapshot"] is True
         assert sqlite.count_completed_runs(scenario_name) == 1
+
+    def test_artifact_editing_adapter_preserves_omitted_artifact_deletions(self) -> None:
+        from autocontext.knowledge.solver import ArtifactEditingTaskAdapter
+
+        adapter = ArtifactEditingTaskAdapter(_SolveArtifactEditing())
+        original = [
+            Artifact(path="config.yaml", content="foo: old\n", content_type="yaml", metadata={}),
+            Artifact(path="legacy.yaml", content="delete: true\n", content_type="yaml", metadata={}),
+        ]
+
+        edited = adapter._parse_edited_artifacts(
+            json.dumps(
+                {
+                    "artifacts": [
+                        {
+                            "path": "config.yaml",
+                            "content": "foo: new\n",
+                            "content_type": "yaml",
+                        }
+                    ]
+                }
+            ),
+            original,
+        )
+
+        assert [artifact.path for artifact in edited] == ["config.yaml"]
 
     def test_runs_artifact_editing_scenarios_through_task_loop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from autocontext.knowledge.solver import SolveScenarioExecutor

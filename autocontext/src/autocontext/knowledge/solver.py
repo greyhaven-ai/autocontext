@@ -10,7 +10,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from autocontext.agents.types import LlmFn
 from autocontext.cli_role_runtime import resolve_role_runtime
@@ -21,7 +21,11 @@ from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.scenarios.artifact_editing import Artifact, ArtifactEditingInterface
+from autocontext.storage import artifact_store_from_settings
 from autocontext.storage.sqlite_store import SQLiteStore
+
+if TYPE_CHECKING:
+    from autocontext.scenarios.families import ScenarioFamily
 
 logger = logging.getLogger(__name__)
 
@@ -156,14 +160,10 @@ class ArtifactEditingTaskAdapter(AgentTaskInterface):
                     else (original_artifact.metadata if original_artifact is not None else {})
                 ),
             )
-        for artifact in original:
-            edited_by_path.setdefault(artifact.path, artifact)
-        if not edited_by_path:
-            raise ValueError("edited artifact set must not be empty")
         return list(edited_by_path.values())
 
 
-def _resolve_family_hint(description: str):
+def _resolve_family_hint(description: str) -> ScenarioFamily | None:
     from autocontext.scenarios.families import get_family, list_families
 
     match = _FAMILY_HEADER_RE.search(description)
@@ -180,7 +180,7 @@ def _resolve_family_hint(description: str):
     return None
 
 
-def _resolve_requested_scenario_family(description: str):
+def _resolve_requested_scenario_family(description: str) -> ScenarioFamily:
     from autocontext.scenarios.custom.family_classifier import classify_scenario_family, route_to_family
 
     hinted_family = _resolve_family_hint(description)
@@ -331,6 +331,19 @@ class SolveScenarioExecutor:
             duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
         )
         sqlite.mark_run_completed(active_run_id)
+        if self._settings.cross_run_inheritance and not self._settings.ablation_no_feedback:
+            artifacts = artifact_store_from_settings(self._settings)
+            playbook_hash = artifacts.snapshot_knowledge(scenario_name, active_run_id)
+            sqlite.save_knowledge_snapshot(
+                scenario=scenario_name,
+                run_id=active_run_id,
+                best_score=result.best_score,
+                best_elo=1500.0,
+                playbook_hash=playbook_hash,
+                agent_provider=self._settings.agent_provider,
+                rlm_enabled=self._settings.rlm_enabled,
+                scoring_backend=self._settings.scoring_backend,
+            )
         return SolveExecutionSummary(
             run_id=active_run_id,
             generations_executed=result.total_rounds,
