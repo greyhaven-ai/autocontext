@@ -23,10 +23,9 @@ from autocontext.cli_queue import register_queue_command
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_runtime_overrides import (
     apply_judge_runtime_overrides,
-    apply_solve_runtime_overrides,
     format_runtime_provider_error,
-    solve_primary_runtime_provider,
 )
+from autocontext.cli_solve import register_solve_command
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
@@ -36,7 +35,7 @@ from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
 from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
-from autocontext.util.json_io import read_json, write_json
+from autocontext.util.json_io import read_json
 
 logger = logging.getLogger(__name__)
 
@@ -56,20 +55,6 @@ class AgentTaskRunSummary:
     total_rounds: int
     met_threshold: bool
     termination_reason: str
-
-
-@dataclass(slots=True)
-class SolveRunSummary:
-    """Result summary for solve-on-demand via the CLI."""
-
-    job_id: str
-    status: str
-    description: str
-    scenario_name: str | None
-    generations: int
-    progress: int
-    output_path: str | None
-    result: dict[str, Any] | None
 
 
 app = typer.Typer(help="autocontext control-plane CLI", invoke_without_command=True)
@@ -1253,100 +1238,6 @@ def investigate(
     )
 
 
-@app.command()
-def solve(
-    description: str = typer.Option(..., "--description", help="Natural-language scenario/problem description"),
-    gens: int = typer.Option(5, "--gens", min=1, max=50, help="Generations to run for the solve"),
-    timeout: float | None = typer.Option(
-        None,
-        "--timeout",
-        min=1.0,
-        help="Provider timeout override in seconds for solve creation/execution runtimes",
-    ),
-    generation_time_budget: int | None = typer.Option(
-        None,
-        "--generation-time-budget",
-        min=0,
-        help="Soft per-generation time budget in seconds for solve runs (0 = unlimited)",
-    ),
-    output: str = typer.Option("", "--output", help="Optional JSON file path for the solved package"),
-    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
-) -> None:
-    """Create a scenario on demand, run it, and export the solved package."""
-    from autocontext.knowledge.solver import SolveManager
-
-    settings = apply_solve_runtime_overrides(
-        load_settings(),
-        timeout=timeout,
-        generation_time_budget_seconds=generation_time_budget,
-    )
-    manager = SolveManager(settings)
-
-    try:
-        job = manager.solve_sync(description=description, generations=gens)
-    except KeyboardInterrupt:
-        if json_output:
-            _write_json_stderr("solve interrupted")
-        else:
-            console.print("[red]Solve interrupted[/red]")
-        raise typer.Exit(code=1) from None
-    except Exception as exc:
-        logger.debug("cli: caught Exception", exc_info=True)
-        if json_output:
-            _write_json_stderr(str(exc))
-        else:
-            console.print(f"[red]Solve failed:[/red] {exc}")
-        raise typer.Exit(code=1) from None
-
-    if job.status != "completed" or job.result is None:
-        message = job.error or "solve did not complete successfully"
-        if "timeout" in message.lower():
-            message = format_runtime_provider_error(
-                ProviderError(message),
-                provider_name=solve_primary_runtime_provider(settings),
-                settings=settings,
-            )
-        if json_output:
-            _write_json_stderr(message)
-        else:
-            console.print(f"[red]Solve failed:[/red] {message}")
-        raise typer.Exit(code=1)
-
-    output_path: str | None = None
-    if output:
-        output_file = Path(output)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        write_json(output_file, job.result.to_dict())
-        output_path = str(output_file)
-
-    summary = SolveRunSummary(
-        job_id=job.job_id,
-        status=job.status,
-        description=job.description,
-        scenario_name=job.scenario_name,
-        generations=job.generations,
-        progress=job.progress,
-        output_path=output_path,
-        result=job.result.to_dict(),
-    )
-
-    if json_output:
-        _write_json_stdout(dataclasses.asdict(summary))
-        return
-
-    table = Table(title="Solve Result")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("Job ID", job.job_id)
-    table.add_row("Status", job.status)
-    table.add_row("Scenario", job.scenario_name or "unknown")
-    table.add_row("Generations", str(job.generations))
-    table.add_row("Progress", str(job.progress))
-    if output_path is not None:
-        table.add_row("Output", output_path)
-    console.print(table)
-
-
 @app.command("import-package")
 def import_package_cmd(
     package_file: str = typer.Argument(..., help="Path to the strategy package JSON file"),
@@ -1621,6 +1512,7 @@ def improve(
         console.print(f"[bold]Met threshold:[/bold] {result.met_threshold}")
 
 
+register_solve_command(app, console=console)
 register_queue_command(app, console=console)
 
 

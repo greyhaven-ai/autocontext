@@ -143,6 +143,36 @@ class _SolveArtifactEditing(ArtifactEditingInterface):
         )
 
 
+class _BudgetExhaustingAgentTask(AgentTaskInterface):
+    name = "solve_budget_exhausting_fixture"
+
+    def __init__(self, clock: dict[str, float]) -> None:
+        self._clock = clock
+
+    def get_task_prompt(self, state: dict) -> str:
+        del state
+        return "Reply with exactly: improved draft"
+
+    def evaluate_output(self, output: str, state: dict, **kwargs: object) -> AgentTaskResult:
+        del output, state, kwargs
+        self._clock["now"] = 2.0
+        return AgentTaskResult(
+            score=1.0,
+            reasoning="budget should expire after evaluation",
+            dimension_scores={"quality": 1.0},
+        )
+
+    def get_rubric(self) -> str:
+        return "Score exact_match 0-1."
+
+    def initial_state(self, seed: int | None = None) -> dict:
+        del seed
+        return {}
+
+    def describe_task(self) -> str:
+        return "Return the expected draft text."
+
+
 class TestSolveScenarioBuilder:
     def test_routes_operator_loop_descriptions_to_operator_loop_creator(self, tmp_path: Path) -> None:
         from autocontext.knowledge.solver import SolveScenarioBuilder
@@ -357,6 +387,47 @@ class TestSolveScenarioExecutor:
         assert summary.generations_executed == 1
         assert summary.best_score == 1.0
         assert sqlite.count_completed_runs(scenario_name) == 1
+
+    def test_task_like_executor_marks_run_failed_when_budget_expires(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        clock = {"now": 0.0}
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            generation_time_budget_seconds=1,
+        )
+        scenario_name = "solve_budget_exhausting_execution"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        SCENARIO_REGISTRY[scenario_name] = lambda: _BudgetExhaustingAgentTask(clock)
+        monkeypatch.setattr("autocontext.knowledge.solver.time.monotonic", lambda: clock["now"])
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            lambda settings, **kwargs: (_StubProvider("improved draft"), "test-model"),
+        )
+
+        try:
+            executor = SolveScenarioExecutor(settings)
+            with pytest.raises(TimeoutError, match="time budget exceeded"):
+                executor.execute(
+                    scenario_name=scenario_name,
+                    family_name="agent_task",
+                    generations=1,
+                )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        sqlite = SQLiteStore(settings.db_path)
+        sqlite.migrate(Path(__file__).resolve().parents[1] / "migrations")
+
+        assert sqlite.count_completed_runs(scenario_name) == 0
 
 
 class TestSolveManager:

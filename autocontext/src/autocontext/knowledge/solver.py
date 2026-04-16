@@ -163,6 +163,110 @@ class ArtifactEditingTaskAdapter(AgentTaskInterface):
         return list(edited_by_path.values())
 
 
+@dataclass(slots=True)
+class _SolveGenerationBudget:
+    scenario_name: str
+    budget_seconds: int
+    started_at: float = field(default_factory=lambda: time.monotonic())
+
+    def elapsed_seconds(self) -> float:
+        return max(0.0, time.monotonic() - self.started_at)
+
+    def check(self, phase: str) -> None:
+        if self.budget_seconds <= 0:
+            return
+        elapsed = self.elapsed_seconds()
+        if elapsed >= self.budget_seconds:
+            raise TimeoutError(
+                f"Solve generation time budget exceeded during {phase} "
+                f"after {elapsed:.2f}s for scenario '{self.scenario_name}' "
+                f"(budget {self.budget_seconds}s)"
+            )
+
+
+class _BudgetedAgentTask(AgentTaskInterface):
+    """Add solve generation budget checks around an AgentTaskInterface."""
+
+    def __init__(self, task: AgentTaskInterface, budget: _SolveGenerationBudget) -> None:
+        self._task = task
+        self._budget = budget
+        self.name = getattr(task, "name", task.__class__.__name__)
+
+    def get_task_prompt(self, state: dict) -> str:
+        self._budget.check("task prompt")
+        prompt = self._task.get_task_prompt(state)
+        self._budget.check("task prompt")
+        return prompt
+
+    def evaluate_output(
+        self,
+        output: str,
+        state: dict,
+        reference_context: str | None = None,
+        required_concepts: list[str] | None = None,
+        calibration_examples: list[dict] | None = None,
+        pinned_dimensions: list[str] | None = None,
+    ) -> AgentTaskResult:
+        self._budget.check("evaluation")
+        result = self._task.evaluate_output(
+            output,
+            state,
+            reference_context=reference_context,
+            required_concepts=required_concepts,
+            calibration_examples=calibration_examples,
+            pinned_dimensions=pinned_dimensions,
+        )
+        self._budget.check("evaluation")
+        return result
+
+    def get_rubric(self) -> str:
+        self._budget.check("rubric")
+        rubric = self._task.get_rubric()
+        self._budget.check("rubric")
+        return rubric
+
+    def initial_state(self, seed: int | None = None) -> dict:
+        self._budget.check("initial state")
+        state = self._task.initial_state(seed)
+        self._budget.check("initial state")
+        return state
+
+    def describe_task(self) -> str:
+        self._budget.check("task description")
+        description = self._task.describe_task()
+        self._budget.check("task description")
+        return description
+
+    def prepare_context(self, state: dict) -> dict:
+        self._budget.check("context preparation")
+        prepared = self._task.prepare_context(state)
+        self._budget.check("context preparation")
+        return prepared
+
+    def validate_context(self, state: dict) -> list[str]:
+        self._budget.check("context validation")
+        errors = self._task.validate_context(state)
+        self._budget.check("context validation")
+        return errors
+
+    def revise_output(
+        self,
+        output: str,
+        judge_result: AgentTaskResult,
+        state: dict,
+    ) -> str:
+        self._budget.check("revision")
+        revised = self._task.revise_output(output, judge_result, state)
+        self._budget.check("revision")
+        return revised
+
+    def verify_facts(self, output: str, state: dict) -> dict | None:
+        self._budget.check("fact verification")
+        result = self._task.verify_facts(output, state)
+        self._budget.check("fact verification")
+        return result
+
+
 def _resolve_family_hint(description: str) -> ScenarioFamily | None:
     from autocontext.scenarios.families import get_family, list_families
 
@@ -261,24 +365,6 @@ class SolveScenarioExecutor:
     ) -> SolveExecutionSummary:
         sqlite = SQLiteStore(self._settings.db_path)
         sqlite.migrate(self._migrations_dir)
-        provider, provider_model = resolve_role_runtime(
-            self._settings,
-            role="competitor",
-            scenario_name=scenario_name,
-            sqlite=sqlite,
-        )
-        state = task.prepare_context(task.initial_state())
-        context_errors = task.validate_context(state)
-        if context_errors:
-            raise ValueError(f"Context validation failed: {'; '.join(context_errors)}")
-        prompt = task.get_task_prompt(state)
-        initial_output = provider.complete(
-            system_prompt="Complete the task precisely.",
-            user_prompt=prompt,
-            model=provider_model,
-        ).text
-
-        loop = ImprovementLoop(task=task, max_rounds=max_rounds)
         active_run_id = f"solve_{scenario_name}_{uuid.uuid4().hex[:8]}"
         sqlite.create_run(
             active_run_id,
@@ -298,10 +384,36 @@ class SolveScenarioExecutor:
             gate_decision="running",
             status="running",
         )
-        sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
+        budget = _SolveGenerationBudget(
+            scenario_name=scenario_name,
+            budget_seconds=self._settings.generation_time_budget_seconds,
+        )
 
         try:
+            provider, provider_model = resolve_role_runtime(
+                self._settings,
+                role="competitor",
+                scenario_name=scenario_name,
+                sqlite=sqlite,
+            )
+            budget.check("runtime resolution")
+            budgeted_task = _BudgetedAgentTask(task, budget)
+            state = budgeted_task.prepare_context(budgeted_task.initial_state())
+            context_errors = budgeted_task.validate_context(state)
+            if context_errors:
+                raise ValueError(f"Context validation failed: {'; '.join(context_errors)}")
+            prompt = budgeted_task.get_task_prompt(state)
+            initial_output = provider.complete(
+                system_prompt="Complete the task precisely.",
+                user_prompt=prompt,
+                model=provider_model,
+            ).text
+            budget.check("initial generation")
+            sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
+
+            loop = ImprovementLoop(task=budgeted_task, max_rounds=max_rounds)
             result = loop.run(initial_output=initial_output, state=state)
+            budget.check("improvement loop")
         except Exception:
             sqlite.upsert_generation(
                 active_run_id,
@@ -313,6 +425,7 @@ class SolveScenarioExecutor:
                 losses=0,
                 gate_decision="failed",
                 status="failed",
+                duration_seconds=budget.elapsed_seconds(),
             )
             sqlite.mark_run_failed(active_run_id)
             raise
