@@ -22,6 +22,23 @@ describe("investigation generation parsing", () => {
     });
   });
 
+  it("parses investigation spec responses wrapped in prose and fenced JSON", () => {
+    expect(
+      parseInvestigationSpecResponse(
+        "I found the investigation spec below.\n```json\n" +
+          JSON.stringify({
+            description: "Investigate anomaly",
+            evidence_pool: [],
+            correct_diagnosis: "config drift",
+          }) +
+          "\n```\nThis should help.",
+      ),
+    ).toMatchObject({
+      description: "Investigate anomaly",
+      correct_diagnosis: "config drift",
+    });
+  });
+
   it("normalizes parsed hypothesis responses and applies limits", () => {
     expect(
       parseInvestigationHypothesisResponse({

@@ -1,3 +1,5 @@
+import { designInvestigation } from "../scenarios/investigation-designer.js";
+import type { InvestigationSpec } from "../scenarios/investigation-spec.js";
 import type { LLMProvider } from "../types/index.js";
 import {
   buildFallbackInvestigationHypothesisSet,
@@ -19,19 +21,39 @@ export interface InvestigationHypothesisSet {
   question: string;
 }
 
+function serializeDesignedInvestigationSpec(spec: InvestigationSpec): Record<string, unknown> {
+  return {
+    description: spec.description,
+    environment_description: spec.environmentDescription,
+    initial_state_description: spec.initialStateDescription,
+    evidence_pool_description: spec.evidencePoolDescription,
+    diagnosis_target: spec.diagnosisTarget,
+    success_criteria: spec.successCriteria,
+    failure_modes: spec.failureModes,
+    actions: spec.actions,
+    max_steps: spec.maxSteps,
+  };
+}
+
 export async function buildInvestigationSpec(opts: {
   provider: LLMProvider;
   description: string;
 }): Promise<Record<string, unknown>> {
-  const result = await opts.provider.complete(
-    buildInvestigationSpecPrompt(opts.description),
-  );
+  const result = await opts.provider.complete(buildInvestigationSpecPrompt(opts.description));
 
   const parsed = parseInvestigationSpecResponse(result.text);
-  if (!parsed) {
-    throw new Error("Investigation spec generation did not return valid JSON");
+  if (parsed) {
+    return parsed;
   }
-  return parsed;
+
+  const designed = await designInvestigation(opts.description, async (system, user) => {
+    const fallback = await opts.provider.complete({
+      systemPrompt: system,
+      userPrompt: user,
+    });
+    return fallback.text;
+  });
+  return serializeDesignedInvestigationSpec(designed);
 }
 
 export async function generateInvestigationHypotheses(opts: {

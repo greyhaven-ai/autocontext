@@ -45,7 +45,7 @@ def generate_investigation_class(spec: InvestigationSpec, name: str) -> str:
         },
     ]
     required_actions = [action.name for action in spec.actions]
-    return f'''from __future__ import annotations
+    return f"""from __future__ import annotations
 
 from typing import Any
 
@@ -106,9 +106,19 @@ class {class_name}(InvestigationInterface):
         if spec is None:
             return False, f"unknown action: {{action.name}}"
         completed = set(state.get("completed_actions", []))
+        known_actions = set(specs)
         for requirement in spec.preconditions:
-            if requirement not in completed:
-                return False, f"precondition not met for {{action.name}}: {{requirement}}"
+            normalized_requirement = requirement.strip().lower()
+            referenced_action = next(
+                (
+                    name
+                    for name in known_actions
+                    if name.lower() == normalized_requirement or name.lower() in normalized_requirement
+                ),
+                None,
+            )
+            if referenced_action and referenced_action not in completed:
+                return False, f"precondition not met for {{action.name}}: {{referenced_action}}"
         return True, ""
 
     def _ordered_evidence(self) -> list[EvidenceItem]:
@@ -240,4 +250,4 @@ class {class_name}(InvestigationInterface):
 
     def max_steps(self) -> int:
         return {spec.max_steps}
-'''
+"""

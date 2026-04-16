@@ -9,7 +9,9 @@ import type { LLMProvider } from "../src/types/index.js";
 function mockProvider(responses: string[]): LLMProvider {
   let callIndex = 0;
   return {
-    complete: async () => ({ text: responses[callIndex++] ?? responses[responses.length - 1] ?? "{}" }),
+    complete: async () => ({
+      text: responses[callIndex++] ?? responses[responses.length - 1] ?? "{}",
+    }),
     defaultModel: () => "test-model",
   } as unknown as LLMProvider;
 }
@@ -31,6 +33,50 @@ describe("investigation generation workflow", () => {
     ).resolves.toMatchObject({
       description: "Investigate anomaly",
       correct_diagnosis: "config drift",
+    });
+  });
+
+  it("falls back to the investigation designer prompt when strict JSON parsing fails", async () => {
+    await expect(
+      buildInvestigationSpec({
+        provider: mockProvider([
+          "not json",
+          [
+            "<!-- INVESTIGATION_SPEC_START -->",
+            JSON.stringify({
+              description: "Investigate anomaly",
+              environment_description: "Production environment",
+              initial_state_description: "Anomaly detected",
+              evidence_pool_description: "System logs and a red herring cron alert",
+              diagnosis_target: "config drift",
+              success_criteria: ["identify root cause", "avoid the red herring"],
+              failure_modes: ["follow the cron alert"],
+              max_steps: 6,
+              actions: [
+                {
+                  name: "inspect_logs",
+                  description: "Inspect logs",
+                  parameters: {},
+                  preconditions: [],
+                  effects: ["log_evidence_collected"],
+                },
+                {
+                  name: "record_diagnosis",
+                  description: "Record diagnosis",
+                  parameters: { diagnosis: "string" },
+                  preconditions: ["inspect_logs"],
+                  effects: ["diagnosis_recorded"],
+                },
+              ],
+            }),
+            "<!-- INVESTIGATION_SPEC_END -->",
+          ].join("\n"),
+        ]),
+        description: "Investigate anomaly",
+      }),
+    ).resolves.toMatchObject({
+      description: "Investigate anomaly",
+      diagnosis_target: "config drift",
     });
   });
 

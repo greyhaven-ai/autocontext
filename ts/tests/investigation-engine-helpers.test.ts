@@ -13,8 +13,13 @@ import {
 
 describe("investigation engine helpers", () => {
   it("derives stable names and parses wrapped JSON payloads", () => {
-    expect(deriveInvestigationName("Why did checkout fail after Tuesday's deploy?")).toBe("why_did_checkout_fail");
-    expect(parseInvestigationJson("before {\"a\":1} after")).toEqual({ a: 1 });
+    expect(deriveInvestigationName("Why did checkout fail after Tuesday's deploy?")).toBe(
+      "why_did_checkout_fail",
+    );
+    expect(parseInvestigationJson('before {"a":1} after')).toEqual({ a: 1 });
+    expect(
+      parseInvestigationJson('Here is the spec:\n```json\n{"a":1,"b":2}\n```\nUse it.'),
+    ).toEqual({ a: 1, b: 2 });
     expect(parseInvestigationJson("not json")).toBeNull();
   });
 
@@ -39,12 +44,14 @@ describe("investigation engine helpers", () => {
       expect(existsSync(join(artifactDir, "scenario_type.txt"))).toBe(true);
       expect(readFileSync(join(artifactDir, "spec.json"), "utf-8")).toContain("checkout_rca");
 
-      expect(buildFailedInvestigationResult(
-        "inv-1",
-        "checkout_rca",
-        { description: "Investigate checkout regression" },
-        ["spec invalid", "provider failed"],
-      )).toMatchObject({
+      expect(
+        buildFailedInvestigationResult(
+          "inv-1",
+          "checkout_rca",
+          { description: "Investigate checkout regression" },
+          ["spec invalid", "provider failed"],
+        ),
+      ).toMatchObject({
         id: "inv-1",
         name: "checkout_rca",
         status: "failed",

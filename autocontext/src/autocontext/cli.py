@@ -18,6 +18,8 @@ from rich.console import Console
 from rich.table import Table
 
 from autocontext.agents.orchestrator import AgentOrchestrator
+from autocontext.cli_investigate import run_investigate_command
+from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_runtime_overrides import (
     apply_judge_runtime_overrides,
     format_runtime_provider_error,
@@ -36,7 +38,6 @@ from autocontext.util.json_io import read_json, write_json
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from autocontext.agents.llm_client import LanguageModelClient
     from autocontext.providers.base import LLMProvider
     from autocontext.training.runner import TrainingConfig, TrainingResult
 
@@ -195,62 +196,42 @@ def _is_agent_task(scenario_name: str) -> bool:
     return issubclass(family.interface_class, AgentTaskInterface)
 
 
-def _wrap_role_client_as_provider(
-    client: LanguageModelClient,
-    resolved_model: str,
-    *,
-    role: str,
-) -> tuple[LLMProvider, str]:
-    """Adapt a resolved LanguageModelClient into an LLMProvider-compatible callable.
-
-    This keeps prompt-only workflows like simulate aligned with the same runtime
-    bridge used by role-driven execution without duplicating the generate() glue.
-    """
-    from autocontext.providers.callable_wrapper import CallableProvider
-
-    def _llm_fn(system_prompt: str, user_prompt: str) -> str:
-        response = client.generate(
-            model=resolved_model,
-            prompt=f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt,
-            max_tokens=4096,
-            temperature=0.0,
-            role=role,
-        )
-        return response.text
-
-    return CallableProvider(_llm_fn, model_name=resolved_model), resolved_model
-
-
 def _resolve_simulation_runtime(settings: AppSettings) -> tuple[LLMProvider, str]:
     """Resolve the architect-style runtime used for simulation spec generation.
 
     Simulations are authoring/spec-generation tasks, so they should follow the
     configured architect runtime surface rather than the judge provider.
     """
-    sqlite = _sqlite_from_settings(settings)
-    artifacts = _artifacts_from_settings(settings)
-    orchestrator = AgentOrchestrator.from_settings(settings, artifacts=artifacts, sqlite=sqlite)
-    client, model = orchestrator.resolve_role_execution(
-        "architect",
-        generation=1,
-        scenario_name="",
+    return _resolve_role_runtime(settings, role="architect")
+
+
+def _resolve_role_runtime(
+    settings: AppSettings,
+    *,
+    role: str,
+    scenario_name: str = "",
+) -> tuple[LLMProvider, str]:
+    return resolve_role_runtime(
+        settings,
+        role=role,
+        scenario_name=scenario_name,
+        sqlite=_sqlite_from_settings(settings),
+        artifacts=_artifacts_from_settings(settings),
+        orchestrator_cls=AgentOrchestrator,
     )
-    resolved_model = model or settings.model_architect or settings.agent_default_model
-    return _wrap_role_client_as_provider(client, resolved_model, role="architect")
+
+
+def _resolve_investigation_runtime(
+    settings: AppSettings,
+    *,
+    role: str,
+) -> tuple[LLMProvider, str]:
+    return _resolve_role_runtime(settings, role=role)
 
 
 def _resolve_agent_task_runtime(settings: AppSettings, scenario_name: str) -> tuple[LLMProvider, str]:
     """Resolve the effective competitor runtime for direct agent-task execution."""
-    sqlite = _sqlite_from_settings(settings)
-    artifacts = _artifacts_from_settings(settings)
-    orchestrator = AgentOrchestrator.from_settings(settings, artifacts=artifacts, sqlite=sqlite)
-    client, model = orchestrator.resolve_role_execution(
-        "competitor",
-        generation=1,
-        scenario_name=scenario_name,
-    )
-    resolved_model = model or settings.model_competitor or settings.agent_default_model
-    return _wrap_role_client_as_provider(client, resolved_model, role="competitor")
+    return _resolve_role_runtime(settings, role="competitor", scenario_name=scenario_name)
 
 
 def _run_agent_task(
@@ -1230,6 +1211,30 @@ def simulate(
         for w in result.get("warnings", []):
             console.print(f"  ⚠ {w}")
         console.print(f"\nArtifacts: {result['artifacts']['scenario_dir']}")
+
+
+@app.command()
+def investigate(
+    description: str = typer.Option("", "--description", "-d", help="Plain-language problem to investigate"),
+    max_steps: int = typer.Option(8, "--max-steps", min=1, help="Maximum investigation steps"),
+    hypotheses: int = typer.Option(5, "--hypotheses", min=1, help="Maximum hypotheses to generate"),
+    save_as: str = typer.Option("", "--save-as", help="Name for the saved investigation"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Run a plain-language investigation with evidence and hypotheses."""
+    run_investigate_command(
+        description=description,
+        max_steps=max_steps,
+        hypotheses=hypotheses,
+        save_as=save_as,
+        json_output=json_output,
+        console=console,
+        load_settings_fn=load_settings,
+        resolve_investigation_runtime=_resolve_investigation_runtime,
+        write_json_stdout=_write_json_stdout,
+        write_json_stderr=_write_json_stderr,
+        check_json_exit=_check_json_exit,
+    )
 
 
 @app.command()

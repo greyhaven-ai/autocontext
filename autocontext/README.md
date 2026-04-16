@@ -32,13 +32,13 @@ The Python package is the full control-plane surface in this repo. It currently 
 
 - generation-loop execution via `autoctx run`
 - plain-language simulation via `autoctx simulate`
+- plain-language investigation via `autoctx investigate`
 - local training workflows via `autoctx export-training-data` and `autoctx train`
 - scenario creation and materialization via `autoctx new-scenario`
 - HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`
 
 Some newer operator-facing surfaces are currently TypeScript-first:
 
-- `autoctx investigate`
 - `autoctx analyze`
 - the interactive terminal UI via `npx autoctx tui`
 
@@ -105,6 +105,8 @@ uv run autoctx solve --description "improve customer-support replies for billing
 
 `autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER`, other role-routing overrides, and per-call `--provider <name>` overrides all apply to live simulation generation.
 
+`autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too.
+
 Run with Pi RPC (remote Pi agent via HTTP):
 
 ```bash
@@ -144,6 +146,7 @@ uv run autoctx mcp-serve
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
 uv run autoctx simulate --description "simulate deploying a web service with rollback" --provider claude-cli
+uv run autoctx investigate --description "why did conversion drop after Tuesday's release"
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
@@ -265,7 +268,7 @@ autocontext exposes:
 - [Agent integration guide](docs/agent-integration.md) — CLI-first integration for external agents, MCP fallback, JSON output reference
 - [Sandbox modes](docs/sandbox.md)
 - [MLX host training](docs/mlx-training.md)
-- [TypeScript package guide](../ts/README.md) — `investigate`, `analyze`, and interactive TUI surfaces
+- [TypeScript package guide](../ts/README.md) — `analyze`, mission control, and interactive TUI surfaces
 - [Demo data notes](demo_data/README.md)
 - [Copy-paste examples](../examples/README.md)
 - [Change history](../CHANGELOG.md)
