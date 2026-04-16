@@ -23,11 +23,13 @@ class _FakeProvider:
         self.calls: list[dict[str, str]] = []
 
     def complete(self, system_prompt: str, user_prompt: str, model: str) -> SimpleNamespace:
-        self.calls.append({
-            "system_prompt": system_prompt,
-            "user_prompt": user_prompt,
-            "model": model,
-        })
+        self.calls.append(
+            {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "model": model,
+            }
+        )
         return SimpleNamespace(text=self._outputs.pop(0))
 
     def default_model(self) -> str:
@@ -48,12 +50,18 @@ class TestJudgeCommand:
 
     def test_judge_missing_provider_gives_clear_error(self) -> None:
         """Judge without API key should give a clear error, not a stack trace."""
-        result = runner.invoke(app, [
-            "judge",
-            "--task-prompt", "Write a haiku",
-            "--output", "Test output",
-            "--rubric", "Score it",
-        ])
+        result = runner.invoke(
+            app,
+            [
+                "judge",
+                "--task-prompt",
+                "Write a haiku",
+                "--output",
+                "Test output",
+                "--rubric",
+                "Score it",
+            ],
+        )
         # Should fail cleanly (no API key configured)
         assert result.exit_code != 0
 
@@ -95,13 +103,19 @@ class TestImproveCommand:
             patch("autocontext.execution.task_runner.evaluate_evaluator_guardrail", return_value=None),
         ):
             mock_judge_cls.return_value.evaluate.side_effect = judge_results
-            result = runner.invoke(app, [
-                "improve",
-                "--task-prompt", "Write a haiku",
-                "--rubric", "Score quality",
-                "--rounds", "2",
-                "--json",
-            ])
+            result = runner.invoke(
+                app,
+                [
+                    "improve",
+                    "--task-prompt",
+                    "Write a haiku",
+                    "--rubric",
+                    "Score quality",
+                    "--rounds",
+                    "2",
+                    "--json",
+                ],
+            )
 
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
@@ -116,12 +130,14 @@ class TestQueueCommand:
         result = runner.invoke(app, ["queue", "--help"])
         assert result.exit_code == 0
         assert "--spec" in result.stdout or "-s" in result.stdout
+        assert "--task-prompt" in result.stdout or "-p" in result.stdout
+        assert "--rounds" in result.stdout or "-n" in result.stdout
 
-    def test_queue_requires_spec(self) -> None:
+    def test_queue_requires_spec_or_task_prompt(self) -> None:
         result = runner.invoke(app, ["queue"])
         assert result.exit_code != 0
 
-    def test_queue_uses_task_runner_helper(self) -> None:
+    def test_queue_uses_task_runner_helper_for_saved_spec(self) -> None:
         settings = MagicMock()
         store = MagicMock()
 
@@ -139,3 +155,46 @@ class TestQueueCommand:
             "status": "queued",
         }
         mock_enqueue.assert_called_once_with(store=store, spec_name="demo-task", priority=2)
+
+    def test_queue_add_accepts_direct_task_prompt_aliases(self) -> None:
+        settings = MagicMock()
+        store = MagicMock()
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._sqlite_from_settings", return_value=store),
+            patch("autocontext.execution.task_runner.enqueue_task", return_value="task-456") as mock_enqueue,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "queue",
+                    "add",
+                    "--task-prompt",
+                    "Write a 1-line fact about primes",
+                    "--rubric",
+                    "correct",
+                    "--threshold",
+                    "0.8",
+                    "--rounds",
+                    "2",
+                    "--provider",
+                    "claude-cli",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["task_id"] == "task-456"
+        assert payload["status"] == "queued"
+        assert payload["spec_name"] == "write_a_1_line_fact_about_primes"
+        mock_enqueue.assert_called_once_with(
+            store=store,
+            spec_name="write_a_1_line_fact_about_primes",
+            task_prompt="Write a 1-line fact about primes",
+            rubric="correct",
+            quality_threshold=0.8,
+            max_rounds=2,
+            priority=0,
+        )

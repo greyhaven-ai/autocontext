@@ -19,6 +19,7 @@ from rich.table import Table
 
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_investigate import run_investigate_command
+from autocontext.cli_queue import register_queue_command
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_runtime_overrides import (
     apply_judge_runtime_overrides,
@@ -1571,27 +1572,7 @@ def improve(
         console.print(f"[bold]Rounds:[/bold] {result.total_rounds}")
         console.print(f"[bold]Met threshold:[/bold] {result.met_threshold}")
 
-
-@app.command()
-def queue(
-    spec: str = typer.Option(..., "--spec", "-s", help="Task spec name"),
-    priority: int = typer.Option(0, "--priority", help="Task priority"),
-    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
-) -> None:
-    """Add a task to the background runner queue."""
-    from autocontext.execution.task_runner import enqueue_task
-
-    settings = load_settings()
-    store = _sqlite_from_settings(settings)
-    migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
-    store.migrate(migrations_dir)
-
-    task_id = enqueue_task(store=store, spec_name=spec, priority=priority)
-
-    if json_output:
-        _write_json_stdout({"task_id": task_id, "spec_name": spec, "status": "queued"})
-    else:
-        console.print(f"Queued task {task_id} for spec '{spec}' (priority {priority})")
+register_queue_command(app, console=console)
 
 
 if __name__ == "__main__":

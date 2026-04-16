@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 Changes in this section are on the branch/repo after `0.4.1` and are not part of the last published release until the next version is cut.
 
+### Fixed
+
+- Restored Python `autoctx queue add --task-prompt ... --rubric ...` compatibility for prompt-backed queued tasks, including direct ad hoc queueing without a saved spec name.
+
 ## [0.4.1] - 2026-04-14
 
 ### Fixed

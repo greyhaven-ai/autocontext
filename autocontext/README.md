@@ -147,6 +147,7 @@ uv run autoctx solve --description "improve customer-support replies for billing
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
 uv run autoctx simulate --description "simulate deploying a web service with rollback" --provider claude-cli
 uv run autoctx investigate --description "why did conversion drop after Tuesday's release"
+uv run autoctx queue add --task-prompt "Write a 1-line fact about primes" --rubric "correct" --threshold 0.8 --rounds 2
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
