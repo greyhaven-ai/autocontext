@@ -137,3 +137,19 @@ class TestRegistryIsolation:
         assert "evaluation_criteria" in message, message
         assert "Traceback" not in message, message
         assert 'File "' not in message, message
+
+    def test_traceback_available_at_debug_level(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        knowledge_root = tmp_path / "knowledge"
+        _write_malformed_spec(knowledge_root, name="regression_probe")
+
+        with caplog.at_level(logging.DEBUG, logger="autocontext.scenarios.custom.registry"):
+            load_all_custom_scenarios(knowledge_root)
+
+        debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
+        assert any(r.exc_text for r in debug_records), (
+            "at DEBUG level the full traceback must be available via exc_info"
+        )
