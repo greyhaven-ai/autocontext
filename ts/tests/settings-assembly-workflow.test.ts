@@ -26,6 +26,7 @@ describe("settings assembly workflow", () => {
       env: {
         AUTOCONTEXT_AGENT_PROVIDER: "deterministic",
         AUTOCONTEXT_MODEL_ANALYST: "analyst-model",
+        AUTOCONTEXT_PI_NO_CONTEXT_FILES: "true",
       },
       defaults: getDefaultSettingsRecord(),
     });
@@ -38,7 +39,10 @@ describe("settings assembly workflow", () => {
       runsRoot: "/tmp/runs",
       dbPath: "/tmp/runs/db.sqlite3",
       defaultGenerations: 4,
+      piNoContextFiles: true,
     });
-    expect(parseAppSettings(input).agentProvider).toBe("deterministic");
+    const settings = parseAppSettings(input);
+    expect(settings.agentProvider).toBe("deterministic");
+    expect(settings.piNoContextFiles).toBe(true);
   });
 });

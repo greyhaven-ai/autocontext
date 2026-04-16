@@ -3,15 +3,87 @@
  */
 
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { execFile, execFileSync } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { execFile, execFileSync, spawn } from "node:child_process";
 
 vi.mock("node:child_process", () => ({
   execFile: vi.fn(),
   execFileSync: vi.fn(),
+  spawn: vi.fn(),
 }));
 
 const execFileSyncMock = vi.mocked(execFileSync);
+const spawnMock = vi.mocked(spawn);
 void execFile;
+
+class FakeStream extends EventEmitter {
+  writable = true;
+  destroyed = false;
+  readonly chunks: string[] = [];
+
+  constructor(private readonly onWrite?: () => void) {
+    super();
+  }
+
+  setEncoding(_encoding: string): void {}
+
+  write(chunk: string): boolean {
+    this.chunks.push(chunk);
+    this.onWrite?.();
+    return true;
+  }
+
+  end(): void {
+    this.writable = false;
+    this.emit("finish");
+  }
+}
+
+function createFakeSpawnProcess(stdoutLines: string[], closeCode = 0): {
+  child: EventEmitter & {
+    stdin: FakeStream;
+    stdout: FakeStream;
+    stderr: FakeStream;
+    killed: boolean;
+    exitCode: number | null;
+    kill: () => void;
+  };
+  stdin: FakeStream;
+} {
+  const child = new EventEmitter() as EventEmitter & {
+    stdin: FakeStream;
+    stdout: FakeStream;
+    stderr: FakeStream;
+    killed: boolean;
+    exitCode: number | null;
+    kill: () => void;
+  };
+  let emitted = false;
+  const emitOutput = (): void => {
+    if (emitted) return;
+    emitted = true;
+    queueMicrotask(() => {
+      for (const line of stdoutLines) {
+        child.stdout.emit("data", `${line}\n`);
+      }
+      child.exitCode = closeCode;
+      child.emit("close", closeCode);
+    });
+  };
+  const stdin = new FakeStream(emitOutput);
+  child.stdin = stdin;
+  child.stdout = new FakeStream();
+  child.stderr = new FakeStream();
+  child.killed = false;
+  child.exitCode = null;
+  child.kill = vi.fn(() => {
+    child.killed = true;
+    child.exitCode = -9;
+    child.emit("close", -9);
+  });
+
+  return { child, stdin };
+}
 
 // ---------------------------------------------------------------------------
 // Pi config in AppSettingsSchema
@@ -25,6 +97,7 @@ describe("Pi config in AppSettingsSchema", () => {
     expect(settings.piTimeout).toBe(120.0);
     expect(settings.piWorkspace).toBe("");
     expect(settings.piModel).toBe("");
+    expect(settings.piNoContextFiles).toBe(false);
   });
 
   it("includes Pi RPC settings with defaults", async () => {
@@ -165,6 +238,7 @@ describe("PiCLIRuntime", () => {
         piTimeout: 33,
         piWorkspace: "/tmp/pi-workspace",
         piModel: "pi-checkpoint",
+        piNoContextFiles: true,
       },
     );
 
@@ -176,15 +250,15 @@ describe("PiCLIRuntime", () => {
     expect(result.text).toBe("pi output");
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "pi-local",
-      ["--print", "--model", "pi-checkpoint", "--workspace", "/tmp/pi-workspace"],
+      ["--print", "--model", "pi-checkpoint", "--no-context-files"],
       expect.objectContaining({
         input: "system prompt\n\ntask prompt",
         timeout: 33_000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        cwd: "/tmp/pi-workspace",
       }),
     );
-    expect(execFileSyncMock.mock.calls[0]?.[2]).not.toHaveProperty("cwd");
   });
 
   it("buildRoleProviderBundle threads Pi CLI settings into run providers", async () => {
@@ -198,6 +272,7 @@ describe("PiCLIRuntime", () => {
       piTimeout: 12,
       piWorkspace: "/tmp/pi-bundle-workspace",
       piModel: "pi-bundle-model",
+      piNoContextFiles: true,
     });
 
     const result = await bundle.defaultProvider.complete({
@@ -208,10 +283,11 @@ describe("PiCLIRuntime", () => {
     expect(result.text).toBe("bundle output");
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "pi-bundle",
-      ["--print", "--model", "pi-bundle-model", "--workspace", "/tmp/pi-bundle-workspace"],
+      ["--print", "--model", "pi-bundle-model", "--no-context-files"],
       expect.objectContaining({
         input: "bundle task",
         timeout: 12_000,
+        cwd: "/tmp/pi-bundle-workspace",
       }),
     );
   });
@@ -230,8 +306,10 @@ describe("PiRPCRuntime", () => {
   it("has correct defaults", async () => {
     const { PiRPCConfig } = await import("../src/runtimes/pi-rpc.js");
     const config = new PiRPCConfig();
-    expect(config.endpoint).toBe("http://localhost:3284");
+    expect(config.piCommand).toBe("pi");
+    expect(config.timeout).toBe(120.0);
     expect(config.sessionPersistence).toBe(true);
+    expect(config.noContextFiles).toBe(false);
   });
 
   it("creates isolated sessions per role", async () => {
@@ -245,18 +323,19 @@ describe("PiRPCRuntime", () => {
     expect(rt2.currentSessionId).toBeNull();
   });
 
-  it("createConfiguredProvider uses Python-compatible Pi RPC endpoint and settings", async () => {
+  it("createConfiguredProvider uses subprocess Pi RPC JSONL instead of HTTP", async () => {
     vi.resetModules();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ text: "first", session_id: "sess-1" }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ text: "second", session_id: "sess-2" }),
-      });
+    const fakeProcess = createFakeSpawnProcess(
+      [
+        JSON.stringify({ type: "response", command: "prompt", success: true }),
+        JSON.stringify({
+          type: "agent_end",
+          messages: [{ role: "assistant", content: "first" }],
+        }),
+      ],
+    );
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     const { createConfiguredProvider } = await import("../src/providers/index.js");
@@ -264,40 +343,85 @@ describe("PiRPCRuntime", () => {
       { providerType: "pi-rpc" },
       {
         agentProvider: "pi-rpc",
+        piCommand: "pi-rpc-local",
+        piTimeout: 45,
         piRpcEndpoint: "http://rpc.local:3284",
         piRpcApiKey: "rpc-key",
         piRpcSessionPersistence: false,
+        piNoContextFiles: true,
       },
     );
 
-    const first = await provider.complete({
+    const result = await provider.complete({
       systemPrompt: "rpc system",
       userPrompt: "first prompt",
     });
-    const second = await provider.complete({
-      systemPrompt: "rpc system",
-      userPrompt: "second prompt",
+
+    expect(result.text).toBe("first");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledWith(
+      "pi-rpc-local",
+      ["--mode", "rpc", "--no-context-files", "--no-session"],
+      expect.objectContaining({
+        stdio: ["pipe", "pipe", "pipe"],
+      }),
+    );
+
+    const input = fakeProcess.stdin.chunks.join("");
+    expect(JSON.parse(input.trim())).toMatchObject({
+      type: "prompt",
+      message: "rpc system\n\nfirst prompt",
+    });
+    expect(input.endsWith("\n")).toBe(true);
+    expect(fakeProcess.stdin.writable).toBe(false);
+  });
+
+  it("does not treat a prompt ack as the final assistant output", async () => {
+    vi.resetModules();
+    const fakeProcess = createFakeSpawnProcess([
+      JSON.stringify({ type: "response", command: "prompt", success: true }),
+    ]);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { PiRPCRuntime, PiRPCConfig } = await import("../src/runtimes/pi-rpc.js");
+    const runtime = new PiRPCRuntime(new PiRPCConfig({ piCommand: "pi-rpc-local" }));
+    const result = await runtime.generate({ prompt: "first prompt" });
+
+    expect(result.text).toBe("");
+    expect(result.metadata?.error).toBe("missing_assistant_response");
+  });
+
+  it("pi-rpc uses piModel when no generic model override is set", async () => {
+    vi.resetModules();
+    const fakeProcess = createFakeSpawnProcess([
+      JSON.stringify({
+        type: "agent_end",
+        messages: [{ role: "assistant", content: "model output" }],
+      }),
+    ]);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { createConfiguredProvider } = await import("../src/providers/index.js");
+    const { provider } = createConfiguredProvider(
+      { providerType: "pi-rpc" },
+      {
+        agentProvider: "pi-rpc",
+        piCommand: "pi-rpc-local",
+        piModel: "manual-pi-model",
+      },
+    );
+
+    await provider.complete({
+      systemPrompt: "",
+      userPrompt: "first prompt",
     });
 
-    expect(first.text).toBe("first");
-    expect(second.text).toBe("second");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://rpc.local:3284/v1/generate");
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer rpc-key",
-      },
-    });
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-      prompt: "first prompt",
-      system: "rpc system",
-    });
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
-      prompt: "second prompt",
-      system: "rpc system",
-    });
+    expect(provider.defaultModel()).toBe("manual-pi-model");
+    expect(spawnMock).toHaveBeenCalledWith(
+      "pi-rpc-local",
+      ["--mode", "rpc", "--model", "manual-pi-model"],
+      expect.any(Object),
+    );
   });
 });
 

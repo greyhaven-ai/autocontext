@@ -114,8 +114,9 @@ export const AppSettingsSchema = z.object({
   piTimeout: z.number().min(1).default(120.0),
   piWorkspace: z.string().default(""),
   piModel: z.string().default(""),
+  piNoContextFiles: z.boolean().default(false),
 
-  // Pi RPC runtime
+  // Pi RPC runtime (subprocess JSONL; endpoint/apiKey retained for backwards-compatible config parsing)
   piRpcEndpoint: z.string().default(""),
   piRpcApiKey: z.string().default(""),
   piRpcSessionPersistence: z.boolean().default(true),

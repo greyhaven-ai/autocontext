@@ -29,6 +29,7 @@ class PiCLIConfig:
     timeout: float = PI_DEFAULT_TIMEOUT_SECONDS
     json_output: bool = True
     workspace: str = ""
+    no_context_files: bool = False
     extra_args: list[str] = field(default_factory=list)
 
 
@@ -90,6 +91,8 @@ class PiCLIRuntime(AgentRuntime):
 
         if self._config.model:
             args.extend(["--model", self._config.model])
+        if self._config.no_context_files:
+            args.append("--no-context-files")
 
         # NOTE: Pi does not have a --workspace CLI flag.
         # Workspace is passed as subprocess cwd instead (see _invoke).

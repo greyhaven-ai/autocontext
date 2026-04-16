@@ -95,6 +95,7 @@ def _complete_smoke_generation(
 # Documented env var → load_settings → build_client round-trip
 # ---------------------------------------------------------------------------
 
+
 class TestPiEnvVarRoundTrip:
     """Verify the documented env var combinations load and produce valid clients."""
 
@@ -128,14 +129,16 @@ class TestPiEnvVarRoundTrip:
             client = build_client_from_settings(settings)
         assert isinstance(client, RuntimeBridgeClient)
 
-    def test_pi_workspace_and_model_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_pi_workspace_model_and_no_context_files_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify optional Pi env vars are preserved through load_settings."""
         monkeypatch.setenv("AUTOCONTEXT_AGENT_PROVIDER", "pi")
         monkeypatch.setenv("AUTOCONTEXT_PI_WORKSPACE", "/my/workspace")
         monkeypatch.setenv("AUTOCONTEXT_PI_MODEL", "distilled-v2")
+        monkeypatch.setenv("AUTOCONTEXT_PI_NO_CONTEXT_FILES", "true")
         settings = load_settings()
         assert settings.pi_workspace == "/my/workspace"
         assert settings.pi_model == "distilled-v2"
+        assert settings.pi_no_context_files is True
 
     def test_pi_rpc_session_persistence_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify PI_RPC_SESSION_PERSISTENCE coerces string to bool."""
@@ -148,6 +151,7 @@ class TestPiEnvVarRoundTrip:
 # ---------------------------------------------------------------------------
 # Scenario-aware Pi model handoff
 # ---------------------------------------------------------------------------
+
 
 class TestPiScenarioHandoff:
     """Verify scenario-aware routing through the public entrypoint."""
@@ -214,6 +218,7 @@ class TestPiScenarioHandoff:
 # Per-role Pi overrides through create_role_client
 # ---------------------------------------------------------------------------
 
+
 class TestPiRoleOverride:
     """Verify Pi works as a per-role provider override (competitor_provider=pi)."""
 
@@ -243,6 +248,7 @@ class TestPiRoleOverride:
 # ---------------------------------------------------------------------------
 # Live autoctx run smoke path
 # ---------------------------------------------------------------------------
+
 
 class TestPiRunSmoke:
     """Verify the documented Pi setup survives the real CLI/runner entrypoint."""
@@ -281,10 +287,7 @@ class TestPiRunSmoke:
         assert result.exit_code == 0, result.output
         assert "competitor" in resolved_clients
         assert "analyst" in resolved_clients
-        assert any(
-            call.kwargs.get("scenario") == "grid_ctf"
-            for call in mock_resolve.call_args_list
-        )
+        assert any(call.kwargs.get("scenario") == "grid_ctf" for call in mock_resolve.call_args_list)
         assert any(
             (call.args[0].model if call.args else call.kwargs["config"].model) == "/models/grid-ctf/pi-v4"
             for call in mock_runtime.call_args_list
@@ -333,6 +336,7 @@ class TestPiRunSmoke:
 # ---------------------------------------------------------------------------
 # Failure modes
 # ---------------------------------------------------------------------------
+
 
 class TestPiFailureModes:
     """Verify broken Pi setups produce intelligible errors."""

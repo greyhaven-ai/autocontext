@@ -28,6 +28,7 @@ def test_config_defaults() -> None:
     assert c.timeout == PI_DEFAULT_TIMEOUT_SECONDS
     assert c.json_output is True
     assert c.workspace == ""
+    assert c.no_context_files is False
     assert c.extra_args == []
 
 
@@ -50,6 +51,7 @@ def test_settings_pi_fields_exist() -> None:
     assert s.pi_timeout == PI_DEFAULT_TIMEOUT_SECONDS
     assert s.pi_workspace == ""
     assert s.pi_model == ""
+    assert s.pi_no_context_files is False
 
 
 # ---------------------------------------------------------------------------
@@ -198,11 +200,19 @@ def test_generate_binary_not_found() -> None:
 
 
 def test_build_args_includes_model_and_prompt() -> None:
-    runtime = PiCLIRuntime(PiCLIConfig(model="pi-turbo", workspace="/tmp/ws", extra_args=["--verbose"]))
+    runtime = PiCLIRuntime(
+        PiCLIConfig(
+            model="pi-turbo",
+            workspace="/tmp/ws",
+            no_context_files=True,
+            extra_args=["--verbose"],
+        )
+    )
     with patch("shutil.which", return_value="/usr/bin/pi"):
         args = runtime._build_args("test prompt")
     assert "--model" in args
     assert "pi-turbo" in args
+    assert "--no-context-files" in args
     assert "--verbose" in args
     assert "test prompt" in args
     # workspace is NOT a Pi flag — handled via cwd

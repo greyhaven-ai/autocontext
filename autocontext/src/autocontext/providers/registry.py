@@ -150,6 +150,7 @@ def get_provider(settings: AppSettings) -> LLMProvider:
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             model=settings.pi_model,
+            no_context_files=settings.pi_no_context_files,
         ))
         return RuntimeBridgeProvider(pi_runtime, default_model_name=settings.pi_model or "pi-default")
 
@@ -162,6 +163,7 @@ def get_provider(settings: AppSettings) -> LLMProvider:
             model=settings.pi_model or settings.judge_model,
             timeout=settings.pi_timeout,
             session_persistence=settings.pi_rpc_session_persistence,
+            no_context_files=settings.pi_no_context_files,
         ))
         return RuntimeBridgeProvider(
             pi_rpc_runtime,

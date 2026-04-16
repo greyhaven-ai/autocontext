@@ -11,6 +11,7 @@ export interface PiCLIConfigOpts {
   model?: string;
   timeout?: number;
   workspace?: string;
+  noContextFiles?: boolean;
 }
 
 export class PiCLIConfig {
@@ -18,12 +19,14 @@ export class PiCLIConfig {
   readonly model: string;
   readonly timeout: number;
   readonly workspace: string;
+  readonly noContextFiles: boolean;
 
   constructor(opts: PiCLIConfigOpts = {}) {
     this.piCommand = opts.piCommand ?? "pi";
     this.model = opts.model ?? "";
     this.timeout = opts.timeout ?? 120.0;
     this.workspace = opts.workspace ?? "";
+    this.noContextFiles = opts.noContextFiles ?? false;
   }
 }
 
@@ -35,13 +38,8 @@ export class PiCLIRuntime {
     this.config = config ?? new PiCLIConfig();
   }
 
-  async generate(opts: {
-    prompt: string;
-    system?: string;
-  }): Promise<AgentOutput> {
-    const fullPrompt = opts.system
-      ? `${opts.system}\n\n${opts.prompt}`
-      : opts.prompt;
+  async generate(opts: { prompt: string; system?: string }): Promise<AgentOutput> {
+    const fullPrompt = opts.system ? `${opts.system}\n\n${opts.prompt}` : opts.prompt;
     return this.invoke(fullPrompt);
   }
 
@@ -66,20 +64,21 @@ export class PiCLIRuntime {
   }
 
   private invoke(prompt: string): AgentOutput {
-    const args = [this.config.piCommand, "--print"];
+    const args = ["--print"];
     if (this.config.model) {
       args.push("--model", this.config.model);
     }
-    if (this.config.workspace) {
-      args.push("--workspace", this.config.workspace);
+    if (this.config.noContextFiles) {
+      args.push("--no-context-files");
     }
 
     try {
-      const stdout = execFileSync(args[0], args.slice(1), {
+      const stdout = execFileSync(this.config.piCommand, args, {
         input: prompt,
         timeout: this.config.timeout * 1000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
+        cwd: this.config.workspace || undefined,
       });
       return this.parseOutput(stdout);
     } catch (err: unknown) {

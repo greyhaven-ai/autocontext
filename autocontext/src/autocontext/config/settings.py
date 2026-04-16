@@ -578,16 +578,29 @@ class AppSettings(BaseModel):
     pi_timeout: float = Field(default=PI_DEFAULT_TIMEOUT_SECONDS, ge=1.0, description="Pi execution timeout")
     pi_workspace: str = Field(default="", description="Pi workspace directory")
     pi_model: str = Field(default="", description="Pi model override")
+    pi_no_context_files: bool = Field(
+        default=False,
+        description="Disable Pi context file loading (e.g. AGENTS.md / CLAUDE.md) for deterministic runs",
+    )
     # Codex CLI runtime (AC-317)
     codex_model: str = Field(default="o4-mini", description="Codex CLI model")
     codex_timeout: float = Field(default=120.0, ge=1.0, description="Codex CLI execution timeout")
     codex_workspace: str = Field(default="", description="Codex CLI working directory")
     codex_approval_mode: str = Field(default="full-auto", description="Codex CLI approval mode")
     codex_quiet: bool = Field(default=False, description="Use Codex CLI quiet mode")
-    # Pi RPC spike (AC-225)
-    pi_rpc_endpoint: str = Field(default="", description="Pi RPC endpoint URL")
-    pi_rpc_api_key: str = Field(default="", description="Pi RPC API key")
-    pi_rpc_session_persistence: bool = Field(default=True, description="Persist Pi sessions across turns")
+    # Pi RPC runtime (subprocess JSONL; endpoint/api_key retained for backwards compatibility)
+    pi_rpc_endpoint: str = Field(
+        default="",
+        description="Legacy compatibility field for older HTTP-based Pi RPC experiments; current runtime ignores it",
+    )
+    pi_rpc_api_key: str = Field(
+        default="",
+        description="Legacy compatibility field for older HTTP-based Pi RPC experiments; current runtime ignores it",
+    )
+    pi_rpc_session_persistence: bool = Field(
+        default=True,
+        description="Persist Pi sessions across turns when launching pi --mode rpc",
+    )
     # Hermes CLI runtime (AC-351)
     hermes_command: str = Field(default="hermes", description="Path to Hermes CLI binary")
     hermes_model: str = Field(default="", description="Hermes model override")

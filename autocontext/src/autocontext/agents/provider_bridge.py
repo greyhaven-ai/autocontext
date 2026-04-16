@@ -328,6 +328,7 @@ def create_role_client(
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             model=resolved_model,
+            no_context_files=settings.pi_no_context_files,
         )
         return RuntimeBridgeClient(PiCLIRuntime(pi_config))
 
@@ -336,8 +337,10 @@ def create_role_client(
 
         rpc_config = PiRPCConfig(
             pi_command=settings.pi_command,
+            model=settings.pi_model,
             timeout=settings.pi_timeout,
             session_persistence=settings.pi_rpc_session_persistence,
+            no_context_files=settings.pi_no_context_files,
         )
         return RuntimeBridgeClient(PiRPCRuntime(rpc_config))
 

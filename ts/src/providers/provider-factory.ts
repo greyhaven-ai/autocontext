@@ -167,6 +167,7 @@ export interface CreateProviderOpts {
   piTimeout?: number;
   piWorkspace?: string;
   piModel?: string;
+  piNoContextFiles?: boolean;
   piRpcEndpoint?: string;
   piRpcApiKey?: string;
   piRpcSessionPersistence?: boolean;
@@ -269,20 +270,24 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         timeout: opts.piTimeout,
         workspace: opts.piWorkspace,
         model: resolvedModel,
+        noContextFiles: opts.piNoContextFiles,
       }),
     );
     return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "pi-default");
   }
 
   if (type === "pi-rpc") {
+    const resolvedModel = opts.model ?? opts.piModel;
     const runtime = new PiRPCRuntime(
       new PiRPCConfig({
-        endpoint: opts.piRpcEndpoint ?? opts.baseUrl,
-        apiKey: opts.piRpcApiKey ?? opts.apiKey,
+        piCommand: opts.piCommand,
+        model: resolvedModel,
+        timeout: opts.piTimeout,
         sessionPersistence: opts.piRpcSessionPersistence,
+        noContextFiles: opts.piNoContextFiles,
       }),
     );
-    return new RuntimeBridgeProvider(runtime as never, opts.model ?? "pi-rpc-default");
+    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "pi-rpc-default");
   }
 
   const compat = OPENAI_COMPATIBLE_PROVIDER_DEFAULTS[type];

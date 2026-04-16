@@ -107,12 +107,18 @@ uv run autoctx solve --description "improve customer-support replies for billing
 
 `autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too.
 
-Run with Pi RPC (remote Pi agent via HTTP):
+Run with Pi RPC (local Pi subprocess using `pi --mode rpc` JSONL):
 
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
-AUTOCONTEXT_PI_RPC_ENDPOINT=http://localhost:3284 \
+AUTOCONTEXT_PI_COMMAND=pi \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+```
+
+For deterministic evals where Pi should ignore repo-local `AGENTS.md` / `CLAUDE.md`, add:
+
+```bash
+AUTOCONTEXT_PI_NO_CONTEXT_FILES=true
 ```
 
 Run with Hermes (via OpenAI-compatible gateway):

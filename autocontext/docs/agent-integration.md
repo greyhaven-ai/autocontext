@@ -32,6 +32,7 @@ autoctx train --scenario grid_ctf --data data.jsonl --json
 ```
 
 **Contract:**
+
 - **stdout** receives the JSON payload (one JSON object per line).
 - **stderr** receives errors in the format `{"error": "description"}`.
 - **Exit code 0** means the command succeeded. The JSON payload is on stdout.
@@ -50,6 +51,7 @@ autoctx run --scenario my_agent_task --gens 3 --json
 ```
 
 JSON output shape:
+
 ```json
 {
   "run_id": "my_run",
@@ -67,6 +69,7 @@ autoctx status <run_id> --json
 ```
 
 JSON output shape:
+
 ```json
 {
   "run_id": "abc123",
@@ -92,6 +95,7 @@ autoctx list --json
 ```
 
 Returns an array of run summaries:
+
 ```json
 [
   {
@@ -157,6 +161,7 @@ autoctx export --scenario grid_ctf --output pkg.json --json
 ```
 
 JSON output shape:
+
 ```json
 {
   "scenario": "grid_ctf",
@@ -174,6 +179,7 @@ autoctx train --scenario grid_ctf --data training.jsonl --time-budget 300 --json
 ```
 
 JSON output shape:
+
 ```json
 {
   "scenario": "grid_ctf",
@@ -192,6 +198,7 @@ autoctx import-package --file grid_ctf_package.json --json
 ```
 
 JSON output shape:
+
 ```json
 {
   "scenario_name": "grid_ctf",
@@ -262,11 +269,13 @@ AUTOCONTEXT_PI_COMMAND=pi \
 AUTOCONTEXT_PI_TIMEOUT=120 \
 autoctx run --scenario my_task --json
 
-# Pi RPC (Pi agent via HTTP RPC — supports session persistence)
+# Pi RPC (Pi subprocess via `pi --mode rpc` JSONL)
 AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
-AUTOCONTEXT_PI_RPC_ENDPOINT=http://localhost:3284 \
-AUTOCONTEXT_PI_RPC_API_KEY=your-key \
+AUTOCONTEXT_PI_COMMAND=pi \
 autoctx run --scenario my_task --json
+
+# Optional: keep Pi deterministic by ignoring AGENTS.md / CLAUDE.md context files
+AUTOCONTEXT_PI_NO_CONTEXT_FILES=true
 
 # Role-scoped override: competitor uses a separate gateway/key
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
@@ -281,55 +290,62 @@ autoctx run --scenario my_task --json
 
 Key environment variables:
 
-| Variable | Purpose |
-|---|---|
-| `AUTOCONTEXT_AGENT_PROVIDER` | Agent provider: `anthropic`, `openai-compatible`, `ollama`, `vllm`, `pi`, `pi-rpc`, `deterministic` |
-| `AUTOCONTEXT_AGENT_API_KEY` | Global agent API key override (or use provider-native env vars such as `ANTHROPIC_API_KEY`) |
-| `AUTOCONTEXT_AGENT_BASE_URL` | Global base URL for OpenAI-compatible agent endpoints |
-| `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential and endpoint override |
-| `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL` | Optional analyst-specific credential and endpoint override |
-| `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL` | Optional coach-specific credential and endpoint override |
-| `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL` | Optional architect-specific credential and endpoint override |
-| `AUTOCONTEXT_JUDGE_PROVIDER` | Judge provider (defaults to `anthropic`) |
-| `AUTOCONTEXT_JUDGE_API_KEY` | API key for the judge provider |
-| `AUTOCONTEXT_JUDGE_BASE_URL` | Base URL for OpenAI-compatible judge endpoints |
-| `AUTOCONTEXT_JUDGE_MODEL` | Override judge model name |
-| `AUTOCONTEXT_CLAUDE_MODEL` | Claude CLI model alias (default: `sonnet`) |
-| `AUTOCONTEXT_CLAUDE_TIMEOUT` | Claude CLI execution timeout in seconds (default: 120) |
-| `AUTOCONTEXT_MODEL_COMPETITOR` | Override competitor agent model |
-| `AUTOCONTEXT_DB_PATH` | SQLite database path |
-| `AUTOCONTEXT_PI_COMMAND` | Path to Pi CLI binary (default: `pi`) |
-| `AUTOCONTEXT_PI_TIMEOUT` | Pi CLI execution timeout in seconds (default: 120) |
-| `AUTOCONTEXT_PI_WORKSPACE` | Pi CLI working directory |
-| `AUTOCONTEXT_PI_MODEL` | Manual Pi model override (pins a specific checkpoint/path) |
-| `AUTOCONTEXT_PI_RPC_ENDPOINT` | Pi RPC server URL (default: `http://localhost:3284`) |
-| `AUTOCONTEXT_PI_RPC_API_KEY` | Pi RPC API key |
-| `AUTOCONTEXT_PI_RPC_SESSION_PERSISTENCE` | Persist Pi sessions across turns (default: `true`) |
+| Variable                                                             | Purpose                                                                                             |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `AUTOCONTEXT_AGENT_PROVIDER`                                         | Agent provider: `anthropic`, `openai-compatible`, `ollama`, `vllm`, `pi`, `pi-rpc`, `deterministic` |
+| `AUTOCONTEXT_AGENT_API_KEY`                                          | Global agent API key override (or use provider-native env vars such as `ANTHROPIC_API_KEY`)         |
+| `AUTOCONTEXT_AGENT_BASE_URL`                                         | Global base URL for OpenAI-compatible agent endpoints                                               |
+| `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential and endpoint override                                       |
+| `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL`       | Optional analyst-specific credential and endpoint override                                          |
+| `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL`           | Optional coach-specific credential and endpoint override                                            |
+| `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL`   | Optional architect-specific credential and endpoint override                                        |
+| `AUTOCONTEXT_JUDGE_PROVIDER`                                         | Judge provider (defaults to `anthropic`)                                                            |
+| `AUTOCONTEXT_JUDGE_API_KEY`                                          | API key for the judge provider                                                                      |
+| `AUTOCONTEXT_JUDGE_BASE_URL`                                         | Base URL for OpenAI-compatible judge endpoints                                                      |
+| `AUTOCONTEXT_JUDGE_MODEL`                                            | Override judge model name                                                                           |
+| `AUTOCONTEXT_CLAUDE_MODEL`                                           | Claude CLI model alias (default: `sonnet`)                                                          |
+| `AUTOCONTEXT_CLAUDE_TIMEOUT`                                         | Claude CLI execution timeout in seconds (default: 120)                                              |
+| `AUTOCONTEXT_MODEL_COMPETITOR`                                       | Override competitor agent model                                                                     |
+| `AUTOCONTEXT_DB_PATH`                                                | SQLite database path                                                                                |
+| `AUTOCONTEXT_PI_COMMAND`                                             | Path to Pi CLI binary (default: `pi`)                                                               |
+| `AUTOCONTEXT_PI_TIMEOUT`                                             | Pi CLI execution timeout in seconds (default: 120)                                                  |
+| `AUTOCONTEXT_PI_WORKSPACE`                                           | Pi CLI working directory                                                                            |
+| `AUTOCONTEXT_PI_MODEL`                                               | Manual Pi model override (pins a specific checkpoint/path)                                          |
+| `AUTOCONTEXT_PI_NO_CONTEXT_FILES`                                    | Disable Pi context file loading (`AGENTS.md`, `CLAUDE.md`) for deterministic/eval-style runs        |
+| `AUTOCONTEXT_PI_RPC_ENDPOINT`                                        | Legacy compatibility field for older HTTP-based experiments; current Pi RPC runtime does not use it |
+| `AUTOCONTEXT_PI_RPC_API_KEY`                                         | Legacy compatibility field for older HTTP-based experiments; current Pi RPC runtime does not use it |
+| `AUTOCONTEXT_PI_RPC_SESSION_PERSISTENCE`                             | Toggle Pi session persistence when launching `pi --mode rpc` (default: `true`)                      |
 
 #### Pi CLI vs Pi RPC
 
 **Pi CLI** (`AUTOCONTEXT_AGENT_PROVIDER=pi`) invokes the `pi` binary in non-interactive `--print` mode for each agent turn. Best for:
+
 - Simple setups where Pi is installed locally
 - Stateless, one-shot agent executions
 - CI/testing environments
 
-**Pi RPC** (`AUTOCONTEXT_AGENT_PROVIDER=pi-rpc`) communicates with Pi via HTTP RPC. Best for:
-- Session persistence across multi-turn improvement loops
-- Branch-on-retry strategies (Pi creates branches for each retry)
-- Remote Pi instances running as a service
+**Pi RPC** (`AUTOCONTEXT_AGENT_PROVIDER=pi-rpc`) launches a local Pi subprocess in `--mode rpc` and exchanges LF-delimited JSONL over stdin/stdout. Best for:
+
+- Aligning autocontext with Pi's documented RPC protocol
+- Session-aware Pi runs when Pi session persistence is enabled
+- Local environments where the `pi` binary is available
 
 Both support **scenario-aware model handoff** when scenario context is available and no manual Pi model override is set. In that case, autocontext checks the distillation model registry for a scenario-specific checkpoint and routes to it automatically. If `AUTOCONTEXT_PI_MODEL` is set, that value is treated as a manual pin and used directly instead of consulting the registry. This enables the distill→deploy loop where a fine-tuned model is used for specific scenarios while still allowing operators to force a specific checkpoint when needed.
+
+Set `AUTOCONTEXT_PI_NO_CONTEXT_FILES=true` when you need Pi runs to ignore repository context files such as `AGENTS.md` and `CLAUDE.md`, which is especially useful for reproducible evaluations and other contamination-sensitive workflows.
 
 #### Hermes via OpenAI-Compatible Gateway
 
 Hermes exposes an OpenAI-compatible API server, so the fastest way to connect autocontext to Hermes is through the existing `openai-compatible` provider.
 
 **When to use the gateway path:**
+
 - You have a Hermes instance already running (local or remote)
 - You want the lowest-friction setup with standard chat-completions semantics
 - The OpenAI chat completions API surface is sufficient for your use case
 
 **Caveats:**
+
 - **Model naming**: Use the exact model name your Hermes server reports (e.g. `hermes-3-llama-3.1-8b`). Check `GET /v1/models` on your Hermes endpoint.
 - **Determinism**: Hermes temperature behavior may differ from OpenAI. Set `AUTOCONTEXT_JUDGE_TEMPERATURE=0.0` explicitly for reproducible evaluations.
 - **Memory/sessions**: The gateway path is stateless per-request. Hermes memory and tool configuration are server-side concerns, not managed by autocontext.
@@ -341,11 +357,13 @@ Hermes exposes an OpenAI-compatible API server, so the fastest way to connect au
 autocontext also supports Hermes directly through `AUTOCONTEXT_AGENT_PROVIDER=hermes`, which shells out to `hermes chat --query ...` instead of using the OpenAI-compatible gateway.
 
 **When to use the native runtime path:**
+
 - You want Hermes CLI behavior directly, including local SOUL/skill/tool configuration that Hermes applies in its own runtime
 - You want Hermes to run in a specific working directory via `AUTOCONTEXT_HERMES_WORKSPACE`
 - You want autocontext to call the local Hermes CLI without standing up a separate OpenAI-compatible server
 
 **Tradeoffs:**
+
 - **Still one-shot**: autocontext invokes Hermes in single-query mode. This is not the same thing as resuming a long-lived interactive Hermes chat session.
 - **CLI dependency**: The `hermes` binary must be installed and available on `PATH` (or configured via `AUTOCONTEXT_HERMES_COMMAND`).
 - **Endpoint overrides**: `AUTOCONTEXT_HERMES_BASE_URL` and `AUTOCONTEXT_HERMES_API_KEY` are forwarded into Hermes's provider env for custom OpenAI-compatible backends.
@@ -492,12 +510,12 @@ autoctx solve \
 
 #### When to use which integration path
 
-| Path | Best for | Complexity |
-|------|----------|-----------|
-| **CLI-first** (this section) | Hermes agents driving `autoctx` via shell commands | Lowest |
-| **OpenAI-compatible provider** | autocontext calling Hermes for agent/judge completions | Low |
-| **MCP server** | Tool-catalog agents (Claude Code, MCP clients) | Medium |
-| **Native Hermes runtime** | autocontext calling the local Hermes CLI with Hermes-side workspace/skill context | Highest |
+| Path                           | Best for                                                                          | Complexity |
+| ------------------------------ | --------------------------------------------------------------------------------- | ---------- |
+| **CLI-first** (this section)   | Hermes agents driving `autoctx` via shell commands                                | Lowest     |
+| **OpenAI-compatible provider** | autocontext calling Hermes for agent/judge completions                            | Low        |
+| **MCP server**                 | Tool-catalog agents (Claude Code, MCP clients)                                    | Medium     |
+| **Native Hermes runtime**      | autocontext calling the local Hermes CLI with Hermes-side workspace/skill context | Highest    |
 
 The CLI-first path is recommended for getting started. Move to the gateway or native provider paths when you want autocontext to call Hermes instead of Hermes calling autocontext.
 
@@ -574,6 +592,7 @@ Once the server is running, invoke tools via the MCP protocol:
 ```
 
 Response:
+
 ```json
 {
   "content": [
@@ -619,6 +638,7 @@ This starts the autocontext MCP server on stdio when Hermes connects.
 For safe Hermes exposure, consider allowing tools by category:
 
 **Read-only (safe for any operator):**
+
 - `mcp_autocontext_list_scenarios` — Browse available scenarios
 - `mcp_autocontext_describe_scenario` — Get scenario details, rules, strategy interface
 - `mcp_autocontext_read_playbook` — Read accumulated strategy playbook
@@ -631,12 +651,14 @@ For safe Hermes exposure, consider allowing tools by category:
 - `mcp_autocontext_list_solved` — List scenarios with exported knowledge
 
 **Evaluation (stateless, safe):**
+
 - `mcp_autocontext_evaluate_output` — One-shot judge evaluation
 - `mcp_autocontext_validate_strategy` — Validate strategy JSON against scenario constraints
 - `mcp_autocontext_run_match` — Run a single match (deterministic)
 - `mcp_autocontext_run_tournament` — Run N matches with Elo scoring
 
 **Write operations (require operator trust):**
+
 - `mcp_autocontext_run_replay` — Replay a generation
 - `mcp_autocontext_export_skill` — Export strategy package
 - `mcp_autocontext_solve_scenario` — Launch a solve job (long-running, creates artifacts)
@@ -647,51 +669,65 @@ For safe Hermes exposure, consider allowing tools by category:
 Once configured, a Hermes agent can drive the full autocontext loop:
 
 **1. Discover scenarios:**
+
 ```
 Use autocontext_list_scenarios to see what's available.
 ```
+
 → Returns JSON array of scenario names with descriptions.
 
 **2. Inspect a scenario:**
+
 ```
 Use autocontext_describe_scenario with scenario_name="grid_ctf".
 ```
+
 → Returns rules, strategy interface, evaluation criteria, and scoring dimensions.
 
 **3. Validate a strategy:**
+
 ```
 Use autocontext_validate_strategy with scenario_name="grid_ctf" and
 strategy='{"aggression": 0.6, "defense": 0.4, "path_bias": 0.5}'.
 ```
+
 → Returns `{"valid": true, "reason": "ok"}` or validation errors.
 
 **4. Run a tournament:**
+
 ```
 Use autocontext_run_tournament with scenario_name="grid_ctf",
 strategy='{"aggression": 0.6, "defense": 0.4, "path_bias": 0.5}',
 matches=5.
 ```
+
 → Returns mean/best scores, Elo, wins/losses.
 
 **5. Read the playbook:**
+
 ```
 Use autocontext_read_playbook with scenario_name="grid_ctf".
 ```
+
 → Returns the accumulated playbook markdown (or sentinel if none exists).
 
 **6. Export knowledge:**
+
 ```
 Use autocontext_export_skill with scenario_name="grid_ctf".
 ```
+
 → Returns a portable skill package with playbook, lessons, best strategy.
 
 **7. Install the exported skill into Hermes:**
+
 ```
 Take the result from autocontext_export_skill, read result.skill_markdown and
 result.suggested_filename, and write the markdown into your Hermes skill directory.
 ```
 
 For raw MCP clients, `autocontext_export_skill` returns structured JSON that now includes:
+
 - `skill_markdown` — the rendered `SKILL.md` contents
 - `suggested_filename` — the recommended install filename, such as `grid-ctf-knowledge.md`
 
@@ -711,19 +747,20 @@ After writing the file, restart Hermes or reload its skills so the new knowledge
 All tools use the `autocontext_` prefix (e.g., `autocontext_list_scenarios`). This is deliberate — it prevents collisions in multi-MCP-server setups. In Hermes, the prefix is visible in tool discovery and helps distinguish autocontext tools from other MCP servers.
 
 **Known rough edges:**
+
 - Tool names are verbose — Hermes agents may need explicit instruction to use the `autocontext_` prefix
 - `autocontext_solve_scenario` is long-running and returns a `job_id`; poll with `autocontext_solve_status`
 - Sandbox tools require explicit create/destroy lifecycle management
 
 #### MCP vs CLI-First for Hermes
 
-| Aspect | MCP | CLI-first |
-|--------|-----|-----------|
-| **Setup** | Config in `mcp_servers` | Set env vars |
-| **Tool discovery** | Automatic (Hermes sees all tools) | Manual (`autoctx --help`) |
-| **Output format** | Structured MCP responses | `--json` stdout |
-| **Long-running jobs** | Poll via `autocontext_solve_status` | Poll via `autoctx status` |
-| **Best for** | Hermes agents with MCP support | Hermes agents with shell access |
+| Aspect                | MCP                                 | CLI-first                       |
+| --------------------- | ----------------------------------- | ------------------------------- |
+| **Setup**             | Config in `mcp_servers`             | Set env vars                    |
+| **Tool discovery**    | Automatic (Hermes sees all tools)   | Manual (`autoctx --help`)       |
+| **Output format**     | Structured MCP responses            | `--json` stdout                 |
+| **Long-running jobs** | Poll via `autocontext_solve_status` | Poll via `autoctx status`       |
+| **Best for**          | Hermes agents with MCP support      | Hermes agents with shell access |
 
 Use MCP when Hermes has native MCP client support and you want automatic tool discovery. Use CLI-first when you want simpler debugging or are scripting a workflow.
 

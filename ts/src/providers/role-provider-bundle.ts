@@ -38,6 +38,7 @@ export interface RoleProviderSettings {
   piTimeout?: number;
   piWorkspace?: string;
   piModel?: string;
+  piNoContextFiles?: boolean;
   piRpcEndpoint?: string;
   piRpcApiKey?: string;
   piRpcSessionPersistence?: boolean;
@@ -71,6 +72,7 @@ export function withRuntimeSettings(
     piTimeout: settings.piTimeout,
     piWorkspace: settings.piWorkspace,
     piModel: settings.piModel,
+    piNoContextFiles: settings.piNoContextFiles,
     piRpcEndpoint: settings.piRpcEndpoint,
     piRpcApiKey: settings.piRpcApiKey,
     piRpcSessionPersistence: settings.piRpcSessionPersistence,
@@ -98,18 +100,21 @@ function resolveRoleConfig(
   const model = normalizeOptionalOverride(roleConfig.model);
   const apiKey = normalizeOptionalOverride(roleConfig.apiKey);
   const baseUrl = normalizeOptionalOverride(roleConfig.baseUrl);
-  return resolveProviderConfig({
-    ...overrides,
-    providerType: providerType ?? defaultConfig.providerType,
-    model: model ?? defaultConfig.model,
-    apiKey: apiKey ?? overrides.apiKey,
-    baseUrl: baseUrl ?? overrides.baseUrl,
-  }, {
-    preferProviderOverride: Boolean(providerType),
-    preferModelOverride: Boolean(model),
-    preferApiKeyOverride: Boolean(apiKey),
-    preferBaseUrlOverride: Boolean(baseUrl),
-  });
+  return resolveProviderConfig(
+    {
+      ...overrides,
+      providerType: providerType ?? defaultConfig.providerType,
+      model: model ?? defaultConfig.model,
+      apiKey: apiKey ?? overrides.apiKey,
+      baseUrl: baseUrl ?? overrides.baseUrl,
+    },
+    {
+      preferProviderOverride: Boolean(providerType),
+      preferModelOverride: Boolean(model),
+      preferApiKeyOverride: Boolean(apiKey),
+      preferBaseUrlOverride: Boolean(baseUrl),
+    },
+  );
 }
 
 export function createConfiguredProvider(

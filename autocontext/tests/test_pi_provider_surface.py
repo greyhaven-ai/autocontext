@@ -14,10 +14,12 @@ import pytest
 
 from autocontext.agents.llm_client import build_client_from_settings
 from autocontext.config.settings import AppSettings
+from autocontext.providers.registry import get_provider
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _settings(**overrides: object) -> AppSettings:
     """Build an AppSettings with sensible defaults and overrides."""
@@ -32,6 +34,7 @@ def _settings(**overrides: object) -> AppSettings:
 # ---------------------------------------------------------------------------
 # Pi CLI happy path
 # ---------------------------------------------------------------------------
+
 
 class TestPiCLIProvider:
     def test_build_client_accepts_pi_provider(self) -> None:
@@ -49,6 +52,7 @@ class TestPiCLIProvider:
             MockRuntime.return_value = MagicMock()
             client = build_client_from_settings(settings)
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
+
         assert isinstance(client, RuntimeBridgeClient)
 
     def test_pi_passes_config_from_settings(self) -> None:
@@ -59,6 +63,7 @@ class TestPiCLIProvider:
             pi_timeout=60.0,
             pi_workspace="/my/workspace",
             pi_model="local-model",
+            pi_no_context_files=True,
         )
         with patch("autocontext.runtimes.pi_cli.PiCLIRuntime") as MockRuntime:
             MockRuntime.return_value = MagicMock()
@@ -68,6 +73,7 @@ class TestPiCLIProvider:
         assert config.pi_command == "/usr/local/bin/pi"
         assert config.timeout == 60.0
         assert config.workspace == "/my/workspace"
+        assert config.no_context_files is True
 
     def test_pi_resolves_scenario_model_handoff(self) -> None:
         """Scenario-aware Pi clients should resolve the active checkpoint via the registry."""
@@ -93,6 +99,7 @@ class TestPiCLIProvider:
 # Pi RPC happy path
 # ---------------------------------------------------------------------------
 
+
 class TestPiRPCProvider:
     def test_build_client_accepts_pi_rpc_provider(self) -> None:
         """``AUTOCONTEXT_AGENT_PROVIDER=pi-rpc`` should construct a valid client."""
@@ -115,6 +122,7 @@ class TestPiRPCProvider:
             MockRuntime.return_value = MagicMock()
             client = build_client_from_settings(settings)
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
+
         assert isinstance(client, RuntimeBridgeClient)
 
     def test_pi_rpc_passes_config_from_settings(self) -> None:
@@ -122,7 +130,9 @@ class TestPiRPCProvider:
         settings = _settings(
             agent_provider="pi-rpc",
             pi_timeout=90.0,
+            pi_model="local-rpc-model",
             pi_rpc_session_persistence=False,
+            pi_no_context_files=True,
         )
         with patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as MockRuntime:
             MockRuntime.return_value = MagicMock()
@@ -130,13 +140,46 @@ class TestPiRPCProvider:
         call_args = MockRuntime.call_args
         config = call_args[0][0] if call_args[0] else call_args[1].get("config")
         assert config.timeout == 90.0
+        assert config.model == "local-rpc-model"
         assert config.session_persistence is False
+        assert config.no_context_files is True
         assert config.pi_command == "pi"
+
+
+# ---------------------------------------------------------------------------
+# Judge/provider registry parity
+# ---------------------------------------------------------------------------
+
+
+class TestPiRegistryProvider:
+    def test_registry_pi_passes_no_context_files(self) -> None:
+        settings = _settings(
+            judge_provider="pi",
+            pi_model="local-model",
+            pi_no_context_files=True,
+        )
+        provider = get_provider(settings)
+        config = provider._runtime._config  # type: ignore[attr-defined]
+        assert config.model == "local-model"
+        assert config.no_context_files is True
+
+    def test_registry_pi_rpc_passes_model_and_no_context_files(self) -> None:
+        settings = _settings(
+            judge_provider="pi-rpc",
+            judge_model="judge-model",
+            pi_model="local-rpc-model",
+            pi_no_context_files=True,
+        )
+        provider = get_provider(settings)
+        config = provider._runtime._config  # type: ignore[attr-defined]
+        assert config.model == "local-rpc-model"
+        assert config.no_context_files is True
 
 
 # ---------------------------------------------------------------------------
 # Misconfiguration
 # ---------------------------------------------------------------------------
+
 
 class TestPiMisconfiguration:
     def test_unknown_provider_still_raises(self) -> None:

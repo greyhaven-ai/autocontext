@@ -207,19 +207,19 @@ class DeterministicDevClient(LanguageModelClient):
         del max_tokens, temperature, role
         self._rlm_turn_counter += 1
         if self._rlm_turn_counter == 1:
-            text = '<code>\nprint(type(answer))\nprint(answer)\n</code>'
+            text = "<code>\nprint(type(answer))\nprint(answer)\n</code>"
         elif self._rlm_turn_counter == 2:
             text = (
                 "<code>\n"
-                "answer[\"content\"] = (\n"
-                "    \"## Findings\\n\\n\"\n"
-                "    \"- Strategy balances offense/defense.\\n\\n\"\n"
-                "    \"## Root Causes\\n\\n\"\n"
-                "    \"- Moderate aggressiveness.\\n\\n\"\n"
-                "    \"## Actionable Recommendations\\n\\n\"\n"
-                "    \"- Increase defensive weight.\"\n"
+                'answer["content"] = (\n'
+                '    "## Findings\\n\\n"\n'
+                '    "- Strategy balances offense/defense.\\n\\n"\n'
+                '    "## Root Causes\\n\\n"\n'
+                '    "- Moderate aggressiveness.\\n\\n"\n'
+                '    "## Actionable Recommendations\\n\\n"\n'
+                '    "- Increase defensive weight."\n'
                 ")\n"
-                "answer[\"ready\"] = True\n"
+                'answer["ready"] = True\n'
                 "</code>"
             )
         else:
@@ -359,35 +359,44 @@ class DeterministicDevClient(LanguageModelClient):
             "name": "resource_balance",
             "display_name": "Resource Balance",
             "description": (
-                "A resource management scenario where agents balance mining, "
-                "defense, and trade to maximize colony growth."
+                "A resource management scenario where agents balance mining, defense, and trade to maximize colony growth."
             ),
             "strategy_interface_description": (
                 "Return JSON object with keys `mining`, `defense`, and `trade`, all floats in [0,1]. "
                 "Constraint: mining + defense + trade <= 2.0."
             ),
             "evaluation_criteria": (
-                "Optimize colony growth through efficient resource "
-                "allocation across mining, defense, and trade."
+                "Optimize colony growth through efficient resource allocation across mining, defense, and trade."
             ),
             "strategy_params": [
                 {
-                    "name": "mining", "description": "Investment in resource extraction",
-                    "min_value": 0.0, "max_value": 1.0, "default": 0.5,
+                    "name": "mining",
+                    "description": "Investment in resource extraction",
+                    "min_value": 0.0,
+                    "max_value": 1.0,
+                    "default": 0.5,
                 },
                 {
-                    "name": "defense", "description": "Investment in colony protection",
-                    "min_value": 0.0, "max_value": 1.0, "default": 0.4,
+                    "name": "defense",
+                    "description": "Investment in colony protection",
+                    "min_value": 0.0,
+                    "max_value": 1.0,
+                    "default": 0.4,
                 },
                 {
-                    "name": "trade", "description": "Investment in trade routes",
-                    "min_value": 0.0, "max_value": 1.0, "default": 0.5,
+                    "name": "trade",
+                    "description": "Investment in trade routes",
+                    "min_value": 0.0,
+                    "max_value": 1.0,
+                    "default": 0.5,
                 },
             ],
             "constraints": [
                 {
-                    "expression": "mining + defense + trade", "operator": "<=",
-                    "threshold": 2.0, "description": "total allocation must be <= 2.0",
+                    "expression": "mining + defense + trade",
+                    "operator": "<=",
+                    "threshold": 2.0,
+                    "description": "total allocation must be <= 2.0",
                 },
             ],
             "environment_variables": [
@@ -536,8 +545,7 @@ def build_client_from_settings(
         )
         if not api_key:
             raise ValueError(
-                "AUTOCONTEXT_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY is required "
-                "when AUTOCONTEXT_AGENT_PROVIDER=anthropic"
+                "AUTOCONTEXT_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY is required when AUTOCONTEXT_AGENT_PROVIDER=anthropic"
             )
         return AnthropicClient(api_key=api_key)
     if settings.agent_provider == "deterministic":
@@ -618,6 +626,7 @@ def build_client_from_settings(
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             model=resolved_model,
+            no_context_files=settings.pi_no_context_files,
         )
         return RuntimeBridgeClient(PiCLIRuntime(pi_config))
     if settings.agent_provider == "pi-rpc":
@@ -626,8 +635,10 @@ def build_client_from_settings(
 
         rpc_config = PiRPCConfig(
             pi_command=settings.pi_command,
+            model=settings.pi_model,
             timeout=settings.pi_timeout,
             session_persistence=settings.pi_rpc_session_persistence,
+            no_context_files=settings.pi_no_context_files,
         )
         return RuntimeBridgeClient(PiRPCRuntime(rpc_config))
     if settings.agent_provider == "hermes":
