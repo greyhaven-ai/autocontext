@@ -4,11 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.4.1` and are not part of the last published release until the next version is cut.
+Changes in this section are on the branch/repo after `0.4.2` and are not part of the last published release until the next version is cut.
+
+## [0.4.2] - 2026-04-16
 
 ### Fixed
 
+- Preserved TypeScript workflow and custom-scenario semantics across broader scenario generation, including workflow compensation/side-effect metadata and camelCase final score weights.
+- Hardened Python judge, improve, simulate, and list CLI flows around timeout overrides, fresh workspaces, provider overrides, rubric guardrails, and simulation-family routing.
+- Added the Python `autoctx investigate` surface with generation fallbacks and kept its CLI implementation below the repository module-size gate.
 - Restored Python `autoctx queue add --task-prompt ... --rubric ...` compatibility for prompt-backed queued tasks, including direct ad hoc queueing without a saved spec name.
+
+### Changed
+
+- Python and TypeScript package metadata are bumped to `0.4.2`.
 
 ## [0.4.1] - 2026-04-14
 
@@ -190,6 +199,7 @@ Changes in this section are on the branch/repo after `0.4.1` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.4.2]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.1...py-v0.4.2
 [0.4.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.0...py-v0.4.1
 [0.4.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.7...py-v0.4.0
 [0.3.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.6...py-v0.3.7
