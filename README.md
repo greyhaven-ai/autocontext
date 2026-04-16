@@ -9,7 +9,6 @@
 autocontext runs LLM agents through structured scenarios, evaluates their outputs, and accumulates the knowledge that improved results — so repeated runs get better, not just different. Point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
 
 <!-- autocontext-whats-new:start -->
-
 ## What's New
 
 - All 11 scenario families executable in both Python and TypeScript

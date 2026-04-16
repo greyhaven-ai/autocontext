@@ -18,6 +18,8 @@ from rich.console import Console
 from rich.table import Table
 
 from autocontext.agents.orchestrator import AgentOrchestrator
+from autocontext.cli_investigate import run_investigate_command
+from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_runtime_overrides import (
     apply_judge_runtime_overrides,
     format_runtime_provider_error,
@@ -36,7 +38,6 @@ from autocontext.util.json_io import read_json, write_json
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from autocontext.agents.llm_client import LanguageModelClient
     from autocontext.providers.base import LLMProvider
     from autocontext.training.runner import TrainingConfig, TrainingResult
 
@@ -195,62 +196,6 @@ def _is_agent_task(scenario_name: str) -> bool:
     return issubclass(family.interface_class, AgentTaskInterface)
 
 
-def _wrap_role_client_as_provider(
-    client: LanguageModelClient,
-    resolved_model: str,
-    *,
-    role: str,
-) -> tuple[LLMProvider, str]:
-    """Adapt a resolved LanguageModelClient into an LLMProvider-compatible callable.
-
-    This keeps prompt-only workflows like simulate aligned with the same runtime
-    bridge used by role-driven execution without duplicating the generate() glue.
-    """
-    from autocontext.providers.callable_wrapper import CallableProvider
-
-    def _llm_fn(system_prompt: str, user_prompt: str) -> str:
-        response = client.generate(
-            model=resolved_model,
-            prompt=f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt,
-            max_tokens=4096,
-            temperature=0.0,
-            role=role,
-        )
-        return response.text
-
-    return CallableProvider(_llm_fn, model_name=resolved_model), resolved_model
-
-
-def _role_default_model(settings: AppSettings, role: str) -> str:
-    role_models = {
-        "competitor": settings.model_competitor,
-        "analyst": settings.model_analyst,
-        "architect": settings.model_architect,
-        "coach": settings.model_coach,
-        "curator": settings.model_curator,
-        "translator": settings.model_translator,
-    }
-    return role_models.get(role) or settings.agent_default_model
-
-
-def _resolve_role_runtime(
-    settings: AppSettings,
-    *,
-    role: str,
-    scenario_name: str = "",
-) -> tuple[LLMProvider, str]:
-    sqlite = _sqlite_from_settings(settings)
-    artifacts = _artifacts_from_settings(settings)
-    orchestrator = AgentOrchestrator.from_settings(settings, artifacts=artifacts, sqlite=sqlite)
-    client, model = orchestrator.resolve_role_execution(
-        role,
-        generation=1,
-        scenario_name=scenario_name,
-    )
-    resolved_model = model or _role_default_model(settings, role)
-    return _wrap_role_client_as_provider(client, resolved_model, role=role)
-
-
 def _resolve_simulation_runtime(settings: AppSettings) -> tuple[LLMProvider, str]:
     """Resolve the architect-style runtime used for simulation spec generation.
 
@@ -260,16 +205,27 @@ def _resolve_simulation_runtime(settings: AppSettings) -> tuple[LLMProvider, str
     return _resolve_role_runtime(settings, role="architect")
 
 
+def _resolve_role_runtime(
+    settings: AppSettings,
+    *,
+    role: str,
+    scenario_name: str = "",
+) -> tuple[LLMProvider, str]:
+    return resolve_role_runtime(
+        settings,
+        role=role,
+        scenario_name=scenario_name,
+        sqlite=_sqlite_from_settings(settings),
+        artifacts=_artifacts_from_settings(settings),
+        orchestrator_cls=AgentOrchestrator,
+    )
+
+
 def _resolve_investigation_runtime(
     settings: AppSettings,
     *,
     role: str,
 ) -> tuple[LLMProvider, str]:
-    """Resolve investigation runtimes through role routing.
-
-    Investigation spec synthesis is an architect-style authoring task, while
-    hypothesis generation is an analyst-style interpretation task.
-    """
     return _resolve_role_runtime(settings, role=role)
 
 
@@ -1266,72 +1222,19 @@ def investigate(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     """Run a plain-language investigation with evidence and hypotheses."""
-    from autocontext.investigation.engine import InvestigationEngine, InvestigationRequest
-
-    if not description:
-        message = "--description is required. Run 'autoctx investigate --help' for usage."
-        if json_output:
-            _write_json_stderr(message)
-        else:
-            console.print(f"[red]{message}[/red]")
-        raise typer.Exit(code=1)
-
-    settings = load_settings()
-    spec_provider, spec_model = _resolve_investigation_runtime(settings, role="architect")
-    analysis_provider, analysis_model = _resolve_investigation_runtime(settings, role="analyst")
-
-    def _spec_llm_fn(system: str, user: str) -> str:
-        result = spec_provider.complete(system, user, model=spec_model)
-        return result.text
-
-    def _analysis_llm_fn(system: str, user: str) -> str:
-        result = analysis_provider.complete(system, user, model=analysis_model)
-        return result.text
-
-    engine = InvestigationEngine(
-        spec_llm_fn=_spec_llm_fn,
-        analysis_llm_fn=_analysis_llm_fn,
-        knowledge_root=settings.knowledge_root,
+    run_investigate_command(
+        description=description,
+        max_steps=max_steps,
+        hypotheses=hypotheses,
+        save_as=save_as,
+        json_output=json_output,
+        console=console,
+        load_settings_fn=load_settings,
+        resolve_investigation_runtime=_resolve_investigation_runtime,
+        write_json_stdout=_write_json_stdout,
+        write_json_stderr=_write_json_stderr,
+        check_json_exit=_check_json_exit,
     )
-    result = engine.run(
-        InvestigationRequest(
-            description=description,
-            max_steps=max_steps,
-            max_hypotheses=hypotheses,
-            save_as=save_as or None,
-        )
-    )
-    payload = result.to_dict()
-
-    if json_output:
-        _write_json_stdout(payload)
-        _check_json_exit(payload)
-        return
-
-    if result.status == "failed":
-        console.print(f"[red]Investigation failed:[/red] {result.error or 'unknown error'}")
-        raise typer.Exit(code=1)
-
-    console.print(f"[bold]Investigation:[/bold] {result.name}")
-    console.print(f"Question: {result.question}")
-    console.print("\n[dim]Hypotheses:[/dim]")
-    for hypothesis in result.hypotheses:
-        icon = "✓" if hypothesis.status == "supported" else "✗" if hypothesis.status == "contradicted" else "?"
-        console.print(
-            f"  {icon} {hypothesis.statement} "
-            f"(confidence: {hypothesis.confidence:.2f}, {hypothesis.status})"
-        )
-    console.print(f"\nConclusion: {result.conclusion.best_explanation}")
-    console.print(f"Confidence: {result.conclusion.confidence:.2f}")
-    if result.unknowns:
-        console.print("\n[dim]Unknowns:[/dim]")
-        for unknown in result.unknowns:
-            console.print(f"  - {unknown}")
-    if result.recommended_next_steps:
-        console.print("\n[dim]Next steps:[/dim]")
-        for step in result.recommended_next_steps:
-            console.print(f"  → {step}")
-    console.print(f"\nArtifacts: {result.artifacts.investigation_dir}")
 
 
 @app.command()
