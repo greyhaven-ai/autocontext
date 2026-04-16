@@ -635,6 +635,7 @@ def build_client_from_settings(
 
         rpc_config = PiRPCConfig(
             pi_command=settings.pi_command,
+            model=settings.pi_model,
             timeout=settings.pi_timeout,
             session_persistence=settings.pi_rpc_session_persistence,
             no_context_files=settings.pi_no_context_files,

@@ -277,16 +277,17 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
   }
 
   if (type === "pi-rpc") {
+    const resolvedModel = opts.model ?? opts.piModel;
     const runtime = new PiRPCRuntime(
       new PiRPCConfig({
         piCommand: opts.piCommand,
-        model: opts.model,
+        model: resolvedModel,
         timeout: opts.piTimeout,
         sessionPersistence: opts.piRpcSessionPersistence,
         noContextFiles: opts.piNoContextFiles,
       }),
     );
-    return new RuntimeBridgeProvider(runtime as never, opts.model ?? "pi-rpc-default");
+    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "pi-rpc-default");
   }
 
   const compat = OPENAI_COMPATIBLE_PROVIDER_DEFAULTS[type];

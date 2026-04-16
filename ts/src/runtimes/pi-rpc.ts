@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import type { AgentOutput } from "./base.js";
 
 export interface PiRPCConfigOpts {
@@ -52,43 +52,7 @@ export class PiRPCRuntime {
     const args = this.buildArgs();
     const input = `${JSON.stringify(this.buildPromptCommand(fullPrompt))}\n`;
 
-    try {
-      const stdout = execFileSync(this.config.piCommand, args, {
-        input,
-        timeout: this.config.timeout * 1000,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      return this.parseOutput(stdout, 0, "");
-    } catch (err: unknown) {
-      const error = err as {
-        code?: string;
-        status?: number;
-        stdout?: string | Buffer;
-        stderr?: string | Buffer;
-        message?: string;
-      };
-      if (error.code === "ETIMEDOUT") {
-        return { text: "", metadata: { error: "timeout" } };
-      }
-      if (error.code === "ENOENT") {
-        return { text: "", metadata: { error: "pi_not_found" } };
-      }
-
-      const stdout = this.normalizeOutput(error.stdout);
-      const stderr = this.normalizeOutput(error.stderr);
-      if (stdout.trim()) {
-        return this.parseOutput(stdout, error.status ?? 1, stderr);
-      }
-      return {
-        text: "",
-        metadata: {
-          error: "nonzero_exit",
-          exitCode: error.status ?? 1,
-          stderr: stderr || error.message || "unknown",
-        },
-      };
-    }
+    return this.invokeRpc(args, input);
   }
 
   async revise(opts: {
@@ -130,6 +94,96 @@ export class PiRPCRuntime {
     };
   }
 
+  private invokeRpc(args: string[], input: string): Promise<AgentOutput> {
+    return new Promise((resolve) => {
+      const child = spawn(this.config.piCommand, args, {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      let stdoutBuffer = "";
+      let settled = false;
+
+      const cleanupTimer = (): NodeJS.Timeout =>
+        setTimeout(() => {
+          if (!child.killed && child.exitCode === null) {
+            child.kill();
+          }
+        }, 1_000);
+
+      const finish = (output: AgentOutput, endStdin = true): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (endStdin && child.stdin.writable && !child.stdin.destroyed) {
+          child.stdin.end();
+        }
+        cleanupTimer().unref();
+        resolve(output);
+      };
+
+      const timeout = setTimeout(() => {
+        if (!child.killed) {
+          child.kill();
+        }
+        finish({ text: "", metadata: { error: "timeout" } }, false);
+      }, this.config.timeout * 1000);
+
+      child.stdout.setEncoding("utf-8");
+      child.stderr.setEncoding("utf-8");
+
+      child.stdout.on("data", (chunk: string | Buffer) => {
+        stdoutBuffer += this.normalizeOutput(chunk);
+        let newlineIndex = stdoutBuffer.indexOf("\n");
+        while (newlineIndex >= 0) {
+          const line = stdoutBuffer.slice(0, newlineIndex);
+          stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+          stdout += `${line}\n`;
+          if (this.isTerminalRpcEvent(line)) {
+            finish(this.parseOutput(stdout, 0, stderr));
+            return;
+          }
+          newlineIndex = stdoutBuffer.indexOf("\n");
+        }
+      });
+
+      child.stderr.on("data", (chunk: string | Buffer) => {
+        stderr += this.normalizeOutput(chunk);
+      });
+
+      child.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "ENOENT") {
+          finish({ text: "", metadata: { error: "pi_not_found" } }, false);
+          return;
+        }
+        finish({ text: "", metadata: { error: err.message || "unknown" } }, false);
+      });
+
+      child.on("close", (code) => {
+        if (stdoutBuffer) {
+          stdout += stdoutBuffer;
+          stdoutBuffer = "";
+        }
+        finish(this.parseOutput(stdout, code ?? 1, stderr), false);
+      });
+
+      child.stdin.write(input);
+    });
+  }
+
+  private isTerminalRpcEvent(record: string): boolean {
+    try {
+      const event = JSON.parse(record) as {
+        type?: string;
+        success?: boolean;
+      };
+      if (event.type === "agent_end") return true;
+      return event.type === "response" && event.success === false;
+    } catch {
+      return false;
+    }
+  }
+
   private parseOutput(raw: string, exitCode: number, stderr: string): AgentOutput {
     const trimmed = raw.trim();
     if (!trimmed) {
@@ -146,6 +200,7 @@ export class PiRPCRuntime {
     }
 
     const textParts: string[] = [];
+    let sawJsonEvent = false;
 
     for (const line of trimmed.split("\n")) {
       const record = line.trim();
@@ -163,6 +218,7 @@ export class PiRPCRuntime {
           session_id?: unknown;
           sessionId?: unknown;
         };
+        sawJsonEvent = true;
         this.updateSessionId(event);
 
         if (event.type === "response") {
@@ -179,27 +235,28 @@ export class PiRPCRuntime {
             };
           }
 
-          if (typeof event.data?.content === "string" && event.data.content) {
-            textParts.push(event.data.content);
+          const content = this.extractTextContent(event.data?.content);
+          if (content) {
+            textParts.push(content);
           }
           continue;
         }
 
         if (event.type === "message_end") {
-          if (typeof event.message?.content === "string" && event.message.content) {
-            textParts.push(event.message.content);
+          const content = this.extractTextContent(event.message?.content);
+          if (content) {
+            textParts.push(content);
           }
           continue;
         }
 
         if (event.type === "agent_end") {
           for (const message of event.messages ?? []) {
-            if (
-              message.role === "assistant" &&
-              typeof message.content === "string" &&
-              message.content
-            ) {
-              textParts.push(message.content);
+            if (message.role === "assistant") {
+              const content = this.extractTextContent(message.content);
+              if (content) {
+                textParts.push(content);
+              }
             }
           }
         }
@@ -231,7 +288,16 @@ export class PiRPCRuntime {
     }
 
     return exitCode === 0
-      ? { text: trimmed, metadata: { exitCode } }
+      ? sawJsonEvent
+        ? {
+            text: "",
+            metadata: {
+              error: "missing_assistant_response",
+              exitCode,
+              stdout: trimmed,
+            },
+          }
+        : { text: trimmed, metadata: { exitCode } }
       : {
           text: "",
           metadata: {
@@ -241,6 +307,25 @@ export class PiRPCRuntime {
             stdout: trimmed,
           },
         };
+  }
+
+  private extractTextContent(content: unknown): string {
+    if (typeof content === "string") {
+      return content;
+    }
+    if (!Array.isArray(content)) {
+      return "";
+    }
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (!part || typeof part !== "object") return "";
+        if ("text" in part && typeof part.text === "string") return part.text;
+        if ("content" in part && typeof part.content === "string") return part.content;
+        return "";
+      })
+      .filter(Boolean)
+      .join("");
   }
 
   private updateSessionId(event: {

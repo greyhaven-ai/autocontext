@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
 import shutil
 import subprocess
+import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -90,6 +93,49 @@ class PiRPCRuntime(AgentRuntime):
             metadata["stdout"] = stdout[:500]
         return AgentOutput(text="", metadata=metadata)
 
+    def _read_stream(self, stream: Any, sink: queue.Queue[str | None]) -> None:
+        try:
+            for line in stream:
+                sink.put(line)
+        finally:
+            sink.put(None)
+
+    def _drain_queue(self, source: queue.Queue[str | None], lines: list[str]) -> None:
+        while True:
+            try:
+                line = source.get_nowait()
+            except queue.Empty:
+                return
+            if line is not None:
+                lines.append(line)
+
+    def _is_terminal_rpc_event(self, line: str) -> bool:
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            return False
+        if not isinstance(event, dict):
+            return False
+        if event.get("type") == "agent_end":
+            return True
+        return event.get("type") == "response" and event.get("success") is False
+
+    def _shutdown_process(self, process: subprocess.Popen[str]) -> None:
+        if process.stdin and not process.stdin.closed:
+            try:
+                process.stdin.close()
+            except OSError:
+                logger.debug("runtimes.pi_rpc: suppressed stdin close error", exc_info=True)
+        try:
+            process.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1.0)
+
     def generate(
         self,
         prompt: str,
@@ -104,35 +150,87 @@ class PiRPCRuntime(AgentRuntime):
         command = self._build_prompt_command(full_prompt)
 
         args = self._build_args()
+        stdout_queue: queue.Queue[str | None] = queue.Queue()
+        stderr_queue: queue.Queue[str | None] = queue.Queue()
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+        process: subprocess.Popen[str] | None = None
         try:
-            # Send the prompt command as JSONL on stdin, read response on stdout
+            # Keep stdin open after the prompt ack so Pi can stream the agent result.
             input_line = json.dumps(command) + "\n"
-            result = subprocess.run(
+            process = subprocess.Popen(
                 args,
-                input=input_line,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=self._config.timeout,
             )
+            if process.stdin is None or process.stdout is None or process.stderr is None:
+                return AgentOutput(text="", metadata={"error": "pi_rpc_pipe_unavailable"})
+
+            threading.Thread(target=self._read_stream, args=(process.stdout, stdout_queue), daemon=True).start()
+            threading.Thread(target=self._read_stream, args=(process.stderr, stderr_queue), daemon=True).start()
+
+            process.stdin.write(input_line)
+            process.stdin.flush()
+
+            deadline = time.monotonic() + self._config.timeout
+            saw_stdout_eof = False
+            terminal_seen = False
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(args, self._config.timeout)
+
+                try:
+                    line = stdout_queue.get(timeout=min(0.1, remaining))
+                except queue.Empty:
+                    self._drain_queue(stderr_queue, stderr_lines)
+                    if process.poll() is not None and saw_stdout_eof:
+                        break
+                    continue
+
+                if line is None:
+                    saw_stdout_eof = True
+                    if process.poll() is not None:
+                        break
+                    continue
+
+                stdout_lines.append(line)
+                if self._is_terminal_rpc_event(line):
+                    terminal_seen = True
+                    break
+
+            self._drain_queue(stderr_queue, stderr_lines)
+            if terminal_seen:
+                self._shutdown_process(process)
+            else:
+                process.wait(timeout=1.0)
         except subprocess.TimeoutExpired:
             logger.error("pi RPC timed out after %.0fs", self._config.timeout)
+            if process is not None:
+                process.kill()
+                process.wait(timeout=1.0)
             return AgentOutput(text="", metadata={"error": "timeout"})
         except FileNotFoundError:
             logger.error("pi CLI not found at %r", self._config.pi_command)
             return AgentOutput(text="", metadata={"error": "pi_not_found"})
 
-        if result.returncode != 0 and not result.stdout.strip():
-            logger.warning("pi RPC exited with code %d: %s", result.returncode, result.stderr[:200])
-            return self._nonzero_exit_output(result.returncode, result.stderr)
+        stdout = "".join(stdout_lines)
+        stderr = "".join(stderr_lines)
+        returncode = process.returncode if process is not None and process.returncode is not None else 0
+        if returncode != 0 and not stdout.strip():
+            logger.warning("pi RPC exited with code %d: %s", returncode, stderr[:200])
+            return self._nonzero_exit_output(returncode, stderr)
 
         output = self._parse_rpc_output(
-            result.stdout,
-            exit_code=result.returncode,
-            stderr=result.stderr,
+            stdout,
+            exit_code=returncode,
+            stderr=stderr,
         )
-        if result.returncode != 0 and not output.metadata.get("error"):
-            logger.warning("pi RPC exited with code %d: %s", result.returncode, result.stderr[:200])
-            return self._nonzero_exit_output(result.returncode, result.stderr, result.stdout)
+        if returncode != 0 and not output.metadata.get("error"):
+            logger.warning("pi RPC exited with code %d: %s", returncode, stderr[:200])
+            return self._nonzero_exit_output(returncode, stderr, stdout)
         return output
 
     def revise(
@@ -164,6 +262,7 @@ class PiRPCRuntime(AgentRuntime):
         Falls back to the last non-empty line if no structured events found.
         """
         text_parts: list[str] = []
+        saw_json_event = False
 
         for line in raw.strip().split("\n"):
             line = line.strip()
@@ -171,6 +270,7 @@ class PiRPCRuntime(AgentRuntime):
                 continue
             try:
                 event = json.loads(line)
+                saw_json_event = True
                 event_type = event.get("type", "")
 
                 # Collect assistant text from message_end or response events
@@ -216,4 +316,13 @@ class PiRPCRuntime(AgentRuntime):
 
         if exit_code != 0:
             return self._nonzero_exit_output(exit_code, stderr, raw.strip())
+        if saw_json_event:
+            return AgentOutput(
+                text="",
+                metadata={
+                    "error": "missing_assistant_response",
+                    "exit_code": exit_code,
+                    "stdout": raw.strip()[:500],
+                },
+            )
         return AgentOutput(text=raw.strip(), metadata={"exit_code": exit_code})

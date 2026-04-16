@@ -14,6 +14,7 @@ import pytest
 
 from autocontext.agents.llm_client import build_client_from_settings
 from autocontext.config.settings import AppSettings
+from autocontext.providers.registry import get_provider
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -129,6 +130,7 @@ class TestPiRPCProvider:
         settings = _settings(
             agent_provider="pi-rpc",
             pi_timeout=90.0,
+            pi_model="local-rpc-model",
             pi_rpc_session_persistence=False,
             pi_no_context_files=True,
         )
@@ -138,9 +140,40 @@ class TestPiRPCProvider:
         call_args = MockRuntime.call_args
         config = call_args[0][0] if call_args[0] else call_args[1].get("config")
         assert config.timeout == 90.0
+        assert config.model == "local-rpc-model"
         assert config.session_persistence is False
         assert config.no_context_files is True
         assert config.pi_command == "pi"
+
+
+# ---------------------------------------------------------------------------
+# Judge/provider registry parity
+# ---------------------------------------------------------------------------
+
+
+class TestPiRegistryProvider:
+    def test_registry_pi_passes_no_context_files(self) -> None:
+        settings = _settings(
+            judge_provider="pi",
+            pi_model="local-model",
+            pi_no_context_files=True,
+        )
+        provider = get_provider(settings)
+        config = provider._runtime._config  # type: ignore[attr-defined]
+        assert config.model == "local-model"
+        assert config.no_context_files is True
+
+    def test_registry_pi_rpc_passes_model_and_no_context_files(self) -> None:
+        settings = _settings(
+            judge_provider="pi-rpc",
+            judge_model="judge-model",
+            pi_model="local-rpc-model",
+            pi_no_context_files=True,
+        )
+        provider = get_provider(settings)
+        config = provider._runtime._config  # type: ignore[attr-defined]
+        assert config.model == "local-rpc-model"
+        assert config.no_context_files is True
 
 
 # ---------------------------------------------------------------------------
