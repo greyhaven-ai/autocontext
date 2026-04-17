@@ -83,6 +83,7 @@ autoctx train --scenario support_triage --dataset data.jsonl --backend cuda
 # Evaluation
 autoctx judge -p <prompt> -o <output> -r <rubric>
 autoctx judge --scenario my_saved_task -o <output>
+autoctx improve -p <prompt> -r <rubric> [-n rounds]
 autoctx improve -p <prompt> -o <output> -r <rubric> [-n rounds]
 autoctx improve --scenario my_saved_task [-o <output>]
 autoctx repl --scenario my_saved_task

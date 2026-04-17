@@ -5,7 +5,7 @@ Usage: autoctx improve [options]
 Options:
   -s, --scenario <name>   Use a saved custom scenario (provides prompt + rubric)
   -p, --prompt <text>     Task prompt
-  -o, --output <text>     Initial agent output to improve
+  -o, --output <text>     Initial agent output to improve (optional; generated if omitted)
   -r, --rubric <text>     Evaluation rubric/criteria
   -n, --rounds N          Maximum improvement rounds (default: 5)
   -t, --threshold N       Quality threshold to stop early (default: 0.9)
@@ -17,8 +17,9 @@ Options:
 Provide either --scenario or both --prompt and --rubric.
 
 Examples:
+  autoctx improve -p "Write a summary" -r "Score clarity" -n 3
   autoctx improve -p "Write a summary" -o "Draft here" -r "Score clarity" -n 3
-  autoctx improve -s my_task -o "Initial draft" --threshold 0.95
+  autoctx improve -s my_task --threshold 0.95
 
 See also: judge, queue, run`;
 
@@ -91,10 +92,7 @@ export function getImproveUsageExitCode(
   values: Pick<ImproveCommandValues, "help" | "scenario" | "prompt" | "rubric" | "output" | "rlm">,
 ): 0 | 1 | null {
   if (values.help) return 0;
-  if (
-    (!values.scenario && (!values.prompt || !values.rubric)) ||
-    (!values.output && !values.rlm && !values.scenario)
-  ) {
+  if (!values.scenario && (!values.prompt || !values.rubric)) {
     return 1;
   }
   return null;
@@ -131,9 +129,7 @@ export function planImproveCommand(
     rlmConfig: {
       enabled: values.rlm ?? false,
       model: values["rlm-model"],
-      ...(values["rlm-turns"]
-        ? { maxTurns: Number.parseInt(values["rlm-turns"], 10) }
-        : {}),
+      ...(values["rlm-turns"] ? { maxTurns: Number.parseInt(values["rlm-turns"], 10) } : {}),
       ...(values["rlm-max-tokens"]
         ? { maxTokensPerTurn: Number.parseInt(values["rlm-max-tokens"], 10) }
         : {}),
@@ -155,7 +151,10 @@ export function planImproveCommand(
 
 export async function executeImproveCommandWorkflow<
   TTask extends {
-    generateOutput(args: { referenceContext?: string; requiredConcepts?: string[] }): Promise<string>;
+    generateOutput(args: {
+      referenceContext?: string;
+      requiredConcepts?: string[];
+    }): Promise<string>;
     getRlmSessions(): unknown[];
   },
   TLoop extends {
@@ -236,9 +235,7 @@ export function renderImproveResult(
           score: round.score,
           dimensionScores: round.dimensionScores,
           reasoning:
-            round.reasoning.length > 200
-              ? `${round.reasoning.slice(0, 200)}...`
-              : round.reasoning,
+            round.reasoning.length > 200 ? `${round.reasoning.slice(0, 200)}...` : round.reasoning,
           isRevision: round.isRevision,
           judgeFailed: round.judgeFailed,
         }),

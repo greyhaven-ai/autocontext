@@ -40,6 +40,19 @@ describe("improve command workflow", () => {
     ).toBe(1);
   });
 
+  it("accepts prompt and rubric without requiring an initial output", () => {
+    expect(
+      getImproveUsageExitCode({
+        help: false,
+        scenario: undefined,
+        prompt: "Write a haiku about distributed systems",
+        rubric: "Score syllable accuracy and relevance",
+        output: undefined,
+        rlm: false,
+      }),
+    ).toBeNull();
+  });
+
   it("plans improve command inputs from saved scenario defaults", () => {
     const parsePositiveInteger = vi.fn((raw: string) => Number.parseInt(raw, 10));
     expect(

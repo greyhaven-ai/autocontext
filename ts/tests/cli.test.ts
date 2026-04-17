@@ -4,12 +4,15 @@ import { join } from "node:path";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli", "index.ts");
 
-function runCli(args: string[]): { stdout: string; exitCode: number } {
+function runCli(
+  args: string[],
+  envOverrides: Record<string, string> = {},
+): { stdout: string; exitCode: number } {
   try {
     const stdout = execFileSync("npx", ["tsx", CLI, ...args], {
       encoding: "utf8",
       timeout: 5000,
-      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      env: { ...process.env, NODE_NO_WARNINGS: "1", ...envOverrides },
     });
     return { stdout, exitCode: 0 };
   } catch (err: unknown) {
@@ -63,6 +66,28 @@ describe("CLI", () => {
   it("improve requires args", () => {
     const { exitCode } = runCli(["improve"]);
     expect(exitCode).toBe(1);
+  });
+
+  it("improve generates an initial draft when prompt and rubric are provided without output", () => {
+    const { stdout, exitCode } = runCli(
+      [
+        "improve",
+        "-p",
+        "Write a haiku about distributed systems",
+        "-r",
+        "Score syllable_accuracy_5_7_5, technical_relevance, and imagery_creativity 0-1 each.",
+        "-n",
+        "2",
+        "-t",
+        "0.8",
+      ],
+      { AUTOCONTEXT_AGENT_PROVIDER: "deterministic" },
+    );
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({
+      bestOutput: expect.any(String),
+      totalRounds: expect.any(Number),
+    });
   });
 
   it("queue --help shows RLM flags", () => {
