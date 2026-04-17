@@ -220,7 +220,10 @@ class AgentTaskPipeline(FamilyPipeline):
         return {"task_prompt", "judge_rubric"}
 
     def validate_spec(self, spec: dict[str, Any]) -> list[str]:
-        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.agent_task_spec import (
+            AgentTaskSpec,
+            normalize_agent_task_runtime_fields,
+        )
         from autocontext.scenarios.custom.agent_task_validator import validate_spec
 
         errors = _check_required_fields(spec, self.required_spec_fields())
@@ -228,7 +231,7 @@ class AgentTaskPipeline(FamilyPipeline):
             return errors
 
         try:
-            spec_obj = AgentTaskSpec(**spec)
+            spec_obj = normalize_agent_task_runtime_fields(AgentTaskSpec(**spec))
         except TypeError as exc:
             return [f"invalid agent_task spec: {exc}"]
         return validate_spec(spec_obj)

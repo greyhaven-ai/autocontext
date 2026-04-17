@@ -25,6 +25,7 @@ from autocontext.scenarios.custom.artifact_editing_designer import (
     ARTIFACT_SPEC_END,
     ARTIFACT_SPEC_START,
 )
+from autocontext.scenarios.custom.family_pipeline import validate_for_family
 from autocontext.scenarios.custom.investigation_designer import (
     INVESTIGATION_SPEC_END,
     INVESTIGATION_SPEC_START,
@@ -372,6 +373,20 @@ class TestValidateSpec:
             reference_sources=["https://example.com/docs"],
         )
         errors = validate_spec(spec)
+        assert errors == []
+
+    def test_family_pipeline_normalizes_structured_runtime_fields(self) -> None:
+        errors = validate_for_family(
+            "agent_task",
+            {
+                "task_prompt": "Summarize the prepared evidence.",
+                "judge_rubric": "Evaluate completeness and grounding.",
+                "reference_context": {"facts": ["alpha", "beta"]},
+                "context_preparation": {"steps": ["load evidence"]},
+                "revision_prompt": ["Add missing facts"],
+                "sample_input": {"case_id": "case-123"},
+            },
+        )
         assert errors == []
 
     def test_empty_judge_model_is_valid(self) -> None:
