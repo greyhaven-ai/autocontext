@@ -11,11 +11,11 @@ autocontext runs LLM agents through structured scenarios, evaluates their output
 <!-- autocontext-whats-new:start -->
 ## What's New
 
-- All 11 scenario families executable in both Python and TypeScript
-- TypeScript campaign CLI, API, and MCP surfaces shipped for multi-mission coordination
-- Provider expansion: Gemini, Mistral, Groq, OpenRouter, and Azure OpenAI
-- Evidence and privacy hardening with TruffleHog integration and redaction
-- Session-runtime parity across Python and TypeScript surfaces
+- Pi RPC and solve runtime budgets hardened for longer live-agent runs
+- Custom scenario registry diagnostics and spec-to-scenario auto-materialization
+- Structured agent-task JSON payloads now validate and render safely
+- TypeScript new-scenario and improve fallbacks preserve family semantics
+- Generated scenario solve/export paths keep family-specific signals intact
 <!-- autocontext-whats-new:end -->
 
 ## What actually is autocontext?
@@ -211,7 +211,7 @@ The repo publishes two installable packages with different scopes:
 
 - Python package: `pip install autocontext`
 - TypeScript package: `npm install autoctx`
-- Current release line: `autocontext==0.4.2` and `autoctx@0.4.2`
+- Current release line: `autocontext==0.4.3` and `autoctx@0.4.3`
 
 Important:
 

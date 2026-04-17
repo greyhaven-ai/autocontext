@@ -1,6 +1,6 @@
 import type { ScenarioFamilyName } from "./families.js";
 
-const SUPPORTED_MATERIALIZE_FAMILIES: ScenarioFamilyName[] = [
+const SUPPORTED_MATERIALIZE_FAMILIES = [
   "game",
   "agent_task",
   "simulation",
@@ -12,11 +12,16 @@ const SUPPORTED_MATERIALIZE_FAMILIES: ScenarioFamilyName[] = [
   "tool_fragility",
   "operator_loop",
   "coordination",
-];
+] satisfies readonly ScenarioFamilyName[];
+
+function isSupportedMaterializeFamily(family: string): family is ScenarioFamilyName {
+  const supportedFamilies: readonly string[] = SUPPORTED_MATERIALIZE_FAMILIES;
+  return supportedFamilies.includes(family);
+}
 
 export function coerceMaterializeFamily(family: string): ScenarioFamilyName {
-  if (SUPPORTED_MATERIALIZE_FAMILIES.includes(family as ScenarioFamilyName)) {
-    return family as ScenarioFamilyName;
+  if (isSupportedMaterializeFamily(family)) {
+    return family;
   }
   return "agent_task";
 }

@@ -4,7 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.4.2` and are not part of the last published release until the next version is cut.
+Changes in this section are on the branch/repo after `0.4.3` and are not part of the last published release until the next version is cut.
+
+## [0.4.3] - 2026-04-17
+
+### Fixed
+
+- Hardened Pi-backed solve/runtime execution so Pi RPC waits for assistant completion, honors model/context-file options consistently, and solve runs enforce timeout budgets.
+- Preserved generated-scenario family behavior across solve, export, TypeScript `new-scenario`, and `improve` flows, including empty-action family specs and improve calls without an initial output.
+- Made custom scenario loading resilient and diagnosable: malformed specs no longer block registry discovery, spec-only directories surface actionable diagnostics, import-time missing files keep their real reason, and non-agent family specs can auto-materialize Python `scenario.py` sources.
+- Normalized structured agent-task prompt payloads before validation and code generation, so JSON-like sample inputs, reference context, preparation instructions, and revision prompts no longer crash generated runtimes.
+
+### Changed
+
+- Python and TypeScript package metadata are bumped to `0.4.3`.
 
 ## [0.4.2] - 2026-04-16
 
@@ -199,6 +212,7 @@ Changes in this section are on the branch/repo after `0.4.2` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.4.3]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.2...py-v0.4.3
 [0.4.2]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.1...py-v0.4.2
 [0.4.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.0...py-v0.4.1
 [0.4.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.3.7...py-v0.4.0

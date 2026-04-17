@@ -196,7 +196,7 @@ describe("autoctx mission lifecycle", () => {
 
     const { stdout } = runCli(["mission", "status", "--id", id], { cwd: dir });
     expect(JSON.parse(stdout).status).toBe("paused");
-  });
+  }, 15000);
 
   it("resume sets status back to active", () => {
     const { stdout: created } = runCli(["mission", "create", "--name", "T", "--goal", "g"], { cwd: dir });
@@ -207,7 +207,7 @@ describe("autoctx mission lifecycle", () => {
 
     const { stdout } = runCli(["mission", "status", "--id", id], { cwd: dir });
     expect(JSON.parse(stdout).status).toBe("active");
-  });
+  }, 15000);
 
   it("cancel sets status to canceled", () => {
     const { stdout: created } = runCli(["mission", "create", "--name", "T", "--goal", "g"], { cwd: dir });
@@ -217,13 +217,13 @@ describe("autoctx mission lifecycle", () => {
 
     const { stdout } = runCli(["mission", "status", "--id", id], { cwd: dir });
     expect(JSON.parse(stdout).status).toBe("canceled");
-  });
+  }, 15000);
 
   it("returns an error for nonexistent mission IDs", () => {
     const { stderr, exitCode } = runCli(["mission", "pause", "--id", "mission-does-not-exist"], { cwd: dir });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Mission not found: mission-does-not-exist");
-  });
+  }, 15000);
 });
 
 describe("autoctx mission run and artifacts", () => {

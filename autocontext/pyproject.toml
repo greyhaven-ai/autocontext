@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autocontext"
-version = "0.4.2"
+version = "0.4.3"
 description = "autocontext control plane for iterative strategy evolution."
 readme = "README.md"
 license = { text = "Apache-2.0" }
