@@ -4,6 +4,8 @@ import importlib.util
 import json
 import logging
 import sys
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,29 @@ from autocontext.scenarios.families import detect_family, get_family_by_marker
 logger = logging.getLogger(__name__)
 
 CUSTOM_SCENARIOS_DIR = "_custom_scenarios"
+
+
+@dataclass(frozen=True, slots=True)
+class ScenarioLoadError:
+    """A single custom-scenario directory that could not be loaded.
+
+    Part of the AC-563 domain model. Emitted by
+    :func:`load_custom_scenarios_detailed` so callers can surface skipped
+    scenarios in a UI without parsing stderr.
+    """
+
+    name: str
+    spec_path: Path
+    reason: str
+    marker: str
+
+
+@dataclass(frozen=True, slots=True)
+class ScenarioRegistryLoadResult:
+    """Aggregate result of attempting to load all custom scenarios."""
+
+    loaded: Mapping[str, type[Any]]
+    skipped: tuple[ScenarioLoadError, ...]
 
 
 def _load_agent_task_class(custom_dir: Path, name: str) -> type[Any]:
@@ -103,12 +128,46 @@ def _load_family_class(custom_dir: Path, name: str, marker: str) -> type[Any]:
     return cls
 
 
-def load_all_custom_scenarios(knowledge_root: Path) -> dict[str, type[Any]]:
+def _summarize_load_failure(exc: BaseException, marker: str) -> str:
+    """Render a single-line, user-friendly reason string for a load failure.
+
+    Best-effort: never raises. Falls back to ``str(exc)`` if rendering fails.
+    """
+    try:
+        from pydantic import ValidationError
+
+        if isinstance(exc, ValidationError):
+            errors = exc.errors()
+            if errors:
+                first = errors[0]
+                loc = ".".join(str(part) for part in first.get("loc", ()))
+                msg = first.get("msg", "invalid")
+                return f"spec.json validation failed: {loc}: {msg}"
+            return "spec.json validation failed"
+        if isinstance(exc, KeyError):
+            return f"unknown scenario_type marker {marker!r}"
+        text = str(exc) or exc.__class__.__name__
+        return text.splitlines()[0][:200]
+    except Exception:
+        return exc.__class__.__name__
+
+
+def load_custom_scenarios_detailed(knowledge_root: Path) -> ScenarioRegistryLoadResult:
+    """Load all custom scenarios under ``knowledge_root``.
+
+    Returns both successfully-loaded scenarios and a tuple of
+    :class:`ScenarioLoadError` for any directory that could not be loaded.
+
+    Malformed directories never prevent other scenarios from loading, and
+    never emit a traceback at WARNING level. The full traceback is available
+    at DEBUG level for forensics.
+    """
     custom_dir = knowledge_root / CUSTOM_SCENARIOS_DIR
     if not custom_dir.is_dir():
-        return {}
+        return ScenarioRegistryLoadResult(loaded={}, skipped=())
 
     loaded: dict[str, type[Any]] = {}
+    skipped: list[ScenarioLoadError] = []
     for entry in sorted(custom_dir.iterdir()):
         if not entry.is_dir():
             continue
@@ -119,10 +178,39 @@ def load_all_custom_scenarios(knowledge_root: Path) -> dict[str, type[Any]]:
             cls = _load_family_class(custom_dir, name, marker)
             loaded[name] = cls
         except FileNotFoundError:
+            # Spec-only directories without compiled source are Failure B
+            # territory (AC-563). Preserve today's silent-skip behavior here.
             continue
-        except KeyError:
-            logger.warning("failed to load custom scenario '%s': unknown marker '%s'", name, marker)
-        except Exception:
-            logger.warning("failed to load custom scenario '%s'", name, exc_info=True)
+        except Exception as exc:
+            spec_path = entry / "spec.json"
+            reason = _summarize_load_failure(exc, marker)
+            skipped.append(
+                ScenarioLoadError(
+                    name=name,
+                    spec_path=spec_path,
+                    reason=reason,
+                    marker=marker,
+                )
+            )
+            logger.warning(
+                "custom scenario %r skipped (%s): %s",
+                name,
+                spec_path,
+                reason,
+            )
+            logger.debug(
+                "custom scenario %r skipped (%s): full traceback",
+                name,
+                spec_path,
+                exc_info=True,
+            )
 
-    return loaded
+    return ScenarioRegistryLoadResult(
+        loaded=loaded,
+        skipped=tuple(skipped),
+    )
+
+
+def load_all_custom_scenarios(knowledge_root: Path) -> dict[str, type[Any]]:
+    """Backwards-compatible entry point — returns only the successful loads."""
+    return dict(load_custom_scenarios_detailed(knowledge_root).loaded)
