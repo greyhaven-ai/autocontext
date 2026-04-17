@@ -92,8 +92,7 @@ class TestFamilyClassification:
 class TestClassifySimulation:
     def test_api_orchestration(self) -> None:
         result = classify_scenario_family(
-            "Build a scenario where an agent orchestrates API calls across microservices "
-            "and must handle failures with rollback"
+            "Build a scenario where an agent orchestrates API calls across microservices and must handle failures with rollback"
         )
         assert result.family_name == "simulation"
         assert result.confidence >= 0.5
@@ -162,6 +161,25 @@ class TestClassifyWorkflow:
         assert result.family_name == "workflow"
 
 
+class TestClassifySchemaEvolution:
+    def test_schema_evolution_stress_prompt_confidently_routes_to_schema_evolution(self) -> None:
+        result = classify_scenario_family(
+            "Harness Stress Test: schema evolution under pressure — mid-run mutation and knowledge migration\n\n"
+            "## Objective\n\n"
+            "Test whether AutoContext handles mid-run schema changes gracefully — adapting strategies, "
+            "migrating knowledge, and preserving persisted state integrity when the rules change.\n\n"
+            "## Scenario Design\n\n"
+            "Use SchemaEvolutionInterface with SchemaMutation. Start with a stable schema with five "
+            "required fields. Apply a breaking mutation mid-run that adds two new required fields, "
+            "removes one existing field, and modifies the type of one field.\n\n"
+            "## Evaluation Dimensions\n\n"
+            "Stale-assumption detection rate. Recovery quality — Elo trajectory post-mutation. "
+            "Knowledge migration completeness. Persisted state integrity. Adaptation speed."
+        )
+        assert result.family_name == "schema_evolution"
+        assert result.confidence >= 0.3
+
+
 # ---------------------------------------------------------------------------
 # classify_scenario_family — agent_task signals
 # ---------------------------------------------------------------------------
@@ -169,27 +187,19 @@ class TestClassifyWorkflow:
 
 class TestClassifyAgentTask:
     def test_essay_writing(self) -> None:
-        result = classify_scenario_family(
-            "Evaluate an agent's ability to write a persuasive essay about climate change"
-        )
+        result = classify_scenario_family("Evaluate an agent's ability to write a persuasive essay about climate change")
         assert result.family_name == "agent_task"
 
     def test_code_generation(self) -> None:
-        result = classify_scenario_family(
-            "Generate a Python function that sorts a list of dictionaries by multiple keys"
-        )
+        result = classify_scenario_family("Generate a Python function that sorts a list of dictionaries by multiple keys")
         assert result.family_name == "agent_task"
 
     def test_content_summarization(self) -> None:
-        result = classify_scenario_family(
-            "Summarize a long research paper into a concise abstract"
-        )
+        result = classify_scenario_family("Summarize a long research paper into a concise abstract")
         assert result.family_name == "agent_task"
 
     def test_data_analysis_report(self) -> None:
-        result = classify_scenario_family(
-            "Analyze a dataset of customer reviews and produce a sentiment report"
-        )
+        result = classify_scenario_family("Analyze a dataset of customer reviews and produce a sentiment report")
         assert result.family_name == "agent_task"
 
 
@@ -200,9 +210,7 @@ class TestClassifyAgentTask:
 
 class TestClassifyGame:
     def test_board_game(self) -> None:
-        result = classify_scenario_family(
-            "Create a competitive board game where two players compete for territory control"
-        )
+        result = classify_scenario_family("Create a competitive board game where two players compete for territory control")
         assert result.family_name == "game"
 
     def test_strategy_tournament(self) -> None:
@@ -213,9 +221,7 @@ class TestClassifyGame:
         assert result.family_name == "game"
 
     def test_capture_the_flag(self) -> None:
-        result = classify_scenario_family(
-            "Build a capture the flag grid game where opponents navigate a maze"
-        )
+        result = classify_scenario_family("Build a capture the flag grid game where opponents navigate a maze")
         assert result.family_name == "game"
 
 
@@ -226,26 +232,20 @@ class TestClassifyGame:
 
 class TestClassificationAlternatives:
     def test_alternatives_are_ranked_by_confidence(self) -> None:
-        result = classify_scenario_family(
-            "Build a deployment pipeline simulation where the agent must deploy services"
-        )
+        result = classify_scenario_family("Build a deployment pipeline simulation where the agent must deploy services")
         if result.alternatives:
             confidences = [a.confidence for a in result.alternatives]
             assert confidences == sorted(confidences, reverse=True)
 
     def test_alternatives_cover_other_families(self) -> None:
-        result = classify_scenario_family(
-            "Write an essay about the history of computing"
-        )
+        result = classify_scenario_family("Write an essay about the history of computing")
         alt_names = {a.family_name for a in result.alternatives}
         # Alternatives should include families other than the top choice
         assert result.family_name not in alt_names
 
     def test_all_families_represented(self) -> None:
         """Top choice + alternatives should cover all registered families."""
-        result = classify_scenario_family(
-            "Create a scenario for testing API orchestration with rollback"
-        )
+        result = classify_scenario_family("Create a scenario for testing API orchestration with rollback")
         all_names = {result.family_name} | {a.family_name for a in result.alternatives}
         assert all_names == {family.name for family in list_families()}
 
@@ -290,12 +290,8 @@ class TestClassifyEdgeCases:
 
     def test_ambiguous_description_has_lower_confidence(self) -> None:
         """A vague description should produce lower confidence than a clear one."""
-        clear = classify_scenario_family(
-            "Build a competitive two-player board game tournament"
-        )
-        vague = classify_scenario_family(
-            "Do something interesting with data"
-        )
+        clear = classify_scenario_family("Build a competitive two-player board game tournament")
+        vague = classify_scenario_family("Do something interesting with data")
         assert clear.confidence > vague.confidence
 
 
@@ -391,17 +387,13 @@ class TestEndToEnd:
         assert family.evaluation_mode == "trace_evaluation"
 
     def test_agent_task_request_routes_correctly(self) -> None:
-        classification = classify_scenario_family(
-            "Write a persuasive blog post about sustainable energy"
-        )
+        classification = classify_scenario_family("Write a persuasive blog post about sustainable energy")
         family = route_to_family(classification)
         assert family.name == "agent_task"
         assert family.evaluation_mode == "llm_judge"
 
     def test_game_request_routes_correctly(self) -> None:
-        classification = classify_scenario_family(
-            "Design a competitive two-player strategy game with territory control"
-        )
+        classification = classify_scenario_family("Design a competitive two-player strategy game with territory control")
         family = route_to_family(classification)
         assert family.name == "game"
         assert family.evaluation_mode == "tournament"
