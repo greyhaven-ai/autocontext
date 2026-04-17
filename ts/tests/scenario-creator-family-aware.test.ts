@@ -92,4 +92,46 @@ describe("createScenarioFromDescription family-aware routing", () => {
       max_escalations: 2,
     });
   });
+
+  it("falls back to agent_task when family-aware simulation creation degrades to a core-only generic spec", async () => {
+    const provider = {
+      defaultModel: () => "mock-model",
+      complete: vi.fn(async ({ systemPrompt }: { systemPrompt?: string }) => {
+        if (systemPrompt?.includes("produce a SimulationSpec JSON")) {
+          return {
+            text: JSON.stringify({
+              family: "simulation",
+              name: "geopolitical_crisis_simulation",
+              taskPrompt: "Coordinate the crisis response.",
+              rubric: "Prioritize de-escalation and clear reasoning.",
+              description: "A bare fallback payload without simulation actions.",
+            }),
+            model: "mock-model",
+            usage: { inputTokens: 0, outputTokens: 0 },
+          };
+        }
+
+        return {
+          text: JSON.stringify({
+            family: "simulation",
+            name: "geopolitical_crisis_simulation",
+            taskPrompt: "Coordinate the crisis response.",
+            rubric: "Prioritize de-escalation and clear reasoning.",
+            description: "A bare fallback payload without simulation actions.",
+          }),
+          model: "mock-model",
+          usage: { inputTokens: 0, outputTokens: 0 },
+        };
+      }),
+    };
+
+    const created = await createScenarioFromDescription(
+      "Create a geopolitical crisis simulation where a national security advisor manages an escalating international crisis using diplomatic, economic, military, intelligence, public communication, alliance, UN, and cyber actions under hidden adversary intentions and escalation thresholds.",
+      provider as never,
+    );
+
+    expect(created.family).toBe("agent_task");
+    expect(created.spec.taskPrompt).toBe("Coordinate the crisis response.");
+    expect(created.spec).not.toHaveProperty("actions");
+  });
 });
