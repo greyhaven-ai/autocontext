@@ -178,9 +178,28 @@ def load_custom_scenarios_detailed(knowledge_root: Path) -> ScenarioRegistryLoad
             cls = _load_family_class(custom_dir, name, marker)
             loaded[name] = cls
         except FileNotFoundError:
-            # Spec-only directories without compiled source are Failure B
-            # territory (AC-563). Preserve today's silent-skip behavior here.
-            continue
+            spec_path = entry / "spec.json"
+            if spec_path.exists():
+                reason = (
+                    f"has spec.json but no compiled source for this package"
+                    f" — run autoctx new-scenario --from-spec {spec_path} to materialize"
+                )
+                skipped.append(
+                    ScenarioLoadError(
+                        name=name,
+                        spec_path=spec_path,
+                        reason=reason,
+                        marker=marker,
+                    )
+                )
+                logger.warning(
+                    "custom scenario %r skipped (%s): %s",
+                    name,
+                    spec_path,
+                    reason,
+                )
+            else:
+                continue
         except Exception as exc:
             spec_path = entry / "spec.json"
             reason = _summarize_load_failure(exc, marker)

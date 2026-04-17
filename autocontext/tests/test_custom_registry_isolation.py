@@ -80,6 +80,28 @@ def _write_unknown_marker_scenario(knowledge_root: Path, name: str = "banana_sce
     return scenario_dir
 
 
+def _write_spec_only_agent_task(knowledge_root: Path, name: str = "spec_only_task") -> Path:
+    """Write a scenario dir with spec.json and agent_task marker but no agent_task.py."""
+    scenario_dir = knowledge_root / "_custom_scenarios" / name
+    scenario_dir.mkdir(parents=True, exist_ok=True)
+    (scenario_dir / "scenario_type.txt").write_text("agent_task", encoding="utf-8")
+    (scenario_dir / "spec.json").write_text(
+        json.dumps(
+            {
+                "name": name,
+                "display_name": "Spec Only Task",
+                "description": "Has spec but no compiled source.",
+                "strategy_interface_description": "ignored",
+                "evaluation_criteria": "ignored",
+                "scenario_type": "agent_task",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return scenario_dir
+
+
 def _write_malformed_spec(knowledge_root: Path, name: str = "regression_probe") -> Path:
     """Write a ``spec.json`` that is missing a required pydantic field."""
     scenario_dir = knowledge_root / "_custom_scenarios" / name
@@ -280,3 +302,19 @@ class TestRegistryIsolation:
 
         assert "real_scenario" in result.loaded
         assert result.skipped == ()
+
+    def test_spec_only_dir_reported_in_skipped(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        knowledge_root = tmp_path / "knowledge"
+        _write_spec_only_agent_task(knowledge_root, name="spec_only_task")
+
+        result = load_custom_scenarios_detailed(knowledge_root)
+
+        assert "spec_only_task" not in result.loaded
+        assert len(result.skipped) == 1
+        entry = result.skipped[0]
+        assert entry.name == "spec_only_task"
+        assert "spec.json" in entry.reason
+        assert "no compiled source" in entry.reason
