@@ -1,9 +1,12 @@
+import {
+  countScenarioFamilySpecificFields,
+  fallbackCodegenFamilyToAgentTask,
+} from "../scenarios/scenario-family-fallback.js";
+
 export function countImportedScenarioFamilySpecificFields(
   specFields: Record<string, unknown>,
 ): number {
-  return Object.keys(specFields).filter(
-    (key) => key !== "taskPrompt" && key !== "rubric" && key !== "description",
-  ).length;
+  return countScenarioFamilySpecificFields(specFields);
 }
 
 export function resolveImportedScenarioFamily(opts: {
@@ -29,13 +32,7 @@ export function resolveImportedScenarioFamily(opts: {
       throw new Error(`Error: family must be one of ${opts.validFamilies.join(", ")}`);
     }
 
-    const familySpecificFieldCount = countImportedScenarioFamilySpecificFields(specFields);
-    family =
-      requestedFamily !== "agent_task" &&
-      requestedFamily !== "game" &&
-      familySpecificFieldCount === 0
-        ? "agent_task"
-        : requestedFamily;
+    family = fallbackCodegenFamilyToAgentTask(requestedFamily, specFields);
   }
 
   return {

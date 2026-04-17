@@ -57,6 +57,26 @@ describe("new-scenario family resolution", () => {
       family: "workflow",
     });
 
+    expect(
+      resolveImportedScenarioFamily({
+        spec: {
+          name: "simulation_saved_task",
+          family: "simulation",
+          taskPrompt: "Handle the crisis response.",
+          rubric: "Keep the system stable.",
+          description: "A simulation import with no initial actions.",
+          actions: [],
+        },
+        description: "A simulation import with no initial actions.",
+        taskPrompt: "Handle the crisis response.",
+        detectScenarioFamily: () => "simulation",
+        isScenarioFamilyName: (value: string) => ["agent_task", "simulation"].includes(value),
+        validFamilies: ["agent_task", "simulation"],
+      }),
+    ).toMatchObject({
+      family: "agent_task",
+    });
+
     expect(() =>
       resolveImportedScenarioFamily({
         spec: {

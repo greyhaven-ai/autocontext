@@ -9,6 +9,7 @@ import type { CoordinationSpec } from "./coordination-spec.js";
 import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
 import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
 import { designInvestigation } from "./investigation-designer.js";
+import { fallbackCodegenFamilyToAgentTask } from "./scenario-family-fallback.js";
 import type { InvestigationSpec } from "./investigation-spec.js";
 import { designNegotiation } from "./negotiation-designer.js";
 import type { NegotiationSpec } from "./negotiation-spec.js";
@@ -403,11 +404,15 @@ async function createGenericScenarioFromDescription(
   if (!spec.rubric) spec.rubric = "Evaluate the quality of the response.";
   if (!spec.description) spec.description = `Custom scenario: ${description}`;
   const name = typeof spec.name === "string" && spec.name.trim() ? spec.name.trim() : defaultName;
-  const family =
+  const resolvedFamily =
     typeof spec.family === "string" && isScenarioFamilyName(spec.family)
       ? spec.family
       : defaultFamily;
   const { name: _ignoredName, family: _ignoredFamily, ...specFields } = spec;
+  const family = fallbackCodegenFamilyToAgentTask(
+    resolvedFamily,
+    specFields as Record<string, unknown>,
+  );
 
   return {
     name,
