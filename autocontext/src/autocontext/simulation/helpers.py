@@ -12,8 +12,12 @@ from typing import Any
 # which can still route geopolitical and statecraft prompts to simulation.
 _OPERATOR_LOOP_FAMILY_TRIGGERS = re.compile(
     r"operator|human[- .]?in[- .]?the[- .]?loop|clarif|approval.required|"
-    r"ambiguous.support|incomplete input|ask.*question|missing.information|gather.more.info|"
-    r"when.to.escalat|triage.judgment"
+    r"ambiguous.support|incomplete input|ask.*question|missing.information|gather.more.info"
+)
+
+_STATECRAFT_SIMULATION_CONTEXT = re.compile(
+    r"geopolit|statecraft|national security|international crisis|international confrontation|"
+    r"crisis wargame|hybrid warfare|military movements|cyber-kinetic"
 )
 
 
@@ -62,6 +66,8 @@ def infer_family(description: str) -> str:
         )
 
         family = route_to_family(classify_scenario_family(description), 0.15).name
+        if family == "operator_loop" and _STATECRAFT_SIMULATION_CONTEXT.search(text_lower):
+            return "simulation"
         return "operator_loop" if family == "operator_loop" else "simulation"
     except Exception:
         return "simulation"
