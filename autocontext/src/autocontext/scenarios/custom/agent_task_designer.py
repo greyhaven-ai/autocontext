@@ -4,7 +4,10 @@ import json
 import re
 
 from autocontext.agents.types import LlmFn
-from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+from autocontext.scenarios.custom.agent_task_spec import (
+    AgentTaskSpec,
+    normalize_agent_task_runtime_fields,
+)
 
 SPEC_START = "<!-- AGENT_TASK_SPEC_START -->"
 SPEC_END = "<!-- AGENT_TASK_SPEC_END -->"
@@ -79,7 +82,7 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     "```\n\n"
     "## Rules\n\n"
     "- `task_prompt` must be clear, detailed, and self-contained\n"
-    "- `task_prompt` must be FULLY self-contained: never say \"you will be provided with...\" or reference "
+    '- `task_prompt` must be FULLY self-contained: never say "you will be provided with..." or reference '
     "external data without including it. If the task depends on input data, populate `sample_input` with "
     "realistic example data and embed it directly in the prompt\n"
     "- `sample_input` (optional, null if not needed) — realistic sample input data for data-dependent tasks. "
@@ -119,22 +122,24 @@ def parse_agent_task_spec(text: str) -> AgentTaskSpec:
         raise ValueError("response does not contain AGENT_TASK_SPEC delimiters")
     raw = match.group(1).strip()
     data = json.loads(raw)
-    return AgentTaskSpec(
-        task_prompt=data["task_prompt"],
-        judge_rubric=data["judge_rubric"],
-        output_format=data.get("output_format", "free_text"),
-        judge_model=data.get("judge_model", ""),
-        difficulty_tiers=data.get("difficulty_tiers"),
-        reference_context=data.get("reference_context"),
-        reference_sources=data.get("reference_sources"),
-        required_concepts=data.get("required_concepts"),
-        calibration_examples=data.get("calibration_examples"),
-        context_preparation=data.get("context_preparation"),
-        required_context_keys=data.get("required_context_keys"),
-        max_rounds=data.get("max_rounds", 1),
-        quality_threshold=data.get("quality_threshold", 0.9),
-        revision_prompt=data.get("revision_prompt"),
-        sample_input=data.get("sample_input"),
+    return normalize_agent_task_runtime_fields(
+        AgentTaskSpec(
+            task_prompt=data["task_prompt"],
+            judge_rubric=data["judge_rubric"],
+            output_format=data.get("output_format", "free_text"),
+            judge_model=data.get("judge_model", ""),
+            difficulty_tiers=data.get("difficulty_tiers"),
+            reference_context=data.get("reference_context"),
+            reference_sources=data.get("reference_sources"),
+            required_concepts=data.get("required_concepts"),
+            calibration_examples=data.get("calibration_examples"),
+            context_preparation=data.get("context_preparation"),
+            required_context_keys=data.get("required_context_keys"),
+            max_rounds=data.get("max_rounds", 1),
+            quality_threshold=data.get("quality_threshold", 0.9),
+            revision_prompt=data.get("revision_prompt"),
+            sample_input=data.get("sample_input"),
+        )
     )
 
 

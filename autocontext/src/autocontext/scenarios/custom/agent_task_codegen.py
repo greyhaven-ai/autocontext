@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 import textwrap
 
-from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+from autocontext.scenarios.custom.agent_task_spec import (
+    AgentTaskSpec,
+    normalize_agent_task_runtime_fields,
+)
 
 
 def _class_name(name: str) -> str:
@@ -25,6 +28,8 @@ def generate_agent_task_class(spec: AgentTaskSpec, name: str = "custom_agent_tas
     Returns:
         Python source code string.
     """
+    spec = normalize_agent_task_runtime_fields(spec)
+
     cls_name = _class_name(name)
     safe_name = _safe_identifier(name)
 

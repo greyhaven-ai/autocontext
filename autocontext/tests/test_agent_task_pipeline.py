@@ -123,8 +123,7 @@ def _mock_investigation_response() -> str:
         "environment_description": "Mock service environment with logs and dashboards.",
         "initial_state_description": "An outage is active and only partial evidence is visible.",
         "evidence_pool_description": (
-            "Logs implicate the auth service, metrics show latency spikes, "
-            "and a cron-job entry is a red herring."
+            "Logs implicate the auth service, metrics show latency spikes, and a cron-job entry is a red herring."
         ),
         "diagnosis_target": "A bad auth deployment exhausted the database connection pool.",
         "success_criteria": [
@@ -464,6 +463,22 @@ class TestSampleInput:
         spec = parse_agent_task_spec(raw)
         assert spec.sample_input == "Service X went down at 3am."
 
+    def test_parse_structured_sample_input_serializes_json(self) -> None:
+        data = {
+            "task_prompt": "Analyze this clinical trial brief",
+            "judge_rubric": "Check completeness",
+            "sample_input": {
+                "indication": "oncology",
+                "phase": "II",
+                "jurisdiction": "FDA",
+            },
+        }
+        raw = f"{SPEC_START}\n{json.dumps(data)}\n{SPEC_END}"
+        spec = parse_agent_task_spec(raw)
+        assert isinstance(spec.sample_input, str)
+        assert '"indication": "oncology"' in spec.sample_input
+        assert '"phase": "II"' in spec.sample_input
+
     def test_sample_input_defaults_to_none(self) -> None:
         data = {
             "task_prompt": "Do something",
@@ -512,6 +527,60 @@ class TestAgentTaskCreator:
                 assert (scenario_dir / "agent_task_spec.json").exists()
                 assert (scenario_dir / "scenario_type.txt").exists()
                 assert (scenario_dir / "scenario_type.txt").read_text() == "agent_task"
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
+    def test_end_to_end_with_structured_sample_input(self) -> None:
+        spec_data = {
+            "task_prompt": "Design a Phase II trial protocol from the study brief.",
+            "judge_rubric": "Evaluate protocol rigor and regulatory alignment.",
+            "output_format": "free_text",
+            "sample_input": {
+                "indication": "oncology",
+                "phase": "II",
+                "jurisdiction": "FDA",
+                "budget": "moderate",
+            },
+            "calibration_examples": [
+                {
+                    "human_score": 0.3,
+                    "human_notes": "Missing endpoint rationale.",
+                    "agent_output": "Use a generic protocol.",
+                },
+                {
+                    "human_score": 0.9,
+                    "human_notes": "Well scoped, justified, and safety-aware.",
+                    "agent_output": "Use a randomized protocol with clear endpoints.",
+                },
+            ],
+        }
+        response_text = f"Here is the spec:\n{SPEC_START}\n{json.dumps(spec_data, indent=2)}\n{SPEC_END}\n"
+
+        def mock_llm(system: str, user: str) -> str:
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            from unittest.mock import patch
+
+            from autocontext.scenarios.families import get_family
+
+            with patch(
+                "autocontext.scenarios.custom.agent_task_creator.route_to_family",
+                return_value=get_family("agent_task"),
+            ):
+                instance = creator.create("Design a clinical trial protocol for oncology")
+            registered_name = creator.derive_name("Design a clinical trial protocol for oncology")
+
+            try:
+                prompt = instance.get_task_prompt({})
+                assert '"indication": "oncology"' in prompt
+                assert "## Input Data" in prompt
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 
@@ -632,12 +701,8 @@ class TestAgentTaskCreator:
                 llm_fn=mock_llm,
                 knowledge_root=Path(tmp),
             )
-            instance = creator.create(
-                "Create a transactional workflow with compensation and side effects"
-            )
-            registered_name = creator.derive_name(
-                "Create a transactional workflow with compensation and side effects"
-            )
+            instance = creator.create("Create a transactional workflow with compensation and side effects")
+            registered_name = creator.derive_name("Create a transactional workflow with compensation and side effects")
             try:
                 from autocontext.scenarios.world_state import WorldState
 
@@ -652,9 +717,7 @@ class TestAgentTaskCreator:
                 _result, next_state = instance.execute_step(initial_state, first_step)
                 next_world_state = WorldState.from_dict(next_state["_world_state"])
                 step_entity = next(
-                    entity
-                    for entity in next_world_state.entities
-                    if entity.entity_id == f"step:{first_step.name}"
+                    entity for entity in next_world_state.entities if entity.entity_id == f"step:{first_step.name}"
                 )
                 assert step_entity.status == "completed"
                 assert next_state["world_state_deltas"]
@@ -758,6 +821,23 @@ class TestSampleInputWiring:
         assert '{"users"' in prompt
         assert "Analyze the following data" in prompt
 
+    def test_structured_sample_input_survives_execution_validation(self) -> None:
+        from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+
+        spec = AgentTaskSpec(
+            task_prompt="Design a clinical trial protocol from the provided study brief.",
+            judge_rubric="Evaluate statistical rigor and regulatory alignment",
+            sample_input={
+                "indication": "oncology",
+                "phase": "II",
+                "jurisdiction": "FDA",
+            },  # type: ignore[arg-type]
+        )
+        source = generate_agent_task_class(spec, name="clinical_trial_protocol")
+        errors = validate_execution(source)
+        assert errors == []
+
     def test_sample_input_in_initial_state(self) -> None:
         from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
         from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
@@ -844,11 +924,11 @@ class TestValidatorExternalDataReference:
 
         spec = AgentTaskSpec(
             task_prompt=(
-                'Based on the data below:\n\n'
-                '```json\n'
+                "Based on the data below:\n\n"
+                "```json\n"
                 '{"gdp_growth": 2.1, "inflation": 3.5, "unemployment": 4.2}\n'
-                '```\n\n'
-                'Provide an economic outlook assessment.'
+                "```\n\n"
+                "Provide an economic outlook assessment."
             ),
             judge_rubric="Evaluate economic analysis quality",
         )
