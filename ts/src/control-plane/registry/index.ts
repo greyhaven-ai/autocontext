@@ -95,6 +95,13 @@ export type { ValidationReport, ValidationIssue, IssueKind } from "./validate.js
 // ---- Registry facade ----
 
 export interface Registry {
+  /**
+   * The cwd this facade was opened against. Exposed so higher layers (e.g.
+   * eval-ingest) can make follow-up calls that need the root without requiring
+   * the caller to thread it through a second time.
+   */
+  readonly cwd: string;
+
   saveArtifact(artifact: Artifact, payloadDir: string): void;
   loadArtifact(id: ArtifactId): Artifact;
   listCandidates(filter: ListCandidatesFilter): Artifact[];
@@ -134,6 +141,8 @@ export function openRegistry(cwd: string): Registry {
   const cache: IndexCache = createFsIndexCache(cwd);
 
   return {
+    cwd,
+
     saveArtifact(artifact, payloadDir): void {
       const lock = acquireLock(cwd);
       try {
