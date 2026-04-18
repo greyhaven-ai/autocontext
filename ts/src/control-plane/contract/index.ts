@@ -62,3 +62,21 @@ export {
   validatePromotionDecision,
   validatePatch,
 } from "./validators.js";
+
+export {
+  createArtifact,
+  createPromotionEvent,
+  createEvalRun,
+} from "./factories.js";
+export type {
+  CreateArtifactInputs,
+  CreatePromotionEventInputs,
+  CreateEvalRunInputs,
+} from "./factories.js";
+
+export {
+  validateLineageNoCycles,
+  validateAppendOnly,
+  computeTreeHash,
+} from "./invariants.js";
+export type { TreeFile } from "./invariants.js";
