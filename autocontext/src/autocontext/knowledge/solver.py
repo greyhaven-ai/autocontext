@@ -50,6 +50,7 @@ _SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES = (
     "**Generations to signal:**",
 )
 _SOLVE_FAMILY_ALIASES = {
+    "alignment_stress_test": "agent_task",
     "meta_learning": "agent_task",
     "capability_bootstrapping": "agent_task",
 }
