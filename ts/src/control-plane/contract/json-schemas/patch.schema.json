@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/patch.json",
+  "title": "Patch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["filePath", "operation", "unifiedDiff"],
+  "properties": {
+    "filePath": { "type": "string", "minLength": 1 },
+    "operation": { "enum": ["create", "modify", "delete"] },
+    "unifiedDiff": { "type": "string" },
+    "afterContent": { "type": "string" }
+  }
+}

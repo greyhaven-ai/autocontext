@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/promotion-decision.json",
+  "title": "PromotionDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pass",
+    "recommendedTargetState",
+    "deltas",
+    "confidence",
+    "thresholds",
+    "reasoning",
+    "evaluatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SchemaVersion" },
+    "pass": { "type": "boolean" },
+    "recommendedTargetState": { "enum": ["shadow", "canary", "active", "disabled"] },
+    "deltas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quality", "cost", "latency", "safety"],
+      "properties": {
+        "quality": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline", "candidate", "delta", "passed"],
+          "properties": {
+            "baseline": { "type": "number" },
+            "candidate": { "type": "number" },
+            "delta": { "type": "number" },
+            "passed": { "type": "boolean" }
+          }
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline", "candidate", "delta", "passed"],
+          "properties": {
+            "baseline": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/CostMetric" },
+            "candidate": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/CostMetric" },
+            "delta": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/CostMetric" },
+            "passed": { "type": "boolean" }
+          }
+        },
+        "latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline", "candidate", "delta", "passed"],
+          "properties": {
+            "baseline": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/LatencyMetric" },
+            "candidate": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/LatencyMetric" },
+            "delta": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/LatencyMetric" },
+            "passed": { "type": "boolean" }
+          }
+        },
+        "safety": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["regressions", "passed"],
+          "properties": {
+            "regressions": {
+              "type": "array",
+              "items": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SafetyRegression" }
+            },
+            "passed": { "type": "boolean" }
+          }
+        },
+        "humanFeedback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["delta", "passed"],
+          "properties": {
+            "delta": { "type": "number" },
+            "passed": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualityMinDelta",
+        "costMaxRelativeIncrease",
+        "latencyMaxRelativeIncrease",
+        "strongConfidenceMin",
+        "moderateConfidenceMin",
+        "strongQualityMultiplier"
+      ],
+      "properties": {
+        "qualityMinDelta": { "type": "number" },
+        "costMaxRelativeIncrease": { "type": "number" },
+        "latencyMaxRelativeIncrease": { "type": "number" },
+        "humanFeedbackMinDelta": { "type": "number" },
+        "strongConfidenceMin": { "type": "number" },
+        "moderateConfidenceMin": { "type": "number" },
+        "strongQualityMultiplier": { "type": "number" }
+      }
+    },
+    "reasoning": { "type": "string" },
+    "evaluatedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" }
+  }
+}

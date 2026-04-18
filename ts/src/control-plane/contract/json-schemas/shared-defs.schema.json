@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/shared-defs.json",
+  "title": "Shared definitions for autocontext control-plane documents",
+  "$defs": {
+    "SchemaVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "Ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "Scenario": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "EnvironmentTag": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+    },
+    "SuiteId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "ActuatorType": {
+      "enum": ["prompt-patch", "tool-policy", "routing-rule", "fine-tuned-model"]
+    },
+    "ActivationState": {
+      "enum": ["candidate", "shadow", "canary", "active", "disabled", "deprecated"]
+    },
+    "IsoTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "SafetyRegression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "severity", "description"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "minor", "major", "critical"] },
+        "description": { "type": "string" },
+        "exampleRef": { "type": "string" }
+      }
+    },
+    "CostMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokensIn", "tokensOut"],
+      "properties": {
+        "tokensIn": { "type": "number" },
+        "tokensOut": { "type": "number" },
+        "usd": { "type": "number" }
+      }
+    },
+    "LatencyMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50Ms", "p95Ms", "p99Ms"],
+      "properties": {
+        "p50Ms": { "type": "number" },
+        "p95Ms": { "type": "number" },
+        "p99Ms": { "type": "number" }
+      }
+    }
+  }
+}

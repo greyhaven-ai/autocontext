@@ -55,17 +55,22 @@
     "@types/better-sqlite3": "^7.6.0",
     "@types/react": "^18.3.0",
     "@types/ws": "^8.5.13",
+    "fast-check": "^4.7.0",
+    "json-schema-to-typescript": "^15.0.4",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
     "better-sqlite3": "^11.0.0",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
     "react": "^18.3.1",
     "secure-exec": "^0.1.0",
+    "ulid": "^3.0.2",
     "ws": "^8.18.0",
     "zod": "^3.24.0"
   }

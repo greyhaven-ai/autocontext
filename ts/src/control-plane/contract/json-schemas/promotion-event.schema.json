@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/promotion-event.json",
+  "title": "PromotionEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["from", "to", "reason", "timestamp"],
+  "properties": {
+    "from": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ActivationState" },
+    "to": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ActivationState" },
+    "reason": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "baselineArtifactId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+        "suiteId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SuiteId" },
+        "decision": { "$ref": "https://autocontext.dev/schema/promotion-decision.json" },
+        "resolvedTargetPath": { "type": "string" },
+        "layoutConfigHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" }
+      }
+    },
+    "timestamp": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" },
+    "signature": { "type": "string" }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/artifact.json",
+  "title": "Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "actuatorType",
+    "scenario",
+    "environmentTag",
+    "activationState",
+    "payloadHash",
+    "provenance",
+    "promotionHistory",
+    "evalRuns"
+  ],
+  "properties": {
+    "schemaVersion": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SchemaVersion" },
+    "id": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+    "actuatorType": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ActuatorType" },
+    "scenario": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Scenario" },
+    "environmentTag": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/EnvironmentTag" },
+    "changeSetId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+    "activationState": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ActivationState" },
+    "payloadHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" },
+    "provenance": { "$ref": "https://autocontext.dev/schema/provenance.json" },
+    "promotionHistory": {
+      "type": "array",
+      "items": { "$ref": "https://autocontext.dev/schema/promotion-event.json" }
+    },
+    "evalRuns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evalRunId", "suiteId", "ingestedAt"],
+        "properties": {
+          "evalRunId": { "type": "string", "minLength": 1 },
+          "suiteId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SuiteId" },
+          "ingestedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" }
+        }
+      }
+    }
+  }
+}

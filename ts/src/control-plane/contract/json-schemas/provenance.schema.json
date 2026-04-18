@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/provenance.json",
+  "title": "Provenance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["authorType", "authorId", "parentArtifactIds", "createdAt"],
+  "properties": {
+    "authorType": { "enum": ["autocontext-run", "human", "external-agent"] },
+    "authorId": { "type": "string", "minLength": 1 },
+    "agentRole": { "type": "string" },
+    "parentArtifactIds": {
+      "type": "array",
+      "items": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" }
+    },
+    "createdAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" }
+  }
+}

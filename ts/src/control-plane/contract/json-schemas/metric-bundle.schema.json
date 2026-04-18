@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/metric-bundle.json",
+  "title": "MetricBundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quality", "cost", "latency", "safety", "evalRunnerIdentity"],
+  "properties": {
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "sampleSize"],
+      "properties": {
+        "score": { "type": "number" },
+        "sampleSize": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "cost": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/CostMetric" },
+    "latency": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/LatencyMetric" },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regressions"],
+      "properties": {
+        "regressions": {
+          "type": "array",
+          "items": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SafetyRegression" }
+        }
+      }
+    },
+    "humanFeedback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["positive", "negative", "neutral"],
+      "properties": {
+        "positive": { "type": "integer", "minimum": 0 },
+        "negative": { "type": "integer", "minimum": 0 },
+        "neutral": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evalRunnerIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "configHash"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "configHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" }
+      }
+    }
+  }
+}

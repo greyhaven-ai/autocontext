@@ -60,7 +60,9 @@ describe("TypeScript type assertion budget", () => {
 
   it("total assertions should be under budget", () => {
     // Budget: enforce no regression from current baseline
-    expect(total).toBeLessThanOrEqual(520);
+    // Bumped to 550 when control-plane/contract/ landed (branded-ID parsers
+    // require `as Brand` casts — phantom types have no runtime representation).
+    expect(total).toBeLessThanOrEqual(550);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {

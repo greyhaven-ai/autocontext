@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/eval-run.json",
+  "title": "EvalRun",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "artifactId", "suiteId", "metrics", "datasetProvenance", "ingestedAt"],
+  "properties": {
+    "schemaVersion": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SchemaVersion" },
+    "runId": { "type": "string", "minLength": 1 },
+    "artifactId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+    "suiteId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SuiteId" },
+    "metrics": { "$ref": "https://autocontext.dev/schema/metric-bundle.json" },
+    "datasetProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasetId", "sliceHash", "sampleCount"],
+      "properties": {
+        "datasetId": { "type": "string", "minLength": 1 },
+        "sliceHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" },
+        "sampleCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ingestedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" }
+  }
+}
