@@ -19,3 +19,7 @@ class TestClaudeTimeoutDefaults:
     def test_app_settings_claude_timeout_default_is_300s(self) -> None:
         settings = AppSettings()
         assert settings.claude_timeout == 300.0
+
+    def test_claude_cli_config_default_is_300s(self) -> None:
+        cfg = ClaudeCLIConfig()
+        assert cfg.timeout == 300.0
