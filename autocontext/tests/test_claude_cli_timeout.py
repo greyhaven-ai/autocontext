@@ -33,3 +33,15 @@ class TestClaudeTimeoutDefaults:
         settings = load_settings()
 
         assert settings.claude_timeout == 45.0
+
+    def test_cli_timeout_flag_overrides_default_for_claude_cli(self) -> None:
+        """--timeout flag routes through apply_judge_runtime_overrides and wins
+        over the default for CLI-backed providers."""
+        from autocontext.cli_runtime_overrides import apply_judge_runtime_overrides
+
+        base = AppSettings()  # claude_timeout defaults to 300
+        resolved = apply_judge_runtime_overrides(
+            base, provider_name="claude-cli", timeout=90.0
+        )
+
+        assert resolved.claude_timeout == 90.0
