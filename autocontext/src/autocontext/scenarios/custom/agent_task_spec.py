@@ -45,6 +45,8 @@ def normalize_agent_task_runtime_fields(spec: AgentTaskSpec) -> AgentTaskSpec:
     """
     return replace(
         spec,
+        task_prompt=_serialize_agent_task_text_payload(spec.task_prompt) or "",
+        judge_rubric=_serialize_agent_task_text_payload(spec.judge_rubric) or "",
         reference_context=_serialize_agent_task_text_payload(spec.reference_context),
         context_preparation=_serialize_agent_task_text_payload(spec.context_preparation),
         revision_prompt=_serialize_agent_task_text_payload(spec.revision_prompt),

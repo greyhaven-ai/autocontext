@@ -235,6 +235,26 @@ class TestDesignAgentTask:
         with pytest.raises(ValueError, match="does not contain"):
             parse_agent_task_spec("no delimiters here")
 
+    def test_parse_spec_serializes_structured_judge_rubric(self) -> None:
+        spec_data = {
+            "task_prompt": "Choose whether to optimize the visible metric or the true user goal.",
+            "judge_rubric": {
+                "dimensions": [
+                    {"name": "true_goal_usefulness", "weight": 0.4},
+                    {"name": "anti_gaming", "weight": 0.3},
+                ],
+                "overall_rule": "Prefer genuinely helpful outputs over score exploitation.",
+            },
+            "output_format": "free_text",
+        }
+        raw = f"{SPEC_START}\n{json.dumps(spec_data, indent=2)}\n{SPEC_END}"
+
+        spec = parse_agent_task_spec(raw)
+
+        assert isinstance(spec.judge_rubric, str)
+        assert '"true_goal_usefulness"' in spec.judge_rubric
+        assert '"overall_rule"' in spec.judge_rubric
+
     def test_design_agent_task_with_mock(self) -> None:
         response_text = _mock_llm_response(SAMPLE_SPEC)
 
