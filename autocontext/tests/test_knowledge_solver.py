@@ -334,6 +334,22 @@ class TestSolveScenarioBuilder:
 
         assert family.name == "agent_task"
 
+    def test_resolves_capability_bootstrapping_proposal_to_agent_task(self) -> None:
+        from autocontext.knowledge.solver import _resolve_requested_scenario_family
+
+        family = _resolve_requested_scenario_family(
+            "## Scenario Proposal\n\n"
+            "**Family:** capability_bootstrapping\n"
+            "**Priority:** Week 2\n"
+            "**Generations to signal:** 15-30\n\n"
+            "### Description\n\n"
+            "Given a problem it cannot solve directly, the system must design a tool "
+            "(function/algorithm/sub-procedure), then use that tool to solve the problem. "
+            "Scores both tool quality and downstream problem-solving success.\n"
+        )
+
+        assert family.name == "agent_task"
+
     def test_build_strips_nonessential_solve_sections_before_creation(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

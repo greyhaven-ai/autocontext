@@ -51,6 +51,7 @@ _SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES = (
 )
 _SOLVE_FAMILY_ALIASES = {
     "meta_learning": "agent_task",
+    "capability_bootstrapping": "agent_task",
 }
 _SIMULATION_INTERFACE_HINT_RE = re.compile(
     r"\bsimulationinterface\b.*\bworldstate\b|\bworldstate\b.*\bsimulationinterface\b",
