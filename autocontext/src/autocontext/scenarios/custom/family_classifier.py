@@ -61,13 +61,56 @@ class LowConfidenceError(Exception):
 # Keyword signal groups per family
 # ---------------------------------------------------------------------------
 
-_STOP_WORDS = frozenset({
-    "a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "at", "by",
-    "is", "are", "was", "be", "do", "does", "it", "we", "they", "i", "you",
-    "that", "can", "should", "could", "would", "will", "must", "with", "which",
-    "what", "how", "where", "when", "about", "create", "build", "make",
-    "new", "need", "want", "scenario", "test", "testing",
-})
+_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "for",
+        "to",
+        "in",
+        "on",
+        "at",
+        "by",
+        "is",
+        "are",
+        "was",
+        "be",
+        "do",
+        "does",
+        "it",
+        "we",
+        "they",
+        "i",
+        "you",
+        "that",
+        "can",
+        "should",
+        "could",
+        "would",
+        "will",
+        "must",
+        "with",
+        "which",
+        "what",
+        "how",
+        "where",
+        "when",
+        "about",
+        "create",
+        "build",
+        "make",
+        "new",
+        "need",
+        "want",
+        "scenario",
+        "test",
+        "testing",
+    }
+)
 
 # Simulation: stateful interaction with environment, action traces
 _SIMULATION_SIGNALS: dict[str, float] = {
@@ -234,13 +277,21 @@ _WORKFLOW_SIGNALS: dict[str, float] = {
 _SCHEMA_EVOLUTION_SIGNALS: dict[str, float] = {
     "schema evolv": 2.0,
     "schema evolution": 2.0,
+    "schema-evolution": 2.0,
+    "schemaevolutioninterface": 2.5,
+    "schemamutation": 2.5,
     "stale context": 2.0,
+    "stale-assumption": 2.0,
     "schema migration": 2.0,
+    "knowledge migration": 2.0,
     "breaking change": 2.0,
+    "breaking mutation": 2.0,
     "schema version": 2.0,
     "field removed": 1.5,
     "field added": 1.5,
     "field renamed": 1.5,
+    "field type": 1.5,
+    "required field": 1.5,
     "context invalidat": 2.0,
     "stale assumption": 2.0,
     "data model change": 1.5,
@@ -391,11 +442,7 @@ def classify_scenario_family(description: str) -> FamilyClassification:
     total = sum(raw_scores.values())
     if total == 0:
         # No signals matched — default to agent_task with low confidence if available.
-        default_family = (
-            _DEFAULT_FAMILY_NAME
-            if _DEFAULT_FAMILY_NAME in registered_families
-            else registered_families[0]
-        )
+        default_family = _DEFAULT_FAMILY_NAME if _DEFAULT_FAMILY_NAME in registered_families else registered_families[0]
         alternatives = [
             FamilyCandidate(
                 family_name=family_name,

@@ -234,6 +234,25 @@ class TestSolveScenarioBuilder:
 
         assert family.name == "coordination"
 
+    def test_resolves_schema_evolution_family_for_ac269_stress_prompt(self) -> None:
+        from autocontext.knowledge.solver import _resolve_requested_scenario_family
+
+        family = _resolve_requested_scenario_family(
+            "Harness Stress Test: schema evolution under pressure — mid-run mutation and knowledge migration\n\n"
+            "## Objective\n\n"
+            "Test whether AutoContext handles mid-run schema changes gracefully — adapting strategies, "
+            "migrating knowledge, and preserving persisted state integrity when the rules change.\n\n"
+            "## Scenario Design\n\n"
+            "Use SchemaEvolutionInterface with SchemaMutation. Start with a stable schema with five "
+            "required fields. Apply a breaking mutation mid-run that adds two new required fields, "
+            "removes one existing field, and modifies the type of one field.\n\n"
+            "## Evaluation Dimensions\n\n"
+            "Stale-assumption detection rate. Recovery quality — Elo trajectory post-mutation. "
+            "Knowledge migration completeness. Persisted state integrity. Adaptation speed."
+        )
+
+        assert family.name == "schema_evolution"
+
     def test_passes_supported_family_hint_into_creator(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from autocontext.knowledge.solver import SolveScenarioBuilder
 
