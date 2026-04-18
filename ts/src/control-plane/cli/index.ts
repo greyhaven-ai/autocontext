@@ -6,6 +6,7 @@ import { runCandidate, CANDIDATE_HELP_TEXT } from "./candidate.js";
 import { runEval, EVAL_HELP_TEXT } from "./eval.js";
 import { runPromotion, PROMOTION_HELP_TEXT } from "./promotion.js";
 import { runRegistryOps, REGISTRY_HELP_TEXT } from "./registry-ops.js";
+import { runEmitPr, EMIT_PR_HELP_TEXT } from "./emit-pr.js";
 import { EXIT } from "./_shared/exit-codes.js";
 import type { CliContext, CliResult } from "./types.js";
 
@@ -14,7 +15,13 @@ export type { ExitCode } from "./_shared/exit-codes.js";
 export { formatOutput } from "./_shared/output-formatters.js";
 export type { OutputMode } from "./_shared/output-formatters.js";
 export type { CliContext, CliResult } from "./types.js";
-export { CANDIDATE_HELP_TEXT, EVAL_HELP_TEXT, PROMOTION_HELP_TEXT, REGISTRY_HELP_TEXT };
+export {
+  CANDIDATE_HELP_TEXT,
+  EVAL_HELP_TEXT,
+  PROMOTION_HELP_TEXT,
+  REGISTRY_HELP_TEXT,
+  EMIT_PR_HELP_TEXT,
+};
 
 // Importing actuators/index.js has the side effect of registering all four
 // actuator types on the actuator registry. The CLI doesn't directly consume
@@ -29,6 +36,9 @@ Namespaces:
   eval         Attach + list EvalRuns
   promotion    Decide, apply, inspect promotion transitions
   registry     Repair / validate / migrate
+
+Top-level:
+  emit-pr      Generate a promotion PR (or dry-run bundle) for a candidate
 
 Run \`autoctx <namespace> --help\` for subcommand details.
 `;
@@ -45,7 +55,7 @@ export interface RunControlPlaneOptions {
  *
  * argv is the args *after* the top-level command (e.g. for
  *   `autoctx candidate list --scenario grid_ctf`
- * pass ["candidate", "list", "--scenario", "grid_ctf"].
+ * pass ["candidate", "list", "--scenario", "grid_ctf"]).
  *
  * Returns a CliResult. Callers (the outer CLI) print stdout/stderr and exit
  * with exitCode. Tests consume CliResult directly for speed.
@@ -75,6 +85,8 @@ export async function runControlPlaneCommand(
       return runPromotion(argv.slice(1), ctx);
     case "registry":
       return runRegistryOps(argv.slice(1), ctx);
+    case "emit-pr":
+      return runEmitPr(argv.slice(1), ctx);
     default:
       return {
         stdout: "",
