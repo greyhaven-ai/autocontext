@@ -185,15 +185,13 @@ describe("fine-tuned-model actuator", () => {
   });
 });
 
-describe("importLegacyModelRecords (signature-stability stub)", () => {
-  test("exists as an async function with the expected signature and throws not-implemented", async () => {
+describe("importLegacyModelRecords (export + arity)", () => {
+  // Behavioral coverage lives in legacy-adapter.test.ts (Layer 11). This
+  // sanity-check ensures the symbol is still exported and the signature has
+  // not drifted.
+  test("is exported as an async function with (cwd, registry[, opts]) signature", () => {
     expect(typeof importLegacyModelRecords).toBe("function");
-    // The production signature takes (cwd, registry) — we verify by shape,
-    // not by type, since registry shape is Layer 4's concern.
-    expect(importLegacyModelRecords.length).toBe(2);
-    const fake = {} as never;
-    await expect(importLegacyModelRecords("/tmp/nowhere", fake)).rejects.toThrow(
-      /not-implemented.*Layer 11/,
-    );
+    // At least (cwd, registry); may accept an optional opts object.
+    expect(importLegacyModelRecords.length).toBeGreaterThanOrEqual(2);
   });
 });

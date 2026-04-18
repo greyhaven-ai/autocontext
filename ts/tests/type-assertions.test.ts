@@ -75,7 +75,14 @@ describe("TypeScript type assertion budget", () => {
     // branded-id casts where the CLI builds a filter object from parsed
     // flags, and an OutputMode cast where the formatter accepts the narrowed
     // union.
-    expect(total).toBeLessThanOrEqual(600);
+    // Bumped to 610 when control-plane/actuators/fine-tuned-model/legacy-adapter.ts
+    // (Layer 11) landed — migrating JSON-parsed `unknown` documents into
+    // branded Scenario/EnvironmentTag and narrowed ActivationState values
+    // requires a small cluster of `as Brand` / `as ActivationState` casts
+    // after manual type-guards. The alternative (a schema library adapter
+    // emitting branded types) was rejected as disproportionate for a v1
+    // one-shot migration path.
+    expect(total).toBeLessThanOrEqual(610);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {

@@ -1,7 +1,15 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  unlinkSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ulid } from "ulid";
 import { runControlPlaneCommand } from "../../../src/control-plane/cli/index.js";
 import { EXIT } from "../../../src/control-plane/cli/_shared/exit-codes.js";
 
@@ -87,10 +95,88 @@ describe("registry validate", () => {
   });
 });
 
-describe("registry migrate (stub)", () => {
-  test("exits non-zero with not-implemented message", async () => {
-    const r = await runControlPlaneCommand(["registry", "migrate"], { cwd: tmp });
-    expect(r.exitCode).toBe(EXIT.NOT_IMPLEMENTED);
-    expect(r.stderr.toLowerCase()).toContain("not implemented");
+describe("registry migrate", () => {
+  function legacyRecord(artifactId: string): Record<string, unknown> {
+    return {
+      artifactId,
+      scenario: "grid_ctf",
+      family: "llama-3",
+      backend: "mlx",
+      checkpointDir: "/mnt/models/grid_ctf-v1",
+      checkpointHash: "sha256:" + "a".repeat(64),
+      activationState: "candidate",
+      promotionHistory: [],
+      registeredAt: "2026-04-17T12:00:00.000Z",
+    };
+  }
+
+  test("prints a pretty summary (imported/skipped/errors) on success and exits 0", async () => {
+    const fromPath = join(tmp, "legacy.json");
+    writeFileSync(fromPath, JSON.stringify([legacyRecord(ulid()), legacyRecord(ulid())]), "utf-8");
+
+    const r = await runControlPlaneCommand(
+      ["registry", "migrate", "--from", fromPath],
+      { cwd: tmp },
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.toLowerCase()).toContain("imported");
+    expect(r.stdout).toContain("2");
+  });
+
+  test("emits structured JSON with --output json and exits 0 on clean run", async () => {
+    const fromPath = join(tmp, "legacy.json");
+    const id = ulid();
+    writeFileSync(fromPath, JSON.stringify([legacyRecord(id)]), "utf-8");
+
+    const r = await runControlPlaneCommand(
+      ["registry", "migrate", "--from", fromPath, "--output", "json"],
+      { cwd: tmp },
+    );
+    expect(r.exitCode).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.imported).toBe(1);
+    expect(parsed.skipped).toBe(0);
+    expect(parsed.errors).toEqual([]);
+  });
+
+  test("exits 1 when one or more records error, but still imports the good ones", async () => {
+    const fromPath = join(tmp, "legacy.json");
+    const goodId = ulid();
+    const good = legacyRecord(goodId);
+    const bad = { ...legacyRecord(ulid()), scenario: "INVALID SLUG!" };
+    writeFileSync(fromPath, JSON.stringify([good, bad]), "utf-8");
+
+    const r = await runControlPlaneCommand(
+      ["registry", "migrate", "--from", fromPath, "--output", "json"],
+      { cwd: tmp },
+    );
+    expect(r.exitCode).toBe(EXIT.HARD_FAIL);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.imported).toBe(1);
+    expect(parsed.errors).toHaveLength(1);
+  });
+
+  test("help: migrate --help documents --from and --output and the default discovery path", async () => {
+    const r = await runControlPlaneCommand(["registry", "migrate", "--help"], { cwd: tmp });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("--from");
+    expect(r.stdout).toContain("legacy-model-records.json");
+  });
+
+  test("discovers <cwd>/.autocontext/legacy-model-records.json when --from omitted", async () => {
+    mkdirSync(join(tmp, ".autocontext"), { recursive: true });
+    writeFileSync(
+      join(tmp, ".autocontext", "legacy-model-records.json"),
+      JSON.stringify([legacyRecord(ulid())]),
+      "utf-8",
+    );
+
+    const r = await runControlPlaneCommand(
+      ["registry", "migrate", "--output", "json"],
+      { cwd: tmp },
+    );
+    expect(r.exitCode).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.imported).toBe(1);
   });
 });
