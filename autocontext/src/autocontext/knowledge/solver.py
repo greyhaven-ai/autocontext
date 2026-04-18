@@ -35,6 +35,28 @@ class _NamedScenario(Protocol):
 
 
 _FAMILY_HEADER_RE = re.compile(r"^\s*\*{0,2}family\*{0,2}:\s*(?P<body>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+_SOLVE_DESCRIPTION_SKIP_SECTIONS = frozenset(
+    {
+        "Why This Matters",
+        "What This Tests",
+        "Implementation Guidance",
+        "Acceptance",
+        "Why existing scenarios don't cover this",
+        "Dependencies",
+    }
+)
+_SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES = (
+    "**Priority:**",
+    "**Generations to signal:**",
+)
+_SOLVE_FAMILY_ALIASES = {
+    "meta_learning": "agent_task",
+}
+_SIMULATION_INTERFACE_HINT_RE = re.compile(
+    r"\bsimulationinterface\b.*\bworldstate\b|\bworldstate\b.*\bsimulationinterface\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_AGENT_TASK_INTERFACE_HINT_RE = re.compile(r"\bagent[- ]task evaluation\b", re.IGNORECASE)
 
 
 @dataclass
@@ -267,6 +289,34 @@ class _BudgetedAgentTask(AgentTaskInterface):
         return result
 
 
+def _build_solve_description_brief(description: str) -> str:
+    lines: list[str] = []
+    skipping_section = False
+    for raw_line in description.splitlines():
+        heading_match = re.match(r"^\s*#{2,6}\s+(.+?)\s*$", raw_line)
+        if heading_match is not None:
+            title = heading_match.group(1).strip()
+            skipping_section = title in _SOLVE_DESCRIPTION_SKIP_SECTIONS
+            if not skipping_section:
+                lines.append(raw_line)
+            continue
+
+        stripped = raw_line.strip()
+        if stripped.startswith(_SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES):
+            continue
+        if not skipping_section:
+            lines.append(raw_line)
+
+    brief = "\n".join(lines).strip()
+    brief = re.sub(r"\n{3,}", "\n\n", brief)
+    return brief or description.strip()
+
+
+def _normalize_family_hint_token(token: str) -> str:
+    normalized = re.sub(r"[^a-z0-9_\-\s]", " ", token.lower()).strip()
+    return normalized.replace("-", "_").replace(" ", "_")
+
+
 def _resolve_family_hint(description: str) -> ScenarioFamily | None:
     from autocontext.scenarios.families import get_family, list_families
 
@@ -277,20 +327,43 @@ def _resolve_family_hint(description: str) -> ScenarioFamily | None:
     supported = {family.name: family for family in list_families()}
     raw_hint = match.group("body")
     for token in re.split(r"[/,|]", raw_hint):
-        normalized = re.sub(r"[^a-z0-9_\-\s]", " ", token.lower()).strip()
-        candidate = normalized.replace("-", "_").replace(" ", "_")
+        candidate = _normalize_family_hint_token(token)
         if candidate in supported:
             return get_family(candidate)
+    return None
+
+
+def _resolve_solve_family_alias(description: str) -> ScenarioFamily | None:
+    from autocontext.scenarios.families import get_family
+
+    match = _FAMILY_HEADER_RE.search(description)
+    if match is not None:
+        for token in re.split(r"[/,|]", match.group("body")):
+            candidate = _normalize_family_hint_token(token)
+            aliased = _SOLVE_FAMILY_ALIASES.get(candidate)
+            if aliased is not None:
+                return get_family(aliased)
+
+    if _SIMULATION_INTERFACE_HINT_RE.search(description):
+        return get_family("simulation")
+    if _AGENT_TASK_INTERFACE_HINT_RE.search(description):
+        return get_family("agent_task")
     return None
 
 
 def _resolve_requested_scenario_family(description: str) -> ScenarioFamily:
     from autocontext.scenarios.custom.family_classifier import classify_scenario_family, route_to_family
 
-    hinted_family = _resolve_family_hint(description)
+    brief = _build_solve_description_brief(description)
+    hinted_family = _resolve_family_hint(brief)
     if hinted_family is not None:
         return hinted_family
-    classification = classify_scenario_family(description)
+
+    aliased_family = _resolve_solve_family_alias(brief)
+    if aliased_family is not None:
+        return aliased_family
+
+    classification = classify_scenario_family(brief)
     return route_to_family(classification)
 
 
@@ -484,7 +557,8 @@ class SolveScenarioBuilder:
         from autocontext.scenarios.custom.agent_task_creator import AgentTaskCreator
         from autocontext.scenarios.custom.creator import ScenarioCreator
 
-        family = _resolve_requested_scenario_family(description)
+        brief = _build_solve_description_brief(description)
+        family = _resolve_requested_scenario_family(brief)
 
         if family.name == "game":
             game_creator = ScenarioCreator(
@@ -492,7 +566,7 @@ class SolveScenarioBuilder:
                 model=self._model,
                 knowledge_root=self._knowledge_root,
             )
-            spec = game_creator.generate_spec(description)
+            spec = game_creator.generate_spec(brief)
             build = game_creator.build_and_validate(spec)
             SCENARIO_REGISTRY[spec.name] = build.scenario_class
             return SolveScenarioBuildResult(
@@ -504,7 +578,7 @@ class SolveScenarioBuilder:
             llm_fn=self._llm_fn,
             knowledge_root=self._knowledge_root,
         )
-        scenario = family_creator.create(description, family_name=family.name)
+        scenario = family_creator.create(brief, family_name=family.name)
         scenario_name = str(cast(_NamedScenario, scenario).name)
         SCENARIO_REGISTRY[scenario_name] = scenario.__class__
         return SolveScenarioBuildResult(
@@ -518,7 +592,7 @@ def _llm_fn_from_client(client: Any, model: str) -> LlmFn:
         response = client.generate(
             model=model,
             prompt=f"{system}\n\n{user}",
-            max_tokens=3000,
+            max_tokens=1800,
             temperature=0.3,
             role="scenario_designer",
         )
@@ -605,11 +679,12 @@ class SolveManager:
 
             client = build_client_from_settings(self._settings)
             runtime = SubagentRuntime(client)
-            llm_fn = _llm_fn_from_client(client, self._settings.model_architect)
+            designer_model = self._settings.model_translator or self._settings.model_architect
+            llm_fn = _llm_fn_from_client(client, designer_model)
             return SolveScenarioBuilder(
                 runtime=runtime,
                 llm_fn=llm_fn,
-                model=self._settings.model_architect,
+                model=designer_model,
                 knowledge_root=self._settings.knowledge_root,
             )
         except Exception:

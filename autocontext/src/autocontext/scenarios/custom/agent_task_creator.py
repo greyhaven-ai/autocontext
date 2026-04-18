@@ -99,12 +99,20 @@ class AgentTaskCreator:
 
         # 1. Design
         logger.info("designing agent task from description")
-        spec = design_agent_task(description, self.llm_fn)
+        try:
+            spec = design_agent_task(description, self.llm_fn)
+        except Exception:
+            logger.warning("agent task design failed on first attempt; retrying once", exc_info=True)
+            spec = design_agent_task(description, self.llm_fn)
 
         # 1.5 Auto-heal: generate synthetic sample_input if needed (AC-309)
-        from autocontext.scenarios.custom.spec_auto_heal import heal_spec_sample_input
+        from autocontext.scenarios.custom.spec_auto_heal import (
+            heal_spec_runtime_context_requirements,
+            heal_spec_sample_input,
+        )
 
         spec = heal_spec_sample_input(spec, description=description)
+        spec = heal_spec_runtime_context_requirements(spec)
 
         # 2. Validate spec
         spec_errors = validate_for_family("agent_task", asdict(spec))

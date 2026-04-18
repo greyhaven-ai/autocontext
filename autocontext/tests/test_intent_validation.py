@@ -15,6 +15,7 @@ from autocontext.scenarios.custom.agent_task_validator import validate_intent
 # Task-family keyword extraction
 # ---------------------------------------------------------------------------
 
+
 class TestIntentKeywordOverlap:
     def test_matching_intent_passes(self) -> None:
         """A spec about Python code quality should pass for a code quality description."""
@@ -61,10 +62,60 @@ class TestIntentKeywordOverlap:
         )
         assert errors == []
 
+    def test_biomedical_agent_task_prompt_does_not_false_positive_as_code(self) -> None:
+        """Biomedical evaluation prompts should not drift just because they mention kidney function."""
+        errors = validate_intent(
+            user_description=(
+                "Build and run a pharmacological reasoning scenario where the agent predicts "
+                "drug interaction risks.\n\n"
+                "Use agent-task evaluation with structured output:\n"
+                "* Agent receives: patient profile (age, weight, conditions, current medications, "
+                "liver/kidney function), proposed new medication\n"
+                "* Agent must produce: interaction risk assessment with mechanism explanation, "
+                "severity rating, clinical recommendation\n"
+                "* Evaluation dimensions: interaction identification accuracy, mechanism explanation "
+                "quality, severity rating accuracy, clinical recommendation quality"
+            ),
+            spec=AgentTaskSpec(
+                task_prompt=(
+                    "Assess the proposed medication against the patient profile, identify clinically "
+                    "meaningful drug interactions, explain the mechanism, assign a severity rating, "
+                    "and recommend the safest next step."
+                ),
+                judge_rubric=(
+                    "Score interaction identification accuracy, mechanism explanation quality, "
+                    "severity rating accuracy, and clinical recommendation quality."
+                ),
+                output_format="json_schema",
+            ),
+        )
+        assert errors == []
+
+    def test_meta_learning_summary_prompt_does_not_false_positive_as_data_task(self) -> None:
+        """Meta-learning prompts should not be rejected just because they mention learning or self-models."""
+        errors = validate_intent(
+            user_description=(
+                "The system's own generation history is fed back as input. It must produce a compressed summary of what it "
+                "has learned, then use that summary as the only context for the next generation."
+            ),
+            spec=AgentTaskSpec(
+                task_prompt=(
+                    "Summarize the most important lessons from the prior generations into a compact memory note that can guide "
+                    "the next attempt without access to the raw history."
+                ),
+                judge_rubric=(
+                    "Score whether the summary preserves actionable lessons, compresses redundant detail, and supports strong "
+                    "next-generation performance."
+                ),
+            ),
+        )
+        assert errors == []
+
 
 # ---------------------------------------------------------------------------
 # Rubric-prompt coherence
 # ---------------------------------------------------------------------------
+
 
 class TestRubricPromptCoherence:
     def test_coherent_rubric_passes(self) -> None:
@@ -93,6 +144,7 @@ class TestRubricPromptCoherence:
 # ---------------------------------------------------------------------------
 # Output format compatibility
 # ---------------------------------------------------------------------------
+
 
 class TestOutputFormatCompatibility:
     def test_code_format_for_code_task(self) -> None:
@@ -163,6 +215,7 @@ class TestOutputFormatCompatibility:
 # Name coherence (derived name vs spec content)
 # ---------------------------------------------------------------------------
 
+
 class TestNameCoherence:
     def test_derived_name_preserves_domain_concepts(self) -> None:
         """Key domain terms from the description should appear in the spec."""
@@ -193,6 +246,7 @@ class TestNameCoherence:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_empty_description_passes(self) -> None:
@@ -236,6 +290,7 @@ class TestEdgeCases:
 # ---------------------------------------------------------------------------
 # Integration with AgentTaskCreator
 # ---------------------------------------------------------------------------
+
 
 class TestCreatorIntentValidation:
     def test_creator_calls_validate_intent(self) -> None:

@@ -56,61 +56,28 @@ _EXAMPLE_SPEC = {
 }
 
 AGENT_TASK_DESIGNER_SYSTEM = (
-    "You are a scenario designer for autocontext, an agent evaluation system. "
-    "Given a natural language description, produce an AgentTaskSpec JSON "
-    "that defines a task prompt, evaluation rubric, output format, and optional judge model.\n\n"
-    f"The output must be valid JSON wrapped in delimiters:\n"
+    "You design AgentTaskSpec JSON for autocontext. "
+    "Return only one JSON object wrapped in the required delimiters.\n\n"
     f"{SPEC_START}\n{{ ... }}\n{SPEC_END}\n\n"
-    "## AgentTaskSpec Schema\n\n"
-    "```json\n"
-    "{\n"
-    '  "task_prompt": "The full prompt given to the agent being evaluated",\n'
-    '  "judge_rubric": "Detailed rubric for the LLM judge to score the output",\n'
-    '  "output_format": "free_text | json_schema | code",\n'
-    '  "judge_model": "",\n'
-    '  "difficulty_tiers": null,\n'
-    '  "reference_context": "Authoritative domain knowledge for judging factual accuracy (optional, null if not needed)",\n'
-    '  "reference_sources": ["list of source URLs or references (optional)"],\n'
-    '  "required_concepts": ["key concepts the output must correctly address (optional)"],\n'
-    '  "sample_input": "Realistic sample input data for data-dependent tasks (optional, null if not needed)",\n'
-    '  "context_preparation": "Instructions for gathering context before generation (optional, null if not needed)",\n'
-    '  "required_context_keys": ["state keys that must be present after context preparation (optional)"],\n'
-    '  "max_rounds": 1,\n'
-    '  "quality_threshold": 0.9,\n'
-    '  "revision_prompt": "Instructions for revising output based on judge feedback (optional)"\n'
-    "}\n"
-    "```\n\n"
-    "## Rules\n\n"
-    "- `task_prompt` must be clear, detailed, and self-contained\n"
-    '- `task_prompt` must be FULLY self-contained: never say "you will be provided with..." or reference '
-    "external data without including it. If the task depends on input data, populate `sample_input` with "
-    "realistic example data and embed it directly in the prompt\n"
-    "- `sample_input` (optional, null if not needed) — realistic sample input data for data-dependent tasks. "
-    "Populate this whenever the task requires the agent to process specific input "
-    "(e.g. an outage report, a code snippet, a dataset)\n"
-    "- `judge_rubric` must list specific evaluation dimensions with criteria\n"
-    "- `output_format` must be one of: free_text, json_schema, code\n"
-    "- `judge_model` is optional; use an empty string to fall back to the configured judge/default provider model\n"
-    "- `reference_context` (optional) — authoritative domain knowledge the judge should use to verify factual accuracy. "
-    "Include this when the task requires domain-specific knowledge that the judge LLM may not have. "
-    "When provided, the judge will score factual_accuracy as a mandatory dimension.\n"
-    "- `reference_sources` (optional) — list of source URLs or citations for the reference context\n"
-    "- `required_concepts` (optional) — key concepts the output must correctly address\n"
-    "- `context_preparation` (optional) — instructions for gathering/loading context before the agent generates output. "
-    "Use this when the task requires research, document loading, or other preparation steps.\n"
-    "- `required_context_keys` (optional) — state dictionary keys that must be present after context preparation. "
-    "Used to validate that preparation completed successfully.\n"
-    "- `calibration_examples` — You MUST include at least 2 calibration examples: one low-quality output "
-    "(~0.3 score) and one high-quality output (~0.9 score). Each example must have `human_score`, "
-    "`human_notes`, and `agent_output` fields. These anchor the judge's scoring scale and are critical "
-    "for consistent evaluation.\n"
-    "- `max_rounds` (optional, default 1) — maximum improvement rounds. Set >1 to enable iterative refinement.\n"
-    "- `quality_threshold` (optional, default 0.9) — stop improving when score >= this value.\n"
-    "- `revision_prompt` (optional) — instructions for how the agent should revise its output based on judge feedback.\n\n"
-    f"## Example\n\n{SPEC_START}\n"
-    f"{json.dumps(_EXAMPLE_SPEC, indent=2)}\n"
-    f"{SPEC_END}\n\n"
-    "Now design an agent task scenario for the user's description.\n"
+    "Required fields:\n"
+    '- "task_prompt": self-contained prompt for the evaluated agent\n'
+    '- "judge_rubric": explicit scoring dimensions and criteria\n'
+    '- "output_format": one of free_text, json_schema, or code\n\n'
+    "Optional fields (use null or omit when unnecessary): judge_model, difficulty_tiers, "
+    "reference_context, reference_sources, required_concepts, sample_input, "
+    "context_preparation, required_context_keys, calibration_examples, max_rounds, "
+    "quality_threshold, revision_prompt.\n\n"
+    "Rules:\n"
+    "- Keep the task executable from the prompt, sample_input, reference_context, "
+    "and reference_sources alone whenever possible.\n"
+    "- If the task depends on concrete input data, include realistic sample_input and make the prompt self-contained.\n"
+    "- Use context_preparation and required_context_keys only when the task truly "
+    "needs extra runtime-loaded context; otherwise set them to null.\n"
+    "- Do not invent impossible external loaders or unsatisfied state keys.\n"
+    "- Prefer concise, domain-specific rubrics over generic prose-quality language.\n"
+    "- For structured tasks, output_format should usually be json_schema.\n"
+    "- If iterative refinement is useful, set max_rounds > 1 and provide a revision_prompt.\n\n"
+    "Produce the smallest complete AgentTaskSpec that faithfully captures the user description.\n"
 )
 
 

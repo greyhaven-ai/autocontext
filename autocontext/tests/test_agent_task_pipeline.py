@@ -599,6 +599,61 @@ class TestAgentTaskCreator:
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 
+    def test_retries_agent_task_design_after_timeout(self) -> None:
+        attempts = {"count": 0}
+        response_text = _mock_llm_response(SAMPLE_SPEC)
+
+        def mock_llm(system: str, user: str) -> str:
+            del system, user
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise RuntimeError("PiCLIRuntime failed: timeout")
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            instance = creator.create("Write a haiku about testing software")
+            registered_name = creator.derive_name("Write a haiku about testing software")
+
+            try:
+                assert instance.get_rubric() == SAMPLE_SPEC.judge_rubric
+                assert attempts["count"] == 2
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
+    def test_retries_agent_task_design_after_parse_failure(self) -> None:
+        attempts = {"count": 0}
+        invalid_response = f'{SPEC_START}\n{{\n  "task_prompt": }}\n{SPEC_END}\n'
+        response_text = _mock_llm_response(SAMPLE_SPEC)
+
+        def mock_llm(system: str, user: str) -> str:
+            del system, user
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                return invalid_response
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+            )
+            instance = creator.create("Write a haiku about testing software")
+            registered_name = creator.derive_name("Write a haiku about testing software")
+
+            try:
+                assert instance.get_rubric() == SAMPLE_SPEC.judge_rubric
+                assert attempts["count"] == 2
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
     def test_routes_simulation_like_requests_to_simulation_creator(self) -> None:
         response_text = _mock_simulation_response()
 
