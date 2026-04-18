@@ -45,3 +45,35 @@ class TestClaudeTimeoutDefaults:
         )
 
         assert resolved.claude_timeout == 90.0
+
+
+class TestClaudeCLIRuntimeObservability:
+    def test_runtime_logs_invoke_with_timeout_and_model(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Each claude-cli invocation emits one INFO log naming the model and timeout."""
+        completed = subprocess.CompletedProcess(
+            args=["claude"],
+            returncode=0,
+            stdout='{"type":"result","subtype":"success","is_error":false,'
+                   '"result":"ok","total_cost_usd":0.0,"session_id":"t","duration_ms":1}',
+            stderr="",
+        )
+
+        runtime = ClaudeCLIRuntime(ClaudeCLIConfig(model="sonnet", timeout=300.0))
+
+        with caplog.at_level(logging.INFO, logger="autocontext.runtimes.claude_cli"):
+            with patch("subprocess.run", return_value=completed):
+                runtime.generate(prompt="probe")
+
+        invoke_records = [
+            r for r in caplog.records
+            if r.levelno == logging.INFO and "claude-cli invoke" in r.getMessage()
+        ]
+        assert len(invoke_records) == 1, (
+            f"expected one invoke INFO record, got {[r.message for r in caplog.records]}"
+        )
+        message = invoke_records[0].getMessage()
+        assert "model=sonnet" in message
+        assert "timeout=300s" in message
