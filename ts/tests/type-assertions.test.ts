@@ -62,7 +62,11 @@ describe("TypeScript type assertion budget", () => {
     // Budget: enforce no regression from current baseline
     // Bumped to 550 when control-plane/contract/ landed (branded-ID parsers
     // require `as Brand` casts — phantom types have no runtime representation).
-    expect(total).toBeLessThanOrEqual(550);
+    // Bumped to 565 when control-plane/registry/ (Layer 4) landed — fs-based
+    // stores must cast strings parsed from on-disk JSON back to branded
+    // ArtifactId/Scenario/EnvironmentTag/ContentHash, and the listStatePointers
+    // walk reconstructs branded path components from directory entry names.
+    expect(total).toBeLessThanOrEqual(565);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {
