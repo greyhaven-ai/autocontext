@@ -57,11 +57,12 @@ Commands:
   mcp-serve        Start MCP server on stdio
   version          Show version
 
-Control plane (Layer 7-8):
+Control plane (Layer 7-9):
   candidate        Register/list/show/lineage/rollback control-plane artifacts
   eval             Attach/list EvalRuns on artifacts
   promotion        Decide/apply/history for promotion transitions
   registry         Repair/validate/migrate the control-plane registry
+  emit-pr          Generate a promotion PR (or dry-run bundle) for a candidate
 
 Python-only commands (not supported in npm package):
   ecosystem, ab-test, resume, wait, trigger-distillation
@@ -195,6 +196,7 @@ async function main(): Promise<void> {
     case "eval":
     case "promotion":
     case "registry":
+    case "emit-pr":
       await cmdControlPlane(command);
       break;
     default:
