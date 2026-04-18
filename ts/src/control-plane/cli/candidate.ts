@@ -19,9 +19,10 @@ import {
 } from "../contract/branded-ids.js";
 import { createArtifact, createPromotionEvent } from "../contract/factories.js";
 import { computeTreeHash, type TreeFile } from "../contract/invariants.js";
-import { openRegistry, type ListCandidatesFilter } from "../registry/index.js";
+import { openRegistry, type ListCandidatesFilter, type Registry } from "../registry/index.js";
 import { validateLineageNoCycles } from "../contract/invariants.js";
 import { CascadeRollbackRequired } from "../actuators/errors.js";
+import { getActuator } from "../actuators/registry.js";
 import { EXIT } from "./_shared/exit-codes.js";
 import { formatOutput, type OutputMode } from "./_shared/output-formatters.js";
 import type { CliResult, CliContext } from "./types.js";
@@ -344,6 +345,41 @@ async function runLineage(args: readonly string[], ctx: CliContext): Promise<Cli
 
 // ---- rollback ----
 
+/**
+ * Cascade-rollback precheck. For an actuator whose rollback strategy is
+ * `cascade-set` (currently only routing-rule), look up the dependsOn list and
+ * find any artifacts of those types that are still in an "active" state in
+ * the same (scenario, environmentTag) tuple. If any are found, return them
+ * so the caller can refuse the rollback with CascadeRollbackRequired.
+ *
+ * v1 simulates the cross-actuator dependency at the registry level (rather
+ * than parsing the routing-rule payload for explicit references) per spec
+ * §10.3 Flow 5 implementation note.
+ */
+function findIncompatibleDependents(
+  registry: Registry,
+  candidate: Artifact,
+): readonly ArtifactId[] {
+  const reg = getActuator(candidate.actuatorType);
+  if (reg === null) return [];
+  if (reg.rollback.kind !== "cascade-set") return [];
+
+  const dependsOn = reg.rollback.dependsOn;
+  const dependents: ArtifactId[] = [];
+  for (const depType of dependsOn) {
+    const matches = registry.listCandidates({
+      scenario: candidate.scenario,
+      environmentTag: candidate.environmentTag,
+      actuatorType: depType,
+      activationState: "active",
+    });
+    for (const m of matches) {
+      dependents.push(m.id);
+    }
+  }
+  return dependents;
+}
+
 async function runRollback(args: readonly string[], ctx: CliContext): Promise<CliResult> {
   const id = args[0];
   if (!id || id.startsWith("--")) {
@@ -367,6 +403,17 @@ async function runRollback(args: readonly string[], ctx: CliContext): Promise<Cl
       stdout: "",
       stderr: err instanceof Error ? err.message : String(err),
       exitCode: EXIT.INVALID_ARTIFACT,
+    };
+  }
+
+  // Cascade precheck — refuse rollback BEFORE mutating state if any
+  // active dependents would be left in an incompatible state.
+  const incompatible = findIncompatibleDependents(registry, current);
+  if (incompatible.length > 0) {
+    return {
+      stdout: "",
+      stderr: `CascadeRollbackRequired: dependents must be rolled back first: ${incompatible.join(", ")}`,
+      exitCode: EXIT.CASCADE_ROLLBACK_REQUIRED,
     };
   }
 
