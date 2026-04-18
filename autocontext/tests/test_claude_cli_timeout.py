@@ -23,3 +23,13 @@ class TestClaudeTimeoutDefaults:
     def test_claude_cli_config_default_is_300s(self) -> None:
         cfg = ClaudeCLIConfig()
         assert cfg.timeout == 300.0
+
+    def test_env_var_overrides_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AUTOCONTEXT_CLAUDE_TIMEOUT has always overridden the default; pin it."""
+        monkeypatch.setenv("AUTOCONTEXT_CLAUDE_TIMEOUT", "45")
+
+        settings = load_settings()
+
+        assert settings.claude_timeout == 45.0
