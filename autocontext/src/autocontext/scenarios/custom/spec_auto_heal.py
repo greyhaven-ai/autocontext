@@ -25,6 +25,17 @@ from autocontext.scenarios.custom.agent_task_validator import (
     _has_inline_data_after,
 )
 
+_AUTOMATIC_RUNTIME_CONTEXT_KEYS = frozenset(
+    {
+        "task_name",
+        "output_format",
+        "sample_input",
+        "context_preparation",
+        "reference_context",
+        "reference_sources",
+    }
+)
+
 
 def needs_sample_input(spec: AgentTaskSpec) -> bool:
     """Detect when a spec needs auto-generated sample_input.
@@ -109,3 +120,27 @@ def heal_spec_sample_input(
 
     synthetic = generate_synthetic_sample_input(spec.task_prompt, description)
     return replace(spec, sample_input=synthetic)
+
+
+def heal_spec_runtime_context_requirements(spec: AgentTaskSpec) -> AgentTaskSpec:
+    """Drop runtime context keys the generated agent-task surface cannot hydrate.
+
+    Generated agent-task classes can automatically provide only a small fixed set
+    of state keys during solve/improve execution. If the LLM designer invents
+    additional required context keys such as `patient_case` or
+    `judge_ground_truth_interactions`, the task becomes impossible to execute.
+    In that case, keep only satisfiable keys and clear context-preparation
+    instructions when nothing executable remains.
+    """
+    if not spec.required_context_keys:
+        return spec
+
+    supported_keys = [key for key in spec.required_context_keys if key in _AUTOMATIC_RUNTIME_CONTEXT_KEYS]
+    if len(supported_keys) == len(spec.required_context_keys):
+        return spec
+
+    return replace(
+        spec,
+        context_preparation=(spec.context_preparation if supported_keys else None),
+        required_context_keys=(supported_keys or None),
+    )

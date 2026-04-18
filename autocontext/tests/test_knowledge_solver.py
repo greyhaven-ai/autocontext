@@ -291,6 +291,155 @@ class TestSolveScenarioBuilder:
         assert captured["family_name"] == "coordination"
         assert result.family_name == "coordination"
 
+    def test_resolves_simulationinterface_harness_prompt_to_simulation(self) -> None:
+        from autocontext.knowledge.solver import _resolve_requested_scenario_family
+
+        family = _resolve_requested_scenario_family(
+            "## Objective\n\n"
+            "Build and run a biomedical scenario where the agent designs Phase II/III "
+            "clinical trial protocols, accumulating regulatory and statistical design "
+            "heuristics across generations.\n\n"
+            "## Scenario Design\n\n"
+            "Use `SimulationInterface` + `WorldState`:\n\n"
+            "* Agent receives: disease indication, drug mechanism of action, target "
+            "population demographics, regulatory jurisdiction (FDA/EMA), budget constraints\n"
+            "* Agent must produce: primary/secondary endpoints, sample size with power "
+            "calculation rationale, inclusion/exclusion criteria, randomization scheme, "
+            "safety monitoring plan\n"
+            "* WorldState tracks: regulatory precedent database, statistical design "
+            "parameters, ethical review requirements\n"
+            "* Multiple seeds across indications: oncology, cardiovascular, rare disease, "
+            "neurodegenerative\n"
+            "* Evaluation against real protocol standards (ICH-GCP E6, FDA guidance "
+            "documents)\n"
+        )
+
+        assert family.name == "simulation"
+
+    def test_resolves_meta_learning_proposal_to_agent_task(self) -> None:
+        from autocontext.knowledge.solver import _resolve_requested_scenario_family
+
+        family = _resolve_requested_scenario_family(
+            "## Scenario Proposal\n\n"
+            "**Family:** meta_learning\n"
+            "**Priority:** Week 1 (standalone)\n"
+            "**Generations to signal:** 20-40\n\n"
+            "### Description\n\n"
+            "The system's own generation history is fed back as input. It must produce "
+            "a compressed summary of what it has learned, then use that summary as the "
+            "only context for the next generation (raw history is dropped). Tests whether "
+            "the system can maintain useful meta-knowledge under compression and develop "
+            "a stable self-model.\n"
+        )
+
+        assert family.name == "agent_task"
+
+    def test_build_strips_nonessential_solve_sections_before_creation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioBuilder
+
+        runtime = SubagentRuntime(DeterministicDevClient())
+        builder = SolveScenarioBuilder(
+            runtime=runtime,
+            llm_fn=_operator_loop_llm,
+            model="test-model",
+            knowledge_root=tmp_path,
+        )
+        captured: dict[str, str] = {}
+
+        class _CreatedScenario:
+            name = "clinical_trial_protocol_fixture"
+
+        def _fake_create(self, description: str, *, family_name: str = "") -> _CreatedScenario:
+            del self, family_name
+            captured["description"] = description
+            return _CreatedScenario()
+
+        monkeypatch.setattr(
+            "autocontext.scenarios.custom.agent_task_creator.AgentTaskCreator.create",
+            _fake_create,
+        )
+
+        builder.build(
+            "## Objective\n\n"
+            "Build and run a biomedical scenario where the agent designs Phase II/III "
+            "clinical trial protocols, accumulating regulatory and statistical design "
+            "heuristics across generations.\n\n"
+            "## Why This Matters\n\n"
+            "Clinical trial protocol design is high value.\n\n"
+            "## Scenario Design\n\n"
+            "Use agent-task evaluation with structured output.\n\n"
+            "## Implementation Guidance\n\n"
+            "Build a concrete SimulationInterface subclass for clinical trial protocol design.\n\n"
+            "## Acceptance\n\n"
+            "- [ ] 10+ generations show score improvement\n"
+        )
+
+        assert "Why This Matters" not in captured["description"]
+        assert "Implementation Guidance" not in captured["description"]
+        assert "Acceptance" not in captured["description"]
+        assert "Objective" in captured["description"]
+        assert "Scenario Design" in captured["description"]
+
+
+class TestSolveLLMFn:
+    def test_uses_tighter_solve_designer_token_budget(self) -> None:
+        from autocontext.knowledge.solver import _llm_fn_from_client
+
+        captured: dict[str, object] = {}
+
+        class _Response:
+            text = "ok"
+
+        class _Client:
+            def generate(self, **kwargs: object) -> _Response:
+                captured.update(kwargs)
+                return _Response()
+
+        llm_fn = _llm_fn_from_client(_Client(), "architect-model")
+        result = llm_fn("system prompt", "user prompt")
+
+        assert result == "ok"
+        assert captured["model"] == "architect-model"
+        assert captured["max_tokens"] == 1800
+        assert captured["role"] == "scenario_designer"
+
+    def test_build_creator_prefers_translator_model_for_solve_design(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveManager
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            model_architect="architect-opus",
+            model_translator="translator-sonnet",
+        )
+        manager = SolveManager(settings)
+
+        class _Client:
+            pass
+
+        class _Runtime:
+            def __init__(self, client: object) -> None:
+                self.client = client
+
+        monkeypatch.setattr(
+            "autocontext.agents.llm_client.build_client_from_settings",
+            lambda settings: _Client(),
+        )
+        monkeypatch.setattr(
+            "autocontext.agents.subagent_runtime.SubagentRuntime",
+            _Runtime,
+        )
+
+        builder = manager._build_creator()
+
+        assert builder is not None
+        assert builder._model == "translator-sonnet"
+
 
 class TestSolveScenarioExecutor:
     def test_runs_agent_task_scenarios_through_task_loop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

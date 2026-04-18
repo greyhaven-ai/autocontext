@@ -16,72 +16,262 @@ logger = logging.getLogger(__name__)
 _VALID_OUTPUT_FORMATS = {"free_text", "json_schema", "code"}
 
 # Words too common to signal domain intent.
-_INTENT_STOP_WORDS = frozenset({
-    "a", "an", "the", "and", "or", "of", "for", "to", "in", "on", "at", "by",
-    "is", "are", "was", "be", "do", "does", "it", "we", "they", "i", "you",
-    "that", "can", "should", "could", "would", "will", "must", "with", "which",
-    "what", "how", "task", "agent", "system", "create", "build", "write", "make",
-    "good", "well", "very", "just", "also", "clear", "structured", "want", "need",
-})
+_INTENT_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "for",
+        "to",
+        "in",
+        "on",
+        "at",
+        "by",
+        "is",
+        "are",
+        "was",
+        "be",
+        "do",
+        "does",
+        "it",
+        "we",
+        "they",
+        "i",
+        "you",
+        "that",
+        "can",
+        "should",
+        "could",
+        "would",
+        "will",
+        "must",
+        "with",
+        "which",
+        "what",
+        "how",
+        "task",
+        "agent",
+        "system",
+        "create",
+        "build",
+        "write",
+        "make",
+        "good",
+        "well",
+        "very",
+        "just",
+        "also",
+        "clear",
+        "structured",
+        "want",
+        "need",
+    }
+)
 
 # Task-family keyword clusters — if description keywords fall in one cluster
 # but the spec's keywords fall in a different one, that signals drift.
 _TASK_FAMILIES: dict[str, frozenset[str]] = {
-    "code": frozenset({
-        "code", "coding", "python", "function", "algorithm", "program", "debug",
-        "debugging", "syntax", "compile", "runtime", "api", "endpoint", "scraper",
-        "refactor", "test", "tests", "testing", "unittest", "bug", "bugs",
-        "implementation", "implement", "software", "developer", "class", "method",
-    }),
-    "writing": frozenset({
-        "essay", "article", "blog", "write", "writing", "prose", "paragraph",
-        "narrative", "story", "fiction", "poetry", "haiku", "poem", "literary",
-        "persuasive", "rhetoric", "composition", "draft", "editorial", "recipe",
-        "cookbook", "cooking", "ingredients", "frosting", "cake", "baking",
-    }),
-    "analysis": frozenset({
-        "analysis", "analyze", "diagnostic", "diagnose", "investigate", "root",
-        "cause", "debugging", "logs", "monitoring", "crash", "error", "incident",
-        "forensic", "audit", "trace", "profiling", "performance", "bottleneck",
-    }),
-    "data": frozenset({
-        "data", "dataset", "classification", "classifier", "sentiment", "nlp",
-        "machine", "learning", "model", "training", "prediction", "regression",
-        "clustering", "neural", "deep", "statistics", "statistical", "inference",
-    }),
-    "design": frozenset({
-        "architecture", "design", "pattern", "microservices", "distributed",
-        "scalability", "infrastructure", "devops", "deployment", "kubernetes",
-        "docker", "cloud", "aws", "system", "systems",
-    }),
+    "code": frozenset(
+        {
+            "code",
+            "coding",
+            "python",
+            "algorithm",
+            "program",
+            "debug",
+            "debugging",
+            "syntax",
+            "compile",
+            "runtime",
+            "api",
+            "scraper",
+            "refactor",
+            "testing",
+            "unittest",
+            "bug",
+            "bugs",
+            "implement",
+            "software",
+            "developer",
+        }
+    ),
+    "writing": frozenset(
+        {
+            "essay",
+            "article",
+            "blog",
+            "write",
+            "writing",
+            "prose",
+            "paragraph",
+            "narrative",
+            "story",
+            "fiction",
+            "poetry",
+            "haiku",
+            "poem",
+            "literary",
+            "persuasive",
+            "rhetoric",
+            "composition",
+            "draft",
+            "editorial",
+            "recipe",
+            "cookbook",
+            "cooking",
+            "ingredients",
+            "frosting",
+            "cake",
+            "baking",
+        }
+    ),
+    "analysis": frozenset(
+        {
+            "analysis",
+            "analyze",
+            "diagnostic",
+            "diagnose",
+            "investigate",
+            "root",
+            "cause",
+            "debugging",
+            "logs",
+            "monitoring",
+            "crash",
+            "error",
+            "incident",
+            "forensic",
+            "audit",
+            "trace",
+            "profiling",
+            "performance",
+            "bottleneck",
+        }
+    ),
+    "data": frozenset(
+        {
+            "data",
+            "dataset",
+            "classification",
+            "classifier",
+            "sentiment",
+            "nlp",
+            "machine",
+            "prediction",
+            "regression",
+            "clustering",
+            "neural",
+            "deep",
+            "statistics",
+            "statistical",
+            "inference",
+        }
+    ),
+    "design": frozenset(
+        {
+            "architecture",
+            "design",
+            "pattern",
+            "microservices",
+            "distributed",
+            "scalability",
+            "infrastructure",
+            "devops",
+            "deployment",
+            "kubernetes",
+            "docker",
+            "cloud",
+            "aws",
+            "system",
+            "systems",
+        }
+    ),
 }
 
 # Signals that the description is asking for code generation output.
-_CODE_INTENT_SIGNALS = frozenset({
-    "code", "function", "class", "algorithm", "program", "implement",
-    "script", "python", "javascript", "typescript", "java", "rust", "go",
-    "generate code", "write code", "coding", "scraper", "web scraper",
-})
+_CODE_INTENT_SIGNALS = frozenset(
+    {
+        "code",
+        "function",
+        "class",
+        "algorithm",
+        "program",
+        "implement",
+        "script",
+        "python",
+        "javascript",
+        "typescript",
+        "java",
+        "rust",
+        "go",
+        "generate code",
+        "write code",
+        "coding",
+        "scraper",
+        "web scraper",
+    }
+)
 
 # Counter-signals: when present alongside code keywords, the task is about
 # evaluating/reviewing code (text output), not generating code.
-_CODE_EVALUATION_SIGNALS = frozenset({
-    "evaluate", "review", "assess", "analyze", "analyse", "audit", "quality",
-    "correctness", "diagnostic", "diagnose", "critique", "score", "grade",
-})
+_CODE_EVALUATION_SIGNALS = frozenset(
+    {
+        "evaluate",
+        "review",
+        "assess",
+        "analyze",
+        "analyse",
+        "audit",
+        "quality",
+        "correctness",
+        "diagnostic",
+        "diagnose",
+        "critique",
+        "score",
+        "grade",
+    }
+)
 
 # Signals that the description is asking for text/writing output.
-_TEXT_INTENT_SIGNALS = frozenset({
-    "essay", "article", "blog", "story", "write about", "persuasive",
-    "narrative", "poem", "haiku", "report", "documentation", "recipe",
-})
+_TEXT_INTENT_SIGNALS = frozenset(
+    {
+        "essay",
+        "article",
+        "blog",
+        "story",
+        "write about",
+        "persuasive",
+        "narrative",
+        "poem",
+        "haiku",
+        "report",
+        "documentation",
+        "recipe",
+    }
+)
 
 # Signals that the description is asking for a structured JSON-shaped output.
-_JSON_INTENT_SIGNALS = frozenset({
-    "json", "json schema", "structured output", "structured response",
-    "return a schema", "return schema", "fields", "field names", "key value",
-    "key-value", "object with", "array of", "machine readable", "machine-readable",
-})
+_JSON_INTENT_SIGNALS = frozenset(
+    {
+        "json",
+        "json schema",
+        "structured output",
+        "structured response",
+        "return a schema",
+        "return schema",
+        "fields",
+        "field names",
+        "key value",
+        "key-value",
+        "object with",
+        "array of",
+        "machine readable",
+        "machine-readable",
+    }
+)
 
 # Patterns that ALWAYS indicate external data (future/passive voice referring
 # to data the system must supply).
@@ -111,7 +301,7 @@ def _has_inline_data_after(prompt: str, pattern: str) -> bool:
     idx = prompt.lower().find(pattern)
     if idx < 0:
         return False
-    after = prompt[idx + len(pattern):].strip()
+    after = prompt[idx + len(pattern) :].strip()
     if not after:
         return False
 
@@ -130,7 +320,7 @@ def _has_inline_data_after(prompt: str, pattern: str) -> bool:
 
     match = _INLINE_BLOCK_RE.match(after)
     if match is not None:
-        payload = after[match.end():].strip()
+        payload = after[match.end() :].strip()
         if len(payload) >= _INLINE_DATA_MIN_CHARS:
             return True
 
@@ -147,12 +337,18 @@ def _detect_task_family(keywords: set[str]) -> str | None:
     """Return the best-matching task family for a set of keywords, or None."""
     best_family: str | None = None
     best_overlap = 0
+    tied_best = False
     for family, family_words in _TASK_FAMILIES.items():
         overlap = len(keywords & family_words)
         if overlap > best_overlap:
             best_overlap = overlap
             best_family = family
-    return best_family if best_overlap >= 1 else None
+            tied_best = False
+        elif overlap == best_overlap and overlap > 0:
+            tied_best = True
+    if best_overlap < 1 or tied_best:
+        return None
+    return best_family
 
 
 def _fuzzy_overlap(a: set[str], b: set[str], min_prefix: int = 4) -> set[str]:
@@ -200,8 +396,7 @@ def validate_intent(
     spec_family = _detect_task_family(spec_keywords)
     if desc_family and spec_family and desc_family != spec_family:
         errors.append(
-            f"intent mismatch: description suggests '{desc_family}' task family "
-            f"but generated spec resembles '{spec_family}'"
+            f"intent mismatch: description suggests '{desc_family}' task family but generated spec resembles '{spec_family}'"
         )
 
     # --- 2. Keyword overlap ---
@@ -209,10 +404,7 @@ def validate_intent(
         overlap = _fuzzy_overlap(desc_keywords, spec_keywords)
         overlap_ratio = len(overlap) / len(desc_keywords) if desc_keywords else 1.0
         if overlap_ratio == 0 and len(desc_keywords) >= 2:
-            errors.append(
-                "intent drift: no domain keywords from the description appear "
-                "in the generated task prompt or rubric"
-            )
+            errors.append("intent drift: no domain keywords from the description appear in the generated task prompt or rubric")
 
     # --- 3. Output format compatibility ---
     desc_signals_code = any(sig in desc_lower for sig in _CODE_INTENT_SIGNALS)
@@ -223,19 +415,12 @@ def validate_intent(
     # Only flag code→free_text mismatch when the description asks for code
     # *generation*, not code *evaluation/review* (which produces text output).
     if desc_signals_code and not desc_signals_text and not desc_signals_code_eval and spec.output_format == "free_text":
-        errors.append(
-            "format mismatch: description implies code output but "
-            "spec uses output_format='free_text'"
-        )
+        errors.append("format mismatch: description implies code output but spec uses output_format='free_text'")
     if desc_signals_text and not desc_signals_code and spec.output_format == "code":
-        errors.append(
-            "format mismatch: description implies text output but "
-            "spec uses output_format='code'"
-        )
+        errors.append("format mismatch: description implies text output but spec uses output_format='code'")
     if desc_signals_json and spec.output_format != "json_schema":
         errors.append(
-            "format mismatch: description implies structured JSON output but "
-            f"spec uses output_format='{spec.output_format}'"
+            f"format mismatch: description implies structured JSON output but spec uses output_format='{spec.output_format}'"
         )
 
     return errors
@@ -252,9 +437,7 @@ def validate_spec(spec: AgentTaskSpec) -> list[str]:
         errors.append("judge_rubric must not be empty")
 
     if spec.output_format not in _VALID_OUTPUT_FORMATS:
-        errors.append(
-            f"output_format '{spec.output_format}' not in {_VALID_OUTPUT_FORMATS}"
-        )
+        errors.append(f"output_format '{spec.output_format}' not in {_VALID_OUTPUT_FORMATS}")
 
     if spec.reference_context is not None and not spec.reference_context.strip():
         errors.append("reference_context, if provided, must not be empty")
@@ -344,9 +527,7 @@ def validate_execution(source: str) -> list[str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "LLMJudge":
                 if any(keyword.arg == "llm_fn" for keyword in node.keywords):
-                    errors.append(
-                        "evaluate_output uses legacy llm_fn wiring; use provider= with runtime provider resolution"
-                    )
+                    errors.append("evaluate_output uses legacy llm_fn wiring; use provider= with runtime provider resolution")
                     break
     except SyntaxError:
         # Syntax issues are handled by validate_syntax().
@@ -379,11 +560,7 @@ def validate_execution(source: str) -> list[str]:
         found_cls = None
         for attr_name in dir(mod):
             attr = getattr(mod, attr_name)
-            if (
-                isinstance(attr, type)
-                and issubclass(attr, AgentTaskInterface)
-                and attr is not AgentTaskInterface
-            ):
+            if isinstance(attr, type) and issubclass(attr, AgentTaskInterface) and attr is not AgentTaskInterface:
                 found_cls = attr
                 break
 

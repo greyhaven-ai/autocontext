@@ -77,8 +77,7 @@ class TestNeedsSampleInput:
 
         spec = AgentTaskSpec(
             task_prompt=(
-                "Analyze the following customer complaint and explain the refund "
-                "exposure, escalation path, and contractual risk."
+                "Analyze the following customer complaint and explain the refund exposure, escalation path, and contractual risk."
             ),
             judge_rubric="Evaluate analysis",
         )
@@ -142,6 +141,44 @@ class TestHealSpecSampleInput:
         healed = heal_spec_sample_input(spec, description="Analyze customer data")
         assert healed.sample_input is not None
         assert len(healed.sample_input) > 0
+
+    def test_drops_unreachable_runtime_context_requirements(self) -> None:
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.spec_auto_heal import heal_spec_runtime_context_requirements
+
+        spec = AgentTaskSpec(
+            task_prompt="Assess a medication interaction case.",
+            judge_rubric="Evaluate accuracy.",
+            sample_input='{"case_id": "poly_07"}',
+            context_preparation="Load patient_case, judge_ground_truth_interactions, and prior_playbook_patterns.",
+            required_context_keys=[
+                "patient_case",
+                "judge_ground_truth_interactions",
+                "prior_playbook_patterns",
+            ],
+        )
+
+        healed = heal_spec_runtime_context_requirements(spec)
+
+        assert healed.context_preparation is None
+        assert healed.required_context_keys is None
+
+    def test_preserves_runtime_supported_context_requirements(self) -> None:
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+        from autocontext.scenarios.custom.spec_auto_heal import heal_spec_runtime_context_requirements
+
+        spec = AgentTaskSpec(
+            task_prompt="Summarize the reference document.",
+            judge_rubric="Evaluate faithfulness.",
+            context_preparation="Load the reference document into state.",
+            reference_context="Reference facts.",
+            required_context_keys=["reference_context"],
+        )
+
+        healed = heal_spec_runtime_context_requirements(spec)
+
+        assert healed.context_preparation == "Load the reference document into state."
+        assert healed.required_context_keys == ["reference_context"]
 
     def test_does_not_overwrite_existing(self) -> None:
         from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
