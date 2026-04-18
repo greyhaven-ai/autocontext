@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/fine-tuned-model-payload.json",
+  "title": "FineTunedModelPayload",
+  "description": "Pointer document shipped as the fine-tuned-model actuator's pointer.json payload file. Actual model bytes live on external storage and are identified by checkpointHash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "externalPath", "checkpointHash", "family", "backend"],
+  "properties": {
+    "kind": { "const": "model-checkpoint" },
+    "externalPath": { "type": "string", "minLength": 1 },
+    "checkpointHash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "family": { "type": "string", "minLength": 1 },
+    "backend": { "type": "string", "minLength": 1 }
+  }
+}

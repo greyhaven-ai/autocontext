@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/prompt-patch-payload.json",
+  "title": "PromptPatchPayload",
+  "description": "The textual contents of the prompt-patch actuator's prompt.txt payload file.",
+  "type": "string"
+}

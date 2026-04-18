@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/routing-rule-payload.json",
+  "title": "RoutingRulePayload",
+  "description": "Ordered routing rules shipped as the routing-rule actuator's rule.json payload file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "rules"],
+  "properties": {
+    "version": { "const": "1" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["match", "route"],
+        "properties": {
+          "match": {},
+          "route": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/tool-policy-payload.json",
+  "title": "ToolPolicyPayload",
+  "description": "Tool allow-list / policy document shipped as the tool-policy actuator's policy.json payload file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "tools"],
+  "properties": {
+    "version": { "const": "1" },
+    "tools": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "allow": { "type": "boolean" },
+          "parameters": {}
+        }
+      }
+    }
+  }
+}
