@@ -22,6 +22,7 @@ import { registerScenarioCatalogTools } from "./scenario-catalog-tools.js";
 import { registerScenarioExecutionTools } from "./scenario-execution-tools.js";
 import { registerScenarioRevisionTools } from "./scenario-revision-tools.js";
 import { registerSolveTools } from "./solve-tools.js";
+import { registerProductionTracesTools } from "./production-traces-tools.js";
 
 export interface MtsServerOpts {
   store: SQLiteStore;
@@ -134,6 +135,8 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
   registerCampaignTools(server, {
     dbPath: opts.dbPath ?? settings.dbPath,
   });
+
+  registerProductionTracesTools(server);
 
   return server;
 }

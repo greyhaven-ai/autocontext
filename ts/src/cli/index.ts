@@ -63,6 +63,7 @@ Control plane (Layer 7-9):
   promotion        Decide/apply/history for promotion transitions
   registry         Repair/validate/migrate the control-plane registry
   emit-pr          Generate a promotion PR (or dry-run bundle) for a candidate
+  production-traces Ingest/list/show/stats/build-dataset/export/policy/rotate-salt/prune (Foundation A — AC-539)
 
 Python-only commands (not supported in npm package):
   ecosystem, ab-test, resume, wait, trigger-distillation
@@ -198,6 +199,9 @@ async function main(): Promise<void> {
     case "registry":
     case "emit-pr":
       await cmdControlPlane(command);
+      break;
+    case "production-traces":
+      await cmdProductionTraces();
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -2925,6 +2929,21 @@ async function cmdControlPlane(topCommand: string): Promise<void> {
   );
   const subArgs = process.argv.slice(3);
   const result = await runControlPlaneCommand([topCommand, ...subArgs]);
+  if (result.stdout) process.stdout.write(result.stdout + "\n");
+  if (result.stderr) process.stderr.write(result.stderr + "\n");
+  process.exit(result.exitCode);
+}
+
+// ---------------------------------------------------------------------------
+// Production-traces namespace (Foundation A / Layer 7 — AC-539)
+// ---------------------------------------------------------------------------
+
+async function cmdProductionTraces(): Promise<void> {
+  const { runProductionTracesCommand } = await import(
+    "../production-traces/cli/index.js"
+  );
+  const subArgs = process.argv.slice(3);
+  const result = await runProductionTracesCommand(subArgs);
   if (result.stdout) process.stdout.write(result.stdout + "\n");
   if (result.stderr) process.stderr.write(result.stderr + "\n");
   process.exit(result.exitCode);
