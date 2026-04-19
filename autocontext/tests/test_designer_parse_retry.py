@@ -10,7 +10,6 @@ import pytest
 
 from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
 
-
 # --- Shared fixtures ---
 
 def _scripted_llm_fn(responses: list[str]) -> Callable[[str, str], str]:
