@@ -338,12 +338,13 @@ def _complete_task_like_initial_output(
     attempts = 3
     for attempt in range(1, attempts + 1):
         try:
-            return provider.complete(
+            result = provider.complete(
                 system_prompt=TASK_LIKE_EXECUTION_SYSTEM_PROMPT,
                 user_prompt=prompt,
                 model=provider_model,
                 max_tokens=initial_completion_max_tokens,
-            ).text
+            )
+            return cast(str, result.text)
         except Exception as exc:
             if not _is_timeout_like_error(exc) or attempt == attempts:
                 raise

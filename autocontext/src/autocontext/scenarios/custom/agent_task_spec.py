@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass, replace
 from typing import Any
 
+_SAMPLE_INPUT_COMPACT_THRESHOLD_CHARS = 1000
+
 
 @dataclass(slots=True)
 class AgentTaskSpec:
@@ -27,6 +29,8 @@ class AgentTaskSpec:
 
 
 def _compact_json_string(value: str) -> str:
+    if len(value) < _SAMPLE_INPUT_COMPACT_THRESHOLD_CHARS:
+        return value
     stripped = value.strip()
     if not stripped:
         return value

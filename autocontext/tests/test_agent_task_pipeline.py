@@ -301,20 +301,29 @@ class TestDesignAgentTask:
 
         assert spec.quality_threshold == 0.9
 
-    def test_parse_spec_compacts_json_string_sample_input(self) -> None:
+    def test_parse_spec_compacts_large_json_string_sample_input(self) -> None:
+        sample_input = {
+            "current_generation": 12,
+            "metrics": {"success_rate": 0.31, "cost": 0.92},
+            "roadmap": [
+                {
+                    "step": i,
+                    "goal": f"Stabilize generation {i}",
+                    "notes": "Preserve enough execution detail for long-horizon solve planning.",
+                }
+                for i in range(20)
+            ],
+        }
         spec_data = {
             "task_prompt": "Plan the next milestone.",
             "judge_rubric": "Evaluate milestone quality.",
-            "sample_input": json.dumps(
-                {"current_generation": 12, "metrics": {"success_rate": 0.31, "cost": 0.92}},
-                indent=2,
-            ),
+            "sample_input": json.dumps(sample_input, indent=2),
         }
         raw = f"{SPEC_START}\n{json.dumps(spec_data, indent=2)}\n{SPEC_END}"
 
         spec = parse_agent_task_spec(raw)
 
-        assert spec.sample_input == '{"current_generation":12,"metrics":{"success_rate":0.31,"cost":0.92}}'
+        assert spec.sample_input == json.dumps(sample_input, separators=(",", ":"), ensure_ascii=False)
 
     def test_design_agent_task_with_mock(self) -> None:
         response_text = _mock_llm_response(SAMPLE_SPEC)
