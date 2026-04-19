@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/redaction-policy.json",
+  "title": "RedactionPolicy",
+  "description": "Per-installation redaction policy config. Lives at .autocontext/production-traces/redaction-policy.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mode",
+    "autoDetect",
+    "customPatterns",
+    "rawProviderPayload",
+    "exportPolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["on-export", "on-ingest"]
+    },
+    "autoDetect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "categories"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "customPatterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "regex", "category", "reason"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "regex": { "type": "string", "minLength": 1 },
+          "category": { "type": "string", "minLength": 1 },
+          "reason": {
+            "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/RedactionReason"
+          }
+        }
+      }
+    },
+    "rawProviderPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["behavior"],
+      "properties": {
+        "behavior": {
+          "type": "string",
+          "enum": ["blanket-mark"]
+        }
+      }
+    },
+    "exportPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "placeholder",
+        "preserveLength",
+        "includeRawProviderPayload",
+        "includeMetadata",
+        "categoryOverrides"
+      ],
+      "properties": {
+        "placeholder": { "type": "string" },
+        "preserveLength": { "type": "boolean" },
+        "includeRawProviderPayload": { "type": "boolean" },
+        "includeMetadata": { "type": "boolean" },
+        "categoryOverrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action"],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": ["redact", "hash", "preserve", "drop"]
+              },
+              "placeholder": { "type": "string" },
+              "hashSalt": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

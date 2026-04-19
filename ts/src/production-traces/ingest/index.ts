@@ -22,7 +22,13 @@ export {
 export { validateIngestedLine } from "./validator.js";
 export type { IngestLineResult } from "./validator.js";
 
-export { markRedactions } from "./redaction-phase.js";
+export {
+  markRedactions,
+  applyRedactions,
+  loadRedactionPolicy,
+  loadInstallSalt,
+} from "./redaction-phase.js";
+export type { LoadedRedactionPolicy } from "./redaction-phase.js";
 
 export { writeReceipt, writeErrorFile } from "./receipt.js";
 export type { ReceiptFields, ErrorFileFields, PerLineError } from "./receipt.js";
