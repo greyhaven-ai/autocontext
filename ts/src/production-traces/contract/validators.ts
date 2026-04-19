@@ -13,6 +13,11 @@ import traceLinksSchema from "./json-schemas/trace-links.schema.json" with { typ
 import redactionMarkerSchema from "./json-schemas/redaction-marker.schema.json" with { type: "json" };
 import redactionPolicySchema from "./json-schemas/redaction-policy.schema.json" with { type: "json" };
 import productionTraceSchema from "./json-schemas/production-trace.schema.json" with { type: "json" };
+import selectionRuleSchema from "./json-schemas/selection-rule.schema.json" with { type: "json" };
+import clusterConfigSchema from "./json-schemas/cluster-config.schema.json" with { type: "json" };
+import rubricConfigSchema from "./json-schemas/rubric-config.schema.json" with { type: "json" };
+import datasetRowSchema from "./json-schemas/dataset-row.schema.json" with { type: "json" };
+import datasetManifestSchema from "./json-schemas/dataset-manifest.schema.json" with { type: "json" };
 import type {
   ProductionTrace,
   TraceSource,
@@ -47,6 +52,11 @@ ajv.addSchema(traceLinksSchema as object);
 ajv.addSchema(redactionMarkerSchema as object);
 ajv.addSchema(redactionPolicySchema as object);
 ajv.addSchema(productionTraceSchema as object);
+ajv.addSchema(selectionRuleSchema as object);
+ajv.addSchema(clusterConfigSchema as object);
+ajv.addSchema(rubricConfigSchema as object);
+ajv.addSchema(datasetRowSchema as object);
+ajv.addSchema(datasetManifestSchema as object);
 
 const traceSourceValidator       = ajv.getSchema("https://autocontext.dev/schema/production-traces/trace-source.json")!;
 const sessionValidator           = ajv.getSchema("https://autocontext.dev/schema/production-traces/session.json")!;
@@ -59,6 +69,11 @@ const traceLinksValidator        = ajv.getSchema("https://autocontext.dev/schema
 const redactionMarkerValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/redaction-marker.json")!;
 const redactionPolicyValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/redaction-policy.json")!;
 const productionTraceValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/production-trace.json")!;
+const selectionRuleValidator     = ajv.getSchema("https://autocontext.dev/schema/production-traces/selection-rule.json")!;
+const clusterConfigValidator     = ajv.getSchema("https://autocontext.dev/schema/production-traces/cluster-config.json")!;
+const rubricConfigValidator      = ajv.getSchema("https://autocontext.dev/schema/production-traces/rubric-config.json")!;
+const datasetRowValidator        = ajv.getSchema("https://autocontext.dev/schema/production-traces/dataset-row.json")!;
+const datasetManifestValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/dataset-manifest.json")!;
 
 function toResult(validate: ValidateFunction, input: unknown): ValidationResult {
   const ok = validate(input);
@@ -104,6 +119,21 @@ export function validateRedactionPolicy(input: unknown): ValidationResult {
 }
 export function validateProductionTrace(input: unknown): ValidationResult {
   return toResult(productionTraceValidator, input);
+}
+export function validateSelectionRule(input: unknown): ValidationResult {
+  return toResult(selectionRuleValidator, input);
+}
+export function validateClusterConfig(input: unknown): ValidationResult {
+  return toResult(clusterConfigValidator, input);
+}
+export function validateRubricConfig(input: unknown): ValidationResult {
+  return toResult(rubricConfigValidator, input);
+}
+export function validateDatasetRow(input: unknown): ValidationResult {
+  return toResult(datasetRowValidator, input);
+}
+export function validateDatasetManifest(input: unknown): ValidationResult {
+  return toResult(datasetManifestValidator, input);
 }
 
 // Type-level assertions — if TS types drift from schemas these won't compile.

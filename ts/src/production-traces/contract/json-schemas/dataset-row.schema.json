@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/dataset-row.json",
+  "title": "DatasetRow",
+  "description": "A single row in a generated dataset (per spec §8.4). Emitted one-per-JSONL-line under .autocontext/datasets/<id>/<split>.jsonl.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "rowId",
+    "split",
+    "clusterId",
+    "source",
+    "inputs",
+    "metadata"
+  ],
+  "properties": {
+    "schemaVersion": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/SchemaVersion" },
+    "rowId": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/Ulid" },
+    "split": {
+      "type": "string",
+      "enum": ["train", "eval", "holdout"]
+    },
+    "clusterId": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceIds", "timeRange", "redactionApplied"],
+      "properties": {
+        "traceIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/Ulid" }
+        },
+        "timeRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" },
+            "to":   { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" }
+          }
+        },
+        "redactionApplied": { "type": "boolean" }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messages", "toolsAvailable"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/TraceMessage" }
+        },
+        "toolsAvailable": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "expectedOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["success", "failure", "partial"]
+        },
+        "score": { "type": "number" },
+        "reasoning": { "type": "string" }
+      }
+    },
+    "rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubricId", "dimensions", "source"],
+      "properties": {
+        "rubricId": { "type": "string", "minLength": 1 },
+        "dimensions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "source": {
+          "type": "string",
+          "enum": ["explicit", "registry", "synthetic"]
+        }
+      }
+    },
+    "metadata": { "type": "object" }
+  }
+}
