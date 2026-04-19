@@ -30,6 +30,10 @@ from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
 from autocontext.execution.improvement_loop import ImprovementLoop
+from autocontext.execution.task_runtime_budget import (
+    TASK_LIKE_EXECUTION_SYSTEM_PROMPT,
+    resolve_task_like_completion_max_tokens,
+)
 from autocontext.loop.generation_runner import GenerationRunner
 from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
@@ -242,11 +246,13 @@ def _run_agent_task(
     if context_errors:
         raise ValueError(f"Context validation failed: {'; '.join(context_errors)}")
     prompt = task.get_task_prompt(state)
+    initial_completion_max_tokens = resolve_task_like_completion_max_tokens(state, prompt)
 
     initial_output = provider.complete(
-        system_prompt="Complete the task precisely.",
+        system_prompt=TASK_LIKE_EXECUTION_SYSTEM_PROMPT,
         user_prompt=prompt,
         model=provider_model,
+        max_tokens=initial_completion_max_tokens,
     ).text
 
     loop = ImprovementLoop(task=task, max_rounds=max_rounds)

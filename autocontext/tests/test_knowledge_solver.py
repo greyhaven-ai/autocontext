@@ -71,9 +71,25 @@ class _StubProviderResponse:
 class _StubProvider:
     def __init__(self, text: str) -> None:
         self._text = text
+        self.calls: list[dict[str, object]] = []
 
-    def complete(self, system_prompt: str, user_prompt: str, model: str = "") -> _StubProviderResponse:
-        del system_prompt, user_prompt, model
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str = "",
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> _StubProviderResponse:
+        self.calls.append(
+            {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
         return _StubProviderResponse(self._text)
 
     def default_model(self) -> str:
@@ -589,6 +605,107 @@ class TestSolveScenarioExecutor:
         assert summary.generations_executed == 1
         assert summary.best_score == 1.0
         assert sqlite.count_completed_runs(scenario_name) == 1
+
+    def test_task_like_executor_uses_output_format_completion_budget(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        class _JsonSolveAgentTask(_SolveAgentTask):
+            def initial_state(self, seed: int | None = None) -> dict:
+                del seed
+                return {"output_format": "json_schema"}
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+        )
+        scenario_name = "solve_json_task_execution"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        provider = _StubProvider("improved draft")
+        SCENARIO_REGISTRY[scenario_name] = _JsonSolveAgentTask
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            lambda settings, **kwargs: (provider, "test-model"),
+        )
+
+        try:
+            executor = SolveScenarioExecutor(settings)
+            summary = executor.execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=1,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
+        assert provider.calls[0]["max_tokens"] == 2200
+        assert "Be concise" in str(provider.calls[0]["system_prompt"])
+
+    def test_task_like_executor_retries_timeout_once(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        class _FlakyTimeoutProvider(_StubProvider):
+            def __init__(self) -> None:
+                super().__init__("improved draft")
+                self._attempt = 0
+
+            def complete(
+                self,
+                system_prompt: str,
+                user_prompt: str,
+                model: str = "",
+                temperature: float = 0.0,
+                max_tokens: int = 4096,
+            ) -> _StubProviderResponse:
+                self._attempt += 1
+                if self._attempt == 1:
+                    raise RuntimeError("PiCLIRuntime failed: timeout")
+                return super().complete(
+                    system_prompt,
+                    user_prompt,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+        )
+        scenario_name = "solve_retry_timeout_execution"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        provider = _FlakyTimeoutProvider()
+        SCENARIO_REGISTRY[scenario_name] = _SolveAgentTask
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            lambda settings, **kwargs: (provider, "test-model"),
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=1,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
+        assert provider._attempt == 2
 
     def test_task_like_executor_marks_run_failed_when_budget_expires(
         self,

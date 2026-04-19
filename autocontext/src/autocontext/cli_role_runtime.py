@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.config.settings import AppSettings
+from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.storage import SQLiteStore, artifact_store_from_settings
 
 if TYPE_CHECKING:
@@ -30,25 +31,40 @@ def _role_default_model(settings: AppSettings, role: str) -> str:
     return role_models.get(role) or settings.agent_default_model
 
 
+class _RoleRuntimeProvider(LLMProvider):
+    def __init__(self, client: LanguageModelClient, resolved_model: str, *, role: str) -> None:
+        self._client = client
+        self._resolved_model = resolved_model
+        self._role = role
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> CompletionResult:
+        response = self._client.generate(
+            model=model or self._resolved_model,
+            prompt=f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            role=self._role,
+        )
+        return CompletionResult(text=response.text, model=model or self._resolved_model)
+
+    def default_model(self) -> str:
+        return self._resolved_model
+
+
 def _wrap_role_client_as_provider(
     client: LanguageModelClient,
     resolved_model: str,
     *,
     role: str,
 ) -> tuple[LLMProvider, str]:
-    from autocontext.providers.callable_wrapper import CallableProvider
-
-    def _llm_fn(system_prompt: str, user_prompt: str) -> str:
-        response = client.generate(
-            model=resolved_model,
-            prompt=f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt,
-            max_tokens=4096,
-            temperature=0.0,
-            role=role,
-        )
-        return response.text
-
-    return CallableProvider(_llm_fn, model_name=resolved_model), resolved_model
+    return _RoleRuntimeProvider(client, resolved_model, role=role), resolved_model
 
 
 def resolve_role_runtime(

@@ -26,6 +26,19 @@ class AgentTaskSpec:
     sample_input: str | None = None  # Sample input data for data-dependent tasks
 
 
+def _compact_json_string(value: str) -> str:
+    stripped = value.strip()
+    if not stripped:
+        return value
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return value
+    if not isinstance(parsed, dict | list):
+        return value
+    return json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
+
+
 def _serialize_agent_task_text_payload(value: Any) -> str | None:
     if value is None:
         return None
@@ -122,5 +135,9 @@ def normalize_agent_task_runtime_fields(spec: AgentTaskSpec) -> AgentTaskSpec:
         max_rounds=_normalize_max_rounds(spec.max_rounds),
         quality_threshold=_normalize_quality_threshold(spec.quality_threshold),
         revision_prompt=_serialize_agent_task_text_payload(spec.revision_prompt),
-        sample_input=_serialize_agent_task_text_payload(spec.sample_input),
+        sample_input=(
+            _compact_json_string(spec.sample_input)
+            if isinstance(spec.sample_input, str)
+            else _serialize_agent_task_text_payload(spec.sample_input)
+        ),
     )
