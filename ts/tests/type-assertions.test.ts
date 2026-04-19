@@ -106,7 +106,15 @@ describe("TypeScript type assertion budget", () => {
     //   - `ProductionTraceId[]` on trace-id list construction.
     // Same pattern as prior layers — phantom brands + JSON-shape narrowings
     // cost one cast each at each parse boundary.
-    expect(total).toBeLessThanOrEqual(660);
+    // Bumped to 720 when production-traces/cli/ (Foundation A Layer 7) landed.
+    // CLI flag-parser handler boundaries require `as OutputMode` / `as ClusterStrategy`
+    // / `as CategoryAction` / `as LoadedRedactionPolicy["mode"]` narrowings —
+    // same pattern as control-plane/cli/. Additional casts on the MCP wiring
+    // (production-traces-tools.ts) where zod-typed `args[key]` values are
+    // narrowed to string/boolean/arrays at the MCP-tool boundary. Budget is
+    // generous by ~10 to absorb Layer 8 retention module emergence without a
+    // separate bump.
+    expect(total).toBeLessThanOrEqual(720);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {
