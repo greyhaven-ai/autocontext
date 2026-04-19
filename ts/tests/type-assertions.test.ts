@@ -92,7 +92,21 @@ describe("TypeScript type assertion budget", () => {
     // Same pattern as Foundation B Layer 1 — the alternative (treating every
     // brand as a class instance) would add runtime overhead and break the
     // "JSON-in, JSON-out" serialization contract.
-    expect(total).toBeLessThanOrEqual(640);
+    // Bumped to 660 when production-traces/dataset/ (Foundation A Layer 5)
+    // landed — the dataset pipeline introduces ~20 parse-boundary casts
+    // spread across:
+    //   - `parseDatasetId` (DatasetId brand) and `DatasetRowSplit`/`"train"`
+    //     placeholder-overwrite widening (pipeline.ts);
+    //   - `MatchExpression` narrowing from the generated union-typed `match`
+    //     field in SelectionRule (select.ts: failureCriterion / successCriterion
+    //     arrive typed as `MatchExpression` via the generated types, but an
+    //     explicit cast documents the narrowing at the handler boundary);
+    //   - `Record<string, unknown>` narrowings in the JSON-path resolver and
+    //     deep-equal helper (cluster.ts, rubric.ts);
+    //   - `ProductionTraceId[]` on trace-id list construction.
+    // Same pattern as prior layers — phantom brands + JSON-shape narrowings
+    // cost one cast each at each parse boundary.
+    expect(total).toBeLessThanOrEqual(660);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {
