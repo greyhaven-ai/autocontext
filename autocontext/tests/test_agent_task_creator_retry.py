@@ -77,3 +77,22 @@ class TestAgentTaskCreatorRetry:
         assert len(persisted_files) == 1, (
             f"expected one persisted agent_task.py, got {persisted_files}"
         )
+
+    def test_creator_retries_on_unparseable_designer_response(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Malformed first responses should still get a second design attempt."""
+        llm_fn = _scripted_llm_fn([
+            "not delimited json",
+            _spec_response(_VALID_TEXT_SPEC),
+        ])
+
+        creator = AgentTaskCreator(llm_fn=llm_fn, knowledge_root=tmp_path)
+
+        scenario_instance = creator.create("Write a haiku about distributed systems.")
+
+        assert len(llm_fn.calls) == 2  # type: ignore[attr-defined]
+        assert scenario_instance is not None
+        persisted_files = list((tmp_path / "_custom_scenarios").rglob("agent_task.py"))
+        assert len(persisted_files) == 1

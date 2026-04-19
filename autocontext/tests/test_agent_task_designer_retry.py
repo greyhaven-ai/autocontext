@@ -101,6 +101,21 @@ class TestDesignValidatedAgentTask:
         )
         assert "attempt 1" in warnings[0].getMessage()
 
+    def test_retries_after_unparseable_designer_response(self) -> None:
+        llm_fn = _scripted_llm_fn([
+            "not delimited json",
+            _spec_response(_VALID_TEXT_SPEC),
+        ])
+
+        spec = design_validated_agent_task(_TEXT_DESCRIPTION, llm_fn)
+
+        assert spec.output_format == "free_text"
+        assert len(llm_fn.calls) == 2  # type: ignore[attr-defined]
+        _system, retry_user_prompt = llm_fn.calls[1]  # type: ignore[attr-defined]
+        assert "could not be parsed" in retry_user_prompt
+        assert SPEC_START in retry_user_prompt
+        assert _TEXT_DESCRIPTION in retry_user_prompt
+
     def test_raises_after_max_retries_exhausted(self) -> None:
         # All 3 attempts return the invalid spec.
         llm_fn = _scripted_llm_fn([
@@ -115,6 +130,21 @@ class TestDesignValidatedAgentTask:
         message = str(excinfo.value)
         assert "intent validation failed after 3 attempts" in message
         assert "format mismatch" in message  # validator's error text present
+        assert len(llm_fn.calls) == 3  # type: ignore[attr-defined]
+
+    def test_raises_after_parse_retries_exhausted(self) -> None:
+        llm_fn = _scripted_llm_fn([
+            "not delimited json",
+            "still not delimited json",
+            "also not delimited json",
+        ])
+
+        with pytest.raises(ValueError) as excinfo:
+            design_validated_agent_task(_TEXT_DESCRIPTION, llm_fn, max_retries=2)
+
+        message = str(excinfo.value)
+        assert "agent task design failed after 3 attempts" in message
+        assert "response does not contain AGENT_TASK_SPEC delimiters" in message
         assert len(llm_fn.calls) == 3  # type: ignore[attr-defined]
 
     def test_retry_correction_prompt_contains_validator_errors(self) -> None:
