@@ -123,6 +123,12 @@ def parse_negotiation_spec(text: str) -> NegotiationSpec:
 def design_negotiation(
     description: str, llm_fn: LlmFn
 ) -> NegotiationSpec:
-    return parse_negotiation_spec(
-        llm_fn(NEGOTIATION_DESIGNER_SYSTEM, f"User description:\n{description}")
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=NEGOTIATION_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_negotiation_spec,
+        delimiter_hint=f"{NEGOTIATION_SPEC_START} ... {NEGOTIATION_SPEC_END}",
     )

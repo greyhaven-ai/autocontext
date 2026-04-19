@@ -138,6 +138,12 @@ def parse_schema_evolution_spec(text: str) -> SchemaEvolutionSpec:
 
 
 def design_schema_evolution(description: str, llm_fn: LlmFn) -> SchemaEvolutionSpec:
-    return parse_schema_evolution_spec(
-        llm_fn(SCHEMA_EVOLUTION_DESIGNER_SYSTEM, f"User description:\n{description}")
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=SCHEMA_EVOLUTION_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_schema_evolution_spec,
+        delimiter_hint=f"{SCHEMA_EVOLUTION_SPEC_START} ... {SCHEMA_EVOLUTION_SPEC_END}",
     )

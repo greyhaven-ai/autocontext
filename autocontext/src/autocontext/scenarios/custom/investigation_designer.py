@@ -114,6 +114,12 @@ def parse_investigation_spec(text: str) -> InvestigationSpec:
 
 
 def design_investigation(description: str, llm_fn: LlmFn) -> InvestigationSpec:
-    return parse_investigation_spec(
-        llm_fn(INVESTIGATION_DESIGNER_SYSTEM, f"User description:\n{description}")
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=INVESTIGATION_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_investigation_spec,
+        delimiter_hint=f"{INVESTIGATION_SPEC_START} ... {INVESTIGATION_SPEC_END}",
     )

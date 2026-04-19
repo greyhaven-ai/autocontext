@@ -67,4 +67,12 @@ def parse_operator_loop_spec(text: str) -> OperatorLoopSpec:
 
 
 def design_operator_loop(description: str, llm_fn: LlmFn) -> OperatorLoopSpec:
-    return parse_operator_loop_spec(llm_fn(OPERATOR_LOOP_DESIGNER_SYSTEM, f"User description:\n{description}"))
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=OPERATOR_LOOP_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_operator_loop_spec,
+        delimiter_hint=f"{OPERATOR_LOOP_SPEC_START} ... {OPERATOR_LOOP_SPEC_END}",
+    )

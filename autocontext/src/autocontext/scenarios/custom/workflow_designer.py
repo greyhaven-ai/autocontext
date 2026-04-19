@@ -149,6 +149,12 @@ def parse_workflow_spec(text: str) -> WorkflowSpec:
 
 
 def design_workflow(description: str, llm_fn: LlmFn) -> WorkflowSpec:
-    return parse_workflow_spec(
-        llm_fn(WORKFLOW_DESIGNER_SYSTEM, f"User description:\n{description}")
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=WORKFLOW_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_workflow_spec,
+        delimiter_hint=f"{WORKFLOW_SPEC_START} ... {WORKFLOW_SPEC_END}",
     )

@@ -125,9 +125,15 @@ def design_agent_task(description: str, llm_fn: LlmFn) -> AgentTaskSpec:
     Returns:
         Parsed AgentTaskSpec.
     """
-    user_prompt = f"User description:\n{description}"
-    response = llm_fn(AGENT_TASK_DESIGNER_SYSTEM, user_prompt)
-    return parse_agent_task_spec(response)
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=AGENT_TASK_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_agent_task_spec,
+        delimiter_hint=f"{SPEC_START} ... {SPEC_END}",
+    )
 
 
 def design_validated_agent_task(
