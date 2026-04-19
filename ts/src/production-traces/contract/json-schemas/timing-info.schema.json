@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/timing-info.json",
+  "title": "TimingInfo",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["startedAt", "endedAt", "latencyMs"],
+  "properties": {
+    "startedAt": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" },
+    "endedAt": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" },
+    "latencyMs": { "type": "number", "minimum": 0 },
+    "timeToFirstTokenMs": { "type": "number", "minimum": 0 }
+  }
+}

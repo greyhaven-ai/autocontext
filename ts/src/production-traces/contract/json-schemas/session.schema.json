@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/session.json",
+  "title": "SessionIdentifier",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "userIdHash": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/Sha256Hex" },
+    "sessionIdHash": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/Sha256Hex" },
+    "requestId": { "type": "string", "minLength": 1 }
+  }
+}

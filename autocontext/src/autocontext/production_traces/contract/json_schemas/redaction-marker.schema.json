@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/redaction-marker.json",
+  "title": "RedactionMarker",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["path", "reason", "detectedBy", "detectedAt"],
+  "properties": {
+    "path": { "type": "string", "minLength": 1 },
+    "reason": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/RedactionReason" },
+    "category": { "type": "string" },
+    "detectedBy": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/DetectedBy" },
+    "detectedAt": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" }
+  }
+}

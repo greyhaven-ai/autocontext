@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/env-context.json",
+  "title": "EnvContext",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["environmentTag", "appId"],
+  "properties": {
+    "environmentTag": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/EnvironmentTag" },
+    "appId": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/AppId" },
+    "taskType": { "type": "string", "minLength": 1 },
+    "deploymentMeta": { "type": "object" }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/shared-defs.json",
+  "title": "Shared definitions for autocontext production-trace documents",
+  "$defs": {
+    "SchemaVersion": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "Ulid": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "Sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "Scenario": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "EnvironmentTag": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+    },
+    "AppId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "IsoTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "MessageRole": {
+      "enum": ["user", "assistant", "system", "tool"]
+    },
+    "ToolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolName", "args"],
+      "properties": {
+        "toolName": { "type": "string", "minLength": 1 },
+        "args": { "type": "object" },
+        "result": {},
+        "durationMs": { "type": "number", "minimum": 0 },
+        "error": { "type": "string" }
+      }
+    },
+    "TraceMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content", "timestamp"],
+      "properties": {
+        "role": { "$ref": "#/$defs/MessageRole" },
+        "content": { "type": "string" },
+        "timestamp": { "$ref": "#/$defs/IsoTimestamp" },
+        "toolCalls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ToolCall" }
+        },
+        "metadata": { "type": "object" }
+      }
+    },
+    "FeedbackKind": {
+      "enum": ["thumbs", "rating", "correction", "edit", "custom"]
+    },
+    "RedactionReason": {
+      "enum": ["pii-email", "pii-name", "pii-ssn", "secret-token", "pii-custom"]
+    },
+    "DetectedBy": {
+      "enum": ["client", "ingestion", "operator"]
+    },
+    "OutcomeLabel": {
+      "enum": ["success", "failure", "partial", "unknown"]
+    },
+    "ProviderName": {
+      "enum": ["openai", "anthropic", "openai-compatible", "langchain", "vercel-ai-sdk", "litellm", "other"]
+    }
+  }
+}

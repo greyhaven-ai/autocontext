@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0",
+  "traceId": "01KPHTAACM0V4X4P7MYHE2XB4M",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.4.3" }
+  },
+  "provider": { "name": "openai-compatible", "endpoint": "http://vllm.internal:8000" },
+  "model": "meta-llama/llama-3.1-8b-instruct",
+  "env": { "environmentTag": "staging", "appId": "chat-service" },
+  "messages": [
+    { "role": "user", "content": "Tell me a joke", "timestamp": "2026-04-17T12:00:00.000Z" },
+    { "role": "assistant", "content": "Why did the chicken cross the road? ...", "timestamp": "2026-04-17T12:00:00.800Z" }
+  ],
+  "toolCalls": [],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:00.800Z",
+    "latencyMs": 800
+  },
+  "usage": { "tokensIn": 8, "tokensOut": 24 },
+  "feedbackRefs": [
+    { "kind": "thumbs", "submittedAt": "2026-04-17T12:00:05.000Z", "ref": "fb-7812" },
+    { "kind": "rating", "submittedAt": "2026-04-17T12:00:06.000Z", "ref": "fb-7813", "score": 4 }
+  ],
+  "links": {},
+  "redactions": []
+}
