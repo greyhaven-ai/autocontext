@@ -82,7 +82,17 @@ describe("TypeScript type assertion budget", () => {
     // after manual type-guards. The alternative (a schema library adapter
     // emitting branded types) was rejected as disproportionate for a v1
     // one-shot migration path.
-    expect(total).toBeLessThanOrEqual(610);
+    // Bumped to 640 when production-traces/contract/ (Foundation A Layer 1)
+    // landed — five new branded IDs (ProductionTraceId, AppId, UserIdHash,
+    // SessionIdHash, FeedbackRefId) each require the `as Brand` cast at
+    // parse-boundary since phantom types have no runtime representation.
+    // Casts also appear in content-address.ts where we produce a non-branded
+    // string (the `ds_`-prefixed dataset ID) from branded ContentHash inputs,
+    // and in invariants.ts where JSON-pointer traversal narrows unknowns.
+    // Same pattern as Foundation B Layer 1 — the alternative (treating every
+    // brand as a class instance) would add runtime overhead and break the
+    // "JSON-in, JSON-out" serialization contract.
+    expect(total).toBeLessThanOrEqual(640);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {

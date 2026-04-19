@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/production-outcome.json",
+  "title": "ProductionOutcome",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "label": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/OutcomeLabel" },
+    "score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reasoning": { "type": "string" },
+    "signals": {
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" },
+        "stack": { "type": "string" }
+      }
+    }
+  }
+}

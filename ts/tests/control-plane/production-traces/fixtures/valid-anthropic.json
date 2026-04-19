@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0",
+  "traceId": "01KPHTAACMTWCHNV1E0QMYMAFW",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-py", "version": "0.4.3" }
+  },
+  "provider": {
+    "name": "anthropic",
+    "endpoint": "https://api.anthropic.com/v1/messages",
+    "providerVersion": "2023-06-01"
+  },
+  "model": "claude-sonnet-4-20250514",
+  "session": {
+    "userIdHash": "b1946ac92492d2347c6235b4d2611184b1946ac92492d2347c6235b4d2611184",
+    "sessionIdHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "env": {
+    "environmentTag": "production",
+    "appId": "agent-runner",
+    "taskType": "code-review"
+  },
+  "messages": [
+    { "role": "user", "content": "Review this diff: ...", "timestamp": "2026-04-17T12:00:00.000Z" },
+    { "role": "assistant", "content": "I found three issues ...", "timestamp": "2026-04-17T12:00:03.400Z" }
+  ],
+  "toolCalls": [],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:03.400Z",
+    "latencyMs": 3400
+  },
+  "usage": {
+    "tokensIn": 512,
+    "tokensOut": 128
+  },
+  "feedbackRefs": [],
+  "links": {},
+  "redactions": []
+}
