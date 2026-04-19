@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from autocontext.agents.types import LlmFn
@@ -8,6 +9,8 @@ from autocontext.scenarios.custom.agent_task_spec import (
     AgentTaskSpec,
     normalize_agent_task_runtime_fields,
 )
+
+logger = logging.getLogger(__name__)
 
 SPEC_START = "<!-- AGENT_TASK_SPEC_START -->"
 SPEC_END = "<!-- AGENT_TASK_SPEC_END -->"
@@ -136,7 +139,7 @@ def design_validated_agent_task(
     """Design an agent task spec, retrying with validator feedback if intent drifts.
 
     On each attempt:
-    - Call ``design_agent_task(description, llm_fn)``
+    - Call the designer (``design_agent_task`` for attempt 0, correction prompt otherwise)
     - Run ``validate_intent(description, spec)``
     - If empty → return spec
     - If errors and attempts remaining → build a correction prompt, loop
@@ -150,11 +153,66 @@ def design_validated_agent_task(
     # Local import to avoid a cycle (validator imports designer symbols in the other file).
     from autocontext.scenarios.custom.agent_task_validator import validate_intent
 
-    spec = design_agent_task(description, llm_fn)
-    errors = validate_intent(description, spec)
-    if not errors:
-        return spec
-    # Stub — Task 5 will implement the actual retry loop. This preserves the
-    # original single-attempt error shape so the happy-path test passes while
-    # leaving the retry behaviour undefined (which later RED tests will drive).
-    raise ValueError(f"intent validation failed: {'; '.join(errors)}")
+    total_attempts = max_retries + 1
+    errors_per_attempt: list[list[str]] = []
+    last_spec: AgentTaskSpec | None = None
+
+    for attempt in range(total_attempts):
+        if attempt == 0:
+            spec = design_agent_task(description, llm_fn)
+        else:
+            assert last_spec is not None  # prior loop iteration sets this
+            user_prompt = _build_correction_prompt(
+                description=description,
+                failed_spec=last_spec,
+                errors=errors_per_attempt[-1],
+            )
+            response = llm_fn(AGENT_TASK_DESIGNER_SYSTEM, user_prompt)
+            spec = parse_agent_task_spec(response)
+
+        errors = validate_intent(description, spec)
+        if not errors:
+            return spec
+
+        errors_per_attempt.append(errors)
+        last_spec = spec
+
+        if attempt < total_attempts - 1:
+            logger.warning(
+                "intent validation failed on attempt %d/%d: %s; retrying with correction prompt",
+                attempt + 1,
+                total_attempts,
+                "; ".join(errors),
+            )
+
+    raise ValueError(
+        f"intent validation failed after {total_attempts} attempts. "
+        f"Errors per attempt: {errors_per_attempt}"
+    )
+
+
+def _build_correction_prompt(
+    *,
+    description: str,
+    failed_spec: AgentTaskSpec,
+    errors: list[str],
+) -> str:
+    """Build the retry user prompt that feeds validator errors back to the LLM."""
+    prompt_excerpt = failed_spec.task_prompt[:200]
+    ellipsis = "..." if len(failed_spec.task_prompt) > 200 else ""
+    error_bullets = "\n".join(f"- {e}" for e in errors)
+    return (
+        "Your previous attempt generated a spec that failed intent validation.\n\n"
+        f"User description:\n{description}\n\n"
+        "Previous spec (key fields):\n"
+        f"  output_format: {failed_spec.output_format}\n"
+        f"  task_prompt: {prompt_excerpt}{ellipsis}\n\n"
+        "Validation errors:\n"
+        f"{error_bullets}\n\n"
+        "Please regenerate a corrected AgentTaskSpec that addresses these errors.\n\n"
+        "Hints:\n"
+        "- If the description implies writing/analysis/evaluation output, use output_format='free_text'\n"
+        "- If the description implies structured data output, use output_format='json_schema'\n"
+        "- Only use output_format='code' when the agent is asked to produce runnable source code\n"
+        "- The task_prompt and judge_rubric must reflect the same domain and output shape as the description"
+    )

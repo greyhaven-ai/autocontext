@@ -76,3 +76,28 @@ class TestDesignValidatedAgentTask:
         assert spec.task_prompt == _VALID_TEXT_SPEC.task_prompt
         assert spec.output_format == "free_text"
         assert len(llm_fn.calls) == 1  # type: ignore[attr-defined]
+
+    def test_retries_once_then_succeeds(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # First attempt: invalid (code format for a text description).
+        # Second attempt: valid.
+        llm_fn = _scripted_llm_fn([
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            _spec_response(_VALID_TEXT_SPEC),
+        ])
+
+        with caplog.at_level(
+            logging.WARNING, logger="autocontext.scenarios.custom.agent_task_designer"
+        ):
+            spec = design_validated_agent_task(_TEXT_DESCRIPTION, llm_fn)
+
+        assert spec.output_format == "free_text"
+        assert len(llm_fn.calls) == 2  # type: ignore[attr-defined]
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1, (
+            f"expected one retry warning, got {[r.message for r in warnings]}"
+        )
+        assert "attempt 1" in warnings[0].getMessage()
