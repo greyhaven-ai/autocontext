@@ -10,6 +10,7 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass, field
 
@@ -28,7 +29,7 @@ class ClaudeCLIConfig:
     permission_mode: str = "bypassPermissions"
     session_persistence: bool = False
     session_id: str | None = None  # Set to maintain context across rounds
-    timeout: float = 120.0
+    timeout: float = 300.0
     system_prompt: str | None = None
     append_system_prompt: str | None = None
     extra_args: list[str] = field(default_factory=list)
@@ -135,8 +136,13 @@ class ClaudeCLIRuntime(AgentRuntime):
 
     def _invoke(self, prompt: str, args: list[str]) -> AgentOutput:
         """Execute claude -p and parse the JSON result."""
-        logger.info("invoking claude CLI: %s", " ".join(args[:6]) + "...")
+        logger.info(
+            "claude-cli invoke: model=%s timeout=%ds",
+            self._config.model,
+            int(self._config.timeout),
+        )
 
+        start = time.monotonic()
         try:
             result = subprocess.run(
                 args,
@@ -151,6 +157,13 @@ class ClaudeCLIRuntime(AgentRuntime):
         except FileNotFoundError:
             logger.error("claude CLI not found. Install Claude Code first.")
             return AgentOutput(text="", metadata={"error": "claude_not_found"})
+
+        elapsed = time.monotonic() - start
+        logger.debug(
+            "claude-cli completed in %.1fs (budget %ds)",
+            elapsed,
+            int(self._config.timeout),
+        )
 
         if result.returncode != 0:
             logger.warning("claude CLI exited with code %d: %s", result.returncode, result.stderr[:200])
