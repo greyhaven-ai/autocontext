@@ -116,6 +116,41 @@ export interface RedactionMarker {
 
 // ---- redaction-marker.schema.json ----
 
+// ---- redaction-policy.schema.json ----
+/**
+ * Per-installation redaction policy config. Lives at .autocontext/production-traces/redaction-policy.json.
+ */
+export interface RedactionPolicy {
+  schemaVersion: "1.0";
+  mode: "on-export" | "on-ingest";
+  autoDetect: {
+    enabled: boolean;
+    categories: string[];
+  };
+  customPatterns: {
+    name: string;
+    regex: string;
+    category: string;
+    reason: "pii-email" | "pii-name" | "pii-ssn" | "secret-token" | "pii-custom";
+  }[];
+  rawProviderPayload: {
+    behavior: "blanket-mark";
+  };
+  exportPolicy: {
+    placeholder: string;
+    preserveLength: boolean;
+    includeRawProviderPayload: boolean;
+    includeMetadata: boolean;
+    categoryOverrides: {
+      [k: string]: {
+        action: "redact" | "hash" | "preserve" | "drop";
+        placeholder?: string;
+        hashSalt?: string;
+      };
+    };
+  };
+}
+
 // ---- session.schema.json ----
 
 // ---- shared-defs.schema.json ----

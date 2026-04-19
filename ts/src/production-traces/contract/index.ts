@@ -61,6 +61,7 @@ export {
   validateFeedbackRef,
   validateTraceLinks,
   validateRedactionMarker,
+  validateRedactionPolicy,
 } from "./validators.js";
 
 export { createProductionTrace } from "./factories.js";

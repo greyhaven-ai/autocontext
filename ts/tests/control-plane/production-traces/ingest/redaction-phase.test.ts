@@ -1,12 +1,14 @@
 import { describe, test, expect } from "vitest";
 import { markRedactions } from "../../../../src/production-traces/ingest/redaction-phase.js";
+import { defaultRedactionPolicy } from "../../../../src/production-traces/redaction/policy.js";
 import { createProductionTrace } from "../../../../src/production-traces/contract/factories.js";
 import type {
   AppId,
   EnvironmentTag,
 } from "../../../../src/production-traces/contract/branded-ids.js";
 
-describe("markRedactions (Layer 3 passthrough)", () => {
+describe("redaction-phase seam (Layer 4 wiring)", () => {
+  const policy = defaultRedactionPolicy();
   const minInputs = {
     source: { emitter: "sdk", sdk: { name: "autoctx-ts", version: "0.4.3" } },
     provider: { name: "openai" as const },
@@ -24,13 +26,20 @@ describe("markRedactions (Layer 3 passthrough)", () => {
     usage: { tokensIn: 10, tokensOut: 5 },
   };
 
-  test("returns the trace unchanged (structural equality) in Layer 3", () => {
-    const trace = createProductionTrace(minInputs);
-    const out = markRedactions(trace);
-    expect(out).toBe(trace);
+  test("delegates to redaction/mark.ts; returns a trace with expanded redactions[]", () => {
+    const trace = createProductionTrace({
+      ...minInputs,
+      messages: [
+        { role: "user", content: "ping alice@example.com", timestamp: "2026-04-17T12:00:00.000Z" },
+      ],
+    });
+    const out = markRedactions(trace, policy);
+    const email = out.redactions.find((m) => m.category === "pii-email");
+    expect(email).toBeDefined();
+    expect(email!.path).toBe("/messages/0/content");
   });
 
-  test("preserves an existing redactions[] array as-is", () => {
+  test("preserves an existing client-provided redactions[] array as-is", () => {
     const trace = createProductionTrace({
       ...minInputs,
       redactions: [
@@ -42,7 +51,7 @@ describe("markRedactions (Layer 3 passthrough)", () => {
         },
       ],
     });
-    const out = markRedactions(trace);
-    expect(out.redactions).toEqual(trace.redactions);
+    const out = markRedactions(trace, policy);
+    expect(out.redactions[0]).toEqual(trace.redactions[0]);
   });
 });

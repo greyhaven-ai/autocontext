@@ -19,7 +19,13 @@ import {
 } from "./paths.js";
 import { loadSeenIds, appendSeenId } from "./dedupe.js";
 import { validateIngestedLine } from "./validator.js";
-import { markRedactions } from "./redaction-phase.js";
+import {
+  markRedactions,
+  applyRedactions,
+  loadRedactionPolicy,
+  loadInstallSalt,
+  type LoadedRedactionPolicy,
+} from "./redaction-phase.js";
 import { writeReceipt, writeErrorFile, type PerLineError } from "./receipt.js";
 import type { ProductionTrace } from "../contract/types.js";
 import type { ProductionTraceId } from "../contract/branded-ids.js";
@@ -57,16 +63,18 @@ interface BatchFileInfo {
  *
  * Contract:
  *   1. Acquire `.autocontext/lock` (shared with Foundation B registry).
- *   2. Load `seen-ids.jsonl` into memory.
- *   3. Walk `incoming/<date>/*.jsonl`, filtered by `--since`.
- *   4. For each batch:
- *       - Read line-by-line, validate, invoke `markRedactions` (passthrough in L3).
+ *   2. Load the redaction policy and (if needed) the install salt ONCE.
+ *   3. Load `seen-ids.jsonl` into memory.
+ *   4. Walk `incoming/<date>/*.jsonl`, filtered by `--since`.
+ *   5. For each batch:
+ *       - Read line-by-line, validate, invoke `markRedactions(policy)`, and
+ *         if policy.mode === "on-ingest", also `applyRedactions(policy, salt)`.
  *       - Skip duplicates; track per-line failures.
  *       - strict + any-failure → batch moves to `failed/`, zero ingestions.
  *       - else → successful lines written to `ingested/<date>/<batch>.jsonl`,
  *         `receipt.json` written; if any line failed, `error.json` is also
  *         written; `seen-ids.jsonl` extended.
- *   5. Release lock; return report.
+ *   6. Release lock; return report.
  *
  * `dry-run` skips all file moves and seen-ids updates but still reports what
  * would have happened.
@@ -87,6 +95,26 @@ export async function ingestBatches(
   // moving files or updating seen-ids") taken at face value.
   const lock = dryRun ? null : acquireLock(cwd);
   try {
+    // Pre-load redaction config. Loading the policy may throw (malformed
+    // JSON / schema-invalid) — propagate so the operator sees it before any
+    // batch is touched.
+    const policy = await loadRedactionPolicy(cwd);
+
+    // Only read install-salt when on-ingest mode actually needs it (avoids
+    // touching the filesystem for on-export deployments). Emit the spec §7.4
+    // advisory warning exactly once per workflow invocation.
+    let installSalt: string | null = null;
+    if (policy.mode === "on-ingest") {
+      installSalt = await loadInstallSalt(cwd);
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[production-traces] redaction mode is 'on-ingest': traces are redacted before "
+        + "being written to ingested/. Debugging production incidents from stored traces "
+        + "becomes significantly harder. Switching back to 'on-export' does NOT recover "
+        + "already-redacted data. See spec §7.4.",
+      );
+    }
+
     const seen = await loadSeenIds(cwd);
 
     const batches = enumerateBatches(cwd, sinceMs);
@@ -100,7 +128,7 @@ export async function ingestBatches(
 
     for (const batch of batches) {
       batchesProcessed += 1;
-      const outcome = await processBatch(batch, seen);
+      const outcome = await processBatch(batch, seen, policy, installSalt);
       linesRejected += outcome.errors.length;
 
       // Strict mode: any per-line failure discards the whole batch, even if
@@ -157,6 +185,8 @@ interface BatchOutcome {
 async function processBatch(
   batch: BatchFileInfo,
   seen: Set<ProductionTraceId>,
+  policy: LoadedRedactionPolicy,
+  installSalt: string | null,
 ): Promise<BatchOutcome> {
   const successes: ProductionTrace[] = [];
   const errors: PerLineError[] = [];
@@ -180,14 +210,20 @@ async function processBatch(
       continue;
     }
 
-    // Mark-at-ingest (Layer 3 passthrough).
-    const marked = markRedactions(r.trace);
+    // Mark-at-ingest.
+    let processed = markRedactions(r.trace, policy);
 
-    if (seen.has(marked.traceId)) {
+    // On-ingest mode: also apply redaction now so nothing plaintext-sensitive
+    // is ever written to ingested/ (spec §7.4).
+    if (policy.mode === "on-ingest") {
+      processed = applyRedactions(processed, policy, installSalt);
+    }
+
+    if (seen.has(processed.traceId)) {
       duplicates += 1;
       continue;
     }
-    successes.push(marked);
+    successes.push(processed);
   }
 
   return { successes, duplicates, errors };

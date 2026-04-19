@@ -11,6 +11,7 @@ import productionOutcomeSchema from "./json-schemas/production-outcome.schema.js
 import feedbackRefSchema from "./json-schemas/feedback-ref.schema.json" with { type: "json" };
 import traceLinksSchema from "./json-schemas/trace-links.schema.json" with { type: "json" };
 import redactionMarkerSchema from "./json-schemas/redaction-marker.schema.json" with { type: "json" };
+import redactionPolicySchema from "./json-schemas/redaction-policy.schema.json" with { type: "json" };
 import productionTraceSchema from "./json-schemas/production-trace.schema.json" with { type: "json" };
 import type {
   ProductionTrace,
@@ -44,6 +45,7 @@ ajv.addSchema(productionOutcomeSchema as object);
 ajv.addSchema(feedbackRefSchema as object);
 ajv.addSchema(traceLinksSchema as object);
 ajv.addSchema(redactionMarkerSchema as object);
+ajv.addSchema(redactionPolicySchema as object);
 ajv.addSchema(productionTraceSchema as object);
 
 const traceSourceValidator       = ajv.getSchema("https://autocontext.dev/schema/production-traces/trace-source.json")!;
@@ -55,6 +57,7 @@ const productionOutcomeValidator = ajv.getSchema("https://autocontext.dev/schema
 const feedbackRefValidator       = ajv.getSchema("https://autocontext.dev/schema/production-traces/feedback-ref.json")!;
 const traceLinksValidator        = ajv.getSchema("https://autocontext.dev/schema/production-traces/trace-links.json")!;
 const redactionMarkerValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/redaction-marker.json")!;
+const redactionPolicyValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/redaction-policy.json")!;
 const productionTraceValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/production-trace.json")!;
 
 function toResult(validate: ValidateFunction, input: unknown): ValidationResult {
@@ -95,6 +98,9 @@ export function validateTraceLinks(input: unknown): ValidationResult {
 }
 export function validateRedactionMarker(input: unknown): ValidationResult {
   return toResult(redactionMarkerValidator, input);
+}
+export function validateRedactionPolicy(input: unknown): ValidationResult {
+  return toResult(redactionPolicyValidator, input);
 }
 export function validateProductionTrace(input: unknown): ValidationResult {
   return toResult(productionTraceValidator, input);
