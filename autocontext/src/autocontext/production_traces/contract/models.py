@@ -1,206 +1,209 @@
-"""Pydantic v2 models for production-trace documents.
-
-.. note::
-
-   AUTO-GENERATED-MIRROR of the canonical JSON Schemas under
-   ``ts/src/production-traces/contract/json-schemas/``. This module is the
-   Python-side projection of the same contract the TS AJV validator enforces.
-
-   ``datamodel-code-generator`` cannot follow the absolute-URL ``$ref`` style
-   used by the canonical schemas (matching Foundation B's convention) without
-   fetching them over HTTP. Until the sync script materializes a local-ref
-   bundle, we hand-maintain these models. Cross-runtime compatibility is
-   property-tested against shared fixtures — any drift between this file and
-   the JSON Schemas will be caught by the cross-runtime test suite.
-
-Regenerate via: ``node ts/scripts/sync-python-production-traces-schemas.mjs``.
-CI gate: ``node ts/scripts/sync-python-production-traces-schemas.mjs --check``.
-"""
+# AUTO-GENERATED from ts/src/production-traces/contract/json-schemas/ — DO NOT EDIT.
+# Run: node ts/scripts/sync-python-production-traces-schemas.mjs
+# CI gate: node ts/scripts/sync-python-production-traces-schemas.mjs --check
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt
-
-from autocontext.production_traces.contract.branded_ids import (
-    AppId,
-    EnvironmentTag,
-    ProductionTraceId,
-    Scenario,
-    SessionIdHash,
-    UserIdHash,
-)
-from autocontext.production_traces.contract.branded_ids import (
-    ContentHash as _ContentHash,  # noqa: F401 — re-exported for downstream use
-)
-
-# --- Shared primitives -----------------------------------------------------
-
-MessageRole = Literal["user", "assistant", "system", "tool"]
-ProviderName = Literal[
-    "openai",
-    "anthropic",
-    "openai-compatible",
-    "langchain",
-    "vercel-ai-sdk",
-    "litellm",
-    "other",
-]
-OutcomeLabel = Literal["success", "failure", "partial", "unknown"]
-FeedbackKind = Literal["thumbs", "rating", "correction", "edit", "custom"]
-RedactionReason = Literal["pii-email", "pii-name", "pii-ssn", "secret-token", "pii-custom"]
-DetectedBy = Literal["client", "ingestion", "operator"]
-SchemaVersion10 = Literal["1.0"]
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
 
 
-class _Strict(BaseModel):
-    """Base model: forbid unknown fields (mirrors JSON Schema ``additionalProperties: false``)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=False, strict=False)
-
-
-class ToolCall(_Strict):
-    toolName: Annotated[str, Field(min_length=1)]
-    args: dict[str, Any]
-    result: Any | None = None
-    durationMs: NonNegativeFloat | None = None
-    error: str | None = None
-
-
-class TraceMessage(_Strict):
-    role: MessageRole
-    content: str
-    timestamp: str
-    toolCalls: list[ToolCall] | None = None
-    metadata: dict[str, Any] | None = None
-
-
-# --- Sub-aggregates --------------------------------------------------------
-
-
-class _Sdk(_Strict):
+class Sdk(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
     name: Annotated[str, Field(min_length=1)]
     version: Annotated[str, Field(min_length=1)]
 
 
-class TraceSource(_Strict):
+class TraceSource(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
     emitter: Annotated[str, Field(min_length=1)]
-    sdk: _Sdk
+    sdk: Sdk
     hostname: str | None = None
 
 
-class ProviderInfo(_Strict):
-    name: ProviderName
+class Provider(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    name: Literal[
+        'openai',
+        'anthropic',
+        'openai-compatible',
+        'langchain',
+        'vercel-ai-sdk',
+        'litellm',
+        'other',
+    ]
     endpoint: str | None = None
     providerVersion: str | None = None
 
 
-class SessionIdentifier(_Strict):
-    userIdHash: UserIdHash | None = None
-    sessionIdHash: SessionIdHash | None = None
-    requestId: Annotated[str, Field(min_length=1)] | None = None
-
-
-class EnvContext(_Strict):
-    environmentTag: EnvironmentTag
-    appId: AppId
-    taskType: Annotated[str, Field(min_length=1)] | None = None
+class EnvContext(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    environmentTag: Annotated[str, Field(pattern='^[a-zA-Z0-9][a-zA-Z0-9_-]*$')]
+    appId: Annotated[str, Field(pattern='^[a-z0-9][a-z0-9_-]*$')]
+    taskType: Annotated[str | None, Field(min_length=1)] = None
     deploymentMeta: dict[str, Any] | None = None
 
 
-class TimingInfo(_Strict):
-    startedAt: str
-    endedAt: str
-    latencyMs: NonNegativeFloat
-    timeToFirstTokenMs: NonNegativeFloat | None = None
+class ToolCall(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    toolName: Annotated[str, Field(min_length=1)]
+    args: dict[str, Any]
+    result: Any | None = None
+    durationMs: Annotated[float | None, Field(ge=0.0)] = None
+    error: str | None = None
 
 
-class UsageInfo(_Strict):
-    tokensIn: NonNegativeInt
-    tokensOut: NonNegativeInt
-    estimatedCostUsd: NonNegativeFloat | None = None
-    providerUsage: dict[str, Any] | None = None
-
-
-class _OutcomeError(_Strict):
+class Error(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
     type: Annotated[str, Field(min_length=1)]
     message: str
     stack: str | None = None
 
 
-class ProductionOutcome(_Strict):
-    label: OutcomeLabel | None = None
-    score: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+class ProductionOutcome(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    label: Literal['success', 'failure', 'partial', 'unknown'] | None = None
+    score: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
     reasoning: str | None = None
     signals: dict[str, float] | None = None
-    error: _OutcomeError | None = None
+    error: Error | None = None
 
 
-class FeedbackRef(_Strict):
-    kind: FeedbackKind
-    submittedAt: str
+class UsageInfo(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    tokensIn: Annotated[int, Field(ge=0)]
+    tokensOut: Annotated[int, Field(ge=0)]
+    estimatedCostUsd: Annotated[float | None, Field(ge=0.0)] = None
+    providerUsage: dict[str, Any] | None = None
+
+
+class EvalExampleId(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
+class TrainingRecordId(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
+class TraceLinks(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    scenarioId: Annotated[str | None, Field(pattern='^[a-z0-9][a-z0-9_-]*$')] = None
+    runId: Annotated[str | None, Field(min_length=1)] = None
+    evalExampleIds: list[EvalExampleId] | None = None
+    trainingRecordIds: list[TrainingRecordId] | None = None
+
+
+class UserIdHash(RootModel[str]):
+    root: Annotated[str, Field(pattern='^[0-9a-f]{64}$')]
+
+
+class EndedAt(RootModel[AwareDatetime]):
+    root: AwareDatetime
+
+
+class Items(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    toolName: Annotated[str, Field(min_length=1)]
+    args: dict[str, Any]
+    result: Any | None = None
+    durationMs: Annotated[float | None, Field(ge=0.0)] = None
+    error: str | None = None
+
+
+class SessionIdentifier(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    userIdHash: Annotated[str | None, Field(pattern='^[0-9a-f]{64}$')] = None
+    sessionIdHash: UserIdHash | None = None
+    requestId: Annotated[str | None, Field(min_length=1)] = None
+
+
+class Message(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    role: Literal['user', 'assistant', 'system', 'tool']
+    content: str
+    timestamp: EndedAt
+    toolCalls: list[Items] | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class TimingInfo(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    startedAt: EndedAt
+    endedAt: AwareDatetime
+    latencyMs: Annotated[float, Field(ge=0.0)]
+    timeToFirstTokenMs: Annotated[float | None, Field(ge=0.0)] = None
+
+
+class FeedbackRef(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Literal['thumbs', 'rating', 'correction', 'edit', 'custom']
+    submittedAt: EndedAt
     ref: Annotated[str, Field(min_length=1)]
     score: float | None = None
     comment: str | None = None
 
 
-class TraceLinks(_Strict):
-    scenarioId: Scenario | None = None
-    runId: Annotated[str, Field(min_length=1)] | None = None
-    evalExampleIds: list[Annotated[str, Field(min_length=1)]] | None = None
-    trainingRecordIds: list[Annotated[str, Field(min_length=1)]] | None = None
-
-
-class RedactionMarker(_Strict):
+class RedactionMarker(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
     path: Annotated[str, Field(min_length=1)]
-    reason: RedactionReason
+    reason: Literal['pii-email', 'pii-name', 'pii-ssn', 'secret-token', 'pii-custom']
     category: str | None = None
-    detectedBy: DetectedBy
-    detectedAt: str
+    detectedBy: Literal['client', 'ingestion', 'operator']
+    detectedAt: EndedAt
 
 
-# --- Aggregate root --------------------------------------------------------
-
-
-class ProductionTrace(_Strict):
-    schemaVersion: SchemaVersion10
-    traceId: ProductionTraceId
-    source: TraceSource
-    provider: ProviderInfo
+class ProductionTrace(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    schemaVersion: Literal['1.0']
+    traceId: Annotated[str, Field(pattern='^[0-9A-HJKMNP-TV-Z]{26}$')]
+    source: Annotated[TraceSource, Field(title='TraceSource')]
+    provider: Provider
     model: Annotated[str, Field(min_length=1)]
-    session: SessionIdentifier | None = None
-    env: EnvContext
-    messages: Annotated[list[TraceMessage], Field(min_length=1)]
+    session: Annotated[SessionIdentifier | None, Field(title='SessionIdentifier')] = (
+        None
+    )
+    env: Annotated[EnvContext, Field(title='EnvContext')]
+    messages: Annotated[list[Message], Field(min_length=1)]
     toolCalls: list[ToolCall]
-    outcome: ProductionOutcome | None = None
-    timing: TimingInfo
-    usage: UsageInfo
+    outcome: Annotated[ProductionOutcome | None, Field(title='ProductionOutcome')] = (
+        None
+    )
+    timing: Annotated[TimingInfo, Field(title='TimingInfo')]
+    usage: Annotated[UsageInfo, Field(title='UsageInfo')]
     feedbackRefs: list[FeedbackRef]
-    links: TraceLinks
+    links: Annotated[TraceLinks, Field(title='TraceLinks')]
     redactions: list[RedactionMarker]
     metadata: dict[str, Any] | None = None
-
-
-__all__ = [
-    "DetectedBy",
-    "EnvContext",
-    "FeedbackKind",
-    "FeedbackRef",
-    "MessageRole",
-    "OutcomeLabel",
-    "ProductionOutcome",
-    "ProductionTrace",
-    "ProviderInfo",
-    "ProviderName",
-    "RedactionMarker",
-    "RedactionReason",
-    "SchemaVersion10",
-    "SessionIdentifier",
-    "TimingInfo",
-    "ToolCall",
-    "TraceLinks",
-    "TraceMessage",
-    "TraceSource",
-    "UsageInfo",
-]

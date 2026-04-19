@@ -55,6 +55,7 @@
     "access": "public"
   },
   "devDependencies": {
+    "@apidevtools/json-schema-ref-parser": "^15.3.5",
     "@types/better-sqlite3": "^7.6.0",
     "@types/react": "^18.3.0",
     "@types/ws": "^8.5.13",
