@@ -16,6 +16,10 @@ from autocontext.agents.types import LlmFn
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.config.settings import AppSettings
 from autocontext.execution.improvement_loop import ImprovementLoop
+from autocontext.execution.task_runtime_budget import (
+    TASK_LIKE_EXECUTION_SYSTEM_PROMPT,
+    resolve_task_like_completion_max_tokens,
+)
 from autocontext.knowledge.export import SkillPackage, export_skill_package
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
@@ -319,6 +323,40 @@ def _build_solve_description_brief(description: str) -> str:
     return brief or description.strip()
 
 
+def _is_timeout_like_error(exc: Exception) -> bool:
+    return "timeout" in str(exc).lower()
+
+
+def _complete_task_like_initial_output(
+    *,
+    provider: Any,
+    provider_model: str,
+    state: dict,
+    prompt: str,
+) -> str:
+    initial_completion_max_tokens = resolve_task_like_completion_max_tokens(state, prompt)
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            result = provider.complete(
+                system_prompt=TASK_LIKE_EXECUTION_SYSTEM_PROMPT,
+                user_prompt=prompt,
+                model=provider_model,
+                max_tokens=initial_completion_max_tokens,
+            )
+            return cast(str, result.text)
+        except Exception as exc:
+            if not _is_timeout_like_error(exc) or attempt == attempts:
+                raise
+            logger.warning(
+                "task-like initial completion timed out on attempt %d/%d; retrying",
+                attempt,
+                attempts,
+                exc_info=True,
+            )
+    raise RuntimeError("unreachable task-like completion retry state")
+
+
 def _normalize_family_hint_token(token: str) -> str:
     normalized = re.sub(r"[^a-z0-9_\-\s]", " ", token.lower()).strip()
     return normalized.replace("-", "_").replace(" ", "_")
@@ -483,11 +521,12 @@ class SolveScenarioExecutor:
             if context_errors:
                 raise ValueError(f"Context validation failed: {'; '.join(context_errors)}")
             prompt = budgeted_task.get_task_prompt(state)
-            initial_output = provider.complete(
-                system_prompt="Complete the task precisely.",
-                user_prompt=prompt,
-                model=provider_model,
-            ).text
+            initial_output = _complete_task_like_initial_output(
+                provider=provider,
+                provider_model=provider_model,
+                state=state,
+                prompt=prompt,
+            )
             budget.check("initial generation")
             sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
 

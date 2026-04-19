@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass, replace
 from typing import Any
 
+_SAMPLE_INPUT_COMPACT_THRESHOLD_CHARS = 1000
+
 
 @dataclass(slots=True)
 class AgentTaskSpec:
@@ -24,6 +26,21 @@ class AgentTaskSpec:
     quality_threshold: float = 0.9  # Stop improving when score >= this
     revision_prompt: str | None = None  # Instructions for how to revise output
     sample_input: str | None = None  # Sample input data for data-dependent tasks
+
+
+def _compact_json_string(value: str) -> str:
+    if len(value) < _SAMPLE_INPUT_COMPACT_THRESHOLD_CHARS:
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return value
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return value
+    if not isinstance(parsed, dict | list):
+        return value
+    return json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
 
 
 def _serialize_agent_task_text_payload(value: Any) -> str | None:
@@ -122,5 +139,9 @@ def normalize_agent_task_runtime_fields(spec: AgentTaskSpec) -> AgentTaskSpec:
         max_rounds=_normalize_max_rounds(spec.max_rounds),
         quality_threshold=_normalize_quality_threshold(spec.quality_threshold),
         revision_prompt=_serialize_agent_task_text_payload(spec.revision_prompt),
-        sample_input=_serialize_agent_task_text_payload(spec.sample_input),
+        sample_input=(
+            _compact_json_string(spec.sample_input)
+            if isinstance(spec.sample_input, str)
+            else _serialize_agent_task_text_payload(spec.sample_input)
+        ),
     )

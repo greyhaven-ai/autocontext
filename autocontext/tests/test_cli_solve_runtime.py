@@ -6,6 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from autocontext.cli import app
+from autocontext.cli_role_runtime import _wrap_role_client_as_provider
 from autocontext.config.settings import AppSettings
 from autocontext.knowledge.export import SkillPackage
 from autocontext.knowledge.solver import SolveJob
@@ -73,6 +74,27 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
         pi_timeout=float(overrides.get("pi_timeout", 300.0)),
         generation_time_budget_seconds=int(overrides.get("generation_time_budget_seconds", 0)),
     )
+
+
+class TestRoleRuntimeProvider:
+    def test_wrap_role_runtime_provider_forwards_max_tokens(self) -> None:
+        captured: dict[str, object] = {}
+
+        class _Response:
+            text = "ok"
+
+        class _Client:
+            def generate(self, **kwargs: object) -> _Response:
+                captured.update(kwargs)
+                return _Response()
+
+        provider, model = _wrap_role_client_as_provider(_Client(), "test-model", role="competitor")
+        result = provider.complete("system", "user", model=model, temperature=0.2, max_tokens=1234)
+
+        assert result.text == "ok"
+        assert captured["max_tokens"] == 1234
+        assert captured["temperature"] == 0.2
+        assert captured["role"] == "competitor"
 
 
 class TestSolveRuntimeOverrides:
