@@ -125,3 +125,36 @@ def design_agent_task(description: str, llm_fn: LlmFn) -> AgentTaskSpec:
     user_prompt = f"User description:\n{description}"
     response = llm_fn(AGENT_TASK_DESIGNER_SYSTEM, user_prompt)
     return parse_agent_task_spec(response)
+
+
+def design_validated_agent_task(
+    description: str,
+    llm_fn: LlmFn,
+    *,
+    max_retries: int = 2,
+) -> AgentTaskSpec:
+    """Design an agent task spec, retrying with validator feedback if intent drifts.
+
+    On each attempt:
+    - Call ``design_agent_task(description, llm_fn)``
+    - Run ``validate_intent(description, spec)``
+    - If empty → return spec
+    - If errors and attempts remaining → build a correction prompt, loop
+    - If errors and attempts exhausted → raise ValueError with all attempts' errors
+
+    Total attempts = ``max_retries + 1``. Default ``max_retries=2`` (3 attempts total).
+
+    Raises:
+        ValueError: when intent validation still fails after max_retries + 1 attempts.
+    """
+    # Local import to avoid a cycle (validator imports designer symbols in the other file).
+    from autocontext.scenarios.custom.agent_task_validator import validate_intent
+
+    spec = design_agent_task(description, llm_fn)
+    errors = validate_intent(description, spec)
+    if not errors:
+        return spec
+    # Stub — Task 5 will implement the actual retry loop. This preserves the
+    # original single-attempt error shape so the happy-path test passes while
+    # leaving the retry behaviour undefined (which later RED tests will drive).
+    raise ValueError(f"intent validation failed: {'; '.join(errors)}")
