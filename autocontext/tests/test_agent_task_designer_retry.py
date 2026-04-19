@@ -101,3 +101,65 @@ class TestDesignValidatedAgentTask:
             f"expected one retry warning, got {[r.message for r in warnings]}"
         )
         assert "attempt 1" in warnings[0].getMessage()
+
+    def test_raises_after_max_retries_exhausted(self) -> None:
+        # All 3 attempts return the invalid spec.
+        llm_fn = _scripted_llm_fn([
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+        ])
+
+        with pytest.raises(ValueError) as excinfo:
+            design_validated_agent_task(_TEXT_DESCRIPTION, llm_fn, max_retries=2)
+
+        message = str(excinfo.value)
+        assert "intent validation failed after 3 attempts" in message
+        assert "format mismatch" in message  # validator's error text present
+        assert len(llm_fn.calls) == 3  # type: ignore[attr-defined]
+
+    def test_retry_correction_prompt_contains_validator_errors(self) -> None:
+        llm_fn = _scripted_llm_fn([
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            _spec_response(_VALID_TEXT_SPEC),
+        ])
+
+        design_validated_agent_task(_TEXT_DESCRIPTION, llm_fn)
+
+        assert len(llm_fn.calls) == 2  # type: ignore[attr-defined]
+        _system, retry_user_prompt = llm_fn.calls[1]  # type: ignore[attr-defined]
+
+        assert "Please regenerate" in retry_user_prompt
+        assert "Validation errors" in retry_user_prompt
+        assert "format mismatch" in retry_user_prompt
+        # The original description must still be present so the LLM has task context.
+        assert _TEXT_DESCRIPTION in retry_user_prompt
+        # Hints block should be present.
+        assert "output_format='free_text'" in retry_user_prompt
+
+    def test_max_retries_zero_makes_exactly_one_attempt(self) -> None:
+        llm_fn = _scripted_llm_fn([
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+        ])
+
+        with pytest.raises(ValueError) as excinfo:
+            design_validated_agent_task(_TEXT_DESCRIPTION, llm_fn, max_retries=0)
+
+        assert "intent validation failed after 1 attempts" in str(excinfo.value)
+        assert len(llm_fn.calls) == 1  # type: ignore[attr-defined]
+
+    def test_max_retries_three_allows_four_total_attempts(self) -> None:
+        # First 3 invalid, 4th valid.
+        llm_fn = _scripted_llm_fn([
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            _spec_response(_VALID_TEXT_SPEC),
+        ])
+
+        spec = design_validated_agent_task(
+            _TEXT_DESCRIPTION, llm_fn, max_retries=3
+        )
+
+        assert spec.output_format == "free_text"
+        assert len(llm_fn.calls) == 4  # type: ignore[attr-defined]
