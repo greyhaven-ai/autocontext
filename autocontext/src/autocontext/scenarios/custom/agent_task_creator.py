@@ -13,7 +13,9 @@ from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.coordination import CoordinationInterface
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
-from autocontext.scenarios.custom.agent_task_designer import design_agent_task
+from autocontext.scenarios.custom.agent_task_designer import (
+    design_validated_agent_task,
+)
 from autocontext.scenarios.custom.agent_task_revision import (
     patch_legacy_generated_evaluate_output,
     patch_legacy_generated_revise_output,
@@ -99,11 +101,7 @@ class AgentTaskCreator:
 
         # 1. Design
         logger.info("designing agent task from description")
-        try:
-            spec = design_agent_task(description, self.llm_fn)
-        except Exception:
-            logger.warning("agent task design failed on first attempt; retrying once", exc_info=True)
-            spec = design_agent_task(description, self.llm_fn)
+        spec = design_validated_agent_task(description, self.llm_fn)
 
         # 1.5 Auto-heal: generate synthetic sample_input if needed (AC-309)
         from autocontext.scenarios.custom.spec_auto_heal import (
