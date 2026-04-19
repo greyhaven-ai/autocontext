@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from autocontext.agents.types import LlmFn
@@ -8,6 +9,8 @@ from autocontext.scenarios.custom.agent_task_spec import (
     AgentTaskSpec,
     normalize_agent_task_runtime_fields,
 )
+
+logger = logging.getLogger(__name__)
 
 SPEC_START = "<!-- AGENT_TASK_SPEC_START -->"
 SPEC_END = "<!-- AGENT_TASK_SPEC_END -->"
@@ -125,3 +128,131 @@ def design_agent_task(description: str, llm_fn: LlmFn) -> AgentTaskSpec:
     user_prompt = f"User description:\n{description}"
     response = llm_fn(AGENT_TASK_DESIGNER_SYSTEM, user_prompt)
     return parse_agent_task_spec(response)
+
+
+def design_validated_agent_task(
+    description: str,
+    llm_fn: LlmFn,
+    *,
+    max_retries: int = 2,
+) -> AgentTaskSpec:
+    """Design an agent task spec, retrying with validator feedback if intent drifts.
+
+    On each attempt:
+    - Call the designer (``design_agent_task`` for attempt 0, correction prompt otherwise)
+    - If the response cannot be parsed, retry with parse feedback when attempts remain
+    - Run ``validate_intent(description, spec)``
+    - If empty → return spec
+    - If errors and attempts remaining → build a correction prompt, loop
+    - If failures exhaust attempts → raise ValueError with all attempts' errors
+
+    Total attempts = ``max_retries + 1``. Default ``max_retries=2`` (3 attempts total).
+
+    Raises:
+        ValueError: when design or intent validation still fails after max_retries + 1 attempts.
+    """
+    # Local import to avoid a cycle (validator imports designer symbols in the other file).
+    from autocontext.scenarios.custom.agent_task_validator import validate_intent
+
+    total_attempts = max_retries + 1
+    errors_per_attempt: list[list[str]] = []
+    last_spec: AgentTaskSpec | None = None
+
+    for attempt in range(total_attempts):
+        try:
+            if attempt == 0:
+                spec = design_agent_task(description, llm_fn)
+            elif last_spec is None:
+                user_prompt = _build_parse_failure_retry_prompt(
+                    description=description,
+                    errors=errors_per_attempt[-1],
+                )
+                response = llm_fn(AGENT_TASK_DESIGNER_SYSTEM, user_prompt)
+                spec = parse_agent_task_spec(response)
+            else:
+                user_prompt = _build_correction_prompt(
+                    description=description,
+                    failed_spec=last_spec,
+                    errors=errors_per_attempt[-1],
+                )
+                response = llm_fn(AGENT_TASK_DESIGNER_SYSTEM, user_prompt)
+                spec = parse_agent_task_spec(response)
+        except Exception as exc:
+            errors = [f"designer response could not be parsed: {exc}"]
+            errors_per_attempt.append(errors)
+            if attempt < total_attempts - 1:
+                logger.warning(
+                    "agent task design failed on attempt %d/%d; retrying with correction prompt",
+                    attempt + 1,
+                    total_attempts,
+                    exc_info=True,
+                )
+                continue
+            raise ValueError(
+                f"agent task design failed after {total_attempts} attempts. "
+                f"Errors per attempt: {errors_per_attempt}"
+            ) from exc
+
+        errors = validate_intent(description, spec)
+        if not errors:
+            return spec
+
+        errors_per_attempt.append(errors)
+        last_spec = spec
+
+        if attempt < total_attempts - 1:
+            logger.warning(
+                "intent validation failed on attempt %d/%d: %s; retrying with correction prompt",
+                attempt + 1,
+                total_attempts,
+                "; ".join(errors),
+            )
+
+    raise ValueError(
+        f"intent validation failed after {total_attempts} attempts. "
+        f"Errors per attempt: {errors_per_attempt}"
+    )
+
+
+def _build_parse_failure_retry_prompt(
+    *,
+    description: str,
+    errors: list[str],
+) -> str:
+    """Build a retry prompt for malformed or unparsable designer output."""
+    error_bullets = "\n".join(f"- {e}" for e in errors)
+    return (
+        "Your previous attempt could not be parsed into an AgentTaskSpec.\n\n"
+        f"User description:\n{description}\n\n"
+        "Parse errors:\n"
+        f"{error_bullets}\n\n"
+        "Please regenerate a corrected AgentTaskSpec as valid JSON wrapped in the "
+        f"{SPEC_START} and {SPEC_END} delimiters."
+    )
+
+
+def _build_correction_prompt(
+    *,
+    description: str,
+    failed_spec: AgentTaskSpec,
+    errors: list[str],
+) -> str:
+    """Build the retry user prompt that feeds validator errors back to the LLM."""
+    prompt_excerpt = failed_spec.task_prompt[:200]
+    ellipsis = "..." if len(failed_spec.task_prompt) > 200 else ""
+    error_bullets = "\n".join(f"- {e}" for e in errors)
+    return (
+        "Your previous attempt generated a spec that failed intent validation.\n\n"
+        f"User description:\n{description}\n\n"
+        "Previous spec (key fields):\n"
+        f"  output_format: {failed_spec.output_format}\n"
+        f"  task_prompt: {prompt_excerpt}{ellipsis}\n\n"
+        "Validation errors:\n"
+        f"{error_bullets}\n\n"
+        "Please regenerate a corrected AgentTaskSpec that addresses these errors.\n\n"
+        "Hints:\n"
+        "- If the description implies writing/analysis/evaluation output, use output_format='free_text'\n"
+        "- If the description implies structured data output, use output_format='json_schema'\n"
+        "- Only use output_format='code' when the agent is asked to produce runnable source code\n"
+        "- The task_prompt and judge_rubric must reflect the same domain and output shape as the description"
+    )
