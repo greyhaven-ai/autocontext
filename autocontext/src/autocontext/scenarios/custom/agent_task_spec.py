@@ -36,7 +36,28 @@ def _serialize_agent_task_text_payload(value: Any) -> str | None:
     return str(value)
 
 
-def _extract_numeric_scalar(value: Any) -> float | None:
+QUALITY_THRESHOLD_NUMERIC_KEYS = (
+    "minimum",
+    "min",
+    "threshold",
+    "target",
+    "required",
+    "value",
+)
+
+
+def _normalized_key(value: object) -> str:
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _matches_preferred_key(key: str, preferred: str) -> bool:
+    if key == preferred:
+        return True
+    parts = tuple(part for part in key.split("_") if part)
+    return preferred in parts
+
+
+def _extract_numeric_scalar(value: Any, *, preferred_keys: tuple[str, ...] = ()) -> float | None:
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int | float):
@@ -47,14 +68,22 @@ def _extract_numeric_scalar(value: Any) -> float | None:
         except ValueError:
             return None
     if isinstance(value, dict):
+        normalized_items = [(_normalized_key(key), nested) for key, nested in value.items()]
+        for preferred in preferred_keys:
+            for key, nested in normalized_items:
+                if not _matches_preferred_key(key, preferred):
+                    continue
+                extracted = _extract_numeric_scalar(nested, preferred_keys=preferred_keys)
+                if extracted is not None:
+                    return extracted
         for nested in value.values():
-            extracted = _extract_numeric_scalar(nested)
+            extracted = _extract_numeric_scalar(nested, preferred_keys=preferred_keys)
             if extracted is not None:
                 return extracted
         return None
     if isinstance(value, list):
         for nested in value:
-            extracted = _extract_numeric_scalar(nested)
+            extracted = _extract_numeric_scalar(nested, preferred_keys=preferred_keys)
             if extracted is not None:
                 return extracted
         return None
@@ -69,9 +98,11 @@ def _normalize_max_rounds(value: Any) -> int:
 
 
 def _normalize_quality_threshold(value: Any) -> float:
-    extracted = _extract_numeric_scalar(value)
+    extracted = _extract_numeric_scalar(value, preferred_keys=QUALITY_THRESHOLD_NUMERIC_KEYS)
     if extracted is None:
         return 0.9
+    if 10.0 <= extracted <= 100.0:
+        return extracted / 100.0
     return extracted
 
 

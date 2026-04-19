@@ -63,9 +63,11 @@ AGENT_TASK_DESIGNER_SYSTEM = (
     '- "task_prompt": self-contained prompt for the evaluated agent\n'
     '- "judge_rubric": explicit scoring dimensions and criteria\n'
     '- "output_format": one of free_text, json_schema, or code\n\n'
+    '- "calibration_examples": MUST include at least 2 calibration examples '
+    "with human_score, human_notes, and agent_output fields\n\n"
     "Optional fields (use null or omit when unnecessary): judge_model, difficulty_tiers, "
     "reference_context, reference_sources, required_concepts, sample_input, "
-    "context_preparation, required_context_keys, calibration_examples, max_rounds, "
+    "context_preparation, required_context_keys, max_rounds, "
     "quality_threshold, revision_prompt.\n\n"
     "Rules:\n"
     "- Keep the task executable from the prompt, sample_input, reference_context, "

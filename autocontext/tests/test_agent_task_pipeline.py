@@ -271,6 +271,36 @@ class TestDesignAgentTask:
         assert isinstance(spec.quality_threshold, float)
         assert spec.quality_threshold == 0.9
 
+    def test_parse_spec_prefers_minimum_quality_threshold_key(self) -> None:
+        spec_data = {
+            "task_prompt": "Transfer two reasoning patterns into a hybrid task.",
+            "judge_rubric": "Evaluate transfer quality.",
+            "quality_threshold": {
+                "stretch": 0.95,
+                "minimum": 0.9,
+            },
+        }
+        raw = f"{SPEC_START}\n{json.dumps(spec_data, indent=2)}\n{SPEC_END}"
+
+        spec = parse_agent_task_spec(raw)
+
+        assert spec.quality_threshold == 0.9
+
+    def test_parse_spec_normalizes_percentage_quality_threshold(self) -> None:
+        spec_data = {
+            "task_prompt": "Transfer two reasoning patterns into a hybrid task.",
+            "judge_rubric": "Evaluate transfer quality.",
+            "quality_threshold": {
+                "scale": "0-100",
+                "minimum": 90,
+            },
+        }
+        raw = f"{SPEC_START}\n{json.dumps(spec_data, indent=2)}\n{SPEC_END}"
+
+        spec = parse_agent_task_spec(raw)
+
+        assert spec.quality_threshold == 0.9
+
     def test_design_agent_task_with_mock(self) -> None:
         response_text = _mock_llm_response(SAMPLE_SPEC)
 
