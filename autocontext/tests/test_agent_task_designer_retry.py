@@ -14,7 +14,6 @@ from autocontext.scenarios.custom.agent_task_designer import (
 )
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
-
 # --- Fixtures ---
 
 _VALID_TEXT_SPEC = AgentTaskSpec(

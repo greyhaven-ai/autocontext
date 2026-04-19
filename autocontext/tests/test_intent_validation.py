@@ -311,7 +311,7 @@ class TestCreatorIntentValidation:
 
         with (
             patch(
-                "autocontext.scenarios.custom.agent_task_creator.design_agent_task",
+                "autocontext.scenarios.custom.agent_task_creator.design_validated_agent_task",
                 return_value=bad_spec,
             ),
             patch(

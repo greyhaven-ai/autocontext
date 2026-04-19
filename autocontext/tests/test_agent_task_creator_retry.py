@@ -9,7 +9,6 @@ from autocontext.scenarios.custom.agent_task_creator import AgentTaskCreator
 from autocontext.scenarios.custom.agent_task_designer import SPEC_END, SPEC_START
 from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
-
 _VALID_TEXT_SPEC = AgentTaskSpec(
     task_prompt="Write a haiku about distributed systems.",
     judge_rubric="Score syllable accuracy, relevance, imagery 0-1 each.",
