@@ -23,6 +23,7 @@ import { registerScenarioExecutionTools } from "./scenario-execution-tools.js";
 import { registerScenarioRevisionTools } from "./scenario-revision-tools.js";
 import { registerSolveTools } from "./solve-tools.js";
 import { registerProductionTracesTools } from "./production-traces-tools.js";
+import { registerInstrumentTools } from "./instrument-tools.js";
 
 export interface MtsServerOpts {
   store: SQLiteStore;
@@ -137,6 +138,7 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
   });
 
   registerProductionTracesTools(server);
+  registerInstrumentTools(server);
 
   return server;
 }
