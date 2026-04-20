@@ -25,6 +25,7 @@ from autocontext.knowledge.solve_design import (
     _build_solve_agent_task_design_brief,
     _build_solve_description_brief,
     _settings_for_solve_creator,
+    _solve_task_spec_needs_compact_retry,
 )
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
@@ -57,6 +58,8 @@ _SIMULATION_INTERFACE_HINT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _AGENT_TASK_INTERFACE_HINT_RE = re.compile(r"\bagent[- ]task evaluation\b", re.IGNORECASE)
+
+
 @dataclass
 class SolveJob:
     job_id: str
@@ -473,7 +476,7 @@ class SolveScenarioExecutor:
 
         try:
             provider, provider_model = resolve_role_runtime(
-                self._settings,
+                _settings_for_solve_creator(self._settings),
                 role="competitor",
                 scenario_name=scenario_name,
                 sqlite=sqlite,
@@ -590,6 +593,7 @@ class SolveScenarioBuilder:
             designer_system_prompt=SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
             retry_designer_system_prompt=RETRY_SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
             description_transform=_build_solve_agent_task_design_brief,
+            retry_spec_predicate=_solve_task_spec_needs_compact_retry,
         )
         scenario = family_creator.create(brief, family_name=family.name)
         scenario_name = str(cast(_NamedScenario, scenario).name)

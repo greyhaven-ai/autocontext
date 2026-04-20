@@ -543,6 +543,28 @@ class TestSolveScenarioBuilder:
         assert "## Scenario Design" in compact
         assert "analytics/rubric_drift.py" in compact
 
+    def test_solve_task_spec_needs_compact_retry_for_runtime_heavy_specs(self) -> None:
+        from autocontext.knowledge.solve_design import _solve_task_spec_needs_compact_retry
+        from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
+
+        heavy_spec = AgentTaskSpec(
+            task_prompt=(
+                "Run a stable eval (grid_ctf if available) for 10 generations with the live provider "
+                "and inspect repository analytics artifacts."
+            ),
+            judge_rubric="Score whether the run completed and analytics were inspected.",
+            output_format="json_schema",
+        )
+        compact_spec = AgentTaskSpec(
+            task_prompt="Inspect telemetry and return JSON only with keys drift_status, calibration_status, and summary.",
+            judge_rubric="Score contract fidelity and diagnosis quality.",
+            output_format="json_schema",
+            sample_input='{"score_entropy":0.18}',
+        )
+
+        assert _solve_task_spec_needs_compact_retry(heavy_spec) is True
+        assert _solve_task_spec_needs_compact_retry(compact_spec) is False
+
 
 class TestSolveLLMFn:
     def test_uses_tighter_solve_designer_token_budget(self) -> None:
@@ -641,6 +663,51 @@ class TestSolveLLMFn:
         builder = manager._build_creator()
 
         assert builder is not None
+        assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
+
+    def test_task_like_executor_raises_pi_timeout_floor_for_solve_runtime(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solve_design import _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            agent_provider="pi",
+            pi_timeout=300.0,
+        )
+        scenario_name = "solve_runtime_timeout_floor"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        SCENARIO_REGISTRY[scenario_name] = _SolveAgentTask
+        provider = _StubProvider("improved draft")
+        captured: dict[str, float] = {}
+
+        def _fake_resolve_role_runtime(settings: AppSettings, **kwargs: object) -> tuple[_StubProvider, str]:
+            del kwargs
+            captured["pi_timeout"] = float(settings.pi_timeout)
+            return provider, "test-model"
+
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            _fake_resolve_role_runtime,
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=1,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
         assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
 
 
@@ -771,6 +838,10 @@ class TestSolveScenarioExecutor:
                 del seed
                 return {"output_format": "json_schema"}
 
+            def get_task_prompt(self, state: dict) -> str:
+                del state
+                return "Return JSON with {summary, milestones, risks, evidence, roadmap}. " + "Long telemetry details. " * 120
+
         settings = AppSettings(
             knowledge_root=tmp_path / "knowledge",
             db_path=tmp_path / "runs.sqlite3",
@@ -800,6 +871,55 @@ class TestSolveScenarioExecutor:
         assert summary.best_score == 1.0
         assert provider.calls[0]["max_tokens"] == 2200
         assert "Be concise" in str(provider.calls[0]["system_prompt"])
+
+    def test_task_like_executor_uses_compact_json_schema_budget(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        class _CompactJsonSolveAgentTask(_SolveAgentTask):
+            def initial_state(self, seed: int | None = None) -> dict:
+                del seed
+                return {"output_format": "json_schema"}
+
+            def get_task_prompt(self, state: dict) -> str:
+                del state
+                return (
+                    "Inspect telemetry and return JSON only with keys drift_status, calibration_status, "
+                    "correlation_health, entropy_status, stagnation_status, evidence_gens, and summary."
+                )
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            agent_provider="pi",
+            pi_timeout=300.0,
+        )
+        scenario_name = "solve_compact_json_task_execution"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        provider = _StubProvider("improved draft")
+        SCENARIO_REGISTRY[scenario_name] = _CompactJsonSolveAgentTask
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            lambda settings, **kwargs: (provider, "test-model"),
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=1,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
+        assert provider.calls[0]["max_tokens"] == 1200
 
     def test_task_like_executor_retries_timeout_once(
         self,

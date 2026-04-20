@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from autocontext.config.settings import AppSettings
+from autocontext.scenarios.custom.agent_task_spec import AgentTaskSpec
 
 _SOLVE_DESCRIPTION_SKIP_SECTIONS = frozenset(
     {
@@ -36,6 +37,10 @@ _SOLVE_AGENT_TASK_DESIGN_KEEP_SECTIONS = frozenset(
 _SOLVE_AGENT_TASK_DESIGN_MAX_CHARS = 1000
 _SOLVE_AGENT_TASK_DESIGN_MAX_SECTION_LINES = 5
 _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS = 600.0
+_SOLVE_RUNTIME_HEAVY_TASK_PROMPT_RE = re.compile(
+    r"\b(run|execute|inspect)\b.*\b(provider|repository|scenario|generations?|command|file|artifact)\b",
+    re.IGNORECASE,
+)
 
 
 def _build_solve_description_brief(description: str) -> str:
@@ -121,3 +126,14 @@ def _settings_for_solve_creator(settings: AppSettings) -> AppSettings:
     if float(settings.pi_timeout) >= _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS:
         return settings
     return settings.model_copy(update={"pi_timeout": _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS})
+
+
+def _solve_task_spec_needs_compact_retry(spec: AgentTaskSpec) -> bool:
+    if spec.output_format != "json_schema":
+        return False
+    if spec.sample_input not in {None, ""}:
+        return False
+    prompt = spec.task_prompt.strip()
+    if "if available" in prompt.lower():
+        return True
+    return bool(_SOLVE_RUNTIME_HEAVY_TASK_PROMPT_RE.search(prompt))
