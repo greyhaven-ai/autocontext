@@ -4,9 +4,11 @@
  * Spec §5.1: DFS, alphabetical-within-directory for determinism. Per file,
  * filter chain applied in order:
  *
- *   1. Hardcoded defaults (.env*, .venv/**, node_modules/**, .git/**,
- *      .autocontext/**, *.pem, *.key, *.secret, *.p12, *.crt, *.cer)
- *   2. .gitignore patterns (nested cascade via `ignore` npm package)
+ *   1. Hardcoded defaults (canonical list lives in safety/hardcoded-defaults.ts;
+ *      Layer 3 moved the constant there — scanner imports from safety per
+ *      spec §3.3's allowed scanner→safety direction for constants/primitives)
+ *   2. .gitignore patterns (nested cascade via `ignore` npm package — remains
+ *      inline here; see safety/index.ts for the non-extraction rationale)
  *   3. Extra excludes from --exclude + --exclude-from (gitignore syntax)
  *   4. Extension filter (.py/.ts/.tsx/.mts/.cts/.js/.jsx/.mjs/.cjs)
  *   5. File-size cap (default 1 MB; over-cap files logged + skipped)
@@ -17,31 +19,11 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep, posix } from "node:path";
 import ignore from "ignore";
 import type { SourceFile } from "../contract/plugin-interface.js";
+import { HARDCODED_DEFAULT_PATTERNS } from "../safety/hardcoded-defaults.js";
 import { fromBytes } from "./source-file.js";
 import { languageFromPath } from "./file-type-filter.js";
 
 const DEFAULT_MAX_FILE_BYTES = 1_048_576;
-
-/** Hardcoded-defaults patterns — spec §5.1 item 1. Non-configurable safety floor. */
-const HARDCODED_DEFAULTS: readonly string[] = [
-  ".env",
-  ".env.*",
-  ".env*",
-  ".venv/",
-  ".venv/**",
-  "node_modules/",
-  "node_modules/**",
-  ".git/",
-  ".git/**",
-  ".autocontext/",
-  ".autocontext/**",
-  "*.pem",
-  "*.key",
-  "*.secret",
-  "*.p12",
-  "*.crt",
-  "*.cer",
-];
 
 export interface ScanOpts {
   readonly cwd: string;
@@ -57,8 +39,8 @@ export async function* scanRepo(opts: ScanOpts): AsyncIterable<SourceFile> {
   const cwd = opts.cwd;
   const maxBytes = opts.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 
-  // Hardcoded defaults always apply.
-  const defaultsIgnore = ignore().add(HARDCODED_DEFAULTS as string[]);
+  // Hardcoded defaults always apply. Sourced from safety/hardcoded-defaults.ts.
+  const defaultsIgnore = ignore().add([...HARDCODED_DEFAULT_PATTERNS]);
 
   // Extra excludes layered on top — user-supplied via --exclude and --exclude-from.
   const extraIgnore = ignore();

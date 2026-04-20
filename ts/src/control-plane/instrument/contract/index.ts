@@ -17,6 +17,7 @@ export type {
   InsertStatementEdit,
   ReplaceExpressionEdit,
   EditDescriptor,
+  SecretMatch,
   SourceFile,
   DetectorPlugin,
   TreeSitterMatch,

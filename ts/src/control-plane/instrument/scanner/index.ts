@@ -7,6 +7,7 @@ export {
   fromBytes,
   loadSourceFile,
   parseDirectives,
+  parseDirectivesFromBytes,
   parseExistingImports,
   detectIndentationStyle,
 } from "./source-file.js";

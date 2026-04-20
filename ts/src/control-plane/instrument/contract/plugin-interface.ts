@@ -49,7 +49,7 @@ export interface ImportSpec {
   readonly kind: "named" | "default" | "namespace";
 }
 
-/** Fields common to every EditDescriptor variant. `pluginId` + `sourceFilePath` are injected by the pipeline. */
+/** Fields common to every EditDescriptor variant. `pluginId` + `sourceFilePath` are injected by the pipeline post-plugin. */
 export interface BaseEdit {
   readonly pluginId: string;
   readonly sourceFilePath: string;
@@ -90,6 +90,27 @@ export type EditDescriptor =
   | ReplaceExpressionEdit;
 
 /**
+ * One match of a secret-literal pattern scanned against file bytes.
+ *
+ * Populated by `safety/secret-detector.ts#detectSecretLiterals`. The contract
+ * layer owns the SHAPE because `SourceFile.secretMatches` surfaces this type
+ * to planner + pr-body consumers — moving the shape into safety/ would force
+ * contract → safety (forbidden by spec §3.3).
+ *
+ * Fields:
+ *  - `pattern` — detector-supplied id (e.g., "aws-access-key"). Stable across runs.
+ *  - `byteOffset` — 0-based byte offset of the match start in the file bytes.
+ *  - `lineNumber` — 1-based line of the match start.
+ *  - `excerpt` — short printable string for error messages; may be truncated/redacted.
+ */
+export interface SecretMatch {
+  readonly pattern: string;
+  readonly byteOffset: number;
+  readonly lineNumber: number;
+  readonly excerpt: string;
+}
+
+/**
  * One customer source file as seen by scanner + plugins.
  *
  * `tree` is `unknown` at the contract boundary so instrument/contract stays free of the
@@ -107,13 +128,18 @@ export interface SourceFile {
   readonly tree: unknown;
   readonly directives: DirectiveMap;
   readonly hasSecretLiteral: boolean;
+  /**
+   * Secret matches found at load time (Layer 3). Empty when `hasSecretLiteral`
+   * is `false`. Planner surfaces these in per-file refuse diagnostics.
+   */
+  readonly secretMatches: readonly SecretMatch[];
   readonly existingImports: ImportSet;
   readonly indentationStyle: IndentationStyle;
 }
 
 /**
  * Detector plugin contract. Plugins are registered via `registerDetectorPlugin(plugin)`
- * (Layer 4 — `registry/plugin-registry.ts`, not implemented in this layer).
+ * (Layer 4 — `registry/plugin-registry.ts`).
  */
 export interface DetectorPlugin {
   readonly id: string;
