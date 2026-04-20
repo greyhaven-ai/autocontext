@@ -90,7 +90,7 @@ class AgentTaskCreator:
         if family_name:
             family = get_family(family_name)
         else:
-            classification = classify_scenario_family(description)
+            classification = classify_scenario_family(description, llm_fn=self.llm_fn)
             family = route_to_family(classification)
         if family.name in FAMILY_CONFIGS:
             logger.info("routing description to %s creator", family.name)
