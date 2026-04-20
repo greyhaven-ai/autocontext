@@ -36,6 +36,7 @@ class FamilyClassification(BaseModel):
     confidence: float
     rationale: str
     alternatives: list[FamilyCandidate] = Field(default_factory=list)
+    no_signals_matched: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -457,6 +458,7 @@ def classify_scenario_family(description: str) -> FamilyClassification:
             confidence=0.2,
             rationale=f"No strong signals detected; defaulting to {default_family}",
             alternatives=alternatives,
+            no_signals_matched=True,
         )
 
     # Normalize to confidences
