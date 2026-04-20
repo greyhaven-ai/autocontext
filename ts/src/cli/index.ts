@@ -64,6 +64,7 @@ Control plane (Layer 7-9):
   registry         Repair/validate/migrate the control-plane registry
   emit-pr          Generate a promotion PR (or dry-run bundle) for a candidate
   production-traces Ingest/list/show/stats/build-dataset/export/policy/rotate-salt/prune (Foundation A — AC-539)
+  instrument       Scan a repo for LLM clients and propose/apply Autocontext wrappers (A2-I — AC-540)
 
 Python-only commands (not supported in npm package):
   ecosystem, ab-test, resume, wait, trigger-distillation
@@ -202,6 +203,9 @@ async function main(): Promise<void> {
       break;
     case "production-traces":
       await cmdProductionTraces();
+      break;
+    case "instrument":
+      await cmdInstrument();
       break;
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -2944,6 +2948,19 @@ async function cmdProductionTraces(): Promise<void> {
   );
   const subArgs = process.argv.slice(3);
   const result = await runProductionTracesCommand(subArgs);
+  if (result.stdout) process.stdout.write(result.stdout + "\n");
+  if (result.stderr) process.stderr.write(result.stderr + "\n");
+  process.exit(result.exitCode);
+}
+
+// Instrument namespace (A2-I / Layer 7 — AC-540)
+
+async function cmdInstrument(): Promise<void> {
+  const { runInstrumentCommand } = await import(
+    "../control-plane/instrument/cli/index.js"
+  );
+  const subArgs = process.argv.slice(3);
+  const result = await runInstrumentCommand(subArgs);
   if (result.stdout) process.stdout.write(result.stdout + "\n");
   if (result.stderr) process.stderr.write(result.stderr + "\n");
   process.exit(result.exitCode);
