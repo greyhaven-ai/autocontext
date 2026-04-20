@@ -25,3 +25,43 @@ class TestValidateFamilyOverride:
     @pytest.mark.parametrize("family_name", [f.name for f in list_families()])
     def test_all_registered_families_are_accepted(self, family_name: str) -> None:
         _validate_family_override(family_name)
+
+
+class TestSolveJobFamilyOverride:
+    def test_solve_sync_defaults_family_override_to_none(self, tmp_path) -> None:
+        from unittest.mock import patch
+
+        from autocontext.config.settings import AppSettings
+        from autocontext.knowledge.solver import SolveJob, SolveManager
+
+        settings = AppSettings(knowledge_root=tmp_path / "knowledge")
+        manager = SolveManager(settings)
+
+        captured: dict[str, SolveJob] = {}
+
+        def capture_and_return(job: SolveJob) -> None:
+            captured["job"] = job
+
+        with patch.object(manager, "_run_job", side_effect=capture_and_return):
+            manager.solve_sync(description="x")
+
+        assert captured["job"].family_override is None
+
+    def test_solve_sync_stores_family_override_on_job(self, tmp_path) -> None:
+        from unittest.mock import patch
+
+        from autocontext.config.settings import AppSettings
+        from autocontext.knowledge.solver import SolveJob, SolveManager
+
+        settings = AppSettings(knowledge_root=tmp_path / "knowledge")
+        manager = SolveManager(settings)
+
+        captured: dict[str, SolveJob] = {}
+
+        def capture_and_return(job: SolveJob) -> None:
+            captured["job"] = job
+
+        with patch.object(manager, "_run_job", side_effect=capture_and_return):
+            manager.solve_sync(description="x", family_override="simulation")
+
+        assert captured["job"].family_override == "simulation"

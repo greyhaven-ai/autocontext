@@ -76,6 +76,7 @@ class SolveJob:
     error: str | None = None
     result: SkillPackage | None = None
     created_at: float = field(default_factory=time.time)
+    family_override: str | None = None
 
 
 @dataclass(slots=True)
@@ -633,13 +634,23 @@ class SolveManager:
         thread.start()
         return job_id
 
-    def solve_sync(self, description: str, generations: int = 5) -> SolveJob:
-        """Run solve-on-demand synchronously in the current process."""
+    def solve_sync(
+        self,
+        description: str,
+        generations: int = 5,
+        family_override: str | None = None,
+    ) -> SolveJob:
+        """Run solve-on-demand synchronously in the current process.
+
+        If ``family_override`` is provided, the scenario family classifier is
+        bypassed and the solver routes directly to the named family's pipeline.
+        """
         job_id = f"solve_{uuid.uuid4().hex[:8]}"
         job = SolveJob(
             job_id=job_id,
             description=description,
             generations=generations,
+            family_override=family_override,
         )
         self._jobs[job_id] = job
         self._run_job(job)
