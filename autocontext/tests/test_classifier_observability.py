@@ -111,3 +111,21 @@ class TestLowConfidenceErrorMessage:
         assert "0.30" in msg
         # No dangling "Top alternatives:" with empty content
         assert not msg.rstrip().endswith("Top alternatives:")
+
+
+class TestVocabularyExpansion:
+    def test_ac277_portfolio_prompt_classifies_above_threshold(self) -> None:
+        c = classify_scenario_family(_AC277_PROMPT)
+        assert c.confidence >= 0.30
+        assert c.family_name == "agent_task"
+        assert c.no_signals_matched is False
+
+    @pytest.mark.parametrize("keyword", _NEW_AGENT_TASK_KEYWORDS)
+    def test_each_new_keyword_individually_triggers_non_fallback(
+        self, keyword: str
+    ) -> None:
+        # Minimal prompt carrying only the keyword.
+        c = classify_scenario_family(f"build something about {keyword}")
+        assert c.no_signals_matched is False, (
+            f"keyword {keyword!r} did not match any signal (got {c.rationale!r})"
+        )

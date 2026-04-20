@@ -214,6 +214,16 @@ _AGENT_TASK_SIGNALS: dict[str, float] = {
     "sort": 0.5,
     "data analysis": 1.0,
     "customer review": 1.0,
+    # AC-571: finance / quant domain keywords
+    "portfolio": 2.0,
+    "macroeconomic": 2.0,
+    "regime change": 2.0,
+    "rebalance": 1.5,
+    "volatility": 1.5,
+    "allocation": 1.0,
+    "quantitative": 1.0,
+    "investment": 1.0,
+    "financial": 1.0,
 }
 
 # Game: competitive, two-player, tournament, Elo
