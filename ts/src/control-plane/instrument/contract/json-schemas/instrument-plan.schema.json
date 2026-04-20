@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/instrument-plan.json",
+  "title": "InstrumentPlan",
+  "description": "A2-I spec §9.1 — composed pre-patch plan. Contains EditDescriptor[], per-file SourceFile metadata, conflict-detector decisions, safety-gate decisions. BYTE-DETERMINISTIC given the same inputs — reused as CI drift fingerprint.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "edits", "sourceFiles", "conflictDecisions", "safetyDecisions"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "edits": { "type": "array", "items": { "$ref": "#/$defs/EditDescriptor" } },
+    "sourceFiles": { "type": "array", "items": { "$ref": "#/$defs/PlanSourceFileMetadata" } },
+    "conflictDecisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["filePath", "decision"],
+        "properties": {
+          "filePath": { "type": "string", "minLength": 1 },
+          "decision": { "$ref": "#/$defs/ConflictDecision" }
+        }
+      }
+    },
+    "safetyDecisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["filePath", "decision"],
+        "properties": {
+          "filePath": { "type": "string", "minLength": 1 },
+          "decision": { "$ref": "#/$defs/SafetyDecision" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "InstrumentLanguage": {
+      "enum": ["python", "typescript", "javascript", "jsx", "tsx"]
+    },
+    "SourceRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startByte", "endByte", "startLineCol", "endLineCol"],
+      "properties": {
+        "startByte": { "type": "integer", "minimum": 0 },
+        "endByte": { "type": "integer", "minimum": 0 },
+        "startLineCol": { "$ref": "#/$defs/LineCol" },
+        "endLineCol": { "$ref": "#/$defs/LineCol" }
+      }
+    },
+    "LineCol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line", "col"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "col": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ImportSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "name", "kind"],
+      "properties": {
+        "module": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "alias": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["named", "default", "namespace"] }
+      }
+    },
+    "BaseEditFields": {
+      "type": "object",
+      "required": ["pluginId", "sourceFilePath", "importsNeeded"],
+      "properties": {
+        "pluginId": { "type": "string", "minLength": 1 },
+        "sourceFilePath": { "type": "string", "minLength": 1 },
+        "importsNeeded": { "type": "array", "items": { "$ref": "#/$defs/ImportSpec" } },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "WrapExpressionEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pluginId", "sourceFilePath", "importsNeeded", "range", "wrapFn"],
+      "properties": {
+        "kind": { "const": "wrap-expression" },
+        "pluginId": { "type": "string", "minLength": 1 },
+        "sourceFilePath": { "type": "string", "minLength": 1 },
+        "importsNeeded": { "type": "array", "items": { "$ref": "#/$defs/ImportSpec" } },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "range": { "$ref": "#/$defs/SourceRange" },
+        "wrapFn": { "type": "string", "minLength": 1 },
+        "wrapArgsBefore": { "type": "array", "items": { "type": "string" } },
+        "wrapArgsAfter": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "InsertStatementEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pluginId", "sourceFilePath", "importsNeeded", "anchor", "statementSource"],
+      "properties": {
+        "kind": { "const": "insert-statement" },
+        "pluginId": { "type": "string", "minLength": 1 },
+        "sourceFilePath": { "type": "string", "minLength": 1 },
+        "importsNeeded": { "type": "array", "items": { "$ref": "#/$defs/ImportSpec" } },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "range"],
+          "properties": {
+            "kind": { "enum": ["before", "after"] },
+            "range": { "$ref": "#/$defs/SourceRange" }
+          }
+        },
+        "statementSource": { "type": "string" }
+      }
+    },
+    "ReplaceExpressionEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pluginId", "sourceFilePath", "importsNeeded", "range", "replacementSource"],
+      "properties": {
+        "kind": { "const": "replace-expression" },
+        "pluginId": { "type": "string", "minLength": 1 },
+        "sourceFilePath": { "type": "string", "minLength": 1 },
+        "importsNeeded": { "type": "array", "items": { "$ref": "#/$defs/ImportSpec" } },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "range": { "$ref": "#/$defs/SourceRange" },
+        "replacementSource": { "type": "string" }
+      }
+    },
+    "EditDescriptor": {
+      "oneOf": [
+        { "$ref": "#/$defs/WrapExpressionEdit" },
+        { "$ref": "#/$defs/InsertStatementEdit" },
+        { "$ref": "#/$defs/ReplaceExpressionEdit" }
+      ]
+    },
+    "PlanSourceFileMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "language", "directivesSummary", "hasSecretLiteral", "existingImports"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "language": { "$ref": "#/$defs/InstrumentLanguage" },
+        "directivesSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["offLines"],
+          "properties": {
+            "offLines": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+            "offFileAtLine": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "hasSecretLiteral": { "type": "boolean" },
+        "existingImports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["module", "names"],
+            "properties": {
+              "module": { "type": "string", "minLength": 1 },
+              "names": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "ConflictDecision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "accepted" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reason"],
+          "properties": {
+            "kind": { "const": "deduplicated" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "conflictingPluginIds", "reason"],
+          "properties": {
+            "kind": { "const": "rejected-conflict" },
+            "conflictingPluginIds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "SafetyDecision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "allow" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reason"],
+          "properties": {
+            "kind": { "const": "refuse" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

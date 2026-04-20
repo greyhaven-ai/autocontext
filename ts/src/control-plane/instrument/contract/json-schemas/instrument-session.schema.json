@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/instrument-session.json",
+  "title": "InstrumentSession",
+  "description": "A2-I spec §9.1 — snapshot of one `autoctx instrument` invocation. Includes CLI flags, timestamps, autoctx version, registered plugins, and gitignore fingerprint. NOT byte-deterministic (contains timestamps + ULID).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cwd",
+    "flags",
+    "startedAt",
+    "endedAt",
+    "autoctxVersion",
+    "registeredPlugins",
+    "gitignoreFingerprint"
+  ],
+  "properties": {
+    "cwd": { "type": "string", "minLength": 1 },
+    "flags": { "$ref": "#/$defs/InstrumentFlagsSnapshot" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": "string", "format": "date-time" },
+    "autoctxVersion": { "type": "string", "minLength": 1 },
+    "registeredPlugins": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RegisteredPluginInfo" }
+    },
+    "gitignoreFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "InstrumentFlagsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "enhanced", "maxFileBytes", "failIfEmpty", "excludes", "output", "force"],
+      "properties": {
+        "mode": { "enum": ["dry-run", "apply", "apply-branch"] },
+        "branch": { "type": "string", "minLength": 1 },
+        "commit": { "type": "string", "minLength": 1 },
+        "enhanced": { "type": "boolean" },
+        "maxFileBytes": { "type": "integer", "minimum": 0 },
+        "failIfEmpty": { "type": "boolean" },
+        "excludes": { "type": "array", "items": { "type": "string" } },
+        "excludeFrom": { "type": "string", "minLength": 1 },
+        "output": { "enum": ["json", "table", "pretty"] },
+        "force": { "type": "boolean" }
+      }
+    },
+    "RegisteredPluginInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "sdkName", "language"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "sdkName": { "type": "string", "minLength": 1 },
+        "language": { "enum": ["python", "typescript", "javascript", "jsx", "tsx"] }
+      }
+    }
+  }
+}
