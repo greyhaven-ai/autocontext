@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from autocontext.agents.types import LlmFn
 from autocontext.scenarios.families import ScenarioFamily, get_family, list_families
 
 logger = logging.getLogger(__name__)
@@ -454,14 +455,24 @@ def _build_rationale(matched: list[str], family_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def classify_scenario_family(description: str) -> FamilyClassification:
+def classify_scenario_family(
+    description: str,
+    *,
+    llm_fn: LlmFn | None = None,
+) -> FamilyClassification:
     """Classify a natural-language description into a scenario family.
 
     Returns a FamilyClassification with the top choice, confidence,
     rationale, and ranked alternatives.
 
+    When ``llm_fn`` is provided and the keyword classifier matches no signals,
+    a single structured LLM call is made to pick a family before returning the
+    keyword fallback (AC-580). If the LLM call fails for any reason, the
+    keyword fallback is returned unchanged.
+
     Raises ValueError if description is empty/whitespace.
     """
+    del llm_fn  # Parameter is accepted but unused in this task; wired in next.
     if not description or not description.strip():
         raise ValueError("description must be non-empty")
 
