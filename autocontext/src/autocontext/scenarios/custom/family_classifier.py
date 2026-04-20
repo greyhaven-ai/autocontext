@@ -7,6 +7,7 @@ rationale. Routes into the correct family-specific generator.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from autocontext.scenarios.families import ScenarioFamily, get_family, list_families
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -529,5 +532,13 @@ def route_to_family(
     Raises KeyError if family_name is not in the registry.
     """
     if classification.confidence < min_confidence:
+        logger.warning(
+            "route_to_family rejecting classification: family=%r confidence=%.2f threshold=%.2f rationale=%r alternatives=%s",
+            classification.family_name,
+            classification.confidence,
+            min_confidence,
+            classification.rationale,
+            [(a.family_name, a.confidence) for a in classification.alternatives],
+        )
         raise LowConfidenceError(classification, min_confidence)
     return get_family(classification.family_name)

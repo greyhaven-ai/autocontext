@@ -129,3 +129,49 @@ class TestVocabularyExpansion:
         assert c.no_signals_matched is False, (
             f"keyword {keyword!r} did not match any signal (got {c.rationale!r})"
         )
+
+
+class TestRouteToFamilyWarningLog:
+    def test_emits_warning_before_raising(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        c = FamilyClassification(
+            family_name="agent_task",
+            confidence=0.2,
+            rationale="No strong signals detected; defaulting to agent_task",
+            alternatives=[],
+            no_signals_matched=True,
+        )
+
+        with caplog.at_level(
+            logging.WARNING, logger="autocontext.scenarios.custom.family_classifier"
+        ):
+            with pytest.raises(LowConfidenceError):
+                route_to_family(c, min_confidence=0.3)
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        msg = warnings[0].getMessage()
+        assert "route_to_family rejecting" in msg
+        assert "agent_task" in msg
+        assert "0.20" in msg
+        assert "0.30" in msg
+
+    def test_emits_no_warning_on_happy_path(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        c = FamilyClassification(
+            family_name="agent_task",
+            confidence=0.9,
+            rationale="matched: haiku",
+            alternatives=[],
+        )
+
+        with caplog.at_level(
+            logging.WARNING, logger="autocontext.scenarios.custom.family_classifier"
+        ):
+            family = route_to_family(c, min_confidence=0.3)
+
+        assert family.name == "agent_task"
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings == []
