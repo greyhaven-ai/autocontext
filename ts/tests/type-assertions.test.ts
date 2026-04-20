@@ -114,7 +114,19 @@ describe("TypeScript type assertion budget", () => {
     // narrowed to string/boolean/arrays at the MCP-tool boundary. Budget is
     // generous by ~10 to absorb Layer 8 retention module emergence without a
     // separate bump.
-    expect(total).toBeLessThanOrEqual(720);
+    // Bumped to 740 when control-plane/instrument/ Layers 1+2 (A2-I) landed —
+    // tree-sitter's Node FFI bindings are untyped (`any`) and require
+    // `as any` / `as TreeSitterTree` casts at the loader boundary (spec §11.8
+    // flagged the ~20-cast bump up-front). Additional minor casts: `match[1]
+    // as DirectiveValue` at the directive-regex boundary (the regex group has
+    // a known finite domain), `HARDCODED_DEFAULTS as string[]` / `dirStack as
+    // string[]` because the `ignore` package's .d.ts requires a mutable array,
+    // and the `ajv` CJS-default-interop pattern cloned from Foundation B's
+    // `control-plane/contract/validators.ts`. The alternative (a full-typed
+    // tree-sitter wrapper) is deliberately deferred — it would bloat scope
+    // without improving review value, since the FFI surface is isolated in
+    // `tree-sitter-loader.ts` and the contract layer never touches `any`.
+    expect(total).toBeLessThanOrEqual(740);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {

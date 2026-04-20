@@ -37,7 +37,9 @@
     "example:repl": "node examples/run-repl-session.mjs",
     "build:production-traces-types": "node scripts/generate-production-traces-types.mjs",
     "sync:production-traces-schemas": "node scripts/sync-python-production-traces-schemas.mjs",
-    "check:production-traces-schemas": "node scripts/generate-production-traces-types.mjs --check && node scripts/sync-python-production-traces-schemas.mjs --check"
+    "check:production-traces-schemas": "node scripts/generate-production-traces-types.mjs --check && node scripts/sync-python-production-traces-schemas.mjs --check",
+    "check:instrument-schemas": "node scripts/check-instrument-schemas.mjs --check",
+    "check:schemas": "npm run check:production-traces-schemas && npm run check:instrument-schemas"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -72,10 +74,15 @@
     "ajv-formats": "^3.0.1",
     "better-sqlite3": "^11.0.0",
     "diff": "^9.0.0",
+    "ignore": "5.3.2",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
     "react": "^18.3.1",
     "secure-exec": "^0.1.0",
+    "tree-sitter": "0.21.1",
+    "tree-sitter-javascript": "0.21.4",
+    "tree-sitter-python": "0.21.0",
+    "tree-sitter-typescript": "0.21.2",
     "ulid": "^3.0.2",
     "ws": "^8.18.0",
     "zod": "^3.24.0"
