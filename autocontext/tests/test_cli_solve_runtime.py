@@ -19,8 +19,13 @@ class _CapturingSolveManager:
     def __init__(self, settings: AppSettings) -> None:
         type(self).last_settings = settings
 
-    def solve_sync(self, description: str, generations: int = 5) -> SolveJob:
-        del description, generations
+    def solve_sync(
+        self,
+        description: str,
+        generations: int = 5,
+        family_override: str | None = None,
+    ) -> SolveJob:
+        del description, generations, family_override
         pkg = SkillPackage(
             scenario_name="grid_ctf",
             display_name="Grid Ctf",
@@ -47,8 +52,13 @@ class _FailingSolveManager:
     def __init__(self, settings: AppSettings) -> None:
         self._settings = settings
 
-    def solve_sync(self, description: str, generations: int = 5) -> SolveJob:
-        del description, generations
+    def solve_sync(
+        self,
+        description: str,
+        generations: int = 5,
+        family_override: str | None = None,
+    ) -> SolveJob:
+        del description, generations, family_override
         return SolveJob(
             job_id="solve_fail",
             description="Broken solve",

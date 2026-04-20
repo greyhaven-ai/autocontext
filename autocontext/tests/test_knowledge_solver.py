@@ -669,8 +669,13 @@ class TestSolveManager:
         )
 
         class _FakeBuilder:
-            def build(self, description: str) -> SolveScenarioBuildResult:
-                del description
+            def build(
+                self,
+                description: str,
+                *,
+                family_override: str | None = None,
+            ) -> SolveScenarioBuildResult:
+                del description, family_override
                 return created
 
         fake_package = SkillPackage(
