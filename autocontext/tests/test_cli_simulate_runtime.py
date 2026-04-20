@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -27,13 +28,15 @@ class _RecordingClient:
         temperature: float,
         role: str = "",
     ) -> SimpleNamespace:
-        self.calls.append({
-            "model": model,
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "role": role,
-        })
+        self.calls.append(
+            {
+                "model": model,
+                "prompt": prompt,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "role": role,
+            }
+        )
         return SimpleNamespace(text=self._text)
 
 
@@ -65,13 +68,15 @@ class _FakeOrchestrator:
         is_plateau: bool = False,
         scenario_name: str = "",
     ) -> tuple[_RecordingClient, str]:
-        self.calls.append({
-            "role": role,
-            "generation": generation,
-            "retry_count": retry_count,
-            "is_plateau": is_plateau,
-            "scenario_name": scenario_name,
-        })
+        self.calls.append(
+            {
+                "role": role,
+                "generation": generation,
+                "retry_count": retry_count,
+                "is_plateau": is_plateau,
+                "scenario_name": scenario_name,
+            }
+        )
         return self._client, self._model
 
 
@@ -88,6 +93,7 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
         model_architect=str(overrides.get("model_architect", "claude-opus-4-6")),
         agent_default_model=str(overrides.get("agent_default_model", "gpt-4o")),
         pi_model=str(overrides.get("pi_model", "")),
+        pi_timeout=float(cast(float | int | str, overrides.get("pi_timeout", 300.0))),
     )
 
 
@@ -118,20 +124,47 @@ class TestSimulateRuntimeResolution:
         payload = json.loads(result.stdout)
         assert payload["provider_text"] == '{"spec": "from-runtime"}'
         mock_from_settings.assert_called_once()
-        assert orchestrator.calls == [{
-            "role": "architect",
-            "generation": 1,
-            "retry_count": 0,
-            "is_plateau": False,
-            "scenario_name": "",
-        }]
-        assert client.calls == [{
-            "model": "pi-architect",
-            "prompt": "architect-system\n\narchitect-user",
-            "max_tokens": 4096,
-            "temperature": 0.0,
-            "role": "architect",
-        }]
+        assert orchestrator.calls == [
+            {
+                "role": "architect",
+                "generation": 1,
+                "retry_count": 0,
+                "is_plateau": False,
+                "scenario_name": "",
+            }
+        ]
+        assert client.calls == [
+            {
+                "model": "pi-architect",
+                "prompt": "architect-system\n\narchitect-user",
+                "max_tokens": 4096,
+                "temperature": 0.0,
+                "role": "architect",
+            }
+        ]
+
+    def test_simulate_raises_pi_timeout_floor_for_architect_runtime(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path, agent_provider="pi", architect_provider="pi", pi_timeout=300.0)
+        client = _RecordingClient(text='{"spec": "from-runtime"}')
+        orchestrator = _FakeOrchestrator(client, "pi-architect")
+        captured_settings: list[AppSettings] = []
+
+        def _capture_from_settings(current: AppSettings, **_: object) -> _FakeOrchestrator:
+            captured_settings.append(current)
+            return orchestrator
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._sqlite_from_settings", return_value=object()),
+            patch("autocontext.cli._artifacts_from_settings", return_value=object()),
+            patch("autocontext.cli.AgentOrchestrator.from_settings", side_effect=_capture_from_settings),
+            patch("autocontext.simulation.engine.SimulationEngine", _FakeSimulationEngine),
+        ):
+            result = runner.invoke(app, ["simulate", "--description", "runtime test", "--json"])
+
+        assert result.exit_code == 0, result.output
+        assert len(captured_settings) == 1
+        assert captured_settings[0].pi_timeout == 600.0
 
     def test_simulate_provider_flag_overrides_architect_runtime(self, tmp_path: Path) -> None:
         settings = _settings(tmp_path, agent_provider="anthropic", architect_provider="pi")

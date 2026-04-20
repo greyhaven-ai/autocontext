@@ -18,18 +18,20 @@ def tmp_knowledge(tmp_path: Path) -> Path:
 
 def _mock_llm_fn(spec_json: str | None = None):
     """Return a callable that mimics llm_fn(system, user) -> str."""
-    default = json.dumps({
-        "description": "Test simulation",
-        "environment_description": "Test env",
-        "initial_state_description": "Start state",
-        "success_criteria": ["complete all steps"],
-        "failure_modes": ["timeout"],
-        "max_steps": 10,
-        "actions": [
-            {"name": "step_a", "description": "First", "parameters": {}, "preconditions": [], "effects": ["a_done"]},
-            {"name": "step_b", "description": "Second", "parameters": {}, "preconditions": ["step_a"], "effects": ["b_done"]},
-        ],
-    })
+    default = json.dumps(
+        {
+            "description": "Test simulation",
+            "environment_description": "Test env",
+            "initial_state_description": "Start state",
+            "success_criteria": ["complete all steps"],
+            "failure_modes": ["timeout"],
+            "max_steps": 10,
+            "actions": [
+                {"name": "step_a", "description": "First", "parameters": {}, "preconditions": [], "effects": ["a_done"]},
+                {"name": "step_b", "description": "Second", "parameters": {}, "preconditions": ["step_a"], "effects": ["b_done"]},
+            ],
+        }
+    )
 
     def llm_fn(system: str, user: str) -> str:
         return spec_json or default
@@ -148,31 +150,33 @@ class TestSimulationEngine:
     def test_tolerates_postconditions_in_llm_generated_actions(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine
 
-        spec_json = json.dumps({
-            "description": "Postconditions simulation",
-            "environment_description": "Test env",
-            "initial_state_description": "Start state",
-            "success_criteria": [{"condition": "complete", "description": "complete all steps"}],
-            "failure_modes": [{"condition": "timeout", "description": "run timed out"}],
-            "max_steps": 10,
-            "actions": [
-                {
-                    "name": "step_a",
-                    "description": "First",
-                    "parameters": {},
-                    "preconditions": [],
-                    "postconditions": ["a_done"],
-                    "steps": [{"action": "observe", "condition": "always"}],
-                },
-                {
-                    "name": "step_b",
-                    "description": "Second",
-                    "parameters": {},
-                    "preconditions": ["step_a"],
-                    "effects": ["b_done"],
-                },
-            ],
-        })
+        spec_json = json.dumps(
+            {
+                "description": "Postconditions simulation",
+                "environment_description": "Test env",
+                "initial_state_description": "Start state",
+                "success_criteria": [{"condition": "complete", "description": "complete all steps"}],
+                "failure_modes": [{"condition": "timeout", "description": "run timed out"}],
+                "max_steps": 10,
+                "actions": [
+                    {
+                        "name": "step_a",
+                        "description": "First",
+                        "parameters": {},
+                        "preconditions": [],
+                        "postconditions": ["a_done"],
+                        "steps": [{"action": "observe", "condition": "always"}],
+                    },
+                    {
+                        "name": "step_b",
+                        "description": "Second",
+                        "parameters": {},
+                        "preconditions": ["step_a"],
+                        "effects": ["b_done"],
+                    },
+                ],
+            }
+        )
 
         engine = SimulationEngine(llm_fn=_mock_llm_fn(spec_json), knowledge_root=tmp_knowledge)
         result = engine.run(description="Simulation with postconditions")
@@ -187,30 +191,32 @@ class TestSimulationEngine:
     def test_structured_preconditions_keep_action_dependencies(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine
 
-        spec_json = json.dumps({
-            "description": "Structured precondition simulation",
-            "environment_description": "Test env",
-            "initial_state_description": "Start state",
-            "success_criteria": ["complete all steps"],
-            "failure_modes": ["timeout"],
-            "max_steps": 10,
-            "actions": [
-                {
-                    "name": "step_a",
-                    "description": "First",
-                    "parameters": {},
-                    "preconditions": [],
-                    "effects": ["a_done"],
-                },
-                {
-                    "name": "step_b",
-                    "description": "Second",
-                    "parameters": {},
-                    "preconditions": [{"action": "step_a", "description": "after step a"}],
-                    "effects": ["b_done"],
-                },
-            ],
-        })
+        spec_json = json.dumps(
+            {
+                "description": "Structured precondition simulation",
+                "environment_description": "Test env",
+                "initial_state_description": "Start state",
+                "success_criteria": ["complete all steps"],
+                "failure_modes": ["timeout"],
+                "max_steps": 10,
+                "actions": [
+                    {
+                        "name": "step_a",
+                        "description": "First",
+                        "parameters": {},
+                        "preconditions": [],
+                        "effects": ["a_done"],
+                    },
+                    {
+                        "name": "step_b",
+                        "description": "Second",
+                        "parameters": {},
+                        "preconditions": [{"action": "step_a", "description": "after step a"}],
+                        "effects": ["b_done"],
+                    },
+                ],
+            }
+        )
 
         engine = SimulationEngine(llm_fn=_mock_llm_fn(spec_json), knowledge_root=tmp_knowledge)
         result = engine.run(description="Simulation with structured preconditions")
@@ -218,34 +224,79 @@ class TestSimulationEngine:
         assert result["status"] == "completed"
         assert result["summary"]["reasoning"] == "Completed 2 of 2 required actions."
 
+    def test_simulation_run_uses_family_designer_for_simulation_family(self, tmp_knowledge: Path) -> None:
+        from autocontext.scenarios.custom.simulation_designer import SIM_SPEC_END, SIM_SPEC_START
+        from autocontext.simulation.engine import SimulationEngine
+
+        simulation_spec = {
+            "description": "Geopolitical crisis simulation with doctrine-based escalation management.",
+            "environment_description": "NegotiationInterface plus WorldState across allied and adversary actors.",
+            "initial_state_description": "A maritime dispute is escalating under hidden information.",
+            "success_criteria": ["contain escalation", "preserve alliance coherence"],
+            "failure_modes": ["catastrophic escalation"],
+            "max_steps": 8,
+            "actions": [
+                {
+                    "name": "diplomatic_demarche",
+                    "description": "Deliver a formal warning to the adversary.",
+                    "parameters": {},
+                    "preconditions": [],
+                    "effects": ["warning_issued"],
+                },
+                {
+                    "name": "alliance_consultation",
+                    "description": "Coordinate with allies before coercive measures.",
+                    "parameters": {},
+                    "preconditions": ["diplomatic_demarche"],
+                    "effects": ["allies_aligned"],
+                },
+            ],
+        }
+        prompt_capture: dict[str, str] = {}
+
+        def simulation_llm(system: str, user: str) -> str:
+            prompt_capture["system"] = system
+            prompt_capture["user"] = user
+            return f"{SIM_SPEC_START}\n{json.dumps(simulation_spec)}\n{SIM_SPEC_END}"
+
+        engine = SimulationEngine(llm_fn=simulation_llm, knowledge_root=tmp_knowledge)
+        result = engine.run(description="Simulate a geopolitical crisis wargame with hidden adversary thresholds")
+
+        assert "SimulationSpec JSON wrapped in delimiters" in prompt_capture["system"]
+        assert result["family"] == "simulation"
+        assert result["status"] == "completed"
+        assert result["summary"]["reasoning"] == "Completed 2 of 2 required actions."
+
     def test_operator_loop_run_prefers_safe_autonomy_over_unnecessary_escalation(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine
 
-        operator_loop_spec = json.dumps({
-            "description": "Escalation-first deployment review with ambiguous prerequisites",
-            "environment_description": "A deployment requires human confirmation before release.",
-            "initial_state_description": "The rollout is blocked until the review is complete.",
-            "escalation_policy": {"escalation_threshold": "medium", "max_escalations": 5},
-            "success_criteria": ["review completed", "release approved safely"],
-            "failure_modes": ["unsafe autonomous release"],
-            "max_steps": 5,
-            "actions": [
-                {
-                    "name": "release_to_prod",
-                    "description": "Attempt production release",
-                    "parameters": {},
-                    "preconditions": ["operator_review_complete"],
-                    "effects": ["released"],
-                },
-                {
-                    "name": "operator_review_complete",
-                    "description": "Record operator review",
-                    "parameters": {},
-                    "preconditions": [],
-                    "effects": ["reviewed"],
-                },
-            ],
-        })
+        operator_loop_spec = json.dumps(
+            {
+                "description": "Escalation-first deployment review with ambiguous prerequisites",
+                "environment_description": "A deployment requires human confirmation before release.",
+                "initial_state_description": "The rollout is blocked until the review is complete.",
+                "escalation_policy": {"escalation_threshold": "medium", "max_escalations": 5},
+                "success_criteria": ["review completed", "release approved safely"],
+                "failure_modes": ["unsafe autonomous release"],
+                "max_steps": 5,
+                "actions": [
+                    {
+                        "name": "release_to_prod",
+                        "description": "Attempt production release",
+                        "parameters": {},
+                        "preconditions": ["operator_review_complete"],
+                        "effects": ["released"],
+                    },
+                    {
+                        "name": "operator_review_complete",
+                        "description": "Record operator review",
+                        "parameters": {},
+                        "preconditions": [],
+                        "effects": ["reviewed"],
+                    },
+                ],
+            }
+        )
 
         engine = SimulationEngine(llm_fn=_mock_llm_fn(operator_loop_spec), knowledge_root=tmp_knowledge)
         result = engine.run(description="Simulate an operator escalation for an ambiguous production release")
@@ -294,11 +345,7 @@ class TestSimulationEngine:
         def operator_loop_llm(system: str, user: str) -> str:
             prompt_capture["system"] = system
             prompt_capture["user"] = user
-            return (
-                f"{OPERATOR_LOOP_SPEC_START}\n"
-                f"{json.dumps(operator_loop_spec)}\n"
-                f"{OPERATOR_LOOP_SPEC_END}"
-            )
+            return f"{OPERATOR_LOOP_SPEC_START}\n{json.dumps(operator_loop_spec)}\n{OPERATOR_LOOP_SPEC_END}"
 
         engine = SimulationEngine(llm_fn=operator_loop_llm, knowledge_root=tmp_knowledge)
         result = engine.run(
@@ -353,10 +400,7 @@ class TestSimulationEngine:
 
         engine = SimulationEngine(llm_fn=operator_loop_llm, knowledge_root=tmp_knowledge)
         result = engine.run(
-            description=(
-                "simulate a support case that must escalate to a human operator "
-                "for clarification before responding"
-            )
+            description=("simulate a support case that must escalate to a human operator for clarification before responding")
         )
 
         assert result["family"] == "operator_loop"
@@ -471,10 +515,12 @@ class TestSimulateReplay:
         from autocontext.simulation.engine import SimulationEngine
 
         engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
-        results = iter([
-            _mock_operator_loop_result(score=0.9, escalations=1, clarifications=0),
-            _mock_operator_loop_result(score=0.8, escalations=0, clarifications=0),
-        ])
+        results = iter(
+            [
+                _mock_operator_loop_result(score=0.9, escalations=1, clarifications=0),
+                _mock_operator_loop_result(score=0.8, escalations=0, clarifications=0),
+            ]
+        )
         engine._execute_single = lambda source, name, seed, max_steps=None: next(results)  # type: ignore[method-assign]
 
         original = engine.run(

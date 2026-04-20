@@ -20,6 +20,7 @@ from autocontext.agents.types import LlmFn
 from autocontext.simulation.helpers import (
     aggregate_contract_signal_counts,
     apply_behavioral_contract,
+    design_structured_family_spec,
     find_scenario_class,
     infer_family,
 )
@@ -300,17 +301,9 @@ class SimulationEngine:
     # ------------------------------------------------------------------
 
     def _build_spec(self, description: str, family: str) -> dict[str, Any]:
-        if family == "operator_loop":
-            from autocontext.scenarios.custom.generic_creator import spec_to_plain_data
-            from autocontext.scenarios.custom.operator_loop_designer import design_operator_loop
-
-            try:
-                designed = design_operator_loop(description, self.llm_fn)
-                plain = spec_to_plain_data(designed)
-                if isinstance(plain, dict):
-                    return plain
-            except Exception:
-                logger.debug("simulation.engine: operator_loop designer fallback", exc_info=True)
+        structured_spec = design_structured_family_spec(description, family, self.llm_fn)
+        if structured_spec is not None:
+            return structured_spec
 
         system = (
             f"You are a simulation designer. Produce a {family} spec as JSON.\n"

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import re
 import types
-from typing import Any
+from typing import Any, cast
+
+from autocontext.agents.types import LlmFn
+
+logger = logging.getLogger(__name__)
 
 # Only explicit human-oversight / clarification semantics should short-circuit to
 # operator_loop here. Broader escalation language belongs to the family classifier,
@@ -71,6 +76,34 @@ def infer_family(description: str) -> str:
         return "operator_loop" if family == "operator_loop" else "simulation"
     except Exception:
         return "simulation"
+
+
+def design_structured_family_spec(description: str, family: str, llm_fn: LlmFn) -> dict[str, Any] | None:
+    from autocontext.scenarios.custom.generic_creator import spec_to_plain_data
+
+    if family == "operator_loop":
+        from autocontext.scenarios.custom.operator_loop_designer import design_operator_loop
+
+        try:
+            plain = spec_to_plain_data(design_operator_loop(description, llm_fn))
+        except Exception:
+            logger.debug("simulation.helpers: operator_loop designer fallback", exc_info=True)
+        else:
+            if isinstance(plain, dict):
+                return cast(dict[str, Any], plain)
+
+    if family == "simulation":
+        from autocontext.scenarios.custom.simulation_designer import design_simulation
+
+        try:
+            plain = spec_to_plain_data(design_simulation(description, llm_fn))
+        except Exception:
+            logger.debug("simulation.helpers: simulation designer fallback", exc_info=True)
+        else:
+            if isinstance(plain, dict):
+                return cast(dict[str, Any], plain)
+
+    return None
 
 
 def aggregate_contract_signal_counts(results: list[dict[str, Any]]) -> dict[str, int]:
