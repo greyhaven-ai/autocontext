@@ -764,6 +764,60 @@ class TestAgentTaskCreator:
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 
+    def test_retries_agent_task_design_when_retry_spec_predicate_flags_spec(self) -> None:
+        compact_spec = AgentTaskSpec(
+            task_prompt="Inspect telemetry and return JSON only with keys drift_status, calibration_status, and summary.",
+            judge_rubric="Score contract fidelity and diagnosis quality.",
+            output_format="json_schema",
+            sample_input='{"score_entropy":0.18}',
+        )
+        seen_system_prompts: list[str] = []
+        responses = [
+            _mock_llm_response(
+                AgentTaskSpec(
+                    task_prompt=(
+                        "Run a stable eval (grid_ctf if available) for 10 generations with the live provider "
+                        "and inspect repository analytics artifacts."
+                    ),
+                    judge_rubric="Score whether the run completed and analytics were inspected.",
+                    output_format="json_schema",
+                )
+            ),
+            _mock_llm_response(compact_spec),
+        ]
+
+        def mock_llm(system: str, user: str) -> str:
+            del user
+            seen_system_prompts.append(system)
+            return responses.pop(0)
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+                designer_system_prompt="primary designer prompt",
+                retry_designer_system_prompt="fallback designer prompt",
+                retry_spec_predicate=lambda spec: spec.sample_input is None and spec.task_prompt.startswith("Run a stable eval"),
+            )
+            from unittest.mock import patch
+
+            from autocontext.scenarios.families import get_family
+
+            with patch(
+                "autocontext.scenarios.custom.agent_task_creator.route_to_family",
+                return_value=get_family("agent_task"),
+            ):
+                instance = creator.create("Analyze rubric drift telemetry")
+            registered_name = creator.derive_name("Analyze rubric drift telemetry")
+
+            try:
+                assert instance.get_rubric() == compact_spec.judge_rubric
+                assert seen_system_prompts == ["primary designer prompt", "fallback designer prompt"]
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
     def test_retries_agent_task_design_after_parse_failure(self) -> None:
         attempts = {"count": 0}
         invalid_response = f'{SPEC_START}\n{{\n  "task_prompt": }}\n{SPEC_END}\n'

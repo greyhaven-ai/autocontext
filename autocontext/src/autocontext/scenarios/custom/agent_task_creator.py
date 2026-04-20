@@ -65,12 +65,14 @@ class AgentTaskCreator:
         designer_system_prompt: str = AGENT_TASK_DESIGNER_SYSTEM,
         retry_designer_system_prompt: str | None = None,
         description_transform: Callable[[str], str] | None = None,
+        retry_spec_predicate: Callable[[Any], bool] | None = None,
     ) -> None:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
         self._designer_system_prompt = designer_system_prompt
         self._retry_designer_system_prompt = retry_designer_system_prompt
         self._description_transform = description_transform
+        self._retry_spec_predicate = retry_spec_predicate
 
     STOP_WORDS = SHARED_STOP_WORDS
 
@@ -128,6 +130,15 @@ class AgentTaskCreator:
                 else self._designer_system_prompt
             )
             logger.warning("agent task design failed on first attempt; retrying once", exc_info=True)
+            spec = design_agent_task(
+                design_description,
+                self.llm_fn,
+                system_prompt=retry_system_prompt,
+            )
+
+        if self._retry_spec_predicate is not None and self._retry_spec_predicate(spec):
+            retry_system_prompt = self._retry_designer_system_prompt or self._designer_system_prompt
+            logger.warning("agent task design produced a retryable spec; retrying once with fallback prompt")
             spec = design_agent_task(
                 design_description,
                 self.llm_fn,

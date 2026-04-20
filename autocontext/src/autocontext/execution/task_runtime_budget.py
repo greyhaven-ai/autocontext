@@ -9,7 +9,18 @@ _TASK_LIKE_COMPLETION_MAX_TOKENS: dict[str, int] = {
     "json_schema": 2200,
     "code": 2600,
 }
+_COMPACT_JSON_SCHEMA_COMPLETION_MAX_TOKENS = 1200
+_COMPACT_JSON_SCHEMA_MAX_PROMPT_CHARS = 1600
 _DEFAULT_TASK_LIKE_COMPLETION_MAX_TOKENS = 1800
+
+
+def _uses_compact_json_schema_budget(prompt: str) -> bool:
+    normalized = prompt.lower()
+    if len(prompt) > _COMPACT_JSON_SCHEMA_MAX_PROMPT_CHARS:
+        return False
+    return "json" in normalized and (
+        "json only with keys" in normalized or "json object with keys" in normalized or "return json with {" in normalized
+    )
 
 
 def resolve_task_like_completion_max_tokens(state: dict, prompt: str) -> int:
@@ -20,10 +31,11 @@ def resolve_task_like_completion_max_tokens(state: dict, prompt: str) -> int:
     trigger live Pi timeouts for roadmap-style prompts. This helper centralizes a
     tighter, output-format-aware cap for the first completion.
     """
-    del prompt
     output_format = state.get("output_format")
     if isinstance(output_format, str):
         normalized = output_format.strip().lower()
+        if normalized == "json_schema" and _uses_compact_json_schema_budget(prompt):
+            return _COMPACT_JSON_SCHEMA_COMPLETION_MAX_TOKENS
         if normalized in _TASK_LIKE_COMPLETION_MAX_TOKENS:
             return _TASK_LIKE_COMPLETION_MAX_TOKENS[normalized]
     return _DEFAULT_TASK_LIKE_COMPLETION_MAX_TOKENS
