@@ -14,6 +14,9 @@ import { runInstrument, type InstrumentInputs, type InstrumentMode, type Instrum
 import { formatOutput, type OutputMode } from "../../cli/_shared/output-formatters.js";
 import type { GitDetector } from "../pipeline/preflight.js";
 import type { BranchGitExecutor } from "../pipeline/modes/branch.js";
+import { hasAnyLLMKey, shouldEnableEnhancement, type EnhancerProvider } from "../llm/index.js";
+import { createProvider, resolveProviderConfig, type ProviderConfig } from "../../../providers/index.js";
+import type { LLMProvider } from "../../../types/index.js";
 
 export type CliResult = { readonly stdout: string; readonly stderr: string; readonly exitCode: number };
 
@@ -30,6 +33,12 @@ export interface RunnerOpts {
   readonly gitDetector?: GitDetector;
   /** Optional branch-mode git executor (for apply-branch tests). */
   readonly branchExecutor?: BranchGitExecutor;
+  /** Optional enhancer provider injected by tests or embedding callers. */
+  readonly enhancementProvider?: EnhancerProvider;
+  /** Optional environment override for enhancement auto-enable resolution. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Optional TTY override for enhancement auto-enable resolution. */
+  readonly isStdoutTTY?: boolean;
 }
 
 export const INSTRUMENT_HELP_TEXT = `autoctx instrument — scan a repo for LLM clients and propose/apply Autocontext wrappers
@@ -110,6 +119,16 @@ export async function runInstrumentCommand(
   const cwd = opts.cwd ?? process.cwd();
   const nowIso = opts.nowIso ?? new Date().toISOString();
   const sessionUlid = opts.sessionUlid ?? ulid();
+  const env = opts.env ?? process.env;
+  const enhanced = shouldEnableEnhancement({
+    cliEnhancedFlag: flags.enhanced,
+    envAutoContextInstrumentLLM: env.AUTOCONTEXT_INSTRUMENT_LLM,
+    isStdoutTTY: opts.isStdoutTTY ?? Boolean(process.stdout.isTTY),
+    hasLLMKey: hasAnyLLMKey(env),
+  });
+  const enhancementProvider = enhanced
+    ? opts.enhancementProvider ?? buildDefaultEnhancementProvider(env, opts.env === undefined)
+    : undefined;
 
   const inputs: InstrumentInputs = {
     cwd,
@@ -123,7 +142,8 @@ export async function runInstrumentCommand(
     ...(flags.maxFileBytes !== undefined ? { maxFileBytes: flags.maxFileBytes } : {}),
     ...(flags.failIfEmpty ? { failIfEmpty: true } : {}),
     ...(flags.force ? { force: true } : {}),
-    ...(flags.enhanced ? { enhanced: true } : {}),
+    ...(enhanced ? { enhanced: true } : {}),
+    ...(enhancementProvider ? { enhancementProvider } : {}),
     ...(opts.autoctxVersion ? { autoctxVersion: opts.autoctxVersion } : {}),
     ...(opts.gitDetector ? { gitDetector: opts.gitDetector } : {}),
     ...(opts.branchExecutor ? { branchExecutor: opts.branchExecutor } : {}),
@@ -171,10 +191,10 @@ export async function runInstrumentCommand(
       "WARNING: --force bypasses the clean-tree preflight — review the diff before committing.",
     );
   }
-  if (flags.enhanced) {
+  if (enhanced && !enhancementProvider) {
     stderrMsgs.push(
-      "Note: --enhanced requested. Enhancement runs only when an LLM provider is wired; "
-      + "otherwise pr-body.md renders from deterministic defaults. plan.json is unaffected.",
+      "Note: LLM enhancement was enabled, but no provider could be resolved; "
+      + "pr-body.md rendered from deterministic defaults. plan.json is unaffected.",
     );
   }
 
@@ -222,6 +242,84 @@ const BOOL_FLAGS = new Set([
   "--force",
   "--enhanced",
 ]);
+
+function buildDefaultEnhancementProvider(
+  env: Readonly<Record<string, string | undefined>>,
+  allowProcessConfig: boolean,
+): EnhancerProvider | undefined {
+  const provider = resolveDefaultEnhancementLLMProvider(env, allowProcessConfig);
+  if (!provider) return undefined;
+  return {
+    async complete(call) {
+      const result = await provider.complete({
+        systemPrompt: "You improve concise pull-request instrumentation narratives. Return only the requested text.",
+        userPrompt: call.prompt,
+        temperature: 0,
+        maxTokens: 600,
+      });
+      return result.text;
+    },
+  };
+}
+
+function resolveDefaultEnhancementLLMProvider(
+  env: Readonly<Record<string, string | undefined>>,
+  allowProcessConfig: boolean,
+): LLMProvider | undefined {
+  if (allowProcessConfig) {
+    try {
+      return createProvider(resolveProviderConfig());
+    } catch {
+      // Fall through to explicit environment probing. This keeps `--enhanced`
+      // usable even when project-level provider config is incomplete.
+    }
+  }
+
+  const config = providerConfigFromEnv(env);
+  if (!config) return undefined;
+  try {
+    return createProvider(config);
+  } catch {
+    return undefined;
+  }
+}
+
+function providerConfigFromEnv(env: Readonly<Record<string, string | undefined>>): ProviderConfig | undefined {
+  const model = env.AUTOCONTEXT_AGENT_DEFAULT_MODEL ?? env.AUTOCONTEXT_MODEL;
+  const baseUrl = env.AUTOCONTEXT_AGENT_BASE_URL ?? env.AUTOCONTEXT_BASE_URL;
+  const providerType = env.AUTOCONTEXT_AGENT_PROVIDER ?? env.AUTOCONTEXT_PROVIDER;
+  const genericKey = env.AUTOCONTEXT_AGENT_API_KEY ?? env.AUTOCONTEXT_API_KEY;
+
+  if (providerType) {
+    return {
+      providerType,
+      ...(genericKey ? { apiKey: genericKey } : {}),
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(model ? { model } : {}),
+    };
+  }
+
+  const anthropicKey = env.ANTHROPIC_API_KEY ?? env.AUTOCONTEXT_ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    return {
+      providerType: "anthropic",
+      apiKey: anthropicKey,
+      ...(model ? { model } : {}),
+    };
+  }
+
+  const openAiKey = env.OPENAI_API_KEY ?? genericKey;
+  if (openAiKey) {
+    return {
+      providerType: "openai",
+      apiKey: openAiKey,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(model ? { model } : {}),
+    };
+  }
+
+  return undefined;
+}
 
 function parseInstrumentFlags(argv: readonly string[]): ParseResult {
   let dryRun = false;

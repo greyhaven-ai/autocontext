@@ -36,6 +36,7 @@ import type {
 import { detectConflicts, type ConflictReason } from "./conflict-detector.js";
 import { planImports, type ImportPlan } from "./import-manager.js";
 import { matchIndentation } from "./indentation-matcher.js";
+import { byteOffsetToStringIndex, sliceByByteRange } from "./byte-offsets.js";
 
 export interface ComposeEditsOpts {
   readonly sourceFile: SourceFile;
@@ -206,8 +207,7 @@ function renderWrap(
   after: readonly string[] | undefined,
   sourceFile: SourceFile,
 ): string {
-  const text = sourceFile.bytes.toString("utf-8");
-  const inner = text.slice(range.startByte, range.endByte);
+  const inner = sliceByByteRange(sourceFile.bytes, range.startByte, range.endByte);
   const argsBefore = (before ?? []).join(", ");
   const argsAfter = (after ?? []).join(", ");
   const lead = argsBefore.length > 0 ? `${argsBefore}, ` : "";
@@ -220,10 +220,11 @@ function renderWrap(
 // ---------------------------------------------------------------------------
 
 /**
- * Apply every surviving edit to the file bytes, PLUS the import-manager's
- * statement block, right-to-left by byte offset.
+ * Apply every surviving edit to the decoded source string, PLUS the
+ * import-manager's statement block, right-to-left after converting byte ranges
+ * to JavaScript string indexes.
  *
- * "Right-to-left" means: sort edits by descending `startByte` and apply one at
+ * "Right-to-left" means: sort edits by descending start index and apply one at
  * a time. Because we never re-measure, earlier offsets remain valid throughout.
  * This is the critical correctness detail from the planner spec.
  */
@@ -234,10 +235,10 @@ function applyEditsRightToLeft(
 ): string {
   const original = sourceFile.bytes.toString("utf-8");
 
-  // Normalize every edit into a content-replace operation on [startByte, endByte).
+  // Normalize every edit into a content-replace operation on string indexes.
   interface Op {
-    readonly startByte: number;
-    readonly endByte: number;
+    readonly startIndex: number;
+    readonly endIndex: number;
     readonly replacement: string;
     readonly tie: number; // stable tiebreaker when two ops share a boundary
   }
@@ -245,19 +246,23 @@ function applyEditsRightToLeft(
   for (let i = 0; i < edits.length; i += 1) {
     const e = edits[i]!;
     if (e.kind === "wrap-expression") {
-      const inner = original.slice(e.range.startByte, e.range.endByte);
+      const startIndex = byteOffsetToStringIndex(sourceFile.bytes, e.range.startByte);
+      const endIndex = byteOffsetToStringIndex(sourceFile.bytes, e.range.endByte);
+      const inner = original.slice(startIndex, endIndex);
       const lead = e.wrapArgsBefore && e.wrapArgsBefore.length > 0 ? `${e.wrapArgsBefore.join(", ")}, ` : "";
       const trail = e.wrapArgsAfter && e.wrapArgsAfter.length > 0 ? `, ${e.wrapArgsAfter.join(", ")}` : "";
       ops.push({
-        startByte: e.range.startByte,
-        endByte: e.range.endByte,
+        startIndex,
+        endIndex,
         replacement: `${e.wrapFn}(${lead}${inner}${trail})`,
         tie: i,
       });
     } else if (e.kind === "replace-expression") {
+      const startIndex = byteOffsetToStringIndex(sourceFile.bytes, e.range.startByte);
+      const endIndex = byteOffsetToStringIndex(sourceFile.bytes, e.range.endByte);
       ops.push({
-        startByte: e.range.startByte,
-        endByte: e.range.endByte,
+        startIndex,
+        endIndex,
         replacement: e.replacementSource,
         tie: i,
       });
@@ -271,13 +276,14 @@ function applyEditsRightToLeft(
       });
       const insertByte =
         e.anchor.kind === "before" ? e.anchor.range.startByte : e.anchor.range.endByte;
-      // Insertions have zero-width range [insertByte, insertByte) and are
-      // distinguished from replacements by startByte === endByte.
+      const insertIndex = byteOffsetToStringIndex(sourceFile.bytes, insertByte);
+      // Insertions have zero-width range [insertIndex, insertIndex) and are
+      // distinguished from replacements by startIndex === endIndex.
       const payload =
         e.anchor.kind === "before" ? `${reindented}\n` : `\n${reindented}`;
       ops.push({
-        startByte: insertByte,
-        endByte: insertByte,
+        startIndex: insertIndex,
+        endIndex: insertIndex,
         replacement: payload,
         tie: i,
       });
@@ -289,25 +295,25 @@ function applyEditsRightToLeft(
   if (importPlan.statementSource.length > 0) {
     const offset = byteOffsetOfLine(original, importPlan.insertAt.line);
     ops.push({
-      startByte: offset,
-      endByte: offset,
+      startIndex: offset,
+      endIndex: offset,
       replacement: importPlan.statementSource,
       tie: edits.length,
     });
   }
 
-  // Sort descending by startByte. Tiebreak: descending endByte (larger edits
+  // Sort descending by startIndex. Tiebreak: descending endIndex (larger edits
   // first), then descending tie (later edits first so stable insertion order
   // holds when reversed).
   ops.sort((a, b) => {
-    if (a.startByte !== b.startByte) return b.startByte - a.startByte;
-    if (a.endByte !== b.endByte) return b.endByte - a.endByte;
+    if (a.startIndex !== b.startIndex) return b.startIndex - a.startIndex;
+    if (a.endIndex !== b.endIndex) return b.endIndex - a.endIndex;
     return b.tie - a.tie;
   });
 
   let text = original;
   for (const op of ops) {
-    text = text.slice(0, op.startByte) + op.replacement + text.slice(op.endByte);
+    text = text.slice(0, op.startIndex) + op.replacement + text.slice(op.endIndex);
   }
   return text;
 }

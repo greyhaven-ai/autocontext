@@ -27,6 +27,11 @@ import {
   mockConflictingPlugin,
   mockAnthropicTsPlugin,
 } from "../../../_fixtures/plugins/index.js";
+import type {
+  DetectorPlugin,
+  SourceFile,
+  TreeSitterMatch,
+} from "../../../../src/control-plane/instrument/contract/index.js";
 
 const FIXED_ULID = "01HN0000000000000000000001";
 const FIXED_NOW = "2026-04-17T12:00:00.000Z";
@@ -120,6 +125,62 @@ describe("runInstrument - dry-run happy path", () => {
     expect(prBody).toContain(FIXED_ULID);
     expect(prBody).toContain("Autocontext instrument");
     expect(prBody).toContain("Audit fingerprint");
+  });
+
+  test("passes real tree-sitter query captures to plugins", async () => {
+    const captureCounts: number[] = [];
+    const seenSnippets: string[] = [];
+    const plugin: DetectorPlugin = {
+      id: "query-capture-fixture",
+      supports: { language: "python", sdkName: "openai" },
+      treeSitterQueries: ["(call) @call"],
+      produce(match: TreeSitterMatch, sourceFile: SourceFile) {
+        captureCounts.push(match.captures.length);
+        const call = match.captures.find((c) => c.name === "call");
+        if (call) {
+          seenSnippets.push(
+            sourceFile.bytes.subarray(call.node.startIndex, call.node.endIndex).toString("utf-8"),
+          );
+        }
+        return [];
+      },
+    };
+    registerDetectorPlugin(plugin);
+    const cwd = scratch();
+    seedPythonRepo(cwd);
+
+    const result = await runInstrument({
+      cwd,
+      mode: "dry-run",
+      sessionUlid: FIXED_ULID,
+      nowIso: FIXED_NOW,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(captureCounts.some((count) => count > 0)).toBe(true);
+    expect(seenSnippets).toContain("OpenAI(api_key=os.getenv('OPENAI_API_KEY'))");
+  });
+
+  test("pr-body before snippets honor UTF-8 byte ranges", async () => {
+    registerDetectorPlugin(mockOpenAiPythonPlugin);
+    const cwd = scratch();
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src", "main.py"),
+      ["# café", "from openai import OpenAI", "client = OpenAI()", ""].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runInstrument({
+      cwd,
+      mode: "dry-run",
+      sessionUlid: FIXED_ULID,
+      nowIso: FIXED_NOW,
+    });
+
+    expect(result.exitCode).toBe(0);
+    const prBody = readFileSync(join(result.sessionDir, "pr-body.md"), "utf-8");
+    expect(prBody).toContain(["**Before:**", "```python", "OpenAI()", "```"].join("\n"));
   });
 });
 

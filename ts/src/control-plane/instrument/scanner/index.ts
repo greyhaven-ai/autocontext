@@ -14,7 +14,10 @@ export {
 export {
   loadParser,
   parseSource,
+  runTreeSitterQuery,
   loadedGrammarsSnapshot,
   type LoadedParser,
   type TreeSitterTree,
+  type TreeSitterQueryCapture,
+  type TreeSitterQueryMatch,
 } from "./tree-sitter-loader.js";

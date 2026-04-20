@@ -4,7 +4,7 @@
  * Verifies runInstrumentCommand dispatches to runInstrument with parsed flags.
  */
 import { describe, test, expect, beforeEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -121,13 +121,38 @@ describe("runInstrumentCommand - --enhanced advisory", () => {
     const cwd = scratch();
     const result = await runInstrumentCommand(
       ["--enhanced", "--output", "json"],
-      { cwd, nowIso: FIXED_NOW, sessionUlid: FIXED_ULID },
+      { cwd, nowIso: FIXED_NOW, sessionUlid: FIXED_ULID, env: {} },
     );
     expect(result.exitCode).toBe(0);
-    // Layer 8 wired the enhancer; advisory now notes that without a provider
-    // enhancement falls back to defaults, and plan.json is unaffected either way.
-    expect(result.stderr).toContain("--enhanced");
+    // Without a resolvable provider, enhancement falls back to defaults and
+    // plan.json remains unaffected.
+    expect(result.stderr).toContain("no provider");
     expect(result.stderr).toContain("plan.json");
+  });
+
+  test("env-enabled enhancement wires an injected provider into pr-body.md", async () => {
+    const cwd = scratch();
+    const result = await runInstrumentCommand(
+      ["--output", "json"],
+      {
+        cwd,
+        nowIso: FIXED_NOW,
+        sessionUlid: FIXED_ULID,
+        env: { AUTOCONTEXT_INSTRUMENT_LLM: "on" },
+        enhancementProvider: {
+          async complete() {
+            return "Enhanced narrative from provider.";
+          },
+        },
+      },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const prBody = readFileSync(
+      join(cwd, ".autocontext", "instrument-patches", FIXED_ULID, "pr-body.md"),
+      "utf-8",
+    );
+    expect(prBody).toContain("Enhanced narrative from provider.");
   });
 });
 

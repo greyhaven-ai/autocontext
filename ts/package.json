@@ -31,6 +31,10 @@
     "./control-plane/runtime": {
       "import": "./dist/control-plane/runtime/index.js",
       "types": "./dist/control-plane/runtime/index.d.ts"
+    },
+    "./control-plane/instrument": {
+      "import": "./dist/control-plane/instrument/index.js",
+      "types": "./dist/control-plane/instrument/index.d.ts"
     }
   },
   "scripts": {

@@ -35,8 +35,10 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { parseContentHash, canonicalJsonStringify, type ContentHash } from "../../contract/index.js";
 import { scanRepo } from "../scanner/walker.js";
+import { runTreeSitterQuery, type TreeSitterTree } from "../scanner/tree-sitter-loader.js";
 import { pluginsForLanguage } from "../registry/plugin-registry.js";
 import { composeEdits, type ComposeResult, type ComposedEdit } from "../planner/edit-composer.js";
+import { sliceByByteRange } from "../planner/byte-offsets.js";
 import type { ConflictReason } from "../planner/conflict-detector.js";
 import type {
   ConflictDecision,
@@ -182,7 +184,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
     const plugins = pluginsForLanguage(sf.language);
     if (plugins.length === 0) continue;
     for (const plugin of plugins) {
-      const matches = runPluginQueries(sf, plugin);
+      const matches = await runPluginQueries(sf, plugin);
       for (const match of matches) {
         const produced = plugin.produce(match, sf);
         const editsWithMeta: EditDescriptor[] = produced.map((e) => injectPluginMeta(e, plugin.id, sf.path));
@@ -465,26 +467,21 @@ function earlyExit(
 }
 
 /**
- * A2-I ships with zero tree-sitter query glue. `plugin.treeSitterQueries` is a
- * list of .scm query strings; in A2-I the pipeline runs the queries via a
- * minimal synthesized match. Real plugins (A2-II+) may implement their own
- * query-running via `sourceFile.tree` inside `produce()`.
- *
- * For A2-I we use the simplest correct contract: when `treeSitterQueries` is
- * empty we never call `produce()`. When non-empty, we call `produce()` ONCE
- * per query with a synthesized empty `TreeSitterMatch`. This defers full
- * QueryCursor wiring to A2-II (where the first real plugin lands) while
- * keeping the pipeline honest: every registered plugin sees every scanned file.
+ * Run a plugin's registered tree-sitter queries against the lazily parsed file.
+ * Plugins only receive real query matches; an empty query result never calls
+ * `produce()` for that file.
  */
-function runPluginQueries(
+async function runPluginQueries(
   sourceFile: SourceFile,
   plugin: DetectorPlugin,
-): readonly TreeSitterMatch[] {
+): Promise<readonly TreeSitterMatch[]> {
   if (plugin.treeSitterQueries.length === 0) return [];
-  // Invoke tree property once so plugins that use `sourceFile.tree` inside
-  // `produce()` see the lazily-parsed CST without having to request it first.
-  void sourceFile.tree;
-  return plugin.treeSitterQueries.map(() => ({ captures: [] }));
+  const tree = await sourceFile.tree as TreeSitterTree;
+  const matches: TreeSitterMatch[] = [];
+  for (const querySource of plugin.treeSitterQueries) {
+    matches.push(...await runTreeSitterQuery(sourceFile.language, tree, querySource));
+  }
+  return matches;
 }
 
 function firstCaptureRange(match: TreeSitterMatch): { startByte: number; endByte: number } {
@@ -711,7 +708,7 @@ function buildDetailedEdits(
           originalRange: composed.originalRange,
           composedSource: composed.composedSource,
         },
-        beforeSnippet: extractSnippet(sf.bytes.toString("utf-8"), composed.originalRange.startByte, composed.originalRange.endByte),
+        beforeSnippet: extractSnippet(sf.bytes, composed.originalRange.startByte, composed.originalRange.endByte),
         afterSnippet: composed.composedSource,
       });
     }
@@ -725,10 +722,8 @@ function buildDetailedEdits(
   return detailed;
 }
 
-function extractSnippet(text: string, startByte: number, endByte: number): string {
-  const s = Math.max(0, startByte);
-  const e = Math.min(text.length, endByte);
-  return text.slice(s, e);
+function extractSnippet(bytes: Buffer, startByte: number, endByte: number): string {
+  return sliceByByteRange(bytes, startByte, endByte);
 }
 
 function buildCommandLine(opts: InstrumentInputs): string {

@@ -37,6 +37,24 @@ function rangeFromText(text: string, startByte: number, endByte: number): Source
   };
 }
 
+/** Construct a SourceRange from real UTF-8 byte offsets. */
+function rangeFromByteOffsets(bytes: Buffer, startByte: number, endByte: number): SourceRange {
+  const before = bytes.subarray(0, startByte).toString("utf-8");
+  const sLine = (before.match(/\n/g)?.length ?? 0) + 1;
+  const sLastNl = before.lastIndexOf("\n");
+  const sCol = before.length - (sLastNl + 1);
+  const between = bytes.subarray(0, endByte).toString("utf-8");
+  const eLine = (between.match(/\n/g)?.length ?? 0) + 1;
+  const eLastNl = between.lastIndexOf("\n");
+  const eCol = between.length - (eLastNl + 1);
+  return {
+    startByte,
+    endByte,
+    startLineCol: { line: sLine, col: sCol },
+    endLineCol: { line: eLine, col: eCol },
+  };
+}
+
 function pyFile(content: string): SourceFile {
   return fromBytes({ path: "src/main.py", language: "python", bytes: Buffer.from(content, "utf-8") });
 }
@@ -240,6 +258,30 @@ describe("composeEdits — right-to-left application", () => {
     if (result.kind === "patch") {
       expect(result.patch.afterContent).toContain("f(aaa)");
       expect(result.patch.afterContent).toContain("g(bbb)");
+    }
+  });
+
+  test("wrap edit honors UTF-8 byte offsets after multibyte source text", () => {
+    const content = "# café\nclient = OpenAI()\n";
+    const bytes = Buffer.from(content, "utf-8");
+    const sf = fromBytes({ path: "src/main.py", language: "python", bytes });
+    const target = Buffer.from("OpenAI()", "utf-8");
+    const start = bytes.indexOf(target);
+    const end = start + target.length;
+    const edit: WrapExpressionEdit = {
+      kind: "wrap-expression",
+      pluginId: "utf8",
+      sourceFilePath: "src/main.py",
+      importsNeeded: [],
+      range: rangeFromByteOffsets(bytes, start, end),
+      wrapFn: "instrument_client",
+    };
+    const result = composeEdits({ sourceFile: sf, edits: [edit] });
+    expect(result.kind).toBe("patch");
+    if (result.kind === "patch") {
+      expect(result.patch.afterContent).toContain("# café");
+      expect(result.patch.afterContent).toContain("instrument_client(OpenAI())");
+      expect(result.patch.afterContent).not.toContain("instrument_client( OpenAI");
     }
   });
 });

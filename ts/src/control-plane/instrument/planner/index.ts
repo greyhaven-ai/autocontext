@@ -23,3 +23,5 @@ export type { MatchIndentationOpts } from "./indentation-matcher.js";
 
 export { composeEdits } from "./edit-composer.js";
 export type { ComposeResult, ComposedEdit, RefusalReason, ComposeEditsOpts } from "./edit-composer.js";
+
+export { byteOffsetToStringIndex, sliceByByteRange } from "./byte-offsets.js";

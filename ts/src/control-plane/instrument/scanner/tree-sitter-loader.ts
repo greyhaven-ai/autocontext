@@ -26,10 +26,27 @@ export interface LoadedParser {
   readonly language: InstrumentLanguage;
   /** Raw tree-sitter Parser instance with the language set. */
   readonly parser: any;
+  /** Raw tree-sitter Language object used for query compilation. */
+  readonly grammar: any;
+  /** Raw Parser constructor/module, retained for Parser.Query fallback. */
+  readonly parserCtor: any;
 }
 
 export interface TreeSitterTree {
   readonly rootNode: unknown;
+  /** Original UTF-8 bytes used to parse the tree; retained for byte-offset normalization. */
+  readonly sourceBytes?: Buffer;
+  /** Decoded source text used by the JS tree-sitter binding. */
+  readonly sourceText?: string;
+}
+
+export interface TreeSitterQueryCapture {
+  readonly name: string;
+  readonly node: { readonly startIndex: number; readonly endIndex: number };
+}
+
+export interface TreeSitterQueryMatch {
+  readonly captures: readonly TreeSitterQueryCapture[];
 }
 
 type GrammarLoader = () => Promise<unknown>;
@@ -71,7 +88,7 @@ export async function loadParser(language: InstrumentLanguage): Promise<LoadedPa
   parser.setLanguage(grammar);
   grammarsLoaded.add(language);
 
-  const loaded: LoadedParser = { language, parser };
+  const loaded: LoadedParser = { language, parser, grammar, parserCtor: ParserCtor };
   parserCache.set(language, loaded);
   return loaded;
 }
@@ -84,7 +101,34 @@ export async function parseSource(language: InstrumentLanguage, bytes: Buffer | 
   const { parser } = await loadParser(language);
   const source = typeof bytes === "string" ? bytes : bytes.toString("utf-8");
   const tree = parser.parse(source);
+  Object.defineProperty(tree, "sourceBytes", {
+    value: Buffer.from(source, "utf-8"),
+    enumerable: false,
+  });
+  Object.defineProperty(tree, "sourceText", {
+    value: source,
+    enumerable: false,
+  });
   return tree as TreeSitterTree;
+}
+
+/** Compile and run one tree-sitter query against `tree.rootNode`. */
+export async function runTreeSitterQuery(
+  language: InstrumentLanguage,
+  tree: TreeSitterTree,
+  querySource: string,
+): Promise<readonly TreeSitterQueryMatch[]> {
+  const { grammar, parserCtor } = await loadParser(language);
+  const query = compileQuery(parserCtor, grammar, querySource);
+  const sourceText = tree.sourceText ?? tree.sourceBytes?.toString("utf-8");
+  if (typeof query.matches === "function") {
+    return normalizeMatches(query.matches(tree.rootNode), sourceText);
+  }
+  if (typeof query.captures === "function") {
+    const captures = normalizeCaptures(query.captures(tree.rootNode), sourceText);
+    return captures.length > 0 ? [{ captures }] : [];
+  }
+  throw new Error(`tree-sitter query object for ${language} does not expose matches() or captures()`);
 }
 
 /**
@@ -99,4 +143,46 @@ export function loadedGrammarsSnapshot(): ReadonlySet<InstrumentLanguage> {
 export function __resetForTests(): void {
   parserCache.clear();
   grammarsLoaded.clear();
+}
+
+function compileQuery(parserCtor: any, grammar: any, querySource: string): any {
+  if (grammar && typeof grammar.query === "function") {
+    return grammar.query(querySource);
+  }
+  if (parserCtor?.Query) {
+    return new parserCtor.Query(grammar, querySource);
+  }
+  throw new Error("tree-sitter runtime does not expose a query compiler");
+}
+
+function normalizeMatches(rawMatches: unknown, sourceText: string | undefined): readonly TreeSitterQueryMatch[] {
+  if (!Array.isArray(rawMatches)) return [];
+  return rawMatches.map((m) => {
+    const captures = (m as { captures?: unknown }).captures;
+    return { captures: normalizeCaptures(captures, sourceText) };
+  });
+}
+
+function normalizeCaptures(rawCaptures: unknown, sourceText: string | undefined): readonly TreeSitterQueryCapture[] {
+  if (!Array.isArray(rawCaptures)) return [];
+  return rawCaptures
+    .map((capture) => {
+      const c = capture as { name?: unknown; node?: unknown };
+      const node = c.node as { startIndex?: unknown; endIndex?: unknown } | undefined;
+      if (typeof c.name !== "string" || !node) return null;
+      if (typeof node.startIndex !== "number" || typeof node.endIndex !== "number") return null;
+      return {
+        name: c.name,
+        node: {
+          startIndex: treeSitterStringIndexToByteOffset(sourceText, node.startIndex),
+          endIndex: treeSitterStringIndexToByteOffset(sourceText, node.endIndex),
+        },
+      };
+    })
+    .filter((c): c is TreeSitterQueryCapture => c !== null);
+}
+
+function treeSitterStringIndexToByteOffset(sourceText: string | undefined, index: number): number {
+  if (sourceText === undefined) return index;
+  return Buffer.byteLength(sourceText.slice(0, index), "utf-8");
 }

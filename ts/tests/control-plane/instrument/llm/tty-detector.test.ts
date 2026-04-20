@@ -149,6 +149,11 @@ describe("hasAnyLLMKey", () => {
     expect(hasAnyLLMKey({ OPENAI_API_KEY: "sk-test" })).toBe(true);
   });
 
+  test("true when generic autocontext provider keys are set", () => {
+    expect(hasAnyLLMKey({ AUTOCONTEXT_AGENT_API_KEY: "sk-test" })).toBe(true);
+    expect(hasAnyLLMKey({ AUTOCONTEXT_API_KEY: "sk-test" })).toBe(true);
+  });
+
   test("false when none set", () => {
     expect(hasAnyLLMKey({})).toBe(false);
   });

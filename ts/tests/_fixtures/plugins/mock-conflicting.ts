@@ -17,60 +17,35 @@ export const mockConflictingPlugin: DetectorPlugin = {
   id: "mock-conflicting",
   supports: { language: "python", sdkName: "openai-alternate" },
   treeSitterQueries: ["(call) @call"],
-  produce(_match: TreeSitterMatch, sourceFile: SourceFile): readonly EditDescriptor[] {
+  produce(match: TreeSitterMatch, sourceFile: SourceFile): readonly EditDescriptor[] {
     if (sourceFile.language !== "python") return [];
-    const text = sourceFile.bytes.toString("utf-8");
-    return findOpenAiCalls(text, sourceFile.path);
+    const call = match.captures.find((c) => c.name === "call");
+    if (!call) return [];
+    const text = sourceFile.bytes.subarray(call.node.startIndex, call.node.endIndex).toString("utf-8");
+    if (!/^OpenAI\(/.test(text)) return [];
+    return [
+      {
+        kind: "wrap-expression",
+        pluginId: "mock-conflicting",
+        sourceFilePath: sourceFile.path,
+        importsNeeded: [],
+        range: rangeFromBytes(sourceFile.bytes, call.node.startIndex, call.node.endIndex),
+        // Deliberately different wrapFn from mock-openai-python's "instrument_client".
+        wrapFn: "alternative_instrument",
+      },
+    ];
   },
 };
 
-function findOpenAiCalls(text: string, filePath: string): readonly WrapExpressionEdit[] {
-  const results: WrapExpressionEdit[] = [];
-  const needle = "OpenAI(";
-  let idx = text.indexOf(needle, 0);
-  while (idx !== -1) {
-    const start = idx;
-    const openParen = start + needle.length - 1;
-    const end = findMatchingParen(text, openParen);
-    if (end !== -1) {
-      const endByte = end + 1;
-      results.push({
-        kind: "wrap-expression",
-        pluginId: "mock-conflicting",
-        sourceFilePath: filePath,
-        importsNeeded: [],
-        range: rangeFromBytes(text, start, endByte),
-        // Deliberately different wrapFn from mock-openai-python's "instrument_client".
-        wrapFn: "alternative_instrument",
-      });
-    }
-    idx = text.indexOf(needle, idx + 1);
-  }
-  return results;
-}
-
-function findMatchingParen(text: string, openIdx: number): number {
-  let depth = 0;
-  for (let i = openIdx; i < text.length; i += 1) {
-    const c = text[i];
-    if (c === "(") depth += 1;
-    else if (c === ")") {
-      depth -= 1;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-}
-
-function rangeFromBytes(text: string, startByte: number, endByte: number): WrapExpressionEdit["range"] {
-  const before = text.slice(0, startByte);
+function rangeFromBytes(bytes: Buffer, startByte: number, endByte: number): WrapExpressionEdit["range"] {
+  const before = bytes.subarray(0, startByte).toString("utf-8");
   const sLine = (before.match(/\n/g)?.length ?? 0) + 1;
   const sLastNl = before.lastIndexOf("\n");
-  const sCol = startByte - (sLastNl + 1);
-  const between = text.slice(0, endByte);
+  const sCol = before.length - (sLastNl + 1);
+  const between = bytes.subarray(0, endByte).toString("utf-8");
   const eLine = (between.match(/\n/g)?.length ?? 0) + 1;
   const eLastNl = between.lastIndexOf("\n");
-  const eCol = endByte - (eLastNl + 1);
+  const eCol = between.length - (eLastNl + 1);
   return {
     startByte,
     endByte,

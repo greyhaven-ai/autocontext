@@ -58,6 +58,8 @@ export function hasAnyLLMKey(env: Readonly<Record<string, string | undefined>> =
     env.ANTHROPIC_API_KEY
       || env.AUTOCONTEXT_ANTHROPIC_API_KEY
       || env.AUTOCONTEXT_JUDGE_API_KEY
+      || env.AUTOCONTEXT_AGENT_API_KEY
+      || env.AUTOCONTEXT_API_KEY
       || env.OPENAI_API_KEY,
   );
 }
