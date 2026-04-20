@@ -4,20 +4,24 @@
  * Builds a SourceFile instance (spec §4.3) from a raw file on disk:
  *
  *   - reads bytes
- *   - parses directives (see spec §5.3) — `# autocontext: off` on the preceding
- *     line marks the next line; `off-file` disables until EOF; `on-file` re-enables;
- *     directives inside string literals are NOT honored (tokenizer-aware parse).
+ *   - parses directives via `safety/directive-parser.ts` (Layer 3 canonical home)
  *   - parses existingImports via a lightweight regex scan sufficient for the
  *     import-manager's dedup needs (tree-sitter is not required for this)
  *   - detects indentation style by scanning leading whitespace
- *   - `hasSecretLiteral` stubbed `false` in Layer 2 — Layer 3 secret-detector
- *     fills this in before the planner sees the SourceFile.
+ *   - detects secret literals via `safety/secret-detector.ts` (Layer 3);
+ *     populates `hasSecretLiteral` + `secretMatches`
  *   - `tree` is lazy — parsed only on first access by plugins that need the CST.
+ *
+ * Import direction note (Layer 3):
+ *   scanner/source-file.ts imports from safety/ (directive-parser, secret-detector).
+ *   safety/* primitives themselves import ONLY from contract/ — so there is no
+ *   cycle. Spec §3.3's "safety imports scanner" permission remains available
+ *   for future safety features that legitimately need scanner primitives (e.g.,
+ *   post-tree-sitter secret detection that narrows scans to string-literal
+ *   tokens). None of Layer 3's primitives need it.
  */
 import { readFile } from "node:fs/promises";
 import type {
-  DirectiveMap,
-  DirectiveValue,
   ExistingImport,
   ImportSet,
   IndentationStyle,
@@ -25,11 +29,11 @@ import type {
   SourceFile,
 } from "../contract/plugin-interface.js";
 import { parseSource } from "./tree-sitter-loader.js";
-
-// Python directive regex — must sit at line start (after optional leading whitespace).
-const PY_DIRECTIVE = /^\s*#\s*autocontext:\s*(off|on|off-file|on-file)\s*(?:#.*)?$/;
-// JS/TS directive regex — `// autocontext: off` or `/* autocontext: off */`.
-const JS_DIRECTIVE = /^\s*(?:\/\/|\/\*)\s*autocontext:\s*(off|on|off-file|on-file)\s*(?:\*\/)?\s*$/;
+import {
+  parseDirectives as safetyParseDirectives,
+  parseDirectivesFromLines,
+} from "../safety/directive-parser.js";
+import { detectSecretLiterals } from "../safety/secret-detector.js";
 
 /** Load a SourceFile from disk. Tree parsing is deferred until `.tree` is first read. */
 export async function loadSourceFile(args: {
@@ -50,7 +54,11 @@ export function fromBytes(args: {
   const content = bytes.toString("utf-8");
   const lines = content.split(/\r?\n/);
 
-  const directives = parseDirectives(lines, language);
+  // Safety primitives fill the two A2-I safety floors (directives + secrets).
+  const directives = parseDirectivesFromLines(lines, language);
+  const secretMatches = detectSecretLiterals(bytes);
+  const hasSecretLiteral = secretMatches.length > 0;
+
   const existingImports = parseExistingImports(lines, language);
   const indentationStyle = detectIndentationStyle(lines);
 
@@ -67,7 +75,8 @@ export function fromBytes(args: {
       return cachedTree;
     },
     directives,
-    hasSecretLiteral: false, // Layer 2: stub; Layer 3 secret-detector fills in.
+    hasSecretLiteral,
+    secretMatches,
     existingImports,
     indentationStyle,
   };
@@ -75,172 +84,26 @@ export function fromBytes(args: {
 }
 
 // ---------------------------------------------------------------------------
-// Directive parser — tokenizer-aware enough to skip string-literal contents.
+// Directive parser — delegated to safety/. Re-exported here for backward
+// compatibility with Layer 1+2 test suite + scanner barrel.
 // ---------------------------------------------------------------------------
 
 /**
- * Parse autocontext directives from `lines`. Directive semantics:
- *   - `off` / `on`  at line N → recorded against line N+1 (next-line scope)
- *   - `off-file` / `on-file` at line N → recorded against line N
- *   - Directives that appear inside a string literal (single-line or triple-quoted)
- *     are NOT honored.
- *
- * We track multi-line string state only (triple-quotes in Python, block comments
- * in JS/TS). Single-line string literals can never legitimately contain a
- * directive matching the regex because the regex is anchored at start-of-line
- * after optional whitespace — i.e. it requires the `#` / `//` / `/*` at column 0
- * (modulo indentation), which cannot occur inside a same-line string literal.
+ * Back-compat shim. Layer 1+2 shipped `parseDirectives(lines, language)` here;
+ * Layer 3 moves the canonical impl into `safety/directive-parser.ts`. Tests
+ * and any downstream importers that still use the `lines` form continue to
+ * work via this thin adapter.
  */
 export function parseDirectives(
   lines: readonly string[],
   language: InstrumentLanguage,
-): DirectiveMap {
-  const map = new Map<number, DirectiveValue>();
-  const pattern = language === "python" ? PY_DIRECTIVE : JS_DIRECTIVE;
-
-  // Python triple-quote state.
-  let inPyTripleSingle = false;
-  let inPyTripleDouble = false;
-  // JS/TS block-comment state for multi-line /* ... */.
-  let inJsBlockComment = false;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i]!;
-    const lineNumber1 = i + 1;
-
-    // Snapshot "was inside string/comment at start-of-line" — directives on such
-    // lines are NOT honored even if they match the regex, because the line opens
-    // inside a multi-line string or block comment.
-    const wasInsideAtStart =
-      language === "python"
-        ? inPyTripleSingle || inPyTripleDouble
-        : inJsBlockComment;
-
-    if (language === "python") {
-      const next = scanPythonTripleStrings(line, inPyTripleSingle, inPyTripleDouble);
-      inPyTripleSingle = next.inTripleSingle;
-      inPyTripleDouble = next.inTripleDouble;
-    } else {
-      inJsBlockComment = scanJsBlockComment(line, inJsBlockComment);
-    }
-
-    if (wasInsideAtStart) continue;
-
-    const match = line.match(pattern);
-    if (!match) continue;
-
-    const raw = match[1] as DirectiveValue;
-    if (raw === "off-file" || raw === "on-file") {
-      map.set(lineNumber1, raw);
-    } else {
-      map.set(lineNumber1 + 1, raw);
-    }
-  }
-  return map;
+): ReturnType<typeof parseDirectivesFromLines> {
+  return parseDirectivesFromLines(lines, language);
 }
 
-/**
- * Scan `line` for Python triple-quote openings/closings. Returns the updated
- * in-triple state at end-of-line. Regular single/double-quoted strings on the
- * same line do NOT affect state (they must close on the same line per Python
- * lexer rules).
- */
-function scanPythonTripleStrings(
-  line: string,
-  inSingleInitial: boolean,
-  inDoubleInitial: boolean,
-): { readonly inTripleSingle: boolean; readonly inTripleDouble: boolean } {
-  let inSingle = inSingleInitial;
-  let inDouble = inDoubleInitial;
-
-  let i = 0;
-  while (i < line.length) {
-    const rest = line.slice(i);
-    if (inSingle) {
-      if (rest.startsWith("'''")) {
-        inSingle = false;
-        i += 3;
-        continue;
-      }
-      i += 1;
-      continue;
-    }
-    if (inDouble) {
-      if (rest.startsWith('"""')) {
-        inDouble = false;
-        i += 3;
-        continue;
-      }
-      i += 1;
-      continue;
-    }
-    if (rest.startsWith("'''")) {
-      inSingle = true;
-      i += 3;
-      continue;
-    }
-    if (rest.startsWith('"""')) {
-      inDouble = true;
-      i += 3;
-      continue;
-    }
-    // Outside a triple — skip single-line strings + everything else.
-    const ch = line[i]!;
-    if (ch === '"' || ch === "'") {
-      // Skip to matching closing single-line quote; abort at EOL if unclosed.
-      i = skipSingleLineString(line, i, ch);
-      continue;
-    }
-    i += 1;
-  }
-  return { inTripleSingle: inSingle, inTripleDouble: inDouble };
-}
-
-function skipSingleLineString(line: string, start: number, quote: string): number {
-  // start points at the opening quote; advance past escapes to matching quote.
-  let i = start + 1;
-  while (i < line.length) {
-    if (line[i] === "\\") {
-      i += 2;
-      continue;
-    }
-    if (line[i] === quote) {
-      return i + 1;
-    }
-    i += 1;
-  }
-  return line.length;
-}
-
-/** Returns true if end-of-line is inside a block comment. */
-function scanJsBlockComment(line: string, inBlockInitial: boolean): boolean {
-  let i = 0;
-  let inBlock = inBlockInitial;
-  while (i < line.length) {
-    const rest = line.slice(i);
-    if (inBlock) {
-      const closeIdx = rest.indexOf("*/");
-      if (closeIdx === -1) return true; // rest of line inside block
-      inBlock = false;
-      i += closeIdx + 2;
-      continue;
-    }
-    // Outside block: skip strings and `//` line comments + look for `/*`.
-    const ch = line[i]!;
-    if (ch === '"' || ch === "'" || ch === "`") {
-      i = skipSingleLineString(line, i, ch);
-      continue;
-    }
-    if (rest.startsWith("//")) return inBlock; // rest is line comment — can't open block
-    if (rest.startsWith("/*")) {
-      inBlock = true;
-      i += 2;
-      continue;
-    }
-    i += 1;
-  }
-  return inBlock;
-}
+// Re-export the safety form so callers with a Buffer in hand don't have to
+// split lines themselves.
+export { safetyParseDirectives as parseDirectivesFromBytes };
 
 // ---------------------------------------------------------------------------
 // Existing imports — lightweight regex scan (sufficient for dedup needs)
