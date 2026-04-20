@@ -23,6 +23,24 @@ if TYPE_CHECKING:
     from rich.console import Console
 
 
+def _validate_family_override(family_name: str | None) -> None:
+    """Validate the --family flag value. Raises typer.Exit(1) on unknown.
+
+    Empty string and None both mean "not provided" → no raise.
+    """
+    from autocontext.scenarios.families import list_families
+
+    if not family_name:
+        return
+    known = {f.name for f in list_families()}
+    if family_name not in known:
+        typer.echo(
+            f"unknown --family {family_name!r}. Valid: {sorted(known)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+
 @dataclass(slots=True)
 class SolveRunSummary:
     """Result summary for solve-on-demand via the CLI."""
