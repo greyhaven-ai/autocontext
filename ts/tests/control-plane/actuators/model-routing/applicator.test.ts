@@ -97,6 +97,27 @@ describe("model-routing actuator — parsePayload", () => {
     expect(() => modelRoutingActuator.parsePayload(bad)).toThrow();
   });
 
+  test("rejects empty route match expressions", () => {
+    const bad = {
+      ...VALID_PAYLOAD,
+      routes: [{ ...VALID_PAYLOAD.routes[0]!, match: {} }],
+    };
+    expect(() => modelRoutingActuator.parsePayload(bad)).toThrow(/match expression/i);
+  });
+
+  test("rejects match operators with more than one operator", () => {
+    const bad = {
+      ...VALID_PAYLOAD,
+      routes: [
+        {
+          ...VALID_PAYLOAD.routes[0]!,
+          match: { "env.taskType": { default: true, equals: "checkout" } },
+        },
+      ],
+    };
+    expect(() => modelRoutingActuator.parsePayload(bad)).toThrow(/exactly one/i);
+  });
+
   test("rejects a rollout with percent > 100", () => {
     const bad = {
       ...VALID_PAYLOAD,

@@ -143,6 +143,40 @@ describe("chooseModel — first matching route wins", () => {
     );
     expect(decision.reason).toBe("default");
   });
+
+  test("empty match expression is non-matching if unchecked config reaches runtime", () => {
+    const decision = choose(
+      cfg({
+        routes: [
+          {
+            id: "bad-catchall",
+            match: {},
+            target: { provider: "o", model: "bad" },
+          },
+        ],
+      }),
+      { taskType: "checkout" },
+    );
+    expect(decision.reason).toBe("default");
+  });
+
+  test("multi-operator matcher is non-matching if unchecked config reaches runtime", () => {
+    const decision = choose(
+      cfg({
+        routes: [
+          {
+            id: "bad-multi-op",
+            match: {
+              "env.taskType": { default: true, equals: "checkout" },
+            },
+            target: { provider: "o", model: "bad" },
+          },
+        ],
+      }),
+      { taskType: "checkout" },
+    );
+    expect(decision.reason).toBe("default");
+  });
 });
 
 describe("chooseModel — contains operator", () => {

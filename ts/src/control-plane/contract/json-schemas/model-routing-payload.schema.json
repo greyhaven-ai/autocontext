@@ -32,9 +32,15 @@
     "MatchExpression": {
       "description": "Mapping of dotted context paths to per-path operator objects. Each operator object may set exactly one of { equals, contains, default:true }.",
       "type": "object",
+      "minProperties": 1,
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
+        "oneOf": [
+          { "required": ["equals"] },
+          { "required": ["contains"] },
+          { "required": ["default"] }
+        ],
         "properties": {
           "equals": {},
           "contains": { "type": ["string", "array"] },

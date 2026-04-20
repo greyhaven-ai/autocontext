@@ -25,10 +25,8 @@ export const ModelTargetSchema = z
 
 /**
  * A per-field operator. The JSON Schema requires each operator object contain
- * exactly one of { equals, contains, default:true }, but JSON Schema cannot
- * enforce "exactly one" declaratively with additionalProperties:false and
- * optional keys. The runtime helper applies "exactly one" semantics: a
- * pathological {} is treated as non-matching.
+ * exactly one of { equals, contains, default:true }. The Zod echo enforces the
+ * same rule so invalid configs fail before registration/runtime.
  */
 export const MatchOperatorSchema = z
   .object({
@@ -36,9 +34,26 @@ export const MatchOperatorSchema = z
     contains: z.union([z.string(), z.array(z.unknown())]).optional(),
     default: z.literal(true).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((op, ctx) => {
+    const set = [
+      op.equals !== undefined,
+      op.contains !== undefined,
+      op.default === true,
+    ].filter(Boolean).length;
+    if (set !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "match operator must set exactly one of equals, contains, or default:true",
+      });
+    }
+  });
 
-export const MatchExpressionSchema = z.record(z.string(), MatchOperatorSchema);
+export const MatchExpressionSchema = z
+  .record(z.string(), MatchOperatorSchema)
+  .refine((match) => Object.keys(match).length > 0, {
+    message: "match expression must include at least one condition",
+  });
 
 export const RolloutSchema = z
   .object({

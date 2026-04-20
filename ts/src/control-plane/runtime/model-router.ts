@@ -86,6 +86,13 @@ function lookupContextValue(path: string, ctx: ModelRouterContext): unknown {
  * require a defined context value.
  */
 function operatorMatches(op: MatchOperator, value: unknown): boolean {
+  const operatorCount = [
+    op.default === true,
+    op.equals !== undefined,
+    op.contains !== undefined,
+  ].filter(Boolean).length;
+  if (operatorCount !== 1) return false;
+
   if (op.default === true) return true;
   if (op.equals !== undefined) {
     return value === op.equals;
@@ -107,7 +114,9 @@ function operatorMatches(op: MatchOperator, value: unknown): boolean {
 
 /** All per-field operators in a MatchExpression must match (AND semantics). */
 function matchExpressionMatches(match: MatchExpression, ctx: ModelRouterContext): boolean {
-  for (const [path, op] of Object.entries(match)) {
+  const entries = Object.entries(match);
+  if (entries.length === 0) return false;
+  for (const [path, op] of entries) {
     const value = lookupContextValue(path, ctx);
     if (!operatorMatches(op, value)) return false;
   }

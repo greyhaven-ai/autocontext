@@ -477,3 +477,11 @@ export type {
   MissionVerifier,
 } from "./mission/index.js";
 
+// Control-plane runtime helpers
+export { chooseModel } from "./control-plane/runtime/index.js";
+export type {
+  ChooseModelInputs,
+  ModelDecision,
+  ModelDecisionReason,
+  ModelRouterContext,
+} from "./control-plane/runtime/index.js";
