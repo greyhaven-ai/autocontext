@@ -73,7 +73,9 @@ def infer_family(description: str) -> str:
         family = route_to_family(classify_scenario_family(description), 0.15).name
         if family == "operator_loop" and _STATECRAFT_SIMULATION_CONTEXT.search(text_lower):
             return "simulation"
-        return "operator_loop" if family == "operator_loop" else "simulation"
+        if family in {"operator_loop", "schema_evolution"}:
+            return family
+        return "simulation"
     except Exception:
         return "simulation"
 
@@ -92,6 +94,17 @@ def design_structured_family_spec(description: str, family: str, llm_fn: LlmFn) 
             if isinstance(plain, dict):
                 return cast(dict[str, Any], plain)
 
+    if family == "schema_evolution":
+        from autocontext.scenarios.custom.schema_evolution_designer import design_schema_evolution
+
+        try:
+            plain = spec_to_plain_data(design_schema_evolution(description, llm_fn))
+        except Exception:
+            logger.debug("simulation.helpers: schema_evolution designer fallback", exc_info=True)
+        else:
+            if isinstance(plain, dict):
+                return cast(dict[str, Any], plain)
+
     if family == "simulation":
         from autocontext.scenarios.custom.simulation_designer import design_simulation
 
@@ -104,6 +117,135 @@ def design_structured_family_spec(description: str, family: str, llm_fn: LlmFn) 
                 return cast(dict[str, Any], plain)
 
     return None
+
+
+def build_json_spec_prompt(family: str) -> str:
+    if family == "schema_evolution":
+        return (
+            "You are a schema-evolution designer. Produce a schema_evolution spec as JSON.\n"
+            "Required: description, environment_description, initial_state_description, mutations, "
+            "success_criteria, failure_modes, max_steps, actions.\n"
+            "Output ONLY JSON."
+        )
+
+    return (
+        f"You are a simulation designer. Produce a {family} spec as JSON.\n"
+        "Required: description, environment_description, initial_state_description, "
+        "success_criteria, failure_modes, max_steps, actions.\n"
+        "Output ONLY JSON."
+    )
+
+
+def fallback_spec_for_family(description: str, family: str) -> dict[str, Any]:
+    if family == "schema_evolution":
+        return {
+            "description": description,
+            "environment_description": "Versioned system with evolving schema.",
+            "initial_state_description": "Schema v1 is active.",
+            "mutations": [
+                {
+                    "version": 2,
+                    "description": "Add a new required field.",
+                    "breaking": True,
+                    "fields_added": ["new_field"],
+                    "fields_removed": [],
+                    "fields_modified": {},
+                }
+            ],
+            "success_criteria": ["detect schema change", "adapt to new version"],
+            "failure_modes": ["stale assumptions after mutation"],
+            "max_steps": 10,
+            "actions": [
+                {
+                    "name": "observe_schema",
+                    "description": "Observe the current schema.",
+                    "parameters": {},
+                    "preconditions": [],
+                    "effects": ["schema_observed"],
+                },
+                {
+                    "name": "adapt_to_mutation",
+                    "description": "Adapt once the schema changes.",
+                    "parameters": {},
+                    "preconditions": ["observe_schema"],
+                    "effects": ["schema_adapted"],
+                },
+            ],
+        }
+
+    return {
+        "description": description,
+        "environment_description": "Simulated environment",
+        "initial_state_description": "Initial state",
+        "success_criteria": ["achieve objective"],
+        "failure_modes": ["timeout"],
+        "max_steps": 10,
+        "actions": [{"name": "act", "description": "Take action", "parameters": {}, "preconditions": [], "effects": []}],
+    }
+
+
+def generate_source_for_family(spec: dict[str, Any], name: str, family: str) -> str:
+    from autocontext.scenarios.custom.simulation_spec import parse_simulation_actions
+
+    if family == "operator_loop":
+        from autocontext.scenarios.custom.operator_loop_codegen import generate_operator_loop_class
+        from autocontext.scenarios.custom.operator_loop_spec import OperatorLoopSpec
+
+        ol_spec = OperatorLoopSpec(
+            description=spec.get("description", ""),
+            environment_description=spec.get("environment_description", ""),
+            initial_state_description=spec.get("initial_state_description", ""),
+            escalation_policy=spec.get("escalation_policy", {"escalation_threshold": "medium", "max_escalations": 5}),
+            success_criteria=spec.get("success_criteria", []),
+            failure_modes=spec.get("failure_modes", []),
+            actions=parse_simulation_actions(spec.get("actions", [])),
+            max_steps=spec.get("max_steps", 10),
+        )
+        return generate_operator_loop_class(ol_spec, name)
+
+    if family == "schema_evolution":
+        from autocontext.scenarios.custom.schema_evolution_codegen import generate_schema_evolution_class
+        from autocontext.scenarios.custom.schema_evolution_spec import (
+            SchemaEvolutionMutationModel,
+            SchemaEvolutionSpec,
+        )
+
+        schema_spec = SchemaEvolutionSpec(
+            description=spec.get("description", ""),
+            environment_description=spec.get("environment_description", ""),
+            initial_state_description=spec.get("initial_state_description", ""),
+            mutations=[
+                SchemaEvolutionMutationModel(
+                    version=int(mutation.get("version", 1)),
+                    description=str(mutation.get("description", "")),
+                    breaking=bool(mutation.get("breaking", False)),
+                    fields_added=list(mutation.get("fields_added", [])),
+                    fields_removed=list(mutation.get("fields_removed", [])),
+                    fields_modified=dict(mutation.get("fields_modified", {})),
+                )
+                for mutation in spec.get("mutations", [])
+                if isinstance(mutation, dict)
+            ],
+            success_criteria=spec.get("success_criteria", []),
+            failure_modes=spec.get("failure_modes", []),
+            actions=parse_simulation_actions(spec.get("actions", [])),
+            max_steps=spec.get("max_steps", 10),
+        )
+        return generate_schema_evolution_class(schema_spec, name)
+
+    from autocontext.scenarios.custom.simulation_codegen import generate_simulation_class
+    from autocontext.scenarios.custom.simulation_spec import SimulationSpec
+
+    sim_spec = SimulationSpec(
+        description=spec.get("description", ""),
+        environment_description=spec.get("environment_description", ""),
+        initial_state_description=spec.get("initial_state_description", ""),
+        success_criteria=spec.get("success_criteria", []),
+        failure_modes=spec.get("failure_modes", []),
+        actions=parse_simulation_actions(spec.get("actions", [])),
+        max_steps=spec.get("max_steps", 10),
+    )
+    return generate_simulation_class(sim_spec, name)
 
 
 def aggregate_contract_signal_counts(results: list[dict[str, Any]]) -> dict[str, int]:

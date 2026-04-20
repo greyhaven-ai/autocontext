@@ -267,6 +267,67 @@ class TestSimulationEngine:
         assert result["status"] == "completed"
         assert result["summary"]["reasoning"] == "Completed 2 of 2 required actions."
 
+    def test_simulation_run_uses_schema_evolution_designer_for_schema_evolution_family(self, tmp_knowledge: Path) -> None:
+        from autocontext.scenarios.custom.schema_evolution_designer import (
+            SCHEMA_EVOLUTION_SPEC_END,
+            SCHEMA_EVOLUTION_SPEC_START,
+        )
+        from autocontext.simulation.engine import SimulationEngine
+
+        schema_evolution_spec = {
+            "description": "Portfolio adapts across breaking macro regime mutations.",
+            "environment_description": "SchemaEvolutionInterface plus WorldState for portfolio construction.",
+            "initial_state_description": "Low-vol regime with bond hedge assumptions still valid.",
+            "mutations": [
+                {
+                    "version": 2,
+                    "description": "Rate-hike regime flips stock-bond correlation.",
+                    "breaking": True,
+                    "fields_added": ["real_yield"],
+                    "fields_removed": ["bond_hedge_assumption"],
+                    "fields_modified": {"regime_assessment": "string -> object"},
+                }
+            ],
+            "success_criteria": ["detect mutation", "adapt allocation"],
+            "failure_modes": ["stale hedging assumptions"],
+            "max_steps": 6,
+            "actions": [
+                {
+                    "name": "observe_market_state",
+                    "description": "Observe the current market schema.",
+                    "parameters": {},
+                    "preconditions": [],
+                    "effects": ["schema_observed"],
+                },
+                {
+                    "name": "detect_schema_mutation",
+                    "description": "Detect whether the regime schema changed.",
+                    "parameters": {},
+                    "preconditions": ["observe_market_state"],
+                    "effects": ["mutation_detected"],
+                },
+            ],
+        }
+        prompt_capture: dict[str, str] = {}
+
+        def schema_evolution_llm(system: str, user: str) -> str:
+            prompt_capture["system"] = system
+            prompt_capture["user"] = user
+            return f"{SCHEMA_EVOLUTION_SPEC_START}\n{json.dumps(schema_evolution_spec)}\n{SCHEMA_EVOLUTION_SPEC_END}"
+
+        engine = SimulationEngine(llm_fn=schema_evolution_llm, knowledge_root=tmp_knowledge)
+        result = engine.run(
+            description=(
+                "Simulate portfolio construction under regime change where SchemaEvolutionInterface and "
+                "SchemaMutation drive adaptation across rate-hike and crisis regimes"
+            )
+        )
+
+        assert "SchemaEvolutionSpec JSON wrapped in delimiters" in prompt_capture["system"]
+        assert result["family"] == "schema_evolution"
+        assert result["status"] == "completed"
+        assert result["summary"]["reasoning"] == "Detected 0/0 stale assumptions."
+
     def test_operator_loop_run_prefers_safe_autonomy_over_unnecessary_escalation(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine
 

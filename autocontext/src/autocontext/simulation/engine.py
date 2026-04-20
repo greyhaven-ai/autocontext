@@ -20,8 +20,11 @@ from autocontext.agents.types import LlmFn
 from autocontext.simulation.helpers import (
     aggregate_contract_signal_counts,
     apply_behavioral_contract,
+    build_json_spec_prompt,
     design_structured_family_spec,
+    fallback_spec_for_family,
     find_scenario_class,
+    generate_source_for_family,
     infer_family,
 )
 from autocontext.util.json_io import read_json, write_json
@@ -305,13 +308,7 @@ class SimulationEngine:
         if structured_spec is not None:
             return structured_spec
 
-        system = (
-            f"You are a simulation designer. Produce a {family} spec as JSON.\n"
-            "Required: description, environment_description, initial_state_description, "
-            "success_criteria, failure_modes, max_steps, actions.\n"
-            "Output ONLY JSON."
-        )
-        text = self.llm_fn(system, f"Simulate: {description}")
+        text = self.llm_fn(build_json_spec_prompt(family), f"Simulate: {description}")
         try:
             trimmed = text.strip()
             start = trimmed.index("{")
@@ -322,15 +319,7 @@ class SimulationEngine:
         except (ValueError, json.JSONDecodeError):
             logger.debug("simulation.engine: suppressed ValueError, json.JSONDecodeError)", exc_info=True)
 
-        return {
-            "description": description,
-            "environment_description": "Simulated environment",
-            "initial_state_description": "Initial state",
-            "success_criteria": ["achieve objective"],
-            "failure_modes": ["timeout"],
-            "max_steps": 10,
-            "actions": [{"name": "act", "description": "Take action", "parameters": {}, "preconditions": [], "effects": []}],
-        }
+        return fallback_spec_for_family(description, family)
 
     def _normalize_spec(self, spec: dict[str, Any]) -> dict[str, Any]:
         from autocontext.scenarios.custom.simulation_spec import normalize_simulation_spec_dict
@@ -338,36 +327,7 @@ class SimulationEngine:
         return normalize_simulation_spec_dict(spec)
 
     def _generate_source(self, spec: dict[str, Any], name: str, family: str) -> str:
-        if family == "operator_loop":
-            from autocontext.scenarios.custom.operator_loop_codegen import generate_operator_loop_class
-            from autocontext.scenarios.custom.operator_loop_spec import OperatorLoopSpec
-            from autocontext.scenarios.custom.simulation_spec import parse_simulation_actions
-
-            ol_spec = OperatorLoopSpec(
-                description=spec.get("description", ""),
-                environment_description=spec.get("environment_description", ""),
-                initial_state_description=spec.get("initial_state_description", ""),
-                escalation_policy=spec.get("escalation_policy", {"escalation_threshold": "medium", "max_escalations": 5}),
-                success_criteria=spec.get("success_criteria", []),
-                failure_modes=spec.get("failure_modes", []),
-                actions=parse_simulation_actions(spec.get("actions", [])),
-                max_steps=spec.get("max_steps", 10),
-            )
-            return generate_operator_loop_class(ol_spec, name)
-        else:
-            from autocontext.scenarios.custom.simulation_codegen import generate_simulation_class
-            from autocontext.scenarios.custom.simulation_spec import SimulationSpec, parse_simulation_actions
-
-            sim_spec = SimulationSpec(
-                description=spec.get("description", ""),
-                environment_description=spec.get("environment_description", ""),
-                initial_state_description=spec.get("initial_state_description", ""),
-                success_criteria=spec.get("success_criteria", []),
-                failure_modes=spec.get("failure_modes", []),
-                actions=parse_simulation_actions(spec.get("actions", [])),
-                max_steps=spec.get("max_steps", 10),
-            )
-            return generate_simulation_class(sim_spec, name)
+        return generate_source_for_family(spec, name, family)
 
     def _persist(
         self,

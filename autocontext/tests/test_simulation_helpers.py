@@ -26,17 +26,24 @@ class TestInferFamily:
 
     def test_routes_compact_geopolitical_wargame_with_escalation_terms_to_simulation(self) -> None:
         family = infer_family(
-            "Build a geopolitical crisis wargame with ambiguous military movements "
-            "and over-escalation dynamics"
+            "Build a geopolitical crisis wargame with ambiguous military movements and over-escalation dynamics"
         )
         assert family == "simulation"
 
     def test_routes_statecraft_when_to_escalate_prompt_to_simulation(self) -> None:
         family = infer_family(
-            "Simulate when to escalate diplomatic pressure during an international crisis "
-            "with national security tradeoffs"
+            "Simulate when to escalate diplomatic pressure during an international crisis with national security tradeoffs"
         )
         assert family == "simulation"
+
+    def test_routes_ac277_regime_change_prompt_to_schema_evolution(self) -> None:
+        family = infer_family(
+            "Harness Stress Test: portfolio construction under regime change — quantitative adaptation "
+            "with schema evolution. Use SchemaEvolutionInterface + WorldState with mid-run "
+            "SchemaMutation events so the agent must discard stale assumptions about bonds hedging "
+            "equities and adapt allocations across low-vol, rising-rate, and crisis regimes."
+        )
+        assert family == "schema_evolution"
 
     def test_keeps_explicit_operator_loop_prompts_on_operator_loop(self) -> None:
         family = infer_family(
