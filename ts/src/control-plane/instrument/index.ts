@@ -1,8 +1,9 @@
 /**
  * Public barrel for A2-I `autoctx instrument` tool infrastructure.
  *
- * Layers 1 + 2 + 3 + 4 + 5 — contract + scanner + safety + registry + planner.
- * Additional layers (pipeline, llm, cli) land in follow-up commits per spec §11.6.
+ * Layers 1 + 2 + 3 + 4 + 5 + 6 + 7 — contract + scanner + safety + registry +
+ * planner + pipeline + cli. (Layer 8 — LLM enhancer — lands next; its hooks
+ * are wired as no-ops in pipeline/pr-body-renderer.ts with TODO markers.)
  *
  * Name-collision resolution:
  *   - `parseDirectives` is exported from BOTH `safety/` (canonical Buffer form)
@@ -33,3 +34,10 @@ export {
 export * from "./safety/index.js";
 export * from "./registry/index.js";
 export * from "./planner/index.js";
+export * from "./pipeline/index.js";
+export {
+  runInstrumentCommand,
+  INSTRUMENT_HELP_TEXT,
+  type CliResult as InstrumentCliResult,
+  type RunnerOpts as InstrumentRunnerOpts,
+} from "./cli/index.js";
