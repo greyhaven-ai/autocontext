@@ -4,7 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.4.3` and are not part of the last published release until the next version is cut.
+Changes in this section are on the branch/repo after `0.4.4` and are not part of the last published release until the next version is cut.
+
+## [0.4.4] - 2026-04-20
+
+### Added
+
+- Added the production-traces contract and traffic-to-eval pipeline across Python and TypeScript, including cross-runtime schemas, emit/validate helpers, redaction, retention, dataset building, CLI/MCP surfaces, and golden integration flows.
+- Added the TypeScript control-plane `model-routing` actuator plus the published `chooseModel` runtime helper for deterministic route, rollout, guardrail, fallback, and trace-integrated model selection.
+- Added Python solve ergonomics for family overrides and improved classifier observability/fallback vocabulary for finance, schema-evolution, geopolitical simulation, and alignment-stress prompts.
+
+### Fixed
+
+- Hardened Python scenario design and solve paths around malformed designer responses, intent-drift retry feedback, mandatory calibration examples, structured quality thresholds, readable sample prompts, and schema/geopolitical simulate routing.
+- Preserved the latest control-plane hardening while restacking the production-traces/model-routing foundation, including candidate artifact boundary validation and model-routing payload registration.
+
+### Changed
+
+- Python and TypeScript package metadata are bumped to `0.4.4`.
 
 ## [0.4.3] - 2026-04-17
 
@@ -212,6 +229,7 @@ Changes in this section are on the branch/repo after `0.4.3` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.4.4]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.3...py-v0.4.4
 [0.4.3]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.2...py-v0.4.3
 [0.4.2]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.1...py-v0.4.2
 [0.4.1]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.0...py-v0.4.1
