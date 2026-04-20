@@ -54,8 +54,10 @@ Filters:
 Safety / observability:
   --fail-if-empty       Exit 12 when zero DetectorPlugins are registered (A2-I default state).
   --force               Bypass clean-tree preflight. Print a prominent stderr warning.
-  --enhanced            Force LLM enhancement of pr-body narrative (no-op in this version;
-                        LLM enhancement lands in Layer 8).
+  --enhanced            Force LLM enhancement of pr-body narrative. Without a provider wired
+                        or without an API key, enhancement silently falls back to the
+                        deterministic default templates — plan.json stays byte-identical
+                        whether enhancement is on or off.
 
 Output:
   --output json|table|pretty
@@ -171,7 +173,8 @@ export async function runInstrumentCommand(
   }
   if (flags.enhanced) {
     stderrMsgs.push(
-      "Note: --enhanced is accepted but has no effect in A2-I (LLM enhancement lands in Layer 8).",
+      "Note: --enhanced requested. Enhancement runs only when an LLM provider is wired; "
+      + "otherwise pr-body.md renders from deterministic defaults. plan.json is unaffected.",
     );
   }
 

@@ -116,15 +116,18 @@ describe("runInstrumentCommand - --fail-if-empty wiring", () => {
   });
 });
 
-describe("runInstrumentCommand - --enhanced is accepted but no-op", () => {
-  test("--enhanced produces a stderr advisory", async () => {
+describe("runInstrumentCommand - --enhanced advisory", () => {
+  test("--enhanced produces a stderr advisory referencing plan.json stability", async () => {
     const cwd = scratch();
     const result = await runInstrumentCommand(
       ["--enhanced", "--output", "json"],
       { cwd, nowIso: FIXED_NOW, sessionUlid: FIXED_ULID },
     );
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toContain("no effect in A2-I");
+    // Layer 8 wired the enhancer; advisory now notes that without a provider
+    // enhancement falls back to defaults, and plan.json is unaffected either way.
+    expect(result.stderr).toContain("--enhanced");
+    expect(result.stderr).toContain("plan.json");
   });
 });
 
