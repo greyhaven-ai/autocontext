@@ -30,6 +30,25 @@ import { writeReceipt, writeErrorFile, type PerLineError } from "./receipt.js";
 import type { ProductionTrace } from "../contract/types.js";
 import type { ProductionTraceId } from "../contract/branded-ids.js";
 import { PRODUCTION_TRACE_SCHEMA_VERSION } from "../contract/types.js";
+import {
+  enforceRetention,
+  loadRetentionPolicy,
+  type RetentionReport,
+} from "../retention/index.js";
+
+/**
+ * Retention-phase control for `ingestBatches`.
+ *   - "enforce" (default): after the phase-1 ingest loop, while the same
+ *     lock is still held, run `enforceRetention` with `dryRun` matching the
+ *     outer `ingestBatches` dryRun flag.
+ *   - "skip": do not run retention. The returned IngestReport carries
+ *     `retention: null`.
+ *
+ * This knob keeps Layer 7's Layer-8-less test fixtures working without
+ * having to set up a retention policy — tests that don't want retention
+ * to run pass `retention: "skip"`.
+ */
+export type RetentionMode = "enforce" | "skip";
 
 export interface IngestOpts {
   /** ISO timestamp; skip batches whose file mtime is before this. */
@@ -38,6 +57,12 @@ export interface IngestOpts {
   readonly strict?: boolean;
   /** Dry-run — validate but don't move files, update seen-ids, or take the lock's side-effects. */
   readonly dryRun?: boolean;
+  /**
+   * Phase-2 retention control. Default `"enforce"` — retention runs in the
+   * same lock scope as ingest (spec §6.3). Set to `"skip"` when callers
+   * want only the phase-1 ingest behaviour (e.g. tests).
+   */
+  readonly retention?: RetentionMode;
 }
 
 export interface IngestReport {
@@ -49,6 +74,12 @@ export interface IngestReport {
   readonly tracesIngested: number;
   readonly duplicatesSkipped: number;
   readonly linesRejected: number;
+  /**
+   * Phase-2 retention summary. `null` when `retention: "skip"` was passed.
+   * Always an object (possibly all-zeros) when retention ran — even in
+   * dry-run mode.
+   */
+  readonly retention: RetentionReport | null;
 }
 
 interface BatchFileInfo {
@@ -74,10 +105,16 @@ interface BatchFileInfo {
  *       - else → successful lines written to `ingested/<date>/<batch>.jsonl`,
  *         `receipt.json` written; if any line failed, `error.json` is also
  *         written; `seen-ids.jsonl` extended.
- *   6. Release lock; return report.
+ *   6. PHASE 2 (same lock scope): when `retention !== "skip"`, load the
+ *      retention policy and invoke `enforceRetention` so traces past
+ *      `retentionDays` are pruned with their deletions logged to
+ *      `gc-log.jsonl`. The Retention/GC phase runs regardless of whether
+ *      phase-1 produced any new ingestions — retention drains over time
+ *      from a data corpus that's independent of the current batch.
+ *   7. Release lock; return report.
  *
- * `dry-run` skips all file moves and seen-ids updates but still reports what
- * would have happened.
+ * `dry-run` skips all file moves, seen-ids updates, AND retention mutations
+ * (retention runs in dry-run mode so its report is still populated).
  */
 export async function ingestBatches(
   cwd: string,
@@ -85,6 +122,7 @@ export async function ingestBatches(
 ): Promise<IngestReport> {
   const strict = opts.strict ?? false;
   const dryRun = opts.dryRun ?? false;
+  const retentionMode: RetentionMode = opts.retention ?? "enforce";
   const sinceMs = opts.since !== undefined ? Date.parse(opts.since) : undefined;
   if (sinceMs !== undefined && Number.isNaN(sinceMs)) {
     throw new Error(`ingestBatches: --since '${opts.since}' is not a parseable timestamp`);
@@ -163,6 +201,20 @@ export async function ingestBatches(
       }
     }
 
+    // -- Phase 2: retention enforcement (same lock scope) --
+    // Runs regardless of whether phase-1 produced any new ingestions.
+    // Skipped entirely when the caller passes `retention: "skip"`.
+    let retention: RetentionReport | null = null;
+    if (retentionMode === "enforce") {
+      const retentionPolicy = await loadRetentionPolicy(cwd);
+      retention = await enforceRetention({
+        cwd,
+        policy: retentionPolicy,
+        nowUtc: new Date(),
+        dryRun,
+      });
+    }
+
     return {
       batchesProcessed,
       batchesSucceeded,
@@ -170,6 +222,7 @@ export async function ingestBatches(
       tracesIngested,
       duplicatesSkipped,
       linesRejected,
+      retention,
     };
   } finally {
     lock?.release();

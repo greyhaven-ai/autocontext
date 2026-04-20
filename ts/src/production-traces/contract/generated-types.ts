@@ -305,6 +305,30 @@ export interface RedactionPolicy {
   };
 }
 
+// ---- retention-policy.schema.json ----
+/**
+ * Per-installation retention policy config. Lives at .autocontext/production-traces/retention-policy.json. See spec §6.6.
+ */
+export interface RetentionPolicy {
+  schemaVersion: "1.0";
+  /**
+   * Traces whose endedAt is older than this many days are eligible for deletion.
+   */
+  retentionDays: number;
+  /**
+   * Compliance-bound escape hatch: when true, no traces are deleted regardless of other settings.
+   */
+  preserveAll: boolean;
+  /**
+   * Traces whose outcome.label matches any value in this list are retained regardless of age.
+   */
+  preserveCategories: string[];
+  /**
+   * Maximum number of traces to evaluate-and-delete per enforcement run; bounds latency for large backlogs.
+   */
+  gcBatchSize: number;
+}
+
 // ---- rubric-config.schema.json ----
 /**
  * Explicit per-cluster rubric mapping (spec §8.3 source #1). Consumed by build-dataset as the highest-precedence rubric source.

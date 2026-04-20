@@ -62,6 +62,7 @@ export {
   validateTraceLinks,
   validateRedactionMarker,
   validateRedactionPolicy,
+  validateRetentionPolicy,
 } from "./validators.js";
 
 export { createProductionTrace } from "./factories.js";
