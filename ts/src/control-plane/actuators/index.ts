@@ -1,5 +1,5 @@
 // Public surface of the autocontext control-plane actuators layer.
-// Importing this module registers all four concrete actuators as a side effect.
+// Importing this module registers all five concrete actuators as a side effect.
 //
 // Import discipline (§3.2): this module imports ONLY from contract/ (and its
 // own subtree) — never from registry/, promotion/, or emit/.
@@ -60,3 +60,33 @@ export {
 export type { FineTunedModelPayload } from "./fine-tuned-model/index.js";
 
 export { importLegacyModelRecords } from "./fine-tuned-model/legacy-adapter.js";
+
+export {
+  modelRoutingActuator,
+  modelRoutingRegistration,
+  ModelRoutingPayloadSchema,
+  RouteSchema,
+  MatchExpressionSchema,
+  MatchOperatorSchema,
+  ModelTargetSchema,
+  RolloutSchema,
+  BudgetGuardrailSchema,
+  LatencyGuardrailSchema,
+  ConfidenceGuardrailSchema,
+  FallbackEntrySchema,
+  FallbackReasonSchema,
+  MODEL_ROUTING_FILENAME,
+} from "./model-routing/index.js";
+export type {
+  ModelRoutingPayload,
+  ModelTarget,
+  MatchOperator,
+  MatchExpression,
+  Rollout,
+  BudgetGuardrail,
+  LatencyGuardrail,
+  ConfidenceGuardrail,
+  Route,
+  FallbackEntry,
+  FallbackReason,
+} from "./model-routing/index.js";

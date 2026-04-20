@@ -130,6 +130,29 @@ export type RedactionMarker = {
   readonly detectedAt: string;
 };
 
+
+// ---- Routing decision (AC-545) ----
+
+export type ModelRoutingDecisionReason = "default" | "matched-route" | "fallback";
+
+export type ModelRoutingFallbackReason =
+  | "budget-exceeded"
+  | "latency-breached"
+  | "provider-error"
+  | "no-match";
+
+export type ProductionTraceRouting = {
+  readonly chosen: {
+    readonly provider: string;
+    readonly model: string;
+    readonly endpoint?: string;
+  };
+  readonly matchedRouteId?: string;
+  readonly reason: ModelRoutingDecisionReason;
+  readonly fallbackReason?: ModelRoutingFallbackReason;
+  readonly evaluatedAt: string;
+};
+
 // ---- Aggregate root ----
 
 export type ProductionTrace = {
@@ -148,6 +171,7 @@ export type ProductionTrace = {
   readonly feedbackRefs: readonly FeedbackRef[];
   readonly links: TraceLinks;
   readonly redactions: readonly RedactionMarker[];
+  readonly routing?: ProductionTraceRouting;
   readonly metadata?: Record<string, unknown>;
 };
 

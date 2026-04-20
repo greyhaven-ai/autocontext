@@ -32,6 +32,7 @@ const ACTUATOR_TYPES: readonly ActuatorType[] = [
   "tool-policy",
   "routing-rule",
   "fine-tuned-model",
+  "model-routing",
 ];
 
 export const CANDIDATE_HELP_TEXT = `autoctx candidate — manage control-plane candidate artifacts

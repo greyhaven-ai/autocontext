@@ -12,6 +12,7 @@ import {
   type ToolCall,
   type TraceLinks,
   type TraceMessage,
+  type ProductionTraceRouting,
   type TraceSource,
   type UsageInfo,
 } from "./types.js";
@@ -31,6 +32,7 @@ export interface CreateProductionTraceInputs {
   readonly feedbackRefs?: readonly FeedbackRef[];
   readonly links?: TraceLinks;
   readonly redactions?: readonly RedactionMarker[];
+  readonly routing?: ProductionTraceRouting;
   readonly metadata?: Record<string, unknown>;
 }
 
@@ -59,6 +61,7 @@ export function createProductionTrace(inputs: CreateProductionTraceInputs): Prod
     feedbackRefs: inputs.feedbackRefs ?? [],
     links: inputs.links ?? {},
     redactions: inputs.redactions ?? [],
+    ...(inputs.routing !== undefined ? { routing: inputs.routing } : {}),
     ...(inputs.metadata !== undefined ? { metadata: inputs.metadata } : {}),
   };
   return trace;

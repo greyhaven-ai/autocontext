@@ -112,6 +112,29 @@ class TraceLinks(BaseModel):
     trainingRecordIds: list[TrainingRecordId] | None = None
 
 
+class Chosen(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    provider: Annotated[str, Field(min_length=1)]
+    model: Annotated[str, Field(min_length=1)]
+    endpoint: str | None = None
+
+
+class Routing(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    chosen: Chosen
+    matchedRouteId: Annotated[str | None, Field(min_length=1)] = None
+    reason: Literal['default', 'matched-route', 'fallback']
+    fallbackReason: (
+        Literal['budget-exceeded', 'latency-breached', 'provider-error', 'no-match']
+        | None
+    ) = None
+    evaluatedAt: AwareDatetime
+
+
 class UserIdHash(RootModel[str]):
     root: Annotated[str, Field(pattern='^[0-9a-f]{64}$')]
 
@@ -206,4 +229,5 @@ class ProductionTrace(BaseModel):
     feedbackRefs: list[FeedbackRef]
     links: Annotated[TraceLinks, Field(title='TraceLinks')]
     redactions: list[RedactionMarker]
+    routing: Routing | None = None
     metadata: dict[str, Any] | None = None
