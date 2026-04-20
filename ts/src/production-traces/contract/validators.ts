@@ -12,6 +12,7 @@ import feedbackRefSchema from "./json-schemas/feedback-ref.schema.json" with { t
 import traceLinksSchema from "./json-schemas/trace-links.schema.json" with { type: "json" };
 import redactionMarkerSchema from "./json-schemas/redaction-marker.schema.json" with { type: "json" };
 import redactionPolicySchema from "./json-schemas/redaction-policy.schema.json" with { type: "json" };
+import retentionPolicySchema from "./json-schemas/retention-policy.schema.json" with { type: "json" };
 import productionTraceSchema from "./json-schemas/production-trace.schema.json" with { type: "json" };
 import selectionRuleSchema from "./json-schemas/selection-rule.schema.json" with { type: "json" };
 import clusterConfigSchema from "./json-schemas/cluster-config.schema.json" with { type: "json" };
@@ -51,6 +52,7 @@ ajv.addSchema(feedbackRefSchema as object);
 ajv.addSchema(traceLinksSchema as object);
 ajv.addSchema(redactionMarkerSchema as object);
 ajv.addSchema(redactionPolicySchema as object);
+ajv.addSchema(retentionPolicySchema as object);
 ajv.addSchema(productionTraceSchema as object);
 ajv.addSchema(selectionRuleSchema as object);
 ajv.addSchema(clusterConfigSchema as object);
@@ -68,6 +70,7 @@ const feedbackRefValidator       = ajv.getSchema("https://autocontext.dev/schema
 const traceLinksValidator        = ajv.getSchema("https://autocontext.dev/schema/production-traces/trace-links.json")!;
 const redactionMarkerValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/redaction-marker.json")!;
 const redactionPolicyValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/redaction-policy.json")!;
+const retentionPolicyValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/retention-policy.json")!;
 const productionTraceValidator   = ajv.getSchema("https://autocontext.dev/schema/production-traces/production-trace.json")!;
 const selectionRuleValidator     = ajv.getSchema("https://autocontext.dev/schema/production-traces/selection-rule.json")!;
 const clusterConfigValidator     = ajv.getSchema("https://autocontext.dev/schema/production-traces/cluster-config.json")!;
@@ -116,6 +119,9 @@ export function validateRedactionMarker(input: unknown): ValidationResult {
 }
 export function validateRedactionPolicy(input: unknown): ValidationResult {
   return toResult(redactionPolicyValidator, input);
+}
+export function validateRetentionPolicy(input: unknown): ValidationResult {
+  return toResult(retentionPolicyValidator, input);
 }
 export function validateProductionTrace(input: unknown): ValidationResult {
   return toResult(productionTraceValidator, input);

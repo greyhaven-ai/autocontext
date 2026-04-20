@@ -52,7 +52,11 @@ async function seedOldAndNewTraces(): Promise<{ oldId: string; newId: string }> 
       outcome: { label: "success" },
     }),
   ]);
-  await runProductionTracesCommand(["ingest"], { cwd });
+  // Layer 8: ingest now runs retention as phase-2 by default. These tests
+  // exercise the out-of-band `prune` CLI, so they need the seed phase to
+  // leave the old trace on disk. Pass --skip-retention so the seed call
+  // writes the old batch to ingested/ unchanged.
+  await runProductionTracesCommand(["ingest", "--skip-retention"], { cwd });
   return { oldId, newId };
 }
 
@@ -98,7 +102,7 @@ describe("autoctx production-traces prune", () => {
     const lines = readFileSync(gcLogPath(cwd), "utf-8").trim().split("\n");
     expect(lines.length).toBe(1);
     const entry = JSON.parse(lines[0]!);
-    expect(entry.reason).toBe("retention");
+    expect(entry.reason).toBe("retention-expired");
     expect(typeof entry.traceId).toBe("string");
   });
 

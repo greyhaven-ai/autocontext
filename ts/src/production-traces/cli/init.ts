@@ -24,7 +24,7 @@ import {
   defaultRetentionPolicy,
   saveRetentionPolicy,
   retentionPolicyPath,
-} from "./_shared/retention-policy.js";
+} from "../retention/index.js";
 import type { CliContext, CliResult } from "./_shared/types.js";
 
 export const INIT_HELP_TEXT = `autoctx production-traces init — scaffold .autocontext/production-traces/

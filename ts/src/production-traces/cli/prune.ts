@@ -1,35 +1,26 @@
 // `autoctx production-traces prune [--dry-run]`
 //
-// Minimum viable retention enforcement for Layer 7 (spec §6.6). Walks
-// `ingested/<date>/` and deletes traces older than `retentionDays` whose
-// `outcome.label` is NOT in `preserveCategories`. Logs each deletion to
-// `gc-log.jsonl`.
+// Thin wrapper over `retention/enforce.ts`. The real work lives in
+// `production-traces/retention/` (spec §6.6 canonical home). This module is
+// responsible only for:
+//   - CLI flag parsing / help text
+//   - Lock acquisition
+//   - Translating the retention domain report into the legacy `PruneReport`
+//     output shape that Layer 7 tests still consume
 //
-// LAYERING NOTE: Layer 8 is expected to own retention properly (with its own
-// module + JSON schema + ingest-phase-2 hook). This Layer 7 implementation is
-// deliberately minimal: it reads the retention policy, applies it out-of-band,
-// and emits the same on-disk artifacts (gc-log.jsonl) that the Layer 8
-// version will continue producing. When Layer 8 lands, this file should
-// shrink to a thin wrapper around `retention/prune.ts`.
+// LAYERING NOTE: Layer 7 shipped a provisional inline implementation here
+// (see that commit message). Layer 8 extracted the core logic to
+// `retention/enforce.ts` and reduced this file to orchestration only. All
+// downstream retention consumers (ingest phase-2, future MCP tools) go
+// through the retention module directly.
 
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
-import type { ProductionTrace } from "../contract/types.js";
-import { productionTracesRoot, gcLogPath } from "../ingest/paths.js";
 import { acquireLock } from "../ingest/lock.js";
 import {
+  enforceRetention,
   loadRetentionPolicy,
-  type RetentionPolicy,
-} from "./_shared/retention-policy.js";
+  type LoadedRetentionPolicy,
+  type RetentionReport,
+} from "../retention/index.js";
 import { EXIT } from "./_shared/exit-codes.js";
 import { formatOutput, type OutputMode } from "./_shared/output-formatters.js";
 import { parseFlags, stringFlag, booleanFlag } from "./_shared/flags.js";
@@ -79,7 +70,7 @@ export async function runPrune(
   const dryRun = booleanFlag(flags.value, "dry-run");
   const output = (stringFlag(flags.value, "output") ?? "pretty") as OutputMode;
 
-  let policy: RetentionPolicy;
+  let policy: LoadedRetentionPolicy;
   try {
     policy = await loadRetentionPolicy(ctx.cwd);
   } catch (err) {
@@ -94,9 +85,15 @@ export async function runPrune(
   }
 
   try {
-    const report = await executePrune(ctx, policy, dryRun);
+    const nowUtc = new Date(ctx.now());
+    const report = await enforceRetention({
+      cwd: ctx.cwd,
+      policy,
+      nowUtc,
+      dryRun,
+    });
     return {
-      stdout: formatOutput(report, output),
+      stdout: formatOutput(toLegacyReport(dryRun, policy, report), output),
       stderr: "",
       exitCode: EXIT.SUCCESS,
     };
@@ -107,133 +104,33 @@ export async function runPrune(
   }
 }
 
-async function executePrune(
-  ctx: CliContext,
-  policy: RetentionPolicy,
+/**
+ * Translate the canonical RetentionReport (from `retention/enforce.ts`) into
+ * the legacy prune-CLI output shape. The field names here preserve the Layer
+ * 7 JSON contract so existing tests and downstream consumers do not break.
+ *
+ * NOTE: `scannedFiles` is approximated — the canonical report surfaces
+ * `batchesAffected` (files touched) rather than total files scanned. A
+ * follow-up can bring the richer metric back to the CLI if operators need it.
+ */
+function toLegacyReport(
   dryRun: boolean,
-): Promise<PruneReport> {
-  const nowMs = Date.parse(ctx.now());
-  const thresholdMs = nowMs - policy.retentionDays * 24 * 60 * 60 * 1000;
-
-  const root = join(productionTracesRoot(ctx.cwd), "ingested");
-  const gcLog = gcLogPath(ctx.cwd);
-
-  let scannedFiles = 0;
-  let scannedTraces = 0;
-  let deletedTraces = 0;
-  let preservedByCategory = 0;
-  let preservedByAge = 0;
-
-  if (policy.preserveAll) {
-    return {
-      dryRun,
-      retentionDays: policy.retentionDays,
-      scannedFiles: 0,
-      scannedTraces: 0,
-      deletedTraces: 0,
-      preservedByCategory: 0,
-      preservedByAge: 0,
-      preserveAll: true,
-    };
-  }
-
-  if (!existsSync(root)) {
-    return {
-      dryRun,
-      retentionDays: policy.retentionDays,
-      scannedFiles,
-      scannedTraces,
-      deletedTraces,
-      preservedByCategory,
-      preservedByAge,
-      preserveAll: false,
-    };
-  }
-
-  const preserve = new Set<string>(policy.preserveCategories);
-
-  // Ensure gc-log directory exists before appending.
-  if (!dryRun) {
-    mkdirSync(productionTracesRoot(ctx.cwd), { recursive: true });
-  }
-
-  for (const date of readdirSync(root).sort()) {
-    const dateDir = join(root, date);
-    if (!statSync(dateDir).isDirectory()) continue;
-
-    for (const file of readdirSync(dateDir).sort()) {
-      if (!file.endsWith(".jsonl")) continue;
-      const path = join(dateDir, file);
-      scannedFiles += 1;
-
-      const text = readFileSync(path, "utf-8");
-      const lines = text.split("\n");
-      const keep: string[] = [];
-      for (const rawLine of lines) {
-        if (rawLine.trim().length === 0) continue;
-        scannedTraces += 1;
-        let parsed: ProductionTrace;
-        try {
-          parsed = JSON.parse(rawLine) as ProductionTrace;
-        } catch {
-          // Malformed lines: preserve them so a later corrective ingest can
-          // re-process. Never silently drop user data here.
-          keep.push(rawLine);
-          continue;
-        }
-        const endedMs = Date.parse(parsed.timing.endedAt);
-        const tooYoung = Number.isNaN(endedMs) || endedMs > thresholdMs;
-        if (tooYoung) {
-          preservedByAge += 1;
-          keep.push(rawLine);
-          continue;
-        }
-        const label = parsed.outcome?.label;
-        if (label !== undefined && preserve.has(label)) {
-          preservedByCategory += 1;
-          keep.push(rawLine);
-          continue;
-        }
-        deletedTraces += 1;
-        if (!dryRun) {
-          // Append an audit record per deletion.
-          appendFileSync(
-            gcLog,
-            JSON.stringify({
-              traceId: parsed.traceId,
-              deletedAt: ctx.now(),
-              reason: "retention",
-              fromFile: path,
-            }) + "\n",
-            "utf-8",
-          );
-        }
-      }
-
-      if (!dryRun) {
-        if (keep.length === 0) {
-          // Remove the file entirely (no remaining content).
-          try {
-            unlinkSync(path);
-          } catch {
-            // File may have been removed concurrently; ignore.
-          }
-        } else if (keep.length < lines.filter((l) => l.trim().length > 0).length) {
-          writeFileSync(path, keep.join("\n") + "\n", "utf-8");
-        }
-      }
-    }
-  }
-
+  policy: LoadedRetentionPolicy,
+  r: RetentionReport,
+): PruneReport {
   return {
     dryRun,
     retentionDays: policy.retentionDays,
-    scannedFiles,
-    scannedTraces,
-    deletedTraces,
-    preservedByCategory,
-    preservedByAge,
-    preserveAll: false,
+    scannedFiles: r.batchesAffected.length,
+    scannedTraces: r.evaluated,
+    // In dry-run the canonical report reports `deleted: 0` but `tooYoung +
+    // preserved + "would-have-been-deleted"` equals `evaluated`. Operators
+    // expect "deletedTraces" to show the candidate count in --dry-run too,
+    // so we reconstruct it: eligible = evaluated - preserved - tooYoung.
+    deletedTraces: dryRun ? r.evaluated - r.preserved - r.tooYoung : r.deleted,
+    preservedByCategory: r.preserved,
+    preservedByAge: r.tooYoung,
+    preserveAll: policy.preserveAll,
   };
 }
 

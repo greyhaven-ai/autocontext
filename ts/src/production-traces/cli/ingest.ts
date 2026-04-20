@@ -8,6 +8,11 @@
 // lock separately — doing so would deadlock. The lock scope is Foundation B-
 // compatible: a concurrent control-plane `appendPromotionEvent` will block
 // while ingest holds the lock, and vice versa (spec §6.2).
+//
+// Phase-2 retention: `ingestBatches` runs `enforceRetention` after the main
+// ingest loop by default. The `--skip-retention` flag passes
+// `retention: "skip"` through so operators can ingest without touching the
+// retention subsystem (e.g. when debugging a phase-1 issue in isolation).
 
 import { ingestBatches, type IngestReport } from "../ingest/scan-workflow.js";
 import { EXIT } from "./_shared/exit-codes.js";
@@ -23,6 +28,7 @@ Usage:
       [--watch [--poll-interval <seconds>]]
       [--strict]
       [--dry-run]
+      [--skip-retention]
       [--output json|pretty|table]
 
 Behavior:
@@ -30,11 +36,14 @@ Behavior:
   Walks incoming/<date>/*.jsonl, validates per-line, invokes redaction
   mark-at-ingest, moves successful batches to ingested/ and failed ones to
   failed/. Appends traceIds to seen-ids.jsonl to enforce idempotence.
+  After phase-1, runs retention enforcement (spec §6.6) in the SAME lock
+  scope unless --skip-retention is passed.
 
 Flags:
   --since <ts>         Skip batches whose file mtime is before this ISO timestamp.
   --strict             Reject the whole batch if any line is invalid (spec §6.4).
   --dry-run            Validate + report without moving files or updating seen-ids.
+  --skip-retention     Do not run phase-2 retention enforcement for this ingest.
   --watch              Polling loop; poll-interval seconds between scans.
   --poll-interval <N>  Watch-mode interval (default 30).
   --output <mode>      json | pretty | table (default pretty).
@@ -62,6 +71,7 @@ export async function runIngest(
     since: { type: "string" },
     strict: { type: "boolean" },
     "dry-run": { type: "boolean" },
+    "skip-retention": { type: "boolean" },
     watch: { type: "boolean" },
     "poll-interval": { type: "string" },
     output: { type: "string", default: "pretty" },
@@ -73,6 +83,7 @@ export async function runIngest(
   const since = stringFlag(flags.value, "since");
   const strict = booleanFlag(flags.value, "strict");
   const dryRun = booleanFlag(flags.value, "dry-run");
+  const skipRetention = booleanFlag(flags.value, "skip-retention");
   const watch = booleanFlag(flags.value, "watch");
   const pollRaw = stringFlag(flags.value, "poll-interval");
   const pollInterval =
@@ -86,16 +97,17 @@ export async function runIngest(
   }
 
   if (watch) {
-    return runWatch(ctx, { since, strict, dryRun }, pollInterval, output);
+    return runWatch(ctx, { since, strict, dryRun, skipRetention }, pollInterval, output);
   }
 
-  return runOnce(ctx, { since, strict, dryRun }, output);
+  return runOnce(ctx, { since, strict, dryRun, skipRetention }, output);
 }
 
 interface IngestFlags {
   readonly since: string | undefined;
   readonly strict: boolean;
   readonly dryRun: boolean;
+  readonly skipRetention: boolean;
 }
 
 async function runOnce(
@@ -109,6 +121,7 @@ async function runOnce(
       ...(flags.since !== undefined ? { since: flags.since } : {}),
       strict: flags.strict,
       dryRun: flags.dryRun,
+      retention: flags.skipRetention ? "skip" : "enforce",
     });
   } catch (err) {
     return mapIngestError(err);
@@ -152,6 +165,7 @@ async function runWatch(
           ...(flags.since !== undefined ? { since: flags.since } : {}),
           strict: flags.strict,
           dryRun: flags.dryRun,
+          retention: flags.skipRetention ? "skip" : "enforce",
         });
         lastReport = report;
         stderrLines.push(`[watch] ${JSON.stringify(report)}`);
