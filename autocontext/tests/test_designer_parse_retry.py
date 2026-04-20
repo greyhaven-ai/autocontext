@@ -47,6 +47,12 @@ def _strict_dict_parser(text: str) -> dict[str, Any]:
     return json.loads(text)
 
 
+def _required_field_parser(text: str) -> dict[str, Any]:
+    """Parser that mirrors real spec parsers raising KeyError on missing fields."""
+    data = _strict_dict_parser(text)
+    return {"required": data["required"]}
+
+
 # --- Tests ---
 
 
@@ -108,6 +114,25 @@ class TestDesignWithParseRetry:
         )
 
         assert result == {"ok": True}
+        assert len(llm_fn.calls) == 2  # type: ignore[attr-defined]
+
+    def test_retries_once_on_missing_required_field_then_succeeds(self) -> None:
+        # First attempt is syntactically valid JSON but misses required schema fields.
+        # Second attempt returns a schema-complete value.
+        llm_fn = _scripted_llm_fn([
+            json.dumps({"other": True}),
+            json.dumps({"required": "ok"}),
+        ])
+
+        result = design_with_parse_retry(
+            llm_fn=llm_fn,
+            system_prompt=_SYSTEM,
+            user_prompt=_USER,
+            parser=_required_field_parser,
+            delimiter_hint=_DELIMITERS,
+        )
+
+        assert result == {"required": "ok"}
         assert len(llm_fn.calls) == 2  # type: ignore[attr-defined]
 
     def test_raises_after_max_retries_exhausted(self) -> None:

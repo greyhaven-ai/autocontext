@@ -3,8 +3,9 @@
 All ``design_X`` entry points under ``autocontext.scenarios.custom`` share the
 same shape: call ``llm_fn(system, user)``, then pass the response through
 ``parse_X_spec``. When the LLM emits a response with an empty or malformed
-JSON body between the expected delimiters, the parser raises
-``JSONDecodeError`` or ``ValueError`` and the solve job dies.
+JSON body between the expected delimiters, or syntactically valid JSON that is
+missing required schema fields, the parser raises a parse/schema exception and
+the solve job dies.
 
 This helper wraps the call/parse pair with a bounded retry loop. On parse
 failure it regenerates with a correction prompt naming the validator error
@@ -22,6 +23,7 @@ from autocontext.agents.types import LlmFn
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+_PARSER_RETRY_EXCEPTIONS = (json.JSONDecodeError, ValueError, KeyError, TypeError)
 
 
 def design_with_parse_retry(
@@ -39,8 +41,7 @@ def design_with_parse_retry(
     - Call ``llm_fn(system_prompt, effective_user_prompt)``
     - Call ``parser(response)``
     - If parser returns a value → return it
-    - If parser raises ``JSONDecodeError`` or ``ValueError`` → build correction
-      prompt, loop
+    - If parser raises a parse/schema exception → build correction prompt, loop
     - If exhausted → raise ``ValueError`` with all attempts' errors
 
     Total attempts = ``max_retries + 1``. Default ``max_retries=2`` (3 attempts).
@@ -59,7 +60,7 @@ def design_with_parse_retry(
         response = llm_fn(system_prompt, effective_user_prompt)
         try:
             return parser(response)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except _PARSER_RETRY_EXCEPTIONS as exc:
             error_text = f"{type(exc).__name__}: {exc}"
             errors.append(error_text)
 

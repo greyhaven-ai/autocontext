@@ -66,6 +66,14 @@ def _empty_sim_response() -> str:
     return f"prefix\n{SIM_SPEC_START}\n{SIM_SPEC_END}\nsuffix"
 
 
+def _missing_required_sim_response() -> str:
+    return (
+        f"prefix\n{SIM_SPEC_START}\n"
+        f"{json.dumps({'description': 'A schema-incomplete simulation'})}\n"
+        f"{SIM_SPEC_END}\nsuffix"
+    )
+
+
 def _valid_sim_response() -> str:
     return (
         f"prefix\n{SIM_SPEC_START}\n{json.dumps(_VALID_SIMULATION_JSON)}\n{SIM_SPEC_END}\nsuffix"
@@ -87,6 +95,18 @@ class TestDesignerParseRetryIntegration:
         """AC-276 repro: first response has empty content between SIM delimiters,
         second response has valid JSON. design_simulation must succeed."""
         llm_fn = _scripted_llm_fn([_empty_sim_response(), _valid_sim_response()])
+
+        spec = design_simulation("A test description.", llm_fn)
+
+        assert spec.description == _VALID_SIMULATION_JSON["description"]
+        assert len(llm_fn.calls) == 2  # type: ignore[attr-defined]
+
+    def test_design_simulation_retries_on_missing_required_schema_fields(self) -> None:
+        """Syntactically valid but schema-incomplete JSON should retry too."""
+        llm_fn = _scripted_llm_fn([
+            _missing_required_sim_response(),
+            _valid_sim_response(),
+        ])
 
         spec = design_simulation("A test description.", llm_fn)
 
