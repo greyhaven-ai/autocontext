@@ -43,6 +43,8 @@ from autocontext.util.json_io import read_json
 
 logger = logging.getLogger(__name__)
 
+_SIMULATION_PI_TIMEOUT_FLOOR_SECONDS = 600.0
+
 if TYPE_CHECKING:
     from autocontext.providers.base import LLMProvider
     from autocontext.training.runner import TrainingConfig, TrainingResult
@@ -189,13 +191,22 @@ def _is_agent_task(scenario_name: str) -> bool:
     return issubclass(family.interface_class, AgentTaskInterface)
 
 
+def _settings_for_simulation_runtime(settings: AppSettings) -> AppSettings:
+    if float(settings.pi_timeout) >= _SIMULATION_PI_TIMEOUT_FLOOR_SECONDS:
+        return settings
+    return settings.model_copy(update={"pi_timeout": _SIMULATION_PI_TIMEOUT_FLOOR_SECONDS})
+
+
 def _resolve_simulation_runtime(settings: AppSettings) -> tuple[LLMProvider, str]:
     """Resolve the architect-style runtime used for simulation spec generation.
 
     Simulations are authoring/spec-generation tasks, so they should follow the
     configured architect runtime surface rather than the judge provider.
+    Live Pi-backed simulation design can exceed the default CLI timeout for
+    stress scenarios, so use the same kind of internal timeout floor applied in
+    other long-running authoring flows.
     """
-    return _resolve_role_runtime(settings, role="architect")
+    return _resolve_role_runtime(_settings_for_simulation_runtime(settings), role="architect")
 
 
 def _resolve_role_runtime(
