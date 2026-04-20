@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,10 @@ from autocontext.scenarios.artifact_editing import ArtifactEditingInterface
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.coordination import CoordinationInterface
 from autocontext.scenarios.custom.agent_task_codegen import generate_agent_task_class
-from autocontext.scenarios.custom.agent_task_designer import design_agent_task
+from autocontext.scenarios.custom.agent_task_designer import (
+    AGENT_TASK_DESIGNER_SYSTEM,
+    design_agent_task,
+)
 from autocontext.scenarios.custom.agent_task_revision import (
     patch_legacy_generated_evaluate_output,
     patch_legacy_generated_revise_output,
@@ -46,6 +50,10 @@ from autocontext.util.json_io import write_json
 logger = logging.getLogger(__name__)
 
 
+def _is_timeout_like_error(exc: Exception) -> bool:
+    return "timeout" in str(exc).lower()
+
+
 class AgentTaskCreator:
     """Orchestrates the full agent task creation pipeline."""
 
@@ -53,9 +61,16 @@ class AgentTaskCreator:
         self,
         llm_fn: LlmFn,
         knowledge_root: Path,
+        *,
+        designer_system_prompt: str = AGENT_TASK_DESIGNER_SYSTEM,
+        retry_designer_system_prompt: str | None = None,
+        description_transform: Callable[[str], str] | None = None,
     ) -> None:
         self.llm_fn = llm_fn
         self.knowledge_root = knowledge_root
+        self._designer_system_prompt = designer_system_prompt
+        self._retry_designer_system_prompt = retry_designer_system_prompt
+        self._description_transform = description_transform
 
     STOP_WORDS = SHARED_STOP_WORDS
 
@@ -99,11 +114,25 @@ class AgentTaskCreator:
 
         # 1. Design
         logger.info("designing agent task from description")
+        design_description = self._description_transform(description) if self._description_transform is not None else description
         try:
-            spec = design_agent_task(description, self.llm_fn)
-        except Exception:
+            spec = design_agent_task(
+                design_description,
+                self.llm_fn,
+                system_prompt=self._designer_system_prompt,
+            )
+        except Exception as exc:
+            retry_system_prompt = (
+                self._retry_designer_system_prompt
+                if _is_timeout_like_error(exc) and self._retry_designer_system_prompt is not None
+                else self._designer_system_prompt
+            )
             logger.warning("agent task design failed on first attempt; retrying once", exc_info=True)
-            spec = design_agent_task(description, self.llm_fn)
+            spec = design_agent_task(
+                design_description,
+                self.llm_fn,
+                system_prompt=retry_system_prompt,
+            )
 
         # 1.5 Auto-heal: generate synthetic sample_input if needed (AC-309)
         from autocontext.scenarios.custom.spec_auto_heal import (

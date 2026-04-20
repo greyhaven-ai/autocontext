@@ -335,6 +335,25 @@ class TestDesignAgentTask:
         assert spec.task_prompt == SAMPLE_SPEC.task_prompt
         assert spec.output_format == "free_text"
 
+    def test_design_agent_task_uses_overridden_system_prompt(self) -> None:
+        response_text = _mock_llm_response(SAMPLE_SPEC)
+        captured: dict[str, str] = {}
+
+        def mock_llm(system: str, user: str) -> str:
+            captured["system"] = system
+            captured["user"] = user
+            return response_text
+
+        spec = design_agent_task(
+            "Write a haiku about testing",
+            mock_llm,
+            system_prompt="custom solve designer prompt",
+        )
+
+        assert spec.task_prompt == SAMPLE_SPEC.task_prompt
+        assert captured["system"] == "custom solve designer prompt"
+        assert captured["user"].startswith("User description:\nWrite a haiku")
+
 
 class TestGenerateAgentTaskClass:
     def test_produces_valid_python(self) -> None:
@@ -713,6 +732,35 @@ class TestAgentTaskCreator:
             try:
                 assert instance.get_rubric() == SAMPLE_SPEC.judge_rubric
                 assert attempts["count"] == 2
+            finally:
+                SCENARIO_REGISTRY.pop(registered_name, None)
+
+    def test_retries_agent_task_design_with_retry_system_prompt_after_timeout(self) -> None:
+        response_text = _mock_llm_response(SAMPLE_SPEC)
+        seen_system_prompts: list[str] = []
+
+        def mock_llm(system: str, user: str) -> str:
+            del user
+            seen_system_prompts.append(system)
+            if len(seen_system_prompts) == 1:
+                raise RuntimeError("PiCLIRuntime failed: timeout")
+            return response_text
+
+        from autocontext.scenarios import SCENARIO_REGISTRY
+
+        with tempfile.TemporaryDirectory() as tmp:
+            creator = AgentTaskCreator(
+                llm_fn=mock_llm,
+                knowledge_root=Path(tmp),
+                designer_system_prompt="primary designer prompt",
+                retry_designer_system_prompt="fallback designer prompt",
+            )
+            instance = creator.create("Write a haiku about testing software")
+            registered_name = creator.derive_name("Write a haiku about testing software")
+
+            try:
+                assert instance.get_rubric() == SAMPLE_SPEC.judge_rubric
+                assert seen_system_prompts == ["primary designer prompt", "fallback designer prompt"]
             finally:
                 SCENARIO_REGISTRY.pop(registered_name, None)
 

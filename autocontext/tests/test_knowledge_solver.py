@@ -414,8 +414,77 @@ class TestSolveScenarioBuilder:
         assert "Objective" in captured["description"]
         assert "Scenario Design" in captured["description"]
 
+    def test_build_uses_compact_designer_prompt_for_agent_task_solves(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from autocontext.knowledge.solve_design import _SOLVE_AGENT_TASK_DESIGN_MAX_CHARS
+        from autocontext.knowledge.solver import (
+            SolveScenarioBuilder,
+        )
+        from autocontext.scenarios.custom.agent_task_designer import (
+            RETRY_SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
+            SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
+        )
+
+        runtime = SubagentRuntime(DeterministicDevClient())
+        builder = SolveScenarioBuilder(
+            runtime=runtime,
+            llm_fn=_operator_loop_llm,
+            model="test-model",
+            knowledge_root=tmp_path,
+        )
+        captured: dict[str, str] = {}
+
+        class _CreatedScenario:
+            name = "stress_test_rubric_fixture"
+
+        def _fake_create(self, description: str, *, family_name: str = "") -> _CreatedScenario:
+            del family_name
+            captured["description"] = description
+            captured["designer_system_prompt"] = self._designer_system_prompt
+            captured["retry_designer_system_prompt"] = self._retry_designer_system_prompt
+            transformed = self._description_transform(description) if self._description_transform is not None else description
+            captured["transformed_description"] = transformed
+            return _CreatedScenario()
+
+        monkeypatch.setattr(
+            "autocontext.scenarios.custom.agent_task_creator.AgentTaskCreator.create",
+            _fake_create,
+        )
+
+        builder.build(
+            "Harness Stress Test: rubric drift detection — long-horizon evaluation quality monitoring\n\n"
+            "## Objective\n\n"
+            "Run a scenario long enough (10+ generations) that rubric drift becomes measurable, then "
+            "validate that the analytics stack correctly detects and reports evaluation quality degradation.\n\n"
+            "## Scenario Design\n\n"
+            "* Use any stable scenario (grid_ctf or a custom agent-task)\n"
+            "* Run 10+ generations with live Anthropic provider\n"
+            "* Use analytics/rubric_drift.py, analytics/calibration.py, analytics/correlation.py, "
+            "analytics/timeline_inspector.py, and analytics/trace_reporter.py\n"
+            "* Capture concrete commands, artifacts, and metrics\n"
+            "* Report cross-module consistency\n\n"
+            "## Evaluation Dimensions\n\n"
+            "* Rubric drift coefficient\n"
+            "* Calibration error\n"
+            "* Inter-dimension correlation matrix health\n"
+            "* Score distribution entropy across generations\n"
+            "* Stagnation detection accuracy\n\n"
+            "## Success Criteria\n\n"
+            "* 10+ generation run completes without crashes\n"
+            "* Analytics modules produce non-trivial output\n"
+            "* Timeline inspector identifies at least one inflection point or trend\n"
+            "* All analytics outputs are internally consistent\n"
+        )
+
+        assert captured["designer_system_prompt"] == SOLVE_AGENT_TASK_DESIGNER_SYSTEM
+        assert captured["retry_designer_system_prompt"] == RETRY_SOLVE_AGENT_TASK_DESIGNER_SYSTEM
+        assert len(captured["transformed_description"]) <= _SOLVE_AGENT_TASK_DESIGN_MAX_CHARS
+        assert len(captured["transformed_description"]) < len(captured["description"])
+        assert "## Scenario Design" in captured["transformed_description"]
+
     def test_build_strips_inline_example_parentheticals_before_creation(self) -> None:
-        from autocontext.knowledge.solver import _build_solve_description_brief
+        from autocontext.knowledge.solve_design import _build_solve_description_brief
 
         brief = _build_solve_description_brief(
             "## Scenario Proposal\n\n"
@@ -431,6 +500,48 @@ class TestSolveScenarioBuilder:
         assert "essay-quality metric" not in brief
         assert "e.g." not in brief
         assert "gaming the metric" in brief
+
+    def test_build_solve_agent_task_design_brief_compacts_long_structured_descriptions(self) -> None:
+        from autocontext.knowledge.solve_design import (
+            _SOLVE_AGENT_TASK_DESIGN_MAX_CHARS,
+            _build_solve_agent_task_design_brief,
+            _build_solve_description_brief,
+        )
+
+        description = (
+            "Harness Stress Test: rubric drift detection — long-horizon evaluation quality monitoring\n\n"
+            "## Objective\n\n"
+            "Run a scenario long enough (10+ generations) that rubric drift becomes measurable, then "
+            "validate that the analytics stack correctly detects and reports evaluation quality degradation.\n\n"
+            "## Scenario Design\n\n"
+            "* Use any stable scenario (grid_ctf or a custom agent-task)\n"
+            "* Run 10+ generations with live Anthropic provider\n"
+            "* Use analytics/rubric_drift.py, analytics/calibration.py, analytics/correlation.py, "
+            "analytics/timeline_inspector.py, and analytics/trace_reporter.py\n"
+            "* Capture concrete commands, artifacts, and metrics\n"
+            "* Report cross-module consistency\n\n"
+            "## Evaluation Dimensions\n\n"
+            "* Rubric drift coefficient\n"
+            "* Calibration error\n"
+            "* Inter-dimension correlation matrix health\n"
+            "* Score distribution entropy across generations\n"
+            "* Stagnation detection accuracy\n\n"
+            "## Success Criteria\n\n"
+            "* 10+ generation run completes without crashes\n"
+            "* Analytics modules produce non-trivial output\n"
+            "* Timeline inspector identifies at least one inflection point or trend\n"
+            "* All analytics outputs are internally consistent\n"
+        )
+
+        brief = _build_solve_description_brief(description)
+        compact = _build_solve_agent_task_design_brief(description)
+
+        assert len(brief) > _SOLVE_AGENT_TASK_DESIGN_MAX_CHARS
+        assert len(compact) <= _SOLVE_AGENT_TASK_DESIGN_MAX_CHARS
+        assert len(compact) < len(brief)
+        assert "## Objective" in compact
+        assert "## Scenario Design" in compact
+        assert "analytics/rubric_drift.py" in compact
 
 
 class TestSolveLLMFn:
@@ -452,7 +563,8 @@ class TestSolveLLMFn:
 
         assert result == "ok"
         assert captured["model"] == "architect-model"
-        assert captured["max_tokens"] == 1800
+        assert captured["max_tokens"] == 1200
+        assert captured["temperature"] == 0.2
         assert captured["role"] == "scenario_designer"
 
     def test_build_creator_prefers_translator_model_for_solve_design(
@@ -489,6 +601,47 @@ class TestSolveLLMFn:
 
         assert builder is not None
         assert builder._model == "translator-sonnet"
+
+    def test_build_creator_raises_pi_timeout_floor_for_solve_design(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solve_design import _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
+        from autocontext.knowledge.solver import SolveManager
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            agent_provider="pi",
+            pi_timeout=300.0,
+        )
+        manager = SolveManager(settings)
+        captured: dict[str, float] = {}
+
+        class _Client:
+            pass
+
+        class _Runtime:
+            def __init__(self, client: object) -> None:
+                self.client = client
+
+        def _fake_build_client(settings: AppSettings) -> _Client:
+            captured["pi_timeout"] = float(settings.pi_timeout)
+            return _Client()
+
+        monkeypatch.setattr(
+            "autocontext.agents.llm_client.build_client_from_settings",
+            _fake_build_client,
+        )
+        monkeypatch.setattr(
+            "autocontext.agents.subagent_runtime.SubagentRuntime",
+            _Runtime,
+        )
+
+        builder = manager._build_creator()
+
+        assert builder is not None
+        assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
 
 
 class TestSolveScenarioExecutor:
