@@ -26,6 +26,15 @@ import type {
   InstrumentPlan,
   SourceRange,
 } from "../contract/plugin-interface.js";
+import {
+  enhance,
+  RATIONALE_PROMPT,
+  SESSION_SUMMARY_PROMPT,
+  type EnhancerProvider,
+  type EnhancerDiagnostic,
+  type RationaleContext,
+  type SessionSummaryContext,
+} from "../llm/index.js";
 
 /** Per-composed-edit projection (mirrors planner's ComposedEdit without importing it). */
 export interface ComposedEditView {
@@ -43,6 +52,18 @@ export interface PrBodyInputs {
   readonly detectedUnchanged: readonly DetectedUnchanged[];
   readonly command: string;
   readonly nowIso: string;
+  /**
+   * Optional LLM enhancer wiring. When absent (or `enabled: false`), the
+   * renderer falls back to the deterministic default templates — `pr-body.md`
+   * stays byte-identical to pre-Layer-8 output, which is the property the
+   * Layer 9 goldens rely on.
+   */
+  readonly enhancement?: {
+    readonly enabled: boolean;
+    readonly provider?: EnhancerProvider;
+    readonly timeoutMs?: number;
+    readonly onDiagnostic?: (d: EnhancerDiagnostic) => void;
+  };
 }
 
 /** Per-file composed-edit metadata passed in from the orchestrator. */
@@ -70,7 +91,7 @@ export interface DetectedUnchanged {
 }
 
 /** Render the pr-body.md document. */
-export function renderPrBody(inputs: PrBodyInputs): string {
+export async function renderPrBody(inputs: PrBodyInputs): Promise<string> {
   const parts: string[] = [];
 
   const filesAffected = inputs.detailedEdits.length;
@@ -78,6 +99,11 @@ export function renderPrBody(inputs: PrBodyInputs): string {
     (acc, f) => acc + f.edits.length,
     0,
   );
+
+  const enhancementEnabled = inputs.enhancement?.enabled ?? false;
+  const enhancementProvider = inputs.enhancement?.provider;
+  const enhancementTimeoutMs = inputs.enhancement?.timeoutMs;
+  const onDiagnostic = inputs.enhancement?.onDiagnostic;
   parts.push(
     `## Autocontext instrument — ${filesAffected} files affected, ${callSitesWrapped} call sites wrapped`,
   );
@@ -89,8 +115,28 @@ export function renderPrBody(inputs: PrBodyInputs): string {
   parts.push("");
 
   // Section: Summary by SDK
+  // Spec §10.1 enhancement site 3 (session summary).
   parts.push("### Summary by SDK");
-  parts.push(defaultSummary(inputs));
+  const defaultSummaryText = defaultSummary(inputs);
+  const summaryContext: SessionSummaryContext = {
+    filesAffected,
+    callSitesWrapped,
+    filesSkipped: inputs.filesSkipped.length,
+    skippedBySecretLiteral: inputs.filesSkipped.filter((f) =>
+      /secret|pattern|AKIA|ghp_|sk-ant-|sk-|xox/i.test(f.reason),
+    ).length,
+    registeredPluginIds: (inputs.session.registeredPlugins ?? []).map((p) => p.id),
+  };
+  const summaryText = await enhance({
+    defaultNarrative: defaultSummaryText,
+    context: summaryContext,
+    prompt: SESSION_SUMMARY_PROMPT,
+    enabled: enhancementEnabled,
+    provider: enhancementProvider,
+    timeoutMs: enhancementTimeoutMs,
+    onDiagnostic,
+  });
+  parts.push(summaryText);
   parts.push("");
 
   // Section: Files affected
@@ -108,9 +154,27 @@ export function renderPrBody(inputs: PrBodyInputs): string {
         parts.push(`\`\`\`${f.language}`);
         parts.push(e.afterSnippet);
         parts.push("```");
-        // TODO(A2-I Layer 8): wire LLM enhancer here —
-        //   const rationale = enhancer?.enhance(defaultRationale(ctx), ctx) ?? defaultRationale(ctx);
-        parts.push(`*Rationale: ${defaultRationale(f, e.edit)}*`);
+
+        // Spec §10.1 enhancement site 1 (per-call-site rationale).
+        const defaultRat = defaultRationale(f, e.edit);
+        const rationaleLang = (f.language as RationaleContext["language"]);
+        const ratCtx: RationaleContext = {
+          filePath: f.filePath,
+          language: rationaleLang,
+          sdkName: f.sdkBreakdown[0]?.sdkName ?? "LLM client",
+          beforeSnippet: e.beforeSnippet,
+          afterSnippet: e.afterSnippet,
+        };
+        const rationaleText = await enhance({
+          defaultNarrative: defaultRat,
+          context: ratCtx,
+          prompt: RATIONALE_PROMPT,
+          enabled: enhancementEnabled,
+          provider: enhancementProvider,
+          timeoutMs: enhancementTimeoutMs,
+          onDiagnostic,
+        });
+        parts.push(`*Rationale: ${rationaleText}*`);
         parts.push("");
       }
     }

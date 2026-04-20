@@ -100,6 +100,13 @@ export interface InstrumentInputs {
   readonly registeredPluginsOverride?: InstrumentSession["registeredPlugins"];
   /** Advanced: skip writing the session directory (for in-process unit tests of the pipeline). */
   readonly skipSessionDirWrite?: boolean;
+  /**
+   * Advanced: injected LLM provider for `enhanced` mode. Tests pass a mock
+   * here; production either leaves this undefined (in which case enhancement
+   * is effectively disabled even with `enhanced: true`) or future layers
+   * could wire a real provider via the existing `providers/` factory.
+   */
+  readonly enhancementProvider?: import("../llm/index.js").EnhancerProvider;
 }
 
 export interface InstrumentResult {
@@ -262,7 +269,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
   const detailedEdits = buildDetailedEdits(composedByFile, editsByFile, filesByPath, registeredPlugins);
 
   const command = buildCommandLine(opts);
-  const prBody = renderPrBody({
+  const prBody = await renderPrBody({
     session,
     plan,
     planHash,
@@ -273,6 +280,12 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
     detectedUnchanged,
     command: `${command} session=${opts.sessionUlid}`,
     nowIso: opts.nowIso,
+    enhancement: opts.enhanced
+      ? {
+          enabled: true,
+          provider: opts.enhancementProvider,
+        }
+      : undefined,
   });
 
   // -------------------------------------------------------------------------
