@@ -40,3 +40,52 @@ class TestLlmFallbackHappyPath:
         assert result.confidence == 0.82
         assert result.rationale == "matches simulation pattern"
         assert result.no_signals_matched is False
+
+
+class TestLlmFallbackFailureModes:
+    """Any failure in the LLM path must fall through to the keyword fallback."""
+
+    def test_llm_fallback_unknown_family_falls_through(self) -> None:
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            return '{"family": "bogus_family", "confidence": 0.9, "rationale": "r"}'
+
+        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        assert result.no_signals_matched is True
+        assert result.family_name == "agent_task"
+
+    def test_llm_fallback_unparseable_json_falls_through(self) -> None:
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            return "not json at all"
+
+        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        assert result.no_signals_matched is True
+        assert result.family_name == "agent_task"
+
+    def test_llm_fallback_missing_rationale_falls_through(self) -> None:
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            return '{"family": "simulation", "confidence": 0.9}'
+
+        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        assert result.no_signals_matched is True
+        assert result.family_name == "agent_task"
+
+    def test_llm_fallback_llm_fn_raises_falls_through(self) -> None:
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            raise RuntimeError("boom")
+
+        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        assert result.no_signals_matched is True
+        assert result.family_name == "agent_task"
+
+    def test_llm_fallback_clamps_out_of_range_confidence(self) -> None:
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            return '{"family": "simulation", "confidence": 1.5, "rationale": "overshoot"}'
+
+        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        assert result.confidence == 1.0
+        assert result.family_name == "simulation"
