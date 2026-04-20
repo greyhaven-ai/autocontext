@@ -52,10 +52,34 @@ class LowConfidenceError(Exception):
     def __init__(self, classification: FamilyClassification, min_confidence: float) -> None:
         self.classification = classification
         self.min_confidence = min_confidence
-        super().__init__(
-            f"Family classification confidence {classification.confidence:.2f} "
-            f"is below threshold {min_confidence:.2f} for family '{classification.family_name}'"
+        super().__init__(self._build_message(classification, min_confidence))
+
+    @staticmethod
+    def _build_message(
+        classification: FamilyClassification, min_confidence: float
+    ) -> str:
+        conf = classification.confidence
+        thr = min_confidence
+        family = classification.family_name
+
+        if classification.no_signals_matched:
+            return (
+                f"Family classification confidence {conf:.2f} < threshold {thr:.2f}: "
+                f"no family keywords matched in description (fell back to {family}). "
+                f"Consider rephrasing with domain keywords."
+            )
+
+        base = (
+            f"Family classification confidence {conf:.2f} < threshold {thr:.2f} "
+            f"for family {family!r}."
         )
+        if classification.alternatives:
+            top_two = classification.alternatives[:2]
+            alts_str = ", ".join(
+                f"{a.family_name}={a.confidence:.2f}" for a in top_two
+            )
+            return f"{base} Top alternatives: {alts_str}."
+        return base
 
 
 # ---------------------------------------------------------------------------

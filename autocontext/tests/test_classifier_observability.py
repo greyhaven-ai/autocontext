@@ -57,3 +57,57 @@ class TestFamilyClassificationFlag:
         # "haiku" is in _AGENT_TASK_SIGNALS with weight 1.5.
         c = classify_scenario_family("write a haiku about rivers")
         assert c.no_signals_matched is False
+
+
+class TestLowConfidenceErrorMessage:
+    def test_message_for_no_signals_fallback(self) -> None:
+        c = FamilyClassification(
+            family_name="agent_task",
+            confidence=0.2,
+            rationale="No strong signals detected; defaulting to agent_task",
+            alternatives=[],
+            no_signals_matched=True,
+        )
+        exc = LowConfidenceError(c, 0.3)
+        msg = str(exc)
+
+        assert "0.20" in msg
+        assert "0.30" in msg
+        assert "no family keywords matched" in msg
+        assert "Consider rephrasing" in msg
+        assert "agent_task" in msg
+
+    def test_message_for_tied_alternatives(self) -> None:
+        c = FamilyClassification(
+            family_name="agent_task",
+            confidence=0.25,
+            rationale="matched: evaluat",
+            alternatives=[
+                FamilyCandidate(family_name="simulation", confidence=0.22, rationale="r1"),
+                FamilyCandidate(family_name="negotiation", confidence=0.18, rationale="r2"),
+            ],
+            no_signals_matched=False,
+        )
+        exc = LowConfidenceError(c, 0.3)
+        msg = str(exc)
+
+        assert "Top alternatives" in msg
+        assert "simulation" in msg
+        assert "0.22" in msg
+        assert "negotiation" in msg
+        assert "0.18" in msg
+
+    def test_message_degrades_cleanly_with_zero_alternatives(self) -> None:
+        c = FamilyClassification(
+            family_name="agent_task",
+            confidence=0.25,
+            rationale="matched: something",
+            alternatives=[],
+            no_signals_matched=False,
+        )
+        # Must not raise IndexError or produce a trailing "Top alternatives:" with empty list.
+        msg = str(LowConfidenceError(c, 0.3))
+        assert "0.25" in msg
+        assert "0.30" in msg
+        # No dangling "Top alternatives:" with empty content
+        assert not msg.rstrip().endswith("Top alternatives:")
