@@ -24,3 +24,19 @@ class TestClassifyWithoutLlmFn:
         assert result.no_signals_matched is False
         assert result.family_name == "simulation"
         forbidden_llm.assert_not_called()
+
+
+class TestLlmFallbackHappyPath:
+    def test_llm_fallback_happy_path_returns_llm_family(self) -> None:
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            return '{"family": "simulation", "confidence": 0.82, "rationale": "matches simulation pattern"}'
+
+        result = classify_scenario_family(
+            "xyz zzz qqq nonsense gibberish",
+            llm_fn=stub_llm,
+        )
+        assert result.family_name == "simulation"
+        assert result.confidence == 0.82
+        assert result.rationale == "matches simulation pattern"
+        assert result.no_signals_matched is False

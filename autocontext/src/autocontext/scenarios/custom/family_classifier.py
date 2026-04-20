@@ -451,6 +451,85 @@ def _build_rationale(matched: list[str], family_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# LLM fallback (AC-580)
+# ---------------------------------------------------------------------------
+
+
+_LLM_FALLBACK_SYSTEM_PROMPT = (
+    "You classify a natural-language scenario description into one of the "
+    "registered scenario families. Respond with a single JSON object on one line: "
+    '{{"family": "<name>", "confidence": <0.0-1.0>, "rationale": "<short explanation>"}}. '
+    "The family name MUST be one of: {family_list}. Do not invent new family names."
+)
+
+
+def _llm_classify_fallback(
+    description: str,
+    registered_families: list[str],
+    llm_fn: LlmFn,
+) -> FamilyClassification | None:
+    """Single structured LLM call to classify a description. Returns None on any failure."""
+    import json
+
+    family_list = ", ".join(registered_families)
+    system = _LLM_FALLBACK_SYSTEM_PROMPT.format(family_list=family_list)
+
+    try:
+        raw = llm_fn(system, description)
+    except Exception as exc:  # noqa: BLE001 - fallback must tolerate any provider failure
+        logger.warning("LLM classifier fallback failed: llm_fn raised %s", exc)
+        return None
+
+    json_start = raw.find("{")
+    json_end = raw.rfind("}")
+    if json_start == -1 or json_end == -1 or json_end <= json_start:
+        logger.warning("LLM classifier fallback failed: no JSON object in response")
+        return None
+
+    try:
+        payload = json.loads(raw[json_start : json_end + 1])
+    except json.JSONDecodeError as exc:
+        logger.warning("LLM classifier fallback failed: JSON decode error %s", exc)
+        return None
+
+    family = payload.get("family") if isinstance(payload, dict) else None
+    confidence = payload.get("confidence") if isinstance(payload, dict) else None
+    rationale = payload.get("rationale") if isinstance(payload, dict) else None
+
+    if not isinstance(family, str) or family not in registered_families:
+        logger.warning("LLM classifier fallback failed: family %r not registered", family)
+        return None
+    if not isinstance(rationale, str) or not rationale.strip():
+        logger.warning("LLM classifier fallback failed: missing rationale")
+        return None
+    try:
+        conf_value = float(confidence)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        logger.warning("LLM classifier fallback failed: confidence %r not numeric", confidence)
+        return None
+
+    clamped = max(0.0, min(1.0, conf_value))
+    logger.info("LLM classifier fallback: family=%s confidence=%.2f", family, clamped)
+
+    alternatives = [
+        FamilyCandidate(
+            family_name=other,
+            confidence=0.0,
+            rationale="LLM fallback selected a different family",
+        )
+        for other in registered_families
+        if other != family
+    ]
+    return FamilyClassification(
+        family_name=family,
+        confidence=round(clamped, 4),
+        rationale=rationale,
+        alternatives=alternatives,
+        no_signals_matched=False,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -472,7 +551,6 @@ def classify_scenario_family(
 
     Raises ValueError if description is empty/whitespace.
     """
-    del llm_fn  # Parameter is accepted but unused in this task; wired in next.
     if not description or not description.strip():
         raise ValueError("description must be non-empty")
 
@@ -490,6 +568,10 @@ def classify_scenario_family(
 
     total = sum(raw_scores.values())
     if total == 0:
+        if llm_fn is not None:
+            llm_result = _llm_classify_fallback(description, registered_families, llm_fn)
+            if llm_result is not None:
+                return llm_result
         # No signals matched — default to agent_task with low confidence if available.
         default_family = _DEFAULT_FAMILY_NAME if _DEFAULT_FAMILY_NAME in registered_families else registered_families[0]
         alternatives = [
