@@ -7,6 +7,7 @@ rationale. Routes into the correct family-specific generator.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from autocontext.scenarios.families import ScenarioFamily, get_family, list_families
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -36,6 +39,7 @@ class FamilyClassification(BaseModel):
     confidence: float
     rationale: str
     alternatives: list[FamilyCandidate] = Field(default_factory=list)
+    no_signals_matched: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -51,10 +55,34 @@ class LowConfidenceError(Exception):
     def __init__(self, classification: FamilyClassification, min_confidence: float) -> None:
         self.classification = classification
         self.min_confidence = min_confidence
-        super().__init__(
-            f"Family classification confidence {classification.confidence:.2f} "
-            f"is below threshold {min_confidence:.2f} for family '{classification.family_name}'"
+        super().__init__(self._build_message(classification, min_confidence))
+
+    @staticmethod
+    def _build_message(
+        classification: FamilyClassification, min_confidence: float
+    ) -> str:
+        conf = classification.confidence
+        thr = min_confidence
+        family = classification.family_name
+
+        if classification.no_signals_matched:
+            return (
+                f"Family classification confidence {conf:.2f} < threshold {thr:.2f}: "
+                f"no family keywords matched in description (fell back to {family}). "
+                f"Consider rephrasing with domain keywords."
+            )
+
+        base = (
+            f"Family classification confidence {conf:.2f} < threshold {thr:.2f} "
+            f"for family {family!r}."
         )
+        if classification.alternatives:
+            top_two = classification.alternatives[:2]
+            alts_str = ", ".join(
+                f"{a.family_name}={a.confidence:.2f}" for a in top_two
+            )
+            return f"{base} Top alternatives: {alts_str}."
+        return base
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +217,16 @@ _AGENT_TASK_SIGNALS: dict[str, float] = {
     "sort": 0.5,
     "data analysis": 1.0,
     "customer review": 1.0,
+    # AC-571: finance / quant domain keywords
+    "portfolio": 2.0,
+    "macroeconomic": 2.0,
+    "regime change": 2.0,
+    "rebalance": 1.5,
+    "volatility": 1.5,
+    "allocation": 1.0,
+    "quantitative": 1.0,
+    "investment": 1.0,
+    "financial": 1.0,
 }
 
 # Game: competitive, two-player, tournament, Elo
@@ -457,6 +495,7 @@ def classify_scenario_family(description: str) -> FamilyClassification:
             confidence=0.2,
             rationale=f"No strong signals detected; defaulting to {default_family}",
             alternatives=alternatives,
+            no_signals_matched=True,
         )
 
     # Normalize to confidences
@@ -493,5 +532,13 @@ def route_to_family(
     Raises KeyError if family_name is not in the registry.
     """
     if classification.confidence < min_confidence:
+        logger.warning(
+            "route_to_family rejecting classification: family=%r confidence=%.2f threshold=%.2f rationale=%r alternatives=%s",
+            classification.family_name,
+            classification.confidence,
+            min_confidence,
+            classification.rationale,
+            [(a.family_name, a.confidence) for a in classification.alternatives],
+        )
         raise LowConfidenceError(classification, min_confidence)
     return get_family(classification.family_name)
