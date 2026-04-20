@@ -360,7 +360,11 @@ def _resolve_solve_family_alias(description: str) -> ScenarioFamily | None:
     return None
 
 
-def _resolve_requested_scenario_family(description: str) -> ScenarioFamily:
+def _resolve_requested_scenario_family(
+    description: str,
+    *,
+    llm_fn: LlmFn | None = None,
+) -> ScenarioFamily:
     from autocontext.scenarios.custom.family_classifier import classify_scenario_family, route_to_family
 
     brief = _build_solve_description_brief(description)
@@ -372,7 +376,7 @@ def _resolve_requested_scenario_family(description: str) -> ScenarioFamily:
     if aliased_family is not None:
         return aliased_family
 
-    classification = classify_scenario_family(brief)
+    classification = classify_scenario_family(brief, llm_fn=llm_fn)
     return route_to_family(classification)
 
 
@@ -576,7 +580,7 @@ class SolveScenarioBuilder:
         if family_override:
             family = get_family(family_override)
         else:
-            family = _resolve_requested_scenario_family(brief)
+            family = _resolve_requested_scenario_family(brief, llm_fn=self._llm_fn)
 
         if family.name == "game":
             game_creator = ScenarioCreator(

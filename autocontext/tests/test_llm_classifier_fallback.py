@@ -89,3 +89,40 @@ class TestLlmFallbackFailureModes:
         result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
         assert result.confidence == 1.0
         assert result.family_name == "simulation"
+
+
+class TestResolveRequestedScenarioFamilyThreadsLlmFn:
+    def test_resolve_requested_scenario_family_threads_llm_fn(self) -> None:
+        from unittest.mock import patch
+
+        from autocontext.knowledge import solver as solver_mod
+        from autocontext.scenarios.custom.family_classifier import FamilyClassification
+        from autocontext.scenarios.families import get_family
+
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            return '{"family": "simulation", "confidence": 0.9, "rationale": "r"}'
+
+        captured: dict = {}
+
+        def fake_classify(description: str, *, llm_fn=None) -> FamilyClassification:
+            del description
+            captured["llm_fn"] = llm_fn
+            return FamilyClassification(
+                family_name="simulation",
+                confidence=0.9,
+                rationale="r",
+                no_signals_matched=False,
+            )
+
+        with patch.object(solver_mod, "_resolve_family_hint", return_value=None):
+            with patch(
+                "autocontext.scenarios.custom.family_classifier.classify_scenario_family",
+                side_effect=fake_classify,
+            ):
+                family = solver_mod._resolve_requested_scenario_family(
+                    "xyz zzz qqq", llm_fn=stub_llm
+                )
+
+        assert captured["llm_fn"] is stub_llm
+        assert family is get_family("simulation")
