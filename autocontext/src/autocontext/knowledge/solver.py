@@ -562,12 +562,21 @@ class SolveScenarioBuilder:
         self._model = model
         self._knowledge_root = knowledge_root
 
-    def build(self, description: str) -> SolveScenarioBuildResult:
+    def build(
+        self,
+        description: str,
+        *,
+        family_override: str | None = None,
+    ) -> SolveScenarioBuildResult:
         from autocontext.scenarios.custom.agent_task_creator import AgentTaskCreator
         from autocontext.scenarios.custom.creator import ScenarioCreator
+        from autocontext.scenarios.families import get_family
 
         brief = _build_solve_description_brief(description)
-        family = _resolve_requested_scenario_family(brief)
+        if family_override:
+            family = get_family(family_override)
+        else:
+            family = _resolve_requested_scenario_family(brief)
 
         if family.name == "game":
             game_creator = ScenarioCreator(
@@ -667,7 +676,7 @@ class SolveManager:
                 job.error = "Scenario creation pipeline unavailable (no API key or unsupported provider)"
                 return
 
-            created = builder.build(job.description)
+            created = builder.build(job.description, family_override=job.family_override)
             job.scenario_name = created.scenario_name
 
             # 2. Run generations

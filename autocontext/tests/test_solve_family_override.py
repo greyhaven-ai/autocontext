@@ -65,3 +65,65 @@ class TestSolveJobFamilyOverride:
             manager.solve_sync(description="x", family_override="simulation")
 
         assert captured["job"].family_override == "simulation"
+
+
+class TestSolveScenarioBuilderFamilyOverride:
+    """Builder.build routes via family_override when provided, else via classifier."""
+
+    def _make_builder(self, tmp_path):
+        from autocontext.knowledge.solver import SolveScenarioBuilder
+
+        def stub_llm_fn(system: str, user: str) -> str:
+            return ""
+
+        return SolveScenarioBuilder(
+            runtime=object(),
+            llm_fn=stub_llm_fn,
+            model="stub-model",
+            knowledge_root=tmp_path / "knowledge",
+        )
+
+    def test_build_skips_classifier_when_family_override_provided(self, tmp_path) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from autocontext.knowledge import solver as solver_mod
+
+        builder = self._make_builder(tmp_path)
+
+        def explode(_desc: str):
+            raise AssertionError("classifier must not be called when family_override is provided")
+
+        fake_scenario = MagicMock()
+        fake_scenario.name = "stub_scenario"
+
+        with patch.object(solver_mod, "_resolve_requested_scenario_family", side_effect=explode):
+            with patch(
+                "autocontext.scenarios.custom.agent_task_creator.AgentTaskCreator.create",
+                return_value=fake_scenario,
+            ):
+                result = builder.build("anything at all", family_override="simulation")
+
+        assert result.family_name == "simulation"
+
+    def test_build_uses_classifier_when_no_override(self, tmp_path) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from autocontext.knowledge import solver as solver_mod
+        from autocontext.scenarios.families import get_family
+
+        builder = self._make_builder(tmp_path)
+
+        fake_scenario = MagicMock()
+        fake_scenario.name = "stub_scenario"
+
+        classifier_mock = MagicMock(return_value=get_family("simulation"))
+
+        with patch.object(solver_mod, "_resolve_requested_scenario_family", classifier_mock):
+            with patch(
+                "autocontext.scenarios.custom.agent_task_creator.AgentTaskCreator.create",
+                return_value=fake_scenario,
+            ):
+                result = builder.build("please classify me")
+
+        classifier_mock.assert_called_once_with("please classify me")
+        assert result.family_name == "simulation"
