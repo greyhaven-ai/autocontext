@@ -21,10 +21,19 @@ from autocontext.execution.task_runtime_budget import (
     resolve_task_like_completion_max_tokens,
 )
 from autocontext.knowledge.export import SkillPackage, export_skill_package
+from autocontext.knowledge.solve_design import (
+    _build_solve_agent_task_design_brief,
+    _build_solve_description_brief,
+    _settings_for_solve_creator,
+)
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.scenarios.artifact_editing import Artifact, ArtifactEditingInterface
+from autocontext.scenarios.custom.agent_task_designer import (
+    RETRY_SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
+    SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
+)
 from autocontext.storage import artifact_store_from_settings
 from autocontext.storage.sqlite_store import SQLiteStore
 
@@ -39,20 +48,6 @@ class _NamedScenario(Protocol):
 
 
 _FAMILY_HEADER_RE = re.compile(r"^\s*\*{0,2}family\*{0,2}:\s*(?P<body>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-_SOLVE_DESCRIPTION_SKIP_SECTIONS = frozenset(
-    {
-        "Why This Matters",
-        "What This Tests",
-        "Implementation Guidance",
-        "Acceptance",
-        "Why existing scenarios don't cover this",
-        "Dependencies",
-    }
-)
-_SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES = (
-    "**Priority:**",
-    "**Generations to signal:**",
-)
 _SOLVE_FAMILY_ALIASES = {
     "meta_learning": "agent_task",
     "capability_bootstrapping": "agent_task",
@@ -62,12 +57,6 @@ _SIMULATION_INTERFACE_HINT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _AGENT_TASK_INTERFACE_HINT_RE = re.compile(r"\bagent[- ]task evaluation\b", re.IGNORECASE)
-_SOLVE_INLINE_EXAMPLE_PAREN_RE = re.compile(
-    r"\(\s*(?:e\.g\.,?|eg,?|for example,?)[^)]*\)",
-    re.IGNORECASE,
-)
-
-
 @dataclass
 class SolveJob:
     job_id: str
@@ -296,31 +285,6 @@ class _BudgetedAgentTask(AgentTaskInterface):
         result = self._task.verify_facts(output, state)
         self._budget.check("fact verification")
         return result
-
-
-def _build_solve_description_brief(description: str) -> str:
-    lines: list[str] = []
-    skipping_section = False
-    for raw_line in description.splitlines():
-        heading_match = re.match(r"^\s*#{2,6}\s+(.+?)\s*$", raw_line)
-        if heading_match is not None:
-            title = heading_match.group(1).strip()
-            skipping_section = title in _SOLVE_DESCRIPTION_SKIP_SECTIONS
-            if not skipping_section:
-                lines.append(raw_line)
-            continue
-
-        stripped = raw_line.strip()
-        if stripped.startswith(_SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES):
-            continue
-        if not skipping_section:
-            lines.append(raw_line)
-
-    brief = "\n".join(lines).strip()
-    brief = _SOLVE_INLINE_EXAMPLE_PAREN_RE.sub("", brief)
-    brief = re.sub(r"\n{3,}", "\n\n", brief)
-    brief = re.sub(r"[ \t]{2,}", " ", brief)
-    return brief or description.strip()
 
 
 def _is_timeout_like_error(exc: Exception) -> bool:
@@ -623,6 +587,9 @@ class SolveScenarioBuilder:
         family_creator = AgentTaskCreator(
             llm_fn=self._llm_fn,
             knowledge_root=self._knowledge_root,
+            designer_system_prompt=SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
+            retry_designer_system_prompt=RETRY_SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
+            description_transform=_build_solve_agent_task_design_brief,
         )
         scenario = family_creator.create(brief, family_name=family.name)
         scenario_name = str(cast(_NamedScenario, scenario).name)
@@ -638,8 +605,8 @@ def _llm_fn_from_client(client: Any, model: str) -> LlmFn:
         response = client.generate(
             model=model,
             prompt=f"{system}\n\n{user}",
-            max_tokens=1800,
-            temperature=0.3,
+            max_tokens=1200,
+            temperature=0.2,
             role="scenario_designer",
         )
         response_text: object = getattr(response, "text", "")
@@ -723,7 +690,8 @@ class SolveManager:
             from autocontext.agents.llm_client import build_client_from_settings
             from autocontext.agents.subagent_runtime import SubagentRuntime
 
-            client = build_client_from_settings(self._settings)
+            creator_settings = _settings_for_solve_creator(self._settings)
+            client = build_client_from_settings(creator_settings)
             runtime = SubagentRuntime(client)
             designer_model = self._settings.model_translator or self._settings.model_architect
             llm_fn = _llm_fn_from_client(client, designer_model)

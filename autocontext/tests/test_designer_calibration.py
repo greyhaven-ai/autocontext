@@ -5,6 +5,8 @@ from __future__ import annotations
 from autocontext.scenarios.custom.agent_task_designer import (
     _EXAMPLE_SPEC,
     AGENT_TASK_DESIGNER_SYSTEM,
+    RETRY_SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
+    SOLVE_AGENT_TASK_DESIGNER_SYSTEM,
 )
 
 
@@ -18,6 +20,12 @@ def test_example_spec_has_calibration_examples() -> None:
 def test_prompt_requires_calibration() -> None:
     """System prompt must state calibration examples are mandatory."""
     assert "MUST include at least 2 calibration" in AGENT_TASK_DESIGNER_SYSTEM
+
+
+def test_solve_prompts_require_calibration() -> None:
+    """Solve-specific designer prompts must preserve the calibration contract."""
+    assert "MUST include at least 2 calibration" in SOLVE_AGENT_TASK_DESIGNER_SYSTEM
+    assert "calibration_examples with at least 2 examples" in RETRY_SOLVE_AGENT_TASK_DESIGNER_SYSTEM
 
 
 def test_calibration_examples_have_required_fields() -> None:
