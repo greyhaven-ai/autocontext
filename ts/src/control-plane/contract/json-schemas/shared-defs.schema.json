@@ -28,7 +28,7 @@
       "pattern": "^[a-z0-9][a-z0-9_-]*$"
     },
     "ActuatorType": {
-      "enum": ["prompt-patch", "tool-policy", "routing-rule", "fine-tuned-model"]
+      "enum": ["prompt-patch", "tool-policy", "routing-rule", "fine-tuned-model", "model-routing"]
     },
     "ActivationState": {
       "enum": ["candidate", "shadow", "canary", "active", "disabled", "deprecated"]

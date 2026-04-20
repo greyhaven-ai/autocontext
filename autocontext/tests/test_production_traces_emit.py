@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ ULID_RE = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 
 
 def _timing(offset_seconds: int = 0) -> dict[str, Any]:
-    start = datetime(2026, 4, 17, 12, 0, offset_seconds, tzinfo=timezone.utc)
+    start = datetime(2026, 4, 17, 12, 0, offset_seconds, tzinfo=UTC)
     end = start + timedelta(seconds=1)
     return {
         "startedAt": start.isoformat().replace("+00:00", "Z"),

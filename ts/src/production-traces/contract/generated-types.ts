@@ -227,6 +227,17 @@ export interface ProductionTrace {
   feedbackRefs: FeedbackRef[];
   links: TraceLinks;
   redactions: RedactionMarker[];
+  routing?: {
+    chosen: {
+      provider: string;
+      model: string;
+      endpoint?: string;
+    };
+    matchedRouteId?: string;
+    reason: "default" | "matched-route" | "fallback";
+    fallbackReason?: "budget-exceeded" | "latency-breached" | "provider-error" | "no-match";
+    evaluatedAt: string;
+  };
   metadata?: {};
 }
 export interface TraceSource {

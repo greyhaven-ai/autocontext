@@ -308,7 +308,8 @@ async function buildRegistryRubricLookup(cwd: string): Promise<RubricLookup | nu
     | "tool-policy"
     | "routing-rule"
     | "fine-tuned-model"
-  )[] = ["prompt-patch", "tool-policy", "routing-rule", "fine-tuned-model"];
+    | "model-routing"
+  )[] = ["prompt-patch", "tool-policy", "routing-rule", "fine-tuned-model", "model-routing"];
 
   return async (scenarioId) => {
     try {

@@ -57,6 +57,27 @@
       "type": "array",
       "items": { "$ref": "https://autocontext.dev/schema/production-traces/redaction-marker.json" }
     },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chosen", "reason", "evaluatedAt"],
+      "properties": {
+        "chosen": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "model"],
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "model": { "type": "string", "minLength": 1 },
+            "endpoint": { "type": "string" }
+          }
+        },
+        "matchedRouteId": { "type": "string", "minLength": 1 },
+        "reason": { "enum": ["default", "matched-route", "fallback"] },
+        "fallbackReason": { "enum": ["budget-exceeded", "latency-breached", "provider-error", "no-match"] },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "metadata": { "type": "object" }
   }
 }

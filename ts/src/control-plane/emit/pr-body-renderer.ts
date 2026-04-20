@@ -176,6 +176,8 @@ function rollbackForActuator(
       return { kind: "cascade-set", dependsOn: ["tool-policy"] };
     case "fine-tuned-model":
       return { kind: "pointer-flip" };
+    case "model-routing":
+      return { kind: "content-revert" };
   }
 }
 

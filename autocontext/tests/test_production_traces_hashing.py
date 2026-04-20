@@ -15,7 +15,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---- hash_user_id / hash_session_id (pure functions, byte-compat with TS) ----
 
 

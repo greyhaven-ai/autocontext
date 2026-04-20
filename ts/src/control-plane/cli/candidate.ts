@@ -27,6 +27,7 @@ import { PROMPT_PATCH_FILENAME } from "../actuators/prompt-patch/schema.js";
 import { TOOL_POLICY_FILENAME } from "../actuators/tool-policy/schema.js";
 import { ROUTING_RULE_FILENAME } from "../actuators/routing-rule/schema.js";
 import { FINE_TUNED_MODEL_FILENAME } from "../actuators/fine-tuned-model/schema.js";
+import { MODEL_ROUTING_FILENAME } from "../actuators/model-routing/schema.js";
 import { EXIT } from "./_shared/exit-codes.js";
 import { formatOutput, type OutputMode } from "./_shared/output-formatters.js";
 import type { CliResult, CliContext } from "./types.js";
@@ -36,6 +37,7 @@ const ACTUATOR_TYPES: readonly ActuatorType[] = [
   "tool-policy",
   "routing-rule",
   "fine-tuned-model",
+  "model-routing",
 ];
 
 const PAYLOAD_FILE_BY_ACTUATOR: Readonly<Record<ActuatorType, string>> = {
@@ -43,6 +45,7 @@ const PAYLOAD_FILE_BY_ACTUATOR: Readonly<Record<ActuatorType, string>> = {
   "tool-policy": TOOL_POLICY_FILENAME,
   "routing-rule": ROUTING_RULE_FILENAME,
   "fine-tuned-model": FINE_TUNED_MODEL_FILENAME,
+  "model-routing": MODEL_ROUTING_FILENAME,
 };
 
 export const CANDIDATE_HELP_TEXT = `autoctx candidate — manage control-plane candidate artifacts

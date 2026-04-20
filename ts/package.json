@@ -27,6 +27,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./control-plane/runtime": {
+      "import": "./dist/control-plane/runtime/index.js",
+      "types": "./dist/control-plane/runtime/index.d.ts"
     }
   },
   "scripts": {

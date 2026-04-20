@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/model-routing-payload.json",
+  "title": "ModelRoutingPayload",
+  "description": "Declarative model-routing config shipped as the model-routing actuator's models.json payload file. Top-level shape: default model + ordered routes[] + fallback[] chain with guardrails for budget, latency, confidence, rollout%. Spec §4 (AC-545).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "default", "routes", "fallback"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "default": { "$ref": "#/$defs/ModelTarget" },
+    "routes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Route" }
+    },
+    "fallback": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/FallbackEntry" }
+    }
+  },
+  "$defs": {
+    "ModelTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "endpoint": { "type": ["string", "null"] }
+      }
+    },
+    "MatchExpression": {
+      "description": "Mapping of dotted context paths to per-path operator objects. Each operator object may set exactly one of { equals, contains, default:true }.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "oneOf": [
+          { "required": ["equals"] },
+          { "required": ["contains"] },
+          { "required": ["default"] }
+        ],
+        "properties": {
+          "equals": {},
+          "contains": { "type": ["string", "array"] },
+          "default": { "const": true }
+        }
+      }
+    },
+    "Route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "match", "target"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "match": { "$ref": "#/$defs/MatchExpression" },
+        "target": { "$ref": "#/$defs/ModelTarget" },
+        "rollout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["percent", "cohortKey"],
+          "properties": {
+            "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+            "cohortKey": { "type": "string", "minLength": 1 }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxCostUsdPerCall"],
+          "properties": {
+            "maxCostUsdPerCall": { "type": "number", "minimum": 0 }
+          }
+        },
+        "latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxP95Ms"],
+          "properties": {
+            "maxP95Ms": { "type": "number", "minimum": 0 }
+          }
+        },
+        "confidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minScore"],
+          "properties": {
+            "minScore": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "FallbackEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "endpoint": { "type": ["string", "null"] },
+        "when": {
+          "type": "array",
+          "items": {
+            "enum": ["budget-exceeded", "latency-breached", "provider-error", "no-match"]
+          }
+        }
+      }
+    }
+  }
+}

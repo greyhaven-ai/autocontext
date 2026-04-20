@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
 
@@ -194,7 +195,7 @@ def _partition_date(traces: list[dict[str, Any]]) -> str:
             parsed = _parse_iso_utc(started)
             if parsed is not None:
                 return parsed.strftime("%Y-%m-%d")
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def _parse_iso_utc(value: str) -> datetime | None:
@@ -205,8 +206,8 @@ def _parse_iso_utc(value: str) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 __all__ = ["TraceBatch", "build_trace", "write_jsonl"]

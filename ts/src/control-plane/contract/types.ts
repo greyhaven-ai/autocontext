@@ -12,7 +12,8 @@ export type ActuatorType =
   | "prompt-patch"
   | "tool-policy"
   | "routing-rule"
-  | "fine-tuned-model";
+  | "fine-tuned-model"
+  | "model-routing";
 
 export type ActivationState =
   | "candidate"
