@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0",
+  "traceId": "01KPHTAACM469X589DWH6ZDR1J",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.4.3" }
+  },
+  "provider": { "name": "openai" },
+  "model": "gpt-4o",
+  "env": { "environmentTag": "production", "appId": "search-agent" },
+  "messages": [
+    { "role": "user", "content": "What's the weather in Paris?", "timestamp": "2026-04-17T12:00:00.000Z" },
+    {
+      "role": "assistant",
+      "content": "",
+      "timestamp": "2026-04-17T12:00:00.600Z",
+      "toolCalls": [
+        { "toolName": "get_weather", "args": { "city": "Paris" } }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "{\"tempC\":17,\"conditions\":\"cloudy\"}",
+      "timestamp": "2026-04-17T12:00:00.900Z"
+    },
+    {
+      "role": "assistant",
+      "content": "It's 17\u00b0C and cloudy in Paris right now.",
+      "timestamp": "2026-04-17T12:00:01.500Z"
+    }
+  ],
+  "toolCalls": [
+    {
+      "toolName": "get_weather",
+      "args": { "city": "Paris" },
+      "result": { "tempC": 17, "conditions": "cloudy" },
+      "durationMs": 280
+    }
+  ],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:01.500Z",
+    "latencyMs": 1500
+  },
+  "usage": { "tokensIn": 64, "tokensOut": 32 },
+  "feedbackRefs": [],
+  "links": {},
+  "redactions": []
+}

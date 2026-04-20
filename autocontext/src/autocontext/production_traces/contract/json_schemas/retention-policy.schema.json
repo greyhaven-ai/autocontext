@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/retention-policy.json",
+  "title": "RetentionPolicy",
+  "description": "Per-installation retention policy config. Lives at .autocontext/production-traces/retention-policy.json. See spec §6.6.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "retentionDays",
+    "preserveAll",
+    "preserveCategories",
+    "gcBatchSize"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "retentionDays": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Traces whose endedAt is older than this many days are eligible for deletion."
+    },
+    "preserveAll": {
+      "type": "boolean",
+      "description": "Compliance-bound escape hatch: when true, no traces are deleted regardless of other settings."
+    },
+    "preserveCategories": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Traces whose outcome.label matches any value in this list are retained regardless of age."
+    },
+    "gcBatchSize": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of traces to evaluate-and-delete per enforcement run; bounds latency for large backlogs."
+    }
+  }
+}

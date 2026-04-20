@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0",
+  "traceId": "01KPHTAACME7DDCF3RTGW62HX3",
+  "source": {
+    "emitter": "autoctx-instrument",
+    "sdk": { "name": "autocontext-ts", "version": "0.4.3" },
+    "hostname": "worker-1.production.example.com"
+  },
+  "provider": {
+    "name": "openai",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "providerVersion": "2024-06-01"
+  },
+  "model": "gpt-4o-mini",
+  "env": {
+    "environmentTag": "production",
+    "appId": "chat-service",
+    "taskType": "support-chat"
+  },
+  "messages": [
+    { "role": "system", "content": "You are a helpful support agent.", "timestamp": "2026-04-17T12:00:00.000Z" },
+    { "role": "user", "content": "How do I reset my password?", "timestamp": "2026-04-17T12:00:00.500Z" },
+    { "role": "assistant", "content": "Click the 'Forgot password' link on the login screen.", "timestamp": "2026-04-17T12:00:01.200Z" }
+  ],
+  "toolCalls": [],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:01.200Z",
+    "latencyMs": 1200,
+    "timeToFirstTokenMs": 450
+  },
+  "usage": {
+    "tokensIn": 42,
+    "tokensOut": 18,
+    "estimatedCostUsd": 0.00012
+  },
+  "feedbackRefs": [],
+  "links": {},
+  "redactions": []
+}

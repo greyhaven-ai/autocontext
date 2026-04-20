@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0",
+  "datasetId": "ds_SB3B6WE96ARGPA1GZ2WWG7BXRC",
+  "name": "single-cluster-dataset",
+  "description": "single-cluster golden scenario",
+  "createdAt": "2026-04-17T12:00:20.000Z",
+  "autoctxVersion": "layer9-golden",
+  "source": {
+    "traceCount": 20,
+    "timeRange": {
+      "from": "2026-04-17T12:00:00.000Z",
+      "to": "2026-04-17T12:00:20.000Z"
+    },
+    "clusterStrategy": "taskType",
+    "filterRules": [
+      {
+        "type": "gate",
+        "include": [
+          {
+            "env.taskType": {
+              "equals": "checkout"
+            }
+          }
+        ]
+      },
+      {
+        "type": "split",
+        "train": 0.7,
+        "eval": 0.15,
+        "holdout": 0.15,
+        "shuffle": false,
+        "seed": 7
+      }
+    ],
+    "redactionPolicy": {
+      "mode": "on-export",
+      "snapshotHash": "sha256:fb253e93c1fd7818ba7799775dc5ec0f5ccd89110b02ef62e67b898d756b6aff"
+    }
+  },
+  "splits": {
+    "train": {
+      "rowCount": 14,
+      "fileHash": "sha256:0f386ac010f61792b51a763f89ccae0c409a3359dbe8616eaa12696f07090db0"
+    },
+    "eval": {
+      "rowCount": 3,
+      "fileHash": "sha256:1f10e53c87032854ed1b15499216807d9c360ae393797e3aabf1d1703b85bf44"
+    },
+    "holdout": {
+      "rowCount": 3,
+      "fileHash": "sha256:80cafb93991f508667e8f569507bf390d84a7cfe0d9cb954b9ece9e1612fe7d2"
+    }
+  },
+  "clusters": [
+    {
+      "clusterId": "checkout",
+      "size": 20,
+      "rubricId": "rubric-accuracy",
+      "rubricSource": "explicit"
+    }
+  ],
+  "provenance": {
+    "configHash": "sha256:e419fe3c3ac6ba2ca586bec3893ce1c4b57070be0b6e1bff4c3bf1dd61805536",
+    "inputTracesHash": "sha256:93cd7a1f94f93caf983fad6a79281a59fd73233e3f445a30f8140964d355e31f"
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/production-trace.json",
+  "title": "ProductionTrace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "traceId",
+    "source",
+    "provider",
+    "model",
+    "env",
+    "messages",
+    "toolCalls",
+    "timing",
+    "usage",
+    "feedbackRefs",
+    "links",
+    "redactions"
+  ],
+  "properties": {
+    "schemaVersion": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/SchemaVersion" },
+    "traceId": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/Ulid" },
+    "source": { "$ref": "https://autocontext.dev/schema/production-traces/trace-source.json" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/ProviderName" },
+        "endpoint": { "type": "string" },
+        "providerVersion": { "type": "string" }
+      }
+    },
+    "model": { "type": "string", "minLength": 1 },
+    "session": { "$ref": "https://autocontext.dev/schema/production-traces/session.json" },
+    "env": { "$ref": "https://autocontext.dev/schema/production-traces/env-context.json" },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/TraceMessage" }
+    },
+    "toolCalls": {
+      "type": "array",
+      "items": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/ToolCall" }
+    },
+    "outcome": { "$ref": "https://autocontext.dev/schema/production-traces/production-outcome.json" },
+    "timing": { "$ref": "https://autocontext.dev/schema/production-traces/timing-info.json" },
+    "usage": { "$ref": "https://autocontext.dev/schema/production-traces/usage-info.json" },
+    "feedbackRefs": {
+      "type": "array",
+      "items": { "$ref": "https://autocontext.dev/schema/production-traces/feedback-ref.json" }
+    },
+    "links": { "$ref": "https://autocontext.dev/schema/production-traces/trace-links.json" },
+    "redactions": {
+      "type": "array",
+      "items": { "$ref": "https://autocontext.dev/schema/production-traces/redaction-marker.json" }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chosen", "reason", "evaluatedAt"],
+      "properties": {
+        "chosen": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "model"],
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "model": { "type": "string", "minLength": 1 },
+            "endpoint": { "type": "string" }
+          }
+        },
+        "matchedRouteId": { "type": "string", "minLength": 1 },
+        "reason": { "enum": ["default", "matched-route", "fallback"] },
+        "fallbackReason": { "enum": ["budget-exceeded", "latency-breached", "provider-error", "no-match"] },
+        "evaluatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "metadata": { "type": "object" }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/feedback-ref.json",
+  "title": "FeedbackRef",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "submittedAt", "ref"],
+  "properties": {
+    "kind": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/FeedbackKind" },
+    "submittedAt": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" },
+    "ref": { "type": "string", "minLength": 1 },
+    "score": { "type": "number" },
+    "comment": { "type": "string" }
+  }
+}

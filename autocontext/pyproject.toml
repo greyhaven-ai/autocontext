@@ -27,6 +27,7 @@ dependencies = [
   "httpx>=0.28.1",
   "prime-sandboxes>=0.2.14",
   "pydantic>=2.11.0",
+  "python-ulid>=3.0.0",
   "pyyaml>=6.0.2",
   "rich>=13.9.4",
   "typer>=0.16.0",

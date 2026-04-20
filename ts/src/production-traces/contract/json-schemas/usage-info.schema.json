@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/usage-info.json",
+  "title": "UsageInfo",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tokensIn", "tokensOut"],
+  "properties": {
+    "tokensIn": { "type": "integer", "minimum": 0 },
+    "tokensOut": { "type": "integer", "minimum": 0 },
+    "estimatedCostUsd": { "type": "number", "minimum": 0 },
+    "providerUsage": { "type": "object" }
+  }
+}

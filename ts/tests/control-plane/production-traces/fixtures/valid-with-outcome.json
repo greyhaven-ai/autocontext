@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "1.0",
+  "traceId": "01KPHTAACM98V0KY1ZDX0DZ6AE",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.4.3" }
+  },
+  "provider": { "name": "openai" },
+  "model": "gpt-4o-mini",
+  "env": { "environmentTag": "production", "appId": "my-app" },
+  "messages": [
+    { "role": "user", "content": "Summarize this article ...", "timestamp": "2026-04-17T12:00:00.000Z" },
+    { "role": "assistant", "content": "The article argues ...", "timestamp": "2026-04-17T12:00:02.000Z" }
+  ],
+  "toolCalls": [],
+  "outcome": {
+    "label": "success",
+    "score": 0.92,
+    "reasoning": "Coherent, faithful summary; no fabrications detected.",
+    "signals": { "relevance": 0.95, "fluency": 0.9 }
+  },
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:02.000Z",
+    "latencyMs": 2000
+  },
+  "usage": { "tokensIn": 256, "tokensOut": 64 },
+  "feedbackRefs": [],
+  "links": {},
+  "redactions": []
+}

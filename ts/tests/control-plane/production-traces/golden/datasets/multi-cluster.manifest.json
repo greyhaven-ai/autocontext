@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1.0",
+  "datasetId": "ds_5NKV1BES09A8XKXBP82XB0AE7Z",
+  "name": "multi-cluster-dataset",
+  "description": "multi-cluster golden scenario",
+  "createdAt": "2026-04-17T12:00:30.000Z",
+  "autoctxVersion": "layer9-golden",
+  "source": {
+    "traceCount": 30,
+    "timeRange": {
+      "from": "2026-04-17T12:00:00.000Z",
+      "to": "2026-04-17T12:00:30.000Z"
+    },
+    "clusterStrategy": "taskType",
+    "filterRules": [
+      {
+        "type": "split",
+        "train": 0.7,
+        "eval": 0.15,
+        "holdout": 0.15,
+        "shuffle": false,
+        "seed": 11
+      }
+    ],
+    "redactionPolicy": {
+      "mode": "on-export",
+      "snapshotHash": "sha256:fb253e93c1fd7818ba7799775dc5ec0f5ccd89110b02ef62e67b898d756b6aff"
+    }
+  },
+  "splits": {
+    "train": {
+      "rowCount": 21,
+      "fileHash": "sha256:61d5c29daa39566dea7d1c7611b7404404064a407fe969af4e91ea28cc903c8c"
+    },
+    "eval": {
+      "rowCount": 4,
+      "fileHash": "sha256:0436108264e0d8b7aca0055dfc67c41a6a1c237f9e44f4ce561fb1c36511c1ff"
+    },
+    "holdout": {
+      "rowCount": 5,
+      "fileHash": "sha256:fc2744c8152bbb1ab90ea330b251b4a7cee2c5d57d6df54e73e4e9da3a85d18f"
+    }
+  },
+  "clusters": [
+    {
+      "clusterId": "checkout",
+      "size": 10,
+      "rubricId": "rubric-accuracy",
+      "rubricSource": "explicit"
+    },
+    {
+      "clusterId": "password-reset",
+      "size": 10,
+      "rubricId": "rubric-safety",
+      "rubricSource": "explicit"
+    },
+    {
+      "clusterId": "support",
+      "size": 10,
+      "rubricId": "rubric-latency",
+      "rubricSource": "registry"
+    }
+  ],
+  "provenance": {
+    "configHash": "sha256:a971ab32465685ae91adce9ad36fe453de8c5f20efd85f0c6f9a76dc5cc08f7e",
+    "inputTracesHash": "sha256:b6537581ee2bb86d923896034d56da423756121cdca4b9a599cc15a2c0d55b1e"
+  }
+}
