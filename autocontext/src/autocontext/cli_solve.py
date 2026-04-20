@@ -71,6 +71,7 @@ def run_solve_command(
     load_settings_fn: Callable[[], AppSettings],
     write_json_stdout: Callable[[object], None],
     write_json_stderr: Callable[[str], None],
+    family_override: str | None = None,
 ) -> None:
     """Create a scenario on demand, run it, and export the solved package."""
     from autocontext.knowledge.solver import SolveManager
@@ -83,7 +84,11 @@ def run_solve_command(
     manager = SolveManager(settings)
 
     try:
-        job = manager.solve_sync(description=description, generations=gens)
+        job = manager.solve_sync(
+            description=description,
+            generations=gens,
+            family_override=family_override or None,
+        )
     except KeyboardInterrupt:
         if json_output:
             write_json_stderr("solve interrupted")
@@ -170,7 +175,13 @@ def register_solve_command(
         ),
         output: str = typer.Option("", "--output", help="Optional JSON file path for the solved package"),
         json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+        family: str = typer.Option(
+            "",
+            "--family",
+            help="Force a specific scenario family, bypassing the keyword classifier",
+        ),
     ) -> None:
+        _validate_family_override(family)
         run_solve_command(
             description=description,
             gens=gens,
@@ -182,4 +193,5 @@ def register_solve_command(
             load_settings_fn=_cli_attr(dependency_module, "load_settings"),
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
             write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+            family_override=family or None,
         )
