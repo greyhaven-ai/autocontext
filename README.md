@@ -4,9 +4,35 @@
 </p>
 
 <p align="center"><strong>turn repeated agent work into validated, reusable execution</strong></p>
+
+<p align="center">
+  <a href="https://github.com/greyhaven-ai/autocontext/blob/main/LICENSE"><img src="https://img.shields.io/github/license/greyhaven-ai/autocontext" alt="License"></a>
+  <a href="https://github.com/greyhaven-ai/autocontext/stargazers"><img src="https://img.shields.io/github/stars/greyhaven-ai/autocontext" alt="GitHub stars"></a>
+  <a href="https://github.com/greyhaven-ai/autocontext/commits/main"><img src="https://img.shields.io/github/last-commit/greyhaven-ai/autocontext" alt="Last commit"></a>
+  <a href="https://pypi.org/project/autocontext/"><img src="https://img.shields.io/pypi/v/autocontext" alt="PyPI version"></a>
+  <a href="https://www.npmjs.com/package/autoctx"><img src="https://img.shields.io/npm/v/autoctx" alt="npm version"></a>
+</p>
+
 <!-- autocontext-readme-hero:end -->
 
 autocontext runs LLM agents through structured scenarios, evaluates their outputs, and accumulates the knowledge that improved results — so repeated runs get better, not just different. Point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
+
+## Table of Contents
+
+- [What's New](#whats-new)
+- [What actually is autocontext?](#what-actually-is-autocontext)
+- [How People Use It](#how-people-use-it)
+- [How It Works](#how-it-works)
+- [Which Surface Fits Which Job](#which-surface-fits-which-job)
+- [Choose An Entry Point](#choose-an-entry-point)
+- [Scenario Families](#scenario-families)
+- [Core Capabilities](#core-capabilities)
+- [Quick Start From Source](#quick-start-from-source)
+- [Installable Packages](#installable-packages)
+- [Which Package Should You Use?](#which-package-should-you-use)
+- [Common Workflows](#common-workflows)
+- [Repository Layout](#repository-layout)
+- [Where To Look Next](#where-to-look-next)
 
 <!-- autocontext-whats-new:start -->
 ## What's New

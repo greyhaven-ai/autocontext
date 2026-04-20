@@ -19,6 +19,33 @@ SYNC_BLOCK_START = "<!-- autocontext-readme-hero:start -->"
 SYNC_BLOCK_END = "<!-- autocontext-readme-hero:end -->"
 WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
 WHATS_NEW_BLOCK_END = "<!-- autocontext-whats-new:end -->"
+README_BADGES = (
+    (
+        "https://github.com/greyhaven-ai/autocontext/blob/main/LICENSE",
+        "https://img.shields.io/github/license/greyhaven-ai/autocontext",
+        "License",
+    ),
+    (
+        "https://github.com/greyhaven-ai/autocontext/stargazers",
+        "https://img.shields.io/github/stars/greyhaven-ai/autocontext",
+        "GitHub stars",
+    ),
+    (
+        "https://github.com/greyhaven-ai/autocontext/commits/main",
+        "https://img.shields.io/github/last-commit/greyhaven-ai/autocontext",
+        "Last commit",
+    ),
+    (
+        "https://pypi.org/project/autocontext/",
+        "https://img.shields.io/pypi/v/autocontext",
+        "PyPI version",
+    ),
+    (
+        "https://www.npmjs.com/package/autoctx",
+        "https://img.shields.io/npm/v/autoctx",
+        "npm version",
+    ),
+)
 
 
 def _assets_dir() -> Path:
@@ -138,12 +165,16 @@ def print_banner_rich() -> None:
 
 def render_readme_banner_block() -> str:
     """Render the synced README hero block."""
+    badges = "\n".join(f'  <a href="{href}"><img src="{image}" alt="{alt}"></a>' for href, image, alt in README_BADGES)
     return (
         f"{SYNC_BLOCK_START}\n"
         '<p align="center">\n'
         '  <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" style="max-width: 100%; height: auto;" />\n'
         "</p>\n\n"
-        f'<p align="center"><strong>{TAGLINE}</strong></p>\n'
+        f'<p align="center"><strong>{TAGLINE}</strong></p>\n\n'
+        '<p align="center">\n'
+        f"{badges}\n"
+        "</p>\n\n"
         f"{SYNC_BLOCK_END}"
     )
 
