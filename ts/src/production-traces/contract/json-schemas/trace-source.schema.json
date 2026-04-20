@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/trace-source.json",
+  "title": "TraceSource",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["emitter", "sdk"],
+  "properties": {
+    "emitter": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sdk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "hostname": { "type": "string" }
+  }
+}

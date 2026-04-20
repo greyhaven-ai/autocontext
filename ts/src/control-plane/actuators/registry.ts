@@ -8,6 +8,7 @@
 //        tool-policy      → content-revert
 //        routing-rule     → cascade-set
 //        fine-tuned-model → pointer-flip
+//        model-routing    → content-revert
 //
 // A second call for an already-registered type throws — by design, there is one
 // canonical implementation per ActuatorType in a given process.
@@ -105,6 +106,7 @@ const MIN_ROLLBACK: Record<ActuatorType, RollbackStrategy["kind"]> = {
   "tool-policy": "content-revert",
   "routing-rule": "cascade-set",
   "fine-tuned-model": "pointer-flip",
+  "model-routing": "content-revert",
 };
 
 function meetsMinimum(type: ActuatorType, declared: RollbackStrategy["kind"]): boolean {

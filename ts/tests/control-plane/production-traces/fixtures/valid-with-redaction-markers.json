@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0",
+  "traceId": "01KPHTAACMWK9SKPM5TNQ0GBT8",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.4.3" }
+  },
+  "provider": { "name": "anthropic" },
+  "model": "claude-sonnet-4-20250514",
+  "env": { "environmentTag": "production", "appId": "crm-agent" },
+  "messages": [
+    { "role": "user", "content": "Contact alice@example.com about her ticket.", "timestamp": "2026-04-17T12:00:00.000Z" },
+    { "role": "assistant", "content": "I'll email her now.", "timestamp": "2026-04-17T12:00:01.500Z" }
+  ],
+  "toolCalls": [],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:01.500Z",
+    "latencyMs": 1500
+  },
+  "usage": { "tokensIn": 32, "tokensOut": 16 },
+  "feedbackRefs": [],
+  "links": {},
+  "redactions": [
+    {
+      "path": "/messages/0/content",
+      "reason": "pii-email",
+      "category": "customer-pii",
+      "detectedBy": "ingestion",
+      "detectedAt": "2026-04-17T12:00:02.000Z"
+    }
+  ]
+}

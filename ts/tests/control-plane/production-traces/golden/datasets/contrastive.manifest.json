@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "1.0",
+  "datasetId": "ds_A95QY0QZH5EDWJZ47MKFGDFXCY",
+  "name": "contrastive-dataset",
+  "description": "contrastive golden scenario",
+  "createdAt": "2026-04-17T12:00:40.000Z",
+  "autoctxVersion": "layer9-golden",
+  "source": {
+    "traceCount": 40,
+    "timeRange": {
+      "from": "2026-04-17T12:00:00.000Z",
+      "to": "2026-04-17T12:00:40.000Z"
+    },
+    "clusterStrategy": "taskType",
+    "filterRules": [
+      {
+        "type": "contrastive",
+        "failureCriterion": {
+          "outcome.label": {
+            "equals": "failure"
+          }
+        },
+        "successCriterion": {
+          "outcome.label": {
+            "equals": "success"
+          }
+        },
+        "pairStrategy": "same-cluster",
+        "maxPairsPerCluster": 20
+      },
+      {
+        "type": "split",
+        "train": 0.7,
+        "eval": 0.15,
+        "holdout": 0.15,
+        "shuffle": false,
+        "seed": 13
+      }
+    ],
+    "redactionPolicy": {
+      "mode": "on-export",
+      "snapshotHash": "sha256:fb253e93c1fd7818ba7799775dc5ec0f5ccd89110b02ef62e67b898d756b6aff"
+    }
+  },
+  "splits": {
+    "train": {
+      "rowCount": 28,
+      "fileHash": "sha256:dbd1fe6453e3d279b8095767062c3c288a80d806349d64023ea327d5688c20e0"
+    },
+    "eval": {
+      "rowCount": 6,
+      "fileHash": "sha256:a60e09cac6d2fa4c2f3a6cc1917391b2576b69668dac95140c80afa211a51ffa"
+    },
+    "holdout": {
+      "rowCount": 6,
+      "fileHash": "sha256:d3512b8a8137de358ca1b5ee42e165145cb7d43ff5c5f64eddaa0415e6d6ffe5"
+    }
+  },
+  "clusters": [
+    {
+      "clusterId": "support",
+      "size": 40,
+      "rubricId": "rubric-accuracy",
+      "rubricSource": "explicit"
+    }
+  ],
+  "provenance": {
+    "configHash": "sha256:5ddb93f21e173e2aa851680333cb92d5193c0f24bd08df17c3f34ef588301340",
+    "inputTracesHash": "sha256:b53790464f1f92a472b79d2f8519951974632ef62259f1f49059d4565690ac72"
+  }
+}

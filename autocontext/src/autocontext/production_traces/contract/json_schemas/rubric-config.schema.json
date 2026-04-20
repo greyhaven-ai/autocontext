@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/rubric-config.json",
+  "title": "RubricConfig",
+  "description": "Explicit per-cluster rubric mapping (spec §8.3 source #1). Consumed by build-dataset as the highest-precedence rubric source.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rubricsByCluster"],
+  "properties": {
+    "rubricsByCluster": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "path"],
+            "properties": {
+              "source": { "type": "string", "const": "file" },
+              "path":   { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "rubric"],
+            "properties": {
+              "source": { "type": "string", "const": "inline" },
+              "rubric": { "$ref": "#/$defs/Rubric" }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "Rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubricId", "dimensions"],
+      "properties": {
+        "rubricId": { "type": "string", "minLength": 1 },
+        "dimensions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "description": { "type": "string" }
+      }
+    }
+  }
+}

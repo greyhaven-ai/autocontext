@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/selection-rule.json",
+  "title": "SelectionRule",
+  "description": "A single selection rule in the dataset-generation pipeline (per spec §8.2). Rules are applied in order; each rule transforms the trace set forward.",
+  "oneOf": [
+    { "$ref": "#/$defs/GateRule" },
+    { "$ref": "#/$defs/TopQuartileRule" },
+    { "$ref": "#/$defs/ContrastiveRule" },
+    { "$ref": "#/$defs/SplitRule" }
+  ],
+  "$defs": {
+    "MatchExpression": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "equals": {},
+          "contains": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "default": { "type": "boolean", "const": true }
+        }
+      }
+    },
+    "GateRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "const": "gate" },
+        "include": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MatchExpression" }
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MatchExpression" }
+        }
+      }
+    },
+    "TopQuartileRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "by", "percentile"],
+      "properties": {
+        "type": { "type": "string", "const": "top-quartile" },
+        "by": { "type": "string", "minLength": 1 },
+        "percentile": { "type": "number", "minimum": 0, "maximum": 100 },
+        "perCluster": { "type": "boolean" }
+      }
+    },
+    "ContrastiveRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "failureCriterion", "successCriterion"],
+      "properties": {
+        "type": { "type": "string", "const": "contrastive" },
+        "failureCriterion": { "$ref": "#/$defs/MatchExpression" },
+        "successCriterion": { "$ref": "#/$defs/MatchExpression" },
+        "pairStrategy": {
+          "type": "string",
+          "enum": ["same-cluster"]
+        },
+        "maxPairsPerCluster": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "SplitRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "train", "eval", "holdout"],
+      "properties": {
+        "type": { "type": "string", "const": "split" },
+        "train": { "type": "number", "minimum": 0, "maximum": 1 },
+        "eval": { "type": "number", "minimum": 0, "maximum": 1 },
+        "holdout": { "type": "number", "minimum": 0, "maximum": 1 },
+        "shuffle": { "type": "boolean" },
+        "seed": { "type": "integer" }
+      }
+    }
+  }
+}

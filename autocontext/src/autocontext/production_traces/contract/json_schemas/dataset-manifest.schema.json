@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/dataset-manifest.json",
+  "title": "DatasetManifest",
+  "description": "Top-level manifest for a generated dataset (per spec §8.4). Lives at .autocontext/datasets/<datasetId>/manifest.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "datasetId",
+    "name",
+    "description",
+    "createdAt",
+    "autoctxVersion",
+    "source",
+    "splits",
+    "clusters",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/SchemaVersion" },
+    "datasetId": {
+      "type": "string",
+      "pattern": "^ds_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "createdAt": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" },
+    "autoctxVersion": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceCount", "timeRange", "clusterStrategy", "filterRules", "redactionPolicy"],
+      "properties": {
+        "traceCount": { "type": "integer", "minimum": 0 },
+        "timeRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" },
+            "to":   { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/IsoTimestamp" }
+          }
+        },
+        "clusterStrategy": {
+          "type": "string",
+          "enum": ["taskType", "rules"]
+        },
+        "filterRules": {
+          "type": "array",
+          "items": { "$ref": "https://autocontext.dev/schema/production-traces/selection-rule.json" }
+        },
+        "redactionPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "snapshotHash"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["on-export", "on-ingest"]
+            },
+            "snapshotHash": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/ContentHash" }
+          }
+        }
+      }
+    },
+    "splits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["train", "eval", "holdout"],
+      "properties": {
+        "train":   { "$ref": "#/$defs/SplitStats" },
+        "eval":    { "$ref": "#/$defs/SplitStats" },
+        "holdout": { "$ref": "#/$defs/SplitStats" }
+      }
+    },
+    "clusters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clusterId", "size"],
+        "properties": {
+          "clusterId": { "type": "string", "minLength": 1 },
+          "size": { "type": "integer", "minimum": 0 },
+          "rubricId": { "type": "string", "minLength": 1 },
+          "rubricSource": {
+            "type": "string",
+            "enum": ["explicit", "registry", "synthetic"]
+          },
+          "skippedReason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configHash", "inputTracesHash"],
+      "properties": {
+        "configHash":      { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/ContentHash" },
+        "inputTracesHash": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/ContentHash" }
+      }
+    }
+  },
+  "$defs": {
+    "SplitStats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowCount", "fileHash"],
+      "properties": {
+        "rowCount": { "type": "integer", "minimum": 0 },
+        "fileHash": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/ContentHash" }
+      }
+    }
+  }
+}

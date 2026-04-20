@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autocontext.dev/schema/production-traces/trace-links.json",
+  "title": "TraceLinks",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "scenarioId": { "$ref": "https://autocontext.dev/schema/production-traces/shared-defs.json#/$defs/Scenario" },
+    "runId": { "type": "string", "minLength": 1 },
+    "evalExampleIds": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "trainingRecordIds": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

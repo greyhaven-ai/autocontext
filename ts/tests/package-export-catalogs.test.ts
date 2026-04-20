@@ -14,6 +14,7 @@ describe("package root exports", () => {
     expect(pkg.ModelStrategySelector).toBeDefined();
     expect(pkg.createMcpServer).toBeDefined();
     expect(pkg.MissionManager).toBeDefined();
+    expect(pkg.chooseModel).toBeDefined();
   });
 
   it("avoids package catalog barrel hops in ts/src/index.ts", () => {
@@ -23,5 +24,16 @@ describe("package root exports", () => {
     expect(indexSource).not.toContain('export * from "./package-execution-catalog.js";');
     expect(indexSource).not.toContain('export * from "./package-trace-training-catalog.js";');
     expect(indexSource).not.toContain('export * from "./package-platform-catalog.js";');
+  });
+
+  it("publishes the control-plane runtime subpath for chooseModel", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"),
+    ) as { exports?: Record<string, { import?: string; types?: string }> };
+
+    expect(packageJson.exports?.["./control-plane/runtime"]).toEqual({
+      import: "./dist/control-plane/runtime/index.js",
+      types: "./dist/control-plane/runtime/index.d.ts",
+    });
   });
 });
