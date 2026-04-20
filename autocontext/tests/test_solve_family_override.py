@@ -125,7 +125,10 @@ class TestSolveScenarioBuilderFamilyOverride:
             ):
                 result = builder.build("please classify me")
 
-        classifier_mock.assert_called_once_with("please classify me")
+        classifier_mock.assert_called_once()
+        args, kwargs = classifier_mock.call_args
+        assert args == ("please classify me",)
+        assert kwargs["llm_fn"]("", "") == ""
         assert result.family_name == "simulation"
 
 
