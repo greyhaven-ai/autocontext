@@ -79,5 +79,12 @@ def parse_artifact_editing_spec(text: str) -> ArtifactEditingSpec:
 
 
 def design_artifact_editing(description: str, llm_fn: LlmFn) -> ArtifactEditingSpec:
-    response = llm_fn(ARTIFACT_EDITING_DESIGNER_SYSTEM, f"User description:\n{description}")
-    return parse_artifact_editing_spec(response)
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=ARTIFACT_EDITING_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_artifact_editing_spec,
+        delimiter_hint=f"{ARTIFACT_SPEC_START} ... {ARTIFACT_SPEC_END}",
+    )

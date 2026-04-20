@@ -118,6 +118,12 @@ def parse_tool_fragility_spec(text: str) -> ToolFragilitySpec:
 
 
 def design_tool_fragility(description: str, llm_fn: LlmFn) -> ToolFragilitySpec:
-    return parse_tool_fragility_spec(
-        llm_fn(TOOL_FRAGILITY_DESIGNER_SYSTEM, f"User description:\n{description}")
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=TOOL_FRAGILITY_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_tool_fragility_spec,
+        delimiter_hint=f"{TOOL_FRAGILITY_SPEC_START} ... {TOOL_FRAGILITY_SPEC_END}",
     )

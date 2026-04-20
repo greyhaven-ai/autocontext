@@ -116,6 +116,22 @@ class TestDesignValidatedAgentTask:
         assert SPEC_START in retry_user_prompt
         assert _TEXT_DESCRIPTION in retry_user_prompt
 
+    def test_retries_after_unparseable_intent_correction_response(self) -> None:
+        llm_fn = _scripted_llm_fn([
+            _spec_response(_INVALID_CODE_FOR_TEXT_DESCRIPTION),
+            "not delimited json",
+            _spec_response(_VALID_TEXT_SPEC),
+        ])
+
+        spec = design_validated_agent_task(_TEXT_DESCRIPTION, llm_fn, max_retries=2)
+
+        assert spec.output_format == "free_text"
+        assert len(llm_fn.calls) == 3  # type: ignore[attr-defined]
+        _system, retry_user_prompt = llm_fn.calls[2]  # type: ignore[attr-defined]
+        assert "could not be parsed" in retry_user_prompt
+        assert "Validation errors" in retry_user_prompt
+        assert _TEXT_DESCRIPTION in retry_user_prompt
+
     def test_raises_after_max_retries_exhausted(self) -> None:
         # All 3 attempts return the invalid spec.
         llm_fn = _scripted_llm_fn([

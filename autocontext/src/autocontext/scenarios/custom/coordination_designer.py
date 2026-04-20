@@ -104,6 +104,12 @@ def parse_coordination_spec(text: str) -> CoordinationSpec:
 def design_coordination(
     description: str, llm_fn: LlmFn
 ) -> CoordinationSpec:
-    return parse_coordination_spec(
-        llm_fn(COORDINATION_DESIGNER_SYSTEM, f"User description:\n{description}")
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=COORDINATION_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_coordination_spec,
+        delimiter_hint=f"{COORDINATION_SPEC_START} ... {COORDINATION_SPEC_END}",
     )

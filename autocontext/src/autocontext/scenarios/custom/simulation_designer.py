@@ -97,4 +97,12 @@ def parse_simulation_spec(text: str) -> SimulationSpec:
 
 
 def design_simulation(description: str, llm_fn: LlmFn) -> SimulationSpec:
-    return parse_simulation_spec(llm_fn(SIMULATION_DESIGNER_SYSTEM, f"User description:\n{description}"))
+    from autocontext.scenarios.custom.designer_retry import design_with_parse_retry
+
+    return design_with_parse_retry(
+        llm_fn=llm_fn,
+        system_prompt=SIMULATION_DESIGNER_SYSTEM,
+        user_prompt=f"User description:\n{description}",
+        parser=parse_simulation_spec,
+        delimiter_hint=f"{SIM_SPEC_START} ... {SIM_SPEC_END}",
+    )
