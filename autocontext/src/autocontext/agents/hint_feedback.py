@@ -22,6 +22,68 @@ from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
+_HINT_REFLECTION_MAX_HINTS = 4
+_HINT_REFLECTION_MAX_HINT_CHARS = 72
+_HINT_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+(.*\S)\s*$")
+_HINT_MARKUP_RE = re.compile(r"[*`]+")
+_HINT_WS_RE = re.compile(r"\s+")
+
+
+def _sanitize_hint_text(text: str) -> str:
+    cleaned = _HINT_MARKUP_RE.sub("", text)
+    cleaned = _HINT_WS_RE.sub(" ", cleaned).strip()
+    return cleaned
+
+
+def _truncate_hint_text(text: str, *, limit: int = _HINT_REFLECTION_MAX_HINT_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def prepare_hint_reflection_items(hints: str) -> list[str]:
+    raw = hints.strip()
+    if not raw:
+        return []
+
+    parsed_items: list[str] = []
+    current_parts: list[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = _HINT_LIST_ITEM_RE.match(line)
+        if match:
+            if current_parts:
+                parsed_items.append(" ".join(current_parts))
+            current_parts = [match.group(1).strip()]
+            continue
+        if current_parts:
+            current_parts.append(stripped)
+        else:
+            current_parts = [stripped]
+    if current_parts:
+        parsed_items.append(" ".join(current_parts))
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in parsed_items:
+        cleaned = _truncate_hint_text(_sanitize_hint_text(item))
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(cleaned)
+        if len(normalized) >= _HINT_REFLECTION_MAX_HINTS:
+            break
+
+    if normalized:
+        return normalized
+    fallback = _truncate_hint_text(_sanitize_hint_text(raw))
+    return [fallback] if fallback else []
+
 
 class HintFeedback(BaseModel):
     """Competitor's annotation of hint quality after tournament."""
@@ -54,26 +116,26 @@ def build_hint_reflection_prompt(
     tournament_best_score: float,
     tournament_mean_score: float,
     previous_best: float,
+    hint_items: list[str] | None = None,
 ) -> str:
     """Build the post-tournament reflection prompt for the competitor."""
-    hint_block = hints.strip() if hints.strip() else "(No hints were provided)"
+    compact_items = hint_items if hint_items is not None else prepare_hint_reflection_items(hints)
+    hint_block = (
+        "\n".join(f"{idx}. {item}" for idx, item in enumerate(compact_items, start=1))
+        if compact_items
+        else "(No hints were provided)"
+    )
 
     return (
-        "You just completed a tournament. Reflect on the coach's hints "
-        "and annotate which were helpful, misleading, or missing.\n\n"
-        f"## Coach Hints Used\n{hint_block}\n\n"
-        f"## Tournament Results\n"
-        f"Best score: {tournament_best_score:.4f}\n"
-        f"Mean score: {tournament_mean_score:.4f}\n"
-        f"Previous best: {previous_best:.4f}\n"
-        f"Delta: {tournament_best_score - previous_best:+.4f}\n\n"
-        "## Your Task\n"
-        "Based on your actual match experience, annotate the hints:\n"
-        "Return a JSON object with three lists:\n"
-        '- "helpful": hints that led to good outcomes\n'
-        '- "misleading": hints that were wrong or counterproductive\n'
-        '- "missing": guidance you needed but didn\'t receive\n\n'
-        "Return ONLY the JSON object, no commentary."
+        "You just completed a tournament.\n\n"
+        f"Coach hints used:\n{hint_block}\n\n"
+        "Results: "
+        f"best={tournament_best_score:.4f} "
+        f"mean={tournament_mean_score:.4f} "
+        f"previous_best={previous_best:.4f} "
+        f"delta={tournament_best_score - previous_best:+.4f}.\n\n"
+        'Return ONLY compact JSON: {"helpful_hint_numbers":[],"misleading_hint_numbers":[],"missing":[]}. '
+        "Use only the hint numbers shown above. Keep missing items short."
     )
 
 
@@ -95,7 +157,37 @@ def _normalize_feedback_list(value: Any) -> list[str]:
     return normalized
 
 
-def parse_hint_feedback(raw_text: str, generation: int) -> HintFeedback:
+def _normalize_feedback_index_list(value: Any, *, max_index: int) -> list[int]:
+    if isinstance(value, (int, str)):
+        candidates = [value]
+    elif isinstance(value, list):
+        candidates = value
+    else:
+        return []
+
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for candidate in candidates:
+        index: int | None = None
+        if isinstance(candidate, int):
+            index = candidate
+        elif isinstance(candidate, str):
+            stripped = candidate.strip()
+            if stripped.isdigit():
+                index = int(stripped)
+        if index is None or index < 1 or index > max_index or index in seen:
+            continue
+        seen.add(index)
+        normalized.append(index)
+    return normalized
+
+
+def parse_hint_feedback(
+    raw_text: str,
+    generation: int,
+    *,
+    hint_items: list[str] | None = None,
+) -> HintFeedback:
     """Parse competitor's hint feedback response."""
     text = raw_text.strip()
 
@@ -107,9 +199,31 @@ def parse_hint_feedback(raw_text: str, generation: int) -> HintFeedback:
     try:
         data = json.loads(text)
         if isinstance(data, dict):
+            helpful: list[str]
+            misleading: list[str]
+            if hint_items:
+                helpful_indexes = _normalize_feedback_index_list(
+                    data.get("helpful_hint_numbers"),
+                    max_index=len(hint_items),
+                )
+                misleading_indexes = _normalize_feedback_index_list(
+                    data.get("misleading_hint_numbers"),
+                    max_index=len(hint_items),
+                )
+                helpful = [hint_items[index - 1] for index in helpful_indexes]
+                misleading = [hint_items[index - 1] for index in misleading_indexes]
+            else:
+                helpful = []
+                misleading = []
+
+            if not helpful:
+                helpful = _normalize_feedback_list(data.get("helpful"))
+            if not misleading:
+                misleading = _normalize_feedback_list(data.get("misleading"))
+
             return HintFeedback(
-                helpful=_normalize_feedback_list(data.get("helpful")),
-                misleading=_normalize_feedback_list(data.get("misleading")),
+                helpful=helpful,
+                misleading=misleading,
                 missing=_normalize_feedback_list(data.get("missing")),
                 generation=generation,
             )

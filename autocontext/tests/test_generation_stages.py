@@ -257,9 +257,7 @@ class TestStageKnowledgeSetup:
         artifacts.read_skills.return_value = ""
         artifacts.read_mutation_replay.return_value = ""
         artifacts.read_latest_weakness_reports_markdown.return_value = (
-            "# Weakness Report: run_1\n"
-            "## [HIGH] dead_end_pattern\n"
-            "Repeated rollbacks detected"
+            "# Weakness Report: run_1\n## [HIGH] dead_end_pattern\nRepeated rollbacks detected"
         )
         artifacts.read_latest_progress_reports_markdown.return_value = ""
         artifacts.read_latest_advance_analysis.return_value = ""
@@ -284,9 +282,7 @@ class TestStageKnowledgeSetup:
         artifacts.read_mutation_replay.return_value = ""
         artifacts.read_latest_weakness_reports_markdown.return_value = ""
         artifacts.read_latest_progress_reports_markdown.return_value = (
-            "# Progress Report: run_2\n"
-            "- Total cost: $0.0240\n"
-            "- Tokens per advance: 3,400"
+            "# Progress Report: run_2\n- Total cost: $0.0240\n- Tokens per advance: 3,400"
         )
         artifacts.read_latest_advance_analysis.return_value = ""
         artifacts.read_progress.return_value = None
@@ -493,9 +489,7 @@ class TestStageKnowledgeSetup:
         artifacts.read_latest_advance_analysis.return_value = ""
         artifacts.read_progress.return_value = None
         artifacts.read_latest_analyst_rating.return_value = None
-        artifacts.read_tool_usage_report.return_value = (
-            "Tool utilization (last 5 gens):\n- path_optimizer: used 1/5 gens (LOW)"
-        )
+        artifacts.read_tool_usage_report.return_value = "Tool utilization (last 5 gens):\n- path_optimizer: used 1/5 gens (LOW)"
         trajectory = MagicMock()
         trajectory.build_trajectory.return_value = ""
         trajectory.build_strategy_registry.return_value = ""
@@ -890,11 +884,13 @@ class TestStageAgentGeneration:
         from autocontext.prompts.templates import build_prompt_bundle
 
         settings = _make_settings()
-        settings = settings.model_copy(update={
-            "multi_basin_enabled": True,
-            "multi_basin_trigger_rollbacks": 1,
-            "multi_basin_candidates": 2,
-        })
+        settings = settings.model_copy(
+            update={
+                "multi_basin_enabled": True,
+                "multi_basin_trigger_rollbacks": 1,
+                "multi_basin_candidates": 2,
+            }
+        )
         scenario = _FakeScenario()
         ctx = _make_ctx(settings=settings, scenario=scenario)
         ctx.gate_decision_history = ["rollback"]
@@ -992,9 +988,7 @@ class _FakeScenario(ScenarioInterface):
     def get_observation(self, state: Mapping[str, Any], player_id: str) -> Observation:
         return Observation(narrative="test observation")
 
-    def validate_actions(
-        self, state: Mapping[str, Any], player_id: str, actions: Mapping[str, Any]
-    ) -> tuple[bool, str]:
+    def validate_actions(self, state: Mapping[str, Any], player_id: str, actions: Mapping[str, Any]) -> tuple[bool, str]:
         return (True, "")
 
     def step(self, state: Mapping[str, Any], actions: Mapping[str, Any]) -> dict[str, Any]:
@@ -1236,9 +1230,7 @@ class TestStageTournament:
 
         assert result.tournament is not None
         assert result.tournament.best_dimensions
-        tournament_events = [
-            call for call in events.emit.call_args_list if call[0][0] == "tournament_completed"
-        ]
+        tournament_events = [call for call in events.emit.call_args_list if call[0][0] == "tournament_completed"]
         assert tournament_events
         payload = tournament_events[-1][0][1]
         assert payload["best_dimensions"]
@@ -1288,9 +1280,7 @@ class TestStageTournament:
         assert result.tournament is not None
         assert result.tournament.self_play_summary["self_play_matches"] == 2
         assert result.tournament.mean_score < 0.5
-        tournament_events = [
-            call for call in events.emit.call_args_list if call[0][0] == "tournament_completed"
-        ]
+        tournament_events = [call for call in events.emit.call_args_list if call[0][0] == "tournament_completed"]
         assert tournament_events
         payload = tournament_events[-1][0][1]
         assert payload["self_play"]["self_play_matches"] == 2
@@ -1381,11 +1371,13 @@ class TestStageTournament:
     def test_novelty_bonus_can_change_live_gate_decision(self) -> None:
         from autocontext.harness.pipeline.gate import BackpressureGate
 
-        settings = _make_settings().model_copy(update={
-            "holdout_enabled": False,
-            "novelty_enabled": True,
-            "novelty_weight": 0.1,
-        })
+        settings = _make_settings().model_copy(
+            update={
+                "holdout_enabled": False,
+                "novelty_enabled": True,
+                "novelty_weight": 0.1,
+            }
+        )
         ctx = _make_tournament_ctx(previous_best=0.6, settings=settings)
         ctx.current_strategy = {"aggression": 1.0}
         ctx.outputs = AgentOutputs(
@@ -1636,9 +1628,7 @@ class TestStageCuratorGate:
         )
         ctx = _make_curator_ctx(gate_decision="advance", coach_playbook="new playbook")
         ctx.outputs.analysis_markdown = (
-            "## Findings\n- Concrete issue\n\n"
-            "## Root Causes\n- Cause\n\n"
-            "## Actionable Recommendations\n- Fix it"
+            "## Findings\n- Concrete issue\n\n## Root Causes\n- Cause\n\n## Actionable Recommendations\n- Fix it"
         )
         artifacts = MagicMock()
         artifacts.read_playbook.return_value = "current playbook"
@@ -2012,10 +2002,7 @@ class TestStagePersistence:
         persist_kwargs = artifacts.persist_generation.call_args.kwargs
         credit_assignment = persist_kwargs["metrics"]["credit_assignment"]
         assert credit_assignment["vector"]["score_delta"] == ctx.gate_delta
-        assert any(
-            change["component"] == "playbook"
-            for change in credit_assignment["vector"]["changes"]
-        )
+        assert any(change["component"] == "playbook" for change in credit_assignment["vector"]["changes"])
         artifacts.write_credit_assignment.assert_called_once()
         gen_completed_calls = [c for c in events.emit.call_args_list if c[0][0] == "generation_completed"]
         assert gen_completed_calls
@@ -2057,11 +2044,13 @@ class TestStagePersistence:
         trajectory = MagicMock()
         client = MagicMock()
         client.generate.return_value = ModelResponse(
-            text=json.dumps({
-                "helpful": "use the corners",
-                "misleading": ["over-commit early"],
-                "missing": ["late-game cleanup"],
-            }),
+            text=json.dumps(
+                {
+                    "helpful_hint_numbers": [1],
+                    "misleading_hint_numbers": [2],
+                    "missing": ["late-game cleanup"],
+                }
+            ),
             usage=RoleUsage(input_tokens=12, output_tokens=9, latency_ms=7, model="test-model"),
         )
         agents = MagicMock()
@@ -2079,11 +2068,12 @@ class TestStagePersistence:
         )
 
         generate_kwargs = client.generate.call_args.kwargs
-        assert "old hints used in tournament" in generate_kwargs["prompt"]
+        assert "helpful_hint_numbers" in generate_kwargs["prompt"]
+        assert "1. old hints used in tournament" in generate_kwargs["prompt"]
         assert "new hints for next gen" not in generate_kwargs["prompt"]
         artifacts.write_hint_feedback.assert_called_once()
         feedback = artifacts.write_hint_feedback.call_args.args[2]
-        assert feedback.helpful == ["use the corners"]
+        assert feedback.helpful == ["old hints used in tournament"]
         artifacts.write_hint_manager.assert_called_once()
         persisted_manager = artifacts.write_hint_manager.call_args.args[1]
         assert "new hints for next gen" in persisted_manager.format_for_competitor()

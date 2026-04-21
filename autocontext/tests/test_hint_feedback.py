@@ -38,7 +38,10 @@ class TestHintFeedback:
         from autocontext.agents.hint_feedback import HintFeedback
 
         fb = HintFeedback(
-            helpful=["a"], misleading=["b"], missing=["c"], generation=3,
+            helpful=["a"],
+            misleading=["b"],
+            missing=["c"],
+            generation=3,
         )
         d = fb.to_dict()
         restored = HintFeedback.from_dict(d)
@@ -49,10 +52,12 @@ class TestHintFeedback:
     def test_from_dict_normalizes_legacy_payload(self) -> None:
         from autocontext.agents.hint_feedback import HintFeedback
 
-        restored = HintFeedback.from_dict({
-            "helpful": "focus on corners",
-            "generation": 2,
-        })
+        restored = HintFeedback.from_dict(
+            {
+                "helpful": "focus on corners",
+                "generation": 2,
+            }
+        )
 
         assert restored.helpful == ["focus on corners"]
         assert restored.misleading == []
@@ -100,9 +105,51 @@ class TestBuildHintReflectionPrompt:
             tournament_mean_score=0.65,
             previous_best=0.60,
         )
-        assert "high aggression" in prompt
-        assert "corners" in prompt
+        assert "Try high aggression" in prompt
+        assert "Focus on corners" in prompt
         assert "0.75" in prompt
+        assert "helpful_hint_numbers" in prompt
+
+    def test_compacts_and_numbers_hint_items(self) -> None:
+        from autocontext.agents.hint_feedback import (
+            build_hint_reflection_prompt,
+            prepare_hint_reflection_items,
+        )
+
+        hints = "\n".join(
+            [
+                "- **Do not** combine defense and routing changes.",
+                "- Preserve one Soldier or Commander as the home anchor while Scouts handle lane pressure.",
+                "- Immediate next run: redeploy the live **moderate** control baseline unchanged.",
+                "- Keep path_bias between 0.50-0.60 for stability.",
+                "- Promote only a probe that beats the scored moderate control on capture progress.",
+                "- Try aggression=0.60 with defense=0.55 for balanced scoring.",
+            ]
+        )
+
+        items = prepare_hint_reflection_items(hints)
+        prompt = build_hint_reflection_prompt(
+            hints=hints,
+            tournament_best_score=0.75,
+            tournament_mean_score=0.65,
+            previous_best=0.60,
+            hint_items=items,
+        )
+
+        assert len(items) < 6
+        assert all("**" not in item for item in items)
+        assert "1. Do not combine defense and routing changes." in prompt
+        assert "helpful_hint_numbers" in prompt
+        assert "Try aggression=0.60 with defense=0.55 for balanced scoring." not in prompt
+
+    def test_preserves_identifier_underscores_during_hint_sanitization(self) -> None:
+        from autocontext.agents.hint_feedback import prepare_hint_reflection_items
+
+        items = prepare_hint_reflection_items(
+            "- Keep `path_bias` between 0.50 and 0.60 for stability."
+        )
+
+        assert items == ["Keep path_bias between 0.50 and 0.60 for stability."]
 
     def test_empty_hints(self) -> None:
         from autocontext.agents.hint_feedback import build_hint_reflection_prompt
@@ -127,16 +174,39 @@ class TestParseHintFeedback:
 
         from autocontext.agents.hint_feedback import parse_hint_feedback
 
-        raw = json.dumps({
-            "helpful": ["edge control"],
-            "misleading": ["avoid center"],
-            "missing": ["transition guidance"],
-        })
+        raw = json.dumps(
+            {
+                "helpful": ["edge control"],
+                "misleading": ["avoid center"],
+                "missing": ["transition guidance"],
+            }
+        )
         fb = parse_hint_feedback(raw, generation=4)
         assert fb.helpful == ["edge control"]
         assert fb.misleading == ["avoid center"]
         assert fb.missing == ["transition guidance"]
         assert fb.generation == 4
+
+    def test_maps_hint_numbers_back_to_compacted_hint_items(self) -> None:
+        import json
+
+        from autocontext.agents.hint_feedback import parse_hint_feedback
+
+        raw = json.dumps(
+            {
+                "helpful_hint_numbers": [1, 3],
+                "misleading_hint_numbers": [2],
+                "missing": ["late-game cleanup"],
+            }
+        )
+        fb = parse_hint_feedback(
+            raw,
+            generation=4,
+            hint_items=["keep anchor", "avoid over-commit", "reuse baseline"],
+        )
+        assert fb.helpful == ["keep anchor", "reuse baseline"]
+        assert fb.misleading == ["avoid over-commit"]
+        assert fb.missing == ["late-game cleanup"]
 
     def test_parses_json_in_fences(self) -> None:
         from autocontext.agents.hint_feedback import parse_hint_feedback
@@ -167,11 +237,13 @@ class TestParseHintFeedback:
 
         from autocontext.agents.hint_feedback import parse_hint_feedback
 
-        raw = json.dumps({
-            "helpful": "focus on corners",
-            "misleading": "avoid the center",
-            "missing": "transition guidance",
-        })
+        raw = json.dumps(
+            {
+                "helpful": "focus on corners",
+                "misleading": "avoid the center",
+                "missing": "transition guidance",
+            }
+        )
         fb = parse_hint_feedback(raw, generation=2)
         assert fb.helpful == ["focus on corners"]
         assert fb.misleading == ["avoid the center"]
@@ -182,11 +254,13 @@ class TestParseHintFeedback:
 
         from autocontext.agents.hint_feedback import parse_hint_feedback
 
-        raw = json.dumps({
-            "helpful": [" corners ", 12, "", None],
-            "misleading": [False, "too passive"],
-            "missing": [" late game plan ", {"x": 1}],
-        })
+        raw = json.dumps(
+            {
+                "helpful": [" corners ", 12, "", None],
+                "misleading": [False, "too passive"],
+                "missing": [" late game plan ", {"x": 1}],
+            }
+        )
         fb = parse_hint_feedback(raw, generation=3)
         assert fb.helpful == ["corners"]
         assert fb.misleading == ["too passive"]

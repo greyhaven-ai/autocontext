@@ -11,6 +11,7 @@ from autocontext.agents.hint_feedback import (
     build_hint_reflection_prompt,
     format_hint_feedback_for_coach,
     parse_hint_feedback,
+    prepare_hint_reflection_items,
 )
 from autocontext.analytics.credit_assignment import (
     CreditAssignmentRecord,
@@ -198,11 +199,13 @@ def _collect_hint_feedback(
     if not hints_used:
         return None
 
+    hint_items = prepare_hint_reflection_items(hints_used)
     prompt = build_hint_reflection_prompt(
         hints=hints_used,
         tournament_best_score=tournament.best_score,
         tournament_mean_score=tournament.mean_score,
         previous_best=_hint_feedback_previous_best(ctx),
+        hint_items=hint_items,
     )
     try:
         client, resolved_model = agents.resolve_role_execution(
@@ -238,29 +241,38 @@ def _collect_hint_feedback(
         ctx.run_id,
         ctx.generation,
         outputs=[("competitor_hint_feedback", exec_result.content)],
-        role_metrics=[(
-            exec_result.role,
-            exec_result.usage.model,
-            exec_result.usage.input_tokens,
-            exec_result.usage.output_tokens,
-            exec_result.usage.latency_ms,
-            exec_result.subagent_id,
-            exec_result.status,
-        )],
+        role_metrics=[
+            (
+                exec_result.role,
+                exec_result.usage.model,
+                exec_result.usage.input_tokens,
+                exec_result.usage.output_tokens,
+                exec_result.usage.latency_ms,
+                exec_result.subagent_id,
+                exec_result.status,
+            )
+        ],
     )
 
-    feedback = parse_hint_feedback(response.text, generation=ctx.generation)
+    feedback = parse_hint_feedback(
+        response.text,
+        generation=ctx.generation,
+        hint_items=hint_items,
+    )
     if feedback.is_empty():
         return None
 
     artifacts.write_hint_feedback(ctx.scenario_name, ctx.generation, feedback)
-    events.emit("hint_feedback_collected", {
-        "run_id": ctx.run_id,
-        "generation": ctx.generation,
-        "helpful_count": len(feedback.helpful),
-        "misleading_count": len(feedback.misleading),
-        "missing_count": len(feedback.missing),
-    })
+    events.emit(
+        "hint_feedback_collected",
+        {
+            "run_id": ctx.run_id,
+            "generation": ctx.generation,
+            "helpful_count": len(feedback.helpful),
+            "misleading_count": len(feedback.misleading),
+            "missing_count": len(feedback.missing),
+        },
+    )
     return feedback
 
 
