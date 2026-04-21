@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 Changes in this section are on the branch/repo after `0.4.4` and are not part of the last published release until the next version is cut.
 
+## [0.4.5] - 2026-04-21
+
+### Changed
+
+- Hardened Python and TypeScript runtime behavior across hint feedback reflection, release-sweep accounting, judge-provider inheritance, and instrument/operator control paths.
+- Improved merge-readiness and production reliability across the recent reland stack, including validation auto-heal coverage, release-facing docs, and cross-surface metadata consistency.
+- Python and TypeScript package metadata are bumped to `0.4.5`.
+
 ## [0.4.4] - 2026-04-20
 
 ### Added
@@ -229,6 +237,7 @@ Changes in this section are on the branch/repo after `0.4.4` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.4.5]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.4...py-v0.4.5
 [0.4.4]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.3...py-v0.4.4
 [0.4.3]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.2...py-v0.4.3
 [0.4.2]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.1...py-v0.4.2
