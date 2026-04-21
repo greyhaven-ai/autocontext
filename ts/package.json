@@ -49,7 +49,15 @@
     "sync:production-traces-schemas": "node scripts/sync-python-production-traces-schemas.mjs",
     "check:production-traces-schemas": "node scripts/generate-production-traces-types.mjs --check && node scripts/sync-python-production-traces-schemas.mjs --check",
     "check:instrument-schemas": "node scripts/check-instrument-schemas.mjs --check",
-    "check:schemas": "npm run check:production-traces-schemas && npm run check:instrument-schemas"
+    "check:schemas": "npm run check:production-traces-schemas && npm run check:instrument-schemas",
+    "check:sdk-import-discipline": "node scripts/check-sdk-import-discipline.mjs",
+    "check:production-traces-sdk-bundle-size": "node scripts/check-production-traces-sdk-bundle-size.mjs",
+    "check:side-effects": "node scripts/check-side-effects.mjs",
+    "check:license-compatibility": "node scripts/check-license-compatibility.mjs",
+    "check:no-postinstall-scripts": "node scripts/check-no-postinstall-scripts.mjs",
+    "check:no-telemetry": "node scripts/check-no-telemetry.mjs",
+    "check:a2-ii-a-all": "npm run check:sdk-import-discipline && npm run check:side-effects && npm run check:production-traces-sdk-bundle-size && npm run check:license-compatibility && npm run check:no-postinstall-scripts && npm run check:no-telemetry",
+    "regenerate-cross-runtime-fixtures": "node scripts/regenerate-cross-runtime-fixtures.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
