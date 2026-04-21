@@ -14,7 +14,6 @@ Functions:
 from __future__ import annotations
 
 import json
-import logging
 import re
 from dataclasses import replace
 from typing import Any
@@ -25,10 +24,6 @@ from autocontext.scenarios.custom.agent_task_validator import (
     _CONTEXTUAL_DATA_PATTERNS,
     _has_inline_data_after,
 )
-
-logger = logging.getLogger(__name__)
-
-_QUALITY_THRESHOLD_DEFAULT = 0.9
 
 _AUTOMATIC_RUNTIME_CONTEXT_KEYS = frozenset(
     {
@@ -125,35 +120,6 @@ def heal_spec_sample_input(
 
     synthetic = generate_synthetic_sample_input(spec.task_prompt, description)
     return replace(spec, sample_input=synthetic)
-
-
-def heal_spec_quality_threshold(spec: AgentTaskSpec) -> AgentTaskSpec:
-    """Clamp ``quality_threshold`` into the validator's (0.0, 1.0] range (AC-585).
-
-    LLM designers occasionally emit out-of-range values (e.g. 1.5, 10, 0, -0.5)
-    which the spec validator rejects before any autoheal runs. This helper runs
-    before validation:
-
-    - Values > 1.0 are clamped to 1.0 (preserves "aim high" intent).
-    - Values <= 0.0 are replaced with the field default (0.9) because there is
-      no coherent interpretation of "stop improving at or below 0".
-
-    Valid values pass through unchanged.
-    """
-    qt = spec.quality_threshold
-    if qt > 1.0:
-        logger.warning(
-            "heal_spec_quality_threshold: clamping quality_threshold %s > 1.0 to 1.0", qt
-        )
-        return replace(spec, quality_threshold=1.0)
-    if qt <= 0.0:
-        logger.warning(
-            "heal_spec_quality_threshold: quality_threshold %s <= 0.0, falling back to default %s",
-            qt,
-            _QUALITY_THRESHOLD_DEFAULT,
-        )
-        return replace(spec, quality_threshold=_QUALITY_THRESHOLD_DEFAULT)
-    return spec
 
 
 def heal_spec_runtime_context_requirements(spec: AgentTaskSpec) -> AgentTaskSpec:

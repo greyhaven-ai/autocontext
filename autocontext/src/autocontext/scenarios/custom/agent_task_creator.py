@@ -103,18 +103,14 @@ class AgentTaskCreator:
         logger.info("designing agent task from description")
         spec = design_validated_agent_task(description, self.llm_fn)
 
-        # 1.5 Auto-heal: generate synthetic sample_input if needed (AC-309),
-        # drop unsatisfiable runtime context keys, and clamp quality_threshold
-        # into the validator's (0.0, 1.0] range (AC-585).
+        # 1.5 Auto-heal: generate synthetic sample_input if needed (AC-309)
         from autocontext.scenarios.custom.spec_auto_heal import (
-            heal_spec_quality_threshold,
             heal_spec_runtime_context_requirements,
             heal_spec_sample_input,
         )
 
         spec = heal_spec_sample_input(spec, description=description)
         spec = heal_spec_runtime_context_requirements(spec)
-        spec = heal_spec_quality_threshold(spec)
 
         # 2. Validate spec
         spec_errors = validate_for_family("agent_task", asdict(spec))
