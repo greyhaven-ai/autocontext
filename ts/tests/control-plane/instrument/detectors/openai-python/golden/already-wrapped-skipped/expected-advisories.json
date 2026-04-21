@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "already-wrapped",
+    "pluginId": "@autoctx/detector-openai-python",
+    "sourceFilePath": "(normalized)",
+    "reason": "call site is already wrapped by instrument_client()"
+  }
+]

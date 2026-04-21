@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "deferred-sdk-variant",
+    "pluginId": "@autoctx/detector-openai-python",
+    "sourceFilePath": "(normalized)",
+    "reason": "AzureOpenAI deferred to a2-ii-b-azure; wrap manually: instrument_client(AzureOpenAI(...))"
+  }
+]

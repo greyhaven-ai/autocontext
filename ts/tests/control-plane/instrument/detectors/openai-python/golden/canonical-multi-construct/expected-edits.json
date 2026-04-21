@@ -1,0 +1,74 @@
+[
+  {
+    "kind": "wrap-expression",
+    "pluginId": "@autoctx/detector-openai-python",
+    "sourceFilePath": "(normalized)",
+    "range": {
+      "startLineCol": {
+        "line": 2,
+        "col": 10
+      },
+      "endLineCol": {
+        "line": 2,
+        "col": 18
+      }
+    },
+    "wrapFn": "instrument_client",
+    "importsNeeded": [
+      {
+        "module": "autocontext.integrations.openai",
+        "name": "instrument_client",
+        "kind": "named"
+      }
+    ]
+  },
+  {
+    "kind": "insert-statement",
+    "pluginId": "@autoctx/detector-openai-python",
+    "sourceFilePath": "(normalized)",
+    "anchorRange": {
+      "startLineCol": {
+        "line": 2,
+        "col": 10
+      }
+    },
+    "importsNeeded": [],
+    "statementSource": "# autocontext: configure the sink for this client — see docs/integrations/openai.md"
+  },
+  {
+    "kind": "wrap-expression",
+    "pluginId": "@autoctx/detector-openai-python",
+    "sourceFilePath": "(normalized)",
+    "range": {
+      "startLineCol": {
+        "line": 3,
+        "col": 10
+      },
+      "endLineCol": {
+        "line": 3,
+        "col": 18
+      }
+    },
+    "wrapFn": "instrument_client",
+    "importsNeeded": [
+      {
+        "module": "autocontext.integrations.openai",
+        "name": "instrument_client",
+        "kind": "named"
+      }
+    ]
+  },
+  {
+    "kind": "insert-statement",
+    "pluginId": "@autoctx/detector-openai-python",
+    "sourceFilePath": "(normalized)",
+    "anchorRange": {
+      "startLineCol": {
+        "line": 3,
+        "col": 10
+      }
+    },
+    "importsNeeded": [],
+    "statementSource": "# autocontext: configure the sink for this client — see docs/integrations/openai.md"
+  }
+]
