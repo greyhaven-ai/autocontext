@@ -11,6 +11,7 @@ class TestClassifyWithoutLlmFn:
         # Gibberish description → keyword fallback (no_signals_matched=True).
         result = classify_scenario_family("xyz zzz qqq nonsense gibberish")
         assert result.no_signals_matched is True
+        assert result.llm_fallback_used is False
         assert result.confidence == 0.2
         assert result.family_name == "agent_task"
 
@@ -22,6 +23,7 @@ class TestClassifyWithoutLlmFn:
             llm_fn=forbidden_llm,
         )
         assert result.no_signals_matched is False
+        assert result.llm_fallback_used is False
         assert result.family_name == "simulation"
         forbidden_llm.assert_not_called()
 
@@ -40,6 +42,7 @@ class TestLlmFallbackHappyPath:
         assert result.confidence == 0.82
         assert result.rationale == "matches simulation pattern"
         assert result.no_signals_matched is False
+        assert result.llm_fallback_used is True
 
 
 class TestLlmFallbackFailureModes:
@@ -52,6 +55,7 @@ class TestLlmFallbackFailureModes:
 
         result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
         assert result.no_signals_matched is True
+        assert result.llm_fallback_used is False
         assert result.family_name == "agent_task"
 
     def test_llm_fallback_unparseable_json_falls_through(self) -> None:
@@ -61,6 +65,7 @@ class TestLlmFallbackFailureModes:
 
         result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
         assert result.no_signals_matched is True
+        assert result.llm_fallback_used is False
         assert result.family_name == "agent_task"
 
     def test_llm_fallback_missing_rationale_falls_through(self) -> None:
@@ -70,6 +75,7 @@ class TestLlmFallbackFailureModes:
 
         result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
         assert result.no_signals_matched is True
+        assert result.llm_fallback_used is False
         assert result.family_name == "agent_task"
 
     def test_llm_fallback_llm_fn_raises_falls_through(self) -> None:
@@ -79,6 +85,7 @@ class TestLlmFallbackFailureModes:
 
         result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
         assert result.no_signals_matched is True
+        assert result.llm_fallback_used is False
         assert result.family_name == "agent_task"
 
     def test_llm_fallback_clamps_out_of_range_confidence(self) -> None:
@@ -88,6 +95,7 @@ class TestLlmFallbackFailureModes:
 
         result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
         assert result.confidence == 1.0
+        assert result.llm_fallback_used is True
         assert result.family_name == "simulation"
 
 

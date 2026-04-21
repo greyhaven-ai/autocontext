@@ -116,9 +116,14 @@ class TestSolveScenarioBuilderFamilyOverride:
         fake_scenario = MagicMock()
         fake_scenario.name = "stub_scenario"
 
-        classifier_mock = MagicMock(return_value=get_family("simulation"))
+        classifier_mock = MagicMock(
+            return_value=solver_mod._ResolvedSolveFamily(
+                family=get_family("simulation"),
+                llm_classifier_fallback_used=False,
+            )
+        )
 
-        with patch.object(solver_mod, "_resolve_requested_scenario_family", classifier_mock):
+        with patch.object(solver_mod, "_resolve_requested_scenario_family_with_metadata", classifier_mock):
             with patch(
                 "autocontext.scenarios.custom.agent_task_creator.AgentTaskCreator.create",
                 return_value=fake_scenario,

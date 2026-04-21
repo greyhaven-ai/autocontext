@@ -52,6 +52,7 @@ class SolveRunSummary:
     generations: int
     progress: int
     output_path: str | None
+    llm_classifier_fallback_used: bool
     result: dict[str, Any] | None
 
 
@@ -131,6 +132,7 @@ def run_solve_command(
         generations=job.generations,
         progress=job.progress,
         output_path=output_path,
+        llm_classifier_fallback_used=job.llm_classifier_fallback_used,
         result=job.result.to_dict(),
     )
 
@@ -146,6 +148,10 @@ def run_solve_command(
     table.add_row("Scenario", job.scenario_name or "unknown")
     table.add_row("Generations", str(job.generations))
     table.add_row("Progress", str(job.progress))
+    table.add_row(
+        "LLM Fallback",
+        "yes" if job.llm_classifier_fallback_used else "no",
+    )
     if output_path is not None:
         table.add_row("Output", output_path)
     console.print(table)

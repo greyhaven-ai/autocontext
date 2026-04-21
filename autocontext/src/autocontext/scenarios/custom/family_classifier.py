@@ -41,6 +41,7 @@ class FamilyClassification(BaseModel):
     rationale: str
     alternatives: list[FamilyCandidate] = Field(default_factory=list)
     no_signals_matched: bool = False
+    llm_fallback_used: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -526,6 +527,7 @@ def _llm_classify_fallback(
         rationale=rationale,
         alternatives=alternatives,
         no_signals_matched=False,
+        llm_fallback_used=True,
     )
 
 

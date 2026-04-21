@@ -77,12 +77,20 @@ class SolveJob:
     result: SkillPackage | None = None
     created_at: float = field(default_factory=time.time)
     family_override: str | None = None
+    llm_classifier_fallback_used: bool = False
 
 
 @dataclass(slots=True)
 class SolveScenarioBuildResult:
     scenario_name: str
     family_name: str
+    llm_classifier_fallback_used: bool = False
+
+
+@dataclass(slots=True)
+class _ResolvedSolveFamily:
+    family: ScenarioFamily
+    llm_classifier_fallback_used: bool = False
 
 
 @dataclass(slots=True)
@@ -365,19 +373,30 @@ def _resolve_requested_scenario_family(
     *,
     llm_fn: LlmFn | None = None,
 ) -> ScenarioFamily:
+    return _resolve_requested_scenario_family_with_metadata(description, llm_fn=llm_fn).family
+
+
+def _resolve_requested_scenario_family_with_metadata(
+    description: str,
+    *,
+    llm_fn: LlmFn | None = None,
+) -> _ResolvedSolveFamily:
     from autocontext.scenarios.custom.family_classifier import classify_scenario_family, route_to_family
 
     brief = _build_solve_description_brief(description)
     hinted_family = _resolve_family_hint(brief)
     if hinted_family is not None:
-        return hinted_family
+        return _ResolvedSolveFamily(family=hinted_family)
 
     aliased_family = _resolve_solve_family_alias(brief)
     if aliased_family is not None:
-        return aliased_family
+        return _ResolvedSolveFamily(family=aliased_family)
 
     classification = classify_scenario_family(brief, llm_fn=llm_fn)
-    return route_to_family(classification)
+    return _ResolvedSolveFamily(
+        family=route_to_family(classification),
+        llm_classifier_fallback_used=classification.llm_fallback_used,
+    )
 
 
 class SolveScenarioExecutor:
@@ -579,8 +598,11 @@ class SolveScenarioBuilder:
         brief = _build_solve_description_brief(description)
         if family_override:
             family = get_family(family_override)
+            llm_classifier_fallback_used = False
         else:
-            family = _resolve_requested_scenario_family(brief, llm_fn=self._llm_fn)
+            resolved_family = _resolve_requested_scenario_family_with_metadata(brief, llm_fn=self._llm_fn)
+            family = resolved_family.family
+            llm_classifier_fallback_used = resolved_family.llm_classifier_fallback_used
 
         if family.name == "game":
             game_creator = ScenarioCreator(
@@ -594,6 +616,7 @@ class SolveScenarioBuilder:
             return SolveScenarioBuildResult(
                 scenario_name=spec.name,
                 family_name=family.name,
+                llm_classifier_fallback_used=llm_classifier_fallback_used,
             )
 
         family_creator = AgentTaskCreator(
@@ -606,6 +629,7 @@ class SolveScenarioBuilder:
         return SolveScenarioBuildResult(
             scenario_name=scenario_name,
             family_name=family.name,
+            llm_classifier_fallback_used=llm_classifier_fallback_used,
         )
 
 
@@ -682,6 +706,7 @@ class SolveManager:
 
             created = builder.build(job.description, family_override=job.family_override)
             job.scenario_name = created.scenario_name
+            job.llm_classifier_fallback_used = created.llm_classifier_fallback_used
 
             # 2. Run generations
             job.status = "running"
@@ -737,6 +762,7 @@ class SolveManager:
             "progress": job.progress,
             "error": job.error,
             "created_at": job.created_at,
+            "llm_classifier_fallback_used": job.llm_classifier_fallback_used,
         }
 
     def get_result(self, job_id: str) -> SkillPackage | None:

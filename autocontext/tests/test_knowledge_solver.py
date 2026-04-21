@@ -290,6 +290,40 @@ class TestSolveScenarioBuilder:
 
         assert captured["family_name"] == "coordination"
         assert result.family_name == "coordination"
+        assert result.llm_classifier_fallback_used is False
+
+    def test_build_marks_llm_classifier_fallback_usage(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from autocontext.knowledge.solver import SolveScenarioBuilder
+
+        def _llm_fallback(system: str, user: str) -> str:
+            del system, user
+            return '{"family": "simulation", "confidence": 0.82, "rationale": "fallback classified the scenario"}'
+
+        runtime = SubagentRuntime(DeterministicDevClient())
+        builder = SolveScenarioBuilder(
+            runtime=runtime,
+            llm_fn=_llm_fallback,
+            model="test-model",
+            knowledge_root=tmp_path,
+        )
+
+        class _CreatedScenario:
+            name = "llm_fallback_simulation_fixture"
+
+        def _fake_create(self, description: str, *, family_name: str = "") -> _CreatedScenario:
+            del self, description
+            assert family_name == "simulation"
+            return _CreatedScenario()
+
+        monkeypatch.setattr(
+            "autocontext.scenarios.custom.agent_task_creator.AgentTaskCreator.create",
+            _fake_create,
+        )
+
+        result = builder.build("xyz zzz qqq nonsense gibberish")
+
+        assert result.family_name == "simulation"
+        assert result.llm_classifier_fallback_used is True
 
     def test_resolves_simulationinterface_harness_prompt_to_simulation(self) -> None:
         from autocontext.knowledge.solver import _resolve_requested_scenario_family

@@ -69,6 +69,40 @@ class _FailingSolveManager:
         )
 
 
+class _FallbackSolveManager:
+    def __init__(self, settings: AppSettings) -> None:
+        self._settings = settings
+
+    def solve_sync(
+        self,
+        description: str,
+        generations: int = 5,
+        family_override: str | None = None,
+    ) -> SolveJob:
+        del description, generations, family_override
+        pkg = SkillPackage(
+            scenario_name="fallback_case",
+            display_name="Fallback Case",
+            description="Solve result",
+            playbook="## Playbook",
+            lessons=["Ask the classifier for help"],
+            best_strategy={"aggression": 0.4},
+            best_score=0.74,
+            best_elo=1498.0,
+            hints="Use the fallback metadata",
+        )
+        return SolveJob(
+            job_id="solve_fallback",
+            description="Fallback solve",
+            scenario_name="fallback_case",
+            status="completed",
+            generations=1,
+            progress=1,
+            result=pkg,
+            llm_classifier_fallback_used=True,
+        )
+
+
 def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
     return AppSettings(
         db_path=tmp_path / "runs" / "autocontext.sqlite3",
@@ -162,3 +196,27 @@ class TestSolveRuntimeOverrides:
         assert "timed out" in payload["error"].lower()
         assert "--timeout" in payload["error"]
         assert "AUTOCONTEXT_PI_TIMEOUT" in payload["error"]
+
+    def test_solve_json_output_surfaces_classifier_fallback_flag(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path)
+
+        from unittest.mock import patch
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager", _FallbackSolveManager),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "solve",
+                    "--description",
+                    "Fallback solve",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["llm_classifier_fallback_used"] is True
+        assert payload["scenario_name"] == "fallback_case"
