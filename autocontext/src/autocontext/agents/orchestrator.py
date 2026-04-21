@@ -17,11 +17,16 @@ from autocontext.agents.curator import KnowledgeCurator
 from autocontext.agents.llm_client import LanguageModelClient, build_client_from_settings
 from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.rlm_short_circuits import (
+    analyst_has_fresh_match_data,
+    build_analyst_no_data_execution,
+    build_architect_cadence_skip_execution,
+)
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.agents.translator import StrategyTranslator
-from autocontext.agents.types import AgentOutputs, RoleExecution, RoleUsage
+from autocontext.agents.types import AgentOutputs, RoleExecution
 from autocontext.config.settings import AppSettings
 from autocontext.execution.harness_coverage import HarnessCoverage
 from autocontext.harness.orchestration.dag import RoleDAG
@@ -936,36 +941,9 @@ class AgentOrchestrator:
             scenario_rules=scenario_rules,
             current_strategy=strategy,
         )
-        if not (
-            analyst_ctx.variables.get("replays")
-            or analyst_ctx.variables.get("metrics_history")
-            or analyst_ctx.variables.get("match_scores")
-        ):
-            analyst_exec = RoleExecution(
-                role="analyst",
-                content=(
-                    "## Findings\n"
-                    "- No fresh match data is available for this run yet; replays, metrics history, "
-                    "and match scores are empty.\n\n"
-                    "## Root Causes\n"
-                    "- The analyst RLM pass was skipped because there is no new scored evidence "
-                    "to analyze for this generation.\n"
-                    "- Only carry-forward guidance from the playbook, prior analyses, and "
-                    "operational lessons is available.\n\n"
-                    "## Actionable Recommendations\n"
-                    "- Freeze parameter deltas at `0.00` and reuse the currently validated "
-                    "baseline until fresh replay-backed data arrives.\n"
-                    "- Collect new scored runs before making additional strategic claims or "
-                    "branching changes."
-                ),
-                usage=RoleUsage(
-                    input_tokens=0,
-                    output_tokens=0,
-                    latency_ms=0,
-                    model=analyst_model or self.settings.model_analyst,
-                ),
-                subagent_id="analyst-no-data",
-                status="completed",
+        if not analyst_has_fresh_match_data(analyst_ctx.variables):
+            analyst_exec = build_analyst_no_data_execution(
+                analyst_model or self.settings.model_analyst,
             )
         else:
             analyst_exec, _ = self._run_single_rlm_session(
@@ -988,27 +966,8 @@ class AgentOrchestrator:
 
         # --- Architect ---
         if _ARCHITECT_CADENCE_SKIP in architect_prompt:
-            architect_exec = RoleExecution(
-                role="architect",
-                content=(
-                    "## Observed Bottlenecks\n"
-                    "- Architect cadence skip: no major intervention this generation.\n\n"
-                    "## Tool Proposals\n"
-                    "- None; return minimal status and an empty tools array.\n\n"
-                    "## Impact Hypothesis\n"
-                    "- Reduces live runtime overhead on off-cadence generations while preserving existing tool behavior.\n\n"
-                    "```json\n"
-                    '{"tools": []}\n'
-                    "```"
-                ),
-                usage=RoleUsage(
-                    input_tokens=0,
-                    output_tokens=0,
-                    latency_ms=0,
-                    model=architect_model or self.settings.model_architect,
-                ),
-                subagent_id="architect-skip",
-                status="completed",
+            architect_exec = build_architect_cadence_skip_execution(
+                architect_model or self.settings.model_architect,
             )
             return analyst_exec, architect_exec
 
