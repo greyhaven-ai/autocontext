@@ -1,0 +1,5 @@
+{
+  "class": "RateLimitError",
+  "status": 429,
+  "message": "You exceeded your current quota"
+}

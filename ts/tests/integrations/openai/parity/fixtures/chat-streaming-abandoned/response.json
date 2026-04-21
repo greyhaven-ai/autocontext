@@ -1,0 +1,4 @@
+[
+  {"id": "chatcmpl-a001", "object": "chat.completion.chunk", "created": 1714000000, "model": "gpt-4o", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}, "finish_reason": null}]},
+  {"id": "chatcmpl-a001", "object": "chat.completion.chunk", "created": 1714000000, "model": "gpt-4o", "choices": [{"index": 0, "delta": {"content": " there"}, "finish_reason": null}]}
+]

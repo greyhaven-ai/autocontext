@@ -22,7 +22,7 @@ import {
 import {
   hashUserId,
   hashSessionId,
-  loadInstallSalt,
+  installSaltPath,
 } from "../../production-traces/sdk/hashing.js";
 import { AsyncStreamProxy } from "./stream-proxy.js";
 
@@ -50,11 +50,24 @@ function _resolveIdentity(perCall: Record<string, string> | null | undefined): R
     if (ambient.sessionId) raw["session_id"] = ambient.sessionId;
   }
   if (Object.keys(raw).length === 0) return {};
-  const salt = loadInstallSalt(".");
+  // Load salt synchronously using readFileSync
+  const salt = _loadSaltSync(".");
+  if (!salt) return {}; // no salt → skip hashing (spec: no identity without salt)
   const hashed: Record<string, string> = {};
   if (raw["user_id"]) hashed["user_id_hash"] = hashUserId(raw["user_id"], salt);
   if (raw["session_id"]) hashed["session_id_hash"] = hashSessionId(raw["session_id"], salt);
   return hashed;
+}
+
+function _loadSaltSync(cwd: string): string | null {
+  try {
+    const saltPath = installSaltPath(cwd);
+    if (!existsSync(saltPath)) return null;
+    const content = readFileSync(saltPath, "utf-8").trim();
+    return content || null;
+  } catch {
+    return null;
+  }
 }
 
 let _cachedVersion: string | null = null;
