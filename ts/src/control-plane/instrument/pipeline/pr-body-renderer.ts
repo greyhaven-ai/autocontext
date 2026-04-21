@@ -24,6 +24,7 @@ import type {
   EditDescriptor,
   InstrumentSession,
   InstrumentPlan,
+  PluginAdvisory,
   SourceRange,
 } from "../contract/plugin-interface.js";
 import {
@@ -64,6 +65,12 @@ export interface PrBodyInputs {
     readonly timeoutMs?: number;
     readonly onDiagnostic?: (d: EnhancerDiagnostic) => void;
   };
+  /**
+   * Plugin advisories collected during detection. When non-empty, the renderer
+   * adds a "Refused with reason" section. When absent or empty, the section is
+   * omitted so pre-advisory goldens remain byte-identical.
+   */
+  readonly advisories?: readonly PluginAdvisory[];
 }
 
 /** Per-file composed-edit metadata passed in from the orchestrator. */
@@ -192,6 +199,29 @@ export async function renderPrBody(inputs: PrBodyInputs): Promise<string> {
     }
   }
   parts.push("");
+
+  // Section: Refused with reason (only present when advisories exist)
+  const advisories = inputs.advisories ?? [];
+  if (advisories.length > 0) {
+    parts.push("### Refused with reason");
+    const byKind = new Map<string, PluginAdvisory[]>();
+    for (const adv of advisories) {
+      const list = byKind.get(adv.kind) ?? [];
+      list.push(adv);
+      byKind.set(adv.kind, list);
+    }
+    const kinds = Array.from(byKind.keys()).sort();
+    for (const kind of kinds) {
+      parts.push(`#### ${kind}`);
+      parts.push("| Path | Line | Plugin | Reason |");
+      parts.push("| --- | --- | --- | --- |");
+      for (const adv of byKind.get(kind)!) {
+        const line = adv.range.startLineCol.line;
+        parts.push(`| \`${adv.sourceFilePath}\` | ${line} | \`${adv.pluginId}\` | ${escapeTable(adv.reason)} |`);
+      }
+      parts.push("");
+    }
+  }
 
   // Section: Detected but unchanged
   parts.push("### Detected but unchanged");

@@ -7,7 +7,7 @@
  */
 import type {
   DetectorPlugin,
-  EditDescriptor,
+  PluginProduceResult,
   SourceFile,
   TreeSitterMatch,
   WrapExpressionEdit,
@@ -17,10 +17,10 @@ export const mockConflictingPlugin: DetectorPlugin = {
   id: "mock-conflicting",
   supports: { language: "python", sdkName: "openai-alternate" },
   treeSitterQueries: ["(call) @call"],
-  produce(_match: TreeSitterMatch, sourceFile: SourceFile): readonly EditDescriptor[] {
-    if (sourceFile.language !== "python") return [];
+  produce(_match: TreeSitterMatch, sourceFile: SourceFile): PluginProduceResult {
+    if (sourceFile.language !== "python") return { edits: [], advisories: [] };
     const text = sourceFile.bytes.toString("utf-8");
-    return findOpenAiCalls(text, sourceFile.path);
+    return { edits: findOpenAiCalls(text, sourceFile.path), advisories: [] };
   },
 };
 

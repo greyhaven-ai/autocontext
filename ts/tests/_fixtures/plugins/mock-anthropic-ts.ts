@@ -4,7 +4,7 @@
  */
 import type {
   DetectorPlugin,
-  EditDescriptor,
+  PluginProduceResult,
   SourceFile,
   TreeSitterMatch,
   WrapExpressionEdit,
@@ -14,10 +14,10 @@ export const mockAnthropicTsPlugin: DetectorPlugin = {
   id: "mock-anthropic-ts",
   supports: { language: "typescript", sdkName: "anthropic" },
   treeSitterQueries: ["(new_expression) @new"],
-  produce(_match: TreeSitterMatch, sourceFile: SourceFile): readonly EditDescriptor[] {
-    if (sourceFile.language !== "typescript" && sourceFile.language !== "tsx") return [];
+  produce(_match: TreeSitterMatch, sourceFile: SourceFile): PluginProduceResult {
+    if (sourceFile.language !== "typescript" && sourceFile.language !== "tsx") return { edits: [], advisories: [] };
     const text = sourceFile.bytes.toString("utf-8");
-    return findAnthropicCalls(text, sourceFile.path);
+    return { edits: findAnthropicCalls(text, sourceFile.path), advisories: [] };
   },
 };
 

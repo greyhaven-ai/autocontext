@@ -5,8 +5,8 @@
  */
 import type {
   DetectorPlugin,
-  EditDescriptor,
   InsertStatementEdit,
+  PluginProduceResult,
   SourceFile,
   TreeSitterMatch,
 } from "../../../src/control-plane/instrument/contract/plugin-interface.js";
@@ -15,10 +15,10 @@ export const mockInsertStatementPlugin: DetectorPlugin = {
   id: "mock-insert-statement",
   supports: { language: "python", sdkName: "mock-insert" },
   treeSitterQueries: ["(module) @m"],
-  produce(_match: TreeSitterMatch, sourceFile: SourceFile): readonly EditDescriptor[] {
+  produce(_match: TreeSitterMatch, sourceFile: SourceFile): PluginProduceResult {
     const text = sourceFile.bytes.toString("utf-8");
     const anchor = text.indexOf("ANCHOR_HERE");
-    if (anchor === -1) return [];
+    if (anchor === -1) return { edits: [], advisories: [] };
     const endByte = anchor + "ANCHOR_HERE".length;
     const before = text.slice(0, anchor);
     const line = (before.match(/\n/g)?.length ?? 0) + 1;
@@ -42,6 +42,6 @@ export const mockInsertStatementPlugin: DetectorPlugin = {
       },
       statementSource: "autocontext.init()",
     };
-    return [edit];
+    return { edits: [edit], advisories: [] };
   },
 };
