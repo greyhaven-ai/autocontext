@@ -21,6 +21,20 @@ print(len(replays))
 print(replays[0].keys())
 </code>
 
+Safe stdlib modules are preloaded and may also be imported directly if needed:
+`json`, `math`, `statistics`, `collections`, `pprint`, `re`, `time`.
+Do not attempt to import filesystem, process, or network modules.
+
+## Text helpers
+
+Use these helpers instead of printing entire large blobs:
+- `peek(text, start=0, length=2000)` -- inspect a slice of a large string
+- `grep(text, pattern, context=0)` -- find matching lines
+- `chunk_by_size(text, size=4000, overlap=0)` -- split a large string into chunks
+- `chunk_by_headers(text, pattern=r"^#{{1,3}} ")` -- split markdown into sections
+
+Prefer these helpers over dumping full tool code, playbooks, changelogs, or lesson files.
+
 ## Available function: llm_batch(prompts)
 
 Call llm_batch(prompts) with a list of prompt strings to dispatch parallel LLM calls.
@@ -136,7 +150,9 @@ answer["ready"] = True
 
 """
 
-ANALYST_MONTY_RLM_SYSTEM = MONTY_RLM_SCAFFOLDING_PREAMBLE + """\
+ANALYST_MONTY_RLM_SYSTEM = (
+    MONTY_RLM_SCAFFOLDING_PREAMBLE
+    + """\
 You are the Analyst agent in an iterative strategy evolution system. Your job is to
 analyze match replays, score distributions, and strategic patterns to produce actionable
 findings for the Coach and Competitor agents.
@@ -154,8 +170,11 @@ Your final answer (set in answer["content"]) must be markdown with these section
 
 Start by exploring the data structure, then dig into patterns.
 """
+)
 
-ARCHITECT_MONTY_RLM_SYSTEM = MONTY_RLM_SCAFFOLDING_PREAMBLE + """\
+ARCHITECT_MONTY_RLM_SYSTEM = (
+    MONTY_RLM_SCAFFOLDING_PREAMBLE
+    + """\
 You are the Architect agent in an iterative strategy evolution system. Your job is to
 analyze tool effectiveness, identify infrastructure bottlenecks, and propose tooling
 improvements.
@@ -180,8 +199,11 @@ If no new tools are needed, use an empty tools array.
 
 Start by examining existing tool code and correlating with performance metrics.
 """
+)
 
-COMPETITOR_MONTY_RLM_SYSTEM = MONTY_RLM_SCAFFOLDING_PREAMBLE + """\
+COMPETITOR_MONTY_RLM_SYSTEM = (
+    MONTY_RLM_SCAFFOLDING_PREAMBLE
+    + """\
 You are the Competitor agent in an iterative strategy evolution system. Your job is to
 explore match replays, analyze score patterns, and produce a JSON strategy that maximizes
 performance in the scenario.
@@ -210,6 +232,7 @@ answer["ready"] = True
 
 Start by exploring the data structure, then develop your strategy iteratively.
 """
+)
 
 # Constraint bullets shared with prompts/templates.py — keep in sync
 _RLM_ANALYST_CONSTRAINT = (
@@ -236,7 +259,9 @@ _RLM_COMPETITOR_CONSTRAINT = (
     "- Do NOT use parameter values outside the ranges defined in strategy_interface\n"
 )
 
-ANALYST_RLM_SYSTEM = RLM_SCAFFOLDING_PREAMBLE + """\
+ANALYST_RLM_SYSTEM = (
+    RLM_SCAFFOLDING_PREAMBLE
+    + """\
 You are the Analyst agent in an iterative strategy evolution system. Your job is to
 analyze match replays, score distributions, and strategic patterns to produce actionable
 findings for the Coach and Competitor agents.
@@ -254,8 +279,11 @@ Your final answer (set in answer["content"]) must be markdown with these section
 
 Start by exploring the data structure, then dig into patterns.
 """
+)
 
-ARCHITECT_RLM_SYSTEM = RLM_SCAFFOLDING_PREAMBLE + """\
+ARCHITECT_RLM_SYSTEM = (
+    RLM_SCAFFOLDING_PREAMBLE
+    + """\
 You are the Architect agent in an iterative strategy evolution system. Your job is to
 analyze tool effectiveness, identify infrastructure bottlenecks, and propose tooling
 improvements.
@@ -280,8 +308,11 @@ If no new tools are needed, use an empty tools array.
 
 Start by examining existing tool code and correlating with performance metrics.
 """
+)
 
-COMPETITOR_RLM_SYSTEM = RLM_SCAFFOLDING_PREAMBLE + """\
+COMPETITOR_RLM_SYSTEM = (
+    RLM_SCAFFOLDING_PREAMBLE
+    + """\
 You are the Competitor agent in an iterative strategy evolution system. Your job is to
 explore match replays, analyze score patterns, and produce a JSON strategy that maximizes
 performance in the scenario.
@@ -310,6 +341,7 @@ answer["ready"] = True
 
 Start by exploring the data structure, then develop your strategy iteratively.
 """
+)
 
 
 def _insert_rlm_constraint(base: str, constraint: str) -> str:

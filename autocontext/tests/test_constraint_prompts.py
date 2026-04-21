@@ -172,6 +172,12 @@ class TestRlmConstrainedPrompts:
         assert "## Important rules" in ANALYST_RLM_SYSTEM_CONSTRAINED
         assert "## Important rules" in ARCHITECT_RLM_SYSTEM_CONSTRAINED
 
+    def test_standard_rlm_prompts_advertise_safe_helpers(self) -> None:
+        assert "pprint" in ANALYST_RLM_SYSTEM
+        assert "## Text helpers" in ANALYST_RLM_SYSTEM
+        assert "peek(text" in ANALYST_RLM_SYSTEM
+        assert "chunk_by_headers" in ARCHITECT_RLM_SYSTEM
+
     def test_constraint_before_important_rules(self) -> None:
         constraint_pos = ANALYST_RLM_SYSTEM_CONSTRAINED.find("## Constraints")
         rules_pos = ANALYST_RLM_SYSTEM_CONSTRAINED.find("## Important rules")
@@ -226,8 +232,7 @@ class TestCuratorConstraints:
         runtime = MagicMock()
         exec_result = MagicMock()
         exec_result.content = (
-            "<!-- CONSOLIDATED_LESSONS_START -->\n- lesson 1\n<!-- CONSOLIDATED_LESSONS_END -->\n"
-            "<!-- LESSONS_REMOVED: 1 -->"
+            "<!-- CONSOLIDATED_LESSONS_START -->\n- lesson 1\n<!-- CONSOLIDATED_LESSONS_END -->\n<!-- LESSONS_REMOVED: 1 -->"
         )
         runtime.run_task.return_value = exec_result
 
@@ -246,8 +251,7 @@ class TestCuratorConstraints:
         runtime = MagicMock()
         exec_result = MagicMock()
         exec_result.content = (
-            "<!-- CONSOLIDATED_LESSONS_START -->\n- lesson 1\n<!-- CONSOLIDATED_LESSONS_END -->\n"
-            "<!-- LESSONS_REMOVED: 1 -->"
+            "<!-- CONSOLIDATED_LESSONS_START -->\n- lesson 1\n<!-- CONSOLIDATED_LESSONS_END -->\n<!-- LESSONS_REMOVED: 1 -->"
         )
         runtime.run_task.return_value = exec_result
 

@@ -52,7 +52,9 @@ class TestLoadForAnalyst:
         )
 
         ctx = loader.load_for_analyst(
-            "r1", "grid_ctf", 1,
+            "r1",
+            "grid_ctf",
+            1,
             scenario_rules="Test rules",
             strategy_interface="Test interface",
             current_strategy={"aggression": 0.5},
@@ -76,6 +78,28 @@ class TestLoadForAnalyst:
 
 
 class TestLoadForArchitect:
+    def test_truncates_large_text_blobs_for_architect_context(self, store_pair: tuple[ArtifactStore, SQLiteStore]) -> None:
+        artifacts, sqlite = store_pair
+        loader = ContextLoader(artifacts, sqlite)
+
+        sqlite.create_run("r1", "grid_ctf", 1, "local")
+        changelog_path = artifacts.knowledge_root / "grid_ctf" / "architect" / "changelog.md"
+        changelog_path.parent.mkdir(parents=True, exist_ok=True)
+        changelog_path.write_text("A" * 12000, encoding="utf-8")
+        skill_dir = artifacts.skills_root / "grid-ctf-ops"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "# Grid CTF Ops\n\n## Operational Lessons\n" + ("B" * 9000),
+            encoding="utf-8",
+        )
+
+        ctx = loader.load_for_architect("r1", "grid_ctf", 1)
+
+        assert len(ctx.variables["architect_changelog"]) < 12000
+        assert len(ctx.variables["operational_lessons"]) < 9000
+        assert "[truncated" in ctx.variables["architect_changelog"]
+        assert "[truncated" in ctx.variables["operational_lessons"]
+
     def test_includes_existing_tools(self, store_pair: tuple[ArtifactStore, SQLiteStore]) -> None:
         artifacts, sqlite = store_pair
         loader = ContextLoader(artifacts, sqlite)
@@ -83,9 +107,13 @@ class TestLoadForArchitect:
         sqlite.create_run("r1", "grid_ctf", 2, "local")
 
         # Create a tool file
-        artifacts.persist_tools("grid_ctf", 1, [
-            {"name": "threat_assessor", "description": "Risk estimator", "code": "def run(x): return x"},
-        ])
+        artifacts.persist_tools(
+            "grid_ctf",
+            1,
+            [
+                {"name": "threat_assessor", "description": "Risk estimator", "code": "def run(x): return x"},
+            ],
+        )
 
         ctx = loader.load_for_architect("r1", "grid_ctf", 1, scenario_rules="Rules here")
 

@@ -20,9 +20,25 @@ _SAFE_MODULES = {
     "math": __import__("math"),
     "statistics": __import__("statistics"),
     "collections": __import__("collections"),
+    "pprint": __import__("pprint"),
     "re": __import__("re"),
     "time": __import__("time"),
 }
+
+
+def _safe_import(
+    name: str,
+    globals: dict[str, Any] | None = None,
+    locals: dict[str, Any] | None = None,
+    fromlist: tuple[str, ...] = (),
+    level: int = 0,
+) -> Any:
+    del globals, locals, fromlist, level
+    base_name = name.split(".", 1)[0]
+    module = _SAFE_MODULES.get(base_name)
+    if module is None:
+        raise ImportError(f"import of '{name}' is blocked")
+    return module
 
 
 def _peek(text: str, start: int = 0, length: int = 2000) -> str:
@@ -98,19 +114,21 @@ _TEXT_HELPERS: dict[str, Any] = {
     "chunk_by_headers": _chunk_by_headers,
 }
 
-_BLOCKED_NAMES = frozenset({
-    "open",
-    "os",
-    "sys",
-    "subprocess",
-    "importlib",
-    "__import__",
-    "eval",
-    "compile",
-    "breakpoint",
-    "exit",
-    "quit",
-})
+_BLOCKED_NAMES = frozenset(
+    {
+        "open",
+        "os",
+        "sys",
+        "subprocess",
+        "importlib",
+        "__import__",
+        "eval",
+        "compile",
+        "breakpoint",
+        "exit",
+        "quit",
+    }
+)
 
 
 class CodeTimeout(BaseException):
@@ -132,6 +150,7 @@ def _build_restricted_builtins() -> dict[str, Any]:
         if name in _BLOCKED_NAMES:
             continue
         safe[name] = getattr(_builtins, name)
+    safe["__import__"] = _safe_import
     return safe
 
 

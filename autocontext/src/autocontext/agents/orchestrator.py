@@ -17,6 +17,11 @@ from autocontext.agents.curator import KnowledgeCurator
 from autocontext.agents.llm_client import LanguageModelClient, build_client_from_settings
 from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
+from autocontext.agents.rlm_short_circuits import (
+    analyst_has_fresh_match_data,
+    build_analyst_no_data_execution,
+    build_architect_cadence_skip_execution,
+)
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
@@ -936,14 +941,19 @@ class AgentOrchestrator:
             scenario_rules=scenario_rules,
             current_strategy=strategy,
         )
-        analyst_exec, _ = self._run_single_rlm_session(
-            role="analyst",
-            model=analyst_model or self.settings.model_analyst,
-            system_tpl=backend.analyst_tpl,
-            context=analyst_ctx,
-            worker_cls=backend.worker_cls,
-            client=analyst_client,
-        )
+        if not analyst_has_fresh_match_data(analyst_ctx.variables):
+            analyst_exec = build_analyst_no_data_execution(
+                analyst_model or self.settings.model_analyst,
+            )
+        else:
+            analyst_exec, _ = self._run_single_rlm_session(
+                role="analyst",
+                model=analyst_model or self.settings.model_analyst,
+                system_tpl=backend.analyst_tpl,
+                context=analyst_ctx,
+                worker_cls=backend.worker_cls,
+                client=analyst_client,
+            )
 
         # Reset turn counter between roles for deterministic client
         architect_client, architect_model = self._resolve_role_execution(
@@ -955,6 +965,12 @@ class AgentOrchestrator:
             architect_client.reset_rlm_turns()
 
         # --- Architect ---
+        if _ARCHITECT_CADENCE_SKIP in architect_prompt:
+            architect_exec = build_architect_cadence_skip_execution(
+                architect_model or self.settings.model_architect,
+            )
+            return analyst_exec, architect_exec
+
         architect_ctx = self._rlm_loader.load_for_architect(
             run_id,
             scenario_name,

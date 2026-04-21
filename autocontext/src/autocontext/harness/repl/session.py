@@ -17,6 +17,15 @@ from autocontext.harness.repl.types import ExecutionRecord, ReplCommand, ReplWor
 logger = logging.getLogger(__name__)
 
 _CODE_PATTERN = re.compile(r"<code>(.*?)</code>", re.DOTALL)
+_REPL_FEEDBACK_MAX_CHARS = 1200
+
+
+def _compact_feedback_text(text: str, *, limit: int = _REPL_FEEDBACK_MAX_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    head = text[: limit // 2].rstrip()
+    tail = text[-(limit - len(head) - len("\n... [truncated] ...\n")) :].lstrip()
+    return f"{head}\n... [truncated] ...\n{tail}"
 
 
 def make_llm_batch(
@@ -123,24 +132,33 @@ class RlmSession:
                 code = code_match.group(1).strip()
                 result = self._worker.run_code(ReplCommand(code))
 
-                self.execution_history.append(ExecutionRecord(
-                    turn=turn,
-                    code=code,
-                    stdout=result.stdout,
-                    error=result.error,
-                    answer_ready=result.answer.get("ready", False),
-                ))
+                self.execution_history.append(
+                    ExecutionRecord(
+                        turn=turn,
+                        code=code,
+                        stdout=result.stdout,
+                        error=result.error,
+                        answer_ready=result.answer.get("ready", False),
+                    )
+                )
 
                 # Build user feedback message
                 parts: list[str] = []
                 if result.stdout:
-                    parts.append(f"[stdout]\n{result.stdout}")
+                    parts.append(f"[stdout]\n{_compact_feedback_text(result.stdout)}")
                 if result.error:
-                    parts.append(f"[error]\n{result.error}")
+                    parts.append(f"[error]\n{_compact_feedback_text(result.error)}")
                 if not parts:
                     parts.append("[no output]")
 
                 feedback = "\n\n".join(parts)
+                if turn >= 2 and not result.answer.get("ready", False):
+                    feedback += (
+                        "\n\n[finalization reminder]\n"
+                        "If you have enough evidence, finalize now by writing your markdown into "
+                        'answer["content"] and setting answer["ready"] = True instead of running '
+                        "more exploratory code."
+                    )
                 messages.append({"role": "user", "content": feedback})
 
                 if self._on_turn:
@@ -151,11 +169,13 @@ class RlmSession:
                     break
             else:
                 # Model didn't emit code — nudge it
-                messages.append({
-                    "role": "user",
-                    "content": "Please write code inside <code> tags to continue your analysis, "
-                    'or set answer["ready"] = True to finalize.',
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Please write code inside <code> tags to continue your analysis, "
+                        'or set answer["ready"] = True to finalize.',
+                    }
+                )
         else:
             status = "truncated"
             logger.warning("RLM %s hit max_turns=%d without finalizing", self._role, self._max_turns)

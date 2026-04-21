@@ -46,12 +46,20 @@ class TestReplWorkerNamespace:
 
     def test_safe_modules_available(self) -> None:
         worker = ReplWorker()
-        worker.run_code(ReplCommand("import json; print(json.dumps({'a': 1}))"))
-        # json is in the namespace directly, but import also works via builtins
-        # Either way, the namespace has json available
+        result = worker.run_code(ReplCommand("import json; print(json.dumps({'a': 1}))"))
+        assert result.error is None
+        assert '{"a": 1}' in result.stdout
+
+        # json is in the namespace directly, but import should also work via builtins
         worker2 = ReplWorker()
         result2 = worker2.run_code(ReplCommand('print(json.dumps({"a": 1}))'))
+        assert result2.error is None
         assert '{"a": 1}' in result2.stdout
+
+        worker3 = ReplWorker()
+        result3 = worker3.run_code(ReplCommand("import pprint; pprint.pprint({'a': 1})"))
+        assert result3.error is None
+        assert "{'a': 1}" in result3.stdout
 
 
 class TestReplWorkerTruncation:
