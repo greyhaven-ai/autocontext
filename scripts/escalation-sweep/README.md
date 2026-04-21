@@ -40,16 +40,22 @@ knowledge, and skills roots. The summarized solve JSON stays in
 
 ## Failure buckets
 
-The summarizer groups non-zero exits into:
+The summarizer reads the structured `error` field from each solve's
+`.out.json`; stderr tracebacks and retry-log chatter in `<ID>.err.log` are
+ignored (otherwise AC-575's "parse failed attempt 1/3" retry warning would
+mask the real failure). First-match-wins ordering:
 
-| Bucket                         | Meaning                                                  |
-| ------------------------------ | -------------------------------------------------------- |
-| `classifier_low_confidence`    | `LowConfidenceError` — keyword miss + LLM fallback also failed |
-| `designer_intent_drift`        | `validate_intent` rejected the spec (AC-242 / AC-574)    |
-| `designer_parse_failure`       | Spec/source/execution validation errored out             |
-| `claude_cli_timeout`           | Subprocess or provider timed out                         |
-| `scenario_execution_failed`    | Scenario built but generations errored                   |
-| `unknown`                      | Didn't match any pattern — eyeball the raw output        |
+| Bucket                         | Meaning                                                        |
+| ------------------------------ | -------------------------------------------------------------- |
+| `spec_quality_threshold`       | AC-585: designer emitted `quality_threshold` outside (0.0, 1.0] |
+| `judge_auth_failure`           | AC-586: judge couldn't resolve a provider auth token            |
+| `classifier_low_confidence`    | `LowConfidenceError` — keyword miss and AC-580 fallback also failed |
+| `designer_intent_drift`        | `validate_intent` rejected the spec (AC-242 / AC-574)          |
+| `designer_parse_exhausted`     | AC-575 retry window exhausted                                  |
+| `spec_validation_other`        | Spec / source / execution validation (non-quality_threshold)   |
+| `claude_cli_timeout`           | Subprocess or provider timed out                               |
+| `scenario_execution_failed`    | Scenario built but generations errored                         |
+| `unknown`                      | Didn't match any pattern — inspect `<ID>.out.json` + `.err.log` |
 
 Successes are split into:
 
