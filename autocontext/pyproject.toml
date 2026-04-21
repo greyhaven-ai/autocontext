@@ -45,8 +45,11 @@ all = ["autocontext[mcp,agent-sdk,monty,openai]"]
 
 [dependency-groups]
 dev = [
+  "hypothesis>=6.151.12",
   "mypy>=1.16.0",
+  "openai>=1.0.0,<2.0",
   "pytest>=8.4.0",
+  "pytest-asyncio>=1.3.0",
   "pytest-cov>=6.0.0",
   "ruff>=0.12.0",
 ]
@@ -69,6 +72,7 @@ packages = ["src/autocontext"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --disable-warnings"
+asyncio_mode = "auto"
 markers = [
     "monty: tests requiring pydantic-monty to be installed",
     "slow: tests that run a full generation loop or multi-generation pipeline",
