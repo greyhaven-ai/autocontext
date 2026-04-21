@@ -1,0 +1,5 @@
+{
+  "model": "gpt-4o",
+  "messages": [{"role": "user", "content": "Abandon this stream"}],
+  "stream": true
+}

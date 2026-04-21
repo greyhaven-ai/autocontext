@@ -1,0 +1,8 @@
+{
+  "id": "chatcmpl-cf001",
+  "object": "chat.completion",
+  "created": 1714000000,
+  "model": "gpt-4o",
+  "choices": [{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "content_filter"}],
+  "usage": {"prompt_tokens": 8, "completion_tokens": 0, "total_tokens": 8}
+}

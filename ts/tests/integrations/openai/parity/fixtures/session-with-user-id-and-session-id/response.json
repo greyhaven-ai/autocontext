@@ -1,0 +1,8 @@
+{
+  "id": "chatcmpl-sess001",
+  "object": "chat.completion",
+  "created": 1714000000,
+  "model": "gpt-4o",
+  "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi!"}, "finish_reason": "stop"}],
+  "usage": {"prompt_tokens": 8, "completion_tokens": 2, "total_tokens": 10}
+}

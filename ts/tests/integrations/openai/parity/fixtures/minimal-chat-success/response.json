@@ -1,0 +1,8 @@
+{
+  "id": "chatcmpl-parity001",
+  "object": "chat.completion",
+  "created": 1714000000,
+  "model": "gpt-4o",
+  "choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello there!"}, "finish_reason": "stop"}],
+  "usage": {"prompt_tokens": 5, "completion_tokens": 4, "total_tokens": 9}
+}
