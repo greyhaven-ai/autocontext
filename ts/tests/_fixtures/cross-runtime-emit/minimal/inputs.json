@@ -1,0 +1,29 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, world.",
+      "timestamp": "2026-04-17T12:00:00.000Z"
+    }
+  ],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:01.250Z",
+    "latencyMs": 1250
+  },
+  "usage": {
+    "tokensIn": 10,
+    "tokensOut": 15
+  },
+  "env": {
+    "environmentTag": "production",
+    "appId": "my-app"
+  },
+  "traceId": "01HZ6X2K7M9A3B4C5D6E7F8G9H",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.0.0" }
+  }
+}

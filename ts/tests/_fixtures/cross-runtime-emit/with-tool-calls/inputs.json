@@ -1,0 +1,42 @@
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-20250514",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What's the weather in Tokyo?",
+      "timestamp": "2026-04-17T12:00:00.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Let me check.",
+      "timestamp": "2026-04-17T12:00:00.500Z"
+    }
+  ],
+  "toolCalls": [
+    {
+      "toolName": "weather_lookup",
+      "args": { "city": "Tokyo", "units": "celsius" },
+      "result": { "temp": 18, "conditions": "cloudy" },
+      "durationMs": 120
+    }
+  ],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:02.000Z",
+    "latencyMs": 2000
+  },
+  "usage": {
+    "tokensIn": 42,
+    "tokensOut": 88
+  },
+  "env": {
+    "environmentTag": "production",
+    "appId": "weather-bot"
+  },
+  "traceId": "01HZ6X2K7M9A3B4C5D6E7F8G9H",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.0.0" }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Classify this as sentiment.",
+      "timestamp": "2026-04-17T12:00:00.000Z"
+    }
+  ],
+  "outcome": {
+    "label": "success",
+    "score": 0.87,
+    "reasoning": "Classifier produced a confident prediction.",
+    "signals": { "confidence": 0.87, "calibration": 0.92 }
+  },
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:00.800Z",
+    "latencyMs": 800
+  },
+  "usage": {
+    "tokensIn": 20,
+    "tokensOut": 5
+  },
+  "env": {
+    "environmentTag": "staging",
+    "appId": "sentiment-classifier"
+  },
+  "traceId": "01HZ6X2K7M9A3B4C5D6E7F8G9H",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.0.0" }
+  }
+}

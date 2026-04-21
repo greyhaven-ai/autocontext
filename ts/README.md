@@ -18,6 +18,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 - **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
 - **Package management**: strategy package export/import, training data export
 - **Training hook surface**: dataset validation and executor-backed `train` entry point
+- **Production-traces emit SDK** at `autoctx/production-traces` — customer-facing emit APIs mirroring the Python SDK (A2-II-a)
 
 ## Install
 
@@ -36,6 +37,91 @@ cd ts
 npm install
 npm run build
 ```
+
+## Emit SDK: `autoctx/production-traces`
+
+Customer applications can emit production traces directly from their
+TypeScript code using the `autoctx/production-traces` subpath. This is the
+TS mirror of the Python `autocontext.production_traces` emit module;
+customers using both languages get one mental model, enforced at the byte
+level by cross-runtime property tests.
+
+```ts
+import {
+  buildTrace,
+  writeJsonl,
+  TraceBatch,
+  hashUserId,
+  loadInstallSalt,
+} from "autoctx/production-traces";
+
+// 1) Hash personally-identifying identifiers with the install salt.
+const salt = (await loadInstallSalt(process.cwd())) ?? "";
+const userIdHash = hashUserId(session.user.id, salt);
+
+// 2) Build and validate a ProductionTrace. Throws ValidationError on
+//    invalid input with per-field detail.
+const trace = buildTrace({
+  provider: "openai",
+  model: "gpt-4o-mini",
+  messages: [
+    { role: "user", content: prompt, timestamp: new Date().toISOString() },
+  ],
+  timing: {
+    startedAt: "2026-04-17T12:00:00.000Z",
+    endedAt: "2026-04-17T12:00:01.250Z",
+    latencyMs: 1250,
+  },
+  usage: { tokensIn: 42, tokensOut: 88 },
+  env: { environmentTag: "production", appId: "my-app" },
+  session: { userIdHash },
+});
+
+// 3) Persist: one file per call, or batch across many calls.
+writeJsonl(trace);
+
+const batch = new TraceBatch();
+for (const event of stream) batch.add(buildTrace(/* ... */));
+batch.flush();  // writes accumulated traces as one file
+```
+
+Both ESM and CommonJS consumers are supported via the `"exports"` map:
+
+```ts
+// ESM
+import { buildTrace } from "autoctx/production-traces";
+
+// CJS
+const { buildTrace } = require("autoctx/production-traces");
+```
+
+### Zero telemetry
+
+**Traces go where you put them.** The SDK itself emits zero telemetry
+about its own usage. No analytics, no phone-home, no opt-out toggle
+needed. CI script `check:no-telemetry` greps the SDK source plus every
+transitive dep for suspicious network patterns on every PR.
+
+### Enterprise-discipline guarantees
+
+- **Bundle size**: ~48 kB gzipped at ship, enforced in CI at a
+  100 kB ceiling. Tree-shakable via `"sideEffects"` discipline.
+- **License compatibility**: every dep in the SDK's transitive closure
+  carries an MIT / Apache-2.0 / BSD / ISC / 0BSD license, enforced by
+  `check:license-compatibility`.
+- **No install scripts**: `autoctx` declares no `preinstall`,
+  `install`, or `postinstall` lifecycle hooks. Safe to deploy with
+  `npm install --ignore-scripts`.
+- **Dual ESM + CJS**: both `import` and `require()` work via the
+  `package.json` `"exports"` map.
+- **Cross-runtime parity**: TS `buildTrace` and Python `build_trace`
+  produce byte-identical canonical JSON, enforced at 50 property runs
+  plus 7 committed fixtures.
+
+See [`src/production-traces/sdk/STABILITY.md`](src/production-traces/sdk/STABILITY.md)
+for the API-stability commitment and
+[`src/production-traces/sdk/BUDGET.md`](src/production-traces/sdk/BUDGET.md)
+for the bundle-size budget details.
 
 ## CLI Commands
 
@@ -291,4 +377,5 @@ npm install
 npm test              # vitest
 npm run lint          # tsc --noEmit
 npm run build         # tsc (outputs to dist/)
+npm run check:a2-ii-a-all  # enterprise discipline checks for the SDK subpath
 ```
