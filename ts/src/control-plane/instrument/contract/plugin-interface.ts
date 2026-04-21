@@ -24,10 +24,36 @@ export type IndentationStyle =
   | { readonly kind: "spaces"; readonly width: number }
   | { readonly kind: "tabs" };
 
+/** One name imported from a module, optionally with a local alias. */
+export interface ImportedName {
+  /** The name exported from the module. */
+  readonly name: string;
+  /** Local binding if `import X as Y` / `from m import X as Y`. */
+  readonly alias?: string;
+}
+
+/** Helper — does `names` contain an entry with `name` and no alias? */
+export function hasImport(names: ReadonlySet<ImportedName>, name: string): boolean {
+  for (const n of names) if (n.name === name && n.alias === undefined) return true;
+  return false;
+}
+
+/** Helper — given a local identifier `localName`, return the source name if imported. */
+export function resolveLocalName(
+  names: ReadonlySet<ImportedName>,
+  localName: string,
+): string | undefined {
+  for (const n of names) {
+    if (n.alias === localName) return n.name;
+    if (n.alias === undefined && n.name === localName) return n.name;
+  }
+  return undefined;
+}
+
 /** One existing import statement already present in the source file. */
 export interface ExistingImport {
   readonly module: string;
-  readonly names: ReadonlySet<string>;
+  readonly names: ReadonlySet<ImportedName>;
 }
 
 /** Set of existing imports — a `ReadonlySet<ExistingImport>` so planner can efficiently dedupe. */

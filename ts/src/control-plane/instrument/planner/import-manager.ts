@@ -26,6 +26,7 @@
  */
 import type {
   ImportSpec,
+  ImportedName,
   SourceFile,
   InstrumentLanguage,
 } from "../contract/plugin-interface.js";
@@ -111,17 +112,24 @@ function filterAlreadyPresent(
   specs: readonly ImportSpec[],
   sourceFile: SourceFile,
 ): readonly ImportSpec[] {
-  const existingByModule = new Map<string, ReadonlySet<string>>();
+  const existingByModule = new Map<string, ReadonlySet<ImportedName>>();
   for (const ei of sourceFile.existingImports) {
     existingByModule.set(ei.module, ei.names);
   }
   return specs.filter((s) => {
     const existing = existingByModule.get(s.module);
     if (!existing) return true;
-    // Treat `name`, `alias`, or module-name as existing when the scanner recorded them.
-    if (existing.has(s.name)) return false;
-    if (s.alias && existing.has(s.alias)) return false;
-    // For default imports, scanner stores the default binding name as a "name".
+    // Check if the spec name matches any recorded ImportedName.
+    for (const n of existing) {
+      if (n.name === s.name) return false; // already imported (with or without alias)
+      // For default imports the scanner records name="default" with alias=binding.
+      if (s.kind === "default" && n.name === "default") return false;
+    }
+    if (s.alias) {
+      for (const n of existing) {
+        if (n.alias === s.alias) return false;
+      }
+    }
     return true;
   });
 }

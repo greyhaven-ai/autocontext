@@ -144,22 +144,31 @@ describe("parseDirectives — property test (P-directive-parser)", () => {
   });
 });
 
+/** Helper: find an ImportedName entry by its source name in a Set<ImportedName>. */
+function hasName(names: ReadonlySet<import("../../../../src/control-plane/instrument/contract/plugin-interface.js").ImportedName>, name: string): boolean {
+  for (const n of names) if (n.name === name) return true;
+  return false;
+}
+
 describe("parseExistingImports — Python", () => {
   test("from-import captured with module and name", () => {
     const lines = ["from openai import OpenAI, AsyncOpenAI", "import os"];
     const set = parseExistingImports(lines, "python");
     const byModule = new Map(Array.from(set).map((i) => [i.module, i.names]));
     expect(byModule.get("openai")).toBeDefined();
-    expect(byModule.get("openai")!.has("OpenAI")).toBe(true);
-    expect(byModule.get("openai")!.has("AsyncOpenAI")).toBe(true);
+    expect(hasName(byModule.get("openai")!, "OpenAI")).toBe(true);
+    expect(hasName(byModule.get("openai")!, "AsyncOpenAI")).toBe(true);
     expect(byModule.get("os")).toBeDefined();
   });
 
-  test("`import m as n` captures `m` as module name (alias stripped)", () => {
+  test("`from openai import OpenAI as Client` captures `OpenAI` as name with alias `Client`", () => {
     const lines = ["from openai import OpenAI as Client"];
     const set = parseExistingImports(lines, "python");
     const byModule = new Map(Array.from(set).map((i) => [i.module, i.names]));
-    expect(byModule.get("openai")!.has("OpenAI")).toBe(true);
+    expect(hasName(byModule.get("openai")!, "OpenAI")).toBe(true);
+    // alias is preserved
+    const entry = Array.from(byModule.get("openai")!).find((n) => n.name === "OpenAI");
+    expect(entry?.alias).toBe("Client");
   });
 });
 
@@ -168,22 +177,28 @@ describe("parseExistingImports — TypeScript/JavaScript", () => {
     const lines = [`import { Anthropic, Tool } from "@anthropic-ai/sdk";`];
     const set = parseExistingImports(lines, "typescript");
     const byModule = new Map(Array.from(set).map((i) => [i.module, i.names]));
-    expect(byModule.get("@anthropic-ai/sdk")!.has("Anthropic")).toBe(true);
-    expect(byModule.get("@anthropic-ai/sdk")!.has("Tool")).toBe(true);
+    expect(hasName(byModule.get("@anthropic-ai/sdk")!, "Anthropic")).toBe(true);
+    expect(hasName(byModule.get("@anthropic-ai/sdk")!, "Tool")).toBe(true);
   });
 
-  test("default import captured", () => {
+  test("default import captured (name='default', alias=binding)", () => {
     const lines = [`import OpenAI from "openai";`];
     const set = parseExistingImports(lines, "typescript");
     const byModule = new Map(Array.from(set).map((i) => [i.module, i.names]));
-    expect(byModule.get("openai")!.has("OpenAI")).toBe(true);
+    // default import: name="default", alias="OpenAI"
+    const entry = Array.from(byModule.get("openai")!).find((n) => n.name === "default");
+    expect(entry).toBeDefined();
+    expect(entry?.alias).toBe("OpenAI");
   });
 
-  test("namespace import captured", () => {
+  test("namespace import captured (name=mod, alias=binding)", () => {
     const lines = [`import * as ts from "typescript";`];
     const set = parseExistingImports(lines, "typescript");
     const byModule = new Map(Array.from(set).map((i) => [i.module, i.names]));
-    expect(byModule.get("typescript")!.has("ts")).toBe(true);
+    // namespace import: name="typescript", alias="ts"
+    const entry = Array.from(byModule.get("typescript")!).find((n) => n.alias === "ts");
+    expect(entry).toBeDefined();
+    expect(entry?.name).toBe("typescript");
   });
 
   test("side-effect import recorded with empty names", () => {

@@ -55,7 +55,7 @@ autoctx instrument --apply --branch autocontext-instrument --commit 'Instrument 
 
 ### Audit fingerprint
 - Session: `01HN0000000000000000000009`
-- Session-plan hash: `sha256:e3ecc72621725a1e729926923b04042c39cc45127a8e7f7055dd7a3bbacd96bc` (of `plan.json`)
+- Session-plan hash: `sha256:06646564c0d147a29caea4c367a78fe73310c36d4379043f42fb218d090603f2` (of `plan.json`)
 - Autoctx version: `0.0.0-golden`
 - Registered plugins: `mock-openai-python@0.0.0, mock-anthropic-ts@0.0.0`
 - `.gitignore` rev: `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`

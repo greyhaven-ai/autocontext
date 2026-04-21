@@ -629,7 +629,11 @@ function toPlanMeta(sf: SourceFile): PlanSourceFileMetadata {
   offLines.sort((a, b) => a - b);
   const existing: { module: string; names: readonly string[] }[] = [];
   for (const ei of sf.existingImports) {
-    existing.push({ module: ei.module, names: Array.from(ei.names).sort() });
+    // names is now ReadonlySet<ImportedName>; serialize as "name" or "name as alias".
+    const nameStrings = Array.from(ei.names)
+      .map((n) => (n.alias !== undefined ? `${n.name} as ${n.alias}` : n.name))
+      .sort();
+    existing.push({ module: ei.module, names: nameStrings });
   }
   existing.sort((a, b) => (a.module < b.module ? -1 : 1));
   const metadata: PlanSourceFileMetadata = {

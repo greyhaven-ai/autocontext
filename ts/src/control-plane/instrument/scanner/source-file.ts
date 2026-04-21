@@ -23,6 +23,7 @@
 import { readFile } from "node:fs/promises";
 import type {
   ExistingImport,
+  ImportedName,
   ImportSet,
   IndentationStyle,
   InstrumentLanguage,
@@ -110,7 +111,7 @@ export { safetyParseDirectives as parseDirectivesFromBytes };
 // ---------------------------------------------------------------------------
 
 const PY_FROM_IMPORT = /^\s*from\s+([\w.]+)\s+import\s+(.+)$/;
-const PY_IMPORT = /^\s*import\s+([\w.]+(?:\s*,\s*[\w.]+)*)\s*$/;
+const PY_IMPORT = /^\s*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)\s*$/;
 const JS_IMPORT_NAMED = /^\s*import\s+\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]\s*;?\s*$/;
 const JS_IMPORT_DEFAULT = /^\s*import\s+(\w+)\s+from\s+['"]([^'"]+)['"]\s*;?\s*$/;
 const JS_IMPORT_NAMESPACE = /^\s*import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]\s*;?\s*$/;
@@ -120,10 +121,10 @@ export function parseExistingImports(
   lines: readonly string[],
   language: InstrumentLanguage,
 ): ImportSet {
-  const byModule = new Map<string, Set<string>>();
-  const add = (module: string, name: string): void => {
-    const s = byModule.get(module) ?? new Set<string>();
-    s.add(name);
+  const byModule = new Map<string, Set<ImportedName>>();
+  const add = (module: string, entry: ImportedName): void => {
+    const s = byModule.get(module) ?? new Set<ImportedName>();
+    s.add(entry);
     byModule.set(module, s);
   };
 
@@ -134,10 +135,12 @@ export function parseExistingImports(
         const module = fromImp[1]!;
         const body = fromImp[2]!;
         for (const part of body.split(",")) {
-          const token = part.trim().split(/\s+as\s+/)[0]!.trim();
-          if (!token) continue;
-          const cleaned = token.replace(/^\(|\)$/g, "").trim();
-          if (cleaned) add(module, cleaned);
+          const cleaned = part.trim().replace(/^\(|\)$/g, "").trim();
+          if (!cleaned) continue;
+          const segments = cleaned.split(/\s+as\s+/).map((s) => s.trim());
+          const name = segments[0]!;
+          const alias = segments[1] || undefined;
+          if (name) add(module, { name, alias });
         }
         continue;
       }
@@ -145,8 +148,10 @@ export function parseExistingImports(
       if (imp) {
         const body = imp[1]!;
         for (const part of body.split(",")) {
-          const mod = part.trim().split(/\s+as\s+/)[0]!.trim();
-          if (mod) add(mod, mod);
+          const segments = part.trim().split(/\s+as\s+/).map((s) => s.trim());
+          const mod = segments[0]!;
+          const alias = segments[1] || mod;
+          if (mod) add(mod, { name: mod, alias });
         }
       }
     }
@@ -157,19 +162,24 @@ export function parseExistingImports(
         const body = named[1]!;
         const module = named[2]!;
         for (const part of body.split(",")) {
-          const name = part.trim().split(/\s+as\s+/)[0]!.trim();
-          if (name) add(module, name);
+          const trimmed = part.trim();
+          if (!trimmed) continue;
+          const segments = trimmed.split(/\s+as\s+/).map((s) => s.trim());
+          const name = segments[0]!;
+          const alias = segments[1] || undefined;
+          if (name) add(module, { name, alias });
         }
         continue;
       }
       const def = line.match(JS_IMPORT_DEFAULT);
       if (def) {
-        add(def[2]!, def[1]!);
+        add(def[2]!, { name: "default", alias: def[1]! });
         continue;
       }
       const ns = line.match(JS_IMPORT_NAMESPACE);
       if (ns) {
-        add(ns[2]!, ns[1]!);
+        // namespace import: `import * as alias from "mod"` — store name = mod, alias = alias
+        add(ns[2]!, { name: ns[2]!, alias: ns[1]! });
         continue;
       }
       const side = line.match(JS_IMPORT_SIDEEFFECT);
