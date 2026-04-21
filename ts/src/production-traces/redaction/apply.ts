@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type {
   ProductionTrace,
   RedactionMarker,
@@ -8,6 +7,7 @@ import type {
   CategoryOverride,
   LoadedRedactionPolicy,
 } from "./types.js";
+import { hashValue } from "./hash-primitives.js";
 
 /**
  * Apply-at-export redaction (spec §7.3, §7.6).
@@ -40,6 +40,15 @@ import type {
  * semantic mismatch is large enough that we re-implement field mutation
  * here. We still share the hashing & placeholder conventions with the
  * existing code (SHA-256, `[redacted]` default).
+ *
+ * ## Relationship to `redaction/hash-primitives.ts`
+ *
+ * The `sha256(salt + value)` primitive itself lives in
+ * `redaction/hash-primitives.ts` so the customer-facing emit SDK
+ * (`sdk/hashing.ts`) can share the algorithm without re-implementing it.
+ * Apply-at-export wraps the raw hex digest in the `"sha256:<hex>"` placeholder
+ * convention that is specific to the redaction-marker format — the SDK
+ * returns the raw hex unchanged.
  */
 const RAW_PROVIDER_PAYLOAD_PATH = "/metadata/rawProviderPayload";
 
@@ -96,7 +105,7 @@ export function applyRedactions(
         );
         break;
       case "hash":
-        rewriteField(clone, marker.path, (current) => hashValue(current, hashSalt));
+        rewriteField(clone, marker.path, (current) => `sha256:${hashValue(current, hashSalt)}`);
         break;
       case "drop":
         dropField(clone, marker.path);
@@ -132,12 +141,6 @@ function makePlaceholder(current: unknown, placeholder: string, preserveLength: 
   // Pad the placeholder (first char repeats) to match the original length.
   const fillChar = placeholder.charAt(0);
   return placeholder.slice(0, current.length).padEnd(current.length, fillChar);
-}
-
-function hashValue(current: unknown, salt: string): unknown {
-  const text = typeof current === "string" ? current : JSON.stringify(current ?? null);
-  const hex = createHash("sha256").update(salt + text).digest("hex");
-  return `sha256:${hex}`;
 }
 
 // ---- JSON-pointer-based field rewriting ----
