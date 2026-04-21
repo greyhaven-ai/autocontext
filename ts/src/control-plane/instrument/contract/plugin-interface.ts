@@ -164,6 +164,28 @@ export interface SourceFile {
 }
 
 /**
+ * An advisory emitted by a plugin when it decides NOT to wrap a call site,
+ * describing why and giving the user actionable information.
+ */
+export interface PluginAdvisory {
+  readonly pluginId: string;
+  readonly sourceFilePath: string;
+  readonly range: SourceRange;
+  readonly kind:
+    | "unresolved-import"
+    | "factoryFunction"
+    | "deferred-sdk-variant"
+    | "already-wrapped";
+  readonly reason: string;
+}
+
+/** The full result returned by `DetectorPlugin.produce()`. */
+export interface PluginProduceResult {
+  readonly edits: readonly EditDescriptor[];
+  readonly advisories: readonly PluginAdvisory[];
+}
+
+/**
  * Detector plugin contract. Plugins are registered via `registerDetectorPlugin(plugin)`
  * (Layer 4 — `registry/plugin-registry.ts`).
  */
@@ -174,7 +196,7 @@ export interface DetectorPlugin {
     readonly sdkName: string;
   };
   readonly treeSitterQueries: readonly string[];
-  produce(match: TreeSitterMatch, sourceFile: SourceFile): readonly EditDescriptor[];
+  produce(match: TreeSitterMatch, sourceFile: SourceFile): PluginProduceResult;
 }
 
 /** Opaque tree-sitter query match handed to plugins; narrowed per-plugin as needed. */

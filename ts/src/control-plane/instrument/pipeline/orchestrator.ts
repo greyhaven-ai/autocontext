@@ -46,6 +46,7 @@ import type {
   InstrumentLanguage,
   InstrumentPlan,
   InstrumentSession,
+  PluginAdvisory,
   PlanSourceFileMetadata,
   SafetyDecision,
   SourceFile,
@@ -178,6 +179,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
   // -------------------------------------------------------------------------
   const detections: Detection[] = [];
   const editsByFile = new Map<string, EditDescriptor[]>();
+  const advisoriesByFile = new Map<string, PluginAdvisory[]>();
   for (const sf of sourceFiles) {
     const plugins = pluginsForLanguage(sf.language);
     if (plugins.length === 0) continue;
@@ -185,7 +187,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
       const matches = runPluginQueries(sf, plugin);
       for (const match of matches) {
         const produced = plugin.produce(match, sf);
-        const editsWithMeta: EditDescriptor[] = produced.map((e) => injectPluginMeta(e, plugin.id, sf.path));
+        const editsWithMeta: EditDescriptor[] = produced.edits.map((e) => injectPluginMeta(e, plugin.id, sf.path));
         detections.push({
           pluginId: plugin.id,
           filePath: sf.path,
@@ -195,6 +197,11 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
         const list = editsByFile.get(sf.path) ?? [];
         list.push(...editsWithMeta);
         editsByFile.set(sf.path, list);
+        if (produced.advisories.length > 0) {
+          const advList = advisoriesByFile.get(sf.path) ?? [];
+          advList.push(...produced.advisories);
+          advisoriesByFile.set(sf.path, advList);
+        }
       }
     }
   }
@@ -269,6 +276,12 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
   const detailedEdits = buildDetailedEdits(composedByFile, editsByFile, filesByPath, registeredPlugins);
 
   const command = buildCommandLine(opts);
+  // Collect all advisories from all files.
+  const allAdvisories: PluginAdvisory[] = [];
+  for (const advList of advisoriesByFile.values()) {
+    allAdvisories.push(...advList);
+  }
+
   const prBody = await renderPrBody({
     session,
     plan,
@@ -280,6 +293,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
     detectedUnchanged,
     command: `${command} session=${opts.sessionUlid}`,
     nowIso: opts.nowIso,
+    advisories: allAdvisories,
     enhancement: opts.enhanced
       ? {
           enabled: true,
