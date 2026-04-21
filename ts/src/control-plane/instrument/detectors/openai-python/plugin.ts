@@ -129,11 +129,6 @@ export const plugin: DetectorPlugin = {
         return { edits, advisories };
       }
 
-      if (ctorText !== "OpenAI" && ctorText !== "AsyncOpenAI") {
-        // Not a target constructor — not our concern.
-        return { edits, advisories };
-      }
-
       if (ctorText === "AzureOpenAI") {
         advisories.push({
           pluginId: PLUGIN_ID,
@@ -142,6 +137,11 @@ export const plugin: DetectorPlugin = {
           kind: "deferred-sdk-variant",
           reason: "AzureOpenAI deferred to a2-ii-b-azure; wrap manually: instrument_client(openai.AzureOpenAI(...))",
         });
+        return { edits, advisories };
+      }
+
+      if (ctorText !== "OpenAI" && ctorText !== "AsyncOpenAI") {
+        // Not a target constructor — not our concern.
         return { edits, advisories };
       }
 
