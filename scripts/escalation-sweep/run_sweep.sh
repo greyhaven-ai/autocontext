@@ -60,6 +60,7 @@ for i in $(seq 0 $((COUNT - 1))); do
   jq -r ".[$i].description" "$MANIFEST" > "$DESC_FILE"
 
   OUT_JSON="$OUTPUT_DIR/${ID}.out.json"
+  ERR_LOG="$OUTPUT_DIR/${ID}.err.log"
   META_JSON="$OUTPUT_DIR/${ID}.meta.json"
 
   printf "[%d/%d] %s ... " "$((i + 1))" "$COUNT" "$ID" >&2
@@ -70,7 +71,7 @@ for i in $(seq 0 $((COUNT - 1))); do
     --gens "$GENS" \
     --timeout "$TIMEOUT" \
     --json \
-    > "$OUT_JSON" 2>&1
+    > "$OUT_JSON" 2> "$ERR_LOG"
   EXIT=$?
   set -e
   END=$(date +%s)

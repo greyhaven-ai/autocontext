@@ -2,16 +2,22 @@
 """Classify sweep results into failure buckets and print a summary.
 
 Reads `<output_dir>/index.json` (list of identifiers) produced by run_sweep.sh
-and the per-scenario .out.json / .meta.json pairs, then tallies into known
-failure buckets:
+and the per-scenario .out.json / .err.log / .meta.json triples, then tallies
+into known failure buckets. The authoritative signal is the ``error`` field
+inside .out.json (printed by the CLI as a single-line JSON object on failure);
+.err.log is consulted only for scenarios where stdout was empty or malformed.
 
+Buckets:
     success                       — solve completed, generations executed
+    llm_fallback_fired            — success + AC-580 LLM fallback engaged
     classifier_low_confidence     — LowConfidenceError raised
-    designer_parse_failure        — spec JSON parse / validation failures
     designer_intent_drift         — validate_intent rejected the spec
+    spec_quality_threshold        — AC-585: quality_threshold out of (0, 1]
+    spec_validation_other         — other spec/source/execution validation
+    designer_parse_exhausted      — AC-575 retry window exhausted
+    judge_auth_failure            — AC-586: judge provider couldn't auth
     claude_cli_timeout            — subprocess or provider timeout
     scenario_execution_failed     — generations errored after scenario built
-    llm_fallback_fired            — (INFO-only detection; success cases only)
     unknown                       — didn't match any known pattern
 
 Usage:
@@ -24,12 +30,43 @@ import re
 import sys
 from pathlib import Path
 
+# Order matters: first match wins, so put more-specific patterns first.
 BUCKET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("classifier_low_confidence", re.compile(r"LowConfidenceError|family.*confidence.*<.*threshold", re.I)),
-    ("designer_intent_drift", re.compile(r"intent validation failed", re.I)),
-    ("designer_parse_failure", re.compile(r"(spec|source|execution) validation failed|parse(?:_| )retry exhausted", re.I)),
-    ("claude_cli_timeout", re.compile(r"timed? ?out|PiCLIRuntime failed:.*timeout|claude.?cli.*timeout", re.I)),
-    ("scenario_execution_failed", re.compile(r"solve did not complete|generation.*fail|executor error", re.I)),
+    (
+        "spec_quality_threshold",
+        re.compile(r"quality_threshold must be between", re.I),
+    ),
+    (
+        "judge_auth_failure",
+        re.compile(
+            r"could not resolve authentication method|expected either api_key or auth_token",
+            re.I,
+        ),
+    ),
+    (
+        "classifier_low_confidence",
+        re.compile(r"LowConfidenceError|family classification confidence .* < .* threshold", re.I),
+    ),
+    (
+        "designer_intent_drift",
+        re.compile(r"intent validation failed", re.I),
+    ),
+    (
+        "designer_parse_exhausted",
+        re.compile(r"parse(?:_| )retry exhausted|designer parse failed.*attempt 3/3", re.I),
+    ),
+    (
+        "spec_validation_other",
+        re.compile(r"(spec|source|execution) validation failed", re.I),
+    ),
+    (
+        "claude_cli_timeout",
+        re.compile(r"timed? ?out|timeout after|claude.?cli.*timeout", re.I),
+    ),
+    (
+        "scenario_execution_failed",
+        re.compile(r"solve did not complete|generation.*fail|executor error", re.I),
+    ),
 ]
 
 
@@ -42,11 +79,58 @@ def classify_error(message: str) -> str:
     return "unknown"
 
 
-def read_json(path: Path) -> dict | None:
+def extract_error_field(out_path: Path) -> str:
+    """Pull the CLI's structured ``error`` field out of .out.json.
+
+    On failure the CLI prints a single-line JSON object with an ``error`` key
+    to stdout. stderr (now separated in run_sweep.sh) carries Python
+    tracebacks / retry log lines. We trust only the structured field here.
+    """
+    if not out_path.exists():
+        return ""
+    raw = out_path.read_text().strip()
+    if not raw:
+        return ""
+    # Success output is multi-line JSON; failure output is single-line
+    # "{"error": "..."}" — scan bottom-up for the last line that parses as
+    # JSON with an "error" key.
+    for line in reversed(raw.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and "error" in payload:
+            return str(payload["error"])
+    # Whole payload might be valid JSON with no "error" key (success case).
     try:
-        return json.loads(path.read_text())
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if isinstance(payload, dict):
+        return str(payload.get("error", ""))
+    return ""
+
+
+def extract_success_fields(out_path: Path) -> dict:
+    try:
+        payload = json.loads(out_path.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
-        return None
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def fallback_log_fired(err_path: Path, out_path: Path) -> bool:
+    for path in (err_path, out_path):
+        if not path.exists():
+            continue
+        if "LLM classifier fallback:" in path.read_text():
+            return True
+    return False
 
 
 def main(argv: list[str]) -> int:
@@ -64,26 +148,27 @@ def main(argv: list[str]) -> int:
     rows: list[dict] = []
 
     for ident in identifiers:
-        meta = read_json(output_dir / f"{ident}.meta.json") or {}
+        meta_path = output_dir / f"{ident}.meta.json"
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            meta = {}
         exit_code = meta.get("exit_code", -1)
         elapsed = meta.get("elapsed_seconds", -1)
+
         out_path = output_dir / f"{ident}.out.json"
-        out_text = out_path.read_text() if out_path.exists() else ""
-        out_payload = read_json(out_path) or {}
+        err_path = output_dir / f"{ident}.err.log"
 
         if exit_code == 0:
             bucket = "success"
-            detail = out_payload.get("scenario_name", "")
-            if "LLM classifier fallback:" in out_text:
+            success = extract_success_fields(out_path)
+            detail = success.get("scenario_name") or ""
+            if fallback_log_fired(err_path, out_path):
                 bucket = "llm_fallback_fired"
         else:
-            message = ""
-            if isinstance(out_payload, dict):
-                message = str(out_payload.get("error") or out_text)
-            else:
-                message = out_text
+            message = extract_error_field(out_path)
             bucket = classify_error(message)
-            detail = message.splitlines()[0][:140] if message else ""
+            detail = message.splitlines()[0][:140] if message else "(no error field)"
 
         rows.append(
             {
