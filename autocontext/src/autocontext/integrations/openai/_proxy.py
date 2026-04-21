@@ -14,6 +14,17 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+
+def _is_async_client(client: Any) -> bool:
+    """Return True if client is an AsyncOpenAI (or compatible async client)."""
+    try:
+        from openai import AsyncOpenAI
+        return isinstance(client, AsyncOpenAI)
+    except ImportError:
+        pass
+    # Fallback: check class name
+    return type(client).__name__.startswith("Async")
+
 from ulid import ULID
 
 from autocontext.integrations.openai._session import current_session
@@ -65,14 +76,14 @@ class _ChatCompletionsProxy:
 
     def create(self, **kwargs: Any) -> Any:
         if kwargs.get("stream", False):
-            if inspect.iscoroutinefunction(self._inner_create):
+            if self._parent._is_async:
                 return self._parent._invoke_streaming_async(
                     inner_method=self._inner_create, kwargs=kwargs
                 )
             return self._parent._invoke_streaming(
                 inner_method=self._inner_create, kwargs=kwargs
             )
-        if inspect.iscoroutinefunction(self._inner_create):
+        if self._parent._is_async:
             return self._parent._invoke_non_streaming_async(
                 inner_method=self._inner_create, kwargs=kwargs,
             )
@@ -108,12 +119,12 @@ class _ResponsesProxy:
         kwargs_for_trace["messages"] = normalized_messages
         kwargs_for_trace.pop("input", None)
         if kwargs.get("stream", False):
-            if inspect.iscoroutinefunction(self._inner_create):
+            if self._parent._is_async:
                 raise NotImplementedError("async responses streaming — see deferred list")
             return self._parent._invoke_streaming(
                 inner_method=self._inner_create, kwargs=kwargs,
             )
-        if inspect.iscoroutinefunction(self._inner_create):
+        if self._parent._is_async:
             return self._parent._invoke_non_streaming_async_responses(
                 inner_method=self._inner_create, kwargs=kwargs,
                 normalized_messages=normalized_messages,
@@ -137,6 +148,7 @@ class ClientProxy:
         object.__setattr__(self, "_sink", sink)
         object.__setattr__(self, "_app_id", app_id)
         object.__setattr__(self, "_environment_tag", environment_tag)
+        object.__setattr__(self, "_is_async", _is_async_client(inner))
         object.__setattr__(self, _WRAPPED_SENTINEL, True)
 
     def __getattr__(self, name: str) -> Any:
@@ -393,27 +405,35 @@ class ClientProxy:
         from autocontext.integrations.openai._stream import StreamProxy
         from autocontext.integrations.openai._trace_builder import finalize_streaming_trace
 
-        proxy_holder: list[StreamProxy] = []
+        # Store the accumulator reference in a dict so that the closure captures
+        # the dict (not the proxy), avoiding a reference cycle that would prevent GC.
+        acc_ref: dict[str, Any] = {"accumulator": None}
+        sink = self._sink
+        env = self._env()
+        source_info = self._source_info()
 
         def on_finalize(outcome: dict[str, Any]) -> None:
             ended_at = _now_iso()
             latency_ms = int((time.monotonic() - started_monotonic) * 1000)
-            acc = proxy_holder[0].accumulated() if proxy_holder else {"usage": None, "tool_calls": None}
+            acc = acc_ref["accumulator"] or {"usage": None, "tool_calls": None}
             trace = finalize_streaming_trace(
                 request_snapshot=request_snapshot,
                 identity=identity,
                 timing={"startedAt": started_at, "endedAt": ended_at, "latencyMs": latency_ms},
-                env=self._env(),
-                source_info=self._source_info(),
+                env=env,
+                source_info=source_info,
                 trace_id=str(ULID()),
                 accumulated_usage=acc["usage"],
                 accumulated_tool_calls=acc["tool_calls"],
                 outcome=outcome,
             )
-            self._sink.add(trace)
+            sink.add(trace)
 
         proxy = StreamProxy(inner_stream=inner_stream, on_finalize=on_finalize)
-        proxy_holder.append(proxy)
+        # Store the proxy's accumulator in acc_ref using a weakref to avoid a
+        # cycle: proxy → on_finalize → acc_ref → proxy's accumulator
+        # We link via the accumulator dict (not the proxy itself)
+        acc_ref["accumulator"] = proxy._accumulator
         return proxy
 
     def _invoke_streaming_async(
@@ -460,7 +480,15 @@ class ClientProxy:
             self._sink.add(trace)
 
         async def _make_proxy() -> AsyncStreamProxy:
-            inner_stream = await inner_method(**kwargs)
+            coro_or_stream = inner_method(**kwargs)
+            # AsyncCompletions.create may be a coroutine or direct async context manager
+            if inspect.iscoroutine(coro_or_stream):
+                inner_stream = await coro_or_stream
+            else:
+                inner_stream = coro_or_stream
+            # If the stream itself is an async context manager, enter it
+            if hasattr(inner_stream, "__aenter__"):
+                inner_stream = await inner_stream.__aenter__()
             proxy = AsyncStreamProxy(inner_stream=inner_stream, on_finalize=on_finalize)
             proxy_holder.append(proxy)
             return proxy
