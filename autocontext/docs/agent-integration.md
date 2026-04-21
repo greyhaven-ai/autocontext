@@ -299,7 +299,7 @@ Key environment variables:
 | `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL`       | Optional analyst-specific credential and endpoint override                                          |
 | `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL`           | Optional coach-specific credential and endpoint override                                            |
 | `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL`   | Optional architect-specific credential and endpoint override                                        |
-| `AUTOCONTEXT_JUDGE_PROVIDER`                                         | Judge provider (defaults to `anthropic`)                                                            |
+| `AUTOCONTEXT_JUDGE_PROVIDER`                                         | Judge provider (defaults to `auto`: inherit a runtime-bridged role/agent provider, else fall back to `anthropic`) |
 | `AUTOCONTEXT_JUDGE_API_KEY`                                          | API key for the judge provider                                                                      |
 | `AUTOCONTEXT_JUDGE_BASE_URL`                                         | Base URL for OpenAI-compatible judge endpoints                                                      |
 | `AUTOCONTEXT_JUDGE_MODEL`                                            | Override judge model name                                                                           |

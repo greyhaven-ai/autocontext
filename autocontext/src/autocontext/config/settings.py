@@ -270,8 +270,13 @@ class AppSettings(BaseModel):
     judge_model: str = Field(default="claude-sonnet-4-20250514")
     judge_samples: int = Field(default=1, ge=1)
     judge_temperature: float = Field(default=0.0, ge=0.0)
-    # Multi-model provider settings
-    judge_provider: str = Field(default="anthropic")
+    # Multi-model provider settings.
+    # Default "auto" (AC-586): inherit the judge provider from the effective
+    # runtime provider (role override first, then ``agent_provider``) when it's
+    # a runtime-bridged provider (claude-cli, codex, pi, pi-rpc). Falls back to
+    # "anthropic" for unrelated agent modes so existing API-key-based setups
+    # continue to work unchanged.
+    judge_provider: str = Field(default="auto")
     judge_base_url: str | None = Field(default=None)
     judge_api_key: str | None = Field(default=None)
     # Evaluator disagreement (AC-330)
