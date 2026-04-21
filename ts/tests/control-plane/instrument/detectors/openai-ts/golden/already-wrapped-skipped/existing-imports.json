@@ -1,0 +1,1 @@
+[{"module": "openai", "names": [{"name": "OpenAI"}]}, {"module": "autoctx/integrations/openai", "names": [{"name": "instrumentClient"}]}]
