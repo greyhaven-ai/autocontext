@@ -1,0 +1,7 @@
+{
+  "name": "autoctx-cjs-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Minimal CJS project that exercises require('autoctx/production-traces'). Driven by subpath-exports.test.ts.",
+  "type": "commonjs"
+}

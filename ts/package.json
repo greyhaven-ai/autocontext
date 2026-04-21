@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "sideEffects": [
+    "**/control-plane/actuators/**"
+  ],
   "files": [
     "README.md",
     "dist",
@@ -27,10 +30,17 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./production-traces": {
+      "types": "./dist/production-traces/sdk/index.d.ts",
+      "import": "./dist/production-traces/sdk/index.js",
+      "require": "./dist/cjs/production-traces/sdk/index.cjs"
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:production-traces-sdk-cjs",
+    "build:production-traces-sdk-cjs": "node scripts/build-production-traces-sdk-cjs.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
