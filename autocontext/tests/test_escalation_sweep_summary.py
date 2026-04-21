@@ -58,3 +58,49 @@ def test_summarize_tallies_llm_classifier_fallback_from_structured_solve_output(
     payload = json.loads((results_dir / "summary.json").read_text(encoding="utf-8"))
     assert payload["rows"][0]["bucket"] == "llm_fallback_fired"
     assert payload["buckets"]["llm_fallback_fired"] == 1
+
+
+def test_summarize_tallies_llm_classifier_fallback_when_stderr_chatter_is_merged(tmp_path: Path, capsys) -> None:
+    summary_mod = _load_summary_module()
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+
+    (results_dir / "index.json").write_text(json.dumps(["ac580_mixed"]), encoding="utf-8")
+    (results_dir / "ac580_mixed.meta.json").write_text(
+        json.dumps(
+            {
+                "identifier": "ac580_mixed",
+                "exit_code": 0,
+                "elapsed_seconds": 9,
+                "workspace_root": str(tmp_path / "workspaces" / "ac580_mixed"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.dumps(
+        {
+            "job_id": "solve_ac580_mixed",
+            "status": "completed",
+            "description": "Fallback solve with merged stderr",
+            "scenario_name": "fallback_case_mixed",
+            "generations": 1,
+            "progress": 1,
+            "output_path": None,
+            "llm_classifier_fallback_used": True,
+            "result": {"scenario_name": "fallback_case_mixed"},
+        }
+    )
+    (results_dir / "ac580_mixed.out.json").write_text(
+        "provider warning on stderr\n" + payload + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = summary_mod.main(["summarize.py", str(results_dir)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "llm_fallback_fired" in captured.out
+
+    summary = json.loads((results_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["rows"][0]["bucket"] == "llm_fallback_fired"
+    assert summary["buckets"]["llm_fallback_fired"] == 1

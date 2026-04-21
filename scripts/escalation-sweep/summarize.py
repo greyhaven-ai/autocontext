@@ -3,10 +3,10 @@
 
 Reads `<output_dir>/index.json` (list of identifiers) produced by run_sweep.sh
 and the per-scenario .out.json / .meta.json pairs, then tallies into known
-failure buckets. The authoritative signal is the ``error`` field inside
-.out.json (printed by the CLI as a single-line JSON object on failure); the
-.err.log sibling carries Python tracebacks + retry-log chatter and is not
-inspected here.
+failure buckets. The authoritative signal is the structured JSON object
+emitted by the CLI. For current and historical sweep captures, `.out.json`
+may contain extra stderr chatter around that object, so this script scans
+bottom-up for the last JSON object and classifies from that payload.
 
 Buckets:
     success                       — solve completed, generations executed
@@ -66,24 +66,21 @@ def read_json(path: Path) -> dict | None:
         return None
 
 
-def extract_error_field(out_path: Path) -> str:
-    """Pull the CLI's structured ``error`` field out of .out.json.
+def extract_structured_payload(out_path: Path) -> dict:
+    """Pull the CLI's structured JSON payload out of .out.json.
 
-    On failure the CLI prints a single-line JSON object with an ``error`` key
-    to stdout. For sweeps run with the current run_sweep.sh (stderr → .err.log)
-    the whole file parses cleanly. For older captures that merged stdout+stderr
-    we fall back to scanning bottom-up for the last line that parses as a
-    JSON object containing an ``error`` key.
+    Current and historical sweep captures may merge stderr chatter into
+    `.out.json`. To stay resilient, scan bottom-up for the last JSON object.
     """
     if not out_path.exists():
-        return ""
+        return {}
     raw = out_path.read_text().strip()
     if not raw:
-        return ""
+        return {}
     try:
         payload = json.loads(raw)
-        if isinstance(payload, dict) and "error" in payload:
-            return str(payload["error"])
+        if isinstance(payload, dict):
+            return payload
     except json.JSONDecodeError:
         pass
     for line in reversed(raw.splitlines()):
@@ -94,9 +91,9 @@ def extract_error_field(out_path: Path) -> str:
             payload = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(payload, dict) and "error" in payload:
-            return str(payload["error"])
-    return ""
+        if isinstance(payload, dict):
+            return payload
+    return {}
 
 
 def main(argv: list[str]) -> int:
@@ -118,7 +115,7 @@ def main(argv: list[str]) -> int:
         exit_code = meta.get("exit_code", -1)
         elapsed = meta.get("elapsed_seconds", -1)
         out_path = output_dir / f"{ident}.out.json"
-        out_payload = read_json(out_path) or {}
+        out_payload = extract_structured_payload(out_path)
 
         if exit_code == 0:
             bucket = "success"
@@ -126,11 +123,10 @@ def main(argv: list[str]) -> int:
             if out_payload.get("llm_classifier_fallback_used") is True:
                 bucket = "llm_fallback_fired"
         else:
-            # Trust only the structured `error` field. stderr tracebacks and
-            # retry-log lines live in <ID>.err.log and would otherwise cause
-            # misclassification (e.g. AC-575's "parse failed attempt 1/3"
-            # retry warning used to hide AC-585 quality_threshold errors).
-            message = extract_error_field(out_path)
+            # Trust only the structured `error` field from the extracted JSON
+            # payload. This ignores stderr chatter like retry warnings that can
+            # otherwise cause misclassification.
+            message = str(out_payload.get("error", "")) if out_payload else ""
             bucket = classify_error(message)
             detail = message.splitlines()[0][:140] if message else "(no error field)"
 

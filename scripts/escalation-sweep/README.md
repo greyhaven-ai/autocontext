@@ -40,10 +40,10 @@ knowledge, and skills roots. The summarized solve JSON stays in
 
 ## Failure buckets
 
-The summarizer reads the structured `error` field from each solve's
-`.out.json`; stderr tracebacks and retry-log chatter in `<ID>.err.log` are
-ignored (otherwise AC-575's "parse failed attempt 1/3" retry warning would
-mask the real failure). First-match-wins ordering:
+The summarizer reads the structured CLI payload from each solve's
+`.out.json`. Some sweep captures include stderr chatter in that same file, so
+the summarizer scans bottom-up for the last JSON object and classifies from
+that payload instead of trusting the surrounding text. First-match-wins ordering:
 
 | Bucket                         | Meaning                                                        |
 | ------------------------------ | -------------------------------------------------------------- |
@@ -55,7 +55,7 @@ mask the real failure). First-match-wins ordering:
 | `spec_validation_other`        | Spec / source / execution validation (non-quality_threshold)   |
 | `claude_cli_timeout`           | Subprocess or provider timed out                               |
 | `scenario_execution_failed`    | Scenario built but generations errored                         |
-| `unknown`                      | Didn't match any pattern — inspect `<ID>.out.json` + `.err.log` |
+| `unknown`                      | Didn't match any pattern — inspect `<ID>.out.json` (and `.err.log` if present) |
 
 Successes are split into:
 
