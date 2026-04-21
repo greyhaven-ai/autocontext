@@ -460,24 +460,27 @@ class ClientProxy:
         from autocontext.integrations.openai._stream import AsyncStreamProxy
         from autocontext.integrations.openai._trace_builder import finalize_streaming_trace
 
-        proxy_holder: list[AsyncStreamProxy] = []
+        acc_ref_async: dict[str, Any] = {"accumulator": None}
+        sink = self._sink
+        env = self._env()
+        source_info = self._source_info()
 
         def on_finalize(outcome: dict[str, Any]) -> None:
             ended_at = _now_iso()
             latency_ms = int((time.monotonic() - started_monotonic) * 1000)
-            acc = proxy_holder[0].accumulated() if proxy_holder else {"usage": None, "tool_calls": None}
+            acc = acc_ref_async["accumulator"] or {"usage": None, "tool_calls": None}
             trace = finalize_streaming_trace(
                 request_snapshot=request_snapshot,
                 identity=identity,
                 timing={"startedAt": started_at, "endedAt": ended_at, "latencyMs": latency_ms},
-                env=self._env(),
-                source_info=self._source_info(),
+                env=env,
+                source_info=source_info,
                 trace_id=str(ULID()),
                 accumulated_usage=acc["usage"],
                 accumulated_tool_calls=acc["tool_calls"],
                 outcome=outcome,
             )
-            self._sink.add(trace)
+            sink.add(trace)
 
         async def _make_proxy() -> AsyncStreamProxy:
             coro_or_stream = inner_method(**kwargs)
@@ -490,7 +493,8 @@ class ClientProxy:
             if hasattr(inner_stream, "__aenter__"):
                 inner_stream = await inner_stream.__aenter__()
             proxy = AsyncStreamProxy(inner_stream=inner_stream, on_finalize=on_finalize)
-            proxy_holder.append(proxy)
+            # Link accumulator into acc_ref_async to avoid cycle
+            acc_ref_async["accumulator"] = proxy._accumulator
             return proxy
 
         return _make_proxy()
