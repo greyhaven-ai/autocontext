@@ -1,0 +1,44 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize this.",
+      "timestamp": "2026-04-17T12:00:00.000Z"
+    }
+  ],
+  "feedbackRefs": [
+    {
+      "kind": "thumbs",
+      "submittedAt": "2026-04-17T12:01:00.000Z",
+      "ref": "fb-thumb-123",
+      "score": 1
+    },
+    {
+      "kind": "rating",
+      "submittedAt": "2026-04-17T12:02:00.000Z",
+      "ref": "fb-rating-456",
+      "score": 4,
+      "comment": "Helpful summary"
+    }
+  ],
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:01.000Z",
+    "latencyMs": 1000
+  },
+  "usage": {
+    "tokensIn": 100,
+    "tokensOut": 30
+  },
+  "env": {
+    "environmentTag": "production",
+    "appId": "summarizer"
+  },
+  "traceId": "01HZ6X2K7M9A3B4C5D6E7F8G9H",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.0.0" }
+  }
+}

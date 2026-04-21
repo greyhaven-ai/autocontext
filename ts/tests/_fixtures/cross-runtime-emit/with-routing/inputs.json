@@ -1,0 +1,39 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Quick math: 2 + 2?",
+      "timestamp": "2026-04-17T12:00:00.000Z"
+    }
+  ],
+  "routing": {
+    "chosen": {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "endpoint": "https://api.openai.com/v1"
+    },
+    "matchedRouteId": "route-cheap-default",
+    "reason": "matched-route",
+    "evaluatedAt": "2026-04-17T12:00:00.010Z"
+  },
+  "timing": {
+    "startedAt": "2026-04-17T12:00:00.000Z",
+    "endedAt": "2026-04-17T12:00:00.300Z",
+    "latencyMs": 300
+  },
+  "usage": {
+    "tokensIn": 8,
+    "tokensOut": 4
+  },
+  "env": {
+    "environmentTag": "production",
+    "appId": "math-bot"
+  },
+  "traceId": "01HZ6X2K7M9A3B4C5D6E7F8G9H",
+  "source": {
+    "emitter": "sdk",
+    "sdk": { "name": "autocontext-ts", "version": "0.0.0" }
+  }
+}
