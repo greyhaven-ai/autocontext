@@ -116,7 +116,7 @@ class TestRegistry:
     def test_create_ollama_provider(self):
         p = create_provider("ollama", model="llama3.1")
         assert p.default_model() == "llama3.1"
-        assert p.name == "OpenAICompatibleProvider"
+        assert "OpenAICompatibleProvider" in p.name  # may be wrapped in RetryProvider
 
     @_skip_no_openai
     def test_create_vllm_provider(self):
@@ -245,7 +245,7 @@ class TestSettingsIntegration:
 
         settings = AppSettings(judge_provider="ollama", judge_model="llama3.1")
         provider = get_provider(settings)
-        assert provider.name == "OpenAICompatibleProvider"
+        assert "OpenAICompatibleProvider" in provider.name  # may be wrapped in RetryProvider
         assert provider.default_model() == "llama3.1"
 
 
