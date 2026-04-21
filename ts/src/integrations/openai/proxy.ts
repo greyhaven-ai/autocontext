@@ -6,6 +6,9 @@
  * Mirror of Python ``_proxy.py``.
  */
 import { ulid } from "ulid";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { TraceSink } from "./sink.js";
 import { currentSession } from "./session.js";
 import { mapExceptionToReason } from "./taxonomy.js";
@@ -21,6 +24,7 @@ import {
   hashSessionId,
   loadInstallSalt,
 } from "../../production-traces/sdk/hashing.js";
+import { AsyncStreamProxy } from "./stream-proxy.js";
 
 export const WRAPPED_SENTINEL = Symbol.for("autocontext.wrapped");
 
@@ -29,13 +33,9 @@ function _nowIso(): string {
 }
 
 function _isAsyncClient(client: unknown): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { AsyncOpenAI } = require("openai") as { AsyncOpenAI: new (...args: unknown[]) => unknown };
-    return client instanceof AsyncOpenAI;
-  } catch {
-    return false;
-  }
+  // Check by class name to avoid ESM require() issues with the openai package
+  const className = (client as object)?.constructor?.name ?? "";
+  return className.startsWith("Async");
 }
 
 function _resolveIdentity(perCall: Record<string, string> | null | undefined): Record<string, string> {
@@ -57,14 +57,30 @@ function _resolveIdentity(perCall: Record<string, string> | null | undefined): R
   return hashed;
 }
 
-function _sdkVersion(): string {
+let _cachedVersion: string | null = null;
+
+function _resolvePackageVersion(): string {
+  if (_cachedVersion !== null) return _cachedVersion;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const pkg = require("../../package.json") as { version?: string };
-    return pkg.version ?? "0.0.0";
+    let dir = dirname(fileURLToPath(import.meta.url));
+    for (let depth = 0; depth < 10; depth++) {
+      const candidate = join(dir, "package.json");
+      if (existsSync(candidate)) {
+        const pkg = JSON.parse(readFileSync(candidate, "utf-8")) as { name?: string; version?: string };
+        if (pkg.name === "autoctx" && typeof pkg.version === "string") {
+          _cachedVersion = pkg.version;
+          return _cachedVersion;
+        }
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
   } catch {
-    return "0.0.0";
+    // best-effort
   }
+  _cachedVersion = "0.0.0";
+  return _cachedVersion;
 }
 
 export class ClientProxy {
@@ -88,31 +104,7 @@ export class ClientProxy {
   }
 
   _sourceInfo(): { emitter: string; sdk: { name: string; version: string } } {
-    // Resolve version from the TS package
-    let ver = "0.0.0";
-    try {
-      // Walk up to find package.json
-      const { readFileSync, existsSync } = require("node:fs") as typeof import("node:fs");
-      const { dirname, join, resolve } = require("node:path") as typeof import("node:path");
-      const { fileURLToPath } = require("node:url") as typeof import("node:url");
-      let dir = dirname(fileURLToPath(import.meta.url));
-      for (let depth = 0; depth < 10; depth++) {
-        const candidate = join(dir, "package.json");
-        if (existsSync(candidate)) {
-          const pkg = JSON.parse(readFileSync(candidate, "utf-8")) as { name?: string; version?: string };
-          if (pkg.name === "autoctx" && typeof pkg.version === "string") {
-            ver = pkg.version;
-            break;
-          }
-        }
-        const parent = dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-      }
-    } catch {
-      // best-effort
-    }
-    return { emitter: "sdk", sdk: { name: "autocontext-ts", version: ver } };
+    return { emitter: "sdk", sdk: { name: "autocontext-ts", version: _resolvePackageVersion() } };
   }
 
   _env(): { environmentTag: string; appId: string } {
@@ -294,9 +286,6 @@ export class ClientProxy {
     const inner = this._inner as Record<string, { completions: { create: (k: unknown) => unknown } }>;
     const streamResult = inner["chat"]["completions"]["create"](kwargs);
 
-    // Import here to avoid circular imports
-    const { AsyncStreamProxy } = require("./stream-proxy.js") as typeof import("./stream-proxy.js");
-
     // acc_ref avoids a cycle: proxy → on_finalize → acc_ref → proxy._accumulator
     const accRef: { accumulator: Record<string, unknown> | null } = { accumulator: null };
 
@@ -346,8 +335,6 @@ export class ClientProxy {
     const sink = this._sink;
     const env = this._env();
     const sourceInfo = this._sourceInfo();
-
-    const { AsyncStreamProxy } = require("./stream-proxy.js") as typeof import("./stream-proxy.js");
 
     const accRef: { accumulator: Record<string, unknown> | null } = { accumulator: null };
 
