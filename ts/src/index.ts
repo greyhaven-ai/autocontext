@@ -109,6 +109,31 @@ export type {
   ValidationResult as ApiKeyValidationResult,
 } from "./config/credentials.js";
 
+// Instrument control plane
+export {
+  registerDetectorPlugin,
+  pluginsForLanguage,
+  resetRegistryForTests,
+  runInstrument,
+  runInstrumentCommand,
+  validateInstrumentPlan,
+  validateInstrumentSession,
+} from "./control-plane/instrument/index.js";
+export type {
+  DetectorPlugin,
+  TreeSitterMatch,
+  EditDescriptor,
+  SourceRange,
+  ImportSpec,
+  SourceFile,
+  InstrumentSession,
+  InstrumentPlan,
+  InstrumentInputs,
+  InstrumentResult,
+  InstrumentMode,
+  InstrumentCliResult,
+  InstrumentRunnerOpts,
+} from "./control-plane/instrument/index.js";
 
 // Execution
 export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improvement-loop.js";
