@@ -8,6 +8,15 @@ from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
 from autocontext.util.json_io import read_json
 
+_RLM_CONTEXT_TEXT_BLOB_MAX_CHARS = 2000
+
+
+def _truncate_context_text(text: str, *, limit: int = _RLM_CONTEXT_TEXT_BLOB_MAX_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    tail = text[-limit:]
+    return f"... [truncated to last {limit} chars] ...\n{tail}"
+
 
 class ContextLoader:
     """Loads run data into REPL namespace variables for RLM-enabled agents."""
@@ -37,12 +46,12 @@ class ContextLoader:
         variables["replays"] = self._load_replays(run_id, generation)
         variables["metrics_history"] = self._load_metrics_files(run_id, generation)
         variables["match_scores"] = self._sqlite.get_matches_for_run(run_id)
-        variables["playbook"] = self._artifacts.read_playbook(scenario_name)
+        variables["playbook"] = _truncate_context_text(self._artifacts.read_playbook(scenario_name))
         variables["scenario_rules"] = scenario_rules
         variables["strategy_interface"] = strategy_interface
         variables["current_strategy"] = current_strategy or {}
         variables["prior_analyses"] = self._load_prior_analyses(scenario_name, generation)
-        variables["operational_lessons"] = self._artifacts.read_skills(scenario_name)
+        variables["operational_lessons"] = _truncate_context_text(self._artifacts.read_skills(scenario_name))
 
         summary = self._build_analyst_summary(variables)
         return RlmContext(variables=variables, summary=summary)
@@ -61,11 +70,11 @@ class ContextLoader:
         variables["existing_tools"] = self._load_tool_sources(scenario_name)
         variables["metrics_history"] = self._load_metrics_files(run_id, generation)
         variables["replays"] = self._load_replays(run_id, generation, latest_only=True)
-        variables["playbook"] = self._artifacts.read_playbook(scenario_name)
-        variables["architect_changelog"] = self._load_architect_changelog(scenario_name)
+        variables["playbook"] = _truncate_context_text(self._artifacts.read_playbook(scenario_name))
+        variables["architect_changelog"] = _truncate_context_text(self._load_architect_changelog(scenario_name))
         variables["scenario_rules"] = scenario_rules
         variables["match_scores"] = self._sqlite.get_matches_for_run(run_id)
-        variables["operational_lessons"] = self._artifacts.read_skills(scenario_name)
+        variables["operational_lessons"] = _truncate_context_text(self._artifacts.read_skills(scenario_name))
 
         summary = self._build_architect_summary(variables)
         return RlmContext(variables=variables, summary=summary)
@@ -93,8 +102,8 @@ class ContextLoader:
         variables["match_scores"] = self._sqlite.get_matches_for_run(run_id)
 
         # Strategy guidance
-        variables["playbook"] = self._artifacts.read_playbook(scenario_name)
-        variables["coach_hints"] = self._artifacts.read_hints(scenario_name)
+        variables["playbook"] = _truncate_context_text(self._artifacts.read_playbook(scenario_name))
+        variables["coach_hints"] = _truncate_context_text(self._artifacts.read_hints(scenario_name))
 
         # Scenario context
         variables["scenario_rules"] = scenario_rules
@@ -103,7 +112,7 @@ class ContextLoader:
 
         # Prior analyses
         variables["prior_analyses"] = self._load_prior_analyses(scenario_name, generation)
-        variables["operational_lessons"] = self._artifacts.read_skills(scenario_name)
+        variables["operational_lessons"] = _truncate_context_text(self._artifacts.read_skills(scenario_name))
 
         summary = self._build_competitor_summary(variables)
         return RlmContext(variables=variables, summary=summary)

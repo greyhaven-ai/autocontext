@@ -22,6 +22,10 @@ from autocontext.harness.core.types import ModelResponse, RoleUsage
 
 logger = logging.getLogger(__name__)
 
+_RUNTIME_MULTITURN_MAX_PROMPT_CHARS = 6000
+_RUNTIME_MULTITURN_MAX_MESSAGE_CHARS = 1000
+_RUNTIME_MULTITURN_MAX_USER_MESSAGES = 3
+
 if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
     from autocontext.providers.base import LLMProvider
@@ -71,6 +75,34 @@ class ProviderBridgeClient(LanguageModelClient):
         )
 
 
+def _truncate_runtime_multiturn_text(text: str, *, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    head = text[: limit // 2].rstrip()
+    tail = text[-(limit - len(head) - len("\n... [truncated] ...\n")) :].lstrip()
+    return f"{head}\n... [truncated] ...\n{tail}"
+
+
+def _build_runtime_multiturn_prompt(system: str, messages: list[dict[str, str]]) -> str:
+    user_messages = [m.get("content", "") for m in messages if m.get("role") == "user"]
+    if not user_messages:
+        return system
+
+    retained: list[str] = []
+    first_message = user_messages[0]
+    tail_messages = user_messages[1:][-_RUNTIME_MULTITURN_MAX_USER_MESSAGES + 1 :]
+    retained.append(first_message)
+    retained.extend(tail_messages)
+
+    sections = [system, "## Conversation state"]
+    for idx, message in enumerate(retained, start=1):
+        compact = _truncate_runtime_multiturn_text(message, limit=_RUNTIME_MULTITURN_MAX_MESSAGE_CHARS)
+        sections.append(f"### User message {idx}\n{compact}")
+
+    prompt = "\n\n".join(section for section in sections if section)
+    return _truncate_runtime_multiturn_text(prompt, limit=_RUNTIME_MULTITURN_MAX_PROMPT_CHARS)
+
+
 class RuntimeBridgeClient(LanguageModelClient):
     """Adapts an AgentRuntime to the LanguageModelClient interface.
 
@@ -109,6 +141,25 @@ class RuntimeBridgeClient(LanguageModelClient):
             metadata=dict(output.metadata),
         )
 
+    def generate_multiturn(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        prompt = _build_runtime_multiturn_prompt(system, messages)
+        return self.generate(
+            model=model,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            role=role,
+        )
+
 
 def _role_setting(settings: AppSettings, role: str, suffix: str) -> str:
     if not role:
@@ -136,11 +187,7 @@ def _provider_api_key(provider_type: str, settings: AppSettings, *, role: str = 
     if role_api_key:
         return role_api_key
     if provider_type == "anthropic":
-        return (
-            settings.anthropic_api_key
-            or os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
-        )
+        return settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
     if provider_type in ("openai", "openai-compatible"):
         return settings.agent_api_key or settings.judge_api_key or os.getenv("OPENAI_API_KEY")
     if provider_type == "vllm":

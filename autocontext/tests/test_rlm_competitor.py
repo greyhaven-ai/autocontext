@@ -86,19 +86,22 @@ def seeded_artifacts(tmp_artifacts: Any, tmp_path: Path) -> Any:
     replay_dir = gen_dir / "replays"
     replay_dir.mkdir(parents=True)
     (replay_dir / "grid_ctf_1.json").write_text(
-        json.dumps({"score": 0.7, "moves": [1, 2, 3]}), encoding="utf-8",
+        json.dumps({"score": 0.7, "moves": [1, 2, 3]}),
+        encoding="utf-8",
     )
 
     # Create metrics
     (gen_dir / "metrics.json").write_text(
-        json.dumps({"elo": 1200, "win_rate": 0.6}), encoding="utf-8",
+        json.dumps({"elo": 1200, "win_rate": 0.6}),
+        encoding="utf-8",
     )
 
     # Create analysis
     analysis_dir = tmp_artifacts.knowledge_root / scenario / "analysis"
     analysis_dir.mkdir(parents=True)
     (analysis_dir / "gen_1.md").write_text(
-        "## Findings\n\n- Score improved.", encoding="utf-8",
+        "## Findings\n\n- Score improved.",
+        encoding="utf-8",
     )
 
     return tmp_artifacts
@@ -111,11 +114,16 @@ def seeded_artifacts(tmp_artifacts: Any, tmp_path: Path) -> Any:
 
 class TestContextLoaderCompetitor:
     def test_load_for_competitor_populates_replays(
-        self, context_loader: Any, seeded_artifacts: Any, tmp_sqlite: Any,
+        self,
+        context_loader: Any,
+        seeded_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """Replays loaded from run artifacts."""
         ctx = context_loader.load_for_competitor(
-            run_id="test_run", scenario_name="grid_ctf", generation=1,
+            run_id="test_run",
+            scenario_name="grid_ctf",
+            generation=1,
         )
         assert isinstance(ctx, RlmContext)
         assert isinstance(ctx.variables["replays"], list)
@@ -123,47 +131,70 @@ class TestContextLoaderCompetitor:
         assert ctx.variables["replays"][0]["score"] == 0.7
 
     def test_load_for_competitor_populates_metrics(
-        self, context_loader: Any, seeded_artifacts: Any, tmp_sqlite: Any,
+        self,
+        context_loader: Any,
+        seeded_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """Metrics history loaded."""
         ctx = context_loader.load_for_competitor(
-            run_id="test_run", scenario_name="grid_ctf", generation=1,
+            run_id="test_run",
+            scenario_name="grid_ctf",
+            generation=1,
         )
         assert isinstance(ctx.variables["metrics_history"], list)
         assert len(ctx.variables["metrics_history"]) == 1
         assert ctx.variables["metrics_history"][0]["elo"] == 1200
 
     def test_load_for_competitor_populates_match_scores(
-        self, context_loader: Any, seeded_artifacts: Any, tmp_sqlite: Any,
+        self,
+        context_loader: Any,
+        seeded_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """Match scores from DB (empty list when no matches recorded)."""
         ctx = context_loader.load_for_competitor(
-            run_id="test_run", scenario_name="grid_ctf", generation=1,
+            run_id="test_run",
+            scenario_name="grid_ctf",
+            generation=1,
         )
         assert isinstance(ctx.variables["match_scores"], list)
 
     def test_load_for_competitor_populates_playbook(
-        self, context_loader: Any, seeded_artifacts: Any, tmp_sqlite: Any,
+        self,
+        context_loader: Any,
+        seeded_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """Playbook string loaded."""
         ctx = context_loader.load_for_competitor(
-            run_id="test_run", scenario_name="grid_ctf", generation=1,
+            run_id="test_run",
+            scenario_name="grid_ctf",
+            generation=1,
         )
         assert isinstance(ctx.variables["playbook"], str)
         assert "aggressive" in ctx.variables["playbook"].lower()
 
     def test_load_for_competitor_populates_coach_hints(
-        self, context_loader: Any, seeded_artifacts: Any, tmp_sqlite: Any,
+        self,
+        context_loader: Any,
+        seeded_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """Hints loaded."""
         ctx = context_loader.load_for_competitor(
-            run_id="test_run", scenario_name="grid_ctf", generation=1,
+            run_id="test_run",
+            scenario_name="grid_ctf",
+            generation=1,
         )
         assert isinstance(ctx.variables["coach_hints"], str)
         assert "aggression" in ctx.variables["coach_hints"].lower()
 
     def test_load_for_competitor_populates_scenario_context(
-        self, context_loader: Any, seeded_artifacts: Any, tmp_sqlite: Any,
+        self,
+        context_loader: Any,
+        seeded_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """Rules + interface + current strategy populated."""
         ctx = context_loader.load_for_competitor(
@@ -179,17 +210,29 @@ class TestContextLoaderCompetitor:
         assert ctx.variables["current_strategy"] == {"aggression": 0.5}
 
     def test_load_for_competitor_summary_format(
-        self, context_loader: Any, seeded_artifacts: Any, tmp_sqlite: Any,
+        self,
+        context_loader: Any,
+        seeded_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """Summary string has all variable names."""
         ctx = context_loader.load_for_competitor(
-            run_id="test_run", scenario_name="grid_ctf", generation=1,
+            run_id="test_run",
+            scenario_name="grid_ctf",
+            generation=1,
         )
         summary = ctx.summary
         expected_vars = [
-            "replays", "metrics_history", "match_scores", "playbook",
-            "coach_hints", "scenario_rules", "strategy_interface",
-            "current_strategy", "prior_analyses", "operational_lessons",
+            "replays",
+            "metrics_history",
+            "match_scores",
+            "playbook",
+            "coach_hints",
+            "scenario_rules",
+            "strategy_interface",
+            "current_strategy",
+            "prior_analyses",
+            "operational_lessons",
         ]
         for var in expected_vars:
             assert var in summary, f"Expected '{var}' in summary"
@@ -206,9 +249,7 @@ class TestCompetitorPrompts:
         from autocontext.rlm.prompts import COMPETITOR_RLM_SYSTEM
 
         for placeholder in ["{max_turns}", "{max_stdout_chars}", "{variable_summary}"]:
-            assert placeholder in COMPETITOR_RLM_SYSTEM, (
-                f"Missing placeholder {placeholder}"
-            )
+            assert placeholder in COMPETITOR_RLM_SYSTEM, f"Missing placeholder {placeholder}"
 
     def test_competitor_rlm_constrained_has_constraints(self) -> None:
         """Constrained variant has constraint bullets."""
@@ -274,14 +315,9 @@ class _CompetitorReadyClient(LanguageModelClient):
     ) -> ModelResponse:
         self._turn += 1
         if self._turn == 1:
-            text = '<code>\nprint(len(replays))\nprint(scenario_rules)\n</code>'
+            text = "<code>\nprint(len(replays))\nprint(scenario_rules)\n</code>"
         else:
-            text = (
-                '<code>\n'
-                'answer["content"] = \'{"aggression": 0.65, "defense": 0.55}\'\n'
-                'answer["ready"] = True\n'
-                '</code>'
-            )
+            text = '<code>\nanswer["content"] = \'{"aggression": 0.65, "defense": 0.55}\'\nanswer["ready"] = True\n</code>'
         return ModelResponse(
             text=text,
             usage=RoleUsage(input_tokens=50, output_tokens=30, latency_ms=2, model=model),
@@ -428,7 +464,10 @@ class TestCompetitorRlmSession:
 
 class TestOrchestratorCompetitorRlm:
     def test_orchestrator_uses_rlm_when_enabled(
-        self, tmp_artifacts: Any, tmp_sqlite: Any, seeded_artifacts: Any,
+        self,
+        tmp_artifacts: Any,
+        tmp_sqlite: Any,
+        seeded_artifacts: Any,
     ) -> None:
         """When rlm_competitor_enabled=True, run_generation uses RLM path for competitor."""
         from autocontext.agents.orchestrator import AgentOrchestrator
@@ -467,7 +506,9 @@ class TestOrchestratorCompetitorRlm:
         assert "competitor" in roles
 
     def test_orchestrator_skips_rlm_when_disabled(
-        self, tmp_artifacts: Any, tmp_sqlite: Any,
+        self,
+        tmp_artifacts: Any,
+        tmp_sqlite: Any,
     ) -> None:
         """When rlm_competitor_enabled=False, normal single-shot path is used."""
         from autocontext.agents.orchestrator import AgentOrchestrator
@@ -504,7 +545,10 @@ class TestOrchestratorCompetitorRlm:
         assert "competitor" in roles
 
     def test_orchestrator_passes_scenario_rules_and_strategy(
-        self, tmp_artifacts: Any, tmp_sqlite: Any, seeded_artifacts: Any,
+        self,
+        tmp_artifacts: Any,
+        tmp_sqlite: Any,
+        seeded_artifacts: Any,
     ) -> None:
         """scenario_rules and current_strategy reach the context loader."""
         from autocontext.agents.orchestrator import AgentOrchestrator
@@ -551,7 +595,10 @@ class TestOrchestratorCompetitorRlm:
         assert captured_kwargs.get("current_strategy") == {"aggression": 0.5}
 
     def test_orchestrator_passes_scenario_rules_to_analyst_and_architect(
-        self, tmp_artifacts: Any, tmp_sqlite: Any, seeded_artifacts: Any,
+        self,
+        tmp_artifacts: Any,
+        tmp_sqlite: Any,
+        seeded_artifacts: Any,
     ) -> None:
         """scenario_rules reaches the analyst and architect context loaders."""
         from autocontext.agents.orchestrator import AgentOrchestrator
@@ -563,6 +610,7 @@ class TestOrchestratorCompetitorRlm:
             rlm_competitor_enabled=False,  # Use normal competitor path
             rlm_max_turns=5,
             curator_enabled=False,
+            architect_every_n_gens=1,
         )
         orch = AgentOrchestrator(
             client=DeterministicDevClient(),
@@ -605,6 +653,109 @@ class TestOrchestratorCompetitorRlm:
         assert analyst_kwargs.get("scenario_rules") == "Capture the flag on a 5x5 grid."
         assert architect_kwargs.get("scenario_rules") == "Capture the flag on a 5x5 grid."
 
+    def test_orchestrator_skips_off_cadence_rlm_architect_session(
+        self,
+        tmp_artifacts: Any,
+        tmp_sqlite: Any,
+        seeded_artifacts: Any,
+    ) -> None:
+        """Off-cadence architect generations should skip the live RLM architect session."""
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.prompts.templates import PromptBundle
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            rlm_enabled=True,
+            rlm_competitor_enabled=False,
+            rlm_max_turns=5,
+            curator_enabled=False,
+            architect_every_n_gens=3,
+        )
+        orch = AgentOrchestrator(
+            client=DeterministicDevClient(),
+            settings=settings,
+            artifacts=seeded_artifacts,
+            sqlite=tmp_sqlite,
+        )
+        prompts = PromptBundle(
+            competitor="Describe your strategy.",
+            analyst="Analyze.",
+            coach="Coach.",
+            architect="Propose.",
+        )
+
+        calls: list[str] = []
+        original = orch._run_single_rlm_session
+
+        def _spy_run_single(*args: Any, **kwargs: Any) -> tuple[RoleExecution, list[Any]]:
+            calls.append(kwargs["role"])
+            return original(*args, **kwargs)
+
+        with patch.object(orch, "_run_single_rlm_session", side_effect=_spy_run_single):
+            outputs = orch.run_generation(
+                prompts,
+                generation_index=2,
+                run_id="test_run",
+                scenario_name="grid_ctf",
+                scenario_rules="Capture the flag on a 5x5 grid.",
+            )
+
+        assert calls.count("analyst") == 1
+        assert "architect" not in calls
+        assert outputs.architect_tools == []
+        assert "empty tools array" in outputs.architect_markdown.lower()
+
+    def test_orchestrator_skips_no_data_rlm_analyst_session(
+        self,
+        tmp_artifacts: Any,
+        tmp_sqlite: Any,
+        seeded_artifacts: Any,
+    ) -> None:
+        """No-data generations should skip the live RLM analyst session."""
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.prompts.templates import PromptBundle
+
+        settings = AppSettings(
+            agent_provider="deterministic",
+            rlm_enabled=True,
+            rlm_competitor_enabled=False,
+            rlm_max_turns=5,
+            curator_enabled=False,
+            architect_every_n_gens=3,
+        )
+        orch = AgentOrchestrator(
+            client=DeterministicDevClient(),
+            settings=settings,
+            artifacts=seeded_artifacts,
+            sqlite=tmp_sqlite,
+        )
+        prompts = PromptBundle(
+            competitor="Describe your strategy.",
+            analyst="Analyze.",
+            coach="Coach.",
+            architect="Propose.",
+        )
+
+        calls: list[str] = []
+        original = orch._run_single_rlm_session
+
+        def _spy_run_single(*args: Any, **kwargs: Any) -> tuple[RoleExecution, list[Any]]:
+            calls.append(kwargs["role"])
+            return original(*args, **kwargs)
+
+        with patch.object(orch, "_run_single_rlm_session", side_effect=_spy_run_single):
+            outputs = orch.run_generation(
+                prompts,
+                generation_index=1,
+                run_id="fresh_run",
+                scenario_name="grid_ctf",
+                scenario_rules="Capture the flag on a 5x5 grid.",
+            )
+
+        assert "analyst" not in calls
+        assert "architect" not in calls
+        assert "no fresh match data" in outputs.analysis_markdown.lower()
+
 
 # ===========================================================================
 # 6. RLM Trial Summary & Experiment Log Tests (AC-100)
@@ -622,9 +773,11 @@ class TestBuildTrialSummary:
             ExecutionRecord(turn=2, code='answer["ready"] = True', stdout="", error=None, answer_ready=True),
         ]
         role_exec = RoleExecution(
-            role="competitor", content="done",
+            role="competitor",
+            content="done",
             usage=RoleUsage(input_tokens=100, output_tokens=50, latency_ms=500, model="test"),
-            subagent_id="abc", status="completed",
+            subagent_id="abc",
+            status="completed",
         )
         summary = _build_trial_summary(3, history, role_exec)
         assert "Generation 3" in summary
@@ -642,9 +795,11 @@ class TestBuildTrialSummary:
             ExecutionRecord(turn=2, code="ok()", stdout="ok", error=None, answer_ready=True),
         ]
         role_exec = RoleExecution(
-            role="competitor", content="done",
+            role="competitor",
+            content="done",
             usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=100, model="t"),
-            subagent_id="x", status="completed",
+            subagent_id="x",
+            status="completed",
         )
         summary = _build_trial_summary(1, history, role_exec)
         assert "errors: 1" in summary
@@ -659,9 +814,11 @@ class TestBuildTrialSummary:
             ExecutionRecord(turn=1, code='answer["ready"] = True', stdout="", error=None, answer_ready=True),
         ]
         role_exec = RoleExecution(
-            role="competitor", content="done",
+            role="competitor",
+            content="done",
             usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=50, model="t"),
-            subagent_id="x", status="completed",
+            subagent_id="x",
+            status="completed",
         )
         summary = _build_trial_summary(1, history, role_exec)
         assert "[READY]" in summary
@@ -681,8 +838,17 @@ class TestExperimentLog:
         """Create run + generation rows so FK constraints pass."""
         sqlite.create_run(run_id, "grid_ctf", len(generations), "local")
         for gen in generations:
-            sqlite.upsert_generation(run_id, gen, mean_score=0.5, best_score=0.5, elo=1500.0,
-                                     wins=0, losses=0, gate_decision="advance", status="completed")
+            sqlite.upsert_generation(
+                run_id,
+                gen,
+                mean_score=0.5,
+                best_score=0.5,
+                elo=1500.0,
+                wins=0,
+                losses=0,
+                gate_decision="advance",
+                status="completed",
+            )
 
     def test_build_experiment_log_collects_summaries(self, tmp_sqlite: Any) -> None:
         """Collects stored trial summaries across generations."""
@@ -714,7 +880,10 @@ class TestExperimentLog:
 
 class TestRlmTrialStorage:
     def test_rlm_competitor_stores_trial_summary(
-        self, tmp_artifacts: Any, tmp_sqlite: Any, seeded_artifacts: Any,
+        self,
+        tmp_artifacts: Any,
+        tmp_sqlite: Any,
+        seeded_artifacts: Any,
     ) -> None:
         """Running competitor via RLM stores a trial summary in sqlite."""
         from autocontext.agents.orchestrator import AgentOrchestrator
@@ -735,9 +904,17 @@ class TestRlmTrialStorage:
 
         # Seed run + generation so FK constraints pass
         tmp_sqlite.create_run("trial-test", "grid_ctf", 1, "local")
-        tmp_sqlite.upsert_generation("trial-test", 1, mean_score=0.5, best_score=0.5,
-                                     elo=1500.0, wins=0, losses=0, gate_decision="advance",
-                                     status="completed")
+        tmp_sqlite.upsert_generation(
+            "trial-test",
+            1,
+            mean_score=0.5,
+            best_score=0.5,
+            elo=1500.0,
+            wins=0,
+            losses=0,
+            gate_decision="advance",
+            status="completed",
+        )
 
         orch._run_rlm_competitor(
             run_id="trial-test",

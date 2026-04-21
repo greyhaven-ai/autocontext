@@ -60,8 +60,12 @@ class TestRlmSession:
         client = DeterministicDevClient()
         worker1 = ReplWorker()
         session1 = RlmSession(
-            client=client, worker=worker1, role="analyst",
-            model="m", system_prompt="s", max_turns=5,
+            client=client,
+            worker=worker1,
+            role="analyst",
+            model="m",
+            system_prompt="s",
+            max_turns=5,
         )
         r1 = session1.run()
         assert r1.status == "completed"
@@ -69,8 +73,12 @@ class TestRlmSession:
         client.reset_rlm_turns()
         worker2 = ReplWorker()
         session2 = RlmSession(
-            client=client, worker=worker2, role="architect",
-            model="m", system_prompt="s", max_turns=5,
+            client=client,
+            worker=worker2,
+            role="architect",
+            model="m",
+            system_prompt="s",
+            max_turns=5,
         )
         r2 = session2.run()
         assert r2.status == "completed"
@@ -115,8 +123,12 @@ class TestRlmSessionExecutionHistory:
         client = DeterministicDevClient()
         worker = ReplWorker()
         session = RlmSession(
-            client=client, worker=worker, role="analyst",
-            model="m", system_prompt="s", max_turns=5,
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="m",
+            system_prompt="s",
+            max_turns=5,
         )
         session.run()
         assert len(session.execution_history) == 2
@@ -128,8 +140,12 @@ class TestRlmSessionExecutionHistory:
         client = _ErrorThenReadyClient()
         worker = ReplWorker()
         session = RlmSession(
-            client=client, worker=worker, role="analyst",
-            model="m", system_prompt="s", max_turns=5,
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="m",
+            system_prompt="s",
+            max_turns=5,
         )
         session.run()
         assert len(session.execution_history) == 2
@@ -141,8 +157,12 @@ class TestRlmSessionExecutionHistory:
         client = DeterministicDevClient()
         worker = ReplWorker()
         session = RlmSession(
-            client=client, worker=worker, role="analyst",
-            model="m", system_prompt="s", max_turns=5,
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="m",
+            system_prompt="s",
+            max_turns=5,
         )
         result = session.run()
         assert result.status == "completed"
@@ -155,11 +175,59 @@ class TestRlmSessionExecutionHistory:
         client = _NeverReadyClient()
         worker = ReplWorker()
         session = RlmSession(
-            client=client, worker=worker, role="analyst",
-            model="m", system_prompt="s", max_turns=3,
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="m",
+            system_prompt="s",
+            max_turns=3,
         )
         session.run()
         assert len(session.execution_history) == 3
+
+    def test_session_compacts_large_feedback_messages(self) -> None:
+        client = _FeedbackCapturingClient()
+        worker = ReplWorker(max_stdout_chars=10000)
+        session = RlmSession(
+            client=client,
+            worker=worker,
+            role="architect",
+            model="m",
+            system_prompt="s",
+            max_turns=3,
+        )
+
+        result = session.run()
+
+        assert result.status == "completed"
+        second_call_messages = client.calls[1]
+        feedback_messages = [m for m in second_call_messages if m["role"] == "user"]
+        assert len(feedback_messages) >= 2
+        latest_feedback = feedback_messages[-1]["content"]
+        assert "[stdout]" in latest_feedback
+        assert "[truncated]" in latest_feedback
+        assert len(latest_feedback) < 2000
+
+    def test_session_adds_finalize_nudge_after_multiple_successful_turns(self) -> None:
+        client = _FinalizeNudgeCapturingClient()
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="m",
+            system_prompt="s",
+            max_turns=4,
+        )
+
+        result = session.run()
+
+        assert result.status == "completed"
+        third_call_messages = client.calls[2]
+        feedback_messages = [m for m in third_call_messages if m["role"] == "user"]
+        latest_feedback = feedback_messages[-1]["content"]
+        assert "finalize now" in latest_feedback.lower()
+        assert 'answer["content"]' in latest_feedback
 
 
 class _ErrorThenReadyClient(LanguageModelClient):
@@ -169,12 +237,18 @@ class _ErrorThenReadyClient(LanguageModelClient):
         self._turn = 0
 
     def generate_multiturn(
-        self, *, model: str, system: str, messages: list[dict[str, str]],
-        max_tokens: int, temperature: float, role: str = "",
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
     ) -> ModelResponse:
         self._turn += 1
         if self._turn == 1:
-            text = '<code>\n1 / 0\n</code>'
+            text = "<code>\n1 / 0\n</code>"
         else:
             text = '<code>\nanswer["content"] = "recovered"\nanswer["ready"] = True\n</code>'
         return ModelResponse(
@@ -187,10 +261,70 @@ class _NeverReadyClient(LanguageModelClient):
     """Always returns code that prints but never sets answer['ready']."""
 
     def generate_multiturn(
-        self, *, model: str, system: str, messages: list[dict[str, str]],
-        max_tokens: int, temperature: float, role: str = "",
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
     ) -> ModelResponse:
         return ModelResponse(
             text='<code>\nprint("still working")\n</code>',
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
+        )
+
+
+class _FeedbackCapturingClient(LanguageModelClient):
+    def __init__(self) -> None:
+        self._turn = 0
+        self.calls: list[list[dict[str, str]]] = []
+
+    def generate_multiturn(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        self.calls.append([dict(message) for message in messages])
+        self._turn += 1
+        if self._turn == 1:
+            text = '<code>\nprint("x" * 5000)\n</code>'
+        else:
+            text = '<code>\nanswer["content"] = "done"\nanswer["ready"] = True\n</code>'
+        return ModelResponse(
+            text=text,
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
+        )
+
+
+class _FinalizeNudgeCapturingClient(LanguageModelClient):
+    def __init__(self) -> None:
+        self._turn = 0
+        self.calls: list[list[dict[str, str]]] = []
+
+    def generate_multiturn(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        self.calls.append([dict(message) for message in messages])
+        self._turn += 1
+        if self._turn < 3:
+            text = '<code>\nprint("ok")\n</code>'
+        else:
+            text = '<code>\nanswer["content"] = "done"\nanswer["ready"] = True\n</code>'
+        return ModelResponse(
+            text=text,
             usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
         )

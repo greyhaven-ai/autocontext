@@ -254,6 +254,37 @@ def test_runtime_bridge_client_raises_on_runtime_error() -> None:
         client.generate(model="ignored", prompt="test", max_tokens=100, temperature=0.5)
 
 
+def test_runtime_bridge_client_multiturn_compacts_prompt_history() -> None:
+    mock_runtime = MagicMock()
+    mock_runtime.generate.return_value = MagicMock(text="bridge output", model="pi", metadata={})
+
+    client = RuntimeBridgeClient(mock_runtime)
+    long_feedback = "feedback-" * 1000
+    client.generate_multiturn(
+        model="ignored",
+        system="system prompt",
+        messages=[
+            {"role": "user", "content": "initial request"},
+            {"role": "assistant", "content": "assistant response 1"},
+            {"role": "user", "content": long_feedback},
+            {"role": "assistant", "content": "assistant response 2"},
+            {"role": "user", "content": "latest feedback"},
+        ],
+        max_tokens=100,
+        temperature=0.5,
+        role="architect",
+    )
+
+    prompt = mock_runtime.generate.call_args.args[0]
+    assert "system prompt" in prompt
+    assert "initial request" in prompt
+    assert "latest feedback" in prompt
+    assert "assistant response 1" not in prompt
+    assert "assistant response 2" not in prompt
+    assert "[truncated]" in prompt
+    assert len(prompt) < len(long_feedback)
+
+
 # ---------------------------------------------------------------------------
 # create_role_client("pi")
 # ---------------------------------------------------------------------------
