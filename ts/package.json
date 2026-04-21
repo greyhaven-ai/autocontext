@@ -8,6 +8,10 @@
   "sideEffects": [
     "**/control-plane/actuators/**"
   ],
+  "_sideEffects_false_subpaths": [
+    "./production-traces/**",
+    "./integrations/openai/**"
+  ],
   "files": [
     "README.md",
     "dist",
@@ -36,6 +40,11 @@
       "import": "./dist/production-traces/sdk/index.js",
       "require": "./dist/cjs/production-traces/sdk/index.cjs"
     },
+    "./integrations/openai": {
+      "types": "./dist/integrations/openai/index.d.ts",
+      "import": "./dist/integrations/openai/index.js",
+      "require": "./dist/cjs/integrations/openai/index.cjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -56,6 +65,7 @@
     "check:license-compatibility": "node scripts/check-license-compatibility.mjs",
     "check:no-postinstall-scripts": "node scripts/check-no-postinstall-scripts.mjs",
     "check:no-telemetry": "node scripts/check-no-telemetry.mjs",
+    "check:integrations-openai-bundle-size": "node scripts/check-integrations-openai-bundle-size.mjs",
     "check:a2-ii-a-all": "npm run check:sdk-import-discipline && npm run check:side-effects && npm run check:production-traces-sdk-bundle-size && npm run check:license-compatibility && npm run check:no-postinstall-scripts && npm run check:no-telemetry",
     "regenerate-cross-runtime-fixtures": "node scripts/regenerate-cross-runtime-fixtures.mjs"
   },
@@ -73,6 +83,14 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "peerDependencies": {
+    "openai": "^4"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^15.3.5",
@@ -95,6 +113,7 @@
     "ignore": "5.3.2",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
+    "openai": "^4.104.0",
     "react": "^18.3.1",
     "secure-exec": "^0.1.0",
     "tree-sitter": "0.21.1",
