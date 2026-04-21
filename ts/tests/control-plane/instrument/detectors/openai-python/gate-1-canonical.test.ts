@@ -90,4 +90,33 @@ describe("openai-python detector Gate 1 — canonical", () => {
     expect(result.advisories).toHaveLength(1);
     expect(result.advisories[0].kind).toBe("unresolved-import");
   });
+
+  test("aliased canonical `from openai import OpenAI as Foo; Foo()` resolves", () => {
+    const sf = fakeSourceFile([
+      { module: "openai", names: new Set([{ name: "OpenAI", alias: "Foo" }]) },
+    ], "src/a.py", "Foo()");
+    const match = {
+      captures: [
+        { name: "call", node: { startIndex: 0, endIndex: 5 } },
+        { name: "ctor", node: { startIndex: 0, endIndex: 3 } }, // "Foo"
+      ],
+    };
+    const result = plugin.produce(match as any, sf);
+    expect(result.edits).toHaveLength(2);
+  });
+
+  test("aliased namespace `import openai as oa; oa.OpenAI()` resolves", () => {
+    const sf = fakeSourceFile([
+      { module: "openai", names: new Set([{ name: "openai", alias: "oa" }]) },
+    ], "src/a.py", "oa.OpenAI()");
+    const match = {
+      captures: [
+        { name: "call", node: { startIndex: 0, endIndex: 11 } },
+        { name: "mod", node: { startIndex: 0, endIndex: 2 } }, // "oa"
+        { name: "ctor", node: { startIndex: 3, endIndex: 9 } }, // "OpenAI"
+      ],
+    };
+    const result = plugin.produce(match as any, sf);
+    expect(result.edits).toHaveLength(2);
+  });
 });
