@@ -50,6 +50,11 @@
       "import": "./dist/control-plane/instrument/detectors/openai-python/index.js",
       "require": "./dist/cjs/control-plane/instrument/detectors/openai-python/index.cjs"
     },
+    "./detectors/openai-ts": {
+      "types": "./dist/esm/control-plane/instrument/detectors/openai-ts/index.d.ts",
+      "import": "./dist/esm/control-plane/instrument/detectors/openai-ts/index.js",
+      "require": "./dist/cjs/control-plane/instrument/detectors/openai-ts/index.cjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
