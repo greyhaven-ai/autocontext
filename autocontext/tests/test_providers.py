@@ -222,7 +222,8 @@ class TestSettingsIntegration:
     def test_new_settings_have_defaults(self):
         from autocontext.config.settings import AppSettings
         s = AppSettings()
-        assert s.judge_provider == "anthropic"
+        # AC-586: default "auto" — resolves to agent_provider at get_provider() time.
+        assert s.judge_provider == "auto"
         assert s.judge_base_url is None
         assert s.judge_api_key is None
 

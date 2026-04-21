@@ -92,14 +92,43 @@ def create_provider(
     )
 
 
+# Agent providers that can be inherited as judge providers without extra
+# credentials. When judge_provider is left as its "auto" default (AC-586),
+# get_provider() inherits from agent_provider if it's in this set.
+_RUNTIME_BRIDGE_PROVIDERS: frozenset[str] = frozenset(
+    {"claude-cli", "codex", "pi", "pi-rpc"}
+)
+
+
+def _resolve_auto_judge_provider(settings: AppSettings) -> str:
+    """Map judge_provider='auto' to an effective provider type (AC-586).
+
+    If the caller set ``agent_provider`` to one of the runtime-bridged values
+    (claude-cli, codex, pi, pi-rpc), use that for the judge too — so
+    subscription-tier users who only have a local ``claude`` CLI auth don't
+    hit the Anthropic SDK's "Could not resolve authentication method" error
+    downstream. For any other agent provider (anthropic, openai, deterministic,
+    agent_sdk, etc.) preserve the historical anthropic default.
+    """
+    agent = settings.agent_provider.lower().strip()
+    if agent in _RUNTIME_BRIDGE_PROVIDERS:
+        return agent
+    return "anthropic"
+
+
 def get_provider(settings: AppSettings) -> LLMProvider:
     """Create a judge provider from autocontext settings.
 
     Uses ``settings.judge_provider``, ``settings.judge_base_url``, and
     ``settings.judge_api_key``. Falls back to provider-specific env vars
     (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``) when ``judge_api_key`` is not set.
+
+    When ``judge_provider`` is ``"auto"`` (the default), inherits a
+    runtime-bridged provider from ``settings.agent_provider`` (AC-586).
     """
     provider_type = settings.judge_provider.lower().strip()
+    if provider_type == "auto":
+        provider_type = _resolve_auto_judge_provider(settings)
     base_url = settings.judge_base_url
 
     # MLX provider has its own construction path using mlx_* settings
