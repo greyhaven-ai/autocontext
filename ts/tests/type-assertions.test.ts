@@ -126,7 +126,16 @@ describe("TypeScript type assertion budget", () => {
     // tree-sitter wrapper) is deliberately deferred — it would bloat scope
     // without improving review value, since the FFI surface is isolated in
     // `tree-sitter-loader.ts` and the contract layer never touches `any`.
-    expect(total).toBeLessThanOrEqual(740);
+    // Bumped to 850 when A2-II-b landed — `integrations/openai/` runtime
+    // (proxy + trace-builder) and `detectors/openai-python/` plugin require
+    // casts through `Parameters<typeof buildTrace>[0][...]` tuple types for
+    // every normalized field (messages, env, session, toolCalls, outcome),
+    // plus OpenAI SDK `Proxy { get }` recursion casts at each resource
+    // boundary (chat, chat.completions, responses), plus tree-sitter capture
+    // lookups in the detector's produce() function. Budget grows linearly with
+    // each new integration library — this is the first one; future integration
+    // libraries (Anthropic, LangChain, etc.) will require similar bumps.
+    expect(total).toBeLessThanOrEqual(850);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {

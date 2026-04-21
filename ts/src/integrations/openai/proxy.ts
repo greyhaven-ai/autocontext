@@ -370,9 +370,10 @@ export class ClientProxy {
     };
 
     const inner = this._inner as Record<string, { completions: { create: (k: unknown) => Promise<unknown> } }>;
-    let innerStream = inner["chat"]["completions"]["create"](kwargs);
-    if (innerStream && typeof (innerStream as { then?: unknown }).then === "function") {
-      innerStream = await (innerStream as Promise<unknown>);
+    const rawStream: unknown = inner["chat"]["completions"]["create"](kwargs);
+    let innerStream: unknown = rawStream;
+    if (rawStream && typeof (rawStream as { then?: unknown }).then === "function") {
+      innerStream = await (rawStream as Promise<unknown>);
     }
 
     const proxy = new AsyncStreamProxy({ innerStream, onFinalize });

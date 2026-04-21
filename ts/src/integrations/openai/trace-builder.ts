@@ -117,7 +117,7 @@ export function buildSuccessTrace(opts: {
   return buildTrace({
     provider: "openai",
     model: opts.requestSnapshot.model,
-    messages: normalizeMessages(opts.requestSnapshot.messages) as Parameters<typeof buildTrace>[0]["messages"],
+    messages: normalizeMessages(opts.requestSnapshot.messages) as unknown as Parameters<typeof buildTrace>[0]["messages"],
     timing: opts.timing,
     usage: _mapUsage(opts.responseUsage),
     env: opts.env as Parameters<typeof buildTrace>[0]["env"],
@@ -148,7 +148,7 @@ export function buildFailureTrace(opts: {
   return buildTrace({
     provider: "openai",
     model: opts.requestSnapshot.model,
-    messages: normalizeMessages(opts.requestSnapshot.messages) as Parameters<typeof buildTrace>[0]["messages"],
+    messages: normalizeMessages(opts.requestSnapshot.messages) as unknown as Parameters<typeof buildTrace>[0]["messages"],
     timing: opts.timing,
     usage: { tokensIn: 0, tokensOut: 0 },
     env: opts.env as Parameters<typeof buildTrace>[0]["env"],
@@ -174,7 +174,7 @@ export function finalizeStreamingTrace(opts: {
   return buildTrace({
     provider: "openai",
     model: opts.requestSnapshot.model,
-    messages: normalizeMessages(opts.requestSnapshot.messages) as Parameters<typeof buildTrace>[0]["messages"],
+    messages: normalizeMessages(opts.requestSnapshot.messages) as unknown as Parameters<typeof buildTrace>[0]["messages"],
     timing: opts.timing,
     usage: _mapUsage(opts.accumulatedUsage),
     env: opts.env as Parameters<typeof buildTrace>[0]["env"],
