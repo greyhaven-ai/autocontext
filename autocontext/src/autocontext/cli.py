@@ -1516,5 +1516,32 @@ register_solve_command(app, console=console)
 register_queue_command(app, console=console)
 
 
+@app.command("classifier-mine-vocab")
+def classifier_mine_vocab(
+    cache: Path | None = typer.Option(None, "--cache", help="Path to classifier cache JSON"),  # noqa: B008
+    out: Path | None = typer.Option(None, "--out", help="Write report to file instead of stdout"),  # noqa: B008
+    min_occurrences: int = typer.Option(3, "--min-occurrences", min=1, help="Minimum token occurrences to propose"),
+) -> None:
+    """Mine cached LLM classifications to propose keyword vocabulary additions (AC-582)."""
+    from autocontext.scenarios.custom.classifier_vocab_miner import (
+        _default_cache_path,
+        format_proposals_report,
+        load_cache_entries,
+        mine_vocab_proposals,
+    )
+    from autocontext.scenarios.custom.family_classifier import _FAMILY_SIGNAL_GROUPS
+
+    cache_path = cache if cache is not None else _default_cache_path()
+    entries = load_cache_entries(cache_path)
+    proposals = mine_vocab_proposals(entries, _FAMILY_SIGNAL_GROUPS, min_occurrences=min_occurrences)
+    report = format_proposals_report(proposals, total_cache_entries=len(entries))
+
+    if out is not None:
+        out.write_text(report, encoding="utf-8")
+        console.print(f"Report written to {out}")
+    else:
+        console.print(report)
+
+
 if __name__ == "__main__":
     app()

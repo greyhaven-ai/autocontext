@@ -17,6 +17,7 @@ File format (``cache.json``)::
                 "rationale": "matches simulation pattern",
                 "alternatives": [...],
                 "no_signals_matched": false,
+                "description": "<original description, retained for AC-582 vocab mining>",
                 "cached_at": "2026-04-22T12:34:56Z"
             },
             ...
@@ -79,7 +80,10 @@ class ClassifierCache:
         entry = data.get("entries", {}).get(_description_key(description))
         if not isinstance(entry, dict):
             return None
-        payload = {k: v for k, v in entry.items() if k != "cached_at"}
+        payload = {
+            k: v for k, v in entry.items()
+            if k not in ("cached_at", "description")
+        }
         try:
             return FamilyClassification.from_dict(payload)
         except Exception as exc:
@@ -103,6 +107,7 @@ class ClassifierCache:
             data = {"schema_version": schema, "entries": {}}
 
         entry: dict[str, Any] = classification.to_dict()
+        entry["description"] = description
         entry["cached_at"] = datetime.now(UTC).isoformat()
         data["entries"][_description_key(description)] = entry
 
