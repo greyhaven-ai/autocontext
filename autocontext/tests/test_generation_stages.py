@@ -446,6 +446,109 @@ class TestStageKnowledgeSetup:
         assert "## Prior-Run Evidence" in result.prompts.analyst
         assert "## Prior-Run Evidence" not in result.prompts.competitor
 
+    def test_writes_semantic_compaction_benchmark_report(self, tmp_path) -> None:
+        settings = AppSettings(
+            agent_provider="deterministic",
+            context_budget_tokens=180,
+            semantic_compaction_benchmark_enabled=True,
+            evidence_workspace_enabled=True,
+            evidence_workspace_budget_mb=1,
+        )
+        artifacts = MagicMock()
+        artifacts.runs_root = tmp_path / "runs"
+        artifacts.knowledge_root = tmp_path / "knowledge"
+        artifacts.read_playbook.return_value = (
+            "## Lessons\n"
+            + ("filler paragraph\n" * 140)
+            + "- Root cause: stale hints kept pushing the same failing opening.\n"
+            + "- Recommendation: preserve the rollback guard and diversify early probes.\n"
+        )
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        artifacts.read_tool_usage_report.return_value = ""
+        artifacts.read_notebook.return_value = None
+
+        prior_run_dir = artifacts.runs_root / "run_prior"
+        prior_run_dir.mkdir(parents=True)
+        (prior_run_dir / "events.ndjson").write_text('{"event":"start"}\n', encoding="utf-8")
+
+        snapshots_dir = artifacts.knowledge_root / "test_scenario" / "snapshots" / "run_prior"
+        snapshots_dir.mkdir(parents=True)
+        (artifacts.knowledge_root / "test_scenario" / "playbook.md").parent.mkdir(parents=True, exist_ok=True)
+        (artifacts.knowledge_root / "test_scenario" / "playbook.md").write_text("# Playbook\n", encoding="utf-8")
+
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = (
+            "## Experiment Log\n\n"
+            "### Generation 1\n"
+            + ("noise line\n" * 120)
+            + "\n### Generation 9\n"
+            + "- Root cause: stale hints amplified retries.\n"
+        )
+        ctx = _make_ctx(settings=settings)
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        artifacts.write_semantic_compaction_report.assert_called_once()
+        report = artifacts.write_semantic_compaction_report.call_args.args[3]
+        assert report.semantic_variant.signal_lines_preserved >= report.budget_only_variant.signal_lines_preserved
+        assert report.evidence_cache_lookups == 1
+        assert result.semantic_compaction_benchmark is not None
+        assert result.semantic_compaction_benchmark["context_budget_tokens"] == 180
+
+    def test_benchmark_report_records_evidence_cache_hits_on_repeat(self, tmp_path) -> None:
+        settings = AppSettings(
+            agent_provider="deterministic",
+            context_budget_tokens=180,
+            semantic_compaction_benchmark_enabled=True,
+            evidence_workspace_enabled=True,
+            evidence_workspace_budget_mb=1,
+        )
+        artifacts = MagicMock()
+        artifacts.runs_root = tmp_path / "runs"
+        artifacts.knowledge_root = tmp_path / "knowledge"
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        artifacts.read_tool_usage_report.return_value = ""
+        artifacts.read_notebook.return_value = None
+
+        prior_run_dir = artifacts.runs_root / "run_prior"
+        prior_run_dir.mkdir(parents=True)
+        (prior_run_dir / "events.ndjson").write_text('{"event":"start"}\n', encoding="utf-8")
+        snapshots_dir = artifacts.knowledge_root / "test_scenario" / "snapshots" / "run_prior"
+        snapshots_dir.mkdir(parents=True)
+        (artifacts.knowledge_root / "test_scenario" / "playbook.md").parent.mkdir(parents=True, exist_ok=True)
+        (artifacts.knowledge_root / "test_scenario" / "playbook.md").write_text("# Playbook\n", encoding="utf-8")
+
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+
+        first = _make_ctx(settings=settings)
+        stage_knowledge_setup(first, artifacts=artifacts, trajectory_builder=trajectory)
+        artifacts.write_semantic_compaction_report.reset_mock()
+
+        second = _make_ctx(settings=settings)
+        stage_knowledge_setup(second, artifacts=artifacts, trajectory_builder=trajectory)
+
+        report = artifacts.write_semantic_compaction_report.call_args.args[3]
+        assert report.evidence_cache_hits == 1
+        assert report.evidence_cache_hit_rate == 1.0
+
     def test_includes_prior_analyst_feedback_in_analyst_prompt(self) -> None:
         artifacts = MagicMock()
         artifacts.read_playbook.return_value = ""

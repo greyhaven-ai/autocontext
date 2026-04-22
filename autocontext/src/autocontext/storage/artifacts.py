@@ -1037,6 +1037,22 @@ class ArtifactStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
+    def _semantic_compaction_report_dir(self, scenario_name: str) -> Path:
+        return self.knowledge_root / scenario_name / "semantic_compaction_reports"
+
+    def write_semantic_compaction_report(
+        self,
+        scenario_name: str,
+        run_id: str,
+        generation: int,
+        report: DictSerializable,
+    ) -> None:
+        """Persist a semantic compaction benchmark report as JSON."""
+        report_dir = self._semantic_compaction_report_dir(scenario_name)
+        report_dir.mkdir(parents=True, exist_ok=True)
+        path = report_dir / f"{run_id}_gen_{generation}.json"
+        self.write_json(path, report.to_dict())
+
     # --- Normalized progress reports (AC-190) ---------------------------------
 
     def _progress_report_dir(self, scenario_name: str) -> Path:

@@ -56,6 +56,7 @@ class GenerationContext:
     base_lessons: str = ""
     exploration_metadata: dict[str, Any] = field(default_factory=dict)
     cost_control_metadata: dict[str, Any] = field(default_factory=dict)
+    semantic_compaction_benchmark: dict[str, Any] | None = None
 
     # Pipeline wiring: tuning proposal from architect (AR-6)
     tuning_proposal: TuningConfig | None = None

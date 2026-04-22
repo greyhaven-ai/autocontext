@@ -58,6 +58,7 @@ class EvidenceWorkspace:
     total_size_bytes: int
     materialized_at: str
     source_signature: str = ""
+    cache_hit: bool = False
     accessed_artifacts: list[str] = field(default_factory=list)
 
     def get_artifact(self, artifact_id: str) -> EvidenceArtifact | None:
@@ -77,6 +78,7 @@ class EvidenceWorkspace:
             "total_size_bytes": self.total_size_bytes,
             "materialized_at": self.materialized_at,
             "source_signature": self.source_signature,
+            "cache_hit": self.cache_hit,
             "accessed_artifacts": list(self.accessed_artifacts),
         }
 
@@ -89,5 +91,6 @@ class EvidenceWorkspace:
             total_size_bytes=data.get("total_size_bytes", 0),
             materialized_at=data["materialized_at"],
             source_signature=str(data.get("source_signature", "")),
+            cache_hit=bool(data.get("cache_hit", False)),
             accessed_artifacts=data.get("accessed_artifacts", []),
         )
