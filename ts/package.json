@@ -11,7 +11,8 @@
   "_sideEffects_false_subpaths": [
     "./production-traces/**",
     "./integrations/_shared/**",
-    "./integrations/openai/**"
+    "./integrations/openai/**",
+    "./integrations/anthropic/**"
   ],
   "files": [
     "README.md",
@@ -50,6 +51,11 @@
       "import": "./dist/integrations/_shared/index.js",
       "require": "./dist/cjs/integrations/_shared/index.cjs"
     },
+    "./integrations/anthropic": {
+      "types": "./dist/integrations/anthropic/index.d.ts",
+      "import": "./dist/integrations/anthropic/index.js",
+      "require": "./dist/cjs/integrations/anthropic/index.cjs"
+    },
     "./integrations/openai": {
       "types": "./dist/integrations/openai/index.d.ts",
       "import": "./dist/integrations/openai/index.js",
@@ -86,6 +92,7 @@
     "check:no-postinstall-scripts": "node scripts/check-no-postinstall-scripts.mjs",
     "check:no-telemetry": "node scripts/check-no-telemetry.mjs",
     "check:integrations-openai-bundle-size": "node scripts/check-integrations-openai-bundle-size.mjs",
+    "check:integrations-anthropic-bundle-size": "node scripts/check-integrations-anthropic-bundle-size.mjs",
     "check:a2-ii-a-all": "npm run check:sdk-import-discipline && npm run check:side-effects && npm run check:production-traces-sdk-bundle-size && npm run check:license-compatibility && npm run check:no-postinstall-scripts && npm run check:no-telemetry",
     "regenerate-cross-runtime-fixtures": "node scripts/regenerate-cross-runtime-fixtures.mjs"
   },
@@ -105,9 +112,13 @@
     "access": "public"
   },
   "peerDependencies": {
+    "@anthropic-ai/sdk": "^0.32",
     "openai": "^4"
   },
   "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
     "openai": {
       "optional": true
     }
@@ -124,6 +135,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@types/diff": "^7.0.2",
     "ajv": "^8.18.0",
@@ -133,7 +145,7 @@
     "ignore": "5.3.2",
     "ink": "^5.1.0",
     "ink-text-input": "^6.0.0",
-    "openai": "^4.104.0",
+    "openai": "^4",
     "react": "^18.3.1",
     "secure-exec": "^0.1.0",
     "tree-sitter": "0.21.1",
