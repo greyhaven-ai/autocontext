@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from autocontext.integrations.openai import FileSink, instrument_client
+
 from .conftest import canned_sse_chunks
 
 
@@ -65,7 +66,8 @@ def test_streaming_include_usage_auto_injected(tmp_path, make_openai_client) -> 
     with wrapped.chat.completions.create(
         model="gpt-4o", messages=[{"role": "user", "content": "hi"}], stream=True,
     ) as stream:
-        for _ in stream: pass
+        for _ in stream:
+            pass
 
     assert seen_body.get("stream_options") == {"include_usage": True}
     sink.close()
@@ -91,7 +93,8 @@ def test_streaming_customer_include_usage_preserved(tmp_path, make_openai_client
         stream=True,
         stream_options={"include_usage": False},  # customer-set; must not be overwritten
     ) as stream:
-        for _ in stream: pass
+        for _ in stream:
+            pass
 
     assert seen_body["stream_options"] == {"include_usage": False}
     sink.close()
@@ -132,7 +135,8 @@ async def test_async_streaming_normal_finalize(tmp_path, make_async_openai_clien
     async with await wrapped.chat.completions.create(
         model="gpt-4o", messages=[{"role": "user", "content": "hi"}], stream=True,
     ) as stream:
-        async for _ in stream: pass
+        async for _ in stream:
+            pass
     sink.close()
     trace = json.loads((tmp_path / "t.jsonl").read_text().strip())
     assert trace["outcome"]["label"] == "success"

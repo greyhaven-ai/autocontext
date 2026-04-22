@@ -1,6 +1,7 @@
 """End-to-end: OpenAI raises → taxonomy mapped → outcome.error.type correct, exception re-raised."""
-import httpx
 import json
+
+import httpx
 import openai
 import pytest
 

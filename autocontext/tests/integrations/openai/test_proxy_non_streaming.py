@@ -6,9 +6,9 @@ from typing import Any
 
 import httpx
 import pytest
-from openai import OpenAI
 
 from autocontext.integrations.openai import FileSink, instrument_client
+
 from .conftest import canned_chat_completion
 
 

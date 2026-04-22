@@ -4,12 +4,9 @@ Asserts the lookup table is byte-identical across Python and TS runtimes.
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from autocontext.production_traces.taxonomy import (
-    OPENAI_ERROR_REASONS,
     OPENAI_ERROR_REASON_KEYS,
+    OPENAI_ERROR_REASONS,
 )
 
 

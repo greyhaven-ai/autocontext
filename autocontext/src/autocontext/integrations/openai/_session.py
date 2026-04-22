@@ -6,12 +6,12 @@ raw ``threading.Thread`` targets — documented in STABILITY.md.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Iterator
 
-_current: ContextVar[dict[str, str]] = ContextVar(
-    "autocontext_session_current", default={}
+_current: ContextVar[dict[str, str] | None] = ContextVar(
+    "autocontext_session_current", default=None
 )
 
 
@@ -38,4 +38,5 @@ def autocontext_session(
 
 def current_session() -> dict[str, str]:
     """Read the active session dict. Returns empty dict when unbound."""
-    return dict(_current.get())
+    val = _current.get()
+    return dict(val) if val is not None else {}

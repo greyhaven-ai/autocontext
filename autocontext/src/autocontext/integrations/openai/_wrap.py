@@ -5,7 +5,7 @@ Spec §4.1.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from autocontext.integrations.openai._proxy import ClientProxy
 from autocontext.integrations.openai._sink import TraceSink

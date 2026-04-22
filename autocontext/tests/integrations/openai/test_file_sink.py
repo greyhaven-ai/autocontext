@@ -1,10 +1,7 @@
 """Tests for FileSink + TraceSink protocol."""
 from __future__ import annotations
 
-import gc
 import json
-import os
-import tempfile
 import time
 from pathlib import Path
 
@@ -75,7 +72,7 @@ def test_close_is_idempotent(tmp_path: Path) -> None:
 
 def test_no_atexit_registered_by_default(tmp_path: Path) -> None:
     import atexit
-    before = list(atexit._exithandlers) if hasattr(atexit, "_exithandlers") else None
+    _before = list(atexit._exithandlers) if hasattr(atexit, "_exithandlers") else None
     _ = FileSink(path=tmp_path / "x.jsonl")
     # There's no portable way to enumerate atexit handlers across versions;
     # instead, assert the public register_atexit default is False and that
@@ -94,7 +91,6 @@ def test_register_atexit_opt_in(tmp_path: Path) -> None:
 
 
 def test_on_error_raise_propagates(tmp_path: Path) -> None:
-    p = tmp_path / "nonexistent-dir" / "traces.jsonl"
     # Parent dir is created lazily; to force an error, use a read-only path.
     ro = tmp_path / "ro"
     ro.mkdir()
