@@ -12,7 +12,6 @@ from autocontext.scenarios.custom.family_classifier import (
     FamilyClassification,
 )
 
-
 # Minimal signal groups for tests — real classifier has 11 families and many keywords.
 _SIGNAL_GROUPS = {
     "simulation": {"pipeline": 1.5, "rollback": 2.0},
