@@ -10,6 +10,9 @@
  * `runProductionTracesCommand` shape.
  */
 import { ulid } from "ulid";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runInstrument, type InstrumentInputs, type InstrumentMode, type InstrumentResult } from "../pipeline/orchestrator.js";
 import { formatOutput, type OutputMode } from "../../cli/_shared/output-formatters.js";
 import type { GitDetector } from "../pipeline/preflight.js";
@@ -76,6 +79,30 @@ Exit codes (spec §8.2):
 `;
 
 /**
+ * Auto-load `.autoctx.instrument.config.{mjs,js,ts}` from `cwd` if present.
+ *
+ * Priority order: `.mjs` > `.js` > `.ts` (first found wins, others ignored).
+ * The file is dynamic-imported so ESM `import()` resolution applies. Any
+ * `registerDetectorPlugin()` calls in the config module execute at import time,
+ * populating the process-global registry before the scanner runs.
+ *
+ * Errors during import propagate to the caller (treated as exit 14).
+ */
+async function loadConfigFileIfPresent(cwd: string): Promise<void> {
+  for (const name of [
+    ".autoctx.instrument.config.mjs",
+    ".autoctx.instrument.config.js",
+    ".autoctx.instrument.config.ts",
+  ]) {
+    const p = join(cwd, name);
+    if (existsSync(p)) {
+      await import(pathToFileURL(p).href);
+      return;
+    }
+  }
+}
+
+/**
  * Parse `argv` (the args AFTER `autoctx instrument`), dispatch to
  * `runInstrument`, format the result per `--output`.
  */
@@ -110,6 +137,17 @@ export async function runInstrumentCommand(
   const cwd = opts.cwd ?? process.cwd();
   const nowIso = opts.nowIso ?? new Date().toISOString();
   const sessionUlid = opts.sessionUlid ?? ulid();
+
+  // Auto-load config file before scanner runs so plugins are registered.
+  try {
+    await loadConfigFileIfPresent(cwd);
+  } catch (err) {
+    return {
+      stdout: "",
+      stderr: `config file load failed: ${err instanceof Error ? err.message : String(err)}`,
+      exitCode: 14,
+    };
+  }
 
   const inputs: InstrumentInputs = {
     cwd,
