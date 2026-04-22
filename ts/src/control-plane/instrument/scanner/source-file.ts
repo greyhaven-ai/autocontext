@@ -29,7 +29,7 @@ import type {
   InstrumentLanguage,
   SourceFile,
 } from "../contract/plugin-interface.js";
-import { parseSource } from "./tree-sitter-loader.js";
+import { parseSource, parseSync } from "./tree-sitter-loader.js";
 import {
   parseDirectives as safetyParseDirectives,
   parseDirectivesFromLines,
@@ -64,6 +64,12 @@ export function fromBytes(args: {
   const indentationStyle = detectIndentationStyle(lines);
 
   // Lazy tree — compute on first access and memoize on the object itself.
+  // After A2-II-b Fix 1: uses `parseSync` (synchronous, requires the parser
+  // to have been preloaded via `ensureParserLoaded` in the orchestrator's
+  // pre-loop phase). Falls back to the async `parseSource` path only when
+  // called outside the orchestrator (e.g. in scanner unit tests that call
+  // `fromBytes` directly without preloading — those tests use `sourceFile.tree`
+  // lazily and the Promise is acceptable since they don't drive queries).
   let cachedTree: unknown | undefined = undefined;
   const file: SourceFile = {
     path,
@@ -71,7 +77,17 @@ export function fromBytes(args: {
     bytes,
     get tree(): unknown {
       if (cachedTree === undefined) {
-        cachedTree = parseSource(language, bytes);
+        // Use synchronous parse. If the parser has been preloaded by the
+        // orchestrator this is instant. If not (standalone unit test usage),
+        // this throws — callers outside the orchestrator should use
+        // `parseSource` directly.
+        try {
+          cachedTree = parseSync(language, bytes);
+        } catch {
+          // Parser not yet loaded (unit test context without orchestrator
+          // preload). Store the Promise so repeated accesses are idempotent.
+          cachedTree = parseSource(language, bytes);
+        }
       }
       return cachedTree;
     },
