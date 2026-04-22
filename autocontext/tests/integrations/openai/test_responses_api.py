@@ -1,6 +1,7 @@
 """responses.create coverage — sync + async."""
-import httpx
 import json
+
+import httpx
 import pytest
 
 from autocontext.integrations.openai import FileSink, instrument_client
@@ -32,7 +33,7 @@ def test_sync_responses_create(tmp_path, make_openai_client):
     client = make_openai_client(_responses_handler())
     sink = FileSink(path=tmp_path / "t.jsonl", batch_size=1)
     wrapped = instrument_client(client, sink=sink, app_id="a")
-    resp = wrapped.responses.create(model="gpt-4o", input="hi")
+    wrapped.responses.create(model="gpt-4o", input="hi")
     sink.close()
     trace = json.loads((tmp_path / "t.jsonl").read_text().strip())
     assert trace["provider"]["name"] == "openai"
@@ -44,7 +45,7 @@ async def test_async_responses_create(tmp_path, make_async_openai_client):
     client = make_async_openai_client(_responses_handler())
     sink = FileSink(path=tmp_path / "t.jsonl", batch_size=1)
     wrapped = instrument_client(client, sink=sink, app_id="a")
-    resp = await wrapped.responses.create(model="gpt-4o", input="hi")
+    await wrapped.responses.create(model="gpt-4o", input="hi")
     sink.close()
     trace = json.loads((tmp_path / "t.jsonl").read_text().strip())
     assert trace["provider"]["name"] == "openai"

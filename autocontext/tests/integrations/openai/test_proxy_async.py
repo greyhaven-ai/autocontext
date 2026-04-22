@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from autocontext.integrations.openai import FileSink, instrument_client
+
 from .conftest import canned_chat_completion
 
 

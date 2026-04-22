@@ -11,19 +11,8 @@ from __future__ import annotations
 import inspect
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-
-
-def _is_async_client(client: Any) -> bool:
-    """Return True if client is an AsyncOpenAI (or compatible async client)."""
-    try:
-        from openai import AsyncOpenAI
-        return isinstance(client, AsyncOpenAI)
-    except ImportError:
-        pass
-    # Fallback: check class name
-    return type(client).__name__.startswith("Async")
 
 from ulid import ULID
 
@@ -41,11 +30,22 @@ from autocontext.production_traces.hashing import (
     load_install_salt,
 )
 
+
+def _is_async_client(client: Any) -> bool:
+    """Return True if client is an AsyncOpenAI (or compatible async client)."""
+    try:
+        from openai import AsyncOpenAI  # noqa: PLC0415
+        return isinstance(client, AsyncOpenAI)
+    except ImportError:
+        pass
+    # Fallback: check class name
+    return type(client).__name__.startswith("Async")
+
 _WRAPPED_SENTINEL = "__autocontext_wrapped__"
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _resolve_identity(per_call: dict[str, Any] | None) -> dict[str, str]:
@@ -60,7 +60,7 @@ def _resolve_identity(per_call: dict[str, Any] | None) -> dict[str, str]:
         raw = dict(current_session())
     if not raw:
         return {}
-    salt = load_install_salt(".")
+    salt = load_install_salt(".") or ""
     hashed: dict[str, str] = {}
     if "user_id" in raw:
         hashed["user_id_hash"] = hash_user_id(raw["user_id"], salt)
@@ -70,7 +70,7 @@ def _resolve_identity(per_call: dict[str, Any] | None) -> dict[str, str]:
 
 
 class _ChatCompletionsProxy:
-    def __init__(self, parent: "ClientProxy", inner_create: Any) -> None:
+    def __init__(self, parent: ClientProxy, inner_create: Any) -> None:
         self._parent = parent
         self._inner_create = inner_create
 
@@ -93,7 +93,7 @@ class _ChatCompletionsProxy:
 
 
 class _ChatProxy:
-    def __init__(self, parent: "ClientProxy", inner_chat: Any) -> None:
+    def __init__(self, parent: ClientProxy, inner_chat: Any) -> None:
         self._parent = parent
         self._inner_chat = inner_chat
 
@@ -103,7 +103,7 @@ class _ChatProxy:
 
 
 class _ResponsesProxy:
-    def __init__(self, parent: "ClientProxy", inner_responses_create: Any) -> None:
+    def __init__(self, parent: ClientProxy, inner_responses_create: Any) -> None:
         self._parent = parent
         self._inner_create = inner_responses_create
 

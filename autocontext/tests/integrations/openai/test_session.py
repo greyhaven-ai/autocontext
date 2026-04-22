@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import threading
-
-import pytest
 
 from autocontext.integrations.openai._session import (
     autocontext_session,

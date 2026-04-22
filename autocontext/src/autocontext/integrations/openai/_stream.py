@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import traceback
 import weakref
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 class StreamProxy:
@@ -44,7 +45,7 @@ class StreamProxy:
     def _finalized(self, value: bool) -> None:
         self._state["finalized"] = value
 
-    def __enter__(self) -> "StreamProxy":
+    def __enter__(self) -> StreamProxy:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -70,7 +71,7 @@ class StreamProxy:
             except Exception:
                 pass
 
-    def __iter__(self) -> "StreamProxy":
+    def __iter__(self) -> StreamProxy:
         return self
 
     def __next__(self) -> Any:
@@ -141,7 +142,7 @@ class AsyncStreamProxy:
     def _finalized(self) -> bool:
         return self._state["finalized"]
 
-    async def __aenter__(self) -> "AsyncStreamProxy":
+    async def __aenter__(self) -> AsyncStreamProxy:
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -162,7 +163,7 @@ class AsyncStreamProxy:
         self._state["finalized"] = True
         self._finalizer.detach()
 
-    def __aiter__(self) -> "AsyncStreamProxy":
+    def __aiter__(self) -> AsyncStreamProxy:
         return self
 
     async def __anext__(self) -> Any:
@@ -174,7 +175,7 @@ class AsyncStreamProxy:
                 self._state["finalized"] = True
                 self._finalizer.detach()
             raise
-        StreamProxy._accumulate(self, chunk)  # reuse impl
+        StreamProxy._accumulate(self, chunk)  # type: ignore[arg-type]  # reuse impl
         return chunk
 
     def accumulated(self) -> dict[str, Any]:

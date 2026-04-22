@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from autocontext.integrations.openai._trace_builder import (
+    build_failure_trace,
     build_request_snapshot,
     build_success_trace,
-    build_failure_trace,
     finalize_streaming_trace,
 )
 
