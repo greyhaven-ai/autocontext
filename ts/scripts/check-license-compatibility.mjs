@@ -38,7 +38,8 @@ const ALLOWLIST = new Set([
   "(BSD-3-Clause OR MIT)",
 ]);
 
-const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid"];
+// Roots: production-traces/sdk direct deps + openai peer dep used by integrations/openai
+const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid", "openai"];
 
 if (!existsSync(PKG_LOCK)) {
   console.error("[check-license-compatibility] FAIL - package-lock.json not found");

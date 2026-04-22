@@ -63,7 +63,9 @@ try {
     outfile: outFile,
     metafile: true,
     logLevel: "silent",
-    external: [...NODE_BUILTINS, "openai"],
+    // openai is a peer dep; ajv/ajv-formats/ulid are runtime deps already
+    // bundled into autoctx/production-traces and thus always present.
+    external: [...NODE_BUILTINS, "openai", "ajv", "ajv/dist/2020.js", "ajv-formats", "ulid"],
     mainFields: ["module", "main"],
     conditions: ["import", "default"],
   });

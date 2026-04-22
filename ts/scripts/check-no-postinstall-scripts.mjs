@@ -31,7 +31,8 @@ const SELF_PKG = join(ROOT, "package.json");
 const STRICT_HOOKS = ["preinstall", "install", "postinstall"];
 const SELF_ONLY_HOOKS = ["prepublish", "prepare"];
 
-const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid"];
+// Roots: production-traces/sdk direct deps + openai peer dep used by integrations/openai
+const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid", "openai"];
 
 function loadPkg(path) {
   if (!existsSync(path)) return null;

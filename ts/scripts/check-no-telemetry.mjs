@@ -21,11 +21,19 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const SDK_SRC = join(ROOT, "src", "production-traces", "sdk");
 const NODE_MODULES = join(ROOT, "node_modules");
 const PKG_LOCK = join(ROOT, "package-lock.json");
 
-const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid"];
+// Source directories for all shipped subpaths
+const SUBPATH_SRC_DIRS = [
+  join(ROOT, "src", "production-traces", "sdk"),
+  join(ROOT, "src", "integrations", "openai"),
+  join(ROOT, "src", "control-plane", "instrument", "detectors", "openai-python"),
+  join(ROOT, "src", "control-plane", "instrument", "detectors", "openai-ts"),
+];
+
+// Roots: production-traces/sdk direct deps + openai peer dep used by integrations/openai
+const SDK_RUNTIME_ROOTS = ["ajv", "ajv-formats", "ulid", "openai"];
 
 const TELEMETRY_IMPORT_RES = [
   /from\s+["']@sentry\//,
@@ -88,7 +96,7 @@ function reachable(roots) {
 
 const sdkReach = reachable(SDK_RUNTIME_ROOTS);
 const filesToScan = [
-  ...listSourceFiles(SDK_SRC, [".ts"]),
+  ...SUBPATH_SRC_DIRS.flatMap((dir) => listSourceFiles(dir, [".ts"])),
   ...[...sdkReach].flatMap((n) =>
     listSourceFiles(join(NODE_MODULES, n), [".js", ".mjs", ".cjs"]),
   ),
