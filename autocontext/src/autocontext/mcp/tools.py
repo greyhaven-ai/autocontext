@@ -43,6 +43,7 @@ from autocontext.mcp.knowledge_tools import (  # noqa: F401
     export_skill,
     get_capabilities,
     get_env_snapshot,
+    get_evidence_artifact,
     get_evidence_list,
     get_feedback,
     import_package,

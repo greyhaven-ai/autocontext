@@ -700,6 +700,16 @@ def autocontext_evidence_list(scenario_name: str) -> str:
     return tools.get_evidence_list(_get_ctx(), scenario_name)
 
 
+@mcp.tool()
+def autocontext_evidence_artifact(
+    scenario_name: str,
+    artifact_id: str,
+    excerpt_lines: int = 40,
+) -> str:
+    """Return a specific evidence artifact by ID, with optional excerpting."""
+    return tools.get_evidence_artifact(_get_ctx(), scenario_name, artifact_id, excerpt_lines)
+
+
 def run_server() -> None:
     """Synchronous entry point for the MCP server."""
     mcp.run(transport="stdio")

@@ -312,6 +312,19 @@ class TestManifest:
             assert "Source path" in result
             assert "Hello evidence!" in result
 
+    def test_render_artifact_detail_supports_excerpt_windows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "test_file.md").write_text(
+                "line 1\nline 2\nline 3\nline 4\nline 5\n",
+                encoding="utf-8",
+            )
+            artifact = _make_artifact(path="test_file.md", source_path="/tmp/source/test_file.md")
+            result = render_artifact_detail(artifact, tmp, excerpt_lines=3)
+            assert "line 1" in result
+            assert "line 3" in result
+            assert "line 4" not in result
+            assert "request full artifact" in result.lower()
+
     def test_render_artifact_detail_handles_missing(self) -> None:
         artifact = _make_artifact(path="nonexistent.md")
         result = render_artifact_detail(artifact, "/tmp/does_not_exist")

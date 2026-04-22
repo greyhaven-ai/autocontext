@@ -238,3 +238,68 @@ class TestMcpTools:
             ctx.settings.knowledge_root = Path(tmp)
             result = get_evidence_list(ctx, "nonexistent")
             assert "not found" in result.lower() or "no evidence" in result.lower()
+
+    def test_evidence_artifact_tool_returns_excerpt_and_tracks_access(self) -> None:
+        from autocontext.mcp.knowledge_tools import get_evidence_artifact
+
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_dir = Path(tmp) / "test_scenario" / "_evidence"
+            evidence_dir.mkdir(parents=True)
+            manifest = {
+                "workspace_dir": str(evidence_dir),
+                "source_runs": ["run_001"],
+                "artifacts": [
+                    {
+                        "artifact_id": "gate_abc123",
+                        "source_run_id": "run_001",
+                        "kind": "gate_decision",
+                        "path": "gate_abc123_gate_decision.json",
+                        "summary": "advance decision",
+                        "size_bytes": 64,
+                        "generation": 2,
+                        "source_path": "/tmp/source/run_001/gate_decision.json",
+                    },
+                ],
+                "total_size_bytes": 64,
+                "materialized_at": "2026-04-22T00:00:00+00:00",
+            }
+            (evidence_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (evidence_dir / "gate_abc123_gate_decision.json").write_text(
+                '{"decision":"advance"}\n{"delta":0.08}\n{"note":"retain guard"}\n',
+                encoding="utf-8",
+            )
+            ctx = MagicMock()
+            ctx.settings.knowledge_root = Path(tmp)
+
+            result = get_evidence_artifact(ctx, "test_scenario", "gate_abc123", excerpt_lines=2)
+
+            assert "Artifact ID: gate_abc123" in result
+            assert '"decision":"advance"' in result
+            assert '"note":"retain guard"' not in result
+            access_log = json.loads((evidence_dir / "evidence_access_log.json").read_text(encoding="utf-8"))
+            assert access_log["accessed"] == ["gate_abc123"]
+
+    def test_evidence_artifact_tool_returns_not_found(self) -> None:
+        from autocontext.mcp.knowledge_tools import get_evidence_artifact
+
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_dir = Path(tmp) / "test_scenario" / "_evidence"
+            evidence_dir.mkdir(parents=True)
+            (evidence_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "workspace_dir": str(evidence_dir),
+                        "source_runs": [],
+                        "artifacts": [],
+                        "total_size_bytes": 0,
+                        "materialized_at": "2026-04-22T00:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            ctx = MagicMock()
+            ctx.settings.knowledge_root = Path(tmp)
+
+            result = get_evidence_artifact(ctx, "test_scenario", "missing")
+
+            assert "not found" in result.lower()

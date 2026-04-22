@@ -53,13 +53,20 @@ def render_evidence_manifest(workspace: EvidenceWorkspace, *, role: str = "defau
     return "\n".join(lines)
 
 
-def render_artifact_detail(artifact: EvidenceArtifact, workspace_dir: str) -> str:
+def render_artifact_detail(
+    artifact: EvidenceArtifact,
+    workspace_dir: str,
+    *,
+    excerpt_lines: int | None = None,
+) -> str:
     """Read and return the content of a specific artifact."""
     path = Path(workspace_dir) / artifact.path
     if not path.exists():
         return f"[Artifact {artifact.artifact_id} not found at {artifact.path}]"
     try:
         content = path.read_text(encoding="utf-8")
+        if excerpt_lines is not None and excerpt_lines > 0:
+            content = _excerpt_content(content, excerpt_lines=excerpt_lines)
         source_path = artifact.source_path or artifact.path
         return (
             f"## {artifact.kind}: {artifact.summary}\n\n"
@@ -70,6 +77,18 @@ def render_artifact_detail(artifact: EvidenceArtifact, workspace_dir: str) -> st
         )
     except (OSError, UnicodeDecodeError):
         return f"[Could not read artifact {artifact.artifact_id}: binary or inaccessible]"
+
+
+def _excerpt_content(content: str, *, excerpt_lines: int) -> str:
+    lines = content.splitlines()
+    if len(lines) <= excerpt_lines:
+        return content
+    excerpt = "\n".join(lines[:excerpt_lines]).rstrip()
+    omitted = len(lines) - excerpt_lines
+    return (
+        f"{excerpt}\n"
+        f"[... {omitted} additional lines omitted; request full artifact for complete content ...]"
+    )
 
 
 def _top_evidence_cards(workspace: EvidenceWorkspace, *, role: str) -> list[EvidenceArtifact]:
