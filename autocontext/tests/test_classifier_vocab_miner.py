@@ -1,16 +1,18 @@
 """AC-582 — mine cached LLM classifications to propose keyword vocabulary additions."""
 from __future__ import annotations
 
-from autocontext.scenarios.custom.classifier_cache import ClassifierCache
+from autocontext.scenarios.custom.classifier_cache import (
+    ClassifierCache,
+    _schema_version,
+)
 from autocontext.scenarios.custom.classifier_vocab_miner import (
     VocabProposal,
     format_proposals_report,
     load_cache_entries,
     mine_vocab_proposals,
 )
-from autocontext.scenarios.custom.family_classifier import (
-    FamilyClassification,
-)
+from autocontext.scenarios.custom.family_classifier import FamilyClassification
+from autocontext.scenarios.families import list_families
 
 # Minimal signal groups for tests — real classifier has 11 families and many keywords.
 _SIGNAL_GROUPS = {
@@ -89,6 +91,13 @@ class TestMineVocabProposals:
 
         proposals_lower = mine_vocab_proposals(cache, _SIGNAL_GROUPS, min_occurrences=2)
         assert any(p.term == "cryptographic" for p in proposals_lower)
+
+    def test_counts_distinct_descriptions_not_repeated_tokens(self) -> None:
+        cache = [
+            _entry("biomedical biomedical biomedical protocol", "agent_task"),
+        ]
+        proposals = mine_vocab_proposals(cache, _SIGNAL_GROUPS, min_occurrences=3)
+        assert not any(p.term == "biomedical" for p in proposals)
 
     def test_proposal_includes_example_descriptions(self) -> None:
         cache = [
@@ -175,7 +184,7 @@ class TestFormatProposalsReport:
 class TestLoadCacheEntriesFromClassifierCache:
     """Miner consumes the AC-581 cache file directly."""
 
-    _FAMILIES = ["agent_task", "simulation", "game"]
+    _FAMILIES = [family.name for family in list_families()]
 
     def _classification(self, family: str) -> FamilyClassification:
         return FamilyClassification(
@@ -192,6 +201,48 @@ class TestLoadCacheEntriesFromClassifierCache:
         path = tmp_path / "cache.json"
         path.write_text("{not json", encoding="utf-8")
         assert load_cache_entries(path) == []
+
+    def test_stale_schema_returns_empty(self, tmp_path) -> None:
+        import json
+
+        path = tmp_path / "cache.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "stale-schema",
+                    "entries": {
+                        "deadbeef": {
+                            "family_name": "deleted_family",
+                            "description": "novel domain token",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert load_cache_entries(path) == []
+
+    def test_current_schema_is_accepted(self, tmp_path) -> None:
+        import json
+
+        path = tmp_path / "cache.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": _schema_version(self._FAMILIES),
+                    "entries": {
+                        "deadbeef": {
+                            "family_name": "agent_task",
+                            "description": "biomedical protocol review",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert load_cache_entries(path) == [
+            {"description": "biomedical protocol review", "family_name": "agent_task"}
+        ]
 
     def test_returns_description_and_family_from_cache_entries(self, tmp_path) -> None:
         path = tmp_path / "cache.json"

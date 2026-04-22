@@ -1,6 +1,7 @@
 """AC-582 — CLI tests for `autoctx classifier-mine-vocab`."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -8,16 +9,15 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from autocontext.cli import app
+from autocontext.scenarios.custom.classifier_cache import _schema_version
+from autocontext.scenarios.families import list_families
 
 runner = CliRunner()
 
 
 def _write_cache(path: Path, entries: dict) -> None:
     """Write a minimal cache.json at *path*."""
-    import hashlib
-
-    families = sorted(entries.keys()) if entries else ["agent_task"]
-    schema = hashlib.sha256(",".join(families).encode()).hexdigest()
+    schema = _schema_version([family.name for family in list_families()])
     raw_entries = {}
     for family, descs in entries.items():
         for desc in descs:

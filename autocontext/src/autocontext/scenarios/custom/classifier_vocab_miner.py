@@ -25,7 +25,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from autocontext.scenarios.custom.classifier_cache import _schema_version
 from autocontext.scenarios.custom.family_classifier import _STOP_WORDS
+from autocontext.scenarios.families import list_families
 
 _DEFAULT_SUGGESTED_WEIGHT = 1.5
 _EXAMPLES_PER_PROPOSAL = 3
@@ -82,7 +84,7 @@ def mine_vocab_proposals(
     Algorithm:
         1. Group descriptions by ``family_name``.
         2. Tokenize each description (lowercase, stopwords removed, min length).
-        3. Count tokens per family.
+        3. Count distinct descriptions per token, per family.
         4. Filter: count must meet ``min_occurrences``.
         5. Filter: token must not already be covered by any signal (substring).
         6. Sort by count descending; emit one :class:`VocabProposal` per term.
@@ -102,10 +104,11 @@ def mine_vocab_proposals(
         for description in descriptions:
             seen_in_this_desc: set[str] = set()
             for token in _tokenize(description):
+                if token in seen_in_this_desc:
+                    continue
                 token_counts[token] += 1
-                if token not in seen_in_this_desc:
-                    examples_by_term.setdefault(token, []).append(description)
-                    seen_in_this_desc.add(token)
+                examples_by_term.setdefault(token, []).append(description)
+                seen_in_this_desc.add(token)
 
         for term, count in token_counts.most_common():
             if count < min_occurrences:
@@ -180,6 +183,9 @@ def load_cache_entries(cache_path: Path) -> list[dict[str, Any]]:
     Returns a list of ``{"description": str, "family_name": str}`` dicts.
     Silently skips entries missing either field — tolerates the legacy cache
     format from the first AC-581 ship that stored only SHA-256 keys.
+
+    Applies the same schema-version invalidation rule as ``ClassifierCache``:
+    if the registered family set has changed, treat the whole file as stale.
     """
     import json
 
@@ -192,6 +198,9 @@ def load_cache_entries(cache_path: Path) -> list[dict[str, Any]]:
     except json.JSONDecodeError:
         return []
     if not isinstance(payload, dict):
+        return []
+    expected_schema = _schema_version([family.name for family in list_families()])
+    if payload.get("schema_version") != expected_schema:
         return []
     entries = payload.get("entries")
     if not isinstance(entries, dict):
