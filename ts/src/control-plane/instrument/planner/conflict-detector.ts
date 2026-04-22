@@ -147,13 +147,20 @@ function rangesEqual(a: SourceRange, b: SourceRange): boolean {
  * Does an insert-statement anchor conflict with another edit's non-empty
  * content range?
  *
- * An anchor conflicts if it OVERLAPS the container (standard half-open overlap)
- * OR is fully equal to it (anchor.range == container.range). Boundary-adjacent
- * anchors (e.g., anchor = [endByte, endByte+k)) do NOT conflict — they sit
- * just after the replaced region.
+ * An anchor conflicts if it is STRICTLY INSIDE the container (overlaps but is
+ * not co-extensive with it). Boundary-adjacent anchors (e.g., anchor =
+ * [endByte, endByte+k)) do NOT conflict — they sit just after the replaced
+ * region. An anchor that is EXACTLY EQUAL to the container also does NOT
+ * conflict: `insert-before expr` combined with `wrap expr` is composable —
+ * the insert goes before the expression, the wrap encloses it; these produce
+ * non-overlapping text changes.
+ *
+ * Only anchors strictly interior to the container (startByte > container start
+ * OR endByte < container end, while still overlapping) are true conflicts
+ * because the insert would land in the middle of territory being wrapped.
  */
 function anchorConflictsWith(anchor: SourceRange, container: SourceRange): boolean {
-  if (rangesEqual(anchor, container)) return true;
+  if (rangesEqual(anchor, container)) return false; // co-extensive: composable
   return rangesOverlap(anchor, container);
 }
 
