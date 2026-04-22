@@ -4,6 +4,10 @@
  * Tracks content blocks by index (matching Anthropic's SSE structure).
  * Uses FinalizationRegistry for abandoned-stream detection.
  * Mirror of Python _stream.py for Anthropic.
+ *
+ * NOTE: The Anthropic SDK's messages.create({stream:true}) returns an
+ * APIPromise<Stream>, so innerStream may be a Promise<AsyncIterable>.
+ * Both cases are handled.
  */
 import type { AccumulatedBlock } from "./trace-builder.js";
 
@@ -53,7 +57,9 @@ export class AnthropicStreamProxy implements AsyncIterable<unknown> {
   private readonly _stopReason: { value: string | null };
   private readonly _onFinalize: OnFinalize;
   private readonly _state: { finalized: boolean };
-  private readonly _innerStream: AsyncIterable<unknown>;
+  // innerStream may be a direct AsyncIterable or a Promise<AsyncIterable>
+  private _innerStream: AsyncIterable<unknown> | null = null;
+  private _innerStreamPromise: Promise<AsyncIterable<unknown>> | null = null;
 
   constructor(opts: { innerStream: unknown; onFinalize: OnFinalize }) {
     this._contentBlocks = new Map();
@@ -61,7 +67,16 @@ export class AnthropicStreamProxy implements AsyncIterable<unknown> {
     this._stopReason = { value: null };
     this._onFinalize = opts.onFinalize;
     this._state = { finalized: false };
-    this._innerStream = opts.innerStream as AsyncIterable<unknown>;
+
+    // Detect if innerStream is a Promise<AsyncIterable> or direct AsyncIterable
+    if (
+      opts.innerStream &&
+      typeof (opts.innerStream as { then?: unknown }).then === "function"
+    ) {
+      this._innerStreamPromise = opts.innerStream as Promise<AsyncIterable<unknown>>;
+    } else {
+      this._innerStream = opts.innerStream as AsyncIterable<unknown>;
+    }
 
     // Register finalizer — pass state+callback, NOT the proxy (prevents cycle)
     const state = this._state;
@@ -77,8 +92,18 @@ export class AnthropicStreamProxy implements AsyncIterable<unknown> {
   }
 
   private async *_makeIterator(): AsyncGenerator<unknown> {
+    // Resolve the inner stream if needed (Anthropic SDK returns APIPromise)
+    let inner: AsyncIterable<unknown>;
+    if (this._innerStream !== null) {
+      inner = this._innerStream;
+    } else if (this._innerStreamPromise !== null) {
+      inner = await this._innerStreamPromise;
+    } else {
+      return;
+    }
+
     try {
-      for await (const event of this._innerStream) {
+      for await (const event of inner) {
         this._handleEvent(event as Record<string, unknown>);
         yield event;
         // Finalize immediately on message_stop (before iterator is fully consumed)
