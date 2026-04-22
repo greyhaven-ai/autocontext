@@ -269,6 +269,86 @@ autocontext exposes:
 - ClawHub skill manifests and scenario discovery metadata
 - an adapter layer for running OpenClaw agents inside the harness
 
+## OpenAI integration
+
+Autocontext ships a zero-configuration OpenAI instrumentation path that
+automatically wraps your existing `OpenAI(...)` calls and emits structured
+traces to a sink of your choice.
+
+### 1. Register detectors
+
+Create `.autoctx.instrument.config.mjs` at the root of your repo:
+
+```js
+// .autoctx.instrument.config.mjs
+import { registerDetectorPlugin } from "autoctx/control-plane/instrument";
+import { plugin as openaiPythonPlugin } from "autoctx/detectors/openai-python";
+
+registerDetectorPlugin(openaiPythonPlugin);
+```
+
+### 2. Run instrument
+
+Preview changes without touching any files:
+
+```bash
+autoctx instrument --dry-run
+```
+
+Apply changes on a new branch for review:
+
+```bash
+autoctx instrument --apply --branch autoctx/instrument
+```
+
+### 3. Review the PR
+
+The instrument command opens a branch. Open the PR and review the diff — you
+will see your `OpenAI(...)` calls wrapped with `instrument_client(...)`.
+Edit the generated TODO comment to point at your `FileSink`:
+
+```python
+# Before (generated):
+client = instrument_client(OpenAI(), sink=None)  # TODO: pass your TraceSink here
+
+# After (your edit):
+from autocontext.integrations.openai import instrument_client, FileSink
+sink = FileSink("./traces/openai.jsonl")
+client = instrument_client(OpenAI(), sink=sink)
+```
+
+Merge the PR.
+
+### 4. Customer code emits traces
+
+Your code is unchanged beyond the wrap. Every `chat.completions.create` call
+now emits a JSONL trace line to your sink:
+
+```python
+import openai
+from autocontext.integrations.openai import instrument_client, FileSink, autocontext_session
+
+sink = FileSink("./traces/openai.jsonl")
+client = instrument_client(openai.OpenAI(), sink=sink)
+
+with autocontext_session({"userId": "u_123"}):
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Hello!"}],
+    )
+    print(response.choices[0].message.content)
+
+sink.close()
+```
+
+Emitted trace line (pretty-printed for readability):
+
+```jsonl
+{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","choices":[{"message":{"role":"assistant","content":"Hi! How can I help?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":7,"total_tokens":16}},"durationMs":342,"errorReason":null}
+```
+
+For the TypeScript equivalent, see `ts/src/integrations/openai/STABILITY.md`.
+
 ## Additional Docs
 
 - [Canonical concept model](../docs/concept-model.md)

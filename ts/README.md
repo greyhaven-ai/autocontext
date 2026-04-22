@@ -369,6 +369,88 @@ These workflows require infrastructure not available in the npm package:
 
 `train` is exposed in the TS CLI as a validation plus executor-hook surface, but the npm package does not bundle a real MLX/CUDA trainer. For end-to-end local training, use the Python package (`pip install autocontext`) or inject a real `TrainingRunner` executor from code.
 
+## OpenAI integration
+
+Autocontext ships a zero-configuration OpenAI instrumentation path that
+automatically wraps your existing `new OpenAI(...)` calls and emits structured
+traces to a sink of your choice.
+
+### 1. Register detectors
+
+Create `.autoctx.instrument.config.mjs` at the root of your repo:
+
+```js
+// .autoctx.instrument.config.mjs
+import { registerDetectorPlugin } from "autoctx/control-plane/instrument";
+import { plugin as openaiTsPlugin } from "autoctx/detectors/openai-ts";
+
+registerDetectorPlugin(openaiTsPlugin);
+```
+
+### 2. Run instrument
+
+Preview changes without touching any files:
+
+```bash
+autoctx instrument --dry-run
+```
+
+Apply changes on a new branch for review:
+
+```bash
+autoctx instrument --apply --branch autoctx/instrument
+```
+
+### 3. Review the PR
+
+The instrument command opens a branch. Open the PR and review the diff — you
+will see your `new OpenAI(...)` calls wrapped with `instrumentClient(...)`.
+Edit the generated TODO comment to point at your `FileSink`:
+
+```ts
+// Before (generated):
+const client = instrumentClient(new OpenAI(), { sink: /* TODO: pass your TraceSink here */ });
+
+// After (your edit):
+import { FileSink } from "autoctx/integrations/openai";
+const sink = new FileSink("./traces/openai.jsonl");
+const client = instrumentClient(new OpenAI(), { sink });
+```
+
+Merge the PR.
+
+### 4. Customer code emits traces
+
+Your code is unchanged beyond the wrap. Every `chat.completions.create` call
+now emits a JSONL trace line to your sink:
+
+```ts
+import OpenAI from "openai";
+import { instrumentClient, FileSink, autocontextSession } from "autoctx/integrations/openai";
+
+const sink = new FileSink("./traces/openai.jsonl");
+const client = instrumentClient(new OpenAI(), { sink });
+
+await autocontextSession({ userId: "u_123" }, async () => {
+  const res = await client.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: "Hello!" }],
+  });
+  console.log(res.choices[0].message.content);
+});
+
+await sink.close();
+```
+
+Emitted trace line (pretty-printed for readability):
+
+```jsonl
+{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","choices":[{"message":{"role":"assistant","content":"Hi! How can I help?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":7,"total_tokens":16}},"durationMs":342,"errorReason":null}
+```
+
+For the Python equivalent, see
+`autocontext/src/autocontext/integrations/openai/STABILITY.md`.
+
 ## Development
 
 ```bash
