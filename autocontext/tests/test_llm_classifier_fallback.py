@@ -113,9 +113,10 @@ class TestResolveRequestedScenarioFamilyThreadsLlmFn:
 
         captured: dict = {}
 
-        def fake_classify(description: str, *, llm_fn=None) -> FamilyClassification:
+        def fake_classify(description: str, *, llm_fn=None, cache=None) -> FamilyClassification:
             del description
             captured["llm_fn"] = llm_fn
+            captured["cache"] = cache
             return FamilyClassification(
                 family_name="simulation",
                 confidence=0.9,
@@ -133,4 +134,5 @@ class TestResolveRequestedScenarioFamilyThreadsLlmFn:
                 )
 
         assert captured["llm_fn"] is stub_llm
+        assert captured["cache"] is None
         assert family is get_family("simulation")
