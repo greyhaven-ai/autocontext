@@ -54,10 +54,11 @@ def _map_usage(response_usage: dict[str, Any] | None) -> dict[str, Any]:
                 "outputTokens": 0,
             },
         }
-    input_tokens = int(response_usage.get("input_tokens", 0))
-    cache_create = int(response_usage.get("cache_creation_input_tokens", 0))
-    cache_read = int(response_usage.get("cache_read_input_tokens", 0))
-    output_tokens = int(response_usage.get("output_tokens", 0))
+    # Use `or 0` to handle None values (Anthropic SDK model_dump() returns None for absent fields)
+    input_tokens = int(response_usage.get("input_tokens") or 0)
+    cache_create = int(response_usage.get("cache_creation_input_tokens") or 0)
+    cache_read = int(response_usage.get("cache_read_input_tokens") or 0)
+    output_tokens = int(response_usage.get("output_tokens") or 0)
     return {
         "tokensIn": input_tokens + cache_create + cache_read,
         "tokensOut": output_tokens,
