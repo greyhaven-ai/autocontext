@@ -94,6 +94,66 @@ jobs:
           curl -fsS http://127.0.0.1:8010/health
           curl -fsS http://127.0.0.1:8010/api/runs
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # OpenAI SDK version-pin matrix (A2-II-b Task 7.4)
+  # Tests the OpenAI integration against the 3 most-recent 1.x patches (Python)
+  # and 3 most-recent 4.x patches (TypeScript).
+  #
+  # Python: 1.82.0, 1.83.0, 1.84.0   (latest 3 minor patches of openai 1.x)
+  # TS:     4.102.0, 4.103.0, 4.104.0 (latest 3 minor patches of openai 4.x)
+  # ────────────────────────────────────────────────────────────────────────────
+  openai-sdk-matrix-python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        openai-version: ["1.82.0", "1.83.0", "1.84.0"]
+    defaults:
+      run:
+        working-directory: autocontext
+    env:
+      OPENAI_VERSION: ${{ matrix.openai-version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install base deps
+        run: uv sync --group dev
+      - name: Pin openai to matrix version
+        run: uv pip install "openai==$OPENAI_VERSION"
+      - name: Run OpenAI integration tests
+        run: uv run pytest tests/production_traces/ tests/integrations/ -q -m "not live"
+
+  openai-sdk-matrix-ts:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        openai-version: ["4.102.0", "4.103.0", "4.104.0"]
+    defaults:
+      run:
+        working-directory: ts
+    env:
+      OPENAI_VERSION: ${{ matrix.openai-version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: ts/package-lock.json
+      - name: Install base deps
+        run: npm ci
+      - name: Pin openai to matrix version
+        run: npm install "openai@$OPENAI_VERSION"
+      - name: Run OpenAI integration tests
+        run: npm test -- --run --reporter=verbose tests/integrations/ tests/control-plane/instrument/
+
   primeintellect-live:
     runs-on: ubuntu-latest
     defaults:
