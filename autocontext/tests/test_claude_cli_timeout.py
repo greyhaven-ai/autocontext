@@ -1,7 +1,8 @@
-"""AC-570 — claude-cli timeout defaults and observability.
+"""AC-570 / AC-588 — claude-cli timeout defaults and observability.
 
-Pins the raised default (300s) and the existing override paths
-(--timeout flag, AUTOCONTEXT_CLAUDE_TIMEOUT env var).
+Pins the per-call default (AC-570 raised 120→300; AC-588 raised 300→600 after
+the 0.4.5 escalation sweep showed long scenarios still hitting the cap) and
+the existing override paths (--timeout flag, AUTOCONTEXT_CLAUDE_TIMEOUT env var).
 """
 from __future__ import annotations
 
@@ -16,13 +17,15 @@ from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
 
 
 class TestClaudeTimeoutDefaults:
-    def test_app_settings_claude_timeout_default_is_300s(self) -> None:
+    def test_app_settings_claude_timeout_default_is_600s(self) -> None:
+        # AC-588: raised 300→600 after the 0.4.5 escalation sweep showed long
+        # designer/judge calls exceeding 300s on complex scenarios.
         settings = AppSettings()
-        assert settings.claude_timeout == 300.0
+        assert settings.claude_timeout == 600.0
 
-    def test_claude_cli_config_default_is_300s(self) -> None:
+    def test_claude_cli_config_default_is_600s(self) -> None:
         cfg = ClaudeCLIConfig()
-        assert cfg.timeout == 300.0
+        assert cfg.timeout == 600.0
 
     def test_env_var_overrides_default(
         self, monkeypatch: pytest.MonkeyPatch
@@ -39,7 +42,7 @@ class TestClaudeTimeoutDefaults:
         over the default for CLI-backed providers."""
         from autocontext.cli_runtime_overrides import apply_judge_runtime_overrides
 
-        base = AppSettings()  # claude_timeout defaults to 300
+        base = AppSettings()  # claude_timeout defaults to 600 (AC-588)
         resolved = apply_judge_runtime_overrides(
             base, provider_name="claude-cli", timeout=90.0
         )

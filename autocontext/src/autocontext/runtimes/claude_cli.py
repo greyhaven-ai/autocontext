@@ -29,7 +29,7 @@ class ClaudeCLIConfig:
     permission_mode: str = "bypassPermissions"
     session_persistence: bool = False
     session_id: str | None = None  # Set to maintain context across rounds
-    timeout: float = 300.0
+    timeout: float = 600.0  # AC-588: per-call default (was 300, AC-570 raised from 120)
     system_prompt: str | None = None
     append_system_prompt: str | None = None
     extra_args: list[str] = field(default_factory=list)

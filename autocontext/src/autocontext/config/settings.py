@@ -574,7 +574,14 @@ class AppSettings(BaseModel):
     notebook_enabled: bool = Field(default=True, description="Enable session notebook feature")
     # Claude Code CLI runtime (AC-317)
     claude_model: str = Field(default="sonnet", description="Claude CLI model alias")
-    claude_timeout: float = Field(default=300.0, ge=1.0, description="Claude CLI execution timeout")
+    claude_timeout: float = Field(
+        default=600.0,
+        ge=1.0,
+        description=(
+            "Claude CLI per-call execution timeout "
+            "(AC-588: 300→600 after 0.4.5 sweep)"
+        ),
+    )
     claude_tools: str | None = Field(default=None, description="Claude CLI tools override")
     claude_permission_mode: str = Field(default="bypassPermissions", description="Claude CLI permission mode")
     claude_session_persistence: bool = Field(default=False, description="Persist Claude CLI sessions across turns")

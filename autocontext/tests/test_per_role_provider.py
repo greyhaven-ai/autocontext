@@ -93,7 +93,7 @@ class TestPerRoleConfigFields:
 
         settings = AppSettings()
         assert settings.claude_model == "sonnet"
-        assert settings.claude_timeout == 300.0
+        assert settings.claude_timeout == 600.0  # AC-588
         assert settings.claude_tools is None
         assert settings.claude_permission_mode == "bypassPermissions"
         assert settings.claude_session_persistence is False

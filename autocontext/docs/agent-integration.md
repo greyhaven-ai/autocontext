@@ -304,7 +304,7 @@ Key environment variables:
 | `AUTOCONTEXT_JUDGE_BASE_URL`                                         | Base URL for OpenAI-compatible judge endpoints                                                      |
 | `AUTOCONTEXT_JUDGE_MODEL`                                            | Override judge model name                                                                           |
 | `AUTOCONTEXT_CLAUDE_MODEL`                                           | Claude CLI model alias (default: `sonnet`)                                                          |
-| `AUTOCONTEXT_CLAUDE_TIMEOUT`                                         | Claude CLI execution timeout in seconds (default: 120)                                              |
+| `AUTOCONTEXT_CLAUDE_TIMEOUT`                                         | Claude CLI execution timeout in seconds (default: 600)                                              |
 | `AUTOCONTEXT_MODEL_COMPETITOR`                                       | Override competitor agent model                                                                     |
 | `AUTOCONTEXT_DB_PATH`                                                | SQLite database path                                                                                |
 | `AUTOCONTEXT_PI_COMMAND`                                             | Path to Pi CLI binary (default: `pi`)                                                               |
