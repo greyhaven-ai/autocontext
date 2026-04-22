@@ -67,6 +67,8 @@ def materialize_workspace(
     )
     cached = _load_cached_workspace(workspace_dir, source_signature=source_signature)
     if cached is not None:
+        if scan_for_secrets:
+            return _refresh_cached_workspace_after_secret_scan(workspace_dir, cached)
         return cached
 
     _cleanup_previous_workspace(workspace_dir)
@@ -177,6 +179,18 @@ def _load_cached_workspace(workspace_dir: Path, *, source_signature: str) -> Evi
         return EvidenceWorkspace.from_dict(data)
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _refresh_cached_workspace_after_secret_scan(
+    workspace_dir: Path,
+    workspace: EvidenceWorkspace,
+) -> EvidenceWorkspace:
+    artifacts, total_size = _apply_secret_scan(workspace_dir, list(workspace.artifacts), workspace.total_size_bytes)
+    workspace.artifacts = artifacts
+    workspace.total_size_bytes = total_size
+    manifest_path = workspace_dir / _MANIFEST_FILENAME
+    manifest_path.write_text(json.dumps(workspace.to_dict(), indent=2), encoding="utf-8")
+    return workspace
 
 
 def _apply_secret_scan(

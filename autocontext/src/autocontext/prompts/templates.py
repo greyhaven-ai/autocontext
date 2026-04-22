@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from autocontext.knowledge.compaction import compact_prompt_components
 from autocontext.prompts.context_budget import ContextBudget
 from autocontext.scenarios.base import Observation
 from autocontext.strategy_interface import is_action_plan_interface
@@ -86,6 +87,24 @@ def build_prompt_bundle(
     _evidence = dict(evidence_manifests or {})
     analyst_evidence_manifest = _evidence.get("analyst", evidence_manifest)
     architect_evidence_manifest = _evidence.get("architect", evidence_manifest)
+    compacted = compact_prompt_components(
+        {
+            "playbook": current_playbook,
+            "trajectory": score_trajectory,
+            "lessons": operational_lessons,
+            "analysis": recent_analysis,
+            "experiment_log": experiment_log,
+            "research_protocol": research_protocol,
+            "session_reports": session_reports,
+        }
+    )
+    current_playbook = compacted["playbook"]
+    score_trajectory = compacted["trajectory"]
+    operational_lessons = compacted["lessons"]
+    recent_analysis = compacted["analysis"]
+    experiment_log = compacted["experiment_log"]
+    research_protocol = compacted["research_protocol"]
+    session_reports = compacted["session_reports"]
     if context_budget_tokens > 0:
         budget = ContextBudget(max_tokens=context_budget_tokens)
         budgeted = budget.apply(

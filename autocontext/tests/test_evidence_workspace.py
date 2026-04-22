@@ -256,6 +256,62 @@ class TestMaterializer:
 
         assert second.materialized_at == first.materialized_at
 
+    def test_cached_workspace_rescans_for_secrets_when_enabled(
+        self,
+        evidence_tmpdir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.security.scanner import ScanFinding, ScanResult, SecretScanner
+
+        calls: list[str] = []
+        ws_dir = evidence_tmpdir / "workspace"
+
+        def clean_scan(_self: SecretScanner, directory: str) -> ScanResult:
+            calls.append("clean")
+            return ScanResult(findings=[], scanned_path=directory, scanner_available=False)
+
+        def dirty_scan(_self: SecretScanner, directory: str) -> ScanResult:
+            calls.append("dirty")
+            flagged_path = next(Path(directory).glob("*events.ndjson"))
+            return ScanResult(
+                findings=[
+                    ScanFinding(
+                        detector="GenericApiKey",
+                        file_path=str(flagged_path),
+                        verified=False,
+                        raw_preview="sk-...",
+                    )
+                ],
+                scanned_path=directory,
+                scanner_available=True,
+            )
+
+        monkeypatch.setattr(SecretScanner, "scan", clean_scan)
+        first = materialize_workspace(
+            knowledge_root=evidence_tmpdir / "knowledge",
+            runs_root=evidence_tmpdir / "runs",
+            source_run_ids=["run_001"],
+            workspace_dir=ws_dir,
+            scan_for_secrets=True,
+        )
+
+        assert first.artifacts
+
+        monkeypatch.setattr(SecretScanner, "scan", dirty_scan)
+        second = materialize_workspace(
+            knowledge_root=evidence_tmpdir / "knowledge",
+            runs_root=evidence_tmpdir / "runs",
+            source_run_ids=["run_001"],
+            workspace_dir=ws_dir,
+            scan_for_secrets=True,
+        )
+
+        assert calls == ["clean", "dirty"]
+        assert len(second.artifacts) < len(first.artifacts)
+        assert all(not artifact.path.endswith("events.ndjson") for artifact in second.artifacts)
+        manifest = json.loads((ws_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert all(not artifact["path"].endswith("events.ndjson") for artifact in manifest["artifacts"])
+
 
 # ---------------------------------------------------------------------------
 # Manifest tests

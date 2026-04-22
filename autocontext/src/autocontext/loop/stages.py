@@ -296,10 +296,17 @@ def stage_knowledge_setup(
     tool_usage_report = "" if ablation else _load_architect_tool_usage_report(ctx, artifacts=artifacts)
     weakness_reports = "" if ablation else artifacts.read_latest_weakness_reports_markdown(ctx.scenario_name)
     progress_reports = "" if ablation else artifacts.read_latest_progress_reports_markdown(ctx.scenario_name)
+    session_reports = (
+        ""
+        if ablation or not ctx.settings.session_reports_enabled
+        else artifacts.read_latest_session_reports(ctx.scenario_name)
+    )
     score_trajectory = "" if ablation else trajectory_builder.build_trajectory(ctx.run_id)
     strategy_registry = "" if ablation else trajectory_builder.build_strategy_registry(ctx.run_id)
     coach_hints_for_prompt = "" if ablation else ctx.coach_competitor_hints
     freshness_notes: list[str] = []
+    if not isinstance(session_reports, str):
+        session_reports = ""
 
     if not ablation and ctx.settings.evidence_freshness_enabled:
         skills_context, lesson_freshness = _load_fresh_skill_context(ctx, artifacts=artifacts)
@@ -427,6 +434,7 @@ def stage_knowledge_setup(
         strategy_registry=strategy_registry,
         progress_json=progress_json_str,
         experiment_log=experiment_log,
+        session_reports=session_reports,
         architect_tool_usage_report=tool_usage_report,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
         context_budget_tokens=ctx.settings.context_budget_tokens,

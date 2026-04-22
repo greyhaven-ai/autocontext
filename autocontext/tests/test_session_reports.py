@@ -247,6 +247,22 @@ class TestArtifactStoreReports:
         assert "Mid Report" in result
         assert "Old Report" not in result
 
+    def test_read_latest_reports_compacts_verbose_reports(self, tmp_path: Path) -> None:
+        store = self._make_store(tmp_path)
+        verbose_report = (
+            "# Session Report: run_new\n"
+            + ("filler paragraph\n" * 80)
+            + "## Findings\n"
+            + "- Preserve the rollback guard after failed harness mutations.\n"
+            + "- Prefer notebook freshness filtering before prompt injection.\n"
+        )
+        store.write_session_report("grid_ctf", "run_new", verbose_report)
+
+        result = store.read_latest_session_reports("grid_ctf", max_reports=1)
+        assert "rollback guard" in result
+        assert "freshness filtering" in result
+        assert "condensed" in result.lower() or result.count("filler paragraph") < 20
+
 
 # ── Prompt bundle integration ──────────────────────────────────────────
 

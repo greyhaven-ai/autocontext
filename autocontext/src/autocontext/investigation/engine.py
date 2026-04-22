@@ -178,6 +178,7 @@ def _build_hypothesis_prompt(
     *,
     description: str,
     execution: _ExecutedInvestigation,
+    diagnosis_target: str,
     max_hypotheses: int | None,
 ) -> tuple[str, str]:
     system_prompt = (
@@ -191,10 +192,14 @@ def _build_hypothesis_prompt(
         "}\n"
         "Output ONLY the JSON object."
     )
-    evidence = ", ".join(item.content for item in execution.collected_evidence) or "none yet"
+    evidence = _build_clustered_evidence_summary(
+        execution.collected_evidence,
+        description=description,
+        diagnosis_target=diagnosis_target,
+    )
     user_prompt = (
         f"Investigation: {description}\n"
-        f"Evidence collected: {evidence}\n"
+        f"{evidence}\n"
         f"Steps taken: {execution.steps_executed}\n"
         f"Maximum hypotheses: {max_hypotheses or 5}"
     )
@@ -354,6 +359,102 @@ def _build_evidence(execution: _ExecutedInvestigation) -> list[InvestigationEvid
         )
         for item in execution.collected_evidence
     ]
+
+
+def _build_clustered_evidence_summary(
+    evidence_items: list[EvidenceItem],
+    *,
+    description: str,
+    diagnosis_target: str,
+) -> str:
+    if not evidence_items:
+        return "Evidence clusters:\n- No evidence collected yet"
+
+    ranked = sorted(
+        evidence_items,
+        key=lambda item: _evidence_priority(item, description=description, diagnosis_target=diagnosis_target),
+        reverse=True,
+    )
+    relevant = [item for item in ranked if not item.is_red_herring]
+    red_herrings = [item for item in ranked if item.is_red_herring]
+
+    core = _cluster_by_source(relevant[:4])
+    supporting = _cluster_by_source(relevant[4:8])
+    red = _cluster_by_source(red_herrings[:3])
+
+    lines = ["Evidence clusters:"]
+    lines.extend(_render_clusters("Core signals", core, diagnosis_target=diagnosis_target))
+    if supporting:
+        lines.extend(_render_clusters("Supporting context", supporting, diagnosis_target=diagnosis_target))
+    if red:
+        lines.extend(_render_clusters("Potential red herrings", red, diagnosis_target=diagnosis_target))
+    return "\n".join(lines)
+
+
+def _evidence_priority(
+    item: EvidenceItem,
+    *,
+    description: str,
+    diagnosis_target: str,
+) -> float:
+    similarity = max(
+        _similarity_score(item.content, description),
+        _similarity_score(item.content, diagnosis_target),
+    )
+    relevance = float(item.relevance) if isinstance(item.relevance, (int, float)) else 0.0
+    red_herring_penalty = 0.35 if item.is_red_herring else 0.0
+    return relevance + similarity - red_herring_penalty
+
+
+def _cluster_by_source(items: list[EvidenceItem]) -> list[tuple[str, list[EvidenceItem]]]:
+    clusters: dict[str, list[EvidenceItem]] = {}
+    for item in items:
+        clusters.setdefault(item.source, []).append(item)
+    return list(clusters.items())
+
+
+def _render_clusters(
+    title: str,
+    clusters: list[tuple[str, list[EvidenceItem]]],
+    *,
+    diagnosis_target: str,
+) -> list[str]:
+    if not clusters:
+        return []
+    lines = [f"{title}:"]
+    for source, items in clusters:
+        summaries = "; ".join(
+            _sanitize_evidence_for_prompt(item.content, diagnosis_target=diagnosis_target)
+            for item in items[:2]
+        )
+        lines.append(f"- {source}: {summaries}")
+    return lines
+
+
+def _shorten_text(text: str, *, max_chars: int = 120) -> str:
+    normalized = re.sub(r"\s+", " ", text.strip())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 3].rstrip() + "..."
+
+
+def _sanitize_evidence_for_prompt(text: str, *, diagnosis_target: str) -> str:
+    summary = _shorten_text(text)
+    if not diagnosis_target:
+        return summary
+
+    lowered = summary.lower()
+    target_lower = diagnosis_target.lower().strip()
+    if not target_lower:
+        return summary
+
+    if "diagnosis target" in lowered:
+        return "Corroborating signal consistent with the observed failure mode"
+
+    if target_lower in lowered:
+        return _shorten_text(re.sub(re.escape(diagnosis_target), "the suspected root cause", summary, flags=re.IGNORECASE))
+
+    return summary
 
 
 def _parse_hypotheses(
@@ -567,6 +668,7 @@ class InvestigationEngine:
             hypothesis_system, hypothesis_user = _build_hypothesis_prompt(
                 description=request.description,
                 execution=execution,
+                diagnosis_target=spec.diagnosis_target,
                 max_hypotheses=request.max_hypotheses,
             )
             question, raw_hypotheses = _parse_hypotheses(

@@ -15,6 +15,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from autocontext.knowledge.compaction import extract_promotable_lines
+
 logger = logging.getLogger(__name__)
 
 
@@ -164,7 +166,7 @@ class MemoryConsolidator:
         if isinstance(session_reports, list):
             for report in session_reports:
                 if isinstance(report, str) and len(report.strip()) > 20:
-                    promoted_lessons.append(report.strip()[:200])
+                    promoted_lessons.extend(extract_promotable_lines(report, max_items=3))
                     reviewed.append("session_report")
 
         # Extract from verification outcomes

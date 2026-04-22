@@ -165,7 +165,9 @@ describe("runtime↔detector contract: Python pair", () => {
     ).toBeGreaterThan(0);
   });
 
-  test(`Python runtime exports every name emitted by the detector (${emittedNames.size} name(s))`, () => {
+  test(
+    `Python runtime exports every name emitted by the detector (${emittedNames.size} name(s))`,
+    () => {
     // Spawn Python subprocess to enumerate runtime exports — args are hardcoded, no injection risk
     const proc = spawnSync(
       "uv",
@@ -195,5 +197,7 @@ describe("runtime↔detector contract: Python pair", () => {
         `runtime missing "${name}" — detector emits it but ${RUNTIME_MODULE} does not export it`,
       ).toBe(true);
     }
-  });
+    },
+    35_000,
+  );
 });

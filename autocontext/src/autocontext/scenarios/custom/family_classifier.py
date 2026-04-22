@@ -10,12 +10,15 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from autocontext.agents.types import LlmFn
 from autocontext.scenarios.families import ScenarioFamily, get_family, list_families
+
+if TYPE_CHECKING:
+    from autocontext.scenarios.custom.classifier_cache import ClassifierCache
 
 logger = logging.getLogger(__name__)
 
@@ -468,9 +471,26 @@ def _llm_classify_fallback(
     description: str,
     registered_families: list[str],
     llm_fn: LlmFn,
+    cache: ClassifierCache | None = None,
 ) -> FamilyClassification | None:
-    """Single structured LLM call to classify a description. Returns None on any failure."""
+    """Single structured LLM call to classify a description. Returns None on any failure.
+
+    When ``cache`` is provided (AC-581), the cache is consulted first and a
+    successful result is written back on miss. Negative results (LLM raised,
+    unparseable JSON, unknown family, etc.) are NOT cached — transient
+    provider hiccups shouldn't poison future lookups.
+    """
     import json
+
+    if cache is not None:
+        cached = cache.get(description, registered_families)
+        if cached is not None:
+            logger.info(
+                "LLM classifier fallback: cache hit family=%s confidence=%.2f",
+                cached.family_name,
+                cached.confidence,
+            )
+            return cached
 
     family_list = ", ".join(registered_families)
     system = _LLM_FALLBACK_SYSTEM_PROMPT.format(family_list=family_list)
@@ -521,7 +541,7 @@ def _llm_classify_fallback(
         for other in registered_families
         if other != family
     ]
-    return FamilyClassification(
+    classification = FamilyClassification(
         family_name=family,
         confidence=round(clamped, 4),
         rationale=rationale,
@@ -529,6 +549,9 @@ def _llm_classify_fallback(
         no_signals_matched=False,
         llm_fallback_used=True,
     )
+    if cache is not None:
+        cache.put(description, registered_families, classification)
+    return classification
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +563,7 @@ def classify_scenario_family(
     description: str,
     *,
     llm_fn: LlmFn | None = None,
+    cache: ClassifierCache | None = None,
 ) -> FamilyClassification:
     """Classify a natural-language description into a scenario family.
 
@@ -550,6 +574,10 @@ def classify_scenario_family(
     a single structured LLM call is made to pick a family before returning the
     keyword fallback (AC-580). If the LLM call fails for any reason, the
     keyword fallback is returned unchanged.
+
+    When ``cache`` is provided (AC-581), the LLM fallback consults the cache
+    first and writes successful results back, eliminating repeat calls for
+    the same description as long as the registered family set is stable.
 
     Raises ValueError if description is empty/whitespace.
     """
@@ -571,7 +599,9 @@ def classify_scenario_family(
     total = sum(raw_scores.values())
     if total == 0:
         if llm_fn is not None:
-            llm_result = _llm_classify_fallback(description, registered_families, llm_fn)
+            llm_result = _llm_classify_fallback(
+                description, registered_families, llm_fn, cache=cache
+            )
             if llm_result is not None:
                 return llm_result
         # No signals matched — default to agent_task with low confidence if available.

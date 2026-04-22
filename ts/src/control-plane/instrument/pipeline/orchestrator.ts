@@ -36,6 +36,7 @@ import { join } from "node:path";
 import { parseContentHash, canonicalJsonStringify, type ContentHash } from "../../contract/index.js";
 import { scanRepo } from "../scanner/walker.js";
 import { pluginsForLanguage } from "../registry/plugin-registry.js";
+import { ensureParserLoaded, loadQuery, loadQuerySync } from "../scanner/tree-sitter-loader.js";
 import { composeEdits, type ComposeResult, type ComposedEdit } from "../planner/edit-composer.js";
 import type { ConflictReason } from "../planner/conflict-detector.js";
 import type {
@@ -175,6 +176,17 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
   }
 
   // -------------------------------------------------------------------------
+  // 2.5 Preload parsers + queries.
+  //
+  // For each language represented in sourceFiles, preload the tree-sitter
+  // parser so that `parseSync` is safe inside the file loop (Fix 1).
+  // Also pre-compile every query string from every registered plugin so that
+  // `runPluginQueries` is synchronous during the file loop (Fix 2/3).
+  // Both operations are cached — calling them again is a cheap Map lookup.
+  // -------------------------------------------------------------------------
+  await preloadParsersAndQueries(sourceFiles);
+
+  // -------------------------------------------------------------------------
   // 3. Detect.
   // -------------------------------------------------------------------------
   const detections: Detection[] = [];
@@ -194,9 +206,11 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
           matchRange: firstCaptureRange(match),
           editsProduced: editsWithMeta.length,
         });
-        const list = editsByFile.get(sf.path) ?? [];
-        list.push(...editsWithMeta);
-        editsByFile.set(sf.path, list);
+        if (editsWithMeta.length > 0) {
+          const list = editsByFile.get(sf.path) ?? [];
+          list.push(...editsWithMeta);
+          editsByFile.set(sf.path, list);
+        }
         if (produced.advisories.length > 0) {
           const advList = advisoriesByFile.get(sf.path) ?? [];
           advList.push(...produced.advisories);
@@ -274,6 +288,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
   }
 
   const detailedEdits = buildDetailedEdits(composedByFile, editsByFile, filesByPath, registeredPlugins);
+  const callSitesDetected = countWrappedCallSites(composedByFile);
 
   const command = buildCommandLine(opts);
   // Collect all advisories from all files.
@@ -350,7 +365,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
         mode: opts.mode,
         filesScanned: sourceFiles.length,
         filesAffected: affectedPatches.length,
-        callSitesDetected: detections.reduce((a, d) => a + d.editsProduced, 0),
+        callSitesDetected,
         filesSkipped,
         conflicts,
         exitCode: cleanCheck.exitCode,
@@ -419,7 +434,7 @@ export async function runInstrument(opts: InstrumentInputs): Promise<InstrumentR
     mode: opts.mode,
     filesScanned: sourceFiles.length,
     filesAffected: affectedPatches.length,
-    callSitesDetected: detections.reduce((a, d) => a + d.editsProduced, 0),
+    callSitesDetected,
     filesSkipped,
     conflicts,
     ...(applyResult ? { applyResult } : {}),
@@ -438,6 +453,10 @@ interface Detection {
   readonly filePath: string;
   readonly matchRange: { readonly startByte: number; readonly endByte: number };
   readonly editsProduced: number;
+}
+
+function isWrappedCallSiteKind(kind: EditDescriptor["kind"]): boolean {
+  return kind !== "insert-statement";
 }
 
 function sessionDirPath(cwd: string, sessionUlid: string): string {
@@ -479,27 +498,96 @@ function earlyExit(
 }
 
 /**
- * A2-I ships with zero tree-sitter query glue. `plugin.treeSitterQueries` is a
- * list of .scm query strings; in A2-I the pipeline runs the queries via a
- * minimal synthesized match. Real plugins (A2-II+) may implement their own
- * query-running via `sourceFile.tree` inside `produce()`.
+ * Preload parsers and queries for all languages appearing in `sourceFiles`.
  *
- * For A2-I we use the simplest correct contract: when `treeSitterQueries` is
- * empty we never call `produce()`. When non-empty, we call `produce()` ONCE
- * per query with a synthesized empty `TreeSitterMatch`. This defers full
- * QueryCursor wiring to A2-II (where the first real plugin lands) while
- * keeping the pipeline honest: every registered plugin sees every scanned file.
+ * This is the async setup phase that makes `runPluginQueries` synchronous:
+ *   1. For each language, call `ensureParserLoaded` so that `parseSync` works.
+ *   2. For each registered plugin on that language, pre-compile every query
+ *      string via `loadQuery` (which caches the compiled Query object).
+ *
+ * Both operations are idempotent and cheap on repeat calls (cache hit).
+ *
+ * Called once per `runInstrument` invocation, between Scan and Detect.
  */
+async function preloadParsersAndQueries(sourceFiles: readonly SourceFile[]): Promise<void> {
+  // Collect unique languages from the scanned files.
+  const languages = new Set<InstrumentLanguage>();
+  for (const sf of sourceFiles) languages.add(sf.language);
+
+  // For each language, preload parser + compile queries for all registered plugins.
+  await Promise.all(
+    Array.from(languages).map(async (lang) => {
+      await ensureParserLoaded(lang);
+      const plugins = pluginsForLanguage(lang);
+      await Promise.all(
+        plugins.flatMap((p) =>
+          p.treeSitterQueries.map((qs) => loadQuery(lang, qs)),
+        ),
+      );
+    }),
+  );
+}
+
+/**
+ * Run all tree-sitter queries for `plugin` against `sourceFile` and return
+ * the resulting matches in the `TreeSitterMatch` contract shape.
+ *
+ * A2-II-b implementation (Fix 3):
+ *   - `sourceFile.tree` is now a real, synchronous tree (parser preloaded).
+ *   - Each query string is fetched from the compiled-query cache (preloaded).
+ *   - `query.matches(rootNode)` returns native QueryMatch[]; each is
+ *     converted to TreeSitterMatch (list of `{name, node: {startIndex, endIndex}}`).
+ *
+ * When `treeSitterQueries` is empty the function returns `[]` immediately
+ * (contract: plugins with no queries are never called via `produce()`).
+ *
+ * All FFI casts (`any`) are confined to this function and to `tree-sitter-loader.ts`.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 function runPluginQueries(
   sourceFile: SourceFile,
   plugin: DetectorPlugin,
 ): readonly TreeSitterMatch[] {
   if (plugin.treeSitterQueries.length === 0) return [];
-  // Invoke tree property once so plugins that use `sourceFile.tree` inside
-  // `produce()` see the lazily-parsed CST without having to request it first.
-  void sourceFile.tree;
-  return plugin.treeSitterQueries.map(() => ({ captures: [] }));
+
+  // sourceFile.tree is synchronous after parser preload (Fix 1).
+  const tree = sourceFile.tree as any;
+  if (!tree || typeof tree.rootNode === "undefined") return [];
+  const rootNode = tree.rootNode;
+
+  const matches: TreeSitterMatch[] = [];
+
+  for (const queryString of plugin.treeSitterQueries) {
+    const cacheKey = `${sourceFile.language}|${queryString}`;
+    // Query was pre-compiled during preloadParsersAndQueries.
+    // We import the module-level cache map indirectly by calling loadQuery
+    // synchronously via the cache path — but loadQuery is async. Instead, we
+    // use the internal module cache accessed via a synchronous re-export.
+    // Implementation: re-use the `loadQuerySync` helper defined below.
+    const query: any = loadQuerySync(sourceFile.language, queryString);
+    if (!query) continue;
+
+    const rawMatches: any[] = query.matches(rootNode);
+    for (const rawMatch of rawMatches) {
+      const captures: TreeSitterMatch["captures"][number][] = [];
+      const rawCaptures: any[] = rawMatch.captures ?? [];
+      for (const cap of rawCaptures) {
+        const node = cap.node;
+        captures.push({
+          name: cap.name as string,
+          node: {
+            startIndex: node.startIndex as number,
+            endIndex: node.endIndex as number,
+          },
+        });
+      }
+      matches.push({ captures });
+    }
+  }
+
+  return matches;
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 function firstCaptureRange(match: TreeSitterMatch): { startByte: number; endByte: number } {
   if (match.captures.length === 0) return { startByte: 0, endByte: 0 };
@@ -710,8 +798,11 @@ function buildDetailedEdits(
     const sf = filesByPath.get(filePath);
     if (!sf) continue;
     const fileEdits = editsByFile.get(filePath) ?? [];
+    const wrappedFileEdits = fileEdits.filter((e) => isWrappedCallSiteKind(e.kind));
+    const wrappedPlan = result.plan.filter((e) => isWrappedCallSiteKind(e.kind));
     const sdkCounts = new Map<string, number>();
-    for (const e of fileEdits) {
+    for (let i = 0; i < wrappedPlan.length && i < wrappedFileEdits.length; i += 1) {
+      const e = wrappedFileEdits[i]!;
       const sdk = pluginToSdk.get(e.pluginId) ?? "unknown";
       sdkCounts.set(sdk, (sdkCounts.get(sdk) ?? 0) + 1);
     }
@@ -719,9 +810,9 @@ function buildDetailedEdits(
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .map(([sdkName, count]) => ({ sdkName, count }));
     const edits: DetailedEditEntry[] = [];
-    for (let i = 0; i < fileEdits.length && i < result.plan.length; i += 1) {
-      const e = fileEdits[i]!;
-      const composed: ComposedEdit = result.plan[i]!;
+    for (let i = 0; i < wrappedPlan.length && i < wrappedFileEdits.length; i += 1) {
+      const e = wrappedFileEdits[i]!;
+      const composed: ComposedEdit = wrappedPlan[i]!;
       edits.push({
         edit: e,
         composed: {
@@ -741,6 +832,17 @@ function buildDetailedEdits(
     });
   }
   return detailed;
+}
+
+function countWrappedCallSites(composedByFile: ReadonlyMap<string, ComposeResult>): number {
+  let count = 0;
+  for (const result of composedByFile.values()) {
+    if (result.kind !== "patch") continue;
+    for (const composed of result.plan) {
+      if (isWrappedCallSiteKind(composed.kind)) count += 1;
+    }
+  }
+  return count;
 }
 
 function extractSnippet(text: string, startByte: number, endByte: number): string {
