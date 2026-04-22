@@ -5,7 +5,7 @@ Session: `01HN0000000000000000000009` · Generated at `2026-04-19T12:00:00.000Z`
 
 ### Summary by SDK
 - **anthropic**: 1 call site wrapped
-- **openai**: 1 call site wrapped
+- **openai**: 2 call sites wrapped
 
 ### Files affected
 #### `src/chat.py` (+1 changes)
@@ -55,7 +55,7 @@ autoctx instrument --apply --branch autocontext-instrument --commit 'Instrument 
 
 ### Audit fingerprint
 - Session: `01HN0000000000000000000009`
-- Session-plan hash: `sha256:06646564c0d147a29caea4c367a78fe73310c36d4379043f42fb218d090603f2` (of `plan.json`)
+- Session-plan hash: `sha256:a2badb489a476a5d1fc9228b71ab35bc1c139606ff55b1fe21ff7d675c82686f` (of `plan.json`)
 - Autoctx version: `0.0.0-golden`
 - Registered plugins: `mock-openai-python@0.0.0, mock-anthropic-ts@0.0.0`
 - `.gitignore` rev: `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`

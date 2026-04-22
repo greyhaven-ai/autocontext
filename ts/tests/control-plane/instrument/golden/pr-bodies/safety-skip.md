@@ -4,7 +4,7 @@ Command: `autoctx instrument --dry-run --exclude tests/** session=01HN0000000000
 Session: `01HN0000000000000000000009` · Generated at `2026-04-19T12:00:00.000Z` by `autocontext v0.0.0-golden`
 
 ### Summary by SDK
-- **openai**: 1 call site wrapped
+- **openai**: 2 call sites wrapped
 
 ### Files affected
 #### `src/clean.py` (+1 changes)
@@ -49,7 +49,7 @@ autoctx instrument --apply --branch autocontext-instrument --commit 'Instrument 
 
 ### Audit fingerprint
 - Session: `01HN0000000000000000000009`
-- Session-plan hash: `sha256:a1d4bb0740fe81fc0fd0b9b32faeeeb82b4596670d2c3cbbb876149e6b95c478` (of `plan.json`)
+- Session-plan hash: `sha256:994456e225f62ad7621f323908a9f08fe9f51991dcadb94945ad93ee3263a833` (of `plan.json`)
 - Autoctx version: `0.0.0-golden`
 - Registered plugins: `mock-openai-python@0.0.0`
 - `.gitignore` rev: `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
