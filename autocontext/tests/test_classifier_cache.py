@@ -126,3 +126,87 @@ class TestClassifierCacheRobustness:
         assert isinstance(data["entries"], dict)
         # Entries are keyed by opaque content hashes — not the raw description.
         assert "desc" not in data["entries"]
+
+
+class TestLlmFallbackCacheIntegration:
+    """AC-580 fallback consults the cache when provided and writes back on success."""
+
+    @staticmethod
+    def _gibberish() -> str:
+        return "xyz zzz qqq no keyword signals"
+
+    def test_cache_miss_invokes_llm_and_writes_cache(self, tmp_path) -> None:
+        from autocontext.scenarios.custom.family_classifier import classify_scenario_family
+
+        cache = ClassifierCache(tmp_path / "cache.json")
+        call_count = {"n": 0}
+
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            call_count["n"] += 1
+            return '{"family": "simulation", "confidence": 0.82, "rationale": "mocked"}'
+
+        result = classify_scenario_family(self._gibberish(), llm_fn=stub_llm, cache=cache)
+        assert result.family_name == "simulation"
+        assert call_count["n"] == 1
+
+        # Next call with same description should hit the cache.
+        result2 = classify_scenario_family(self._gibberish(), llm_fn=stub_llm, cache=cache)
+        assert result2.family_name == "simulation"
+        assert call_count["n"] == 1  # LLM not called again
+
+    def test_cache_none_means_no_caching(self, tmp_path) -> None:
+        # Regression guard: existing callers pass no cache and still work.
+        from autocontext.scenarios.custom.family_classifier import classify_scenario_family
+
+        call_count = {"n": 0}
+
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            call_count["n"] += 1
+            return '{"family": "simulation", "confidence": 0.82, "rationale": "mocked"}'
+
+        classify_scenario_family(self._gibberish(), llm_fn=stub_llm)
+        classify_scenario_family(self._gibberish(), llm_fn=stub_llm)
+        assert call_count["n"] == 2  # Both calls went to LLM
+
+    def test_llm_failure_is_not_cached(self, tmp_path) -> None:
+        # Negative results (LLM raised / parse failed) must not be written —
+        # otherwise a transient provider hiccup would poison future lookups.
+        from autocontext.scenarios.custom.family_classifier import classify_scenario_family
+
+        cache = ClassifierCache(tmp_path / "cache.json")
+
+        def bad_llm(system: str, user: str) -> str:
+            del system, user
+            return "not json at all"
+
+        result = classify_scenario_family(self._gibberish(), llm_fn=bad_llm, cache=cache)
+        # Fallback failed → keyword fallback returned.
+        assert result.no_signals_matched is True
+
+        # Cache file should be empty (or non-existent) — no entries written.
+        cache_path = tmp_path / "cache.json"
+        if cache_path.exists():
+            data = json.loads(cache_path.read_text(encoding="utf-8"))
+            assert data.get("entries", {}) == {}
+
+    def test_cache_hit_preserves_all_fields(self, tmp_path) -> None:
+        from autocontext.scenarios.custom.family_classifier import classify_scenario_family
+
+        cache = ClassifierCache(tmp_path / "cache.json")
+
+        def stub_llm(system: str, user: str) -> str:
+            del system, user
+            return '{"family": "simulation", "confidence": 0.82, "rationale": "first call rationale"}'
+
+        first = classify_scenario_family(self._gibberish(), llm_fn=stub_llm, cache=cache)
+
+        def forbidden_llm(system: str, user: str) -> str:
+            raise AssertionError("cache hit should prevent LLM call")
+
+        second = classify_scenario_family(self._gibberish(), llm_fn=forbidden_llm, cache=cache)
+        assert second.family_name == first.family_name
+        assert second.confidence == first.confidence
+        assert second.rationale == first.rationale
+        assert second.no_signals_matched is False
