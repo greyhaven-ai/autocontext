@@ -24,6 +24,20 @@ _DEFAULT_COMPONENT_TOKEN_LIMITS: dict[str, int] = {
     "evidence_manifest": 1200,
     "evidence_manifest_analyst": 1200,
     "evidence_manifest_architect": 1200,
+    "agent_task_playbook": 600,
+    "agent_task_best_output": 900,
+    "policy_refinement_rules": 1600,
+    "policy_refinement_interface": 1000,
+    "policy_refinement_criteria": 1000,
+    "policy_refinement_feedback": 1400,
+    "consultation_context": 400,
+    "consultation_strategy": 400,
+}
+
+_TAIL_PRESERVING_COMPONENTS = {
+    "agent_task_best_output",
+    "consultation_context",
+    "consultation_strategy",
 }
 
 _IMPORTANT_KEYWORDS = (
@@ -49,15 +63,18 @@ def compact_prompt_components(components: Mapping[str, str]) -> dict[str, str]:
     """Return a compacted copy of prompt-facing context components."""
     result: dict[str, str] = {}
     for key, value in components.items():
-        if not value:
-            result[key] = value
-            continue
-        limit = _DEFAULT_COMPONENT_TOKEN_LIMITS.get(key)
-        if limit is None:
-            result[key] = value
-            continue
-        result[key] = _compact_component(key, value, limit)
+        result[key] = compact_prompt_component(key, value)
     return result
+
+
+def compact_prompt_component(key: str, value: str) -> str:
+    """Compact a single prompt-facing component when a limit is configured."""
+    if not value:
+        return value
+    limit = _DEFAULT_COMPONENT_TOKEN_LIMITS.get(key)
+    if limit is None:
+        return value
+    return _compact_component(key, value, limit)
 
 
 def extract_promotable_lines(text: str, *, max_items: int = 3) -> list[str]:
@@ -99,17 +116,19 @@ def extract_promotable_lines(text: str, *, max_items: int = 3) -> list[str]:
 
 
 def _compact_component(key: str, text: str, max_tokens: int) -> str:
-    if key in {"experiment_log", "session_reports"}:
+    if key in {"experiment_log", "session_reports", "policy_refinement_feedback"}:
         needs_history_compaction = len(text.splitlines()) > 24 or len(_split_sections(text)) > 4
         if not needs_history_compaction and estimate_tokens(text) <= max_tokens:
             return text
     elif estimate_tokens(text) <= max_tokens:
         return text
 
-    if key in {"experiment_log", "session_reports"}:
+    if key in {"experiment_log", "session_reports", "policy_refinement_feedback"}:
         compacted = _compact_history(text, max_tokens=max_tokens)
     elif key == "trajectory":
         compacted = _compact_table(text, max_tokens=max_tokens)
+    elif key in _TAIL_PRESERVING_COMPONENTS and _looks_like_plain_prose(text):
+        compacted = _compact_plain_prose(text, max_tokens=max_tokens)
     elif key == "lessons":
         compacted = _compact_markdown(text, max_tokens=max_tokens, prefer_recent=True)
     else:
@@ -200,6 +219,20 @@ def _compact_table(text: str, *, max_tokens: int) -> str:
     return compacted or _truncate_text(text, max_tokens=max_tokens)
 
 
+def _compact_plain_prose(text: str, *, max_tokens: int) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return _truncate_text(text, max_tokens=max_tokens)
+
+    head = lines[:2]
+    tail = lines[-3:]
+    selected = _dedupe_lines([*head, *tail])
+    compacted = "\n".join(selected).strip()
+    if compacted and compacted != text:
+        compacted = f"{compacted}\n\n[... condensed recent context ...]"
+    return compacted or _truncate_text(text, max_tokens=max_tokens)
+
+
 def _split_sections(text: str) -> list[str]:
     if "\n\n---\n\n" in text:
         return [section.strip() for section in text.split("\n\n---\n\n") if section.strip()]
@@ -215,6 +248,19 @@ def _split_sections(text: str) -> list[str]:
     if current:
         sections.append(current)
     return ["\n".join(section).strip() for section in sections if any(line.strip() for line in section)]
+
+
+def _looks_like_plain_prose(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if re.search(r"^#{1,6}\s+", stripped, re.MULTILINE):
+        return False
+    if "\n\n---\n\n" in stripped:
+        return False
+    if re.search(r"^\s*(?:[-*]|\d+\.)\s+", stripped, re.MULTILINE):
+        return False
+    return True
 
 
 def _compact_section(section: str, *, prefer_recent: bool = False) -> str:
