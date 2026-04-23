@@ -40,6 +40,7 @@ Usage:
   autoctx production-traces build-dataset --name <str>
       [--config ./dataset-config.json]
       [--since <iso-ts>] [--until <iso-ts>]
+      [--provider <name>]
       [--cluster-strategy taskType|rules]
       [--rules ./cluster-config.json]
       [--rubrics ./rubric-config.json]
@@ -50,13 +51,16 @@ Usage:
 
 Behavior:
   1. Acquire .autocontext/lock (shared with Foundation B).
-  2. Load ingested traces (filtered by --since/--until).
+  2. Load ingested traces (filtered by --since/--until/--provider).
   3. Optionally load cluster / rubric configs.
   4. Wire a registry-backed RubricLookup that resolves scenarioId via the
      control-plane artifact store. Returns null when no active artifact exists
      for the scenario, which falls through to synthetic or skip per §8.3.
   5. Invoke buildDataset() to cluster, select, split, redact, and write
      .autocontext/datasets/<datasetId>/.
+
+Flags:
+  --provider <name>    Filter traces by provider name (e.g. openai, anthropic).
 
 Exit codes:
   0  success
@@ -79,6 +83,7 @@ export async function runBuildDataset(
     config: { type: "string" },
     since: { type: "string" },
     until: { type: "string" },
+    provider: { type: "string" },
     "cluster-strategy": { type: "string", default: "taskType" },
     rules: { type: "string" },
     rubrics: { type: "string" },
@@ -95,6 +100,7 @@ export async function runBuildDataset(
   const configPath = stringFlag(flags.value, "config");
   const since = stringFlag(flags.value, "since");
   const until = stringFlag(flags.value, "until");
+  const provider = stringFlag(flags.value, "provider");
   const clusterStrategyRaw = stringFlag(flags.value, "cluster-strategy") ?? "taskType";
   const rulesPath = stringFlag(flags.value, "rules");
   const rubricsPath = stringFlag(flags.value, "rubrics");
@@ -183,6 +189,7 @@ export async function runBuildDataset(
   const filter: TraceFilter = {
     ...(since !== undefined ? { since } : {}),
     ...(until !== undefined ? { until } : {}),
+    ...(provider !== undefined ? { provider } : {}),
   };
   let traces;
   try {
