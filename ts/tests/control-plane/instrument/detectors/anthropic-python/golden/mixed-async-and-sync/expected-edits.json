@@ -1,0 +1,74 @@
+[
+  {
+    "kind": "wrap-expression",
+    "pluginId": "@autoctx/detector-anthropic-python",
+    "sourceFilePath": "(normalized)",
+    "range": {
+      "startLineCol": {
+        "line": 2,
+        "col": 14
+      },
+      "endLineCol": {
+        "line": 2,
+        "col": 25
+      }
+    },
+    "wrapFn": "instrument_client",
+    "importsNeeded": [
+      {
+        "module": "autocontext.integrations.anthropic",
+        "name": "instrument_client",
+        "kind": "named"
+      }
+    ]
+  },
+  {
+    "kind": "insert-statement",
+    "pluginId": "@autoctx/detector-anthropic-python",
+    "sourceFilePath": "(normalized)",
+    "anchorRange": {
+      "startLineCol": {
+        "line": 2,
+        "col": 14
+      }
+    },
+    "importsNeeded": [],
+    "statementSource": "# autocontext: configure the sink for this client — see https://github.com/greyhaven-ai/autocontext/tree/main/autocontext#anthropic-integration"
+  },
+  {
+    "kind": "wrap-expression",
+    "pluginId": "@autoctx/detector-anthropic-python",
+    "sourceFilePath": "(normalized)",
+    "range": {
+      "startLineCol": {
+        "line": 3,
+        "col": 15
+      },
+      "endLineCol": {
+        "line": 3,
+        "col": 31
+      }
+    },
+    "wrapFn": "instrument_client",
+    "importsNeeded": [
+      {
+        "module": "autocontext.integrations.anthropic",
+        "name": "instrument_client",
+        "kind": "named"
+      }
+    ]
+  },
+  {
+    "kind": "insert-statement",
+    "pluginId": "@autoctx/detector-anthropic-python",
+    "sourceFilePath": "(normalized)",
+    "anchorRange": {
+      "startLineCol": {
+        "line": 3,
+        "col": 15
+      }
+    },
+    "importsNeeded": [],
+    "statementSource": "# autocontext: configure the sink for this client — see https://github.com/greyhaven-ai/autocontext/tree/main/autocontext#anthropic-integration"
+  }
+]

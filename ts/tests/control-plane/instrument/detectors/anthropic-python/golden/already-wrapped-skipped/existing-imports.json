@@ -1,0 +1,1 @@
+[{"module": "anthropic", "names": [{"name": "Anthropic"}]}, {"module": "autocontext.integrations.anthropic", "names": [{"name": "instrument_client"}]}]

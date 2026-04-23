@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "deferred-sdk-variant",
+    "pluginId": "@autoctx/detector-anthropic-python",
+    "sourceFilePath": "(normalized)",
+    "reason": "AnthropicBedrock deferred to a2-iii-bedrock; wrap manually: instrument_client(AnthropicBedrock(...))"
+  }
+]
