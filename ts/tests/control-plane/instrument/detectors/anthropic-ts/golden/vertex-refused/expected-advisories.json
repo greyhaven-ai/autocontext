@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "deferred-sdk-variant",
+    "pluginId": "@autoctx/detector-anthropic-ts",
+    "sourceFilePath": "(normalized)",
+    "reason": "AnthropicVertex deferred to a2-iii-vertex; wrap manually: instrumentClient(new AnthropicVertex(...))"
+  }
+]

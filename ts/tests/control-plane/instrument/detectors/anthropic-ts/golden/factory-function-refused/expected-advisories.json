@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "factoryFunction",
+    "pluginId": "@autoctx/detector-anthropic-ts",
+    "sourceFilePath": "(normalized)",
+    "reason": "call is the return expression of a factory function; wrap at the call site of the factory instead"
+  }
+]

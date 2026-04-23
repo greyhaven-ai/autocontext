@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "already-wrapped",
+    "pluginId": "@autoctx/detector-anthropic-ts",
+    "sourceFilePath": "(normalized)",
+    "reason": "call site is already wrapped by instrumentClient()"
+  }
+]
