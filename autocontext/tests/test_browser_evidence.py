@@ -52,3 +52,20 @@ def test_persist_snapshot_artifacts_writes_html_and_png(tmp_path: Path) -> None:
     screenshot_path = Path(result["screenshotPath"])
     assert html_path.read_text(encoding="utf-8") == "<html><body>Hello</body></html>"
     assert screenshot_path.read_bytes() == b"png-bytes"
+
+
+def test_persist_snapshot_artifacts_contains_traversal_names(tmp_path: Path) -> None:
+    store = BrowserEvidenceStore(tmp_path)
+
+    result = store.persist_snapshot_artifacts(
+        session_id="../session_1",
+        basename="../../../../../escaped",
+        screenshot_base64="cG5nLWJ5dGVz",
+    )
+
+    assert result["screenshotPath"] is not None
+    screenshot_path = Path(result["screenshotPath"]).resolve()
+    assert screenshot_path.is_relative_to(tmp_path.resolve())
+    assert screenshot_path.name == "escaped.png"
+    assert screenshot_path.read_bytes() == b"png-bytes"
+    assert not (tmp_path.parent / "escaped.png").exists()

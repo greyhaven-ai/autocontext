@@ -66,6 +66,7 @@ async def test_snapshot_persists_artifacts_and_click_uses_ref_mapping(tmp_path: 
         },
         {"data": "cG5nLWJ5dGVz"},
         {"result": {"value": {"ok": True}}},
+        {"result": {"value": "https://example.com/dashboard"}},
     ])
     session = ChromeCdpSession(
         session_id="session_1",
@@ -84,8 +85,88 @@ async def test_snapshot_persists_artifacts_and_click_uses_ref_mapping(tmp_path: 
     assert Path(snapshot.screenshotPath).read_bytes() == b"png-bytes"
     assert "selectorFor(element)" in transport.calls[2][1]["expression"]
     assert event.allowed is True
-    assert transport.calls[-1][0] == "Runtime.evaluate"
-    assert "button:nth-of-type(1)" in transport.calls[-1][1]["expression"]
+    assert event.afterUrl == "https://example.com/dashboard"
+    assert transport.calls[-2][0] == "Runtime.evaluate"
+    assert "button:nth-of-type(1)" in transport.calls[-2][1]["expression"]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_normalizes_null_ref_fields(tmp_path: Path) -> None:
+    transport = FakeTransport([
+        {},
+        {},
+        {
+            "result": {
+                "value": {
+                    "url": "https://example.com/dashboard",
+                    "title": "Dashboard",
+                    "visibleText": "Welcome back",
+                    "refs": [
+                        {
+                            "id": "@e1",
+                            "role": "button",
+                            "name": None,
+                            "text": None,
+                            "selector": "button:nth-of-type(1)",
+                        }
+                    ],
+                    "html": "<html><body>Welcome back</body></html>",
+                }
+            }
+        },
+    ])
+    session = ChromeCdpSession(
+        session_id="session_1",
+        config=build_default_browser_session_config(
+            allowed_domains=["example.com"],
+            capture_screenshots=False,
+        ),
+        transport=transport,
+        evidence_store=BrowserEvidenceStore(tmp_path),
+    )
+
+    snapshot = await session.snapshot()
+
+    ref = snapshot.model_dump(mode="json", exclude_none=True)["refs"][0]
+    assert "name" not in ref
+    assert "text" not in ref
+
+
+@pytest.mark.asyncio
+async def test_click_records_blocked_when_interaction_leaves_allowlist(tmp_path: Path) -> None:
+    transport = FakeTransport([
+        {},
+        {},
+        {
+            "result": {
+                "value": {
+                    "url": "https://example.com/dashboard",
+                    "title": "Dashboard",
+                    "visibleText": "Continue",
+                    "refs": [{"id": "@e1", "selector": "a:nth-of-type(1)"}],
+                    "html": "<html><body><a href='https://blocked.example.net'>Continue</a></body></html>",
+                }
+            }
+        },
+        {"result": {"value": {"ok": True}}},
+        {"result": {"value": "https://blocked.example.net"}},
+    ])
+    session = ChromeCdpSession(
+        session_id="session_1",
+        config=build_default_browser_session_config(
+            allowed_domains=["example.com"],
+            capture_screenshots=False,
+        ),
+        transport=transport,
+        evidence_store=BrowserEvidenceStore(tmp_path),
+    )
+
+    await session.snapshot()
+    event = await session.click("@e1")
+
+    assert event.allowed is False
+    assert event.policyReason == "domain_not_allowed"
+    assert event.afterUrl == "https://blocked.example.net"
 
 
 @pytest.mark.asyncio

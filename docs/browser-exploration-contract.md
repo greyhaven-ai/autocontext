@@ -19,7 +19,7 @@ The architecture is inspired by thin browser-control projects such as `browser-h
 
 ## Current Scope
 
-This foundation currently includes the shared contract, settings, validation, and policy layer. It does not yet ship a browser backend or CLI execution path.
+This foundation currently includes the shared contract, settings, validation, policy layer, and a thin Python Chrome/CDP attachment backend. It does not yet ship TypeScript browser execution or CLI investigation wiring.
 
 Included:
 
@@ -30,13 +30,14 @@ Included:
 - security-focused policy helpers for allowlists and auth-sensitive actions
 - mirrored `AUTOCONTEXT_BROWSER_*` settings in both packages
 - backend-agnostic session/runtime protocol types for future adapters
+- Python evidence stores for browser audit and snapshot artifacts
+- Python Chrome/CDP session wrappers for `navigate`, `snapshot`, `click`, `fill`, `press`, and `screenshot`
+- Python WebSocket CDP transport and debugger target discovery from `/json/list`
+- Python settings-backed runtime factory for attaching to an existing debugger target
 
 Not yet included:
 
-- thin CDP session wrappers or websocket transports
-- debugger target discovery from `/json/list`
-- browser evidence stores for audit and snapshot artifacts
-- settings-backed browser runtime factories
+- TypeScript browser runtime implementation beyond the shared contract and policy helpers
 - CLI investigation wiring such as `investigate --browser-url <url>`
 - browser process launching or lifecycle management
 - domain-skill persistence
@@ -90,9 +91,9 @@ Python exposes the matching validation and policy helpers under:
 
 - `autocontext.integrations.browser`
 
-Both surfaces are intentionally small and backend-agnostic so a thin CDP implementation can be introduced later without changing the contract.
+Both surfaces are intentionally small and backend-agnostic so additional runtime implementations can be introduced later without changing the contract.
 
-The reserved debugger settings are intended for a future attach-oriented CDP implementation:
+The Python CDP implementation is intentionally attach-oriented:
 
 - use `AUTOCONTEXT_BROWSER_DEBUGGER_URL` / `browserDebuggerUrl` to point at an existing Chrome debugger endpoint
 - use `AUTOCONTEXT_BROWSER_PREFERRED_TARGET_URL` / `browserPreferredTargetUrl` to prefer a specific page when multiple allowed targets are present

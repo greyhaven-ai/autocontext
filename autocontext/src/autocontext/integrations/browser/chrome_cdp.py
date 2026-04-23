@@ -60,8 +60,8 @@ _SNAPSHOT_EXPRESSION = """
       element.getAttribute("aria-label") ??
       element.getAttribute("name") ??
       element.textContent?.trim() ??
-      null,
-    text: element.textContent?.trim() ?? null,
+      "",
+    text: element.textContent?.trim() ?? "",
     selector: selectorFor(element),
     disabled: element.hasAttribute("disabled"),
   }));
@@ -143,8 +143,7 @@ class ChromeCdpSession(BrowserSessionPort):
             },
         )
         payload = _extract_result_value(response)
-        refs = payload.get("refs")
-        parsed_refs = refs if isinstance(refs, list) else []
+        parsed_refs = _normalize_snapshot_refs(payload.get("refs"))
         self._ref_selectors = {
             str(ref.get("id")): str(ref.get("selector"))
             for ref in parsed_refs
@@ -198,11 +197,10 @@ class ChromeCdpSession(BrowserSessionPort):
                 "awaitPromise": True,
             },
         )
-        return self._record_action_result(
+        return await self._record_interactive_result(
             action=action,
             decision=decision,
             before_url=self._current_url,
-            after_url=self._current_url,
             message="click allowed",
         )
 
@@ -234,11 +232,10 @@ class ChromeCdpSession(BrowserSessionPort):
                 "awaitPromise": True,
             },
         )
-        return self._record_action_result(
+        return await self._record_interactive_result(
             action=action,
             decision=decision,
             before_url=self._current_url,
-            after_url=self._current_url,
             message="fill allowed",
         )
 
@@ -262,11 +259,10 @@ class ChromeCdpSession(BrowserSessionPort):
                 "awaitPromise": True,
             },
         )
-        return self._record_action_result(
+        return await self._record_interactive_result(
             action=action,
             decision=decision,
             before_url=self._current_url,
-            after_url=self._current_url,
             message="key press allowed",
         )
 
@@ -364,6 +360,48 @@ class ChromeCdpSession(BrowserSessionPort):
     def _selector_for_ref(self, ref: str) -> str:
         return self._ref_selectors.get(ref, ref)
 
+    async def _record_interactive_result(
+        self,
+        *,
+        action: BrowserAction,
+        decision: BrowserPolicyDecision,
+        before_url: str | None,
+        message: str,
+    ) -> BrowserAuditEvent:
+        after_url = await self._read_current_url()
+        self._current_url = after_url
+        after_decision = _evaluate_navigation_url_policy(self.config, after_url)
+        if not after_decision.allowed:
+            return self._record_action_result(
+                action=action,
+                decision=after_decision,
+                before_url=before_url,
+                after_url=after_url,
+                message="interaction navigated outside browser policy",
+            )
+        return self._record_action_result(
+            action=action,
+            decision=decision,
+            before_url=before_url,
+            after_url=after_url,
+            message=message,
+        )
+
+    async def _read_current_url(self) -> str:
+        response = await self.transport.send(
+            "Runtime.evaluate",
+            {
+                "expression": "(() => window.location.href)()",
+                "returnByValue": True,
+                "awaitPromise": True,
+            },
+        )
+        result = response.get("result")
+        if not isinstance(result, dict):
+            return self._current_url
+        value = result.get("value")
+        return value if isinstance(value, str) and value else self._current_url
+
 
 def _extract_result_value(response: dict[str, Any]) -> dict[str, Any]:
     result = response.get("result")
@@ -373,6 +411,42 @@ def _extract_result_value(response: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
     return value
+
+
+def _normalize_snapshot_refs(refs: Any) -> list[dict[str, Any]]:
+    if not isinstance(refs, list):
+        return []
+    normalized_refs: list[dict[str, Any]] = []
+    for item in refs:
+        if not isinstance(item, dict):
+            continue
+        ref_id = item.get("id")
+        if not isinstance(ref_id, str):
+            continue
+        normalized: dict[str, Any] = {"id": ref_id}
+        for key in ("role", "name", "text", "selector"):
+            value = item.get(key)
+            if isinstance(value, str):
+                normalized[key] = value
+        disabled = item.get("disabled")
+        if isinstance(disabled, bool):
+            normalized["disabled"] = disabled
+        normalized_refs.append(normalized)
+    return normalized_refs
+
+
+def _evaluate_navigation_url_policy(config: BrowserSessionConfig, url: str) -> BrowserPolicyDecision:
+    return evaluate_browser_action_policy(
+        config,
+        {
+            "schemaVersion": "1.0",
+            "actionId": "act_interaction_url_probe",
+            "sessionId": "session_interaction_url_probe",
+            "timestamp": _utcnow(),
+            "type": "navigate",
+            "params": {"url": url},
+        },
+    )
 
 
 def _click_expression(selector: str) -> str:
