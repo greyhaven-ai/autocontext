@@ -29,6 +29,7 @@ export function makeTrace(overrides: {
   readonly outcome?: ProductionTrace["outcome"];
   readonly messages?: ProductionTrace["messages"];
   readonly links?: ProductionTrace["links"];
+  readonly provider?: ProductionTrace["provider"];
 } = {}): ProductionTrace {
   const traceId = overrides.traceId ?? newProductionTraceId();
   const startedAt = overrides.startedAt ?? "2026-04-17T12:00:00.000Z";
@@ -41,7 +42,7 @@ export function makeTrace(overrides: {
       emitter: "sdk",
       sdk: { name: "autoctx-ts", version: "0.4.3" },
     },
-    provider: { name: "openai" },
+    provider: overrides.provider ?? { name: "openai" },
     model: "gpt-4o-mini",
     env: {
       environmentTag: "production" as ProductionTrace["env"]["environmentTag"],

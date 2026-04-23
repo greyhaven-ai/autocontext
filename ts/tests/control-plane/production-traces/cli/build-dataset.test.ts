@@ -169,4 +169,9 @@ describe("autoctx production-traces build-dataset", () => {
     );
     expect(r.exitCode).toBe(0);
   });
+
+  test("makeTrace accepts provider override", () => {
+    const t = makeTrace({ provider: { name: "anthropic" } });
+    expect(t.provider.name).toBe("anthropic");
+  });
 });
