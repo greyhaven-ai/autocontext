@@ -4,8 +4,8 @@ from __future__ import annotations
 import types
 
 from autocontext.production_traces.taxonomy import (
-    ANTHROPIC_ERROR_REASONS,
     ANTHROPIC_ERROR_REASON_KEYS,
+    ANTHROPIC_ERROR_REASONS,
 )
 
 

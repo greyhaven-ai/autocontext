@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from typing import Final, Literal
 
-from autocontext.production_traces.taxonomy.openai_error_reasons import (
-    OPENAI_ERROR_REASONS,
-    OPENAI_ERROR_REASON_KEYS,
-    OpenAiErrorReasonKey,
-)
 from autocontext.production_traces.taxonomy.anthropic_error_reasons import (
-    ANTHROPIC_ERROR_REASONS,
     ANTHROPIC_ERROR_REASON_KEYS,
+    ANTHROPIC_ERROR_REASONS,
     AnthropicErrorReasonKey,
+)
+from autocontext.production_traces.taxonomy.openai_error_reasons import (
+    OPENAI_ERROR_REASON_KEYS,
+    OPENAI_ERROR_REASONS,
+    OpenAiErrorReasonKey,
 )
 
 OutcomeReasonKey = Literal[

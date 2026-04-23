@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from autocontext.production_traces.taxonomy import (
     OUTCOME_REASON_KEYS,
-    OpenAiErrorReasonKey,
 )
 
 

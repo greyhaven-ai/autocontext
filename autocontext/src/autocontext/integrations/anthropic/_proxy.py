@@ -60,7 +60,7 @@ def _resolve_identity(per_call: dict[str, Any] | None) -> dict[str, str]:
 
 
 class _MessagesProxy:
-    def __init__(self, parent: "ClientProxy") -> None:
+    def __init__(self, parent: ClientProxy) -> None:
         self._parent = parent
 
     def create(self, **kwargs: Any) -> Any:
@@ -256,9 +256,9 @@ class ClientProxy:
         return StreamProxy(inner_stream=inner_stream, on_finalize=on_finalize)
 
     def _invoke_streaming_async(self, *, kwargs: dict[str, Any]) -> Any:
-        from autocontext.integrations.anthropic._stream import AsyncStreamProxy  # noqa: PLC0415
-        import asyncio  # noqa: PLC0415
         import inspect  # noqa: PLC0415
+
+        from autocontext.integrations.anthropic._stream import AsyncStreamProxy  # noqa: PLC0415
         per_call = kwargs.pop("autocontext", None)
         identity = _resolve_identity(per_call)
         request_snapshot = build_request_snapshot(

@@ -133,9 +133,9 @@ describe("TypeScript type assertion budget", () => {
     // plus OpenAI SDK `Proxy { get }` recursion casts at each resource
     // boundary (chat, chat.completions, responses), plus tree-sitter capture
     // lookups in the detector's produce() function. Budget grows linearly with
-    // each new integration library — this is the first one; future integration
-    // libraries (Anthropic, LangChain, etc.) will require similar bumps.
-    expect(total).toBeLessThanOrEqual(850);
+    // each new integration library — A2-III Anthropic integration added ~50 casts
+    // (proxy + trace-builder analogues). LangChain etc. will require similar bumps.
+    expect(total).toBeLessThanOrEqual(950);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {
