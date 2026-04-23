@@ -4,7 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-Changes in this section are on the branch/repo after `0.4.4` and are not part of the last published release until the next version is cut.
+### Added
+
+- **Browser integration surface** (AC-598–603): Chrome CDP backend for Python (`autocontext.integrations.browser`) and TypeScript (`autoctx/integrations/browser`), wired into investigations and the task queue. Includes a browser exploration contract, cross-runtime validation fixtures, parity enforcement, and selector generation for CDP element refs.
+- **A2-III Anthropic integration**: `instrument_client` / `InstrumentedAsyncAnthropic` (Python) and `instrumentClient` (TypeScript) intercept Anthropic SDK calls and route production traces through the autocontext pipeline, with `AnthropicStreamProxy`/`AnthropicStreamProxyAsync` for streaming and `AnthropicTaxonomyMapper` for outcome classification. Available at `autocontext.integrations.anthropic` and `autoctx/integrations/anthropic`. Includes cross-runtime parity (9 fixtures + 50-run property tests), anthropic-python/ts detector plugins, bundle-size enforcement, and zero-telemetry guarantee.
+- **Production traces `build-dataset` filters** (AC-606): `--provider`, `--app`, `--env`, and `--outcome` filters on the `build-dataset` CLI and MCP tool, plus an E2E integration test covering OpenAI + Anthropic traces through ingest→build-dataset.
+- Hierarchical investigation evidence with evidence cards cache and artifact drill-down hardening.
+- Tail context preservation in secondary prompt reducer surfaces.
+- Solve runtime floor raised for generated scenarios.
+
+### Fixed
+
+- Install salt identity invariant preserved across process restarts (AC-609).
+- Cross-runtime migration ledger reconciliation so Python and TypeScript DBs stay aligned after schema divergence (AC-608).
+- CLI dispatch moved into a command registry so mission routes resolve correctly (AC-610).
+- Babel reverse solve designer retries restored and scenario creation stabilized (AC-607).
+
+## [0.4.5] - 2026-04-21
+
+### Fixed
+
+- `quality_threshold` auto-heal no longer silently drops below the configured floor during multi-round improvement loops (AC-585).
+- Judge-provider inheritance now propagates correctly to nested evaluation calls so role-routing overrides are honored end-to-end (AC-586).
+- Claude CLI timeout default bumped from 300 to 600 seconds, reducing spurious failures in longer live-agent solve runs (AC-588).
+- Release-sweep accounting hardened to prevent double-counting across concurrent sweep legs.
 
 ### Added
 
@@ -238,6 +261,7 @@ Changes in this section are on the branch/repo after `0.4.4` and are not part of
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
+[0.4.5]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.4...py-v0.4.5
 [0.4.4]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.3...py-v0.4.4
 [0.4.3]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.2...py-v0.4.3
 [0.4.2]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.1...py-v0.4.2
