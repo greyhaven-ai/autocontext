@@ -9,6 +9,7 @@ Changes in this section are on the branch/repo after `0.4.4` and are not part of
 ### Added
 
 - Added a shared browser exploration contract and package-safe configuration surface across Python and TypeScript, including canonical schemas, validation helpers, secure `AUTOCONTEXT_BROWSER_*` defaults, and policy helpers.
+- Added the TypeScript Chrome DevTools Protocol backend for browser exploration, including attach-only target discovery, websocket transport, policy-gated actions, and evidence artifacts.
 
 ## [0.4.4] - 2026-04-20
 
