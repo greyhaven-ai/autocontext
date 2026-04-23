@@ -27,6 +27,29 @@ from autocontext.integrations.browser.validate import (
 
 _SNAPSHOT_EXPRESSION = """
 (() => {
+  const cssEscape = (value) =>
+    globalThis.CSS?.escape
+      ? CSS.escape(value)
+      : String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
+  const selectorFor = (element) => {
+    if (element.id) return "#" + cssEscape(element.id);
+    const parts = [];
+    let current = element;
+    while (current && current.nodeType === Node.ELEMENT_NODE && current !== document.documentElement) {
+      const tag = current.tagName.toLowerCase();
+      const parent = current.parentElement;
+      if (!parent) {
+        parts.unshift(tag);
+        break;
+      }
+      const siblings = Array.from(parent.children).filter((sibling) => sibling.tagName === current.tagName);
+      const index = siblings.indexOf(current) + 1;
+      parts.unshift(siblings.length > 1 ? tag + ":nth-of-type(" + index + ")" : tag);
+      current = parent;
+      if (parts.length >= 4) break;
+    }
+    return parts.join(" > ");
+  };
   const candidates = Array.from(
     document.querySelectorAll("a,button,input,select,textarea,[role],[tabindex]")
   ).slice(0, 200);
@@ -39,7 +62,7 @@ _SNAPSHOT_EXPRESSION = """
       element.textContent?.trim() ??
       null,
     text: element.textContent?.trim() ?? null,
-    selector: null,
+    selector: selectorFor(element),
     disabled: element.hasAttribute("disabled"),
   }));
   return {

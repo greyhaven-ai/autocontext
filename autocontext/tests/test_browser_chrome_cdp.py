@@ -82,6 +82,7 @@ async def test_snapshot_persists_artifacts_and_click_uses_ref_mapping(tmp_path: 
     assert snapshot.screenshotPath is not None
     assert Path(snapshot.htmlPath).exists()
     assert Path(snapshot.screenshotPath).read_bytes() == b"png-bytes"
+    assert "selectorFor(element)" in transport.calls[2][1]["expression"]
     assert event.allowed is True
     assert transport.calls[-1][0] == "Runtime.evaluate"
     assert "button:nth-of-type(1)" in transport.calls[-1][1]["expression"]
