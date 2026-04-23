@@ -1,7 +1,7 @@
 /**
  * Canonical concept model metadata for capability discovery.
  *
- * Keep this aligned with docs/concept-model.md.
+ * Keep this exact with docs/concept-model.json.
  */
 
 export type ConceptStatus = "implemented" | "partial" | "reserved";
