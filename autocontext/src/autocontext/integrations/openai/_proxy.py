@@ -16,18 +16,13 @@ from typing import Any
 
 from ulid import ULID
 
-from autocontext.integrations.openai._session import current_session
+from autocontext.integrations._shared.identity import resolve_identity
 from autocontext.integrations.openai._sink import TraceSink
 from autocontext.integrations.openai._taxonomy import map_exception_to_reason
 from autocontext.integrations.openai._trace_builder import (
     build_failure_trace,
     build_request_snapshot,
     build_success_trace,
-)
-from autocontext.production_traces.hashing import (
-    hash_session_id,
-    hash_user_id,
-    load_install_salt,
 )
 
 
@@ -46,27 +41,6 @@ _WRAPPED_SENTINEL = "__autocontext_wrapped__"
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _resolve_identity(per_call: dict[str, Any] | None) -> dict[str, str]:
-    """Per-call kwarg wins → ambient contextvar → empty."""
-    raw: dict[str, str] = {}
-    if per_call:
-        if "user_id" in per_call and per_call["user_id"] is not None:
-            raw["user_id"] = per_call["user_id"]
-        if "session_id" in per_call and per_call["session_id"] is not None:
-            raw["session_id"] = per_call["session_id"]
-    if not raw:
-        raw = dict(current_session())
-    if not raw:
-        return {}
-    salt = load_install_salt(".") or ""
-    hashed: dict[str, str] = {}
-    if "user_id" in raw:
-        hashed["user_id_hash"] = hash_user_id(raw["user_id"], salt)
-    if "session_id" in raw:
-        hashed["session_id_hash"] = hash_session_id(raw["session_id"], salt)
-    return hashed
 
 
 class _ChatCompletionsProxy:
@@ -178,7 +152,7 @@ class ClientProxy:
         per_call = kwargs.pop("autocontext", None)
         if kwargs.get("stream", False):
             raise NotImplementedError("streaming not yet wired")
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -231,7 +205,7 @@ class ClientProxy:
         normalized_messages: list[dict[str, Any]],
     ) -> Any:
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         model = kwargs.get("model", "")
         request_snapshot = build_request_snapshot(
             model=model,
@@ -283,7 +257,7 @@ class ClientProxy:
         per_call = kwargs.pop("autocontext", None)
         if kwargs.get("stream", False):
             raise NotImplementedError("async streaming wired in Task 2.8")
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -336,7 +310,7 @@ class ClientProxy:
         normalized_messages: list[dict[str, Any]],
     ) -> Any:
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         model = kwargs.get("model", "")
         request_snapshot = build_request_snapshot(
             model=model,
@@ -391,7 +365,7 @@ class ClientProxy:
         if "include_usage" not in stream_opts:
             stream_opts["include_usage"] = True
             kwargs["stream_options"] = stream_opts
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -448,7 +422,7 @@ class ClientProxy:
         if "include_usage" not in stream_opts:
             stream_opts["include_usage"] = True
             kwargs["stream_options"] = stream_opts
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),

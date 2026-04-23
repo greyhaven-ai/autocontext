@@ -68,6 +68,15 @@ def test_hash_session_id_uses_same_algorithm_as_user_id() -> None:
     assert hash_session_id(value, salt) == hash_user_id(value, salt)
 
 
+def test_hash_helpers_reject_empty_salt() -> None:
+    from autocontext.production_traces.hashing import hash_session_id, hash_user_id
+
+    with pytest.raises(ValueError, match="salt"):
+        hash_user_id("user-123", "")
+    with pytest.raises(ValueError, match="salt"):
+        hash_session_id("session-abc", "")
+
+
 def test_hash_user_id_matches_ts_reference_output() -> None:
     """Cross-runtime byte-identical check.
 

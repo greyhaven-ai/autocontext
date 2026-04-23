@@ -79,11 +79,13 @@ def hash_user_id(user_id: str, salt: str) -> str:
 
     Byte-identical to the TS ``hashValue(userId, salt)`` helper.
     """
+    _assert_non_empty_salt(salt)
     return hashlib.sha256((salt + user_id).encode("utf-8")).hexdigest()
 
 
 def hash_session_id(session_id: str, salt: str) -> str:
     """Same algorithm as :func:`hash_user_id`; semantic distinction at call site."""
+    _assert_non_empty_salt(salt)
     return hashlib.sha256((salt + session_id).encode("utf-8")).hexdigest()
 
 
@@ -101,6 +103,14 @@ def _write_salt(path: Path) -> str:
     except (OSError, NotImplementedError):  # pragma: no cover - Windows guard
         pass
     return salt
+
+
+def _assert_non_empty_salt(salt: str) -> None:
+    if not isinstance(salt, str) or len(salt) == 0:
+        raise ValueError(
+            "hashing salt must be a non-empty string; "
+            "use load_install_salt() or initialize_install_salt()"
+        )
 
 
 __all__ = [

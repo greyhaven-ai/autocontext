@@ -8,7 +8,7 @@ from typing import Any
 
 from ulid import ULID
 
-from autocontext.integrations._shared.session import current_session
+from autocontext.integrations._shared.identity import resolve_identity
 from autocontext.integrations._shared.sink import TraceSink
 from autocontext.integrations.anthropic._taxonomy import map_exception_to_reason
 from autocontext.integrations.anthropic._trace_builder import (
@@ -16,11 +16,6 @@ from autocontext.integrations.anthropic._trace_builder import (
     build_request_snapshot,
     build_success_trace,
     finalize_streaming_trace,
-)
-from autocontext.production_traces.hashing import (
-    hash_session_id,
-    hash_user_id,
-    load_install_salt,
 )
 
 _WRAPPED_SENTINEL = "__autocontext_wrapped__"
@@ -37,26 +32,6 @@ def _is_async_client(client: Any) -> bool:
     except ImportError:
         pass
     return type(client).__name__.startswith("Async")
-
-
-def _resolve_identity(per_call: dict[str, Any] | None) -> dict[str, str]:
-    raw: dict[str, str] = {}
-    if per_call:
-        if "user_id" in per_call and per_call["user_id"] is not None:
-            raw["user_id"] = per_call["user_id"]
-        if "session_id" in per_call and per_call["session_id"] is not None:
-            raw["session_id"] = per_call["session_id"]
-    if not raw:
-        raw = dict(current_session())
-    if not raw:
-        return {}
-    salt = load_install_salt(".") or ""
-    hashed: dict[str, str] = {}
-    if "user_id" in raw:
-        hashed["user_id_hash"] = hash_user_id(raw["user_id"], salt)
-    if "session_id" in raw:
-        hashed["session_id_hash"] = hash_session_id(raw["session_id"], salt)
-    return hashed
 
 
 def _response_usage_and_content(response: Any) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str | None]:
@@ -126,7 +101,7 @@ class ClientProxy:
 
     def _invoke_non_streaming(self, *, kwargs: dict[str, Any]) -> Any:
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -171,7 +146,7 @@ class ClientProxy:
 
     async def _invoke_non_streaming_async(self, *, kwargs: dict[str, Any]) -> Any:
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -217,7 +192,7 @@ class ClientProxy:
     def _invoke_streaming(self, *, kwargs: dict[str, Any]) -> Any:
         from autocontext.integrations.anthropic._stream import StreamProxy  # noqa: PLC0415
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -253,7 +228,7 @@ class ClientProxy:
         from autocontext.integrations.anthropic._stream import HelperStreamManagerProxy  # noqa: PLC0415
 
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -329,7 +304,7 @@ class ClientProxy:
 
         from autocontext.integrations.anthropic._stream import AsyncStreamProxy  # noqa: PLC0415
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
@@ -372,7 +347,7 @@ class ClientProxy:
         from autocontext.integrations.anthropic._stream import AsyncHelperStreamManagerProxy  # noqa: PLC0415
 
         per_call = kwargs.pop("autocontext", None)
-        identity = _resolve_identity(per_call)
+        identity = resolve_identity(per_call)
         request_snapshot = build_request_snapshot(
             model=kwargs.get("model", ""),
             messages=kwargs.get("messages", []),
