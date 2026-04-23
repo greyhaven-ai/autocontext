@@ -145,8 +145,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - id: setup-node
-        uses: actions/setup-node@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: "npm"
@@ -154,9 +153,7 @@ jobs:
       - name: Reuse setup-node headers for native addons
         shell: bash
         run: |
-          arch="${{ runner.arch }}"
-          arch="${arch,,}"
-          nodedir="${RUNNER_TOOL_CACHE}/node/${{ steps.setup-node.outputs.node-version }}/${arch}"
+          nodedir="$(dirname "$(dirname "$(command -v node)")")"
           test -d "$nodedir/include/node"
           echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
       - name: Install uv
