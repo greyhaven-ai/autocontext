@@ -39,4 +39,15 @@ describe("package root exports", () => {
       types: "./dist/control-plane/runtime/index.d.ts",
     });
   });
+
+  it("publishes the browser integration subpath", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"),
+    ) as { exports?: Record<string, { import?: string; types?: string }> };
+
+    expect(packageJson.exports?.["./integrations/browser"]).toEqual({
+      import: "./dist/integrations/browser/index.js",
+      types: "./dist/integrations/browser/index.d.ts",
+    });
+  });
 });

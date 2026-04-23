@@ -61,6 +61,10 @@
       "import": "./dist/integrations/openai/index.js",
       "require": "./dist/cjs/integrations/openai/index.cjs"
     },
+    "./integrations/browser": {
+      "types": "./dist/integrations/browser/index.d.ts",
+      "import": "./dist/integrations/browser/index.js"
+    },
     "./detectors/openai-python": {
       "types": "./dist/control-plane/instrument/detectors/openai-python/index.d.ts",
       "import": "./dist/control-plane/instrument/detectors/openai-python/index.js",
@@ -85,16 +89,19 @@
   },
   "scripts": {
     "build": "tsc && npm run build:production-traces-sdk-cjs",
+    "build:browser-contract-types": "node scripts/generate-browser-contract-types.mjs",
     "build:production-traces-sdk-cjs": "node scripts/build-production-traces-sdk-cjs.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "example:repl": "node examples/run-repl-session.mjs",
+    "sync:browser-contract-schemas": "node scripts/sync-python-browser-contract-schemas.mjs",
     "build:production-traces-types": "node scripts/generate-production-traces-types.mjs",
+    "check:browser-contract-schemas": "node scripts/generate-browser-contract-types.mjs --check && node scripts/sync-python-browser-contract-schemas.mjs --check",
     "sync:production-traces-schemas": "node scripts/sync-python-production-traces-schemas.mjs",
     "check:production-traces-schemas": "node scripts/generate-production-traces-types.mjs --check && node scripts/sync-python-production-traces-schemas.mjs --check",
     "check:instrument-schemas": "node scripts/check-instrument-schemas.mjs --check",
-    "check:schemas": "npm run check:production-traces-schemas && npm run check:instrument-schemas",
+    "check:schemas": "npm run check:production-traces-schemas && npm run check:browser-contract-schemas && npm run check:instrument-schemas",
     "check:sdk-import-discipline": "node scripts/check-sdk-import-discipline.mjs",
     "check:production-traces-sdk-bundle-size": "node scripts/check-production-traces-sdk-bundle-size.mjs",
     "check:side-effects": "node scripts/check-side-effects.mjs",
