@@ -26,8 +26,8 @@ These are the nouns we should prefer in docs, APIs, and product copy when descri
 | Concept | Definition | Current status |
 | --- | --- | --- |
 | `Scenario` | A reusable environment, simulation, or evaluation context with stable rules and scoring. | Implemented across Python, TypeScript, CLI, MCP, API/TUI surfaces, and docs. |
-| `Task` | A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface. | Implemented, but overloaded. |
-| `Mission` | A long-running goal advanced step by step until a verifier says it is complete. | Implemented in TypeScript CLI/MCP/API/TUI surfaces. |
+| `Task` | A user-authored unit of work or prompt-centric objective that can be evaluated directly or embedded inside another surface. | Partial: prompt-centric task support exists, but the name is still overloaded across agent-task specs, queued runtime jobs, and generic prompts. |
+| `Mission` | A long-running goal advanced step by step until a verifier says it is complete. | Partial: implemented in TypeScript CLI/MCP/API/TUI surfaces, but not yet a shared Python package concept. |
 | `Campaign` | A planned grouping of missions, runs, and/or scenarios used to coordinate broader work over time. | Partially implemented through TypeScript CLI/API/MCP surfaces. Not yet a Python package surface. |
 
 ### Runtime concepts
@@ -37,12 +37,12 @@ These are the execution nouns we should use when describing how the system actua
 | Concept | Definition | Current status |
 | --- | --- | --- |
 | `Run` | A concrete execution instance of a `Scenario` or `Task`. | Implemented broadly. |
-| `Step` | A bounded action taken while advancing a `Mission` or another long-running workflow. | Implemented for missions. |
-| `Verifier` | The runtime check that decides whether a mission, step, or output is acceptable. | Implemented for missions and several evaluation flows. |
+| `Step` | A bounded action taken while advancing a `Mission` or another long-running workflow. | Partial: implemented for missions, but not yet generalized across every long-running workflow. |
+| `Verifier` | The runtime check that decides whether a mission, step, or output is acceptable. | Partial: implemented for missions and several evaluation flows, but not yet a unified runtime concept. |
 | `Artifact` | A persisted runtime output such as a replay, checkpoint, package, report, harness, or skill export. | Implemented broadly. |
 | `Knowledge` | Persisted learned state that should carry forward across runs, such as playbooks, hints, lessons, and analysis. | Implemented broadly. |
-| `Budget` | Constraints that bound runtime behavior, such as max steps, cost, time, or retries. | Implemented in several places, but not yet described consistently. |
-| `Policy` | Structured rules that constrain or guide runtime behavior, such as escalation, hint volume, cost, conflict, or harness policies. | Implemented in pockets, but not yet presented as one concept. |
+| `Budget` | Constraints that bound runtime behavior, such as max steps, cost, time, or retries. | Partial: implemented in several places, but not yet described consistently. |
+| `Policy` | Structured rules that constrain or guide runtime behavior, such as escalation, hint volume, cost, conflict, or harness policies. | Partial: implemented in pockets, but not yet presented as one concept. |
 
 ## Relationship Model
 
