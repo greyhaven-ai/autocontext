@@ -1,4 +1,8 @@
 import type { Conclusion, Evidence, Hypothesis } from "./investigation-contracts.js";
+import {
+  buildInvestigationBrowserEvidence,
+  type InvestigationBrowserContext,
+} from "./browser-context.js";
 
 interface CollectedEvidenceItem {
   id: string;
@@ -38,8 +42,8 @@ function similarityScore(left: string, right: string): number {
 
 export function buildInvestigationEvidence(execution: {
   collectedEvidence: CollectedEvidenceItem[];
-}): Evidence[] {
-  return execution.collectedEvidence.map((item, index) => ({
+}, opts: { browserContext?: InvestigationBrowserContext } = {}): Evidence[] {
+  const evidence = execution.collectedEvidence.map((item, index) => ({
     id: item.id ?? `e${index}`,
     kind: item.isRedHerring ? "red_herring" : "observation",
     source: "scenario execution",
@@ -48,6 +52,10 @@ export function buildInvestigationEvidence(execution: {
     contradicts: [],
     isRedHerring: !!item.isRedHerring,
   }));
+  if (opts.browserContext) {
+    return [buildInvestigationBrowserEvidence(opts.browserContext), ...evidence];
+  }
+  return evidence;
 }
 
 export function evaluateInvestigationHypotheses(
@@ -112,6 +120,7 @@ export function evaluateInvestigationHypotheses(
 export function buildInvestigationConclusion(
   hypotheses: Hypothesis[],
   evidence: Evidence[],
+  opts: { hasBrowserContext?: boolean } = {},
 ): Conclusion {
   const best = hypotheses
     .filter((hypothesis) => hypothesis.status === "supported")
@@ -125,7 +134,11 @@ export function buildInvestigationConclusion(
   if (hypotheses.some((hypothesis) => hypothesis.status === "unresolved")) {
     limitations.push("Some hypotheses remain unresolved");
   }
-  limitations.push("Investigation based on generated scenario — not live system data");
+  limitations.push(
+    opts.hasBrowserContext
+      ? "Investigation combines generated scenario reasoning with browser snapshot evidence"
+      : "Investigation based on generated scenario — not live system data",
+  );
 
   return {
     bestExplanation: best?.statement ?? "No hypothesis received sufficient support",

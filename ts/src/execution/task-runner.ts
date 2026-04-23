@@ -22,6 +22,7 @@ import {
 } from "./task-runner-config.js";
 import type { TaskConfig } from "./task-runner-config.js";
 import { executeQueuedTaskWorkflow } from "./task-processing-workflow.js";
+import type { QueuedTaskBrowserContextService } from "./queued-task-browser-context.js";
 import {
   evaluateSimpleAgentTaskOutput,
   generateSimpleAgentTaskOutput,
@@ -156,6 +157,7 @@ export interface TaskRunnerOpts {
   provider: LLMProvider;
   model?: string;
   knowledgeRoot?: string;
+  browserContextService?: QueuedTaskBrowserContextService;
   pollInterval?: number;
   maxConsecutiveEmpty?: number;
   concurrency?: number;
@@ -166,6 +168,7 @@ export class TaskRunner {
   #provider: LLMProvider;
   #model: string;
   #knowledgeRoot?: string;
+  #browserContextService?: QueuedTaskBrowserContextService;
   #pollInterval: number;
   #maxConsecutiveEmpty: number;
   #concurrency: number;
@@ -177,6 +180,7 @@ export class TaskRunner {
     this.#provider = opts.provider;
     this.#model = buildTaskRunnerModel(opts.provider.defaultModel(), opts.model);
     this.#knowledgeRoot = opts.knowledgeRoot;
+    this.#browserContextService = opts.browserContextService;
     this.#pollInterval = opts.pollInterval ?? 60;
     this.#maxConsecutiveEmpty = opts.maxConsecutiveEmpty ?? 0;
     this.#concurrency = Math.max(1, opts.concurrency ?? 1);
@@ -215,6 +219,7 @@ export class TaskRunner {
       provider: this.#provider,
       model: this.#model,
       knowledgeRoot: this.#knowledgeRoot,
+      browserContextService: this.#browserContextService,
       internals: {
         createAgentTask: ({
           taskPrompt,

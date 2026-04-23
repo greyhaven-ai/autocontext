@@ -893,6 +893,7 @@ async function cmdQueue(dbPath: string): Promise<void> {
       spec: { type: "string", short: "s" },
       prompt: { type: "string", short: "p" },
       rubric: { type: "string", short: "r" },
+      "browser-url": { type: "string" },
       priority: { type: "string", default: "0" },
       "min-rounds": { type: "string" },
       rlm: { type: "boolean" },
@@ -2582,6 +2583,7 @@ async function cmdInvestigate(): Promise<void> {
       "max-steps": { type: "string" },
       hypotheses: { type: "string" },
       "save-as": { type: "string" },
+      "browser-url": { type: "string" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
@@ -2590,6 +2592,7 @@ async function cmdInvestigate(): Promise<void> {
   const {
     INVESTIGATE_HELP_TEXT,
     executeInvestigateCommandWorkflow,
+    prepareInvestigateRequest,
     renderInvestigationSuccess,
   } = await import("./investigate-command-workflow.js");
 
@@ -2610,9 +2613,11 @@ async function cmdInvestigate(): Promise<void> {
     resolve(settings.knowledgeRoot),
   );
 
+  let request;
   let result;
   try {
-    result = await executeInvestigateCommandWorkflow({ values, engine });
+    request = await prepareInvestigateRequest({ values, settings });
+    result = await executeInvestigateCommandWorkflow({ values, request, engine });
   } catch (error) {
     console.error(errorMessage(error));
     process.exit(1);

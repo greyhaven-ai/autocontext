@@ -30,6 +30,7 @@ export async function executeInvestigationRun(
         description: opts.request.description,
         knowledgeRoot: opts.knowledgeRoot,
         name: opts.name,
+        browserContext: opts.request.browserContext,
       },
       dependencies,
     );

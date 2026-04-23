@@ -15,6 +15,7 @@ export interface TaskConfig {
   qualityThreshold?: number;
   minRounds?: number;
   referenceContext?: string;
+  browserUrl?: string;
   requiredConcepts?: string[];
   calibrationExamples?: Array<Record<string, unknown>>;
   initialOutput?: string;
@@ -29,6 +30,7 @@ export interface EnqueueTaskRequest {
   taskPrompt?: string;
   rubric?: string;
   referenceContext?: string;
+  browserUrl?: string;
   requiredConcepts?: string[];
   maxRounds?: number;
   qualityThreshold?: number;
@@ -58,6 +60,7 @@ const TaskConfigSchema = z.object({
   quality_threshold: z.number().min(0).max(1).optional(),
   min_rounds: z.number().int().positive().optional(),
   reference_context: z.string().optional(),
+  browser_url: z.string().url().optional(),
   required_concepts: z.array(z.string()).optional(),
   calibration_examples: z.array(z.record(z.unknown())).optional(),
   initial_output: z.string().optional(),
@@ -89,6 +92,7 @@ export function parseTaskConfig(json: string | null): TaskConfig {
     qualityThreshold: parsed.quality_threshold,
     minRounds: parsed.min_rounds,
     referenceContext: parsed.reference_context,
+    browserUrl: parsed.browser_url,
     requiredConcepts: parsed.required_concepts,
     calibrationExamples: parsed.calibration_examples,
     initialOutput: parsed.initial_output,
@@ -143,6 +147,7 @@ export function buildEnqueueTaskConfig(opts?: EnqueueTaskRequest): Record<string
   if (opts?.taskPrompt) config.task_prompt = opts.taskPrompt;
   if (opts?.rubric) config.rubric = opts.rubric;
   if (opts?.referenceContext) config.reference_context = opts.referenceContext;
+  if (opts?.browserUrl) config.browser_url = opts.browserUrl;
   if (opts?.requiredConcepts) config.required_concepts = opts.requiredConcepts;
   if (opts?.initialOutput) config.initial_output = opts.initialOutput;
   if (opts?.delegatedResults?.length) {

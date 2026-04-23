@@ -13,6 +13,7 @@ Changes in this section are on the branch/repo after `0.4.4` and are not part of
 - Added Python browser exploration integration for investigations and queued tasks, including policy-gated snapshot capture, prompt/evidence enrichment, and fail-closed task-runner wiring.
 - Added a thin Python Chrome CDP browser backend with debugger-target discovery, evidence persistence, WebSocket transport, runtime factory, and policy-checked session actions.
 - Added cross-runtime browser contract fixtures so Python and TypeScript validators stay in lockstep.
+- Added TypeScript browser-context integration for investigations, queued tasks, and MCP queueing, including fail-closed navigation policy handling and artifact-backed browser evidence.
 
 ## [0.4.4] - 2026-04-20
 

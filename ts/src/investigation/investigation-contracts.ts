@@ -1,9 +1,12 @@
+import type { InvestigationBrowserContext } from "./browser-context.js";
+
 export interface InvestigationRequest {
   description: string;
   maxSteps?: number;
   maxHypotheses?: number;
   saveAs?: string;
   strictEvidence?: boolean;
+  browserContext?: InvestigationBrowserContext;
 }
 
 export interface Hypothesis {

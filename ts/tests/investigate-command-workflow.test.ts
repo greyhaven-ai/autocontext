@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   INVESTIGATE_HELP_TEXT,
   executeInvestigateCommandWorkflow,
+  prepareInvestigateRequest,
   planInvestigateCommand,
   renderInvestigationSuccess,
 } from "../src/cli/investigate-command-workflow.js";
@@ -41,6 +42,7 @@ describe("investigate command workflow", () => {
     expect(INVESTIGATE_HELP_TEXT).toContain("autoctx investigate");
     expect(INVESTIGATE_HELP_TEXT).toContain("--description");
     expect(INVESTIGATE_HELP_TEXT).toContain("--max-steps");
+    expect(INVESTIGATE_HELP_TEXT).toContain("--browser-url");
   });
 
   it("plans an investigation request from CLI values", () => {
@@ -108,5 +110,62 @@ describe("investigate command workflow", () => {
       saveAs: undefined,
     });
     expect(result.name).toBe("checkout_rca");
+  });
+
+  it("prepares an investigation request with captured browser context when requested", async () => {
+    const browserContext = {
+      url: "https://example.com/status",
+      title: "Status",
+      visibleText: "Checkout is degraded",
+      htmlPath: "/tmp/status.html",
+      screenshotPath: "/tmp/status.png",
+    };
+    const captureBrowserContext = vi.fn().mockResolvedValue(browserContext);
+
+    const request = await prepareInvestigateRequest(
+      {
+        values: {
+          description: "why did conversion drop",
+          "browser-url": "https://example.com/status",
+          "save-as": "checkout_rca",
+        },
+        settings: {
+          browserEnabled: true,
+          browserBackend: "chrome-cdp",
+          browserProfileMode: "ephemeral",
+          browserAllowedDomains: "example.com",
+          browserAllowAuth: false,
+          browserAllowUploads: false,
+          browserAllowDownloads: false,
+          browserCaptureScreenshots: true,
+          browserHeadless: true,
+          browserDebuggerUrl: "http://127.0.0.1:9333",
+          browserPreferredTargetUrl: "",
+          browserDownloadsRoot: "",
+          browserUploadsRoot: "",
+          runsRoot: "/tmp/runs",
+          knowledgeRoot: "/tmp/knowledge",
+        },
+      },
+      {
+        captureBrowserContext,
+      },
+    );
+
+    expect(captureBrowserContext).toHaveBeenCalledWith({
+      settings: expect.objectContaining({
+        browserEnabled: true,
+        browserBackend: "chrome-cdp",
+      }),
+      browserUrl: "https://example.com/status",
+      investigationName: "checkout_rca",
+    });
+    expect(request).toEqual({
+      description: "why did conversion drop",
+      maxSteps: undefined,
+      maxHypotheses: undefined,
+      saveAs: "checkout_rca",
+      browserContext,
+    });
   });
 });

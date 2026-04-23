@@ -90,10 +90,11 @@ describe("CLI", () => {
     });
   });
 
-  it("queue --help shows RLM flags", () => {
+  it("queue --help shows RLM and browser flags", () => {
     const { stdout, exitCode } = runCli(["queue", "--help"]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("--rlm");
+    expect(stdout).toContain("--browser-url");
   });
 
   it("repl --help shows phase option", () => {

@@ -198,12 +198,21 @@ describe("core control plane MCP tools", () => {
     const queued = await server.registeredTools.queue_task.handler({
       specName: "spec-a",
       priority: 2,
+      browserUrl: "https://status.example.com",
     });
     expect(JSON.parse(queued.content[0].text)).toEqual({
       taskId: "task-123",
       specName: "spec-a",
       status: "queued",
     });
+    expect(enqueueTask).toHaveBeenCalledWith(
+      expect.anything(),
+      "spec-a",
+      expect.objectContaining({
+        priority: 2,
+        browserUrl: "https://status.example.com",
+      }),
+    );
 
     const queueStatus = await server.registeredTools.get_queue_status.handler({});
     expect(JSON.parse(queueStatus.content[0].text)).toEqual({ pendingCount: 4 });

@@ -1,9 +1,22 @@
+import {
+  renderInvestigationBrowserContext,
+  type InvestigationBrowserContext,
+} from "./browser-context.js";
+
 export interface InvestigationPrompt {
   systemPrompt: string;
   userPrompt: string;
 }
 
-export function buildInvestigationSpecPrompt(description: string): InvestigationPrompt {
+export function buildInvestigationSpecPrompt(
+  description: string,
+  opts: { browserContext?: InvestigationBrowserContext } = {},
+): InvestigationPrompt {
+  let userPrompt = `Investigation: ${description}`;
+  if (opts.browserContext) {
+    userPrompt = `${userPrompt}\n\n${renderInvestigationBrowserContext(opts.browserContext)}`;
+  }
+
   return {
     systemPrompt: `You are an investigation designer. Given a problem description, produce an investigation spec as JSON.
 
@@ -21,7 +34,7 @@ Required fields:
 - correct_diagnosis: the ground truth answer
 
 Output ONLY the JSON object, no markdown fences.`,
-    userPrompt: `Investigation: ${description}`,
+    userPrompt,
   };
 }
 
@@ -29,7 +42,15 @@ export function buildInvestigationHypothesisPrompt(opts: {
   description: string;
   execution: { stepsExecuted: number; collectedEvidence: Array<{ content: string }> };
   maxHypotheses?: number;
+  browserContext?: InvestigationBrowserContext;
 }): InvestigationPrompt {
+  let userPrompt = `Investigation: ${opts.description}\nEvidence collected: ${
+    opts.execution.collectedEvidence.map((item) => item.content).join(", ") || "none yet"
+  }\nSteps taken: ${opts.execution.stepsExecuted}\nMaximum hypotheses: ${opts.maxHypotheses ?? 5}`;
+  if (opts.browserContext) {
+    userPrompt = `${userPrompt}\n\n${renderInvestigationBrowserContext(opts.browserContext)}`;
+  }
+
   return {
     systemPrompt: `You are a diagnostic analyst. Given an investigation description and collected evidence, generate hypotheses. Output JSON:
 {
@@ -39,8 +60,6 @@ export function buildInvestigationHypothesisPrompt(opts: {
   ]
 }
 Output ONLY the JSON object.`,
-    userPrompt: `Investigation: ${opts.description}\nEvidence collected: ${
-      opts.execution.collectedEvidence.map((item) => item.content).join(", ") || "none yet"
-    }\nSteps taken: ${opts.execution.stepsExecuted}\nMaximum hypotheses: ${opts.maxHypotheses ?? 5}`,
+    userPrompt,
   };
 }

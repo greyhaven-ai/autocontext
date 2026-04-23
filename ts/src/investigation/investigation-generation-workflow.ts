@@ -10,6 +10,7 @@ import {
   buildInvestigationHypothesisPrompt,
   buildInvestigationSpecPrompt,
 } from "./investigation-generation-prompts.js";
+import type { InvestigationBrowserContext } from "./browser-context.js";
 
 export interface InvestigationHypothesisDraft {
   statement: string;
@@ -38,8 +39,13 @@ function serializeDesignedInvestigationSpec(spec: InvestigationSpec): Record<str
 export async function buildInvestigationSpec(opts: {
   provider: LLMProvider;
   description: string;
+  browserContext?: InvestigationBrowserContext;
 }): Promise<Record<string, unknown>> {
-  const result = await opts.provider.complete(buildInvestigationSpecPrompt(opts.description));
+  const result = await opts.provider.complete(
+    buildInvestigationSpecPrompt(opts.description, {
+      browserContext: opts.browserContext,
+    }),
+  );
 
   const parsed = parseInvestigationSpecResponse(result.text);
   if (parsed) {
@@ -61,6 +67,7 @@ export async function generateInvestigationHypotheses(opts: {
   description: string;
   execution: { stepsExecuted: number; collectedEvidence: Array<{ content: string }> };
   maxHypotheses?: number;
+  browserContext?: InvestigationBrowserContext;
 }): Promise<InvestigationHypothesisSet> {
   try {
     const result = await opts.provider.complete(
@@ -68,6 +75,7 @@ export async function generateInvestigationHypotheses(opts: {
         description: opts.description,
         execution: opts.execution,
         maxHypotheses: opts.maxHypotheses,
+        browserContext: opts.browserContext,
       }),
     );
 

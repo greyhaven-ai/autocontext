@@ -37,6 +37,44 @@ describe("investigation analysis workflow", () => {
     ]);
   });
 
+  it("prepends browser evidence when browser context is provided", () => {
+    expect(buildInvestigationEvidence(
+      {
+        collectedEvidence: [
+          { id: "db", content: "Database saturation detected", isRedHerring: false },
+        ],
+      },
+      {
+        browserContext: {
+          url: "https://example.com/status",
+          title: "Status Page",
+          visibleText: "Checkout is degraded",
+          htmlPath: "/tmp/status.html",
+          screenshotPath: "/tmp/status.png",
+        },
+      },
+    )).toEqual([
+      {
+        id: "browser_snapshot",
+        kind: "browser_snapshot",
+        source: "https://example.com/status",
+        summary: "Status Page\nCheckout is degraded",
+        supports: [],
+        contradicts: [],
+        isRedHerring: false,
+      },
+      {
+        id: "db",
+        kind: "observation",
+        source: "scenario execution",
+        summary: "Database saturation detected",
+        supports: [],
+        contradicts: [],
+        isRedHerring: false,
+      },
+    ]);
+  });
+
   it("annotates evidence support/contradiction and hypothesis status", () => {
     const evidence = buildInvestigationEvidence({
       collectedEvidence: [

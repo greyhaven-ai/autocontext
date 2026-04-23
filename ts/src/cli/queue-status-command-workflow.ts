@@ -1,11 +1,12 @@
 export const QUEUE_HELP_TEXT =
   "autoctx queue -s <spec-name> [-p prompt] [-r rubric] [--priority N] " +
-  "[--min-rounds N] [--rlm] [--rlm-turns N]";
+  "[--min-rounds N] [--browser-url URL] [--rlm] [--rlm-turns N]";
 
 export interface QueueCommandValues {
   spec?: string;
   prompt?: string;
   rubric?: string;
+  "browser-url"?: string;
   priority?: string;
   "min-rounds"?: string;
   rlm?: boolean;
@@ -32,6 +33,7 @@ export interface PlannedQueueCommand {
   request: {
     taskPrompt?: string;
     rubric?: string;
+    browserUrl?: string;
     referenceContext?: string;
     requiredConcepts?: string[];
     maxRounds?: number;
@@ -66,6 +68,7 @@ export function planQueueCommand(
     request: {
       taskPrompt: values.prompt ?? savedScenario?.taskPrompt,
       rubric: values.rubric ?? savedScenario?.rubric,
+      browserUrl: values["browser-url"],
       referenceContext: savedScenario?.referenceContext,
       requiredConcepts: savedScenario?.requiredConcepts,
       maxRounds: savedScenario?.maxRounds,

@@ -103,10 +103,27 @@ export async function generateSimpleAgentTaskOutput(opts: {
 
   const result = await opts.provider.complete({
     systemPrompt: "You are a skilled writer and analyst. Complete the task precisely.",
-    userPrompt: opts.taskPrompt,
+    userPrompt: buildSimpleAgentTaskUserPrompt({
+      taskPrompt: opts.taskPrompt,
+      referenceContext: opts.referenceContext,
+      requiredConcepts: opts.requiredConcepts,
+    }),
     model: opts.model,
   });
   return result.text;
+}
+
+export function buildSimpleAgentTaskUserPrompt(opts: {
+  taskPrompt: string;
+  referenceContext?: string;
+  requiredConcepts?: string[];
+}): string {
+  const blocks = [
+    opts.taskPrompt.trim(),
+    buildReferenceContextBlock(opts.referenceContext),
+    buildRequiredConceptsBlock(opts.requiredConcepts),
+  ].filter((value) => value.length > 0);
+  return blocks.join("\n\n");
 }
 
 export function buildSimpleAgentTaskRevisionPrompt(opts: {
@@ -114,18 +131,22 @@ export function buildSimpleAgentTaskRevisionPrompt(opts: {
   output: string;
   judgeResult: AgentTaskResult;
   taskPrompt: string;
+  referenceContext?: string;
+  requiredConcepts?: string[];
 }): string {
   const instruction = opts.revisionPrompt
     ?? "Revise the following output based on the judge's feedback. Maintain what works, fix what doesn't.";
 
-  return (
-    `${instruction}\n\n` +
-    `## Original Output\n${opts.output}\n\n` +
-    `## Judge Score: ${opts.judgeResult.score.toFixed(2)}\n` +
-    `## Judge Feedback\n${opts.judgeResult.reasoning}\n\n` +
-    `## Task\n${opts.taskPrompt}\n\n` +
-    "Produce an improved version:"
-  );
+  return [
+    instruction,
+    `## Original Output\n${opts.output}`,
+    `## Judge Score: ${opts.judgeResult.score.toFixed(2)}`,
+    `## Judge Feedback\n${opts.judgeResult.reasoning}`,
+    buildReferenceContextBlock(opts.referenceContext),
+    buildRequiredConceptsBlock(opts.requiredConcepts),
+    `## Task\n${opts.taskPrompt}`,
+    "Produce an improved version:",
+  ].filter((value) => value.length > 0).join("\n\n");
 }
 
 export async function reviseSimpleAgentTaskOutput(opts: {
@@ -170,8 +191,24 @@ export async function reviseSimpleAgentTaskOutput(opts: {
       output: opts.output,
       judgeResult: opts.judgeResult,
       taskPrompt: opts.taskPrompt,
+      referenceContext: opts.referenceContext,
+      requiredConcepts: opts.requiredConcepts,
     }),
     model: opts.model,
   });
   return result.text;
+}
+
+function buildReferenceContextBlock(referenceContext?: string): string {
+  const trimmedReferenceContext = referenceContext?.trim();
+  return trimmedReferenceContext ? `## Reference Context\n${trimmedReferenceContext}` : "";
+}
+
+function buildRequiredConceptsBlock(requiredConcepts?: string[]): string {
+  const normalizedConcepts = requiredConcepts
+    ?.map((concept) => concept.trim())
+    .filter((concept) => concept.length > 0);
+  return normalizedConcepts && normalizedConcepts.length > 0
+    ? `## Required Concepts\n${normalizedConcepts.map((concept) => `- ${concept}`).join("\n")}`
+    : "";
 }

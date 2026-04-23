@@ -157,6 +157,7 @@ autoctx mcp-serve                     # MCP server on stdio
 autoctx simulate -d "simulate deploying a web service with rollback"
 autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1
 autoctx investigate -d "why did conversion drop after Tuesday's release"
+autoctx investigate -d "checkout is failing" --browser-url https://status.example.com
 autoctx analyze --id deploy_sim --type simulation
 autoctx analyze --left sim_a --right sim_b --type simulation
 autoctx mission create --name "Ship login" --goal "Implement OAuth"
@@ -175,7 +176,7 @@ autoctx improve --scenario my_saved_task [-o <output>]
 autoctx repl --scenario my_saved_task
 
 # Task queue
-autoctx queue -s <spec> [--priority N]
+autoctx queue -s <spec> [--priority N] [--browser-url https://status.example.com]
 autoctx status
 ```
 
@@ -362,6 +363,8 @@ For end-to-end local MLX/CUDA training, the Python package is still the canonica
 The TypeScript package exposes the shared browser exploration contract and policy helpers from the package root. Browser exploration is disabled by default and configured through `AUTOCONTEXT_BROWSER_*` settings such as `AUTOCONTEXT_BROWSER_ENABLED`, `AUTOCONTEXT_BROWSER_ALLOWED_DOMAINS`, and `AUTOCONTEXT_BROWSER_PROFILE_MODE`.
 
 Use `resolveBrowserSessionConfig(...)`, `evaluateBrowserActionPolicy(...)`, and the `validateBrowser*` helpers when integrating a browser backend or agent harness.
+
+When browser exploration is enabled, the TS CLI can capture a policy-gated Chrome DevTools Protocol snapshot and attach it as evidence for `autoctx investigate --browser-url <url>`. Queued agent tasks can also store `--browser-url`; the runner resolves it through an injected browser-context service so enterprise deployments can keep browser access disabled by default, domain-scoped, and audit-artifact backed.
 
 ## Python-Only Commands
 

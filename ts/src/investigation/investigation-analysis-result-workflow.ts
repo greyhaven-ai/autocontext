@@ -50,16 +50,21 @@ export async function executeInvestigationAnalysisResult(
     description: opts.request.description,
     execution,
     maxHypotheses: opts.request.maxHypotheses,
+    browserContext: opts.request.browserContext,
   });
 
-  const evidence = dependencies.buildInvestigationEvidence(execution);
+  const evidence = dependencies.buildInvestigationEvidence(execution, {
+    browserContext: opts.request.browserContext,
+  });
   const { evidence: annotatedEvidence, hypotheses } = dependencies.evaluateInvestigationHypotheses(
     hypothesisData,
     evidence,
     opts.healedSpec,
   );
 
-  const conclusion = dependencies.buildInvestigationConclusion(hypotheses, annotatedEvidence);
+  const conclusion = dependencies.buildInvestigationConclusion(hypotheses, annotatedEvidence, {
+    hasBrowserContext: !!opts.request.browserContext,
+  });
   const unknowns = dependencies.identifyInvestigationUnknowns(hypotheses, annotatedEvidence);
   const nextSteps = dependencies.recommendInvestigationNextSteps(hypotheses, unknowns);
   const reportPath = join(opts.investigationDir, "report.json");

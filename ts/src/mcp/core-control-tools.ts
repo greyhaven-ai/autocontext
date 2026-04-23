@@ -215,6 +215,7 @@ const QueueTaskArgsSchema = z.object({
   specName: z.string().describe("Task spec name / identifier"),
   taskPrompt: z.string().optional(),
   rubric: z.string().optional(),
+  browserUrl: z.string().url().optional(),
   initialOutput: z.string().optional(),
   delegatedResults: z.array(DelegatedResultArgSchema).optional(),
   maxRounds: z.number().int().optional(),
@@ -418,6 +419,7 @@ export function registerCoreControlPlaneTools(
       const taskId = internals.enqueueTask(opts.store, args.specName, {
         taskPrompt: args.taskPrompt,
         rubric: args.rubric,
+        browserUrl: args.browserUrl,
         initialOutput: args.initialOutput,
         delegatedResults: args.delegatedResults,
         maxRounds: args.maxRounds,

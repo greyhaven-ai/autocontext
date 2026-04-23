@@ -14,6 +14,29 @@ describe("investigation generation prompts", () => {
     expect(prompt.userPrompt).toBe("Investigation: Investigate anomaly");
   });
 
+  it("includes browser context in investigation prompts when provided", () => {
+    const browserContext = {
+      url: "https://example.com/status",
+      title: "Status Page",
+      visibleText: "Checkout is degraded for some users.",
+      htmlPath: "/tmp/status.html",
+      screenshotPath: "/tmp/status.png",
+    };
+
+    const specPrompt = buildInvestigationSpecPrompt("Investigate anomaly", {
+      browserContext,
+    });
+    const hypothesisPrompt = buildInvestigationHypothesisPrompt({
+      description: "Investigate outage",
+      execution: { stepsExecuted: 1, collectedEvidence: [] },
+      browserContext,
+    });
+
+    expect(specPrompt.userPrompt).toContain("Live browser context");
+    expect(specPrompt.userPrompt).toContain("https://example.com/status");
+    expect(hypothesisPrompt.userPrompt).toContain("Checkout is degraded for some users.");
+  });
+
   it("builds the hypothesis prompt with evidence, steps, and max hypotheses", () => {
     const prompt = buildInvestigationHypothesisPrompt({
       description: "Investigate outage",

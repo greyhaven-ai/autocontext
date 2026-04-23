@@ -13,6 +13,7 @@ describe("task runner config workflow", () => {
         max_rounds: 4,
         quality_threshold: 0.85,
         min_rounds: 2,
+        browser_url: "https://example.com",
         task_prompt: "Write a summary",
         rubric: "Be clear",
         delegated_results: [{
@@ -27,6 +28,7 @@ describe("task runner config workflow", () => {
       maxRounds: 4,
       qualityThreshold: 0.85,
       minRounds: 2,
+      browserUrl: "https://example.com",
       taskPrompt: "Write a summary",
       rubric: "Be clear",
       delegatedResults: [{
@@ -74,11 +76,13 @@ describe("task runner config workflow", () => {
   it("builds snake_case enqueue config fields only for provided values", () => {
     expect(buildEnqueueTaskConfig({
       taskPrompt: "Prompt",
+      browserUrl: "https://example.com",
       minRounds: 3,
       rlmEnabled: true,
       rlmModel: "claude",
     })).toEqual({
       task_prompt: "Prompt",
+      browser_url: "https://example.com",
       min_rounds: 3,
       rlm_enabled: true,
       rlm_model: "claude",

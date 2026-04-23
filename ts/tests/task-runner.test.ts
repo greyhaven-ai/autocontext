@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -311,6 +311,36 @@ describe("TaskRunner.runBatch", () => {
     expect(count).toBe(2);
     expect(store.pendingTaskCount()).toBe(1);
   });
+
+  it("passes browser reference context service into queued task processing", async () => {
+    const store = createStore();
+    const browserContextService = {
+      buildReferenceContext: vi.fn(async () =>
+        "Saved facts\n\nLive browser context:\nVisible text: Checkout is degraded"),
+    };
+    const id = enqueueTask(store, "browser-spec", {
+      taskPrompt: "Summarize current status",
+      rubric: "Be accurate",
+      initialOutput: "Draft",
+      referenceContext: "Saved facts",
+      browserUrl: "https://status.example.com",
+    });
+
+    const runner = new TaskRunner({
+      store,
+      provider: makeMockProvider(),
+      browserContextService,
+    });
+    const result = await runner.runOnce();
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("completed");
+    expect(browserContextService.buildReferenceContext).toHaveBeenCalledWith({
+      taskId: id,
+      browserUrl: "https://status.example.com",
+      referenceContext: "Saved facts",
+    });
+  });
 });
 
 describe("minRounds wiring (AC-53)", () => {
@@ -350,6 +380,31 @@ describe("SimpleAgentTask", () => {
     expect(revised).toBe("generated text"); // Mock returns same for non-judge calls
   });
 
+  it("includes reference context and required concepts in generation prompts", async () => {
+    const calls: Array<{ systemPrompt: string; userPrompt: string }> = [];
+    const provider: LLMProvider = {
+      name: "mock",
+      defaultModel: () => "mock",
+      complete: async (opts) => {
+        calls.push({ systemPrompt: opts.systemPrompt, userPrompt: opts.userPrompt });
+        return { text: "generated text", usage: {} };
+      },
+    };
+
+    const task = new SimpleAgentTask("Write something", "Be good", provider);
+    const output = await task.generateOutput({
+      referenceContext: "Trusted facts only",
+      requiredConcepts: ["safety", "latency"],
+    });
+
+    expect(output).toBe("generated text");
+    expect(calls[0]!.userPrompt).toContain("## Reference Context");
+    expect(calls[0]!.userPrompt).toContain("Trusted facts only");
+    expect(calls[0]!.userPrompt).toContain("## Required Concepts");
+    expect(calls[0]!.userPrompt).toContain("- safety");
+    expect(calls[0]!.userPrompt).toContain("- latency");
+  });
+
   it("can revise through RLM mode", async () => {
     const task = new SimpleAgentTask(
       "Write something",
@@ -378,5 +433,49 @@ describe("SimpleAgentTask", () => {
     expect(revised).toBe("RLM fixed draft");
     expect(task.getRlmSessions()).toHaveLength(1);
     expect(task.getRlmSessions()[0].phase).toBe("revise");
+  });
+
+  it("includes reference context and required concepts in revision prompts", async () => {
+    const calls: Array<{ systemPrompt: string; userPrompt: string }> = [];
+    const provider: LLMProvider = {
+      name: "mock",
+      defaultModel: () => "mock",
+      complete: async (opts) => {
+        calls.push({ systemPrompt: opts.systemPrompt, userPrompt: opts.userPrompt });
+        if (opts.systemPrompt.includes("judge")) {
+          return {
+            text:
+              "<!-- JUDGE_RESULT_START -->\n" +
+              JSON.stringify({
+                score: 0.5,
+                reasoning: "Needs work",
+                dimensions: { quality: 0.5 },
+              }) +
+              "\n<!-- JUDGE_RESULT_END -->",
+            usage: {},
+          };
+        }
+        return { text: "revised text", usage: {} };
+      },
+    };
+
+    const task = new SimpleAgentTask("Write something", "Be good", provider);
+    await task.evaluateOutput("Original draft", {}, {
+      referenceContext: "Trusted facts only",
+      requiredConcepts: ["safety", "latency"],
+    });
+
+    const revised = await task.reviseOutput(
+      "Original draft",
+      { score: 0.5, reasoning: "Needs work", dimensionScores: { quality: 0.5 } },
+      {},
+    );
+
+    expect(revised).toBe("revised text");
+    expect(calls.at(-1)?.userPrompt).toContain("## Reference Context");
+    expect(calls.at(-1)?.userPrompt).toContain("Trusted facts only");
+    expect(calls.at(-1)?.userPrompt).toContain("## Required Concepts");
+    expect(calls.at(-1)?.userPrompt).toContain("- safety");
+    expect(calls.at(-1)?.userPrompt).toContain("- latency");
   });
 });

@@ -51,6 +51,15 @@ export {
 export type { BrowserRuntimeSettingsLike, ConfiguredBrowserRuntime } from "./factory.js";
 export { createBrowserRuntimeFromSettings } from "./factory.js";
 export type {
+  BrowserContextCaptureSettingsLike,
+  CaptureBrowserContextRequest,
+  CapturedBrowserContext,
+} from "./context-capture.js";
+export {
+  captureBrowserContextFromUrl,
+  renderCapturedBrowserContext,
+} from "./context-capture.js";
+export type {
   BrowserWebSocketFactory,
   BrowserWebSocketLike,
   ChromeCdpWebSocketTransportOpts,

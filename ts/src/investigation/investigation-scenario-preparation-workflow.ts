@@ -2,6 +2,7 @@ import { generateScenarioSource } from "../scenarios/codegen/registry.js";
 import { validateGeneratedScenario } from "../scenarios/codegen/execution-validator.js";
 import { healSpec as defaultHealSpec } from "../scenarios/spec-auto-heal.js";
 import type { LLMProvider } from "../types/index.js";
+import type { InvestigationBrowserContext } from "./browser-context.js";
 import { buildInvestigationSpec } from "./investigation-generation-workflow.js";
 import { persistInvestigationArtifacts } from "./investigation-engine-helpers.js";
 
@@ -10,6 +11,7 @@ export interface InvestigationScenarioPreparationRequest {
   description: string;
   knowledgeRoot: string;
   name: string;
+  browserContext?: InvestigationBrowserContext;
 }
 
 export interface InvestigationScenarioPreparationDependencies {
@@ -43,6 +45,7 @@ export async function prepareInvestigationScenario(
   const spec = await dependencies.buildInvestigationSpec({
     provider: opts.provider,
     description: opts.description,
+    browserContext: opts.browserContext,
   });
   const healedSpec = dependencies.healSpec(spec, "investigation");
   const source = dependencies.generateScenarioSource("investigation", healedSpec, opts.name);

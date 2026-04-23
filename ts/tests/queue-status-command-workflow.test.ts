@@ -14,6 +14,7 @@ describe("queue/status command workflow", () => {
     expect(QUEUE_HELP_TEXT).toContain("autoctx queue");
     expect(QUEUE_HELP_TEXT).toContain("--priority");
     expect(QUEUE_HELP_TEXT).toContain("--rlm");
+    expect(QUEUE_HELP_TEXT).toContain("--browser-url");
   });
 
   it("returns the right queue usage exit code", () => {
@@ -28,6 +29,7 @@ describe("queue/status command workflow", () => {
           spec: "saved-scenario",
           prompt: "override prompt",
           rubric: undefined,
+          "browser-url": "https://status.example.com",
           priority: "2",
           "min-rounds": "3",
           rlm: true,
@@ -53,6 +55,7 @@ describe("queue/status command workflow", () => {
       request: {
         taskPrompt: "override prompt",
         rubric: "saved rubric",
+        browserUrl: "https://status.example.com",
         referenceContext: "saved context",
         requiredConcepts: ["concept-a"],
         maxRounds: 5,
@@ -78,6 +81,7 @@ describe("queue/status command workflow", () => {
           spec: undefined,
           prompt: undefined,
           rubric: undefined,
+          "browser-url": undefined,
           priority: "0",
           "min-rounds": undefined,
           rlm: false,

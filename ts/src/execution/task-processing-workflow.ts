@@ -6,6 +6,7 @@ import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
 import type { TaskConfig } from "./task-runner-config.js";
 import { parseTaskConfig, serializeTaskResult } from "./task-runner-config.js";
 import type { RlmSessionRecord, RlmTaskConfig } from "../rlm/types.js";
+import type { QueuedTaskBrowserContextService } from "./queued-task-browser-context.js";
 
 interface SavedTaskSpec {
   judgeRubric?: string;
@@ -25,6 +26,7 @@ export interface QueuedTaskExecutionPlan {
   taskPrompt: string;
   rubric: string;
   referenceContext?: string;
+  browserUrl?: string;
   requiredConcepts?: string[];
   calibrationExamples?: Array<Record<string, unknown>>;
   maxRounds: number;
@@ -112,6 +114,7 @@ export function buildQueuedTaskExecutionPlan(opts: {
     taskPrompt,
     rubric,
     referenceContext: config.referenceContext ?? savedTask?.spec.referenceContext ?? undefined,
+    browserUrl: config.browserUrl,
     requiredConcepts: config.requiredConcepts ?? savedTask?.spec.requiredConcepts ?? undefined,
     calibrationExamples: config.calibrationExamples ?? savedTask?.spec.calibrationExamples ?? undefined,
     maxRounds: config.maxRounds ?? savedTask?.spec.maxRounds ?? 5,
@@ -132,6 +135,7 @@ export async function executeQueuedTaskWorkflow(opts: {
   provider: LLMProvider;
   model: string;
   knowledgeRoot?: string;
+  browserContextService?: QueuedTaskBrowserContextService;
   internals?: Partial<TaskProcessingInternals>;
 }): Promise<void> {
   const internals: TaskProcessingInternals = {
@@ -145,6 +149,14 @@ export async function executeQueuedTaskWorkflow(opts: {
       knowledgeRoot: opts.knowledgeRoot,
       internals,
     });
+    const resolvedReferenceContext = plan.browserUrl
+      ? await resolveQueuedTaskBrowserReferenceContext({
+          taskId: opts.task.id,
+          browserUrl: plan.browserUrl,
+          referenceContext: plan.referenceContext,
+          browserContextService: opts.browserContextService,
+        })
+      : plan.referenceContext;
 
     const agentTask = internals.createAgentTask({
       taskPrompt: plan.taskPrompt,
@@ -159,7 +171,7 @@ export async function executeQueuedTaskWorkflow(opts: {
     let initialOutput = plan.initialOutput;
     if (!initialOutput) {
       initialOutput = await agentTask.generateOutput({
-        referenceContext: plan.referenceContext,
+        referenceContext: resolvedReferenceContext,
         requiredConcepts: plan.requiredConcepts,
       });
     }
@@ -172,7 +184,7 @@ export async function executeQueuedTaskWorkflow(opts: {
     }).run({
       initialOutput,
       state: agentTask.initialState(),
-      referenceContext: plan.referenceContext,
+      referenceContext: resolvedReferenceContext,
       requiredConcepts: plan.requiredConcepts,
       calibrationExamples: plan.calibrationExamples,
     });
@@ -189,4 +201,20 @@ export async function executeQueuedTaskWorkflow(opts: {
     const message = err instanceof Error ? err.message : String(err);
     opts.store.failTask(opts.task.id, message);
   }
+}
+
+async function resolveQueuedTaskBrowserReferenceContext(opts: {
+  taskId: string;
+  browserUrl: string;
+  referenceContext?: string;
+  browserContextService?: QueuedTaskBrowserContextService;
+}): Promise<string> {
+  if (!opts.browserContextService) {
+    throw new Error("browser exploration is not configured");
+  }
+  return opts.browserContextService.buildReferenceContext({
+    taskId: opts.taskId,
+    browserUrl: opts.browserUrl,
+    referenceContext: opts.referenceContext,
+  });
 }
