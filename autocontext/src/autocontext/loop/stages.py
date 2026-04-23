@@ -128,8 +128,8 @@ def _evidence_source_run_ids(ctx: GenerationContext, *, artifacts: ArtifactStore
         return []
 
 
-def _materialize_evidence_manifest(ctx: GenerationContext, *, artifacts: ArtifactStore) -> str:
-    """Build the evidence workspace and render its prompt-facing manifest."""
+def _materialize_evidence_manifests(ctx: GenerationContext, *, artifacts: ArtifactStore) -> dict[str, str]:
+    """Build the evidence workspace and render role-specific prompt manifests."""
     from autocontext.evidence import materialize_workspace, render_evidence_manifest
 
     workspace = materialize_workspace(
@@ -141,7 +141,10 @@ def _materialize_evidence_manifest(ctx: GenerationContext, *, artifacts: Artifac
         scenario_name=ctx.scenario_name,
         scan_for_secrets=True,
     )
-    return render_evidence_manifest(workspace)
+    return {
+        "analyst": render_evidence_manifest(workspace, role="analyst"),
+        "architect": render_evidence_manifest(workspace, role="architect"),
+    }
 
 
 class _ClientAsProvider(LLMProvider):
@@ -293,10 +296,17 @@ def stage_knowledge_setup(
     tool_usage_report = "" if ablation else _load_architect_tool_usage_report(ctx, artifacts=artifacts)
     weakness_reports = "" if ablation else artifacts.read_latest_weakness_reports_markdown(ctx.scenario_name)
     progress_reports = "" if ablation else artifacts.read_latest_progress_reports_markdown(ctx.scenario_name)
+    session_reports = (
+        ""
+        if ablation or not ctx.settings.session_reports_enabled
+        else artifacts.read_latest_session_reports(ctx.scenario_name)
+    )
     score_trajectory = "" if ablation else trajectory_builder.build_trajectory(ctx.run_id)
     strategy_registry = "" if ablation else trajectory_builder.build_strategy_registry(ctx.run_id)
     coach_hints_for_prompt = "" if ablation else ctx.coach_competitor_hints
     freshness_notes: list[str] = []
+    if not isinstance(session_reports, str):
+        session_reports = ""
 
     if not ablation and ctx.settings.evidence_freshness_enabled:
         skills_context, lesson_freshness = _load_fresh_skill_context(ctx, artifacts=artifacts)
@@ -365,6 +375,7 @@ def stage_knowledge_setup(
     summary_text = f"best score so far: {ctx.previous_best:.4f}"
     strategy_interface = scenario.describe_strategy_interface()
     evidence_manifest = ""
+    evidence_manifests: dict[str, str] | None = None
     notebook_contexts: dict[str, str] | None = None
     active_harness_mutations = [] if ablation else load_active_harness_mutations(artifacts, ctx.scenario_name)
     if not ablation:
@@ -397,7 +408,8 @@ def stage_knowledge_setup(
         experiment_log = f"{experiment_log}\n\n{context_policy_block}".strip() if experiment_log else context_policy_block
     if not ablation and ctx.settings.evidence_workspace_enabled:
         try:
-            evidence_manifest = _materialize_evidence_manifest(ctx, artifacts=artifacts)
+            evidence_manifests = _materialize_evidence_manifests(ctx, artifacts=artifacts)
+            evidence_manifest = evidence_manifests.get("analyst", "")
         except Exception:
             logger.warning("failed to materialize evidence workspace for %s", ctx.scenario_name, exc_info=True)
 
@@ -422,12 +434,14 @@ def stage_knowledge_setup(
         strategy_registry=strategy_registry,
         progress_json=progress_json_str,
         experiment_log=experiment_log,
+        session_reports=session_reports,
         architect_tool_usage_report=tool_usage_report,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
         context_budget_tokens=ctx.settings.context_budget_tokens,
         notebook_contexts=notebook_contexts,
         environment_snapshot="" if ablation else ctx.environment_snapshot,
         evidence_manifest=evidence_manifest,
+        evidence_manifests=evidence_manifests,
     )
     prompts = apply_harness_mutations_to_prompts(prompts, active_harness_mutations)
 

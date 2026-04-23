@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.concepts import get_concept_model
+from autocontext.evidence import (
+    EvidenceWorkspace,
+    load_access_log,
+    record_access,
+    render_artifact_detail,
+    save_access_log,
+)
 from autocontext.execution.rubric_calibration import run_judge_calibration
 from autocontext.mcp._base import _OPENCLAW_VERSION, MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
@@ -352,10 +360,66 @@ def get_env_snapshot(ctx: MtsToolContext, scenario_name: str) -> str:
 
 def get_evidence_list(ctx: MtsToolContext, scenario_name: str) -> str:
     """Return the evidence workspace manifest for a scenario, or a not-found message."""
-    manifest_path = ctx.settings.knowledge_root / scenario_name / "_evidence" / "manifest.json"
+    manifest_path = _evidence_manifest_path(ctx, scenario_name)
     if not manifest_path.exists():
         return json.dumps({"error": f"No evidence workspace found for scenario '{scenario_name}'"})
     try:
         return manifest_path.read_text(encoding="utf-8")
     except OSError as exc:
         return json.dumps({"error": f"Failed to read evidence manifest: {exc}"})
+
+
+def get_evidence_artifact(
+    ctx: MtsToolContext,
+    scenario_name: str,
+    artifact_id: str,
+    excerpt_lines: int = 40,
+) -> str:
+    """Return a specific evidence artifact by ID and record that it was consulted."""
+    workspace, error = _load_evidence_workspace(ctx, scenario_name)
+    if error is not None:
+        return error
+    if workspace is None:
+        return json.dumps({"error": f"No evidence workspace found for scenario '{scenario_name}'"})
+
+    artifact = workspace.get_artifact(artifact_id)
+    if artifact is None:
+        return f"[Artifact {artifact_id} not found in evidence workspace for scenario '{scenario_name}']"
+
+    record_access(workspace, artifact_id)
+    save_access_log(workspace)
+    return render_artifact_detail(
+        artifact,
+        workspace.workspace_dir,
+        excerpt_lines=excerpt_lines if excerpt_lines > 0 else None,
+    )
+
+
+def _evidence_manifest_path(ctx: MtsToolContext, scenario_name: str) -> Path:
+    return ctx.settings.knowledge_root / scenario_name / "_evidence" / "manifest.json"
+
+
+def _load_evidence_workspace(
+    ctx: MtsToolContext,
+    scenario_name: str,
+) -> tuple[EvidenceWorkspace, None] | tuple[None, str]:
+    manifest_path = _evidence_manifest_path(ctx, scenario_name)
+    if not manifest_path.exists():
+        return None, json.dumps({"error": f"No evidence workspace found for scenario '{scenario_name}'"})
+
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return None, json.dumps({"error": f"Failed to read evidence manifest: {exc}"})
+
+    if not isinstance(data, dict):
+        return None, json.dumps({"error": "Evidence manifest is malformed"})
+
+    try:
+        workspace = EvidenceWorkspace.from_dict(data)
+    except (KeyError, TypeError, ValueError) as exc:
+        return None, json.dumps({"error": f"Evidence manifest is invalid: {exc}"})
+
+    workspace.workspace_dir = str(manifest_path.parent)
+    workspace.accessed_artifacts = load_access_log(workspace.workspace_dir)
+    return workspace, None

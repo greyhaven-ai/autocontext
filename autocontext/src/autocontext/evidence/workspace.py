@@ -17,6 +17,8 @@ class EvidenceArtifact:
     summary: str  # one-line description
     size_bytes: int
     generation: int | None
+    source_path: str = ""
+    source_mtime_ns: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -27,6 +29,8 @@ class EvidenceArtifact:
             "summary": self.summary,
             "size_bytes": self.size_bytes,
             "generation": self.generation,
+            "source_path": self.source_path,
+            "source_mtime_ns": self.source_mtime_ns,
         }
 
     @classmethod
@@ -39,6 +43,8 @@ class EvidenceArtifact:
             summary=data["summary"],
             size_bytes=data["size_bytes"],
             generation=data.get("generation"),
+            source_path=str(data.get("source_path", "")),
+            source_mtime_ns=data.get("source_mtime_ns"),
         )
 
 
@@ -51,6 +57,7 @@ class EvidenceWorkspace:
     artifacts: list[EvidenceArtifact]
     total_size_bytes: int
     materialized_at: str
+    source_signature: str = ""
     accessed_artifacts: list[str] = field(default_factory=list)
 
     def get_artifact(self, artifact_id: str) -> EvidenceArtifact | None:
@@ -69,6 +76,7 @@ class EvidenceWorkspace:
             "artifacts": [a.to_dict() for a in self.artifacts],
             "total_size_bytes": self.total_size_bytes,
             "materialized_at": self.materialized_at,
+            "source_signature": self.source_signature,
             "accessed_artifacts": list(self.accessed_artifacts),
         }
 
@@ -80,5 +88,6 @@ class EvidenceWorkspace:
             artifacts=[EvidenceArtifact.from_dict(a) for a in data.get("artifacts", [])],
             total_size_bytes=data.get("total_size_bytes", 0),
             materialized_at=data["materialized_at"],
+            source_signature=str(data.get("source_signature", "")),
             accessed_artifacts=data.get("accessed_artifacts", []),
         )

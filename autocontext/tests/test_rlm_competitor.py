@@ -711,6 +711,25 @@ class TestExperimentLog:
         assert "Gen 1 trial" in log
         assert "aggression" not in log
 
+    def test_build_experiment_log_compacts_noisy_history(self, tmp_sqlite: Any) -> None:
+        """Long trial histories are condensed while preserving recent signal."""
+        from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
+
+        self._seed_run(tmp_sqlite, "run-1", [1, 7])
+        tmp_sqlite.append_agent_output("run-1", 1, "competitor_rlm_trials", "### Generation 1\n" + ("noise line\n" * 120))
+        tmp_sqlite.append_agent_output(
+            "run-1",
+            7,
+            "competitor_rlm_trials",
+            "### Generation 7\n- Root cause: overfitting to stale hints\n- Keep broader opening exploration",
+        )
+
+        builder = ScoreTrajectoryBuilder(tmp_sqlite)
+        log = builder.build_experiment_log("run-1")
+        assert "Generation 7" in log
+        assert "overfitting to stale hints" in log
+        assert "condensed" in log.lower() or log.count("noise line") < 120
+
 
 class TestRlmTrialStorage:
     def test_rlm_competitor_stores_trial_summary(

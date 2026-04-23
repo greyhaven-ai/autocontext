@@ -20,6 +20,7 @@ from autocontext.analytics.credit_assignment import CreditAssignmentRecord
 from autocontext.harness.mutations.spec import HarnessMutation
 from autocontext.harness.mutations.store import MutationStore
 from autocontext.harness.storage.versioned_store import VersionedFileStore
+from autocontext.knowledge.compaction import compact_prompt_components
 from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
@@ -1153,7 +1154,8 @@ class ArtifactStore:
         reports = []
         for path in report_files[:max_reports]:
             reports.append(path.read_text(encoding="utf-8"))
-        return "\n\n---\n\n".join(reports)
+        combined = "\n\n---\n\n".join(reports)
+        return compact_prompt_components({"session_reports": combined})["session_reports"]
 
     # --- Harness versioning ---------------------------------------------------
 

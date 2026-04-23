@@ -43,7 +43,6 @@ def materialize_workspace(
 ) -> EvidenceWorkspace:
     """Materialize evidence from prior runs into a flat workspace directory."""
     workspace_dir.mkdir(parents=True, exist_ok=True)
-    _cleanup_previous_workspace(workspace_dir)
 
     all_artifacts: list[EvidenceArtifact] = []
 
@@ -58,6 +57,21 @@ def materialize_workspace(
         knowledge_dir = knowledge_root / scenario_name
         if knowledge_dir.is_dir():
             all_artifacts.extend(_scan_knowledge_artifacts(knowledge_dir, scenario_name))
+
+    source_signature = _compute_source_signature(
+        artifacts=all_artifacts,
+        source_run_ids=source_run_ids,
+        budget_bytes=budget_bytes,
+        scenario_name=scenario_name,
+        scan_for_secrets=scan_for_secrets,
+    )
+    cached = _load_cached_workspace(workspace_dir, source_signature=source_signature)
+    if cached is not None:
+        if scan_for_secrets:
+            return _refresh_cached_workspace_after_secret_scan(workspace_dir, cached)
+        return cached
+
+    _cleanup_previous_workspace(workspace_dir)
 
     # Sort by priority then recency (mtime descending)
     priority_map = {kind: i for i, kind in enumerate(ARTIFACT_PRIORITY)}
@@ -88,6 +102,8 @@ def materialize_workspace(
             summary=artifact.summary,
             size_bytes=artifact.size_bytes,
             generation=artifact.generation,
+            source_path=artifact.source_path or str(src_path),
+            source_mtime_ns=artifact.source_mtime_ns,
         )
         selected.append(workspace_artifact)
         total_size += artifact.size_bytes
@@ -102,12 +118,78 @@ def materialize_workspace(
         artifacts=selected,
         total_size_bytes=total_size,
         materialized_at=datetime.datetime.now(datetime.UTC).isoformat(),
+        source_signature=source_signature,
     )
 
     # Write manifest
     manifest_path = workspace_dir / _MANIFEST_FILENAME
     manifest_path.write_text(json.dumps(workspace.to_dict(), indent=2), encoding="utf-8")
 
+    return workspace
+
+
+def _compute_source_signature(
+    *,
+    artifacts: list[EvidenceArtifact],
+    source_run_ids: list[str],
+    budget_bytes: int,
+    scenario_name: str | None,
+    scan_for_secrets: bool,
+) -> str:
+    digest = hashlib.sha256()
+    digest.update(str(sorted(source_run_ids)).encode())
+    digest.update(str(budget_bytes).encode())
+    digest.update(str(bool(scan_for_secrets)).encode())
+    digest.update(str(scenario_name or "").encode())
+    for artifact in sorted(artifacts, key=lambda item: (item.source_run_id, item.kind, item.path)):
+        digest.update(artifact.source_run_id.encode())
+        digest.update(artifact.kind.encode())
+        digest.update((artifact.source_path or artifact.path).encode())
+        digest.update(str(artifact.size_bytes).encode())
+        digest.update(str(artifact.source_mtime_ns or 0).encode())
+        digest.update(str(artifact.generation if artifact.generation is not None else "").encode())
+    return digest.hexdigest()
+
+
+def _load_cached_workspace(workspace_dir: Path, *, source_signature: str) -> EvidenceWorkspace | None:
+    manifest_path = workspace_dir / _MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if str(data.get("source_signature", "")) != source_signature:
+        return None
+    artifacts = data.get("artifacts", [])
+    if not isinstance(artifacts, list):
+        return None
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            return None
+        rel_path = artifact.get("path")
+        if not isinstance(rel_path, str):
+            return None
+        artifact_path = _resolve_workspace_path(workspace_dir, rel_path)
+        if artifact_path is None or not artifact_path.exists():
+            return None
+    try:
+        return EvidenceWorkspace.from_dict(data)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _refresh_cached_workspace_after_secret_scan(
+    workspace_dir: Path,
+    workspace: EvidenceWorkspace,
+) -> EvidenceWorkspace:
+    artifacts, total_size = _apply_secret_scan(workspace_dir, list(workspace.artifacts), workspace.total_size_bytes)
+    workspace.artifacts = artifacts
+    workspace.total_size_bytes = total_size
+    manifest_path = workspace_dir / _MANIFEST_FILENAME
+    manifest_path.write_text(json.dumps(workspace.to_dict(), indent=2), encoding="utf-8")
     return workspace
 
 
@@ -217,6 +299,8 @@ def _scan_run_artifacts(run_dir: Path, run_id: str) -> list[EvidenceArtifact]:
                     summary=f"{kind}: {path.name} from {run_id}",
                     size_bytes=path.stat().st_size,
                     generation=generation,
+                    source_path=str(path),
+                    source_mtime_ns=path.stat().st_mtime_ns,
                 )
             )
     except OSError:
@@ -246,6 +330,8 @@ def _scan_knowledge_artifacts(knowledge_dir: Path, scenario_name: str) -> list[E
                     summary=f"{kind}: {fname} for {scenario_name}",
                     size_bytes=fpath.stat().st_size,
                     generation=None,
+                    source_path=str(fpath),
+                    source_mtime_ns=fpath.stat().st_mtime_ns,
                 )
             )
 
@@ -263,6 +349,8 @@ def _scan_knowledge_artifacts(knowledge_dir: Path, scenario_name: str) -> list[E
                         summary=f"tool: {tpath.name} for {scenario_name}",
                         size_bytes=tpath.stat().st_size,
                         generation=None,
+                        source_path=str(tpath),
+                        source_mtime_ns=tpath.stat().st_mtime_ns,
                     )
                 )
 
@@ -281,6 +369,8 @@ def _scan_knowledge_artifacts(knowledge_dir: Path, scenario_name: str) -> list[E
                         summary=f"analysis: {apath.name} for {scenario_name}",
                         size_bytes=apath.stat().st_size,
                         generation=gen,
+                        source_path=str(apath),
+                        source_mtime_ns=apath.stat().st_mtime_ns,
                     )
                 )
 

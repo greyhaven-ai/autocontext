@@ -67,6 +67,7 @@ describe("CLI -> session-dir integration", () => {
     expect(r.exitCode).toBe(0);
     const payload = JSON.parse(r.stdout);
     expect(payload.filesAffected).toBe(1);
+    expect(payload.callSitesDetected).toBe(1);
     const sessionDir = join(cwd, ".autocontext", "instrument-patches", ULID);
     expect(existsSync(join(sessionDir, "plan.json"))).toBe(true);
     const prBody = readFileSync(join(sessionDir, "pr-body.md"), "utf-8");

@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 _TRIM_ORDER = (
     "session_reports",
     "evidence_manifest",
+    "evidence_manifest_analyst",
+    "evidence_manifest_architect",
     "notebook_architect",
     "notebook_coach",
     "notebook_analyst",

@@ -189,3 +189,29 @@ class TestMemoryConsolidator:
             dry_run=True,
         )
         assert result.dry_run
+
+    def test_promotes_structured_lessons_instead_of_raw_prefixes(self) -> None:
+        from autocontext.session.memory_consolidation import (
+            ConsolidationTrigger,
+            MemoryConsolidator,
+        )
+
+        trigger = ConsolidationTrigger(min_completed_turns=1)
+        consolidator = MemoryConsolidator(trigger=trigger)
+        report = (
+            "# Session Report: run_123\n"
+            "Verbose setup details that are not the main lesson.\n"
+            "## Findings\n"
+            "- Preserve the rollback guard after failed tool mutations.\n"
+            "- Prefer freshness-filtered notebook context over stale notes.\n"
+        )
+
+        result = consolidator.run(
+            completed_turns=3,
+            completed_sessions=1,
+            artifacts={"session_reports": [report]},
+            dry_run=True,
+        )
+
+        assert any("rollback guard" in lesson.lower() for lesson in result.promoted_lessons)
+        assert any("freshness-filtered" in lesson.lower() for lesson in result.promoted_lessons)
