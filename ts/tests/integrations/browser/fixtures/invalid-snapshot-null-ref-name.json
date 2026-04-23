@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "sessionId": "session_1",
+  "capturedAt": "2026-04-22T12:00:01Z",
+  "url": "https://example.com/dashboard",
+  "title": "Example Dashboard",
+  "refs": [
+    {
+      "id": "@e1",
+      "role": "button",
+      "name": null
+    }
+  ],
+  "visibleText": "Welcome back",
+  "htmlPath": "runs/browser/html/0001.html",
+  "screenshotPath": "runs/browser/shots/0001.png"
+}

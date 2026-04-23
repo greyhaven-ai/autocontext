@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "actionId": "act_fill_1",
+  "sessionId": "session_1",
+  "timestamp": "2026-04-22T12:00:00Z",
+  "type": "fill",
+  "params": {
+    "ref": "@e1",
+    "text": "hello@example.com",
+    "fieldKind": null
+  }
+}
