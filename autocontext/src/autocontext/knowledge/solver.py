@@ -21,6 +21,13 @@ from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 from autocontext.scenarios.artifact_editing import Artifact, ArtifactEditingInterface
+from autocontext.scenarios.custom.classifier_cache import (
+    ClassifierCache,
+    default_classifier_cache_path,
+)
+from autocontext.scenarios.custom.classifier_input import (
+    build_family_classification_brief,
+)
 from autocontext.storage import artifact_store_from_settings
 from autocontext.storage.sqlite_store import SQLiteStore
 
@@ -35,20 +42,6 @@ class _NamedScenario(Protocol):
 
 
 _FAMILY_HEADER_RE = re.compile(r"^\s*\*{0,2}family\*{0,2}:\s*(?P<body>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-_SOLVE_DESCRIPTION_SKIP_SECTIONS = frozenset(
-    {
-        "Why This Matters",
-        "What This Tests",
-        "Implementation Guidance",
-        "Acceptance",
-        "Why existing scenarios don't cover this",
-        "Dependencies",
-    }
-)
-_SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES = (
-    "**Priority:**",
-    "**Generations to signal:**",
-)
 _SOLVE_FAMILY_ALIASES = {
     "alignment_stress_test": "agent_task",
     "meta_learning": "agent_task",
@@ -59,12 +52,7 @@ _SIMULATION_INTERFACE_HINT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _AGENT_TASK_INTERFACE_HINT_RE = re.compile(r"\bagent[- ]task evaluation\b", re.IGNORECASE)
-_SOLVE_INLINE_EXAMPLE_PAREN_RE = re.compile(
-    r"\(\s*(?:e\.g\.,?|eg,?|for example,?)[^)]*\)",
-    re.IGNORECASE,
-)
-
-
+_SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS = 600.0
 @dataclass
 class SolveJob:
     job_id: str
@@ -305,28 +293,7 @@ class _BudgetedAgentTask(AgentTaskInterface):
 
 
 def _build_solve_description_brief(description: str) -> str:
-    lines: list[str] = []
-    skipping_section = False
-    for raw_line in description.splitlines():
-        heading_match = re.match(r"^\s*#{2,6}\s+(.+?)\s*$", raw_line)
-        if heading_match is not None:
-            title = heading_match.group(1).strip()
-            skipping_section = title in _SOLVE_DESCRIPTION_SKIP_SECTIONS
-            if not skipping_section:
-                lines.append(raw_line)
-            continue
-
-        stripped = raw_line.strip()
-        if stripped.startswith(_SOLVE_DESCRIPTION_SKIP_LINE_PREFIXES):
-            continue
-        if not skipping_section:
-            lines.append(raw_line)
-
-    brief = "\n".join(lines).strip()
-    brief = _SOLVE_INLINE_EXAMPLE_PAREN_RE.sub("", brief)
-    brief = re.sub(r"\n{3,}", "\n\n", brief)
-    brief = re.sub(r"[ \t]{2,}", " ", brief)
-    return brief or description.strip()
+    return build_family_classification_brief(description)
 
 
 def _normalize_family_hint_token(token: str) -> str:
@@ -380,6 +347,7 @@ def _resolve_requested_scenario_family_with_metadata(
     description: str,
     *,
     llm_fn: LlmFn | None = None,
+    cache: ClassifierCache | None = None,
 ) -> _ResolvedSolveFamily:
     from autocontext.scenarios.custom.family_classifier import classify_scenario_family, route_to_family
 
@@ -392,7 +360,7 @@ def _resolve_requested_scenario_family_with_metadata(
     if aliased_family is not None:
         return _ResolvedSolveFamily(family=aliased_family)
 
-    classification = classify_scenario_family(brief, llm_fn=llm_fn)
+    classification = classify_scenario_family(brief, llm_fn=llm_fn, cache=cache)
     return _ResolvedSolveFamily(
         family=route_to_family(classification),
         llm_classifier_fallback_used=classification.llm_fallback_used,
@@ -436,7 +404,7 @@ class SolveScenarioExecutor:
 
         from autocontext.loop.generation_runner import GenerationRunner
 
-        runner = GenerationRunner(self._settings)
+        runner = GenerationRunner(_settings_for_solve_runtime(self._settings))
         runner.migrate(self._migrations_dir)
         run_id = f"solve_{scenario_name}_{uuid.uuid4().hex[:8]}"
         summary = runner.run(scenario_name, generations, run_id)
@@ -496,7 +464,7 @@ class SolveScenarioExecutor:
 
         try:
             provider, provider_model = resolve_role_runtime(
-                self._settings,
+                _settings_for_solve_runtime(self._settings),
                 role="competitor",
                 scenario_name=scenario_name,
                 sqlite=sqlite,
@@ -600,7 +568,12 @@ class SolveScenarioBuilder:
             family = get_family(family_override)
             llm_classifier_fallback_used = False
         else:
-            resolved_family = _resolve_requested_scenario_family_with_metadata(brief, llm_fn=self._llm_fn)
+            cache = ClassifierCache(default_classifier_cache_path(self._knowledge_root))
+            resolved_family = _resolve_requested_scenario_family_with_metadata(
+                brief,
+                llm_fn=self._llm_fn,
+                cache=cache,
+            )
             family = resolved_family.family
             llm_classifier_fallback_used = resolved_family.llm_classifier_fallback_used
 
@@ -734,7 +707,8 @@ class SolveManager:
             from autocontext.agents.llm_client import build_client_from_settings
             from autocontext.agents.subagent_runtime import SubagentRuntime
 
-            client = build_client_from_settings(self._settings)
+            creator_settings = _settings_for_solve_runtime(self._settings)
+            client = build_client_from_settings(creator_settings)
             runtime = SubagentRuntime(client)
             designer_model = self._settings.model_translator or self._settings.model_architect
             llm_fn = _llm_fn_from_client(client, designer_model)
@@ -771,3 +745,11 @@ class SolveManager:
         if job is None or job.status != "completed":
             return None
         return job.result
+
+
+def _settings_for_solve_runtime(settings: AppSettings) -> AppSettings:
+    if settings.agent_provider not in {"pi", "pi-rpc"}:
+        return settings
+    if float(settings.pi_timeout) >= _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS:
+        return settings
+    return settings.model_copy(update={"pi_timeout": _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS})

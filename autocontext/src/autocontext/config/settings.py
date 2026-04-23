@@ -324,6 +324,10 @@ class AppSettings(BaseModel):
     constraint_prompts_enabled: bool = Field(default=True, description="Append constraint suffixes to role prompts")
     # Context budget
     context_budget_tokens: int = Field(default=100_000, ge=0, description="Max estimated tokens for prompt context")
+    semantic_compaction_benchmark_enabled: bool = Field(
+        default=False,
+        description="Capture a semantic compaction benchmark report during prompt assembly",
+    )
     # Knowledge coherence
     coherence_check_enabled: bool = Field(default=True, description="Run knowledge coherence check after persistence")
     # Strategy pre-validation

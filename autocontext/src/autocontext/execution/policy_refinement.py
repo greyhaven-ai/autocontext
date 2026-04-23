@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 
 from autocontext.execution.policy_executor import PolicyExecutor, PolicyMatchResult
+from autocontext.knowledge.compaction import compact_prompt_component
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.base import ScenarioInterface
 
@@ -84,27 +85,37 @@ def _build_refinement_prompt(
     iteration: int,
 ) -> tuple[str, str]:
     """Build (system_prompt, user_prompt) for the LLM refinement call."""
+    scenario_rules = compact_prompt_component(
+        "policy_refinement_rules",
+        scenario.describe_rules(),
+    )
+    strategy_interface = compact_prompt_component(
+        "policy_refinement_interface",
+        scenario.describe_strategy_interface(),
+    )
+    evaluation_criteria = compact_prompt_component(
+        "policy_refinement_criteria",
+        scenario.describe_evaluation_criteria(),
+    )
     system_prompt = (
         "You are a Python policy optimization expert. "
         "You write choose_action(state) -> dict functions that play game scenarios well. "
         "You must output a complete Python function definition.\n\n"
-        f"Scenario rules:\n{scenario.describe_rules()}\n\n"
-        f"Strategy interface:\n{scenario.describe_strategy_interface()}\n\n"
-        f"Evaluation criteria:\n{scenario.describe_evaluation_criteria()}"
+        f"Scenario rules:\n{scenario_rules}\n\n"
+        f"Strategy interface:\n{strategy_interface}\n\n"
+        f"Evaluation criteria:\n{evaluation_criteria}"
     )
 
-    scores_str = ", ".join(f"{r.score:.4f}" for r in match_results)
-    errors_str = ""
-    for r in match_results:
-        if r.errors:
-            errors_str += f"\nErrors: {'; '.join(r.errors)}"
-        if r.had_illegal_actions:
-            errors_str += f"\nIllegal actions: {r.illegal_action_count}"
+    scores_str = _format_score_history(match_results)
+    feedback_block = compact_prompt_component(
+        "policy_refinement_feedback",
+        _build_match_feedback(match_results),
+    )
 
     user_prompt = (
         f"Iteration {iteration}. The current policy achieved heuristic {heuristic_value:.4f}.\n"
-        f"Match scores: [{scores_str}]\n"
-        f"{errors_str}\n\n"
+        f"Match scores: {scores_str}\n\n"
+        f"{feedback_block}\n\n"
         f"Current policy:\n```python\n{current_policy}\n```\n\n"
         "Write an improved choose_action(state) -> dict function. "
         "Output ONLY the Python code in a ```python``` code block. "
@@ -113,6 +124,35 @@ def _build_refinement_prompt(
     )
 
     return system_prompt, user_prompt
+
+
+def _format_score_history(match_results: list[PolicyMatchResult], *, max_items: int = 8) -> str:
+    scores = [f"{result.score:.4f}" for result in match_results[-max_items:]]
+    rendered = "[" + ", ".join(scores) + "]"
+    if len(match_results) <= max_items:
+        return rendered
+    return f"{rendered} (recent {min(len(match_results), max_items)} of {len(match_results)})"
+
+
+def _build_match_feedback(match_results: list[PolicyMatchResult]) -> str:
+    if not match_results:
+        return "## Match Feedback\n- No match results were recorded."
+
+    sections: list[str] = []
+    for index, result in enumerate(match_results, start=1):
+        lines = [
+            f"### Match {index}",
+            f"- Score: {result.score:.4f}",
+            f"- Normalized score: {result.normalized_score:.4f}",
+            f"- Moves played: {result.moves_played}",
+        ]
+        if result.had_illegal_actions:
+            lines.append(f"- Illegal actions: {result.illegal_action_count}")
+        if result.errors:
+            lines.append(f"- Errors: {'; '.join(result.errors)}")
+        sections.append("\n".join(lines))
+
+    return "\n\n---\n\n".join(sections)
 
 
 class PolicyRefinementLoop:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from autocontext.knowledge.compaction import compact_prompt_components
 from autocontext.prompts.context_budget import ContextBudget
 from autocontext.scenarios.base import Observation
 from autocontext.strategy_interface import is_action_plan_interface
@@ -80,8 +81,32 @@ def build_prompt_bundle(
     notebook_contexts: dict[str, str] | None = None,
     environment_snapshot: str = "",
     evidence_manifest: str = "",
+    evidence_manifests: dict[str, str] | None = None,
+    semantic_compaction: bool = True,
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
+    _evidence = dict(evidence_manifests or {})
+    analyst_evidence_manifest = _evidence.get("analyst", evidence_manifest)
+    architect_evidence_manifest = _evidence.get("architect", evidence_manifest)
+    if semantic_compaction:
+        compacted = compact_prompt_components(
+            {
+                "playbook": current_playbook,
+                "trajectory": score_trajectory,
+                "lessons": operational_lessons,
+                "analysis": recent_analysis,
+                "experiment_log": experiment_log,
+                "research_protocol": research_protocol,
+                "session_reports": session_reports,
+            }
+        )
+        current_playbook = compacted["playbook"]
+        score_trajectory = compacted["trajectory"]
+        operational_lessons = compacted["lessons"]
+        recent_analysis = compacted["analysis"]
+        experiment_log = compacted["experiment_log"]
+        research_protocol = compacted["research_protocol"]
+        session_reports = compacted["session_reports"]
     if context_budget_tokens > 0:
         budget = ContextBudget(max_tokens=context_budget_tokens)
         budgeted = budget.apply(
@@ -103,7 +128,8 @@ def build_prompt_bundle(
                 "session_reports": session_reports,
                 "tool_usage_report": architect_tool_usage_report,
                 "environment_snapshot": environment_snapshot,
-                "evidence_manifest": evidence_manifest,
+                "evidence_manifest_analyst": analyst_evidence_manifest,
+                "evidence_manifest_architect": architect_evidence_manifest,
                 "notebook_competitor": _nb.get("competitor", ""),
                 "notebook_analyst": _nb.get("analyst", ""),
                 "notebook_coach": _nb.get("coach", ""),
@@ -127,7 +153,8 @@ def build_prompt_bundle(
         session_reports = budgeted["session_reports"]
         architect_tool_usage_report = budgeted["tool_usage_report"]
         environment_snapshot = budgeted["environment_snapshot"]
-        evidence_manifest = budgeted["evidence_manifest"]
+        analyst_evidence_manifest = budgeted["evidence_manifest_analyst"]
+        architect_evidence_manifest = budgeted["evidence_manifest_architect"]
         _nb = {
             "competitor": budgeted["notebook_competitor"],
             "analyst": budgeted["notebook_analyst"],
@@ -152,7 +179,8 @@ def build_prompt_bundle(
     session_reports_block = f"Prior session reports:\n{session_reports}\n\n" if session_reports else ""
     tool_usage_block = f"{architect_tool_usage_report.strip()}\n\n" if architect_tool_usage_report else ""
     snapshot_block = f"{environment_snapshot}\n\n" if environment_snapshot else ""
-    evidence_block = f"{evidence_manifest}\n\n" if evidence_manifest else ""
+    analyst_evidence_block = f"{analyst_evidence_manifest}\n\n" if analyst_evidence_manifest else ""
+    architect_evidence_block = f"{architect_evidence_manifest}\n\n" if architect_evidence_manifest else ""
     base_context = (
         f"Scenario rules:\n{scenario_rules}\n\n"
         f"Strategy interface:\n{strategy_interface}\n\n"
@@ -194,7 +222,7 @@ def build_prompt_bundle(
     return PromptBundle(
         competitor=base_context + hints_block + competitor_nb + competitor_constraint + competitor_task,
         analyst=base_context
-        + evidence_block
+        + analyst_evidence_block
         + analyst_feedback_block
         + analyst_attribution_block
         + analyst_nb
@@ -225,7 +253,7 @@ def build_prompt_bundle(
             "<!-- COMPETITOR_HINTS_END -->"
         ),
         architect=base_context
-        + evidence_block
+        + architect_evidence_block
         + tool_usage_block
         + architect_attribution_block
         + architect_nb

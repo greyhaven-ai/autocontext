@@ -11,6 +11,7 @@ from autocontext.execution.policy_refinement import (
     PolicyIteration,
     PolicyRefinementLoop,
     PolicyRefinementResult,
+    _build_refinement_prompt,
     compute_heuristic,
 )
 from autocontext.providers.base import CompletionResult, LLMProvider
@@ -241,6 +242,42 @@ class TestPolicyRefinementLoopRefine:
         assert result.best_heuristic > 0.0
         assert len(result.iteration_log) == 1
         assert result.total_matches_run == 2
+
+    def test_build_refinement_prompt_compacts_verbose_feedback(self) -> None:
+        scenario = GridCtfScenario()
+        match_results = [
+            PolicyMatchResult(
+                score=0.45 + (idx * 0.01),
+                normalized_score=0.45 + (idx * 0.01),
+                had_illegal_actions=idx % 2 == 0,
+                illegal_action_count=idx + 1,
+                errors=[
+                    f"Iteration {idx} repeated timeout while evaluating extended path search with stale state payload"
+                ],
+                moves_played=20 + idx,
+                replay=None,
+            )
+            for idx in range(12)
+        ]
+        current_policy = textwrap.dedent("""\
+            def choose_action(state):
+                if state.get("enemy_distance", 0) < 3:
+                    return {"aggression": 0.9, "defense": 0.1, "path_bias": 0.6}
+                return {"aggression": 0.5, "defense": 0.7, "path_bias": 0.8}
+        """)
+
+        _system_prompt, user_prompt = _build_refinement_prompt(
+            scenario,
+            current_policy,
+            match_results,
+            heuristic_value=0.58,
+            iteration=7,
+        )
+
+        assert "choose_action(state)" in user_prompt
+        assert "Iteration 11 repeated timeout" in user_prompt
+        assert "Illegal actions" in user_prompt
+        assert "condensed" in user_prompt.lower()
 
     def test_best_policy_tracked(self) -> None:
         """Best policy should be the one with the highest heuristic."""

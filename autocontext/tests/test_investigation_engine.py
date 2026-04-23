@@ -206,3 +206,28 @@ class TestInvestigationEngine:
 
         assert result.status == "failed"
         assert "valid JSON" in (result.error or "")
+
+    def test_hypothesis_prompt_uses_clustered_evidence_summary(self, tmp_path: Path) -> None:
+        from autocontext.investigation.engine import InvestigationEngine, InvestigationRequest
+
+        captured_user_prompts: list[str] = []
+
+        def analysis_llm(_system: str, user: str) -> str:
+            captured_user_prompts.append(user)
+            return _hypothesis_response()
+
+        engine = InvestigationEngine(
+            spec_llm_fn=lambda *_: _spec_response(),
+            analysis_llm_fn=analysis_llm,
+            knowledge_root=tmp_path,
+        )
+
+        result = engine.run(InvestigationRequest(description="Investigate checkout errors"))
+
+        assert result.status == "completed"
+        assert captured_user_prompts
+        prompt = captured_user_prompts[0]
+        assert "Evidence clusters" in prompt
+        assert "Potential red herrings" in prompt
+        assert "Diagnosis target:" not in prompt
+        assert "A config regression in the checkout service" not in prompt

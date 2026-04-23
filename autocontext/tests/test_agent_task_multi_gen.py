@@ -180,6 +180,55 @@ class TestBuildEnrichedPrompt:
         )
         assert "5" in prompt or "generation 5" in prompt.lower()
 
+    def test_compacts_verbose_playbook_and_best_output(self) -> None:
+        from autocontext.execution.agent_task_evolution import build_enriched_prompt
+
+        prompt = build_enriched_prompt(
+            task_prompt="Write a better incident review.",
+            playbook=(
+                "## Lessons\n"
+                + ("filler paragraph\n" * 220)
+                + "- Root cause: preserve concrete failure evidence in the write-up.\n"
+                + "- Recommendation: end with an explicit mitigation checklist.\n"
+            ),
+            generation=6,
+            best_output=(
+                "# Previous Report\n\n"
+                + ("background sentence\n" * 220)
+                + "## Findings\n"
+                + "- Root cause: stale assumptions hid the real failure mode.\n"
+                + "- Recommendation: cite the strongest evidence first.\n"
+            ),
+            best_score=0.84,
+        )
+
+        assert "root cause" in prompt.lower()
+        assert "mitigation checklist" in prompt.lower()
+        assert "strongest evidence first" in prompt.lower()
+        assert "condensed" in prompt.lower()
+
+    def test_compacts_plain_text_best_output_without_losing_tail(self) -> None:
+        from autocontext.execution.agent_task_evolution import build_enriched_prompt
+
+        prompt = build_enriched_prompt(
+            task_prompt="Write a better incident review.",
+            playbook="",
+            generation=6,
+            best_output=(
+                "\n".join(
+                    f"Paragraph {idx}: filler filler filler filler filler filler filler filler."
+                    for idx in range(1, 80)
+                )
+                + "\nFinal answer: preserve the rollback guard and cite evidence first."
+            ),
+            best_score=0.91,
+        )
+
+        assert "final answer" in prompt.lower()
+        assert "rollback guard" in prompt.lower()
+        assert "cite evidence first" in prompt.lower()
+        assert "condensed" in prompt.lower()
+
 
 # ===========================================================================
 # AgentTaskTrajectory

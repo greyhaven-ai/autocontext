@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from autocontext.knowledge.compaction import compact_prompt_component
 from autocontext.scenarios.agent_task import AgentTaskResult
 
 
@@ -92,6 +93,8 @@ def build_enriched_prompt(
     best_score: float,
 ) -> str:
     """Enrich a task prompt with cross-generation context."""
+    playbook = compact_prompt_component("agent_task_playbook", playbook)
+    best_output = compact_prompt_component("agent_task_best_output", best_output)
     sections: list[str] = [task_prompt]
 
     if playbook:

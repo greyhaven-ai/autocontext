@@ -53,3 +53,9 @@ def test_run_match_tool() -> None:
     parsed = json.loads(result)
     assert "score" in parsed
     assert isinstance(parsed["score"], float)
+
+
+def test_evidence_artifact_tool_function_exists() -> None:
+    from autocontext.mcp import server
+
+    assert hasattr(server, "autocontext_evidence_artifact")

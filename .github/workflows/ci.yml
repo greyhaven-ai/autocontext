@@ -150,6 +150,12 @@ jobs:
           node-version: "24"
           cache: "npm"
           cache-dependency-path: ts/package-lock.json
+      - name: Reuse setup-node headers for native addons
+        shell: bash
+        run: |
+          nodedir="$(dirname "$(dirname "$(command -v node)")")"
+          test -d "$nodedir/include/node"
+          echo "npm_config_nodedir=$nodedir" >> "$GITHUB_ENV"
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:

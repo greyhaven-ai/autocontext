@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from autocontext.harness.evaluation.dimensional import format_dimension_trajectory
+from autocontext.knowledge.compaction import compact_prompt_components
 from autocontext.storage.sqlite_store import SQLiteStore
 
 
@@ -81,7 +82,7 @@ class ScoreTrajectoryBuilder:
         for row in rows:
             lines.append(str(row["content"]))
             lines.append("")
-        return "\n".join(lines)
+        return compact_prompt_components({"experiment_log": "\n".join(lines)})["experiment_log"]
 
     def build_strategy_registry(self, run_id: str) -> str:
         """Markdown table: Gen | Strategy (truncated) | Best Score | Gate"""
