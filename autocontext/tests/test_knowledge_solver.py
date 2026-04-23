@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -524,6 +525,155 @@ class TestSolveLLMFn:
         assert builder is not None
         assert builder._model == "translator-sonnet"
 
+    def test_build_creator_raises_pi_timeout_floor_for_solve_design(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import (
+            _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS,
+            SolveManager,
+        )
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            agent_provider="pi",
+            pi_timeout=300.0,
+        )
+        manager = SolveManager(settings)
+        captured: dict[str, float] = {}
+
+        class _Client:
+            pass
+
+        class _Runtime:
+            def __init__(self, client: object) -> None:
+                self.client = client
+
+        def _fake_build_client(settings: AppSettings) -> _Client:
+            captured["pi_timeout"] = float(settings.pi_timeout)
+            return _Client()
+
+        monkeypatch.setattr(
+            "autocontext.agents.llm_client.build_client_from_settings",
+            _fake_build_client,
+        )
+        monkeypatch.setattr(
+            "autocontext.agents.subagent_runtime.SubagentRuntime",
+            _Runtime,
+        )
+
+        builder = manager._build_creator()
+
+        assert builder is not None
+        assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
+
+    def test_task_like_executor_raises_pi_timeout_floor_for_solve_runtime(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import (
+            _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS,
+            SolveScenarioExecutor,
+        )
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            agent_provider="pi",
+            pi_timeout=300.0,
+        )
+        scenario_name = "solve_runtime_timeout_floor"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        SCENARIO_REGISTRY[scenario_name] = _SolveAgentTask
+        provider = _StubProvider("improved draft")
+        captured: dict[str, float] = {}
+
+        def _fake_resolve_role_runtime(settings: AppSettings, **kwargs: object) -> tuple[_StubProvider, str]:
+            del kwargs
+            captured["pi_timeout"] = float(settings.pi_timeout)
+            return provider, "test-model"
+
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            _fake_resolve_role_runtime,
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=1,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
+        assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
+
+    def test_generation_runner_executor_raises_pi_timeout_floor_for_solve_runtime(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import (
+            _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS,
+            SolveScenarioExecutor,
+        )
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            agent_provider="pi",
+            pi_timeout=300.0,
+        )
+        scenario_name = "solve_generation_runner_timeout_floor"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        captured: dict[str, float] = {}
+
+        class _Scenario:
+            name = scenario_name
+
+        class _FakeGenerationRunner:
+            def __init__(self, settings: AppSettings) -> None:
+                captured["pi_timeout"] = float(settings.pi_timeout)
+
+            def migrate(self, migrations_dir: Path) -> None:
+                del migrations_dir
+
+            def run(self, scenario_name: str, generations: int, run_id: str) -> SimpleNamespace:
+                return SimpleNamespace(
+                    run_id=run_id,
+                    generations_executed=generations,
+                    best_score=0.73,
+                    scenario_name=scenario_name,
+                )
+
+        SCENARIO_REGISTRY[scenario_name] = _Scenario
+        monkeypatch.setattr(
+            "autocontext.loop.generation_runner.GenerationRunner",
+            _FakeGenerationRunner,
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="negotiation",
+                generations=2,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 0.73
+        assert summary.generations_executed == 2
+        assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
 
 class TestSolveScenarioExecutor:
     def test_runs_agent_task_scenarios_through_task_loop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

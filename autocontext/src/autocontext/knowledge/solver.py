@@ -52,6 +52,7 @@ _SIMULATION_INTERFACE_HINT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _AGENT_TASK_INTERFACE_HINT_RE = re.compile(r"\bagent[- ]task evaluation\b", re.IGNORECASE)
+_SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS = 600.0
 @dataclass
 class SolveJob:
     job_id: str
@@ -403,7 +404,7 @@ class SolveScenarioExecutor:
 
         from autocontext.loop.generation_runner import GenerationRunner
 
-        runner = GenerationRunner(self._settings)
+        runner = GenerationRunner(_settings_for_solve_runtime(self._settings))
         runner.migrate(self._migrations_dir)
         run_id = f"solve_{scenario_name}_{uuid.uuid4().hex[:8]}"
         summary = runner.run(scenario_name, generations, run_id)
@@ -463,7 +464,7 @@ class SolveScenarioExecutor:
 
         try:
             provider, provider_model = resolve_role_runtime(
-                self._settings,
+                _settings_for_solve_runtime(self._settings),
                 role="competitor",
                 scenario_name=scenario_name,
                 sqlite=sqlite,
@@ -706,7 +707,8 @@ class SolveManager:
             from autocontext.agents.llm_client import build_client_from_settings
             from autocontext.agents.subagent_runtime import SubagentRuntime
 
-            client = build_client_from_settings(self._settings)
+            creator_settings = _settings_for_solve_runtime(self._settings)
+            client = build_client_from_settings(creator_settings)
             runtime = SubagentRuntime(client)
             designer_model = self._settings.model_translator or self._settings.model_architect
             llm_fn = _llm_fn_from_client(client, designer_model)
@@ -743,3 +745,11 @@ class SolveManager:
         if job is None or job.status != "completed":
             return None
         return job.result
+
+
+def _settings_for_solve_runtime(settings: AppSettings) -> AppSettings:
+    if settings.agent_provider not in {"pi", "pi-rpc"}:
+        return settings
+    if float(settings.pi_timeout) >= _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS:
+        return settings
+    return settings.model_copy(update={"pi_timeout": _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS})
