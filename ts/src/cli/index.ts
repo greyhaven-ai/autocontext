@@ -15,6 +15,13 @@
 import { parseArgs } from "node:util";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  buildCliHelp,
+  resolveCliCommand,
+  type ControlPlaneCommandName,
+  type DbCommandName,
+  type NoDbCommandName,
+} from "./command-registry.js";
 import { emitEngineResult } from "./emit-engine-result.js";
 import type { CampaignStatus } from "../mission/campaign.js";
 
@@ -23,57 +30,45 @@ function getMigrationsDir(): string {
   return join(thisDir, "..", "..", "migrations");
 }
 
-const HELP = `
-autoctx — always-on agent evaluation harness
+const HELP = buildCliHelp();
 
-Commands:
-  init             Scaffold project config and AGENTS guidance
-  run              Run generation loop for a scenario
-  list             List recent runs
-  replay           Print replay JSON for a generation
-  benchmark        Run benchmark (multiple runs, aggregate stats)
-  export           Export strategy package for a scenario
-  export-training-data  Export training data as JSONL
-  import-package   Import a strategy package from file
-  new-scenario     Create or scaffold a scenario
-  capabilities     Show available scenarios, providers, and features (JSON)
-  login            Store provider credentials persistently
-  whoami           Show current auth status and provider
-  logout           Clear stored provider credentials
-  providers        List all known providers with auth status (JSON)
-  models           List available models for authenticated providers (JSON)
-  campaign         Manage multi-mission campaigns
-  tui              Start interactive TUI (WebSocket server + Ink UI)
-  judge            One-shot evaluation of output against a rubric
-  improve          Run multi-round improvement loop
-  repl             Run a direct REPL-loop session
-  queue            Add a task to the background runner queue
-  status           Show queue status
-  serve            Start HTTP API server [--json]
-  train            Train a distilled model from curated dataset (requires configured executor)
-  simulate         Run a plain-language simulation with sweeps and analysis
-  investigate      Run a plain-language investigation with evidence and hypotheses
-  analyze          Analyze and compare runs, simulations, investigations, and missions
-  mcp-serve        Start MCP server on stdio
-  version          Show version
+const NO_DB_COMMAND_HANDLERS: Record<NoDbCommandName, () => Promise<void>> = {
+  init: cmdInit,
+  capabilities: cmdCapabilities,
+  login: cmdLogin,
+  whoami: cmdWhoami,
+  logout: cmdLogout,
+  providers: cmdProviders,
+  models: cmdModels,
+  train: cmdTrain,
+  simulate: cmdSimulate,
+  investigate: cmdInvestigate,
+  analyze: cmdAnalyze,
+  blob: cmdBlob,
+  "production-traces": cmdProductionTraces,
+  instrument: cmdInstrument,
+};
 
-Control plane (Layer 7-9):
-  candidate        Register/list/show/lineage/rollback control-plane artifacts
-  eval             Attach/list EvalRuns on artifacts
-  promotion        Decide/apply/history for promotion transitions
-  registry         Repair/validate/migrate the control-plane registry
-  emit-pr          Generate a promotion PR (or dry-run bundle) for a candidate
-  production-traces Ingest/list/show/stats/build-dataset/export/policy/rotate-salt/prune (Foundation A — AC-539)
-  instrument       Scan a repo for LLM clients and propose/apply Autocontext wrappers (A2-I — AC-540)
-
-Python-only commands (not supported in npm package):
-  ecosystem, ab-test, resume, wait, trigger-distillation
-
-Run \`autoctx <command> --help\` for command-specific options.
-
-Install: npm install -g autoctx
-Note: The npm package is \`autoctx\`, not \`autocontext\` (different package).
-`.trim();
+const DB_COMMAND_HANDLERS: Record<DbCommandName, (dbPath: string) => Promise<void>> = {
+  mission: cmdMission,
+  campaign: cmdCampaign,
+  run: cmdRun,
+  list: cmdList,
+  replay: cmdReplay,
+  benchmark: cmdBenchmark,
+  export: cmdExport,
+  "export-training-data": cmdExportTrainingData,
+  "import-package": cmdImportPackage,
+  "new-scenario": cmdNewScenario,
+  tui: cmdTui,
+  judge: cmdJudge,
+  improve: cmdImprove,
+  repl: cmdRepl,
+  queue: cmdQueue,
+  status: cmdStatus,
+  serve: cmdServeHttp,
+  "mcp-serve": cmdMcpServe,
+};
 
 async function main(): Promise<void> {
   const command = process.argv[2];
@@ -97,118 +92,36 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (command === "version" || command === "--version") {
+  if (command === "--version") {
     const pkg = await import("../../package.json", { with: { type: "json" } });
     console.log(pkg.default.version);
     process.exit(0);
   }
 
-  switch (command) {
-    case "init":
-      await cmdInit();
+  const route = resolveCliCommand(command);
+  switch (route.kind) {
+    case "version": {
+      const pkg = await import("../../package.json", { with: { type: "json" } });
+      console.log(pkg.default.version);
       break;
-    case "capabilities":
-      await cmdCapabilities();
+    }
+    case "no-db":
+      await NO_DB_COMMAND_HANDLERS[route.command]();
       break;
-    case "login":
-      await cmdLogin();
+    case "db":
+      await DB_COMMAND_HANDLERS[route.command](await getDbPath());
       break;
-    case "whoami":
-      await cmdWhoami();
+    case "control-plane":
+      await cmdControlPlane(route.command as ControlPlaneCommandName);
       break;
-    case "logout":
-      await cmdLogout();
-      break;
-    case "providers":
-      await cmdProviders();
-      break;
-    case "models":
-      await cmdModels();
-      break;
-    case "mission":
-      await cmdMission(await getDbPath());
-      break;
-    case "campaign":
-      await cmdCampaign(await getDbPath());
-      break;
-    case "run":
-      await cmdRun(await getDbPath());
-      break;
-    case "list":
-      await cmdList(await getDbPath());
-      break;
-    case "replay":
-      await cmdReplay(await getDbPath());
-      break;
-    case "benchmark":
-      await cmdBenchmark(await getDbPath());
-      break;
-    case "export":
-      await cmdExport(await getDbPath());
-      break;
-    case "export-training-data":
-      await cmdExportTrainingData(await getDbPath());
-      break;
-    case "import-package":
-      await cmdImportPackage(await getDbPath());
-      break;
-    case "new-scenario":
-      await cmdNewScenario(await getDbPath());
-      break;
-    case "tui":
-      await cmdTui(await getDbPath());
-      break;
-    case "judge":
-      await cmdJudge(await getDbPath());
-      break;
-    case "improve":
-      await cmdImprove(await getDbPath());
-      break;
-    case "repl":
-      await cmdRepl(await getDbPath());
-      break;
-    case "queue":
-      await cmdQueue(await getDbPath());
-      break;
-    case "status":
-      await cmdStatus(await getDbPath());
-      break;
-    case "serve":
-      await cmdServeHttp(await getDbPath());
-      break;
-    case "mcp-serve":
-      await cmdMcpServe(await getDbPath());
-      break;
-    case "train":
-      await cmdTrain();
-      break;
-    case "simulate":
-      await cmdSimulate();
-      break;
-    case "investigate":
-      await cmdInvestigate();
-      break;
-    case "analyze":
-      await cmdAnalyze();
-      break;
-    case "blob":
-      await cmdBlob();
-      break;
-    case "candidate":
-    case "eval":
-    case "promotion":
-    case "registry":
-    case "emit-pr":
-      await cmdControlPlane(command);
-      break;
-    case "production-traces":
-      await cmdProductionTraces();
-      break;
-    case "instrument":
-      await cmdInstrument();
-      break;
-    default:
-      console.error(`Unknown command: ${command}\n`);
+    case "python-only":
+      console.error(
+        `${route.command} is only supported by the Python package, not the npm CLI.\n`,
+      );
+      console.log(HELP);
+      process.exit(1);
+    case "unknown":
+      console.error(`Unknown command: ${route.command}\n`);
       console.log(HELP);
       process.exit(1);
   }
