@@ -6,9 +6,6 @@
  * Mirror of Python ``_proxy.py``.
  */
 import { ulid } from "ulid";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { TraceSink } from "./sink.js";
 import { currentSession } from "./session.js";
 import { mapExceptionToReason } from "./taxonomy.js";
@@ -20,80 +17,19 @@ import {
   type RequestSnapshot,
 } from "./trace-builder.js";
 import {
-  hashUserId,
-  hashSessionId,
-  installSaltPath,
-} from "../../production-traces/sdk/hashing.js";
+  buildProviderSourceInfo,
+  finishInvocationTiming,
+  resolveProviderIdentity,
+  startInvocationClock,
+} from "../_shared/proxy-runtime.js";
 import { AsyncStreamProxy } from "./stream-proxy.js";
 
 export const WRAPPED_SENTINEL = Symbol.for("autocontext.wrapped");
-
-function _nowIso(): string {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-}
 
 function _isAsyncClient(client: unknown): boolean {
   // Check by class name to avoid ESM require() issues with the openai package
   const className = (client as object)?.constructor?.name ?? "";
   return className.startsWith("Async");
-}
-
-function _resolveIdentity(perCall: Record<string, string> | null | undefined): Record<string, string> {
-  let raw: Record<string, string> = {};
-  if (perCall) {
-    if (perCall["user_id"] != null) raw["user_id"] = perCall["user_id"];
-    if (perCall["session_id"] != null) raw["session_id"] = perCall["session_id"];
-  }
-  if (Object.keys(raw).length === 0) {
-    const ambient = currentSession();
-    if (ambient.userId) raw["user_id"] = ambient.userId;
-    if (ambient.sessionId) raw["session_id"] = ambient.sessionId;
-  }
-  if (Object.keys(raw).length === 0) return {};
-  // Load salt synchronously using readFileSync
-  const salt = _loadSaltSync(".");
-  if (!salt) return {}; // no salt → skip hashing (spec: no identity without salt)
-  const hashed: Record<string, string> = {};
-  if (raw["user_id"]) hashed["user_id_hash"] = hashUserId(raw["user_id"], salt);
-  if (raw["session_id"]) hashed["session_id_hash"] = hashSessionId(raw["session_id"], salt);
-  return hashed;
-}
-
-function _loadSaltSync(cwd: string): string | null {
-  try {
-    const saltPath = installSaltPath(cwd);
-    if (!existsSync(saltPath)) return null;
-    const content = readFileSync(saltPath, "utf-8").trim();
-    return content || null;
-  } catch {
-    return null;
-  }
-}
-
-let _cachedVersion: string | null = null;
-
-function _resolvePackageVersion(): string {
-  if (_cachedVersion !== null) return _cachedVersion;
-  try {
-    let dir = dirname(fileURLToPath(import.meta.url));
-    for (let depth = 0; depth < 10; depth++) {
-      const candidate = join(dir, "package.json");
-      if (existsSync(candidate)) {
-        const pkg = JSON.parse(readFileSync(candidate, "utf-8")) as { name?: string; version?: string };
-        if (pkg.name === "autoctx" && typeof pkg.version === "string") {
-          _cachedVersion = pkg.version;
-          return _cachedVersion;
-        }
-      }
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  } catch {
-    // best-effort
-  }
-  _cachedVersion = "0.0.0";
-  return _cachedVersion;
 }
 
 export class ClientProxy {
@@ -117,7 +53,7 @@ export class ClientProxy {
   }
 
   _sourceInfo(): { emitter: string; sdk: { name: string; version: string } } {
-    return { emitter: "sdk", sdk: { name: "autocontext-ts", version: _resolvePackageVersion() } };
+    return buildProviderSourceInfo(import.meta.url);
   }
 
   _env(): { environmentTag: string; appId: string } {
@@ -136,7 +72,7 @@ export class ClientProxy {
   _invokeNonStreaming(kwargs: Record<string, unknown>): unknown {
     const perCall = kwargs["autocontext"] as Record<string, string> | null;
     delete kwargs["autocontext"];
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const snapshot = buildRequestSnapshot({
       model: String(kwargs["model"] ?? ""),
       messages: (kwargs["messages"] as Array<Record<string, unknown>>) ?? [],
@@ -144,19 +80,17 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     let response: unknown;
     try {
       const inner = this._inner as Record<string, { completions: { create: (k: unknown) => unknown } }>;
       response = inner["chat"]["completions"]["create"](kwargs);
     } catch (exc) {
-      const endedAt = _nowIso();
-      const latencyMs = Date.now() - startedMonotonic;
+      const timing = finishInvocationTiming(clock);
       const trace = buildFailureTrace({
         requestSnapshot: snapshot,
         identity,
-        timing: { startedAt, endedAt, latencyMs },
+        timing,
         env: this._env(),
         sourceInfo: this._sourceInfo(),
         traceId: ulid(),
@@ -170,8 +104,7 @@ export class ClientProxy {
     // Response is a Promise for async, but for sync OpenAI this is direct
     return (response as Promise<unknown>).then(
       (resp) => {
-        const endedAt = _nowIso();
-        const latencyMs = Date.now() - startedMonotonic;
+        const timing = finishInvocationTiming(clock);
         const r = resp as Record<string, unknown>;
         const usage = r["usage"] as Record<string, unknown> | null;
         let toolCalls: Array<Record<string, unknown>> | null = null;
@@ -186,7 +119,7 @@ export class ClientProxy {
           responseUsage: usage,
           responseToolCalls: toolCalls,
           identity,
-          timing: { startedAt, endedAt, latencyMs },
+          timing,
           env: this._env(),
           sourceInfo: this._sourceInfo(),
           traceId: ulid(),
@@ -195,12 +128,11 @@ export class ClientProxy {
         return resp;
       },
       (exc: unknown) => {
-        const endedAt = _nowIso();
-        const latencyMs = Date.now() - startedMonotonic;
+        const timing = finishInvocationTiming(clock);
         const trace = buildFailureTrace({
           requestSnapshot: snapshot,
           identity,
-          timing: { startedAt, endedAt, latencyMs },
+          timing,
           env: this._env(),
           sourceInfo: this._sourceInfo(),
           traceId: ulid(),
@@ -217,7 +149,7 @@ export class ClientProxy {
   async _invokeNonStreamingAsync(kwargs: Record<string, unknown>): Promise<unknown> {
     const perCall = kwargs["autocontext"] as Record<string, string> | null;
     delete kwargs["autocontext"];
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const snapshot = buildRequestSnapshot({
       model: String(kwargs["model"] ?? ""),
       messages: (kwargs["messages"] as Array<Record<string, unknown>>) ?? [],
@@ -225,19 +157,17 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     let resp: unknown;
     try {
       const inner = this._inner as Record<string, { completions: { create: (k: unknown) => Promise<unknown> } }>;
       resp = await inner["chat"]["completions"]["create"](kwargs);
     } catch (exc) {
-      const endedAt = _nowIso();
-      const latencyMs = Date.now() - startedMonotonic;
+      const timing = finishInvocationTiming(clock);
       const trace = buildFailureTrace({
         requestSnapshot: snapshot,
         identity,
-        timing: { startedAt, endedAt, latencyMs },
+        timing,
         env: this._env(),
         sourceInfo: this._sourceInfo(),
         traceId: ulid(),
@@ -248,8 +178,7 @@ export class ClientProxy {
       this._sink.add(trace as unknown as Record<string, unknown>);
       throw exc;
     }
-    const endedAt = _nowIso();
-    const latencyMs = Date.now() - startedMonotonic;
+    const timing = finishInvocationTiming(clock);
     const r = resp as Record<string, unknown>;
     const usage = r["usage"] as Record<string, unknown> | null;
     let toolCalls: Array<Record<string, unknown>> | null = null;
@@ -264,7 +193,7 @@ export class ClientProxy {
       responseUsage: usage,
       responseToolCalls: toolCalls,
       identity,
-      timing: { startedAt, endedAt, latencyMs },
+      timing,
       env: this._env(),
       sourceInfo: this._sourceInfo(),
       traceId: ulid(),
@@ -282,7 +211,7 @@ export class ClientProxy {
       streamOpts["include_usage"] = true;
       kwargs["stream_options"] = streamOpts;
     }
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const snapshot = buildRequestSnapshot({
       model: String(kwargs["model"] ?? ""),
       messages: (kwargs["messages"] as Array<Record<string, unknown>>) ?? [],
@@ -290,8 +219,7 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     const sink = this._sink;
     const env = this._env();
     const sourceInfo = this._sourceInfo();
@@ -303,13 +231,12 @@ export class ClientProxy {
     const accRef: { accumulator: Record<string, unknown> | null } = { accumulator: null };
 
     const onFinalize = (outcome: Record<string, unknown>): void => {
-      const endedAt = _nowIso();
-      const latencyMs = Date.now() - startedMonotonic;
+      const timing = finishInvocationTiming(clock);
       const acc = accRef.accumulator ?? { usage: null, toolCalls: null };
       const trace = finalizeStreamingTrace({
         requestSnapshot: snapshot,
         identity,
-        timing: { startedAt, endedAt, latencyMs },
+        timing,
         env,
         sourceInfo,
         traceId: ulid(),
@@ -335,7 +262,7 @@ export class ClientProxy {
       streamOpts["include_usage"] = true;
       kwargs["stream_options"] = streamOpts;
     }
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const snapshot = buildRequestSnapshot({
       model: String(kwargs["model"] ?? ""),
       messages: (kwargs["messages"] as Array<Record<string, unknown>>) ?? [],
@@ -343,8 +270,7 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     const sink = this._sink;
     const env = this._env();
     const sourceInfo = this._sourceInfo();
@@ -352,13 +278,12 @@ export class ClientProxy {
     const accRef: { accumulator: Record<string, unknown> | null } = { accumulator: null };
 
     const onFinalize = (outcome: Record<string, unknown>): void => {
-      const endedAt = _nowIso();
-      const latencyMs = Date.now() - startedMonotonic;
+      const timing = finishInvocationTiming(clock);
       const acc = accRef.accumulator ?? { usage: null, tool_calls: null };
       const trace = finalizeStreamingTrace({
         requestSnapshot: snapshot,
         identity,
-        timing: { startedAt, endedAt, latencyMs },
+        timing,
         env,
         sourceInfo,
         traceId: ulid(),
@@ -387,7 +312,7 @@ export class ClientProxy {
   ): unknown {
     const perCall = kwargs["autocontext"] as Record<string, string> | null;
     delete kwargs["autocontext"];
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const model = String(kwargs["model"] ?? "");
     const snapshot = buildRequestSnapshot({
       model,
@@ -396,14 +321,12 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages" && k !== "input"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     const inner = this._inner as Record<string, { create: (k: unknown) => unknown }>;
     const result = inner["responses"]["create"](kwargs);
     return (result as Promise<unknown>).then(
       (resp) => {
-        const endedAt = _nowIso();
-        const latencyMs = Date.now() - startedMonotonic;
+        const timing = finishInvocationTiming(clock);
         const r = resp as Record<string, unknown>;
         const usage = r["usage"] as Record<string, unknown> | null;
         const trace = buildSuccessTrace({
@@ -411,7 +334,7 @@ export class ClientProxy {
           responseUsage: usage,
           responseToolCalls: null,
           identity,
-          timing: { startedAt, endedAt, latencyMs },
+          timing,
           env: this._env(),
           sourceInfo: this._sourceInfo(),
           traceId: ulid(),
@@ -420,12 +343,11 @@ export class ClientProxy {
         return resp;
       },
       (exc: unknown) => {
-        const endedAt = _nowIso();
-        const latencyMs = Date.now() - startedMonotonic;
+        const timing = finishInvocationTiming(clock);
         const trace = buildFailureTrace({
           requestSnapshot: snapshot,
           identity,
-          timing: { startedAt, endedAt, latencyMs },
+          timing,
           env: this._env(),
           sourceInfo: this._sourceInfo(),
           traceId: ulid(),

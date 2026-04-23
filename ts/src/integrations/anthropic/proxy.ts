@@ -5,9 +5,6 @@
  * access passes through transparently. Mirror of Python _proxy.py for Anthropic.
  */
 import { ulid } from "ulid";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { TraceSink } from "../_shared/sink.js";
 import { currentSession } from "../_shared/session.js";
 import { mapExceptionToReason } from "./taxonomy.js";
@@ -20,79 +17,14 @@ import {
 } from "./trace-builder.js";
 import { AnthropicStreamProxy, wrapHelperStream } from "./stream-proxy.js";
 import {
-  hashUserId,
-  hashSessionId,
-  installSaltPath,
-} from "../../production-traces/sdk/hashing.js";
+  buildProviderSourceInfo,
+  finishInvocationTiming,
+  resolveProviderIdentity,
+  startInvocationClock,
+} from "../_shared/proxy-runtime.js";
 import type { ContentBlock } from "./content.js";
 
 export const WRAPPED_SENTINEL = Symbol.for("autocontext.wrapped");
-
-function _nowIso(): string {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-}
-
-function _resolveIdentity(
-  perCall: Record<string, string> | null | undefined,
-): Record<string, string> {
-  let raw: Record<string, string> = {};
-  if (perCall) {
-    if (perCall["user_id"] != null) raw["user_id"] = perCall["user_id"];
-    if (perCall["session_id"] != null) raw["session_id"] = perCall["session_id"];
-  }
-  if (Object.keys(raw).length === 0) {
-    const ambient = currentSession();
-    if (ambient.userId) raw["user_id"] = ambient.userId;
-    if (ambient.sessionId) raw["session_id"] = ambient.sessionId;
-  }
-  if (Object.keys(raw).length === 0) return {};
-  const salt = _loadSaltSync(".");
-  if (!salt) return {};
-  const hashed: Record<string, string> = {};
-  if (raw["user_id"]) hashed["user_id_hash"] = hashUserId(raw["user_id"], salt);
-  if (raw["session_id"]) hashed["session_id_hash"] = hashSessionId(raw["session_id"], salt);
-  return hashed;
-}
-
-function _loadSaltSync(cwd: string): string | null {
-  try {
-    const saltPath = installSaltPath(cwd);
-    if (!existsSync(saltPath)) return null;
-    const content = readFileSync(saltPath, "utf-8").trim();
-    return content || null;
-  } catch {
-    return null;
-  }
-}
-
-let _cachedVersion: string | null = null;
-
-function _resolvePackageVersion(): string {
-  if (_cachedVersion !== null) return _cachedVersion;
-  try {
-    let dir = dirname(fileURLToPath(import.meta.url));
-    for (let depth = 0; depth < 10; depth++) {
-      const candidate = join(dir, "package.json");
-      if (existsSync(candidate)) {
-        const pkg = JSON.parse(readFileSync(candidate, "utf-8")) as {
-          name?: string;
-          version?: string;
-        };
-        if (pkg.name === "autoctx" && typeof pkg.version === "string") {
-          _cachedVersion = pkg.version;
-          return _cachedVersion;
-        }
-      }
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  } catch {
-    // best-effort
-  }
-  _cachedVersion = "0.0.0";
-  return _cachedVersion;
-}
 
 function _responseUsageAndContent(resp: Record<string, unknown>): {
   usage: Record<string, unknown> | null;
@@ -125,10 +57,7 @@ export class ClientProxy {
   }
 
   _sourceInfo(): { emitter: string; sdk: { name: string; version: string } } {
-    return {
-      emitter: "sdk",
-      sdk: { name: "autocontext-ts", version: _resolvePackageVersion() },
-    };
+    return buildProviderSourceInfo(import.meta.url);
   }
 
   _env(): { environmentTag: string; appId: string } {
@@ -138,7 +67,7 @@ export class ClientProxy {
   async _invokeNonStreaming(kwargs: Record<string, unknown>): Promise<unknown> {
     const perCall = kwargs["autocontext"] as Record<string, string> | null;
     delete kwargs["autocontext"];
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const snapshot: RequestSnapshot = buildRequestSnapshot({
       model: String(kwargs["model"] ?? ""),
       messages: (kwargs["messages"] as Array<Record<string, unknown>>) ?? [],
@@ -146,8 +75,7 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     let resp: unknown;
     try {
       const inner = this._inner as {
@@ -155,12 +83,11 @@ export class ClientProxy {
       };
       resp = await inner.messages.create(kwargs);
     } catch (exc) {
-      const endedAt = _nowIso();
-      const latencyMs = Date.now() - startedMonotonic;
+      const timing = finishInvocationTiming(clock);
       const trace = buildFailureTrace({
         requestSnapshot: snapshot,
         identity,
-        timing: { startedAt, endedAt, latencyMs },
+        timing,
         env: this._env(),
         sourceInfo: this._sourceInfo(),
         traceId: ulid(),
@@ -171,8 +98,7 @@ export class ClientProxy {
       this._sink.add(trace as unknown as Record<string, unknown>);
       throw exc;
     }
-    const endedAt = _nowIso();
-    const latencyMs = Date.now() - startedMonotonic;
+    const timing = finishInvocationTiming(clock);
     const r = resp as Record<string, unknown>;
     const usage = (r["usage"] as Record<string, unknown>) ?? null;
     const content = (r["content"] as Array<Record<string, unknown>>) ?? [];
@@ -183,7 +109,7 @@ export class ClientProxy {
       responseUsage: usage,
       responseStopReason: stopReason,
       identity,
-      timing: { startedAt, endedAt, latencyMs },
+      timing,
       env: this._env(),
       sourceInfo: this._sourceInfo(),
       traceId: ulid(),
@@ -195,7 +121,7 @@ export class ClientProxy {
   _invokeStreaming(kwargs: Record<string, unknown>): AnthropicStreamProxy {
     const perCall = kwargs["autocontext"] as Record<string, string> | null;
     delete kwargs["autocontext"];
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const snapshot: RequestSnapshot = buildRequestSnapshot({
       model: String(kwargs["model"] ?? ""),
       messages: (kwargs["messages"] as Array<Record<string, unknown>>) ?? [],
@@ -203,8 +129,7 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     const inner = this._inner as {
       messages: { create: (k: unknown) => unknown };
     };
@@ -219,12 +144,11 @@ export class ClientProxy {
       stopReason: string | null,
       outcome: Record<string, unknown>,
     ): void => {
-      const endedAt = _nowIso();
-      const latencyMs = Date.now() - startedMonotonic;
+      const timing = finishInvocationTiming(clock);
       const trace = finalizeStreamingTrace({
         requestSnapshot: snapshot,
         identity,
-        timing: { startedAt, endedAt, latencyMs },
+        timing,
         env,
         sourceInfo,
         traceId: ulid(),
@@ -242,7 +166,7 @@ export class ClientProxy {
   _invokeHelperStreaming(kwargs: Record<string, unknown>): unknown {
     const perCall = kwargs["autocontext"] as Record<string, string> | null;
     delete kwargs["autocontext"];
-    const identity = _resolveIdentity(perCall);
+    const identity = resolveProviderIdentity(perCall, currentSession());
     const snapshot: RequestSnapshot = buildRequestSnapshot({
       model: String(kwargs["model"] ?? ""),
       messages: (kwargs["messages"] as Array<Record<string, unknown>>) ?? [],
@@ -250,8 +174,7 @@ export class ClientProxy {
         Object.entries(kwargs).filter(([k]) => k !== "model" && k !== "messages"),
       ),
     });
-    const startedAt = _nowIso();
-    const startedMonotonic = Date.now();
+    const clock = startInvocationClock();
     const inner = this._inner as {
       messages: { stream: (k: unknown) => unknown };
     };
@@ -263,8 +186,7 @@ export class ClientProxy {
     return wrapHelperStream({
       innerHelper: helper,
       onFinalize: (message, outcome) => {
-        const endedAt = _nowIso();
-        const latencyMs = Date.now() - startedMonotonic;
+        const timing = finishInvocationTiming(clock);
         const { usage, content, stopReason } = _responseUsageAndContent(message);
         const trace = buildSuccessTrace({
           requestSnapshot: snapshot,
@@ -272,7 +194,7 @@ export class ClientProxy {
           responseUsage: usage,
           responseStopReason: stopReason,
           identity,
-          timing: { startedAt, endedAt, latencyMs },
+          timing,
           env,
           sourceInfo,
           traceId: ulid(),
@@ -282,12 +204,11 @@ export class ClientProxy {
         );
       },
       onFailure: (exc) => {
-        const endedAt = _nowIso();
-        const latencyMs = Date.now() - startedMonotonic;
+        const timing = finishInvocationTiming(clock);
         const trace = buildFailureTrace({
           requestSnapshot: snapshot,
           identity,
-          timing: { startedAt, endedAt, latencyMs },
+          timing,
           env,
           sourceInfo,
           traceId: ulid(),
