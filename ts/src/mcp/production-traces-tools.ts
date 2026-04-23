@@ -167,13 +167,17 @@ export function registerProductionTracesTools(server: McpToolRegistrar): void {
   // build-dataset
   server.tool(
     "production_traces_build_dataset",
-    "Build an evaluation dataset from curated traces (spec AC-541). Wires registry-backed RubricLookup.",
+    "Build an evaluation dataset from curated traces (spec AC-541). Supports CLI filters and wires registry-backed RubricLookup.",
     {
       cwd: z.string().optional(),
       name: z.string(),
       config: z.string().optional(),
       since: z.string().optional(),
       until: z.string().optional(),
+      provider: z.string().optional(),
+      app: z.string().optional(),
+      env: z.string().optional(),
+      outcome: z.string().optional(),
       clusterStrategy: z.enum(["taskType", "rules"]).optional(),
       rules: z.string().optional(),
       rubrics: z.string().optional(),
@@ -186,6 +190,10 @@ export function registerProductionTracesTools(server: McpToolRegistrar): void {
       if (typeof args.config === "string") argv.push("--config", args.config);
       if (typeof args.since === "string") argv.push("--since", args.since);
       if (typeof args.until === "string") argv.push("--until", args.until);
+      for (const k of ["provider", "app", "env", "outcome"] as const) {
+        const v = args[k];
+        if (typeof v === "string" && v.length > 0) argv.push(`--${k}`, v);
+      }
       if (typeof args.clusterStrategy === "string") argv.push("--cluster-strategy", args.clusterStrategy);
       if (typeof args.rules === "string") argv.push("--rules", args.rules);
       if (typeof args.rubrics === "string") argv.push("--rubrics", args.rubrics);
