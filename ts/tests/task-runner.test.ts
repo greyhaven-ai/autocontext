@@ -3,7 +3,12 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SQLiteStore } from "../src/storage/index.js";
-import { TaskRunner, SimpleAgentTask, enqueueTask } from "../src/execution/task-runner.js";
+import {
+  TaskRunner,
+  SimpleAgentTask,
+  createTaskRunnerFromSettings,
+  enqueueTask,
+} from "../src/execution/task-runner.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
@@ -339,6 +344,43 @@ describe("TaskRunner.runBatch", () => {
       taskId: id,
       browserUrl: "https://status.example.com",
       referenceContext: "Saved facts",
+    });
+  });
+
+  it("builds the browser reference context service from app settings", async () => {
+    const store = createStore();
+    const browserContextService = {
+      buildReferenceContext: vi.fn(async () =>
+        "Live browser context:\nVisible text: Checkout is degraded"),
+    };
+    const createBrowserContextService = vi.fn(() => browserContextService);
+    const id = enqueueTask(store, "browser-settings-spec", {
+      taskPrompt: "Summarize current status",
+      rubric: "Be accurate",
+      initialOutput: "Draft",
+      browserUrl: "https://status.example.com",
+    });
+    const settings = {
+      browserEnabled: true,
+      knowledgeRoot: "/tmp/knowledge",
+      runsRoot: "/tmp/runs",
+    };
+
+    const runner = createTaskRunnerFromSettings({
+      settings: settings as never,
+      store,
+      provider: makeMockProvider(),
+      createBrowserContextService,
+    });
+    const result = await runner.runOnce();
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("completed");
+    expect(createBrowserContextService).toHaveBeenCalledWith(settings);
+    expect(browserContextService.buildReferenceContext).toHaveBeenCalledWith({
+      taskId: id,
+      browserUrl: "https://status.example.com",
+      referenceContext: undefined,
     });
   });
 });

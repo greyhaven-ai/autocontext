@@ -8,6 +8,7 @@ import type {
   AgentTaskInterface,
   AgentTaskResult,
 } from "../types/index.js";
+import type { AppSettings } from "../config/index.js";
 import { type DelegatedResult, type JudgeInterface } from "../judge/delegated.js";
 import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
@@ -22,7 +23,10 @@ import {
 } from "./task-runner-config.js";
 import type { TaskConfig } from "./task-runner-config.js";
 import { executeQueuedTaskWorkflow } from "./task-processing-workflow.js";
-import type { QueuedTaskBrowserContextService } from "./queued-task-browser-context.js";
+import {
+  createQueuedTaskBrowserContextService,
+  type QueuedTaskBrowserContextService,
+} from "./queued-task-browser-context.js";
 import {
   evaluateSimpleAgentTaskOutput,
   generateSimpleAgentTaskOutput,
@@ -163,6 +167,14 @@ export interface TaskRunnerOpts {
   concurrency?: number;
 }
 
+export interface TaskRunnerFromSettingsOpts
+  extends Omit<TaskRunnerOpts, "knowledgeRoot" | "browserContextService"> {
+  settings: AppSettings;
+  knowledgeRoot?: string;
+  browserContextService?: QueuedTaskBrowserContextService;
+  createBrowserContextService?: typeof createQueuedTaskBrowserContextService;
+}
+
 export class TaskRunner {
   #store: SQLiteStore;
   #provider: LLMProvider;
@@ -249,4 +261,24 @@ export function enqueueTask(
   opts?: EnqueueTaskRequest,
 ): string {
   return enqueueConfiguredTask(store, specName, opts);
+}
+
+export function createTaskRunnerFromSettings(opts: TaskRunnerFromSettingsOpts): TaskRunner {
+  const createBrowserContextService =
+    opts.createBrowserContextService ?? createQueuedTaskBrowserContextService;
+  const browserContextService = opts.browserContextService
+    ?? (opts.settings.browserEnabled
+      ? createBrowserContextService(opts.settings)
+      : undefined);
+
+  return new TaskRunner({
+    store: opts.store,
+    provider: opts.provider,
+    model: opts.model,
+    knowledgeRoot: opts.knowledgeRoot ?? opts.settings.knowledgeRoot,
+    browserContextService,
+    pollInterval: opts.pollInterval,
+    maxConsecutiveEmpty: opts.maxConsecutiveEmpty,
+    concurrency: opts.concurrency,
+  });
 }

@@ -143,8 +143,17 @@ export {
 export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improvement-loop.js";
 export type { ImprovementLoopOpts } from "./execution/improvement-loop.js";
 export { cleanRevisionOutput } from "./execution/output-cleaner.js";
-export { TaskRunner, SimpleAgentTask, enqueueTask } from "./execution/task-runner.js";
-export type { TaskRunnerOpts, TaskConfig } from "./execution/task-runner.js";
+export {
+  TaskRunner,
+  SimpleAgentTask,
+  enqueueTask,
+  createTaskRunnerFromSettings,
+} from "./execution/task-runner.js";
+export type {
+  TaskRunnerOpts,
+  TaskRunnerFromSettingsOpts,
+  TaskConfig,
+} from "./execution/task-runner.js";
 export { JudgeExecutor } from "./execution/judge-executor.js";
 export { ActionFilterHarness, ActionDictSchema } from "./execution/action-filter.js";
 export type { ActionDict, ScenarioLike, HarnessLoaderLike } from "./execution/action-filter.js";
