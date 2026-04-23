@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from autocontext.storage.migration_ledgers import TYPESCRIPT_BASELINE_MIGRATIONS
+
 _BOOTSTRAP_MIGRATIONS = (
     "001_initial.sql",
     "002_phase3_phase7.sql",
@@ -33,6 +35,14 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_version (
+            filename TEXT PRIMARY KEY,
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         """
@@ -326,4 +336,8 @@ def bootstrap_core_schema(conn: sqlite3.Connection) -> None:
     conn.executemany(
         "INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)",
         [(version,) for version in _BOOTSTRAP_MIGRATIONS],
+    )
+    conn.executemany(
+        "INSERT OR IGNORE INTO schema_version(filename) VALUES (?)",
+        [(version,) for version in TYPESCRIPT_BASELINE_MIGRATIONS],
     )

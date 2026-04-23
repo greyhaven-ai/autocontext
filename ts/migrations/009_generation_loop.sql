@@ -56,3 +56,46 @@ CREATE TABLE IF NOT EXISTS agent_outputs (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (run_id, generation_index) REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS generation_recovery (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    generation_index INTEGER NOT NULL,
+    decision TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    retry_count INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (run_id, generation_index) REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS agent_role_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    generation_index INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    latency_ms INTEGER NOT NULL,
+    subagent_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'completed',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (run_id, generation_index) REFERENCES generations(run_id, generation_index) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scenario TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    best_score REAL NOT NULL,
+    best_elo REAL NOT NULL,
+    playbook_hash TEXT NOT NULL,
+    agent_provider TEXT NOT NULL DEFAULT '',
+    rlm_enabled INTEGER NOT NULL DEFAULT 0,
+    scoring_backend TEXT NOT NULL DEFAULT 'elo',
+    rating_uncertainty REAL DEFAULT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_snapshots_scenario
+    ON knowledge_snapshots(scenario, best_score DESC);
