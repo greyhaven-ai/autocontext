@@ -120,7 +120,7 @@ class TestTuningLoadAtStartup:
         artifacts.read_tuning.return_value = tuning_data.to_json()
         tb = _make_trajectory_builder()
 
-        with patch("autocontext.loop.stages.build_prompt_bundle", return_value=_mock_prompt_bundle()):
+        with patch("autocontext.loop.stage_helpers.semantic_benchmark.build_prompt_bundle", return_value=_mock_prompt_bundle()):
             result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=tb)
 
         artifacts.read_tuning.assert_called_once_with("grid_ctf")
@@ -137,7 +137,7 @@ class TestTuningLoadAtStartup:
         artifacts = _make_artifacts()
         tb = _make_trajectory_builder()
 
-        with patch("autocontext.loop.stages.build_prompt_bundle", return_value=_mock_prompt_bundle()):
+        with patch("autocontext.loop.stage_helpers.semantic_benchmark.build_prompt_bundle", return_value=_mock_prompt_bundle()):
             stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=tb)
 
         artifacts.read_tuning.assert_not_called()
@@ -152,7 +152,7 @@ class TestTuningLoadAtStartup:
         artifacts.read_tuning.return_value = ""
         tb = _make_trajectory_builder()
 
-        with patch("autocontext.loop.stages.build_prompt_bundle", return_value=_mock_prompt_bundle()):
+        with patch("autocontext.loop.stage_helpers.semantic_benchmark.build_prompt_bundle", return_value=_mock_prompt_bundle()):
             result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=tb)
 
         assert result.settings.matches_per_generation == 3  # unchanged
@@ -184,7 +184,7 @@ class TestProtocolOverrides:
         artifacts.read_research_protocol.return_value = protocol.to_markdown()
         tb = _make_trajectory_builder()
 
-        with patch("autocontext.loop.stages.build_prompt_bundle", return_value=_mock_prompt_bundle()):
+        with patch("autocontext.loop.stage_helpers.semantic_benchmark.build_prompt_bundle", return_value=_mock_prompt_bundle()):
             result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=tb)
 
         artifacts.read_research_protocol.assert_called_once_with("grid_ctf")
@@ -201,7 +201,7 @@ class TestProtocolOverrides:
         artifacts = _make_artifacts()
         tb = _make_trajectory_builder()
 
-        with patch("autocontext.loop.stages.build_prompt_bundle", return_value=_mock_prompt_bundle()):
+        with patch("autocontext.loop.stage_helpers.semantic_benchmark.build_prompt_bundle", return_value=_mock_prompt_bundle()):
             stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=tb)
 
         artifacts.read_research_protocol.assert_not_called()
@@ -216,7 +216,7 @@ class TestProtocolOverrides:
         artifacts.read_research_protocol.return_value = ""
         tb = _make_trajectory_builder()
 
-        with patch("autocontext.loop.stages.build_prompt_bundle", return_value=_mock_prompt_bundle()):
+        with patch("autocontext.loop.stage_helpers.semantic_benchmark.build_prompt_bundle", return_value=_mock_prompt_bundle()):
             result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=tb)
 
         assert result.settings.exploration_mode == "linear"

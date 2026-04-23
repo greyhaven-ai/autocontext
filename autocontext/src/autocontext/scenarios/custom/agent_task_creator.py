@@ -24,6 +24,13 @@ from autocontext.scenarios.custom.agent_task_validator import (
     validate_execution,
     validate_intent,
 )
+from autocontext.scenarios.custom.classifier_cache import (
+    ClassifierCache,
+    default_classifier_cache_path,
+)
+from autocontext.scenarios.custom.classifier_input import (
+    build_family_classification_brief,
+)
 from autocontext.scenarios.custom.creator_registry import FAMILY_CONFIGS, create_for_family
 from autocontext.scenarios.custom.family_classifier import (
     classify_scenario_family,
@@ -90,7 +97,13 @@ class AgentTaskCreator:
         if family_name:
             family = get_family(family_name)
         else:
-            classification = classify_scenario_family(description, llm_fn=self.llm_fn)
+            classification_description = build_family_classification_brief(description)
+            cache = ClassifierCache(default_classifier_cache_path(self.knowledge_root))
+            classification = classify_scenario_family(
+                classification_description,
+                llm_fn=self.llm_fn,
+                cache=cache,
+            )
             family = route_to_family(classification)
         if family.name in FAMILY_CONFIGS:
             logger.info("routing description to %s creator", family.name)

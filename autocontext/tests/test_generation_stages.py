@@ -298,6 +298,54 @@ class TestStageKnowledgeSetup:
         assert "Recent progress reports:" in result.prompts.competitor
         assert "Tokens per advance" in result.prompts.competitor
 
+    def test_includes_recent_session_reports_in_prompt_context(self) -> None:
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_session_reports.return_value = (
+            "# Session Report: run_3\n## Key Findings\n- Preserve rollback guardrails"
+        )
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        ctx = _make_ctx()
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "Prior session reports:" in result.prompts.competitor
+        assert "Preserve rollback guardrails" in result.prompts.competitor
+
+    def test_skips_session_reports_when_disabled(self) -> None:
+        settings = AppSettings(agent_provider="deterministic", session_reports_enabled=False)
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        ctx = _make_ctx(settings=settings)
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert "Prior session reports:" not in result.prompts.competitor
+        artifacts.read_latest_session_reports.assert_not_called()
+
     def test_applies_active_harness_mutations_to_live_prompts(self) -> None:
         from autocontext.harness.mutations.spec import HarnessMutation, MutationType
 
@@ -496,12 +544,22 @@ class TestStageKnowledgeSetup:
 
         result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
 
-        artifacts.write_semantic_compaction_report.assert_called_once()
-        report = artifacts.write_semantic_compaction_report.call_args.args[3]
-        assert report.semantic_variant.signal_lines_preserved >= report.budget_only_variant.signal_lines_preserved
-        assert report.evidence_cache_lookups == 1
         assert result.semantic_compaction_benchmark is not None
         assert result.semantic_compaction_benchmark["context_budget_tokens"] == 180
+        assert (
+            result.semantic_compaction_benchmark["semantic_variant"]["signal_lines_preserved"]
+            >= result.semantic_compaction_benchmark["budget_only_variant"]["signal_lines_preserved"]
+        )
+        assert result.semantic_compaction_benchmark["evidence_cache_lookups"] == 1
+        report_path = (
+            artifacts.knowledge_root
+            / "test_scenario"
+            / "semantic_compaction_reports"
+            / "run_test_gen_1.json"
+        )
+        assert report_path.exists()
+        persisted = json.loads(report_path.read_text(encoding="utf-8"))
+        assert persisted["context_budget_tokens"] == 180
 
     def test_benchmark_report_records_evidence_cache_hits_on_repeat(self, tmp_path) -> None:
         settings = AppSettings(
@@ -540,14 +598,13 @@ class TestStageKnowledgeSetup:
 
         first = _make_ctx(settings=settings)
         stage_knowledge_setup(first, artifacts=artifacts, trajectory_builder=trajectory)
-        artifacts.write_semantic_compaction_report.reset_mock()
 
         second = _make_ctx(settings=settings)
-        stage_knowledge_setup(second, artifacts=artifacts, trajectory_builder=trajectory)
+        result = stage_knowledge_setup(second, artifacts=artifacts, trajectory_builder=trajectory)
 
-        report = artifacts.write_semantic_compaction_report.call_args.args[3]
-        assert report.evidence_cache_hits == 1
-        assert report.evidence_cache_hit_rate == 1.0
+        assert result.semantic_compaction_benchmark is not None
+        assert result.semantic_compaction_benchmark["evidence_cache_hits"] == 1
+        assert result.semantic_compaction_benchmark["evidence_cache_hit_rate"] == 1.0
 
     def test_includes_prior_analyst_feedback_in_analyst_prompt(self) -> None:
         artifacts = MagicMock()

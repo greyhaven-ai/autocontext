@@ -229,3 +229,5 @@ class TestInvestigationEngine:
         prompt = captured_user_prompts[0]
         assert "Evidence clusters" in prompt
         assert "Potential red herrings" in prompt
+        assert "Diagnosis target:" not in prompt
+        assert "A config regression in the checkout service" not in prompt

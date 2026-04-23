@@ -42,7 +42,6 @@ from autocontext.loop.tournament_helpers import (
 )
 from autocontext.notebook.context_provider import NotebookContextProvider
 from autocontext.notebook.types import SessionNotebook
-from autocontext.prompts.templates import build_prompt_bundle
 from autocontext.providers.base import CompletionResult, LLMProvider
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
 
@@ -101,6 +100,10 @@ from autocontext.loop.stage_helpers.persistence_helpers import (
     _revise_strategy_for_validity_failure,
     _run_curator_consolidation,
 )
+from autocontext.loop.stage_helpers.semantic_benchmark import (
+    materialize_evidence_manifests,
+    prepare_generation_prompts,
+)
 from autocontext.loop.stage_helpers.tournament_prep import (
     _build_empty_tournament,
     _build_live_opponent_pool,
@@ -111,101 +114,6 @@ from autocontext.loop.stage_helpers.tournament_prep import (
 logger = logging.getLogger(__name__)
 
 _NOTEBOOK_CONTEXT_PROVIDER = NotebookContextProvider()
-
-
-def _evidence_source_run_ids(ctx: GenerationContext, *, artifacts: ArtifactStore) -> list[str]:
-    """Return prior same-scenario run ids with persisted knowledge snapshots."""
-    snapshots_dir = artifacts.knowledge_root / ctx.scenario_name / "snapshots"
-    if not snapshots_dir.is_dir():
-        return []
-    try:
-        return sorted(
-            path.name
-            for path in snapshots_dir.iterdir()
-            if path.is_dir() and path.name != ctx.run_id
-        )
-    except OSError:
-        return []
-
-
-def _materialize_evidence_manifests(
-    ctx: GenerationContext,
-    *,
-    artifacts: ArtifactStore,
-) -> tuple[dict[str, str], Any]:
-    """Build the evidence workspace and render role-specific prompt manifests."""
-    from autocontext.evidence import materialize_workspace, render_evidence_manifest
-
-    workspace = materialize_workspace(
-        knowledge_root=artifacts.knowledge_root,
-        runs_root=artifacts.runs_root,
-        source_run_ids=_evidence_source_run_ids(ctx, artifacts=artifacts),
-        workspace_dir=artifacts.knowledge_root / ctx.scenario_name / "_evidence",
-        budget_bytes=ctx.settings.evidence_workspace_budget_mb * 1024 * 1024,
-        scenario_name=ctx.scenario_name,
-        scan_for_secrets=True,
-    )
-    return (
-        {
-            "analyst": render_evidence_manifest(workspace, role="analyst"),
-            "architect": render_evidence_manifest(workspace, role="architect"),
-        },
-        workspace,
-    )
-
-
-def _benchmarkable_prompt_components(
-    *,
-    current_playbook: str,
-    score_trajectory: str,
-    operational_lessons: str,
-    available_tools: str,
-    recent_analysis: str,
-    analyst_feedback: str,
-    analyst_attribution: str,
-    coach_attribution: str,
-    architect_attribution: str,
-    coach_competitor_hints: str,
-    coach_hint_feedback: str,
-    experiment_log: str,
-    dead_ends: str,
-    research_protocol: str,
-    session_reports: str,
-    architect_tool_usage_report: str,
-    environment_snapshot: str,
-    evidence_manifest: str,
-    evidence_manifests: dict[str, str] | None,
-    notebook_contexts: dict[str, str] | None,
-) -> dict[str, str]:
-    """Collect prompt-facing context components for benchmarking and observability."""
-    _evidence = dict(evidence_manifests or {})
-    _nb = dict(notebook_contexts or {})
-    return {
-        "playbook": current_playbook,
-        "trajectory": score_trajectory,
-        "lessons": operational_lessons,
-        "tools": available_tools,
-        "analysis": recent_analysis,
-        "analyst_feedback": analyst_feedback,
-        "analyst_attribution": analyst_attribution,
-        "coach_attribution": coach_attribution,
-        "architect_attribution": architect_attribution,
-        "hints": coach_competitor_hints,
-        "coach_hint_feedback": coach_hint_feedback,
-        "experiment_log": experiment_log,
-        "dead_ends": dead_ends,
-        "research_protocol": research_protocol,
-        "session_reports": session_reports,
-        "tool_usage_report": architect_tool_usage_report,
-        "environment_snapshot": environment_snapshot,
-        "evidence_manifest": evidence_manifest,
-        "evidence_manifest_analyst": _evidence.get("analyst", evidence_manifest),
-        "evidence_manifest_architect": _evidence.get("architect", evidence_manifest),
-        "notebook_competitor": _nb.get("competitor", ""),
-        "notebook_analyst": _nb.get("analyst", ""),
-        "notebook_coach": _nb.get("coach", ""),
-        "notebook_architect": _nb.get("architect", ""),
-    }
 
 
 class _ClientAsProvider(LLMProvider):
@@ -357,9 +265,11 @@ def stage_knowledge_setup(
     tool_usage_report = "" if ablation else _load_architect_tool_usage_report(ctx, artifacts=artifacts)
     weakness_reports = "" if ablation else artifacts.read_latest_weakness_reports_markdown(ctx.scenario_name)
     progress_reports = "" if ablation else artifacts.read_latest_progress_reports_markdown(ctx.scenario_name)
-    session_reports = "" if ablation else artifacts.read_latest_session_reports(ctx.scenario_name)
-    if not isinstance(session_reports, str):
-        session_reports = ""
+    session_reports = (
+        ""
+        if ablation or not ctx.settings.session_reports_enabled
+        else artifacts.read_latest_session_reports(ctx.scenario_name)
+    )
     dead_ends = "" if ablation else artifacts.read_dead_ends(ctx.scenario_name)
     if not isinstance(dead_ends, str):
         dead_ends = ""
@@ -367,6 +277,8 @@ def stage_knowledge_setup(
     strategy_registry = "" if ablation else trajectory_builder.build_strategy_registry(ctx.run_id)
     coach_hints_for_prompt = "" if ablation else ctx.coach_competitor_hints
     freshness_notes: list[str] = []
+    if not isinstance(session_reports, str):
+        session_reports = ""
 
     if not ablation and ctx.settings.evidence_freshness_enabled:
         skills_context, lesson_freshness = _load_fresh_skill_context(ctx, artifacts=artifacts)
@@ -393,11 +305,12 @@ def stage_knowledge_setup(
                 logger.warning("Failed to parse tuning.json for %s", ctx.scenario_name)
 
     # #166 - Apply protocol tuning overrides when protocol_enabled
-    research_protocol = "" if ablation else artifacts.read_research_protocol(ctx.scenario_name)
-    if not isinstance(research_protocol, str):
-        research_protocol = ""
+    research_protocol = ""
     if ctx.settings.protocol_enabled:
-        raw_protocol = research_protocol
+        raw_protocol = "" if ablation else artifacts.read_research_protocol(ctx.scenario_name)
+        if not isinstance(raw_protocol, str):
+            raw_protocol = ""
+        research_protocol = raw_protocol
         if raw_protocol:
             protocol = parse_research_protocol(raw_protocol)
             # Apply exploration mode from protocol
@@ -473,104 +386,54 @@ def stage_knowledge_setup(
         experiment_log = f"{experiment_log}\n\n{context_policy_block}".strip() if experiment_log else context_policy_block
     if not ablation and ctx.settings.evidence_workspace_enabled:
         try:
-            evidence_manifests, evidence_workspace = _materialize_evidence_manifests(ctx, artifacts=artifacts)
+            evidence_manifests, evidence_workspace = materialize_evidence_manifests(ctx, artifacts=artifacts)
             evidence_manifest = evidence_manifests.get("analyst", "")
             evidence_cache_lookups = 1
             evidence_cache_hits = int(bool(getattr(evidence_workspace, "cache_hit", False)))
         except Exception:
             logger.warning("failed to materialize evidence workspace for %s", ctx.scenario_name, exc_info=True)
-
-    environment_snapshot = "" if ablation else ctx.environment_snapshot
-    prompt_kwargs: dict[str, Any] = {
-        "scenario_rules": scenario.describe_rules(),
-        "strategy_interface": strategy_interface,
-        "evaluation_criteria": scenario.describe_evaluation_criteria(),
-        "previous_summary": summary_text,
-        "observation": observation,
-        "current_playbook": playbook,
-        "available_tools": tool_context,
-        "operational_lessons": skills_context,
-        "replay_narrative": "" if ablation else ctx.replay_narrative,
-        "coach_competitor_hints": coach_hints_for_prompt,
-        "coach_hint_feedback": coach_hint_feedback,
-        "recent_analysis": recent_analysis,
-        "analyst_feedback": analyst_feedback,
-        "analyst_attribution": analyst_attribution,
-        "coach_attribution": coach_attribution,
-        "architect_attribution": architect_attribution,
-        "score_trajectory": score_trajectory,
-        "strategy_registry": strategy_registry,
-        "progress_json": progress_json_str,
-        "experiment_log": experiment_log,
-        "dead_ends": dead_ends,
-        "research_protocol": research_protocol,
-        "session_reports": session_reports,
-        "architect_tool_usage_report": tool_usage_report,
-        "constraint_mode": ctx.settings.constraint_prompts_enabled,
-        "context_budget_tokens": ctx.settings.context_budget_tokens,
-        "notebook_contexts": notebook_contexts,
-        "environment_snapshot": environment_snapshot,
-        "evidence_manifest": evidence_manifest,
-        "evidence_manifests": evidence_manifests,
-    }
-    build_start = time.perf_counter()
-    prompts = build_prompt_bundle(**prompt_kwargs)
-    semantic_build_latency_ms = (time.perf_counter() - build_start) * 1000.0
-    if ctx.settings.semantic_compaction_benchmark_enabled:
-        from autocontext.knowledge.semantic_compaction_benchmark import (
-            build_semantic_compaction_benchmark_report,
-        )
-
-        baseline_start = time.perf_counter()
-        budget_only_prompts = build_prompt_bundle(**prompt_kwargs, semantic_compaction=False)
-        budget_only_build_latency_ms = (time.perf_counter() - baseline_start) * 1000.0
-        benchmark_report = build_semantic_compaction_benchmark_report(
-            scenario_name=ctx.scenario_name,
-            run_id=ctx.run_id,
-            generation=ctx.generation,
-            context_budget_tokens=ctx.settings.context_budget_tokens,
-            raw_components=_benchmarkable_prompt_components(
-                current_playbook=playbook,
-                score_trajectory=score_trajectory,
-                operational_lessons=skills_context,
-                available_tools=tool_context,
-                recent_analysis=recent_analysis,
-                analyst_feedback=analyst_feedback,
-                analyst_attribution=analyst_attribution,
-                coach_attribution=coach_attribution,
-                architect_attribution=architect_attribution,
-                coach_competitor_hints=coach_hints_for_prompt,
-                coach_hint_feedback=coach_hint_feedback,
-                experiment_log=experiment_log,
-                dead_ends=dead_ends,
-                research_protocol=research_protocol,
-                session_reports=session_reports,
-                architect_tool_usage_report=tool_usage_report,
-                environment_snapshot=environment_snapshot,
-                evidence_manifest=evidence_manifest,
-                evidence_manifests=evidence_manifests,
-                notebook_contexts=notebook_contexts,
-            ),
-            semantic_prompts=prompts,
-            budget_only_prompts=budget_only_prompts,
-            semantic_build_latency_ms=semantic_build_latency_ms,
-            budget_only_build_latency_ms=budget_only_build_latency_ms,
-            evidence_cache_hits=evidence_cache_hits,
-            evidence_cache_lookups=evidence_cache_lookups,
-        )
-        artifacts.write_semantic_compaction_report(
-            ctx.scenario_name,
-            ctx.run_id,
-            ctx.generation,
-            benchmark_report,
-        )
-        ctx.semantic_compaction_benchmark = benchmark_report.to_dict()
-
+    prompts, semantic_benchmark_payload = prepare_generation_prompts(
+        ctx,
+        artifacts=artifacts,
+        scenario_rules=scenario.describe_rules(),
+        strategy_interface=strategy_interface,
+        evaluation_criteria=scenario.describe_evaluation_criteria(),
+        previous_summary=summary_text,
+        observation=observation,
+        current_playbook=playbook,
+        available_tools=tool_context,
+        operational_lessons=skills_context,
+        replay_narrative="" if ablation else ctx.replay_narrative,
+        coach_competitor_hints=coach_hints_for_prompt,
+        coach_hint_feedback=coach_hint_feedback,
+        recent_analysis=recent_analysis,
+        analyst_feedback=analyst_feedback,
+        analyst_attribution=analyst_attribution,
+        coach_attribution=coach_attribution,
+        architect_attribution=architect_attribution,
+        score_trajectory=score_trajectory,
+        strategy_registry=strategy_registry,
+        progress_json=progress_json_str,
+        experiment_log=experiment_log,
+        dead_ends=dead_ends,
+        research_protocol=research_protocol,
+        session_reports=session_reports,
+        architect_tool_usage_report=tool_usage_report,
+        constraint_mode=ctx.settings.constraint_prompts_enabled,
+        context_budget_tokens=ctx.settings.context_budget_tokens,
+        notebook_contexts=notebook_contexts,
+        environment_snapshot="" if ablation else ctx.environment_snapshot,
+        evidence_manifest=evidence_manifest,
+        evidence_manifests=evidence_manifests,
+        evidence_cache_hits=evidence_cache_hits,
+        evidence_cache_lookups=evidence_cache_lookups,
+    )
     prompts = apply_harness_mutations_to_prompts(prompts, active_harness_mutations)
 
     ctx.applied_competitor_hints = "" if ablation else coach_hints_for_prompt
     ctx.prompts = prompts
     ctx.evidence_manifest = evidence_manifest
+    ctx.semantic_compaction_benchmark = semantic_benchmark_payload
     ctx.strategy_interface = strategy_interface
     ctx.tool_context = tool_context
     ctx.base_playbook = playbook

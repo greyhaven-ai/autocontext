@@ -5,6 +5,7 @@ import logging
 import re
 
 from autocontext.consultation.types import ConsultationRequest, ConsultationResult
+from autocontext.knowledge.compaction import compact_prompt_component
 from autocontext.providers.base import CompletionResult, LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -32,16 +33,18 @@ class ConsultationRunner:
         )
 
     def _build_user_prompt(self, request: ConsultationRequest) -> str:
+        context_summary = compact_prompt_component("consultation_context", request.context_summary)
+        strategy_summary = compact_prompt_component("consultation_strategy", request.current_strategy_summary)
         parts = [
             f"Run: {request.run_id}, Generation: {request.generation}",
             f"Trigger: {request.trigger.value}",
-            f"Context: {request.context_summary}",
-            f"Current strategy: {request.current_strategy_summary}",
+            f"Context: {context_summary}",
+            f"Current strategy: {strategy_summary}",
         ]
         if request.score_history:
-            parts.append(f"Score history: {request.score_history}")
+            parts.append(f"Score history: {_format_score_history(request.score_history)}")
         if request.gate_history:
-            parts.append(f"Gate history: {request.gate_history}")
+            parts.append(f"Gate history: {_format_gate_history(request.gate_history)}")
         return "\n".join(parts)
 
     def _parse_response(self, completion: CompletionResult) -> ConsultationResult:
@@ -62,3 +65,19 @@ def _extract_section(text: str, heading: str) -> str:
     pattern = rf"##\s*{re.escape(heading)}\s*\n(.*?)(?=\n##\s|\Z)"
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1).strip() if match else ""
+
+
+def _format_score_history(scores: list[float], *, max_items: int = 8) -> str:
+    recent = scores[-max_items:]
+    rendered = " -> ".join(f"{score:.2f}" for score in recent)
+    if len(scores) <= max_items:
+        return rendered
+    return f"{rendered} (recent {len(recent)} of {len(scores)})"
+
+
+def _format_gate_history(gates: list[str], *, max_items: int = 8) -> str:
+    recent = gates[-max_items:]
+    rendered = " -> ".join(recent)
+    if len(gates) <= max_items:
+        return rendered
+    return f"{rendered} (recent {len(recent)} of {len(gates)})"

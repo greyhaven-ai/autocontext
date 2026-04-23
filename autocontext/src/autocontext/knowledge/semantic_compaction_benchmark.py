@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from autocontext.knowledge.compaction import compact_prompt_components, extract_promotable_lines
 from autocontext.prompts.context_budget import ContextBudget, estimate_tokens
@@ -29,7 +29,7 @@ class CompactionComponentBenchmark:
     semantic_signal_lines_preserved: int = 0
     budget_only_signal_lines_preserved: int = 0
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
 
 
@@ -44,7 +44,7 @@ class PromptVariantBenchmark:
     build_latency_ms: float
     signal_lines_preserved: int
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
 
 
@@ -56,7 +56,7 @@ class RegressionCheck:
     passed: bool
     detail: str
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
 
 
@@ -82,7 +82,7 @@ class SemanticCompactionBenchmarkReport:
             return 0.0
         return round(self.evidence_cache_hits / self.evidence_cache_lookups, 4)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> dict[str, Any]:
         payload = dataclasses.asdict(self)
         payload["evidence_cache_hit_rate"] = self.evidence_cache_hit_rate
         return payload
