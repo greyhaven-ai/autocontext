@@ -124,18 +124,20 @@ export type {
   BrowserSnapshot,
   BrowserSnapshotRef,
   BrowserValidationResult,
-} from "./integrations/browser/index.js";
+} from "./integrations/browser/types.js";
 export {
   BROWSER_CONTRACT_SCHEMA_VERSION,
-  buildDefaultBrowserSessionConfig,
-  evaluateBrowserActionPolicy,
-  normalizeBrowserAllowedDomains,
-  resolveBrowserSessionConfig,
   validateBrowserAction,
   validateBrowserAuditEvent,
   validateBrowserSessionConfig,
   validateBrowserSnapshot,
-} from "./integrations/browser/index.js";
+} from "./integrations/browser/contract/index.js";
+export {
+  buildDefaultBrowserSessionConfig,
+  evaluateBrowserActionPolicy,
+  normalizeBrowserAllowedDomains,
+  resolveBrowserSessionConfig,
+} from "./integrations/browser/policy.js";
 
 // Execution
 export { ImprovementLoop, isParseFailure, isImproved } from "./execution/improvement-loop.js";
