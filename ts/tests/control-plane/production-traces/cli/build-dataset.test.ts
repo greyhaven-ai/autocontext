@@ -169,4 +169,211 @@ describe("autoctx production-traces build-dataset", () => {
     );
     expect(r.exitCode).toBe(0);
   });
+
+  test("makeTrace accepts provider override", () => {
+    const t = makeTrace({ provider: { name: "anthropic" } });
+    expect(t.provider.name).toBe("anthropic");
+  });
+
+  describe("--provider filter", () => {
+    test("--provider anthropic returns only anthropic traces", async () => {
+      await runProductionTracesCommand(["init"], { cwd });
+
+      // Seed 2 openai + 2 anthropic traces
+      const base = Date.parse("2026-04-17T12:00:00.000Z");
+      const openaiTraces = Array.from({ length: 2 }, (_, i) =>
+        makeTrace({
+          traceId: newProductionTraceId(),
+          startedAt: new Date(base + i * 60_000).toISOString(),
+          provider: { name: "openai" },
+          env: { environmentTag: "production" as any, appId: "app1" as any, taskType: "chat" },
+          outcome: { label: "success" },
+        }),
+      );
+      const anthropicTraces = Array.from({ length: 2 }, (_, i) =>
+        makeTrace({
+          traceId: newProductionTraceId(),
+          startedAt: new Date(base + (i + 2) * 60_000).toISOString(),
+          provider: { name: "anthropic" },
+          env: { environmentTag: "production" as any, appId: "app1" as any, taskType: "chat" },
+          outcome: { label: "success" },
+        }),
+      );
+      writeIncomingBatch(cwd, TEST_DATE, "batch-openai", openaiTraces);
+      writeIncomingBatch(cwd, TEST_DATE, "batch-anthropic", anthropicTraces);
+      await runProductionTracesCommand(["ingest"], { cwd });
+
+      const r = await runProductionTracesCommand(
+        [
+          "build-dataset",
+          "--name",
+          "anthropic-only",
+          "--provider",
+          "anthropic",
+          "--cluster-strategy",
+          "taskType",
+          "--allow-synthetic-rubrics",
+          "--output",
+          "json",
+        ],
+        { cwd },
+      );
+      expect(r.exitCode).toBe(0);
+      const result = JSON.parse(r.stdout);
+      // 2 anthropic traces → 1 cluster → split produces at least 1 train row
+      expect(result.stats.traceCount).toBe(2);
+    });
+
+    test("--provider openai with only anthropic traces yields exit 12", async () => {
+      await runProductionTracesCommand(["init"], { cwd });
+
+      const base = Date.parse("2026-04-17T12:00:00.000Z");
+      const anthropicTraces = Array.from({ length: 2 }, (_, i) =>
+        makeTrace({
+          traceId: newProductionTraceId(),
+          startedAt: new Date(base + i * 60_000).toISOString(),
+          provider: { name: "anthropic" },
+          env: { environmentTag: "production" as any, appId: "app1" as any, taskType: "chat" },
+          outcome: { label: "success" },
+        }),
+      );
+      writeIncomingBatch(cwd, TEST_DATE, "batch-anth", anthropicTraces);
+      await runProductionTracesCommand(["ingest"], { cwd });
+
+      const r = await runProductionTracesCommand(
+        [
+          "build-dataset",
+          "--name",
+          "openai-only",
+          "--provider",
+          "openai",
+          "--cluster-strategy",
+          "taskType",
+          "--allow-synthetic-rubrics",
+        ],
+        { cwd },
+      );
+      expect(r.exitCode).toBe(12);
+    });
+  });
+
+  describe("--app / --env / --outcome filters", () => {
+    async function seedMixedTraces(): Promise<void> {
+      const base = Date.parse("2026-04-17T12:00:00.000Z");
+      const traces = [
+        makeTrace({
+          traceId: newProductionTraceId(),
+          startedAt: new Date(base).toISOString(),
+          env: { environmentTag: "production" as any, appId: "app-alpha" as any, taskType: "chat" },
+          outcome: { label: "success" },
+        }),
+        makeTrace({
+          traceId: newProductionTraceId(),
+          startedAt: new Date(base + 60_000).toISOString(),
+          env: { environmentTag: "staging" as any, appId: "app-beta" as any, taskType: "chat" },
+          outcome: { label: "failure" },
+        }),
+        makeTrace({
+          traceId: newProductionTraceId(),
+          startedAt: new Date(base + 120_000).toISOString(),
+          env: { environmentTag: "production" as any, appId: "app-alpha" as any, taskType: "chat" },
+          outcome: { label: "success" },
+        }),
+      ];
+      writeIncomingBatch(cwd, TEST_DATE, "batch-mixed", traces);
+      await runProductionTracesCommand(["ingest"], { cwd });
+    }
+
+    test("--app filters to matching appId only", async () => {
+      await runProductionTracesCommand(["init"], { cwd });
+      await seedMixedTraces();
+
+      const r = await runProductionTracesCommand(
+        [
+          "build-dataset",
+          "--name",
+          "app-alpha-ds",
+          "--app",
+          "app-alpha",
+          "--cluster-strategy",
+          "taskType",
+          "--allow-synthetic-rubrics",
+          "--output",
+          "json",
+        ],
+        { cwd },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(JSON.parse(r.stdout).stats.traceCount).toBe(2);
+    });
+
+    test("--env filters to matching environmentTag only", async () => {
+      await runProductionTracesCommand(["init"], { cwd });
+      await seedMixedTraces();
+
+      const r = await runProductionTracesCommand(
+        [
+          "build-dataset",
+          "--name",
+          "prod-ds",
+          "--env",
+          "production",
+          "--cluster-strategy",
+          "taskType",
+          "--allow-synthetic-rubrics",
+          "--output",
+          "json",
+        ],
+        { cwd },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(JSON.parse(r.stdout).stats.traceCount).toBe(2);
+    });
+
+    test("--outcome filters to matching outcome label only", async () => {
+      await runProductionTracesCommand(["init"], { cwd });
+      await seedMixedTraces();
+
+      const r = await runProductionTracesCommand(
+        [
+          "build-dataset",
+          "--name",
+          "success-only-ds",
+          "--outcome",
+          "success",
+          "--cluster-strategy",
+          "taskType",
+          "--allow-synthetic-rubrics",
+          "--output",
+          "json",
+        ],
+        { cwd },
+      );
+      expect(r.exitCode).toBe(0);
+      expect(JSON.parse(r.stdout).stats.traceCount).toBe(2);
+    });
+
+    test("combined filters: --app + --outcome", async () => {
+      await runProductionTracesCommand(["init"], { cwd });
+      await seedMixedTraces();
+
+      // app-beta only has 1 trace but it's outcome=failure; filtering success should give 0 → exit 12
+      const r = await runProductionTracesCommand(
+        [
+          "build-dataset",
+          "--name",
+          "beta-success-ds",
+          "--app",
+          "app-beta",
+          "--outcome",
+          "success",
+          "--cluster-strategy",
+          "taskType",
+          "--allow-synthetic-rubrics",
+        ],
+        { cwd },
+      );
+      expect(r.exitCode).toBe(12);
+    });
+  });
 });

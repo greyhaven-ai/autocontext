@@ -1,8 +1,8 @@
 // `autoctx production-traces build-dataset ...`
 //
-// Loads source traces (filtered by --since/--until), reads cluster + rubric
-// configs, wires a registry-backed RubricLookup (the ONE allowed cross-module
-// import from `control-plane/registry/` per the Layer 7 brief), and invokes
+// Loads source traces (filtered by --since/--until/--provider/--app/--env/--outcome),
+// reads cluster + rubric configs, wires a registry-backed RubricLookup (the ONE allowed
+// cross-module import from `control-plane/registry/` per the Layer 7 brief), and invokes
 // Layer 5's `buildDataset(inputs)` orchestrator.
 //
 // Exit-code contract (spec §9.7):
@@ -40,6 +40,10 @@ Usage:
   autoctx production-traces build-dataset --name <str>
       [--config ./dataset-config.json]
       [--since <iso-ts>] [--until <iso-ts>]
+      [--provider <name>]
+      [--app <app-id>]
+      [--env <env-tag>]
+      [--outcome <label>]
       [--cluster-strategy taskType|rules]
       [--rules ./cluster-config.json]
       [--rubrics ./rubric-config.json]
@@ -50,13 +54,19 @@ Usage:
 
 Behavior:
   1. Acquire .autocontext/lock (shared with Foundation B).
-  2. Load ingested traces (filtered by --since/--until).
+  2. Load ingested traces (filtered by --since/--until/--provider/--app/--env/--outcome).
   3. Optionally load cluster / rubric configs.
   4. Wire a registry-backed RubricLookup that resolves scenarioId via the
      control-plane artifact store. Returns null when no active artifact exists
      for the scenario, which falls through to synthetic or skip per §8.3.
   5. Invoke buildDataset() to cluster, select, split, redact, and write
      .autocontext/datasets/<datasetId>/.
+
+Flags:
+  --provider <name>    Filter traces by provider name (e.g. openai, anthropic).
+  --app <app-id>       Filter traces by appId.
+  --env <env-tag>      Filter traces by environmentTag.
+  --outcome <label>    Filter traces by outcome label (success, failure, partial).
 
 Exit codes:
   0  success
@@ -79,6 +89,10 @@ export async function runBuildDataset(
     config: { type: "string" },
     since: { type: "string" },
     until: { type: "string" },
+    provider: { type: "string" },
+    app: { type: "string" },
+    env: { type: "string" },
+    outcome: { type: "string" },
     "cluster-strategy": { type: "string", default: "taskType" },
     rules: { type: "string" },
     rubrics: { type: "string" },
@@ -95,6 +109,10 @@ export async function runBuildDataset(
   const configPath = stringFlag(flags.value, "config");
   const since = stringFlag(flags.value, "since");
   const until = stringFlag(flags.value, "until");
+  const provider = stringFlag(flags.value, "provider");
+  const app = stringFlag(flags.value, "app");
+  const env = stringFlag(flags.value, "env");
+  const outcome = stringFlag(flags.value, "outcome");
   const clusterStrategyRaw = stringFlag(flags.value, "cluster-strategy") ?? "taskType";
   const rulesPath = stringFlag(flags.value, "rules");
   const rubricsPath = stringFlag(flags.value, "rubrics");
@@ -183,6 +201,10 @@ export async function runBuildDataset(
   const filter: TraceFilter = {
     ...(since !== undefined ? { since } : {}),
     ...(until !== undefined ? { until } : {}),
+    ...(provider !== undefined ? { provider } : {}),
+    ...(app !== undefined ? { app } : {}),
+    ...(env !== undefined ? { env } : {}),
+    ...(outcome !== undefined ? { outcome } : {}),
   };
   let traces;
   try {
@@ -193,7 +215,7 @@ export async function runBuildDataset(
   if (traces.length === 0) {
     return {
       stdout: "",
-      stderr: `no ingested traces match filter (since=${since ?? "-"}, until=${until ?? "-"})`,
+      stderr: `no ingested traces match filter (since=${since ?? "-"}, until=${until ?? "-"}, provider=${provider ?? "-"}, app=${app ?? "-"}, env=${env ?? "-"}, outcome=${outcome ?? "-"})`,
       exitCode: EXIT.NO_MATCHING_TRACES,
     };
   }
