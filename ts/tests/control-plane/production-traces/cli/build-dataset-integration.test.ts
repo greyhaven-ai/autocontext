@@ -116,6 +116,9 @@ describe("AC-606: OpenAI + Anthropic traces through ingest → build-dataset", (
     const ds = JSON.parse(result.stdout);
     expect(ds.stats.traceCount).toBe(3);
     expect(existsSync(join(ds.writePath, "manifest.json"))).toBe(true);
+    expect(existsSync(join(ds.writePath, "train.jsonl"))).toBe(true);
+    const manifest = JSON.parse(readFileSync(join(ds.writePath, "manifest.json"), "utf-8"));
+    expect(manifest.source.traceCount).toBe(3);
   });
 
   test("build-dataset without --provider includes all 6 traces", async () => {
@@ -177,6 +180,8 @@ describe("AC-606: OpenAI + Anthropic traces through ingest → build-dataset", (
 
     const openaiIds = readTraceIds(openaiDs.writePath);
     const anthropicIds = readTraceIds(anthropicDs.writePath);
+    expect(openaiIds.size).toBeGreaterThan(0);
+    expect(anthropicIds.size).toBeGreaterThan(0);
     const intersection = [...openaiIds].filter((id) => anthropicIds.has(id));
     expect(intersection).toHaveLength(0);
   });
