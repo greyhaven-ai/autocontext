@@ -505,6 +505,16 @@ describe("Designer", () => {
     const spec = parseAgentTaskSpec(response);
     expect(spec.taskPrompt).toBe(SAMPLE_SPEC.taskPrompt);
   });
+
+  it("falls back to raw JSON when delimiters are missing", () => {
+    const spec = parseAgentTaskSpec(JSON.stringify({
+      task_prompt: SAMPLE_SPEC.taskPrompt,
+      judge_rubric: SAMPLE_SPEC.judgeRubric,
+      output_format: SAMPLE_SPEC.outputFormat,
+      judge_model: SAMPLE_SPEC.judgeModel,
+    }));
+    expect(spec.taskPrompt).toBe(SAMPLE_SPEC.taskPrompt);
+  });
 });
 
 describe("Validator", () => {

@@ -1,9 +1,21 @@
 import type { ArtifactEditingSpec } from "./artifact-editing-spec.js";
 import { parseRawArtifactEditingSpec } from "./artifact-editing-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const ARTIFACT_SPEC_START = "<!-- ARTIFACT_EDITING_SPEC_START -->";
 export const ARTIFACT_SPEC_END = "<!-- ARTIFACT_EDITING_SPEC_END -->";
+
+const ARTIFACT_EDITING_DESCRIPTOR: FamilyDesignerDescriptor<ArtifactEditingSpec> = {
+  family: "artifact_editing",
+  startDelimiter: ARTIFACT_SPEC_START,
+  endDelimiter: ARTIFACT_SPEC_END,
+  missingDelimiterLabel: "ARTIFACT_EDITING_SPEC",
+  parseRaw: parseRawArtifactEditingSpec,
+};
 
 const EXAMPLE_SPEC = {
   task_description: "Update a YAML service config to add a database section without changing unrelated settings.",
@@ -58,22 +70,17 @@ ${ARTIFACT_SPEC_END}
 `;
 
 export function parseArtifactEditingSpec(text: string): ArtifactEditingSpec {
-  const startIdx = text.indexOf(ARTIFACT_SPEC_START);
-  const endIdx = text.indexOf(ARTIFACT_SPEC_END);
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    throw new Error("response does not contain ARTIFACT_EDITING_SPEC delimiters");
-  }
-  const raw = text.slice(startIdx + ARTIFACT_SPEC_START.length, endIdx).trim();
-  return parseRawArtifactEditingSpec(
-    healSpec(JSON.parse(raw) as Record<string, unknown>, "artifact_editing"),
-  );
+  return parseFamilyDesignerSpec(text, ARTIFACT_EDITING_DESCRIPTOR);
 }
 
 export async function designArtifactEditing(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<ArtifactEditingSpec> {
-  return parseArtifactEditingSpec(
-    await llmFn(ARTIFACT_EDITING_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    ARTIFACT_EDITING_DESIGNER_SYSTEM,
+    ARTIFACT_EDITING_DESCRIPTOR,
+    llmFn,
   );
 }

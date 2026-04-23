@@ -1,9 +1,21 @@
 import type { ToolFragilitySpec } from "./tool-fragility-spec.js";
 import { parseRawToolFragilitySpec } from "./tool-fragility-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const TOOL_FRAGILITY_SPEC_START = "<!-- TOOL_FRAGILITY_SPEC_START -->";
 export const TOOL_FRAGILITY_SPEC_END = "<!-- TOOL_FRAGILITY_SPEC_END -->";
+
+const TOOL_FRAGILITY_DESCRIPTOR: FamilyDesignerDescriptor<ToolFragilitySpec> = {
+  family: "tool_fragility",
+  startDelimiter: TOOL_FRAGILITY_SPEC_START,
+  endDelimiter: TOOL_FRAGILITY_SPEC_END,
+  missingDelimiterLabel: "TOOL_FRAGILITY_SPEC",
+  parseRaw: parseRawToolFragilitySpec,
+};
 
 const EXAMPLE_SPEC = {
   description: "API contracts drift during a data processing pipeline.",
@@ -83,22 +95,17 @@ ${TOOL_FRAGILITY_SPEC_END}
 `;
 
 export function parseToolFragilitySpec(text: string): ToolFragilitySpec {
-  const startIdx = text.indexOf(TOOL_FRAGILITY_SPEC_START);
-  const endIdx = text.indexOf(TOOL_FRAGILITY_SPEC_END);
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    throw new Error("response does not contain TOOL_FRAGILITY_SPEC delimiters");
-  }
-  const raw = text.slice(startIdx + TOOL_FRAGILITY_SPEC_START.length, endIdx).trim();
-  return parseRawToolFragilitySpec(
-    healSpec(JSON.parse(raw) as Record<string, unknown>, "tool_fragility"),
-  );
+  return parseFamilyDesignerSpec(text, TOOL_FRAGILITY_DESCRIPTOR);
 }
 
 export async function designToolFragility(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<ToolFragilitySpec> {
-  return parseToolFragilitySpec(
-    await llmFn(TOOL_FRAGILITY_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    TOOL_FRAGILITY_DESIGNER_SYSTEM,
+    TOOL_FRAGILITY_DESCRIPTOR,
+    llmFn,
   );
 }

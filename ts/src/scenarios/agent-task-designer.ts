@@ -5,10 +5,22 @@
 
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { parseRawSpec } from "./agent-task-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const SPEC_START = "<!-- AGENT_TASK_SPEC_START -->";
 export const SPEC_END = "<!-- AGENT_TASK_SPEC_END -->";
+
+const AGENT_TASK_DESCRIPTOR: FamilyDesignerDescriptor<AgentTaskSpec> = {
+  family: "agent_task",
+  startDelimiter: SPEC_START,
+  endDelimiter: SPEC_END,
+  missingDelimiterLabel: "AGENT_TASK_SPEC",
+  parseRaw: parseRawSpec,
+};
 
 const EXAMPLE_SPEC = {
   task_prompt:
@@ -107,14 +119,7 @@ Now design an agent task scenario for the user's description.
  * Parse an AgentTaskSpec from LLM response text containing delimiters.
  */
 export function parseAgentTaskSpec(text: string): AgentTaskSpec {
-  const startIdx = text.indexOf(SPEC_START);
-  const endIdx = text.indexOf(SPEC_END);
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
-    throw new Error("response does not contain AGENT_TASK_SPEC delimiters");
-  }
-  const raw = text.slice(startIdx + SPEC_START.length, endIdx).trim();
-  const data = healSpec(JSON.parse(raw) as Record<string, unknown>, "agent_task");
-  return parseRawSpec(data);
+  return parseFamilyDesignerSpec(text, AGENT_TASK_DESCRIPTOR);
 }
 
 /**
@@ -124,7 +129,10 @@ export async function designAgentTask(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<AgentTaskSpec> {
-  const userPrompt = `User description:\n${description}`;
-  const response = await llmFn(AGENT_TASK_DESIGNER_SYSTEM, userPrompt);
-  return parseAgentTaskSpec(response);
+  return designFamilySpec(
+    description,
+    AGENT_TASK_DESIGNER_SYSTEM,
+    AGENT_TASK_DESCRIPTOR,
+    llmFn,
+  );
 }
