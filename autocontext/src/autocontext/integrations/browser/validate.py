@@ -43,7 +43,7 @@ def validate_browser_audit_event(data: Any) -> BrowserAuditEvent:
 
 
 def validate_browser_session_config_dict(data: Any) -> tuple[bool, list[str]]:
-    return _validate_dict(data, BrowserSessionConfig)
+    return _validate_dict(data, ValidatedBrowserSessionConfig)
 
 
 def validate_browser_action_dict(data: Any) -> tuple[bool, list[str]]:

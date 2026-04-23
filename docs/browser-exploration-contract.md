@@ -19,29 +19,28 @@ The architecture is inspired by thin browser-control projects such as `browser-h
 
 ## Current Scope
 
-This foundation now includes the shared contract and policy layer plus a thin Chrome/CDP attachment path.
+This foundation currently includes the shared contract, settings, validation, and policy layer. It does not yet ship a browser backend or CLI execution path.
 
 Included:
 
 - canonical JSON Schemas for browser session config, actions, snapshots, and audit events
 - TypeScript validators and generated contract types
 - mirrored Python schemas and generated Pydantic models
-- shared cross-runtime fixtures and parity tests
+- drift checks that keep the TypeScript and Python contract projections aligned
 - security-focused policy helpers for allowlists and auth-sensitive actions
 - mirrored `AUTOCONTEXT_BROWSER_*` settings in both packages
-- thin evidence stores for browser audit and snapshot artifacts
-- thin CDP session wrappers for `navigate`, `snapshot`, `click`, `fill`, `press`, and `screenshot`
-- thin websocket CDP transports
-- thin CDP runtimes that create sessions from a debugger target
-- debugger target discovery from `/json/list` with allowlist-aware selection
-- settings-backed runtime factories that resolve a session config plus runtime together
-- investigation wiring in both CLIs via `investigate --browser-url <url>`, which captures a policy-checked browser snapshot and feeds stable context/evidence into investigation prompts and reports
+- backend-agnostic session/runtime protocol types for future adapters
 
 Not yet included:
 
+- thin CDP session wrappers or websocket transports
+- debugger target discovery from `/json/list`
+- browser evidence stores for audit and snapshot artifacts
+- settings-backed browser runtime factories
+- CLI investigation wiring such as `investigate --browser-url <url>`
 - browser process launching or lifecycle management
 - domain-skill persistence
-- broader scenario or operator-loop execution wiring beyond the explicit investigate entry point
+- broader scenario or operator-loop execution wiring
 - uploads/downloads as first-class browser actions
 
 ## Contract Documents
@@ -81,12 +80,6 @@ Policy helpers currently enforce:
 - rejection of download/upload-enabled session configs without an explicit root
 - rejection of `user-profile` mode unless auth is explicitly enabled
 
-Debugger target discovery additionally enforces:
-
-- page-target-only attachment
-- allowlist-aware target selection using the same navigation policy rules
-- optional preferred target URL hints without bypassing policy
-
 ## Package Surfaces
 
 TypeScript exposes the shared browser module at:
@@ -99,7 +92,7 @@ Python exposes the matching validation and policy helpers under:
 
 Both surfaces are intentionally small and backend-agnostic so a thin CDP implementation can be introduced later without changing the contract.
 
-The current CDP implementation is intentionally attach-oriented:
+The reserved debugger settings are intended for a future attach-oriented CDP implementation:
 
 - use `AUTOCONTEXT_BROWSER_DEBUGGER_URL` / `browserDebuggerUrl` to point at an existing Chrome debugger endpoint
 - use `AUTOCONTEXT_BROWSER_PREFERRED_TARGET_URL` / `browserPreferredTargetUrl` to prefer a specific page when multiple allowed targets are present

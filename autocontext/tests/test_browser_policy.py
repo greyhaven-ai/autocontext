@@ -4,6 +4,7 @@ from autocontext.integrations.browser.policy import (
     build_default_browser_session_config,
     evaluate_browser_action_policy,
 )
+from autocontext.integrations.browser.validate import validate_browser_session_config_dict
 
 
 def test_navigation_requires_allowlisted_domain() -> None:
@@ -66,3 +67,39 @@ def test_password_fill_requires_auth_opt_in() -> None:
 
     assert decision.allowed is False
     assert decision.reason == "auth_blocked"
+
+
+def test_session_config_dict_validator_applies_cross_field_policy() -> None:
+    ok, errors = validate_browser_session_config_dict({
+        "schemaVersion": "1.0",
+        "profileMode": "ephemeral",
+        "allowedDomains": [],
+        "allowAuth": False,
+        "allowUploads": False,
+        "allowDownloads": True,
+        "captureScreenshots": True,
+        "headless": True,
+        "downloadsRoot": None,
+        "uploadsRoot": None,
+    })
+
+    assert ok is False
+    assert any("downloadsRoot is required" in error for error in errors)
+
+
+def test_session_config_dict_validator_rejects_user_profile_without_auth() -> None:
+    ok, errors = validate_browser_session_config_dict({
+        "schemaVersion": "1.0",
+        "profileMode": "user-profile",
+        "allowedDomains": [],
+        "allowAuth": False,
+        "allowUploads": False,
+        "allowDownloads": False,
+        "captureScreenshots": True,
+        "headless": True,
+        "downloadsRoot": None,
+        "uploadsRoot": None,
+    })
+
+    assert ok is False
+    assert any("allowAuth must be true" in error for error in errors)
