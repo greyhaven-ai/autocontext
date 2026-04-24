@@ -17,6 +17,14 @@ interface SolveToolManager {
   getResult(jobId: string): Record<string, unknown> | null;
 }
 
+interface SolveToolDefinition {
+  name: string;
+  aliases: string[];
+  description: string;
+  schema: Record<string, unknown>;
+  handler: (args: Record<string, unknown>) => Promise<JsonToolResponse>;
+}
+
 function jsonText(payload: unknown, indent?: number): JsonToolResponse {
   return {
     content: [
@@ -38,41 +46,62 @@ export function buildSolveResultNotFoundPayload(jobId: string): {
   };
 }
 
+function buildSolveToolDefinitions(solveManager: SolveToolManager): SolveToolDefinition[] {
+  return [
+    {
+      name: "solve_scenario",
+      aliases: ["autocontext_solve_scenario"],
+      description: "Submit a problem for on-demand solving. Returns a job_id for polling.",
+      schema: { description: z.string(), generations: z.number().int().default(5) },
+      handler: async (args: Record<string, unknown>) => {
+        const jobId = solveManager.submit(
+          String(args.description),
+          Number(args.generations ?? 5),
+        );
+        return jsonText({ jobId, status: "pending" });
+      },
+    },
+    {
+      name: "solve_status",
+      aliases: ["autocontext_solve_status"],
+      description: "Check status of a solve-on-demand job",
+      schema: { jobId: z.string() },
+      handler: async (args: Record<string, unknown>) =>
+        jsonText(solveManager.getStatus(String(args.jobId)), 2),
+    },
+    {
+      name: "solve_result",
+      aliases: ["autocontext_solve_result"],
+      description: "Get the exported skill package result of a completed solve-on-demand job",
+      schema: { jobId: z.string() },
+      handler: async (args: Record<string, unknown>) => {
+        const jobId = String(args.jobId);
+        const result = solveManager.getResult(jobId);
+        return jsonText(result ?? buildSolveResultNotFoundPayload(jobId), 2);
+      },
+    },
+  ];
+}
+
+function registerToolDefinition(server: McpToolRegistrar, definition: SolveToolDefinition): void {
+  server.tool(definition.name, definition.description, definition.schema, definition.handler);
+  for (const alias of definition.aliases) {
+    server.tool(
+      alias,
+      `${definition.description} Alias for ${definition.name}.`,
+      definition.schema,
+      definition.handler,
+    );
+  }
+}
+
 export function registerSolveTools(
   server: McpToolRegistrar,
   opts: {
     solveManager: SolveToolManager;
   },
 ): void {
-  server.tool(
-    "solve_scenario",
-    "Submit a problem for on-demand solving. Returns a job_id for polling.",
-    { description: z.string(), generations: z.number().int().default(5) },
-    async (args: Record<string, unknown>) => {
-      const jobId = opts.solveManager.submit(
-        String(args.description),
-        Number(args.generations ?? 5),
-      );
-      return jsonText({ jobId, status: "pending" });
-    },
-  );
-
-  server.tool(
-    "solve_status",
-    "Check status of a solve-on-demand job",
-    { jobId: z.string() },
-    async (args: Record<string, unknown>) =>
-      jsonText(opts.solveManager.getStatus(String(args.jobId)), 2),
-  );
-
-  server.tool(
-    "solve_result",
-    "Get the exported skill package result of a completed solve-on-demand job",
-    { jobId: z.string() },
-    async (args: Record<string, unknown>) => {
-      const jobId = String(args.jobId);
-      const result = opts.solveManager.getResult(jobId);
-      return jsonText(result ?? buildSolveResultNotFoundPayload(jobId), 2);
-    },
-  );
+  for (const definition of buildSolveToolDefinitions(opts.solveManager)) {
+    registerToolDefinition(server, definition);
+  }
 }

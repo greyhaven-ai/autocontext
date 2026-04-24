@@ -59,3 +59,19 @@ def test_evidence_artifact_tool_function_exists() -> None:
     from autocontext.mcp import server
 
     assert hasattr(server, "autocontext_evidence_artifact")
+
+
+def test_solve_tools_expose_prefixed_and_unprefixed_names() -> None:
+    from autocontext.mcp import server
+
+    tool_names = set(mcp._tool_manager._tools.keys())
+    for name in [
+        "autocontext_solve_scenario",
+        "autocontext_solve_status",
+        "autocontext_solve_result",
+        "solve_scenario",
+        "solve_status",
+        "solve_result",
+    ]:
+        assert name in tool_names
+        assert hasattr(server, name)

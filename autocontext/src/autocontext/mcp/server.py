@@ -236,6 +236,24 @@ def autocontext_solve_result(job_id: str) -> str:
     return json.dumps(pkg.to_dict())
 
 
+@mcp.tool()
+def solve_scenario(description: str, generations: int = 5) -> str:
+    """Alias for autocontext_solve_scenario."""
+    return autocontext_solve_scenario(description, generations)
+
+
+@mcp.tool()
+def solve_status(job_id: str) -> str:
+    """Alias for autocontext_solve_status."""
+    return autocontext_solve_status(job_id)
+
+
+@mcp.tool()
+def solve_result(job_id: str) -> str:
+    """Alias for autocontext_solve_result."""
+    return autocontext_solve_result(job_id)
+
+
 # -- Human feedback tools --
 
 
