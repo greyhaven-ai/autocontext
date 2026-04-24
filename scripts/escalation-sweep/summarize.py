@@ -18,6 +18,7 @@ Buckets:
     designer_parse_exhausted      — AC-575 retry window exhausted
     spec_validation_other         — spec/source/execution validation (non-qt)
     claude_cli_timeout            — subprocess or provider timeout
+    browser_cdp_unavailable       — browser context requested but browser/CDP runtime unreachable
     scenario_execution_failed     — generations errored after scenario built
     unknown                       — didn't match any known pattern
 
@@ -45,6 +46,16 @@ BUCKET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("designer_intent_drift", re.compile(r"intent validation failed", re.I)),
     ("designer_parse_exhausted", re.compile(r"parse(?:_| )retry exhausted|designer parse failed.*attempt 3/3", re.I)),
     ("spec_validation_other", re.compile(r"(spec|source|execution) validation failed", re.I)),
+    (
+        "browser_cdp_unavailable",
+        re.compile(
+            r"ChromeCdp|CDP websocket|debugger target|debugger targets|"
+            r"attachable page targets|page targets.*debugger|"
+            r"browser exploration is not configured|browser.*connect.*fail|"
+            r"chrome.*not.*running|cdp.*unavailable|no.*debug.*port",
+            re.I,
+        ),
+    ),
     ("claude_cli_timeout", re.compile(r"timed? ?out|PiCLIRuntime failed:.*timeout|claude.?cli.*timeout", re.I)),
     ("scenario_execution_failed", re.compile(r"solve did not complete|generation.*fail|executor error", re.I)),
 ]

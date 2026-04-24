@@ -6,7 +6,7 @@ Release-validation helper: run every "Scenarios"-state Linear issue through
 ## Prerequisites
 
 - `jq` and Python 3.11+ on PATH.
-- `autoctx` CLI installed (either a published release `pip install autocontext==0.4.4`
+- `autoctx` CLI installed (either a published release `pip install autocontext==0.4.6`
   or run the checked-out source via `cd autocontext && uv run autoctx ...`).
 - An agent provider. By default the harness uses `AUTOCONTEXT_AGENT_PROVIDER=claude-cli`,
   which invokes the locally-authenticated `claude` binary (Anthropic subscription) — no
@@ -54,6 +54,7 @@ that payload instead of trusting the surrounding text. First-match-wins ordering
 | `designer_parse_exhausted`     | AC-575 retry window exhausted                                  |
 | `spec_validation_other`        | Spec / source / execution validation (non-quality_threshold)   |
 | `claude_cli_timeout`           | Subprocess or provider timed out                               |
+| `browser_cdp_unavailable`      | Browser context requested but browser/CDP runtime not reachable (AC-598–603) |
 | `scenario_execution_failed`    | Scenario built but generations errored                         |
 | `unknown`                      | Didn't match any pattern — inspect `<ID>.out.json` (and `.err.log` if present) |
 
