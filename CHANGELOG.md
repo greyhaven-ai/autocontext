@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - TypeScript capabilities now report the provider factory support surface and no longer mark the visible `train` command as Python-only (AC-626).
+- TypeScript `run` now supports saved custom `agent_task` scenarios through the agent-task improvement runner instead of rejecting scenarios already discoverable in the control plane (AC-625).
 
 ## [0.4.6] - 2026-04-23
 

@@ -30,6 +30,7 @@ import { executeChatAgentInteraction } from "./chat-agent-workflow.js";
 import { RunCustomScenarioRegistry } from "./run-custom-scenario-registry.js";
 import { RunManagerProviderSession } from "./run-manager-provider-session.js";
 import {
+  executeAgentTaskCustomStartRun,
   executeBuiltInGameStartRun,
   executeGeneratedCustomStartRun,
   resolveBuiltInGameScenario,
@@ -270,6 +271,32 @@ export class RunManager {
       return id;
     }
 
+    if (plan.kind === "agent_task_custom") {
+      const settings = loadSettings();
+      const providerBundle = this.#resolveProviderBundle(settings);
+      this.#runPromise = createManagedRunExecution({
+        runId: id,
+        execute: () => executeAgentTaskCustomStartRun({
+          runId: id,
+          scenarioName: plan.scenarioName,
+          entry: plan.entry,
+          generations,
+          provider: providerBundle.defaultProvider,
+          controller: this.#controller,
+          events: this.#events,
+        }),
+        events: this.#events,
+        getPaused: () => this.#controller.isPaused(),
+        setActive: (active) => {
+          this.#active = active;
+        },
+        updateState: (patch) => {
+          this.#updateState(patch);
+        },
+      });
+      return id;
+    }
+
     this.#runPromise = createManagedRunExecution({
       runId: id,
       execute: () => executeGeneratedCustomStartRun({
@@ -351,4 +378,3 @@ export class RunManager {
       .join(" ");
   }
 }
-

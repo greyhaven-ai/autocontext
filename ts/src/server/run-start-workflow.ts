@@ -9,12 +9,18 @@ import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
 import type { CustomScenarioEntry } from "../scenarios/custom-loader.js";
 import { executeGeneratedScenarioEntry } from "../scenarios/codegen/executor.js";
+import { executeAgentTaskSolve } from "../knowledge/agent-task-solve-execution.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import { SQLiteStore } from "../storage/index.js";
 
 export type RunStartPlan =
   | { kind: "builtin_game"; scenarioName: string }
+  | {
+    kind: "agent_task_custom";
+    scenarioName: string;
+    entry: CustomScenarioEntry;
+  }
   | {
     kind: "generated_custom";
     scenarioName: string;
@@ -37,10 +43,18 @@ export function resolveRunStartPlan(opts: {
   if (!customScenario) {
     throw new Error(`Unknown scenario: ${opts.scenario}. Available: ${opts.builtinScenarioNames.join(", ")}`);
   }
-  if (!customScenario.hasGeneratedSource || !family || family === "agent_task") {
+  if (family === "agent_task" || customScenario.type === "agent_task") {
+    return {
+      kind: "agent_task_custom",
+      scenarioName: opts.scenario,
+      entry: customScenario,
+    };
+  }
+
+  if (!customScenario.hasGeneratedSource || !family) {
     throw new Error(
       `Scenario '${opts.scenario}' is a saved custom ${customScenario.type ?? "unknown"} scenario. ` +
-      "It is discoverable in the TS control plane, but /run currently supports only built-in game scenarios and generated non-agent-task scenarios.",
+      "It is discoverable in the TS control plane, but /run currently supports only built-in game, saved agent-task, and generated custom scenarios.",
     );
   }
 
@@ -172,6 +186,77 @@ export async function executeBuiltInGameStartRun(opts: {
   } finally {
     store.close();
   }
+}
+
+export interface AgentTaskCustomStartRunDeps {
+  executeAgentTaskSolve?: typeof executeAgentTaskSolve;
+}
+
+function readBestScore(result: Record<string, unknown>): number {
+  const raw = result.best_score;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+}
+
+function normalizeCompletedGenerations(progress: number): number {
+  return Number.isFinite(progress) ? Math.max(0, Math.floor(progress)) : 0;
+}
+
+export async function executeAgentTaskCustomStartRun(opts: {
+  runId: string;
+  scenarioName: string;
+  entry: CustomScenarioEntry;
+  generations: number;
+  provider: import("../types/index.js").LLMProvider;
+  controller: LoopController;
+  events: EventStreamEmitter;
+  deps?: AgentTaskCustomStartRunDeps;
+}): Promise<void> {
+  const executeTask = opts.deps?.executeAgentTaskSolve ?? executeAgentTaskSolve;
+
+  opts.events.emit("run_started", {
+    run_id: opts.runId,
+    scenario: opts.scenarioName,
+    target_generations: opts.generations,
+    family: "agent_task",
+    saved_custom: true,
+  });
+  await opts.controller.waitIfPaused();
+  opts.events.emit("generation_started", { run_id: opts.runId, generation: 1 });
+
+  const result = await executeTask({
+    provider: opts.provider,
+    created: {
+      name: opts.scenarioName,
+      spec: opts.entry.spec,
+    },
+    generations: opts.generations,
+  });
+  const bestScore = readBestScore(result.result);
+  const completedGenerations = normalizeCompletedGenerations(result.progress);
+
+  for (let generation = 1; generation <= completedGenerations; generation++) {
+    if (generation > 1) {
+      opts.events.emit("generation_started", { run_id: opts.runId, generation });
+    }
+    opts.events.emit("generation_completed", {
+      run_id: opts.runId,
+      generation,
+      mean_score: bestScore,
+      best_score: bestScore,
+      elo: 1000,
+      gate_decision: "advance",
+      family: "agent_task",
+      rounds_completed: completedGenerations,
+    });
+  }
+  opts.events.emit("run_completed", {
+    run_id: opts.runId,
+    completed_generations: completedGenerations,
+    best_score: bestScore,
+    elo: 1000,
+    family: "agent_task",
+    saved_custom: true,
+  });
 }
 
 export interface GeneratedCustomStartRunDeps {

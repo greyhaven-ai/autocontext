@@ -137,7 +137,14 @@ export async function executeAgentTaskSolve(opts: {
   generations: number;
   deps?: AgentTaskSolveExecutionDeps;
 }): Promise<AgentTaskSolveExecutionResult> {
-  const spec = buildAgentTaskSolveSpec(opts.created.spec, opts.generations);
+  const spec = buildAgentTaskSolveSpec(
+    {
+      ...opts.created.spec,
+      maxRounds: opts.generations,
+      max_rounds: opts.generations,
+    },
+    opts.generations,
+  );
   const task = (opts.deps?.createTask ?? createAgentTask)({
     spec,
     name: opts.created.name,

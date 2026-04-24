@@ -119,6 +119,74 @@ describe("agent-task solve execution", () => {
     expect(result.result.skill_markdown).toContain("Best round: 1");
   });
 
+  it("lets the requested generation count override saved maxRounds", async () => {
+    const provider: LLMProvider = {
+      name: "test-provider",
+      defaultModel: () => "test-model",
+      complete: vi.fn(async () => ({
+        text: "Initial response",
+        model: "test-model",
+        usage: {},
+      })),
+    };
+    const taskFromSpec = vi.fn((opts: {
+      spec: ReturnType<typeof buildAgentTaskSolveSpec>;
+      name: string;
+      provider: LLMProvider;
+    }) => ({
+      name: "saved_task",
+      spec: opts.spec,
+      getTaskPrompt: () => "Do work",
+      getRubric: () => "Do it well",
+      describeTask: () => "Do work",
+      initialState: () => ({}),
+      validateContext: () => [],
+      evaluateOutput: async () => ({
+        score: 0.5,
+        reasoning: "ok",
+        dimensionScores: {},
+        internalRetries: 0,
+      }),
+    }));
+
+    await executeAgentTaskSolve({
+      provider,
+      created: {
+        name: "saved_task",
+        spec: {
+          taskPrompt: "Do work",
+          judgeRubric: "Do it well",
+          maxRounds: 1,
+        },
+      },
+      generations: 3,
+      deps: {
+        createTask: taskFromSpec,
+        createLoop: ({ maxRounds }) => {
+          expect(maxRounds).toBe(3);
+          return {
+            run: vi.fn(async () => ({
+              rounds: [],
+              bestOutput: "Initial response",
+              bestScore: 0.5,
+              bestRound: 1,
+              totalRounds: 3,
+              metThreshold: false,
+              judgeFailures: 0,
+              terminationReason: "max_rounds",
+              dimensionTrajectory: {},
+              totalInternalRetries: 0,
+              durationMs: 1,
+              judgeCalls: 1,
+            })),
+          };
+        },
+      },
+    });
+
+    expect(taskFromSpec.mock.calls[0]?.[0].spec.maxRounds).toBe(3);
+  });
+
   it("fails when prepared context is invalid", async () => {
     const provider: LLMProvider = {
       name: "test-provider",

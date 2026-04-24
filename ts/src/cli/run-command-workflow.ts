@@ -3,7 +3,7 @@ export const RUN_HELP_TEXT = `autoctx run — Run the generation loop for a scen
 Usage: autoctx run [options]
 
 Options:
-  --scenario <name>    Scenario to run (current built-in: grid_ctf)
+  --scenario <name>    Scenario to run (built-in or saved custom agent_task)
   --gens N             Number of generations to run (default: from config or 1)
   --run-id <id>        Custom run identifier (default: auto-generated)
   --provider <type>    LLM provider: anthropic, openai, ollama, deterministic, etc.
@@ -68,7 +68,108 @@ export interface RunCommandResult {
   bestScore: number;
   currentElo: number;
   provider: string;
+  skillPackage?: Record<string, unknown>;
   synthetic?: true;
+}
+
+type AgentTaskSolveExecutor = (opts: {
+  provider: unknown;
+  created: { name: string; spec: Record<string, unknown> };
+  generations: number;
+}) => Promise<{ progress: number; result: Record<string, unknown> }>;
+
+export interface AgentTaskRunStore {
+  migrate(migrationsDir: string): void;
+  createRun(
+    runId: string,
+    scenario: string,
+    generations: number,
+    executorMode: string,
+    agentProvider?: string,
+  ): void;
+  updateRunStatus(runId: string, status: string): void;
+  upsertGeneration(
+    runId: string,
+    generationIndex: number,
+    opts: {
+      meanScore: number;
+      bestScore: number;
+      elo: number;
+      wins: number;
+      losses: number;
+      gateDecision: string;
+      status: string;
+      scoringBackend?: string;
+      ratingUncertainty?: number | null;
+    },
+  ): void;
+  close(): void;
+}
+
+export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends {
+  defaultProvider: unknown;
+  defaultConfig: { providerType: string };
+}>(opts: {
+  plan: RunCommandPlan;
+  providerBundle: TProviderBundle;
+  spec: Record<string, unknown>;
+  executeAgentTaskSolve: AgentTaskSolveExecutor;
+  dbPath?: string;
+  migrationsDir?: string;
+  createStore?: (dbPath: string) => AgentTaskRunStore;
+}): Promise<RunCommandResult> {
+  const provider = opts.providerBundle.defaultConfig.providerType;
+  const migrationsDir = opts.migrationsDir;
+  const store = opts.createStore && opts.dbPath && opts.migrationsDir
+    ? opts.createStore(opts.dbPath)
+    : null;
+
+  try {
+    if (store && migrationsDir) {
+      store.migrate(migrationsDir);
+    }
+    store?.createRun(opts.plan.runId, opts.plan.scenarioName, opts.plan.gens, "agent_task", provider);
+
+    const result = await opts.executeAgentTaskSolve({
+      provider: opts.providerBundle.defaultProvider,
+      created: {
+        name: opts.plan.scenarioName,
+        spec: opts.spec,
+      },
+      generations: opts.plan.gens,
+    });
+    const bestScore = typeof result.result.best_score === "number" ? result.result.best_score : 0;
+    const generationsCompleted = normalizeCompletedGenerations(result.progress);
+
+    for (let generation = 1; generation <= generationsCompleted; generation++) {
+      store?.upsertGeneration(opts.plan.runId, generation, {
+        meanScore: bestScore,
+        bestScore,
+        elo: 1000,
+        wins: 0,
+        losses: 0,
+        gateDecision: "advance",
+        status: "completed",
+        scoringBackend: "agent_task",
+      });
+    }
+    store?.updateRunStatus(opts.plan.runId, "completed");
+
+    return {
+      runId: opts.plan.runId,
+      generationsCompleted,
+      bestScore,
+      currentElo: 1000,
+      provider,
+      skillPackage: result.result,
+      ...(provider === "deterministic" ? { synthetic: true } : {}),
+    };
+  } catch (error) {
+    store?.updateRunStatus(opts.plan.runId, "failed");
+    throw error;
+  } finally {
+    store?.close();
+  }
 }
 
 export async function planRunCommand(
@@ -225,4 +326,8 @@ export function renderRunResult(
       : {}),
     stdout: `Run ${result.runId}: ${result.generationsCompleted} generations, best score ${result.bestScore.toFixed(4)}, Elo ${result.currentElo.toFixed(1)}`,
   };
+}
+
+function normalizeCompletedGenerations(progress: number): number {
+  return Number.isFinite(progress) ? Math.max(0, Math.floor(progress)) : 0;
 }
