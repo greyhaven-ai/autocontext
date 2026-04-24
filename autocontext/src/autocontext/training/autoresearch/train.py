@@ -1,7 +1,8 @@
-"""Baseline MLX GPT model and training loop for autoresearch distillation.
+"""Baseline MLX/CUDA GPT model and training loop for autoresearch distillation.
 
 All MLX code is behind import guards so the module can be imported
-(for type checking, tests, etc.) even when MLX is not installed.
+(for type checking, tests, etc.) even when MLX is not installed. CUDA support
+imports PyTorch only inside the CUDA execution path.
 """
 from __future__ import annotations
 
@@ -265,12 +266,30 @@ else:
     class ModelConfig:  # type: ignore[no-redef]
         """Hyperparameters for the baseline GPT model (stub)."""
 
-        depth: int = 4
-        aspect_ratio: int = 64
-        head_dim: int = 64
-        n_kv_heads: int = 4
-        vocab_size: int = total_vocab_size(BASE_VOCAB_SIZE)
-        seq_len: int = 2048
+        def __init__(
+            self,
+            *,
+            depth: int = 4,
+            aspect_ratio: int = 64,
+            head_dim: int = 64,
+            n_kv_heads: int = 4,
+            vocab_size: int = total_vocab_size(BASE_VOCAB_SIZE),
+            seq_len: int = 2048,
+        ) -> None:
+            self.depth = depth
+            self.aspect_ratio = aspect_ratio
+            self.head_dim = head_dim
+            self.n_kv_heads = n_kv_heads
+            self.vocab_size = vocab_size
+            self.seq_len = seq_len
+
+        @property
+        def d_model(self) -> int:
+            return self.depth * self.aspect_ratio
+
+        @property
+        def n_heads(self) -> int:
+            return self.d_model // self.head_dim
 
     class GPTModel:  # type: ignore[no-redef]
         """GPT model stub when MLX is not installed."""
@@ -397,7 +416,7 @@ def _build_corpus(records: list[dict[str, Any]]) -> str:
     return "\n".join(examples)
 
 
-def run_training(
+def _run_mlx_training(
     *,
     scenario_name: str,
     data_path: Path,
@@ -496,11 +515,58 @@ def run_training(
     }
 
 
+def run_training(
+    *,
+    scenario_name: str,
+    data_path: Path,
+    output_dir: Path,
+    time_budget: int,
+    memory_limit_mb: int,
+    train_steps: int = 8,
+    batch_size: int = 4,
+    learning_rate: float = 1e-3,
+    seq_len: int = 128,
+    assess_samples: int = 8,
+    backend: str = "mlx",
+) -> dict[str, float]:
+    normalized_backend = backend.strip().lower()
+    if normalized_backend == "mlx":
+        return _run_mlx_training(
+            scenario_name=scenario_name,
+            data_path=data_path,
+            output_dir=output_dir,
+            time_budget=time_budget,
+            memory_limit_mb=memory_limit_mb,
+            train_steps=train_steps,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            seq_len=seq_len,
+            assess_samples=assess_samples,
+        )
+    if normalized_backend == "cuda":
+        from autocontext.training.autoresearch.cuda import run_cuda_training
+
+        return run_cuda_training(
+            scenario_name=scenario_name,
+            data_path=data_path,
+            output_dir=output_dir,
+            time_budget=time_budget,
+            memory_limit_mb=memory_limit_mb,
+            train_steps=train_steps,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            seq_len=seq_len,
+            assess_samples=assess_samples,
+        )
+    raise ValueError("unsupported training backend: expected 'mlx' or 'cuda'")
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run local autoresearch MLX training")
+    parser = argparse.ArgumentParser(description="Run local autoresearch MLX or CUDA training")
     parser.add_argument("--scenario", required=True)
     parser.add_argument("--data", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--backend", choices=("mlx", "cuda"), default="mlx")
     parser.add_argument("--time-budget", type=int, default=300)
     parser.add_argument("--memory-limit", type=int, default=16384)
     parser.add_argument("--train-steps", type=int, default=8)
@@ -526,6 +592,7 @@ def main(argv: list[str] | None = None) -> int:
             learning_rate=args.learning_rate,
             seq_len=args.seq_len,
             assess_samples=args.assess_samples,
+            backend=args.backend,
         )
     except Exception as exc:
         logger.debug("training.autoresearch.train: caught Exception", exc_info=True)
