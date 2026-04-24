@@ -260,12 +260,10 @@ class TestClassificationAlternatives:
         )
         register_family(temp_family)
         try:
-            with pytest.raises(LowConfidenceError) as exc_info:
-                classify_scenario_family("do something unusual")
-            classification = exc_info.value.classification
-            all_names = {classification.family_name} | {a.family_name for a in classification.alternatives}
+            result = classify_scenario_family("do something unusual")
+            all_names = {result.family_name} | {a.family_name for a in result.alternatives}
             assert "_test_family" in all_names
-            assert classification.family_name == _DEFAULT_FAMILY_NAME
+            assert result.family_name == _DEFAULT_FAMILY_NAME
         finally:
             FAMILY_REGISTRY.pop("_test_family", None)
 
@@ -285,19 +283,15 @@ class TestClassifyEdgeCases:
             classify_scenario_family("   ")
 
     def test_very_short_description(self) -> None:
-        """Short descriptions with no keyword signals raise LowConfidenceError."""
-        with pytest.raises(LowConfidenceError) as exc_info:
-            classify_scenario_family("write code")
-        result = exc_info.value.classification
+        """Short descriptions should still produce a classification."""
+        result = classify_scenario_family("write code")
         assert result.family_name in {"agent_task", "game", "simulation"}
         assert result.confidence > 0.0
 
     def test_ambiguous_description_has_lower_confidence(self) -> None:
-        """A vague description produces lower confidence than a clear one."""
+        """A vague description should produce lower confidence than a clear one."""
         clear = classify_scenario_family("Build a competitive two-player board game tournament")
-        with pytest.raises(LowConfidenceError) as exc_info:
-            classify_scenario_family("Do something interesting with data")
-        vague = exc_info.value.classification
+        vague = classify_scenario_family("Do something interesting with data")
         assert clear.confidence > vague.confidence
 
 
@@ -441,16 +435,12 @@ class TestFallbackAttemptedFlag:
         def bad_llm(system: str, user: str) -> str:
             return "I cannot determine the family for this input."
 
-        with pytest.raises(LowConfidenceError) as exc_info:
-            classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
-
-        assert exc_info.value.classification.llm_fallback_attempted is True
+        classification = classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+        assert classification.llm_fallback_attempted is True
 
     def test_flag_not_set_when_no_llm_fn_provided(self) -> None:
-        with pytest.raises(LowConfidenceError) as exc_info:
-            classify_scenario_family(_GIBBERISH)
-
-        assert exc_info.value.classification.llm_fallback_attempted is False
+        classification = classify_scenario_family(_GIBBERISH)
+        assert classification.llm_fallback_attempted is False
 
     def test_flag_not_set_on_successful_llm_fallback(self) -> None:
         def good_llm(system: str, user: str) -> str:
@@ -466,15 +456,21 @@ class TestLowConfidenceErrorMentionsFallback:
         def bad_llm(system: str, user: str) -> str:
             return "Sorry, I cannot classify this."
 
+        classification = classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+        assert classification.llm_fallback_attempted is True
+
         with pytest.raises(LowConfidenceError) as exc_info:
-            classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+            route_to_family(classification)
 
         msg = str(exc_info.value).lower()
         assert "fallback" in msg
 
     def test_message_does_not_mention_fallback_when_not_attempted(self) -> None:
+        classification = classify_scenario_family(_GIBBERISH)
+        assert classification.llm_fallback_attempted is False
+
         with pytest.raises(LowConfidenceError) as exc_info:
-            classify_scenario_family(_GIBBERISH)
+            route_to_family(classification)
 
         # No llm_fn passed — message should only recommend rephrasing
         msg = str(exc_info.value).lower()
@@ -484,7 +480,9 @@ class TestLowConfidenceErrorMentionsFallback:
         def bad_llm(system: str, user: str) -> str:
             return "not json"
 
+        classification = classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+
         with pytest.raises(LowConfidenceError) as exc_info:
-            classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+            route_to_family(classification)
 
         assert "rephras" in str(exc_info.value).lower()
