@@ -52,6 +52,7 @@ const NO_DB_COMMAND_HANDLERS: Record<NoDbCommandName, () => Promise<void>> = {
 const DB_COMMAND_HANDLERS: Record<DbCommandName, (dbPath: string) => Promise<void>> = {
   mission: cmdMission,
   campaign: cmdCampaign,
+  solve: cmdSolve,
   run: cmdRun,
   list: cmdList,
   replay: cmdReplay,
@@ -488,6 +489,66 @@ async function cmdRun(dbPath: string): Promise<void> {
     console.error(rendered.stderr);
   }
   console.log(rendered.stdout);
+}
+
+async function cmdSolve(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      description: { type: "string", short: "d" },
+      gens: { type: "string", short: "g" },
+      timeout: { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  const {
+    executeSolveCommandWorkflow,
+    planSolveCommand,
+    renderSolveCommandSummary,
+    SOLVE_HELP_TEXT,
+  } = await import("./solve-command-workflow.js");
+
+  if (values.help) {
+    console.log(SOLVE_HELP_TEXT);
+    process.exit(0);
+  }
+
+  let plan;
+  try {
+    plan = planSolveCommand(values, parsePositiveInteger);
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { SolveManager } = await import("../knowledge/solver.js");
+
+  const settings = loadSettings();
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+
+  try {
+    const { provider } = await getProvider();
+    const summary = await executeSolveCommandWorkflow({
+      manager: new SolveManager({
+        provider,
+        store,
+        runsRoot: resolve(settings.runsRoot),
+        knowledgeRoot: resolve(settings.knowledgeRoot),
+      }),
+      plan,
+    });
+    console.log(renderSolveCommandSummary(summary, plan.json));
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  } finally {
+    store.close();
+  }
 }
 
 async function cmdTui(dbPath: string): Promise<void> {

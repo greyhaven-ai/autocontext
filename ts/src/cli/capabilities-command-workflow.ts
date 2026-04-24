@@ -10,6 +10,7 @@ export const CAPABILITIES_COMMANDS = [
   "export-training-data",
   "import-package",
   "new-scenario",
+  "solve",
   "capabilities",
   "login",
   "whoami",

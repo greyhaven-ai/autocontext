@@ -357,6 +357,24 @@ describe("AC-405: autoctx capabilities", () => {
   });
 });
 
+describe("AC-619: autoctx solve", () => {
+  it("appears in top-level and command-specific help", () => {
+    const topLevel = runCli(["--help"]);
+    expect(topLevel.stdout).toContain("solve");
+
+    const solveHelp = runCli(["solve", "--help"]);
+    expect(solveHelp.exitCode).toBe(0);
+    expect(solveHelp.stdout).toContain("autoctx solve");
+    expect(solveHelp.stdout).toContain("--description");
+  });
+
+  it("requires a description", () => {
+    const { stderr, exitCode } = runCli(["solve"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("--description is required");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // AC-418: capabilities reports dynamic version
 // ---------------------------------------------------------------------------

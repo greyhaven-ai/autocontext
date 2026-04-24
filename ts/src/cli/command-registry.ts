@@ -27,6 +27,7 @@ export type NoDbCommandName =
 export type DbCommandName =
   | "mission"
   | "campaign"
+  | "solve"
   | "run"
   | "list"
   | "replay"
@@ -77,6 +78,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   { name: "models", description: "List available models for authenticated providers (JSON)", group: "primary", route: { kind: "no-db", command: "models" } },
   { name: "mission", description: "Manage multi-step task missions", group: "primary", route: { kind: "db", command: "mission" } },
   { name: "campaign", description: "Manage multi-mission campaigns", group: "primary", route: { kind: "db", command: "campaign" } },
+  { name: "solve", description: "Create and solve a scenario from plain language", group: "primary", route: { kind: "db", command: "solve" } },
   { name: "tui", description: "Start interactive TUI (WebSocket server + Ink UI)", group: "primary", route: { kind: "db", command: "tui" } },
   { name: "judge", description: "One-shot evaluation of output against a rubric", group: "primary", route: { kind: "db", command: "judge" } },
   { name: "improve", description: "Run multi-round improvement loop", group: "primary", route: { kind: "db", command: "improve" } },

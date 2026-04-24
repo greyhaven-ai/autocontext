@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- TypeScript CLI now exposes `autoctx solve` as a DB-backed solve-on-demand entrypoint with `--description`, `--gens`, `--timeout`, and `--json` support (AC-619).
+
 ## [0.4.6] - 2026-04-23
 
 ### Added
