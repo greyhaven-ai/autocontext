@@ -13,6 +13,7 @@ describe("export-training-data command workflow", () => {
     expect(EXPORT_TRAINING_DATA_HELP_TEXT).toContain("--run-id");
     expect(EXPORT_TRAINING_DATA_HELP_TEXT).toContain("--scenario");
     expect(EXPORT_TRAINING_DATA_HELP_TEXT).toContain("--include-matches");
+    expect(EXPORT_TRAINING_DATA_HELP_TEXT).not.toContain("Unsupported Python commands: train");
   });
 
   it("requires run-id or scenario", () => {

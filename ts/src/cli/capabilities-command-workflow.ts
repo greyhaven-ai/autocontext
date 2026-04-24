@@ -26,6 +26,7 @@ export const CAPABILITIES_COMMANDS = [
   "status",
   "serve",
   "mcp-serve",
+  "train",
   "version",
 ] as const;
 

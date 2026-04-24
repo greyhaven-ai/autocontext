@@ -40,6 +40,7 @@ describe("capabilities command workflow", () => {
         "status",
         "serve",
         "mcp-serve",
+        "train",
         "version",
       ]),
       features: {

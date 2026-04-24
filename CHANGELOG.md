@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- TypeScript capabilities now report the provider factory support surface and no longer mark the visible `train` command as Python-only (AC-626).
+
 ## [0.4.6] - 2026-04-23
 
 ### Added

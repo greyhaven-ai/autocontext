@@ -6,6 +6,9 @@ import { CodexCLIRuntime, CodexCLIConfig } from "../runtimes/codex-cli.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
 import { RuntimeBridgeProvider } from "../agents/provider-bridge.js";
+import { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
+
+export { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
 
 export interface AnthropicProviderOpts {
   apiKey: string;
@@ -172,25 +175,6 @@ export interface CreateProviderOpts {
   piRpcApiKey?: string;
   piRpcSessionPersistence?: boolean;
 }
-
-export const SUPPORTED_PROVIDER_TYPES = [
-  "anthropic",
-  "openai",
-  "openai-compatible",
-  "ollama",
-  "vllm",
-  "hermes",
-  "gemini",
-  "mistral",
-  "groq",
-  "openrouter",
-  "azure-openai",
-  "claude-cli",
-  "codex",
-  "pi",
-  "pi-rpc",
-  "deterministic",
-] as const;
 
 export function createProvider(opts: CreateProviderOpts): LLMProvider {
   const type = opts.providerType.toLowerCase().trim();

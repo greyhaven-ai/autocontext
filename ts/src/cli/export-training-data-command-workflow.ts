@@ -6,7 +6,7 @@ export const EXPORT_TRAINING_DATA_HELP_TEXT = [
   "",
   "Exports training data as JSONL with Python-compatible snake_case fields.",
   "",
-  "Unsupported Python commands: train, trigger-distillation (require MLX/CUDA backends)",
+  "For end-to-end local MLX/CUDA training, use the Python package's train command or inject a TypeScript training executor.",
 ].join("\n");
 
 export interface ExportTrainingDataCommandValues {
