@@ -104,3 +104,19 @@ def test_summarize_tallies_llm_classifier_fallback_when_stderr_chatter_is_merged
     summary = json.loads((results_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["rows"][0]["bucket"] == "llm_fallback_fired"
     assert summary["buckets"]["llm_fallback_fired"] == 1
+
+
+def test_classify_error_buckets_common_browser_cdp_failures_before_generic_timeouts() -> None:
+    summary_mod = _load_summary_module()
+
+    messages = [
+        "Timed out connecting to CDP websocket: ws://127.0.0.1:9222/devtools/page/1",
+        "Failed to connect to CDP websocket: ECONNREFUSED",
+        "No attachable page targets were advertised by the debugger",
+        "No debugger targets matched the browser allowlist",
+        "Debugger target discovery failed with HTTP 404",
+        "browser exploration is not configured",
+    ]
+
+    for message in messages:
+        assert summary_mod.classify_error(message) == "browser_cdp_unavailable", message
