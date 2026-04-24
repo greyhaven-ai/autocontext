@@ -11,12 +11,18 @@ import {
 
 describe("solve workflow", () => {
   it("creates solve jobs and reports status payloads", () => {
-    const job = createSolveJob("solve_123", "Summarize outage escalations", 3);
+    const job = createSolveJob("solve_123", "Summarize outage escalations", 3, {
+      familyOverride: "agent_task",
+      generationTimeBudgetSeconds: 15,
+    });
 
     expect(job).toMatchObject({
       jobId: "solve_123",
       description: "Summarize outage escalations",
       generations: 3,
+      familyOverride: "agent_task",
+      generationTimeBudgetSeconds: 15,
+      llmClassifierFallbackUsed: false,
       status: "pending",
     });
 
@@ -24,6 +30,11 @@ describe("solve workflow", () => {
       jobId: "solve_123",
       status: "pending",
       generations: 3,
+      familyOverride: "agent_task",
+      generationTimeBudgetSeconds: 15,
+      generation_time_budget_seconds: 15,
+      llmClassifierFallbackUsed: false,
+      llm_classifier_fallback_used: false,
       progress: 0,
     });
 

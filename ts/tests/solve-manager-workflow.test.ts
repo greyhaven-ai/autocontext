@@ -12,7 +12,20 @@ describe("solve manager workflow", () => {
   });
 
   it("routes agent-task jobs through scenario preparation, persistence, and execution", async () => {
-    const job = createSolveJob("solve_job", "Summarize outage escalations", 2);
+    const job = createSolveJob("solve_job", "Summarize outage escalations", 2, {
+      familyOverride: "agent_task",
+      generationTimeBudgetSeconds: 30,
+    });
+    const createScenarioFromDescription = vi.fn(async () => ({
+      name: "incident_triage",
+      family: "agent_task",
+      spec: { taskPrompt: "Summarize incident reports", rubric: "Evaluate completeness" },
+    }));
+    const prepareSolveScenario = vi.fn(({ created, description, familyOverride }) => ({
+      ...created,
+      description,
+      family: familyOverride,
+    }));
     const executeAgentTaskSolve = vi.fn(async () => ({
       progress: 1,
       result: { scenario_name: "incident_triage", best_score: 0.93 },
@@ -25,13 +38,9 @@ describe("solve manager workflow", () => {
       runsRoot: "/tmp/runs",
       knowledgeRoot: "/tmp/knowledge",
       deps: {
-        createScenarioFromDescription: vi.fn(async () => ({
-          name: "incident_triage",
-          family: "agent_task",
-          spec: { taskPrompt: "Summarize incident reports", rubric: "Evaluate completeness" },
-        })),
+        createScenarioFromDescription,
         listBuiltinScenarioNames: vi.fn(async () => ["grid_ctf"]),
-        prepareSolveScenario: vi.fn(({ created, description }) => ({ ...created, description })) as never,
+        prepareSolveScenario: prepareSolveScenario as never,
         determineSolveExecutionRoute: vi.fn(() => "agent_task") as never,
         persistSolveScenarioScaffold: vi.fn(async () => ({ persisted: true, errors: [] })) as never,
         executeBuiltInGameSolve: vi.fn() as never,
@@ -44,6 +53,12 @@ describe("solve manager workflow", () => {
       },
     });
 
+    expect(createScenarioFromDescription).toHaveBeenCalledWith(
+      expect.stringContaining("**Family:** agent_task"),
+    );
+    expect(prepareSolveScenario).toHaveBeenCalledWith(
+      expect.objectContaining({ familyOverride: "agent_task" }),
+    );
     expect(executeAgentTaskSolve).toHaveBeenCalledWith({
       provider: expect.objectContaining({ name: "mock" }),
       created: expect.objectContaining({ name: "incident_triage" }),

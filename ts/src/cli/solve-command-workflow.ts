@@ -1,23 +1,33 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+
 export const SOLVE_HELP_TEXT = `autoctx solve — create and solve a scenario from a plain-language description
 
 Usage:
-  autoctx solve --description "..." [--gens N] [--json]
+  autoctx solve --description "..." [--gens N] [--family name] [--json]
 
 Options:
   -d, --description <text>   Natural-language scenario/problem description
   -g, --gens <N>             Generations to run (default: 5)
+  --family <name>            Force a scenario family before creation/routing
   --timeout <seconds>        Maximum time to wait for solve completion (default: 300)
+  --generation-time-budget <seconds>
+                              Soft per-generation solve runtime budget metadata (0 = unlimited)
+  --output <path>            Write the solved package JSON to a file
   --json                     Output structured JSON
   -h, --help                 Show this help
 
 Examples:
   autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
-  autoctx solve -d "investigate a production outage from logs" --gens 2 --json`;
+  autoctx solve -d "investigate a production outage from logs" --family investigation --gens 2 --json`;
 
 export interface SolveCommandValues {
   description?: string;
   gens?: string;
   timeout?: string;
+  "generation-time-budget"?: string;
+  family?: string;
+  output?: string;
   json?: boolean;
 }
 
@@ -25,11 +35,21 @@ export interface SolveCommandPlan {
   description: string;
   generations: number;
   timeoutMs: number;
+  generationTimeBudgetSeconds: number | null;
+  familyOverride: string | null;
+  outputPath: string | null;
   json: boolean;
 }
 
 export interface SolveManagerLike {
-  submit(description: string, generations: number): string;
+  submit(
+    description: string,
+    generations: number,
+    opts?: {
+      familyOverride?: string;
+      generationTimeBudgetSeconds?: number | null;
+    },
+  ): string;
   getStatus(jobId: string): Record<string, unknown>;
   getResult(jobId: string): Record<string, unknown> | null;
 }
@@ -41,6 +61,9 @@ export interface SolveCommandSummary {
   scenarioName: string | null;
   family: string | null;
   generations: number;
+  generationTimeBudgetSeconds: number | null;
+  outputPath: string | null;
+  llmClassifierFallbackUsed: boolean;
   progress: number;
   result: Record<string, unknown>;
 }
@@ -60,11 +83,17 @@ export function planSolveCommand(
   const timeoutMs = values.timeout
     ? parsePositiveInteger(values.timeout, "--timeout") * 1000
     : DEFAULT_TIMEOUT_MS;
+  const generationTimeBudgetSeconds = values["generation-time-budget"] === undefined
+    ? null
+    : parseNonNegativeInteger(values["generation-time-budget"], "--generation-time-budget");
 
   return {
     description,
     generations: values.gens ? parsePositiveInteger(values.gens, "--gens") : 5,
     timeoutMs,
+    generationTimeBudgetSeconds,
+    familyOverride: values.family?.trim() ? values.family.trim() : null,
+    outputPath: values.output?.trim() ? values.output.trim() : null,
     json: Boolean(values.json),
   };
 }
@@ -80,7 +109,10 @@ export async function executeSolveCommandWorkflow(opts: {
   const sleep = opts.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const deadline = now() + opts.plan.timeoutMs;
-  const jobId = opts.manager.submit(opts.plan.description, opts.plan.generations);
+  const jobId = opts.manager.submit(opts.plan.description, opts.plan.generations, {
+    familyOverride: opts.plan.familyOverride ?? undefined,
+    generationTimeBudgetSeconds: opts.plan.generationTimeBudgetSeconds,
+  });
 
   let status = opts.manager.getStatus(jobId);
   while (!isTerminalSolveStatus(status)) {
@@ -107,9 +139,22 @@ export async function executeSolveCommandWorkflow(opts: {
     scenarioName: stringOrNull(status.scenarioName),
     family: stringOrNull(status.family),
     generations: numberOrDefault(status.generations, opts.plan.generations),
+    generationTimeBudgetSeconds: nullableNumberOrDefault(
+      status.generationTimeBudgetSeconds ?? status.generation_time_budget_seconds,
+      opts.plan.generationTimeBudgetSeconds,
+    ),
+    outputPath: opts.plan.outputPath,
+    llmClassifierFallbackUsed: Boolean(
+      status.llmClassifierFallbackUsed ?? status.llm_classifier_fallback_used,
+    ),
     progress: numberOrDefault(status.progress, 0),
     result,
   };
+}
+
+export function writeSolveOutputFile(result: Record<string, unknown>, outputPath: string): void {
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, JSON.stringify(result, null, 2) + "\n", "utf-8");
 }
 
 export function renderSolveCommandSummary(summary: SolveCommandSummary, json: boolean): string {
@@ -124,6 +169,7 @@ export function renderSolveCommandSummary(summary: SolveCommandSummary, json: bo
     `  Family: ${summary.family ?? "unknown"}`,
     `  Generations: ${summary.generations}`,
     `  Progress: ${summary.progress}`,
+    ...(summary.outputPath ? [`  Output: ${summary.outputPath}`] : []),
   ].join("\n");
 }
 
@@ -137,4 +183,16 @@ function stringOrNull(value: unknown): string | null {
 
 function numberOrDefault(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function nullableNumberOrDefault(value: unknown, fallback: number | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function parseNonNegativeInteger(raw: string | undefined, label: string): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${label} must be a non-negative integer`);
+  }
+  return parsed;
 }

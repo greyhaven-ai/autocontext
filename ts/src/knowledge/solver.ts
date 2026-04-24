@@ -27,6 +27,11 @@ export interface SolveManagerOpts {
   knowledgeRoot: string;
 }
 
+export interface SolveSubmitOptions {
+  familyOverride?: string;
+  generationTimeBudgetSeconds?: number | null;
+}
+
 export { buildAgentTaskSolveSpec } from "./agent-task-solve-execution.js";
 
 export class SolveManager {
@@ -43,9 +48,9 @@ export class SolveManager {
     this.#knowledgeRoot = opts.knowledgeRoot;
   }
 
-  submit(description: string, generations: number): string {
+  submit(description: string, generations: number, opts: SolveSubmitOptions = {}): string {
     const jobId = buildSolveJobId();
-    const job = createSolveJob(jobId, description, generations);
+    const job = createSolveJob(jobId, description, generations, opts);
     this.#jobs.set(jobId, job);
 
     this.#runJob(job).catch(() => {

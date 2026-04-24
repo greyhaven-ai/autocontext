@@ -138,7 +138,7 @@ autoctx providers
 autoctx models
 
 # Scenario execution
-autoctx solve --description "improve customer-support replies" --gens 3 --json
+autoctx solve --description "improve customer-support replies" --family agent_task --gens 3 --output package.json --json
 autoctx run --scenario support_triage --gens 3 --json
 autoctx list --json
 autoctx replay --run-id <id> --generation 1
