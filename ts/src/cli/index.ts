@@ -470,6 +470,9 @@ async function cmdRun(dbPath: string): Promise<void> {
         providerBundle,
         spec: savedAgentTask.spec,
         executeAgentTaskSolve: executeAgentTaskSolve as never,
+        dbPath,
+        migrationsDir: getMigrationsDir(),
+        createStore: (runDbPath) => new SQLiteStore(runDbPath),
       });
       const rendered = renderRunResult(result, plan.json);
       if (rendered.stderr) {

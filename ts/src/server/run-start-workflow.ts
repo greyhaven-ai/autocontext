@@ -197,6 +197,10 @@ function readBestScore(result: Record<string, unknown>): number {
   return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
 }
 
+function normalizeCompletedGenerations(progress: number): number {
+  return Number.isFinite(progress) ? Math.max(0, Math.floor(progress)) : 0;
+}
+
 export async function executeAgentTaskCustomStartRun(opts: {
   runId: string;
   scenarioName: string;
@@ -228,20 +232,26 @@ export async function executeAgentTaskCustomStartRun(opts: {
     generations: opts.generations,
   });
   const bestScore = readBestScore(result.result);
+  const completedGenerations = normalizeCompletedGenerations(result.progress);
 
-  opts.events.emit("generation_completed", {
-    run_id: opts.runId,
-    generation: 1,
-    mean_score: bestScore,
-    best_score: bestScore,
-    elo: 1000,
-    gate_decision: "advance",
-    family: "agent_task",
-    rounds_completed: result.progress,
-  });
+  for (let generation = 1; generation <= completedGenerations; generation++) {
+    if (generation > 1) {
+      opts.events.emit("generation_started", { run_id: opts.runId, generation });
+    }
+    opts.events.emit("generation_completed", {
+      run_id: opts.runId,
+      generation,
+      mean_score: bestScore,
+      best_score: bestScore,
+      elo: 1000,
+      gate_decision: "advance",
+      family: "agent_task",
+      rounds_completed: completedGenerations,
+    });
+  }
   opts.events.emit("run_completed", {
     run_id: opts.runId,
-    completed_generations: result.progress,
+    completed_generations: completedGenerations,
     best_score: bestScore,
     elo: 1000,
     family: "agent_task",

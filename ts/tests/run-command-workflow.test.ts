@@ -213,6 +213,15 @@ describe("run command workflow", () => {
       },
       spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
       executeAgentTaskSolve,
+      dbPath: "/tmp/run.db",
+      migrationsDir: "/tmp/migrations",
+      createStore: vi.fn(() => ({
+        migrate: vi.fn(),
+        createRun: vi.fn(),
+        updateRunStatus: vi.fn(),
+        upsertGeneration: vi.fn(),
+        close: vi.fn(),
+      })),
     });
 
     expect(executeAgentTaskSolve).toHaveBeenCalledWith({
@@ -235,6 +244,61 @@ describe("run command workflow", () => {
       },
       synthetic: true,
     });
+  });
+
+  it("persists saved agent-task runs and completed generations", async () => {
+    const store = {
+      migrate: vi.fn(),
+      createRun: vi.fn(),
+      updateRunStatus: vi.fn(),
+      upsertGeneration: vi.fn(),
+      close: vi.fn(),
+    };
+
+    await executeAgentTaskRunCommandWorkflow({
+      plan: {
+        scenarioName: "saved_task",
+        gens: 2,
+        runId: "run-task",
+        providerType: "deterministic",
+        matches: 1,
+        json: true,
+      },
+      providerBundle: {
+        defaultProvider: { name: "provider" },
+        defaultConfig: { providerType: "deterministic" },
+      },
+      spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+      executeAgentTaskSolve: vi.fn(async () => ({
+        progress: 2,
+        result: { scenario_name: "saved_task", best_score: 0.91 },
+      })),
+      dbPath: "/tmp/run.db",
+      migrationsDir: "/tmp/migrations",
+      createStore: vi.fn(() => store),
+    });
+
+    expect(store.migrate).toHaveBeenCalledWith("/tmp/migrations");
+    expect(store.createRun).toHaveBeenCalledWith(
+      "run-task",
+      "saved_task",
+      2,
+      "agent_task",
+      "deterministic",
+    );
+    expect(store.upsertGeneration).toHaveBeenCalledTimes(2);
+    expect(store.upsertGeneration).toHaveBeenNthCalledWith(2, "run-task", 2, {
+      meanScore: 0.91,
+      bestScore: 0.91,
+      elo: 1000,
+      wins: 0,
+      losses: 0,
+      gateDecision: "advance",
+      status: "completed",
+      scoringBackend: "agent_task",
+    });
+    expect(store.updateRunStatus).toHaveBeenCalledWith("run-task", "completed");
+    expect(store.close).toHaveBeenCalledOnce();
   });
 
   it("renders json and human-readable run results", () => {

@@ -261,6 +261,11 @@ describe("run start workflow", () => {
       generations: 2,
     });
     expect(emitted[0]?.event).toBe("run_started");
+    expect(emitted.filter((entry) => entry.event === "generation_started")).toEqual([
+      { event: "generation_started", payload: { run_id: "run_task", generation: 1 } },
+      { event: "generation_started", payload: { run_id: "run_task", generation: 2 } },
+    ]);
+    expect(emitted.filter((entry) => entry.event === "generation_completed")).toHaveLength(2);
     expect(emitted.find((entry) => entry.event === "generation_completed")?.payload.best_score).toBe(0.82);
     expect(emitted.find((entry) => entry.event === "run_completed")?.payload.completed_generations).toBe(2);
   });
