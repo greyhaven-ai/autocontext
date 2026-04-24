@@ -5,6 +5,7 @@
 
 import { createRequire } from "node:module";
 import { getConceptModel, type ConceptModel } from "../concepts/model.js";
+import { SUPPORTED_PROVIDER_TYPES } from "../providers/supported-provider-types.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 
 const require = createRequire(import.meta.url);
@@ -23,17 +24,7 @@ export function getCapabilities(): Capabilities {
   return {
     version: pkg.version,
     scenarios: Object.keys(SCENARIO_REGISTRY).sort(),
-    providers: [
-      "anthropic",
-      "openai",
-      "openai-compatible",
-      "ollama",
-      "vllm",
-      "hermes",
-      "pi",
-      "pi-rpc",
-      "deterministic",
-    ],
+    providers: [...SUPPORTED_PROVIDER_TYPES],
     features: [
       "generation_loop",
       "tournament",
@@ -51,7 +42,6 @@ export function getCapabilities(): Capabilities {
       "stagnation_detection",
     ],
     pythonOnly: [
-      "train",
       "ecosystem",
       "ab-test",
       "resume",
