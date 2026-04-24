@@ -365,6 +365,8 @@ class TrainingRunner:
             str(self.config.time_budget),
             "--memory-limit",
             str(self.config.memory_limit_mb),
+            "--backend",
+            self.config.backend,
         ]
         return subprocess.run(
             command,

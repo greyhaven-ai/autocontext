@@ -175,7 +175,9 @@ JSON output shape:
 #### `autoctx train` — Run a training loop
 
 ```bash
-autoctx train --scenario grid_ctf --data training.jsonl --time-budget 300 --json
+autoctx train --scenario grid_ctf --data training.jsonl --backend mlx --time-budget 300 --json
+# On a CUDA host with CUDA-enabled PyTorch:
+autoctx train --scenario grid_ctf --data training.jsonl --backend cuda --time-budget 300 --json
 ```
 
 JSON output shape:

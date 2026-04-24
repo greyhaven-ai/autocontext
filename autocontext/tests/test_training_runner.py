@@ -256,6 +256,23 @@ class TestConstraints:
         # Subprocess timeout should be 2x the time budget (safety margin)
         assert runner.subprocess_timeout == 20
 
+    def test_experiment_subprocess_receives_selected_backend(self, tmp_path: Path) -> None:
+        cfg = TrainingConfig(
+            scenario="grid_ctf",
+            data_path=tmp_path / "data.jsonl",
+            backend="cuda",
+        )
+        (tmp_path / "data.jsonl").write_text("{}\n")
+        runner = TrainingRunner(cfg, work_dir=tmp_path / "workspace")
+
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with patch("autocontext.training.runner.subprocess.run", return_value=completed) as mock_run:
+            runner._run_experiment_subprocess(0)
+
+        command = mock_run.call_args.args[0]
+        backend_index = command.index("--backend")
+        assert command[backend_index + 1] == "cuda"
+
     def test_convergence_nudge_after_consecutive_discards(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(scenario="grid_ctf", data_path=tmp_path / "data.jsonl")
         (tmp_path / "data.jsonl").write_text("{}\n")

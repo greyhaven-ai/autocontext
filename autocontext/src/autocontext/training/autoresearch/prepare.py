@@ -178,69 +178,68 @@ def extract_best_opponent(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 3. Tokenizer training (requires MLX extra for rustbpe/tiktoken)
+# 3. Tokenizer training (shared by MLX and CUDA backends)
 # ---------------------------------------------------------------------------
 
+
+class AutoresearchTokenizer:
+    """Thin wrapper that preserves special-token metadata for training/inference."""
+
+    def __init__(self, encoding: Any, *, base_vocab_size: int) -> None:
+        self._encoding = encoding
+        self.base_vocab_size = base_vocab_size
+        self.special_tokens = build_special_tokens(base_vocab_size)
+        self.vocab_size = total_vocab_size(base_vocab_size)
+
+    @property
+    def end_token_id(self) -> int:
+        return self.special_tokens["<|end|>"]
+
+    def encode(self, text: str) -> list[int]:
+        token_ids = self._encoding.encode(text, allowed_special=set(self.special_tokens))
+        return cast(list[int], token_ids)
+
+    def decode(self, token_ids: list[int]) -> str:
+        return cast(str, self._encoding.decode(token_ids))
+
+
+def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> AutoresearchTokenizer:
+    """Train a BPE tokenizer on the given corpus.
+
+    Uses rustbpe for fast BPE training and wraps with tiktoken for
+    encode/decode.
+
+    Parameters
+    ----------
+    corpus_path:
+        Path to a text file containing the training corpus.
+    vocab_size:
+        Target vocabulary size.
+
+    Returns
+    -------
+    A tokenizer object with ``encode(text) -> list[int]`` and
+    ``decode(tokens) -> str`` methods.
+    """
+    import rustbpe  # type: ignore[import-not-found]
+    import tiktoken  # type: ignore[import-not-found]
+
+    text = corpus_path.read_text(encoding="utf-8")
+    tokenizer = rustbpe.Tokenizer()
+    tokenizer.train_from_iterator([text], vocab_size=vocab_size)
+    merges = {bytes(k): v for k, v in tokenizer.get_mergeable_ranks()}
+    special_tokens = build_special_tokens(vocab_size)
+
+    enc = tiktoken.Encoding(
+        name="mts_autoresearch",
+        pat_str=tokenizer.get_pattern(),
+        mergeable_ranks=merges,
+        special_tokens=special_tokens,
+    )
+    return AutoresearchTokenizer(enc, base_vocab_size=vocab_size)
+
+
 if HAS_MLX:
-
-    class AutoresearchTokenizer:
-        """Thin wrapper that preserves special-token metadata for training/inference."""
-
-        def __init__(self, encoding: Any, *, base_vocab_size: int) -> None:
-            self._encoding = encoding
-            self.base_vocab_size = base_vocab_size
-            self.special_tokens = build_special_tokens(base_vocab_size)
-            self.vocab_size = total_vocab_size(base_vocab_size)
-
-        @property
-        def end_token_id(self) -> int:
-            return self.special_tokens["<|end|>"]
-
-        def encode(self, text: str) -> list[int]:
-            token_ids = self._encoding.encode(text, allowed_special=set(self.special_tokens))
-            return cast(list[int], token_ids)
-
-        def decode(self, token_ids: list[int]) -> str:
-            return cast(str, self._encoding.decode(token_ids))
-
-    def train_tokenizer(corpus_path: Path, vocab_size: int = BASE_VOCAB_SIZE) -> AutoresearchTokenizer:
-        """Train a BPE tokenizer on the given corpus.
-
-        Uses rustbpe for fast BPE training and wraps with tiktoken for
-        encode/decode.
-
-        Parameters
-        ----------
-        corpus_path:
-            Path to a text file containing the training corpus.
-        vocab_size:
-            Target vocabulary size.
-
-        Returns
-        -------
-        A tokenizer object with ``encode(text) -> list[int]`` and
-        ``decode(tokens) -> str`` methods.
-        """
-        import rustbpe  # type: ignore[import-not-found]
-        import tiktoken  # type: ignore[import-not-found]
-
-        text = corpus_path.read_text(encoding="utf-8")
-        # Train BPE merges using rustbpe's Tokenizer API
-        tokenizer = rustbpe.Tokenizer()
-        tokenizer.train_from_iterator([text], vocab_size=vocab_size)
-        merges = {bytes(k): v for k, v in tokenizer.get_mergeable_ranks()}
-
-        # Build tiktoken encoding from the merges
-        # Special tokens for our format
-        special_tokens = build_special_tokens(vocab_size)
-
-        enc = tiktoken.Encoding(
-            name="mts_autoresearch",
-            pat_str=tokenizer.get_pattern(),
-            mergeable_ranks=merges,
-            special_tokens=special_tokens,
-        )
-        return AutoresearchTokenizer(enc, base_vocab_size=vocab_size)
 
     # -----------------------------------------------------------------------
     # 4. Dataloader (MLX arrays)
