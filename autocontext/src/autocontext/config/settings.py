@@ -692,6 +692,16 @@ class AppSettings(BaseModel):
     blob_store_repo: str = Field(default="", description="HF repo ID for hf_bucket backend")
     blob_store_cache_max_mb: int = Field(default=500, ge=1, description="Max hydration cache size in MB")
     blob_store_min_size_bytes: int = Field(default=1024, ge=0, description="Min artifact size to mirror (0=all)")
+    # Classifier fast-path threshold (AC-628)
+    classifier_fast_path_threshold: float = Field(
+        default_factory=lambda: float(
+            __import__("os").getenv("AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD", "0.65")
+        ),
+        ge=0.0,
+        le=1.0,
+        validate_default=True,
+        description="Keyword confidence >= this skips LLM classification; ambiguous descriptions call LLM",
+    )
 
     @field_validator("cost_budget_limit", mode="before")
     @classmethod

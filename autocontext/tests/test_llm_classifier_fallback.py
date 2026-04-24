@@ -1,29 +1,39 @@
-"""AC-580 — LLM classifier fallback when no keyword signals matched."""
+"""AC-580 — LLM classifier fallback when no keyword signals matched.
+
+Updated for AC-628: zero-signal + no/failed LLM now raises LowConfidenceError.
+"""
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from autocontext.scenarios.custom.family_classifier import classify_scenario_family
+import pytest
+
+from autocontext.scenarios.custom.family_classifier import (
+    LowConfidenceError,
+    classify_scenario_family,
+)
 
 
 class TestClassifyWithoutLlmFn:
-    def test_classify_without_llm_fn_preserves_keyword_only_behavior(self) -> None:
-        # Gibberish description → keyword fallback (no_signals_matched=True).
-        result = classify_scenario_family("xyz zzz qqq nonsense gibberish")
-        assert result.no_signals_matched is True
-        assert result.llm_fallback_used is False
-        assert result.confidence == 0.2
-        assert result.family_name == "agent_task"
+    def test_classify_without_llm_fn_raises_on_zero_signal(self) -> None:
+        # AC-628: zero-signal + no LLM → LowConfidenceError (no longer returns fallback).
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family("xyz zzz qqq nonsense gibberish")
+        c = exc_info.value.classification
+        assert c.no_signals_matched is True
+        assert c.llm_classifier_used is False
+        assert c.confidence == pytest.approx(0.2)
+        assert c.family_name == "agent_task"
 
     def test_classify_with_keyword_match_skips_llm_fn(self) -> None:
-        # When keywords match, llm_fn must not be invoked.
+        # When keywords match above fast-path threshold, llm_fn must not be invoked.
         forbidden_llm = MagicMock(side_effect=AssertionError("must not be called"))
         result = classify_scenario_family(
             "Build a simulation of a deployment pipeline with rollback and failover",
             llm_fn=forbidden_llm,
         )
         assert result.no_signals_matched is False
-        assert result.llm_fallback_used is False
+        assert result.llm_classifier_used is False
         assert result.family_name == "simulation"
         forbidden_llm.assert_not_called()
 
@@ -39,54 +49,60 @@ class TestLlmFallbackHappyPath:
             llm_fn=stub_llm,
         )
         assert result.family_name == "simulation"
-        assert result.confidence == 0.82
+        assert result.confidence == pytest.approx(0.82)
         assert result.rationale == "matches simulation pattern"
         assert result.no_signals_matched is False
-        assert result.llm_fallback_used is True
+        assert result.llm_classifier_used is True
 
 
 class TestLlmFallbackFailureModes:
-    """Any failure in the LLM path must fall through to the keyword fallback."""
+    """On zero-signal, any failure in the LLM path raises LowConfidenceError."""
 
-    def test_llm_fallback_unknown_family_falls_through(self) -> None:
+    def test_llm_fallback_unknown_family_raises(self) -> None:
         def stub_llm(system: str, user: str) -> str:
             del system, user
             return '{"family": "bogus_family", "confidence": 0.9, "rationale": "r"}'
 
-        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
-        assert result.no_signals_matched is True
-        assert result.llm_fallback_used is False
-        assert result.family_name == "agent_task"
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        c = exc_info.value.classification
+        assert c.no_signals_matched is True
+        assert c.llm_classifier_used is False
+        assert c.llm_classifier_attempted is True
 
-    def test_llm_fallback_unparseable_json_falls_through(self) -> None:
+    def test_llm_fallback_unparseable_json_raises(self) -> None:
         def stub_llm(system: str, user: str) -> str:
             del system, user
             return "not json at all"
 
-        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
-        assert result.no_signals_matched is True
-        assert result.llm_fallback_used is False
-        assert result.family_name == "agent_task"
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        c = exc_info.value.classification
+        assert c.no_signals_matched is True
+        assert c.llm_classifier_used is False
+        assert c.llm_classifier_attempted is True
 
-    def test_llm_fallback_missing_rationale_falls_through(self) -> None:
+    def test_llm_fallback_missing_rationale_raises(self) -> None:
         def stub_llm(system: str, user: str) -> str:
             del system, user
             return '{"family": "simulation", "confidence": 0.9}'
 
-        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
-        assert result.no_signals_matched is True
-        assert result.llm_fallback_used is False
-        assert result.family_name == "agent_task"
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        c = exc_info.value.classification
+        assert c.no_signals_matched is True
+        assert c.llm_classifier_attempted is True
 
-    def test_llm_fallback_llm_fn_raises_falls_through(self) -> None:
+    def test_llm_fallback_llm_fn_raises_raises(self) -> None:
         def stub_llm(system: str, user: str) -> str:
             del system, user
             raise RuntimeError("boom")
 
-        result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
-        assert result.no_signals_matched is True
-        assert result.llm_fallback_used is False
-        assert result.family_name == "agent_task"
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
+        c = exc_info.value.classification
+        assert c.no_signals_matched is True
+        assert c.llm_classifier_attempted is True
 
     def test_llm_fallback_clamps_out_of_range_confidence(self) -> None:
         def stub_llm(system: str, user: str) -> str:
@@ -94,8 +110,8 @@ class TestLlmFallbackFailureModes:
             return '{"family": "simulation", "confidence": 1.5, "rationale": "overshoot"}'
 
         result = classify_scenario_family("xyz zzz qqq", llm_fn=stub_llm)
-        assert result.confidence == 1.0
-        assert result.llm_fallback_used is True
+        assert result.confidence == pytest.approx(1.0)
+        assert result.llm_classifier_used is True
         assert result.family_name == "simulation"
 
 

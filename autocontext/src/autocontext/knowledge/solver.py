@@ -367,7 +367,7 @@ def _resolve_requested_scenario_family_with_metadata(
     classification = classify_scenario_family(brief, llm_fn=llm_fn, cache=cache)
     return _ResolvedSolveFamily(
         family=route_to_family(classification),
-        llm_classifier_fallback_used=classification.llm_fallback_used,
+        llm_classifier_fallback_used=classification.llm_classifier_used,
     )
 
 

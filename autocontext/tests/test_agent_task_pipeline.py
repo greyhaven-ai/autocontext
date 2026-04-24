@@ -603,11 +603,13 @@ class TestAgentTaskCreator:
             )
             from unittest.mock import patch
 
-            from autocontext.scenarios.families import get_family
+            from autocontext.scenarios.custom.family_classifier import FamilyClassification
 
             with patch(
-                "autocontext.scenarios.custom.agent_task_creator.route_to_family",
-                return_value=get_family("agent_task"),
+                "autocontext.scenarios.custom.agent_task_creator.classify_scenario_family",
+                return_value=FamilyClassification(
+                    family_name="agent_task", confidence=0.9, rationale="mocked"
+                ),
             ):
                 instance = creator.create("Design a clinical trial protocol for oncology")
             registered_name = creator.derive_name("Design a clinical trial protocol for oncology")
