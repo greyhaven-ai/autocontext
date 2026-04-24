@@ -3,7 +3,7 @@ export const RUN_HELP_TEXT = `autoctx run — Run the generation loop for a scen
 Usage: autoctx run [options]
 
 Options:
-  --scenario <name>    Scenario to run (current built-in: grid_ctf)
+  --scenario <name>    Scenario to run (built-in or saved custom agent_task)
   --gens N             Number of generations to run (default: from config or 1)
   --run-id <id>        Custom run identifier (default: auto-generated)
   --provider <type>    LLM provider: anthropic, openai, ollama, deterministic, etc.
@@ -68,7 +68,44 @@ export interface RunCommandResult {
   bestScore: number;
   currentElo: number;
   provider: string;
+  skillPackage?: Record<string, unknown>;
   synthetic?: true;
+}
+
+type AgentTaskSolveExecutor = (opts: {
+  provider: unknown;
+  created: { name: string; spec: Record<string, unknown> };
+  generations: number;
+}) => Promise<{ progress: number; result: Record<string, unknown> }>;
+
+export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends {
+  defaultProvider: unknown;
+  defaultConfig: { providerType: string };
+}>(opts: {
+  plan: RunCommandPlan;
+  providerBundle: TProviderBundle;
+  spec: Record<string, unknown>;
+  executeAgentTaskSolve: AgentTaskSolveExecutor;
+}): Promise<RunCommandResult> {
+  const result = await opts.executeAgentTaskSolve({
+    provider: opts.providerBundle.defaultProvider,
+    created: {
+      name: opts.plan.scenarioName,
+      spec: opts.spec,
+    },
+    generations: opts.plan.gens,
+  });
+  const bestScore = typeof result.result.best_score === "number" ? result.result.best_score : 0;
+  const provider = opts.providerBundle.defaultConfig.providerType;
+  return {
+    runId: opts.plan.runId,
+    generationsCompleted: result.progress,
+    bestScore,
+    currentElo: 1000,
+    provider,
+    skillPackage: result.result,
+    ...(provider === "deterministic" ? { synthetic: true } : {}),
+  };
 }
 
 export async function planRunCommand(

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  executeAgentTaskRunCommandWorkflow,
   executeRunCommandWorkflow,
   planRunCommand,
   renderRunResult,
@@ -184,6 +185,54 @@ describe("run command workflow", () => {
       bestScore: 0.8123,
       currentElo: 1112.4,
       provider: "deterministic",
+      synthetic: true,
+    });
+  });
+
+  it("executes saved agent-task scenarios through the task solve runner", async () => {
+    const executeAgentTaskSolve = vi.fn(async () => ({
+      progress: 2,
+      result: {
+        scenario_name: "saved_task",
+        best_score: 0.91,
+      },
+    }));
+
+    const result = await executeAgentTaskRunCommandWorkflow({
+      plan: {
+        scenarioName: "saved_task",
+        gens: 2,
+        runId: "run-task",
+        providerType: "deterministic",
+        matches: 1,
+        json: true,
+      },
+      providerBundle: {
+        defaultProvider: { name: "provider" },
+        defaultConfig: { providerType: "deterministic" },
+      },
+      spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+      executeAgentTaskSolve,
+    });
+
+    expect(executeAgentTaskSolve).toHaveBeenCalledWith({
+      provider: { name: "provider" },
+      created: {
+        name: "saved_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+      },
+      generations: 2,
+    });
+    expect(result).toEqual({
+      runId: "run-task",
+      generationsCompleted: 2,
+      bestScore: 0.91,
+      currentElo: 1000,
+      provider: "deterministic",
+      skillPackage: {
+        scenario_name: "saved_task",
+        best_score: 0.91,
+      },
       synthetic: true,
     });
   });

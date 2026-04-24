@@ -5,6 +5,7 @@ import type { CustomScenarioEntry } from "../src/scenarios/custom-loader.js";
 import type { ScenarioFamilyName } from "../src/scenarios/families.js";
 import type { RoleProviderBundle } from "../src/providers/index.js";
 import {
+  executeAgentTaskCustomStartRun,
   executeBuiltInGameStartRun,
   executeGeneratedCustomStartRun,
   resolveRunStartPlan,
@@ -68,7 +69,7 @@ describe("run start workflow", () => {
     });
   });
 
-  it("rejects saved custom agent-task scenarios for /run", () => {
+  it("resolves saved custom agent-task scenarios for /run", () => {
     const entry: CustomScenarioEntry = {
       name: "saved_task",
       type: "agent_task",
@@ -77,12 +78,16 @@ describe("run start workflow", () => {
       hasGeneratedSource: false,
     };
 
-    expect(() => resolveRunStartPlan({
+    expect(resolveRunStartPlan({
       scenario: "saved_task",
       builtinScenarioNames: ["grid_ctf"],
       customScenario: entry,
       customScenarioFamily: "agent_task",
-    })).toThrow(/only built-in game scenarios and generated non-agent-task scenarios/i);
+    })).toEqual({
+      kind: "agent_task_custom",
+      scenarioName: "saved_task",
+      entry,
+    });
   });
 
   it("executes built-in game runs through the generation runner boundary", async () => {
@@ -216,5 +221,47 @@ describe("run start workflow", () => {
     const completed = emitted.find((entry) => entry.event === "run_completed");
     expect(completed?.payload.best_score).toBe(0.9);
     expect(completed?.payload.completed_generations).toBe(2);
+  });
+
+  it("executes saved agent-task runs and emits lifecycle events", async () => {
+    const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    const events = {
+      emit: (event: string, payload: Record<string, unknown>) => {
+        emitted.push({ event, payload });
+      },
+    };
+    const executeAgentTaskSolve = vi.fn(async () => ({
+      progress: 2,
+      result: { best_score: 0.82, scenario_name: "saved_task" },
+    }));
+
+    await executeAgentTaskCustomStartRun({
+      runId: "run_task",
+      scenarioName: "saved_task",
+      entry: {
+        name: "saved_task",
+        type: "agent_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+        path: "/tmp/saved_task",
+        hasGeneratedSource: false,
+      },
+      generations: 2,
+      provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      controller: { waitIfPaused: async () => {} } as never,
+      events: events as never,
+      deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
+    });
+
+    expect(executeAgentTaskSolve).toHaveBeenCalledWith({
+      provider: expect.objectContaining({ name: "test" }),
+      created: {
+        name: "saved_task",
+        spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+      },
+      generations: 2,
+    });
+    expect(emitted[0]?.event).toBe("run_started");
+    expect(emitted.find((entry) => entry.event === "generation_completed")?.payload.best_score).toBe(0.82);
+    expect(emitted.find((entry) => entry.event === "run_completed")?.payload.completed_generations).toBe(2);
   });
 });

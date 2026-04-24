@@ -412,6 +412,7 @@ async function cmdRun(dbPath: string): Promise<void> {
   });
 
   const {
+    executeAgentTaskRunCommandWorkflow,
     executeRunCommandWorkflow,
     planRunCommand,
     renderRunResult,
@@ -454,6 +455,30 @@ async function cmdRun(dbPath: string): Promise<void> {
     settings,
     plan.providerType ? { providerType: plan.providerType } : {},
   );
+
+  if (!SCENARIO_REGISTRY[plan.scenarioName]) {
+    const { resolveCustomAgentTask } = await import("../scenarios/custom-loader.js");
+    const savedAgentTask = resolveCustomAgentTask(
+      resolve(settings.knowledgeRoot),
+      plan.scenarioName,
+    );
+    if (savedAgentTask) {
+      const { executeAgentTaskSolve } =
+        await import("../knowledge/agent-task-solve-execution.js");
+      const result = await executeAgentTaskRunCommandWorkflow({
+        plan,
+        providerBundle,
+        spec: savedAgentTask.spec,
+        executeAgentTaskSolve: executeAgentTaskSolve as never,
+      });
+      const rendered = renderRunResult(result, plan.json);
+      if (rendered.stderr) {
+        console.error(rendered.stderr);
+      }
+      console.log(rendered.stdout);
+      return;
+    }
+  }
 
   let ScenarioClass;
   try {
