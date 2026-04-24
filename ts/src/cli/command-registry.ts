@@ -137,6 +137,12 @@ export function visibleCommandNames(): string[] {
   return COMMANDS.filter((command) => command.visible !== false).map((command) => command.name);
 }
 
+export function visibleSupportedCommandNames(): string[] {
+  return COMMANDS.filter((command) => command.group !== "python-only" && command.visible !== false).map(
+    (command) => command.name,
+  );
+}
+
 function visibleCommands(group: CommandGroup): CommandDescriptor[] {
   return COMMANDS.filter((command) => command.group === group && command.visible !== false);
 }
