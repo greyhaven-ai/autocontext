@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -84,6 +85,23 @@ def test_strips_autocontext_kwarg_before_forwarding(tmp_path, make_openai_client
     )
     assert "autocontext" not in seen_kwargs
     sink.close()
+
+
+def test_skips_identity_when_install_salt_is_missing(tmp_path, make_openai_client) -> None:
+    (Path(".autocontext") / "install-salt").unlink()
+    client = make_openai_client(_handler_returning(canned_chat_completion()))
+    sink = FileSink(path=tmp_path / "t.jsonl", batch_size=1)
+    wrapped = instrument_client(client, sink=sink, app_id="a")
+
+    wrapped.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "hi"}],
+        autocontext={"user_id": "u1", "session_id": "s1"},
+    )
+
+    sink.close()
+    trace = json.loads((tmp_path / "t.jsonl").read_text().strip())
+    assert "session" not in trace
 
 
 def test_per_call_kwarg_wins_over_ambient_context(tmp_path, make_openai_client) -> None:
