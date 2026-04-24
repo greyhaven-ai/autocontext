@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- TypeScript CLI now exposes `autoctx solve` as a DB-backed solve-on-demand entrypoint with `--description`, `--gens`, `--timeout`, and `--json` support (AC-619).
+
 ### Fixed
 
 - TypeScript capabilities now report the provider factory support surface and no longer mark the visible `train` command as Python-only (AC-626).
