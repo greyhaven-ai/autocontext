@@ -411,3 +411,78 @@ class TestEndToEnd:
         )
         assert classification.family_name != "agent_task"
         assert classification.family_name == "simulation"
+
+
+# ---------------------------------------------------------------------------
+# AC-618: LLM fallback non-JSON response surfaces a distinct error
+# ---------------------------------------------------------------------------
+
+
+_GIBBERISH = "xqztp nnvw rrb no keyword signals at all"
+
+
+class TestFallbackAttemptedFlag:
+    def test_flag_false_by_default(self) -> None:
+        c = FamilyClassification(
+            family_name="agent_task",
+            confidence=0.8,
+            rationale="r",
+            no_signals_matched=False,
+        )
+        assert c.llm_fallback_attempted is False
+
+    def test_flag_set_when_fallback_tried_but_returns_non_json(self) -> None:
+        def bad_llm(system: str, user: str) -> str:
+            return "I cannot determine the family for this input."
+
+        classification = classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+        assert classification.llm_fallback_attempted is True
+
+    def test_flag_not_set_when_no_llm_fn_provided(self) -> None:
+        classification = classify_scenario_family(_GIBBERISH)
+        assert classification.llm_fallback_attempted is False
+
+    def test_flag_not_set_on_successful_llm_fallback(self) -> None:
+        def good_llm(system: str, user: str) -> str:
+            return '{"family": "agent_task", "confidence": 0.75, "rationale": "default task"}'
+
+        classification = classify_scenario_family(_GIBBERISH, llm_fn=good_llm)
+        assert classification.llm_fallback_attempted is False
+        assert classification.llm_fallback_used is True
+
+
+class TestLowConfidenceErrorMentionsFallback:
+    def test_message_mentions_fallback_when_attempted(self) -> None:
+        def bad_llm(system: str, user: str) -> str:
+            return "Sorry, I cannot classify this."
+
+        classification = classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+        assert classification.llm_fallback_attempted is True
+
+        with pytest.raises(LowConfidenceError) as exc_info:
+            route_to_family(classification)
+
+        msg = str(exc_info.value).lower()
+        assert "fallback" in msg
+
+    def test_message_does_not_mention_fallback_when_not_attempted(self) -> None:
+        classification = classify_scenario_family(_GIBBERISH)
+        assert classification.llm_fallback_attempted is False
+
+        with pytest.raises(LowConfidenceError) as exc_info:
+            route_to_family(classification)
+
+        # No llm_fn passed — message should only recommend rephrasing
+        msg = str(exc_info.value).lower()
+        assert "fallback" not in msg
+
+    def test_message_still_suggests_rephrasing(self) -> None:
+        def bad_llm(system: str, user: str) -> str:
+            return "not json"
+
+        classification = classify_scenario_family(_GIBBERISH, llm_fn=bad_llm)
+
+        with pytest.raises(LowConfidenceError) as exc_info:
+            route_to_family(classification)
+
+        assert "rephras" in str(exc_info.value).lower()
