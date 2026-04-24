@@ -79,20 +79,27 @@ describe("solve MCP tools", () => {
     });
     expect(submit).toHaveBeenCalledWith("grid ctf", 5);
     expect(JSON.parse(result.content[0].text)).toEqual({
-      jobId: "solve-123",
+      job_id: "solve-123",
       status: "pending",
     });
 
     const aliasStatus = await server.registeredTools.autocontext_solve_status.handler({
-      jobId: "solve-123",
+      job_id: "solve-123",
     });
     const canonicalStatus = await server.registeredTools.solve_status.handler({
       jobId: "solve-123",
     });
-    expect(aliasStatus).toEqual(canonicalStatus);
+    expect(JSON.parse(aliasStatus.content[0].text)).toEqual({
+      job_id: "solve-123",
+      status: "completed",
+    });
+    expect(JSON.parse(canonicalStatus.content[0].text)).toEqual({
+      jobId: "solve-123",
+      status: "completed",
+    });
 
     const aliasResult = await server.registeredTools.autocontext_solve_result.handler({
-      jobId: "solve-123",
+      job_id: "solve-123",
     });
     const canonicalResult = await server.registeredTools.solve_result.handler({
       jobId: "solve-123",

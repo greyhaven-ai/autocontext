@@ -208,6 +208,10 @@ def autocontext_solve_scenario(description: str, generations: int = 5) -> str:
     """Submit a new problem for on-demand solving. autocontext creates a scenario from the
     description, runs strategy evolution, and produces a skill package.
     Returns a job_id for polling status."""
+    return _solve_scenario_response(description, generations)
+
+
+def _solve_scenario_response(description: str, generations: int = 5) -> str:
     from autocontext.knowledge.solver import SolveManager
 
     mgr: SolveManager = _get_solve_mgr()  # type: ignore[assignment]
@@ -218,6 +222,10 @@ def autocontext_solve_scenario(description: str, generations: int = 5) -> str:
 @mcp.tool()
 def autocontext_solve_status(job_id: str) -> str:
     """Check status of a solve-on-demand job."""
+    return _solve_status_response(job_id)
+
+
+def _solve_status_response(job_id: str) -> str:
     from autocontext.knowledge.solver import SolveManager
 
     mgr: SolveManager = _get_solve_mgr()  # type: ignore[assignment]
@@ -227,6 +235,10 @@ def autocontext_solve_status(job_id: str) -> str:
 @mcp.tool()
 def autocontext_solve_result(job_id: str) -> str:
     """Get the skill package result of a completed solve job."""
+    return _solve_result_response(job_id)
+
+
+def _solve_result_response(job_id: str) -> str:
     from autocontext.knowledge.solver import SolveManager
 
     mgr: SolveManager = _get_solve_mgr()  # type: ignore[assignment]
@@ -239,19 +251,19 @@ def autocontext_solve_result(job_id: str) -> str:
 @mcp.tool()
 def solve_scenario(description: str, generations: int = 5) -> str:
     """Alias for autocontext_solve_scenario."""
-    return autocontext_solve_scenario(description, generations)
+    return _solve_scenario_response(description, generations)
 
 
 @mcp.tool()
 def solve_status(job_id: str) -> str:
     """Alias for autocontext_solve_status."""
-    return autocontext_solve_status(job_id)
+    return _solve_status_response(job_id)
 
 
 @mcp.tool()
 def solve_result(job_id: str) -> str:
     """Alias for autocontext_solve_result."""
-    return autocontext_solve_result(job_id)
+    return _solve_result_response(job_id)
 
 
 # -- Human feedback tools --
