@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -140,3 +141,21 @@ def test_strips_autocontext_kwarg_before_forwarding(tmp_path, make_anthropic_cli
     )
     assert "autocontext" not in seen_kwargs
     sink.close()
+
+
+def test_skips_identity_when_install_salt_is_missing(tmp_path, make_anthropic_client) -> None:
+    (Path(".autocontext") / "install-salt").unlink()
+    client = make_anthropic_client(_handler_returning(canned_messages_response()))
+    sink = FileSink(path=tmp_path / "t.jsonl", batch_size=1)
+    wrapped = instrument_client(client, sink=sink, app_id="test-app")
+
+    wrapped.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=100,
+        messages=[{"role": "user", "content": "hi"}],
+        autocontext={"user_id": "u1", "session_id": "s1"},
+    )
+
+    sink.close()
+    trace = json.loads((tmp_path / "t.jsonl").read_text().strip())
+    assert "session" not in trace
