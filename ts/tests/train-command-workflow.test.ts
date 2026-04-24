@@ -10,6 +10,8 @@ import {
 describe("train command workflow", () => {
   it("exposes stable help text", () => {
     expect(TRAIN_HELP_TEXT).toContain("autoctx train");
+    expect(TRAIN_HELP_TEXT).toContain("`autoctx train` command");
+    expect(TRAIN_HELP_TEXT).not.toContain("\u0000");
     expect(TRAIN_HELP_TEXT).toContain("--scenario");
     expect(TRAIN_HELP_TEXT).toContain("--dataset");
     expect(TRAIN_HELP_TEXT).toContain("--backend");
