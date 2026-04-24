@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { buildCapabilitiesPayload } from "../src/cli/capabilities-command-workflow.js";
+import { visibleSupportedCommandNames } from "../src/cli/command-registry.js";
 
 describe("capabilities command workflow", () => {
   it("builds capabilities payload with CLI command inventory and feature flags", () => {
-    expect(
-      buildCapabilitiesPayload({
+    const payload = buildCapabilitiesPayload(
+      {
         version: "0.3.7",
         scenarios: ["grid_ctf"],
         providers: ["deterministic"],
@@ -16,8 +17,11 @@ describe("capabilities command workflow", () => {
           user_facing: [],
           runtime: [],
         },
-      }, null),
-    ).toMatchObject({
+      },
+      null,
+    );
+
+    expect(payload).toMatchObject({
       version: "0.3.7",
       scenarios: ["grid_ctf"],
       providers: ["deterministic"],
@@ -41,6 +45,17 @@ describe("capabilities command workflow", () => {
         "serve",
         "mcp-serve",
         "train",
+        "solve",
+        "simulate",
+        "investigate",
+        "analyze",
+        "candidate",
+        "eval",
+        "promotion",
+        "registry",
+        "emit-pr",
+        "production-traces",
+        "instrument",
         "version",
       ]),
       features: {
@@ -52,6 +67,8 @@ describe("capabilities command workflow", () => {
       },
       project_config: null,
     });
+    expect(payload.commands).toEqual(visibleSupportedCommandNames());
+    expect(payload.commands).not.toContain("ecosystem");
   });
 
   it("preserves project config when provided", () => {

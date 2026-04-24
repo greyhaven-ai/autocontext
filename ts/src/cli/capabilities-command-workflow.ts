@@ -1,35 +1,7 @@
 import type { Capabilities } from "../mcp/capabilities.js";
+import { visibleSupportedCommandNames } from "./command-registry.js";
 
-export const CAPABILITIES_COMMANDS = [
-  "init",
-  "run",
-  "list",
-  "replay",
-  "benchmark",
-  "export",
-  "export-training-data",
-  "import-package",
-  "new-scenario",
-  "solve",
-  "capabilities",
-  "login",
-  "whoami",
-  "logout",
-  "providers",
-  "models",
-  "mission",
-  "campaign",
-  "tui",
-  "judge",
-  "improve",
-  "repl",
-  "queue",
-  "status",
-  "serve",
-  "mcp-serve",
-  "train",
-  "version",
-] as const;
+export const CAPABILITIES_COMMANDS: readonly string[] = visibleSupportedCommandNames();
 
 export interface CapabilitiesCommandPayload
   extends Omit<Capabilities, "features"> {

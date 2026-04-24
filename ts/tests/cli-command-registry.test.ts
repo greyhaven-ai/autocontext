@@ -4,6 +4,7 @@ import {
   buildCliHelp,
   resolveCliCommand,
   visibleCommandNames,
+  visibleSupportedCommandNames,
 } from "../src/cli/command-registry.js";
 
 describe("CLI command registry", () => {
@@ -15,6 +16,27 @@ describe("CLI command registry", () => {
     for (const name of names) {
       expect(help).toContain(name);
     }
+  });
+
+  it("exposes supported commands separately from Python-only help entries", () => {
+    const names = visibleSupportedCommandNames();
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "train",
+        "simulate",
+        "investigate",
+        "analyze",
+        "candidate",
+        "eval",
+        "promotion",
+        "registry",
+        "emit-pr",
+        "production-traces",
+        "instrument",
+      ]),
+    );
+    expect(names).not.toContain("ecosystem");
   });
 
   it("classifies commands by dispatch surface", () => {
