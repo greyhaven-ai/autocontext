@@ -53,6 +53,60 @@ describe("solve MCP tools", () => {
     });
   });
 
+  it("registers Python-compatible solve tool aliases", async () => {
+    const server = createFakeServer();
+    const submit = vi.fn(() => "solve-123");
+
+    registerSolveTools(server, {
+      solveManager: {
+        submit,
+        getStatus: vi.fn(() => ({ jobId: "solve-123", status: "completed" })),
+        getResult: vi.fn(() => ({ scenario_name: "grid_ctf" })),
+      },
+    });
+
+    expect(Object.keys(server.registeredTools).sort()).toEqual([
+      "autocontext_solve_result",
+      "autocontext_solve_scenario",
+      "autocontext_solve_status",
+      "solve_result",
+      "solve_scenario",
+      "solve_status",
+    ]);
+
+    const result = await server.registeredTools.autocontext_solve_scenario.handler({
+      description: "grid ctf",
+    });
+    expect(submit).toHaveBeenCalledWith("grid ctf", 5);
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      job_id: "solve-123",
+      status: "pending",
+    });
+
+    const aliasStatus = await server.registeredTools.autocontext_solve_status.handler({
+      job_id: "solve-123",
+    });
+    const canonicalStatus = await server.registeredTools.solve_status.handler({
+      jobId: "solve-123",
+    });
+    expect(JSON.parse(aliasStatus.content[0].text)).toEqual({
+      job_id: "solve-123",
+      status: "completed",
+    });
+    expect(JSON.parse(canonicalStatus.content[0].text)).toEqual({
+      jobId: "solve-123",
+      status: "completed",
+    });
+
+    const aliasResult = await server.registeredTools.autocontext_solve_result.handler({
+      job_id: "solve-123",
+    });
+    const canonicalResult = await server.registeredTools.solve_result.handler({
+      jobId: "solve-123",
+    });
+    expect(aliasResult).toEqual(canonicalResult);
+  });
+
   it("returns solve status payloads from the shared manager", async () => {
     const server = createFakeServer();
 
