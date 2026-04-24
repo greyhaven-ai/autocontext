@@ -45,6 +45,7 @@ class FamilyClassification(BaseModel):
     alternatives: list[FamilyCandidate] = Field(default_factory=list)
     no_signals_matched: bool = False
     llm_fallback_used: bool = False
+    llm_fallback_attempted: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -71,10 +72,16 @@ class LowConfidenceError(Exception):
         family = classification.family_name
 
         if classification.no_signals_matched:
+            fallback_note = (
+                " LLM fallback was attempted but returned no parseable response."
+                if classification.llm_fallback_attempted
+                else ""
+            )
             return (
                 f"Family classification confidence {conf:.2f} < threshold {thr:.2f}: "
-                f"no family keywords matched in description (fell back to {family}). "
-                f"Consider rephrasing with domain keywords."
+                f"no family keywords matched in description (fell back to {family})."
+                f"{fallback_note}"
+                f" Consider rephrasing with domain keywords."
             )
 
         base = (
@@ -598,12 +605,14 @@ def classify_scenario_family(
 
     total = sum(raw_scores.values())
     if total == 0:
+        llm_fallback_attempted = False
         if llm_fn is not None:
             llm_result = _llm_classify_fallback(
                 description, registered_families, llm_fn, cache=cache
             )
             if llm_result is not None:
                 return llm_result
+            llm_fallback_attempted = True
         # No signals matched — default to agent_task with low confidence if available.
         default_family = _DEFAULT_FAMILY_NAME if _DEFAULT_FAMILY_NAME in registered_families else registered_families[0]
         alternatives = [
@@ -621,6 +630,7 @@ def classify_scenario_family(
             rationale=f"No strong signals detected; defaulting to {default_family}",
             alternatives=alternatives,
             no_signals_matched=True,
+            llm_fallback_attempted=llm_fallback_attempted,
         )
 
     # Normalize to confidences
