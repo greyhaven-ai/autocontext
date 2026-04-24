@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from autocontext.scenarios.custom.classifier_cache import ClassifierCache
 from autocontext.scenarios.custom.family_classifier import (
     FamilyCandidate,
     FamilyClassification,
+    LowConfidenceError,
 )
 
 FAMILIES_A = ["agent_task", "simulation", "game"]
@@ -180,9 +183,10 @@ class TestLlmFallbackCacheIntegration:
             del system, user
             return "not json at all"
 
-        result = classify_scenario_family(self._gibberish(), llm_fn=bad_llm, cache=cache)
-        # Fallback failed → keyword fallback returned.
-        assert result.no_signals_matched is True
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family(self._gibberish(), llm_fn=bad_llm, cache=cache)
+        # Fallback failed → LowConfidenceError raised with no_signals_matched.
+        assert exc_info.value.classification.no_signals_matched is True
 
         # Cache file should be empty (or non-existent) — no entries written.
         cache_path = tmp_path / "cache.json"

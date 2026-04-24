@@ -624,7 +624,7 @@ def classify_scenario_family(
             for family_name in registered_families
             if family_name != default_family
         ]
-        return FamilyClassification(
+        classification = FamilyClassification(
             family_name=default_family,
             confidence=0.2,
             rationale=f"No strong signals detected; defaulting to {default_family}",
@@ -632,6 +632,7 @@ def classify_scenario_family(
             no_signals_matched=True,
             llm_fallback_attempted=llm_fallback_attempted,
         )
+        raise LowConfidenceError(classification, min_confidence=0.3)
 
     # Normalize to confidences
     confidences = {name: score / total for name, score in raw_scores.items()}
