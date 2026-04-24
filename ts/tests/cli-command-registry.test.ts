@@ -23,6 +23,7 @@ describe("CLI command registry", () => {
       kind: "db",
       command: "mission",
     });
+    expect(resolveCliCommand("solve")).toEqual({ kind: "db", command: "solve" });
     expect(resolveCliCommand("init")).toEqual({ kind: "no-db", command: "init" });
     expect(resolveCliCommand("registry")).toEqual({
       kind: "control-plane",

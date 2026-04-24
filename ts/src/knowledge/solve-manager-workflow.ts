@@ -139,6 +139,7 @@ export async function executeSolveJobWorkflow(opts: {
     const route = opts.deps.determineSolveExecutionRoute(prepared, builtinScenarioNames);
 
     if (route === "builtin_game") {
+      opts.job.family = "game";
       await runBuiltInGameSolveJob({
         job: opts.job,
         provider: opts.provider,
