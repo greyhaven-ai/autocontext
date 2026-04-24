@@ -180,6 +180,8 @@ autoctx train --scenario grid_ctf --data training.jsonl --backend mlx --time-bud
 autoctx train --scenario grid_ctf --data training.jsonl --backend cuda --time-budget 300 --json
 ```
 
+CUDA training currently publishes checkpoint artifacts for inspection and later serving work; it does not auto-route the resulting `model.pt` bundle as a live provider model.
+
 JSON output shape:
 
 ```json

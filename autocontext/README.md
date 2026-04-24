@@ -225,7 +225,7 @@ uv run autoctx train \
   --time-budget 300
 ```
 
-CUDA requires a CUDA-enabled PyTorch install where `torch.cuda.is_available()` is true. The CUDA bundle writes `config.json`, `tokenizer.json`, and `model.pt` under the selected checkpoint directory.
+CUDA requires a CUDA-enabled PyTorch install where `torch.cuda.is_available()` is true. The CUDA bundle writes `config.json`, `tokenizer.json`, and `model.pt` under the selected checkpoint directory. Until a Torch provider loader lands, CUDA checkpoints are published as checkpoint artifacts only and are not auto-routed as live provider models.
 
 If you only want to inspect generated training data first, export without training and open the JSONL directly.
 

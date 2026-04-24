@@ -104,7 +104,7 @@ class CUDABackend(TrainingBackend):
         return Path("models") / scenario / "cuda"
 
     def supported_runtime_types(self) -> list[str]:
-        return ["provider"]
+        return ["checkpoint"]
 
 
 class BackendRegistry:

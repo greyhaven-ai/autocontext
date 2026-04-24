@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from autocontext.training.autoresearch import cuda as cuda_module
 from autocontext.training.autoresearch import train as train_module
 
 
@@ -41,7 +42,7 @@ def test_parser_accepts_cuda_backend() -> None:
 
 
 def test_run_training_routes_cuda_backend(tmp_path: Path) -> None:
-    with patch.object(train_module, "_run_cuda_training", return_value=_summary_metrics()) as run_cuda:
+    with patch.object(cuda_module, "run_cuda_training", return_value=_summary_metrics()) as run_cuda:
         result = train_module.run_training(
             scenario_name="grid_ctf",
             data_path=tmp_path / "training.jsonl",
@@ -71,7 +72,7 @@ def test_require_torch_cuda_accepts_cuda_runtime(monkeypatch: pytest.MonkeyPatch
     fake_torch = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: True))
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
-    assert train_module._require_torch_cuda() is fake_torch
+    assert cuda_module.require_torch_cuda() is fake_torch
 
 
 def test_require_torch_cuda_rejects_unavailable_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,4 +80,4 @@ def test_require_torch_cuda_rejects_unavailable_cuda(monkeypatch: pytest.MonkeyP
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
     with pytest.raises(RuntimeError, match="torch.cuda.is_available"):
-        train_module._require_torch_cuda()
+        cuda_module.require_torch_cuda()

@@ -518,7 +518,12 @@ class TestTrainingLoop:
         registry_path = settings.knowledge_root / "model_registry" / f"{result.published_model_id}.json"
         registry_record = json.loads(registry_path.read_text(encoding="utf-8"))
         assert registry_record["backend"] == "cuda"
-        assert registry_record["runtime_types"] == ["provider"]
+        assert registry_record["runtime_types"] == ["checkpoint"]
+
+        from autocontext.training.model_registry import ModelRegistry, resolve_model
+
+        registry = ModelRegistry(settings.knowledge_root)
+        assert resolve_model(registry, scenario="grid_ctf", backend="cuda", runtime_type="provider") is None
 
     def test_propose_train_py_uses_competitor_model_when_agent_model_empty(self, tmp_path: Path) -> None:
         cfg = TrainingConfig(

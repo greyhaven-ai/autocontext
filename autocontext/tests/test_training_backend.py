@@ -80,6 +80,11 @@ class TestTrainingBackend:
         assert "othello" in str(path)
         assert "cuda" in str(path)
 
+    def test_cuda_publishes_checkpoint_artifacts_only(self) -> None:
+        from autocontext.training.backends import CUDABackend
+
+        assert CUDABackend().supported_runtime_types() == ["checkpoint"]
+
     def test_backend_metadata(self) -> None:
         from autocontext.training.backends import MLXBackend
 
