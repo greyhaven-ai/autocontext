@@ -4,7 +4,11 @@ import {
   executeSolveCommandWorkflow,
   planSolveCommand,
   renderSolveCommandSummary,
+  writeSolveOutputFile,
 } from "../src/cli/solve-command-workflow.js";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("solve command workflow", () => {
   it("plans required description, generations, timeout, and JSON output", () => {
@@ -16,6 +20,9 @@ describe("solve command workflow", () => {
           description: "  investigate checkout failures  ",
           gens: "3",
           timeout: "12",
+          "generation-time-budget": "4",
+          family: "investigation",
+          output: "solve-result.json",
           json: true,
         },
         parsePositiveInteger,
@@ -24,6 +31,9 @@ describe("solve command workflow", () => {
       description: "investigate checkout failures",
       generations: 3,
       timeoutMs: 12_000,
+      generationTimeBudgetSeconds: 4,
+      familyOverride: "investigation",
+      outputPath: "solve-result.json",
       json: true,
     });
     expect(parsePositiveInteger).toHaveBeenCalledWith("3", "--gens");
@@ -58,13 +68,19 @@ describe("solve command workflow", () => {
         description: "grid ctf",
         generations: 1,
         timeoutMs: 1000,
+        generationTimeBudgetSeconds: 7,
+        familyOverride: "game",
+        outputPath: "result.json",
         json: true,
       },
       sleep: vi.fn(async () => undefined),
       pollIntervalMs: 1,
     });
 
-    expect(submit).toHaveBeenCalledWith("grid ctf", 1);
+    expect(submit).toHaveBeenCalledWith("grid ctf", 1, {
+      familyOverride: "game",
+      generationTimeBudgetSeconds: 7,
+    });
     expect(getStatus).toHaveBeenCalledTimes(2);
     expect(summary).toEqual({
       jobId: "solve-123",
@@ -73,6 +89,9 @@ describe("solve command workflow", () => {
       scenarioName: "grid_ctf",
       family: "game",
       generations: 1,
+      generationTimeBudgetSeconds: 7,
+      outputPath: "result.json",
+      llmClassifierFallbackUsed: false,
       progress: 1,
       result: { scenario_name: "grid_ctf" },
     });
@@ -86,11 +105,28 @@ describe("solve command workflow", () => {
       scenarioName: "grid_ctf",
       family: "game",
       generations: 1,
+      generationTimeBudgetSeconds: null,
+      outputPath: null,
+      llmClassifierFallbackUsed: false,
       progress: 1,
       result: { scenario_name: "grid_ctf" },
     };
 
     expect(JSON.parse(renderSolveCommandSummary(summary, true))).toEqual(summary);
     expect(renderSolveCommandSummary(summary, false)).toContain("Solve completed");
+  });
+
+  it("writes solved package output JSON files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-solve-output-"));
+    try {
+      const outputPath = join(dir, "package.json");
+      writeSolveOutputFile({ scenario_name: "grid_ctf" }, outputPath);
+      expect(existsSync(outputPath)).toBe(true);
+      expect(JSON.parse(readFileSync(outputPath, "utf-8"))).toEqual({
+        scenario_name: "grid_ctf",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

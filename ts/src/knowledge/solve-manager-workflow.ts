@@ -6,9 +6,11 @@ import { executeBuiltInGameSolve } from "./built-in-game-solve-execution.js";
 import { executeAgentTaskSolve } from "./agent-task-solve-execution.js";
 import { executeCodegenSolve } from "./codegen-solve-execution.js";
 import {
+  buildSolveScenarioDescription,
   determineSolveExecutionRoute,
   persistSolveScenarioScaffold,
   prepareSolveScenario,
+  validateSolveFamilyOverride,
 } from "./solve-scenario-routing.js";
 import { failSolveJob, type SolveJob } from "./solve-workflow.js";
 
@@ -127,10 +129,14 @@ export async function executeSolveJobWorkflow(opts: {
 }): Promise<void> {
   opts.job.status = "creating_scenario";
   try {
-    const created = await opts.deps.createScenarioFromDescription(opts.job.description);
+    const familyOverride = validateSolveFamilyOverride(opts.job.familyOverride);
+    const created = await opts.deps.createScenarioFromDescription(
+      buildSolveScenarioDescription(opts.job.description, familyOverride),
+    );
     const prepared = opts.deps.prepareSolveScenario({
       created: created as never,
       description: opts.job.description,
+      familyOverride,
     });
     opts.job.scenarioName = prepared.name;
     opts.job.family = prepared.family;

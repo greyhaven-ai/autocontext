@@ -12,7 +12,14 @@ type McpToolRegistrar = {
 };
 
 interface SolveToolManager {
-  submit(description: string, generations: number): string;
+  submit(
+    description: string,
+    generations: number,
+    opts?: {
+      familyOverride?: string;
+      generationTimeBudgetSeconds?: number | null;
+    },
+  ): string;
   getStatus(jobId: string): Record<string, unknown>;
   getResult(jobId: string): Record<string, unknown> | null;
 }
@@ -47,11 +54,32 @@ export function registerSolveTools(
   server.tool(
     "solve_scenario",
     "Submit a problem for on-demand solving. Returns a job_id for polling.",
-    { description: z.string(), generations: z.number().int().default(5) },
+    {
+      description: z.string(),
+      generations: z.number().int().default(5),
+      family: z.string().optional(),
+      generationTimeBudget: z.number().int().min(0).optional(),
+      generationTimeBudgetSeconds: z.number().int().min(0).optional(),
+      generation_time_budget: z.number().int().min(0).optional(),
+    },
     async (args: Record<string, unknown>) => {
+      const generationTimeBudgetSeconds =
+        typeof args.generationTimeBudgetSeconds === "number"
+          ? args.generationTimeBudgetSeconds
+          : typeof args.generationTimeBudget === "number"
+            ? args.generationTimeBudget
+            : typeof args.generation_time_budget === "number"
+              ? args.generation_time_budget
+              : undefined;
       const jobId = opts.solveManager.submit(
         String(args.description),
         Number(args.generations ?? 5),
+        {
+          familyOverride: typeof args.family === "string" && args.family.trim()
+            ? args.family.trim()
+            : undefined,
+          generationTimeBudgetSeconds,
+        },
       );
       return jsonText({ jobId, status: "pending" });
     },
