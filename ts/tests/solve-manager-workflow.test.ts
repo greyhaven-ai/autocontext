@@ -58,6 +58,53 @@ describe("solve manager workflow", () => {
     });
   });
 
+  it("reports built-in scenario solves as game family even when designer metadata drifts", async () => {
+    const job = createSolveJob("solve_builtin", "grid ctf", 1);
+    const executeBuiltInGameSolve = vi.fn(async () => ({
+      progress: 1,
+      result: { scenario_name: "grid_ctf", best_score: 0.73 },
+    }));
+
+    await executeSolveJobWorkflow({
+      job,
+      provider: { name: "mock", defaultModel: () => "mock", complete: vi.fn() } as never,
+      store: {} as never,
+      runsRoot: "/tmp/runs",
+      knowledgeRoot: "/tmp/knowledge",
+      deps: {
+        createScenarioFromDescription: vi.fn(async () => ({
+          name: "grid_ctf",
+          family: "agent_task",
+          spec: { taskPrompt: "grid ctf", rubric: "score" },
+        })),
+        listBuiltinScenarioNames: vi.fn(async () => ["grid_ctf"]),
+        prepareSolveScenario: vi.fn(({ created, description }) => ({ ...created, description })) as never,
+        determineSolveExecutionRoute: vi.fn(() => "builtin_game") as never,
+        persistSolveScenarioScaffold: vi.fn() as never,
+        executeBuiltInGameSolve: executeBuiltInGameSolve as never,
+        executeAgentTaskSolve: vi.fn() as never,
+        executeCodegenSolve: vi.fn() as never,
+        failSolveJob: vi.fn((failedJob, error) => {
+          failedJob.status = "failed";
+          failedJob.error = error instanceof Error ? error.message : String(error);
+        }),
+      },
+    });
+
+    expect(executeBuiltInGameSolve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scenarioName: "grid_ctf",
+        generations: 1,
+      }),
+    );
+    expect(job).toMatchObject({
+      status: "completed",
+      scenarioName: "grid_ctf",
+      family: "game",
+      result: { scenario_name: "grid_ctf", best_score: 0.73 },
+    });
+  });
+
   it("records route/materialization failures on the solve job", async () => {
     const job = createSolveJob("solve_fail", "Create a game", 1);
     const failSolveJob = vi.fn((failedJob, error) => {
