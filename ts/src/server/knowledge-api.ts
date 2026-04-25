@@ -7,6 +7,7 @@ import {
   importStrategyPackage,
   type ConflictPolicy,
 } from "../knowledge/package.js";
+import { isSafeScenarioId } from "../knowledge/scenario-id.js";
 import type { SolveSubmitOptions } from "../knowledge/solver.js";
 import type { GenerationRow, SQLiteStore } from "../storage/index.js";
 
@@ -190,10 +191,8 @@ function listSolvedScenarios(knowledgeRoot: string): Array<{ scenario: string; h
   return solved.sort((a, b) => a.scenario.localeCompare(b.scenario));
 }
 
-const KNOWLEDGE_SCENARIO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
 function resolveKnowledgeScenarioDir(knowledgeRoot: string, scenarioName: string): string | null {
-  if (!KNOWLEDGE_SCENARIO_NAME_RE.test(scenarioName)) {
+  if (!isSafeScenarioId(scenarioName)) {
     return null;
   }
   const root = resolve(knowledgeRoot);
