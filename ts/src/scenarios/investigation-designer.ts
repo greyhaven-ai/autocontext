@@ -1,10 +1,21 @@
 import type { InvestigationSpec } from "./investigation-spec.js";
 import { parseRawInvestigationSpec } from "./investigation-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
-import { parseDelimitedJsonObject } from "./llm-json-response.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const INVESTIGATION_SPEC_START = "<!-- INVESTIGATION_SPEC_START -->";
 export const INVESTIGATION_SPEC_END = "<!-- INVESTIGATION_SPEC_END -->";
+
+const INVESTIGATION_DESCRIPTOR: FamilyDesignerDescriptor<InvestigationSpec> = {
+  family: "investigation",
+  startDelimiter: INVESTIGATION_SPEC_START,
+  endDelimiter: INVESTIGATION_SPEC_END,
+  missingDelimiterLabel: "INVESTIGATION_SPEC",
+  parseRaw: parseRawInvestigationSpec,
+};
 
 const EXAMPLE_SPEC = {
   description: "Investigate a production outage by gathering evidence and identifying the root cause.",
@@ -87,24 +98,17 @@ ${INVESTIGATION_SPEC_END}
 `;
 
 export function parseInvestigationSpec(text: string): InvestigationSpec {
-  return parseRawInvestigationSpec(
-    healSpec(
-      parseDelimitedJsonObject({
-        text,
-        startDelimiter: INVESTIGATION_SPEC_START,
-        endDelimiter: INVESTIGATION_SPEC_END,
-        missingDelimiterLabel: "INVESTIGATION_SPEC",
-      }),
-      "investigation",
-    ),
-  );
+  return parseFamilyDesignerSpec(text, INVESTIGATION_DESCRIPTOR);
 }
 
 export async function designInvestigation(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<InvestigationSpec> {
-  return parseInvestigationSpec(
-    await llmFn(INVESTIGATION_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    INVESTIGATION_DESIGNER_SYSTEM,
+    INVESTIGATION_DESCRIPTOR,
+    llmFn,
   );
 }

@@ -1,10 +1,21 @@
 import type { SchemaEvolutionSpec } from "./schema-evolution-spec.js";
 import { parseRawSchemaEvolutionSpec } from "./schema-evolution-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
-import { parseDelimitedJsonObject } from "./llm-json-response.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const SCHEMA_EVOLUTION_SPEC_START = "<!-- SCHEMA_EVOLUTION_SPEC_START -->";
 export const SCHEMA_EVOLUTION_SPEC_END = "<!-- SCHEMA_EVOLUTION_SPEC_END -->";
+
+const SCHEMA_EVOLUTION_DESCRIPTOR: FamilyDesignerDescriptor<SchemaEvolutionSpec> = {
+  family: "schema_evolution",
+  startDelimiter: SCHEMA_EVOLUTION_SPEC_START,
+  endDelimiter: SCHEMA_EVOLUTION_SPEC_END,
+  missingDelimiterLabel: "SCHEMA_EVOLUTION_SPEC",
+  parseRaw: parseRawSchemaEvolutionSpec,
+};
 
 const EXAMPLE_SPEC = {
   description: "API schema evolves from v1 to v3 during a data migration task.",
@@ -101,24 +112,17 @@ ${SCHEMA_EVOLUTION_SPEC_END}
 `;
 
 export function parseSchemaEvolutionSpec(text: string): SchemaEvolutionSpec {
-  return parseRawSchemaEvolutionSpec(
-    healSpec(
-      parseDelimitedJsonObject({
-        text,
-        startDelimiter: SCHEMA_EVOLUTION_SPEC_START,
-        endDelimiter: SCHEMA_EVOLUTION_SPEC_END,
-        missingDelimiterLabel: "SCHEMA_EVOLUTION_SPEC",
-      }),
-      "schema_evolution",
-    ),
-  );
+  return parseFamilyDesignerSpec(text, SCHEMA_EVOLUTION_DESCRIPTOR);
 }
 
 export async function designSchemaEvolution(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<SchemaEvolutionSpec> {
-  return parseSchemaEvolutionSpec(
-    await llmFn(SCHEMA_EVOLUTION_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    SCHEMA_EVOLUTION_DESIGNER_SYSTEM,
+    SCHEMA_EVOLUTION_DESCRIPTOR,
+    llmFn,
   );
 }

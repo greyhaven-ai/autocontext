@@ -1,10 +1,21 @@
 import type { NegotiationSpec } from "./negotiation-spec.js";
 import { parseRawNegotiationSpec } from "./negotiation-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
-import { parseDelimitedJsonObject } from "./llm-json-response.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const NEGOTIATION_SPEC_START = "<!-- NEGOTIATION_SPEC_START -->";
 export const NEGOTIATION_SPEC_END = "<!-- NEGOTIATION_SPEC_END -->";
+
+const NEGOTIATION_DESCRIPTOR: FamilyDesignerDescriptor<NegotiationSpec> = {
+  family: "negotiation",
+  startDelimiter: NEGOTIATION_SPEC_START,
+  endDelimiter: NEGOTIATION_SPEC_END,
+  missingDelimiterLabel: "NEGOTIATION_SPEC",
+  parseRaw: parseRawNegotiationSpec,
+};
 
 const EXAMPLE_SPEC = {
   description: "Contract price negotiation with hidden BATNA.",
@@ -92,24 +103,17 @@ ${NEGOTIATION_SPEC_END}
 `;
 
 export function parseNegotiationSpec(text: string): NegotiationSpec {
-  return parseRawNegotiationSpec(
-    healSpec(
-      parseDelimitedJsonObject({
-        text,
-        startDelimiter: NEGOTIATION_SPEC_START,
-        endDelimiter: NEGOTIATION_SPEC_END,
-        missingDelimiterLabel: "NEGOTIATION_SPEC",
-      }),
-      "negotiation",
-    ),
-  );
+  return parseFamilyDesignerSpec(text, NEGOTIATION_DESCRIPTOR);
 }
 
 export async function designNegotiation(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<NegotiationSpec> {
-  return parseNegotiationSpec(
-    await llmFn(NEGOTIATION_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    NEGOTIATION_DESIGNER_SYSTEM,
+    NEGOTIATION_DESCRIPTOR,
+    llmFn,
   );
 }
