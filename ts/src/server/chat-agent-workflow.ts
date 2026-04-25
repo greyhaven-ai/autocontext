@@ -8,6 +8,7 @@ export function normalizeChatAgentRole(role: string): GenerationRole | undefined
     || role === "coach"
     || role === "architect"
     || role === "curator"
+    || role === "translator"
     ? role
     : undefined;
 }

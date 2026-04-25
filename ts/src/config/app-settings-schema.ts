@@ -18,6 +18,7 @@ export const AppSettingsSchema = z.object({
   // Core
   executorMode: z.string().default("local"),
   agentProvider: z.string().default("anthropic"),
+  roleRouting: z.enum(["off", "auto"]).default("off"),
   anthropicApiKey: z.string().nullable().default(null),
 
   // Models
@@ -28,6 +29,13 @@ export const AppSettingsSchema = z.object({
   modelTranslator: z.string().default("claude-sonnet-4-5-20250929"),
   modelCurator: z.string().default("claude-opus-4-6"),
   modelSkeptic: z.string().default("claude-opus-4-6"),
+  tierRoutingEnabled: z.boolean().default(false),
+  tierHaikuModel: z.string().default("claude-haiku-4-5-20251001"),
+  tierSonnetModel: z.string().default("claude-sonnet-4-5-20250929"),
+  tierOpusModel: z.string().default("claude-opus-4-6"),
+  tierCompetitorHaikuMaxGen: z.number().int().min(1).default(3),
+  tierHarnessAwareEnabled: z.boolean().default(false),
+  tierHarnessCoverageDemotionThreshold: z.number().min(0).max(1).default(0.8),
 
   // Loop tuning
   architectEveryNGens: z.number().int().min(1).default(3),
@@ -250,6 +258,11 @@ export const AppSettingsSchema = z.object({
   coachBaseUrl: z.string().default(""),
   architectApiKey: z.string().default(""),
   architectBaseUrl: z.string().default(""),
+
+  // Local model inference
+  mlxModelPath: z.string().default(""),
+  mlxTemperature: z.number().min(0).max(2).default(0.8),
+  mlxMaxTokens: z.number().int().min(1).default(512),
 
   // Monitor
   monitorEnabled: z.boolean().default(true),

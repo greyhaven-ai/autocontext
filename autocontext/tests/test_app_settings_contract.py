@@ -51,6 +51,7 @@ def test_python_load_settings_consumes_contract_aliases(monkeypatch: pytest.Monk
 def test_python_app_settings_rejects_representative_invalid_shared_values() -> None:
     invalid_cases = [
         ("matches_per_generation", 0),
+        ("role_routing", "manual"),
         ("claude_timeout", 0),
         ("browser_profile_mode", "shared"),
         ("monitor_max_conditions", 0),

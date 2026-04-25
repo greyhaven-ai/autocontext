@@ -1,11 +1,20 @@
-import type { LLMProvider } from "../types/index.js";
+import { ProviderError, type LLMProvider } from "../types/index.js";
 import { createProvider, type CreateProviderOpts } from "./provider-factory.js";
 import { resolveProviderConfig, type ProviderConfig } from "./provider-config-resolution.js";
+import {
+  ROUTED_GENERATION_ROLES,
+  routeRoleProvider,
+  type GenerationRole,
+  type RoleRoutingContext,
+  type RoleRoutingSettings,
+  type RoutedProviderConfig,
+} from "./role-routing.js";
 
-export type GenerationRole = "competitor" | "analyst" | "coach" | "architect" | "curator";
+export type { GenerationRole } from "./role-routing.js";
 
-export interface RoleProviderSettings {
+export interface RoleProviderSettings extends RoleRoutingSettings {
   agentProvider: string;
+  roleRouting?: string;
   competitorProvider?: string;
   analystProvider?: string;
   coachProvider?: string;
@@ -23,6 +32,11 @@ export interface RoleProviderSettings {
   modelCoach?: string;
   modelArchitect?: string;
   modelCurator?: string;
+  modelTranslator?: string;
+  tierOpusModel?: string;
+  tierSonnetModel?: string;
+  tierHaikuModel?: string;
+  mlxModelPath?: string;
   claudeModel?: string;
   claudeFallbackModel?: string;
   claudeTools?: string | null;
@@ -44,11 +58,16 @@ export interface RoleProviderSettings {
   piRpcSessionPersistence?: boolean;
 }
 
+export interface BuildRoleProviderBundleOptions {
+  routingContext?: RoleRoutingContext;
+}
+
 export interface RoleProviderBundle {
   defaultProvider: LLMProvider;
   defaultConfig: ProviderConfig;
   roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
   roleModels: Partial<Record<GenerationRole, string>>;
+  roleRoutes?: Partial<Record<GenerationRole, RoutedProviderConfig>>;
 }
 
 export function withRuntimeSettings(
@@ -117,6 +136,85 @@ function resolveRoleConfig(
   );
 }
 
+function roleConfigInputForRole(
+  role: GenerationRole,
+  settings: RoleProviderSettings,
+): RoleConfigInput {
+  switch (role) {
+    case "competitor":
+      return {
+        providerType: settings.competitorProvider,
+        model: settings.modelCompetitor,
+        apiKey: settings.competitorApiKey,
+        baseUrl: settings.competitorBaseUrl,
+      };
+    case "analyst":
+      return {
+        providerType: settings.analystProvider,
+        model: settings.modelAnalyst,
+        apiKey: settings.analystApiKey,
+        baseUrl: settings.analystBaseUrl,
+      };
+    case "coach":
+      return {
+        providerType: settings.coachProvider,
+        model: settings.modelCoach,
+        apiKey: settings.coachApiKey,
+        baseUrl: settings.coachBaseUrl,
+      };
+    case "architect":
+      return {
+        providerType: settings.architectProvider,
+        model: settings.modelArchitect,
+        apiKey: settings.architectApiKey,
+        baseUrl: settings.architectBaseUrl,
+      };
+    case "curator":
+      return {
+        model: settings.modelCurator,
+      };
+    case "translator":
+      return {
+        model: settings.modelTranslator,
+      };
+  }
+}
+
+function assertRoutedProviderIsExecutable(role: GenerationRole, routed: RoutedProviderConfig): void {
+  if (routed.executableInTypeScript) {
+    return;
+  }
+
+  const reason = routed.unsupportedReason
+    ?? "TypeScript provider runtime does not support routed provider";
+  throw new ProviderError(`${reason} for role ${JSON.stringify(role)}.`);
+}
+
+function resolveRoutedRoleConfig(
+  overrides: Partial<ProviderConfig>,
+  roleConfig: RoleConfigInput,
+  routed: RoutedProviderConfig,
+): ProviderConfig {
+  const apiKey = normalizeOptionalOverride(roleConfig.apiKey);
+  const baseUrl = normalizeOptionalOverride(roleConfig.baseUrl);
+
+  return resolveProviderConfig(
+    {
+      ...overrides,
+      providerType: routed.providerType,
+      model: routed.model,
+      apiKey: apiKey ?? overrides.apiKey,
+      baseUrl: baseUrl ?? overrides.baseUrl,
+    },
+    {
+      preferProviderOverride: true,
+      preferModelOverride: Boolean(routed.model),
+      preferApiKeyOverride: Boolean(apiKey ?? overrides.apiKey),
+      preferBaseUrlOverride: Boolean(baseUrl ?? overrides.baseUrl),
+    },
+  );
+}
+
 export function createConfiguredProvider(
   overrides: Partial<ProviderConfig> = {},
   settings: Partial<RoleProviderSettings> = {},
@@ -134,6 +232,7 @@ export function createConfiguredProvider(
 export function buildRoleProviderBundle(
   settings: RoleProviderSettings,
   overrides: Partial<ProviderConfig> = {},
+  options: BuildRoleProviderBundleOptions = {},
 ): RoleProviderBundle {
   const defaultConfig = resolveProviderConfig({
     ...overrides,
@@ -141,52 +240,37 @@ export function buildRoleProviderBundle(
   });
   const defaultProvider = createProvider(withRuntimeSettings(defaultConfig, settings));
 
-  const roleConfigs: Record<GenerationRole, ProviderConfig> = {
-    competitor: resolveRoleConfig(defaultConfig, overrides, {
-      providerType: settings.competitorProvider,
-      model: settings.modelCompetitor,
-      apiKey: settings.competitorApiKey,
-      baseUrl: settings.competitorBaseUrl,
-    }),
-    analyst: resolveRoleConfig(defaultConfig, overrides, {
-      providerType: settings.analystProvider,
-      model: settings.modelAnalyst,
-      apiKey: settings.analystApiKey,
-      baseUrl: settings.analystBaseUrl,
-    }),
-    coach: resolveRoleConfig(defaultConfig, overrides, {
-      providerType: settings.coachProvider,
-      model: settings.modelCoach,
-      apiKey: settings.coachApiKey,
-      baseUrl: settings.coachBaseUrl,
-    }),
-    architect: resolveRoleConfig(defaultConfig, overrides, {
-      providerType: settings.architectProvider,
-      model: settings.modelArchitect,
-      apiKey: settings.architectApiKey,
-      baseUrl: settings.architectBaseUrl,
-    }),
-    curator: resolveRoleConfig(defaultConfig, overrides, {
-      model: settings.modelCurator,
-    }),
+  const roleConfigs = {} as Record<GenerationRole, ProviderConfig>;
+  const roleRoutes: Partial<Record<GenerationRole, RoutedProviderConfig>> = {};
+  const effectiveRoutingSettings: RoleProviderSettings = {
+    ...settings,
+    agentProvider: defaultConfig.providerType,
   };
+
+  for (const role of ROUTED_GENERATION_ROLES) {
+    const roleConfig = roleConfigInputForRole(role, settings);
+    if (settings.roleRouting === "auto") {
+      const routed = routeRoleProvider(effectiveRoutingSettings, role, options.routingContext);
+      roleRoutes[role] = routed;
+      assertRoutedProviderIsExecutable(role, routed);
+      roleConfigs[role] = resolveRoutedRoleConfig(overrides, roleConfig, routed);
+    } else {
+      roleConfigs[role] = resolveRoleConfig(defaultConfig, overrides, roleConfig);
+    }
+  }
+
+  const roleProviders: Partial<Record<GenerationRole, LLMProvider>> = {};
+  const roleModels: Partial<Record<GenerationRole, string>> = {};
+  for (const role of ROUTED_GENERATION_ROLES) {
+    roleProviders[role] = createProvider(withRuntimeSettings(roleConfigs[role], settings));
+    roleModels[role] = roleConfigs[role].model;
+  }
 
   return {
     defaultProvider,
     defaultConfig,
-    roleProviders: {
-      competitor: createProvider(withRuntimeSettings(roleConfigs.competitor, settings)),
-      analyst: createProvider(withRuntimeSettings(roleConfigs.analyst, settings)),
-      coach: createProvider(withRuntimeSettings(roleConfigs.coach, settings)),
-      architect: createProvider(withRuntimeSettings(roleConfigs.architect, settings)),
-      curator: createProvider(withRuntimeSettings(roleConfigs.curator, settings)),
-    },
-    roleModels: {
-      competitor: roleConfigs.competitor.model,
-      analyst: roleConfigs.analyst.model,
-      coach: roleConfigs.coach.model,
-      architect: roleConfigs.architect.model,
-      curator: roleConfigs.curator.model,
-    },
+    roleProviders,
+    roleModels,
+    ...(settings.roleRouting === "auto" ? { roleRoutes } : {}),
   };
 }

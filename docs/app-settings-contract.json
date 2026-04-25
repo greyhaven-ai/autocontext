@@ -46,6 +46,14 @@
       "env": ["AUTOCONTEXT_AGENT_PROVIDER", "AUTOCONTEXT_PROVIDER"]
     },
     {
+      "python": "role_routing",
+      "typescript": "roleRouting",
+      "type": "enum",
+      "default": "off",
+      "env": ["AUTOCONTEXT_ROLE_ROUTING"],
+      "values": ["off", "auto"]
+    },
+    {
       "python": "anthropic_api_key",
       "typescript": "anthropicApiKey",
       "type": "nullable_string",
@@ -67,6 +75,34 @@
       "default": 1,
       "env": ["AUTOCONTEXT_DEFAULT_GENERATIONS"],
       "minimum": 1
+    },
+    {
+      "python": "tier_haiku_model",
+      "typescript": "tierHaikuModel",
+      "type": "string",
+      "default": "claude-haiku-4-5-20251001",
+      "env": ["AUTOCONTEXT_TIER_HAIKU_MODEL"]
+    },
+    {
+      "python": "tier_sonnet_model",
+      "typescript": "tierSonnetModel",
+      "type": "string",
+      "default": "claude-sonnet-4-5-20250929",
+      "env": ["AUTOCONTEXT_TIER_SONNET_MODEL"]
+    },
+    {
+      "python": "tier_opus_model",
+      "typescript": "tierOpusModel",
+      "type": "string",
+      "default": "claude-opus-4-6",
+      "env": ["AUTOCONTEXT_TIER_OPUS_MODEL"]
+    },
+    {
+      "python": "mlx_model_path",
+      "typescript": "mlxModelPath",
+      "type": "string",
+      "default": "",
+      "env": ["AUTOCONTEXT_MLX_MODEL_PATH"]
     },
     {
       "python": "holdout_enabled",

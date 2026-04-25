@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "contract": "role provider routing classes, preferences, and model tier mapping shared by Python and TypeScript",
+  "mode_values": ["off", "auto"],
+  "provider_classes": ["frontier", "mid_tier", "fast", "local", "code_policy"],
+  "cost_per_1k_tokens": {
+    "frontier": 0.015,
+    "mid_tier": 0.003,
+    "fast": 0.001,
+    "local": 0.0
+  },
+  "default_routing_table": {
+    "competitor": ["frontier", "local"],
+    "analyst": ["mid_tier", "local"],
+    "coach": ["mid_tier", "local"],
+    "architect": ["frontier"],
+    "curator": ["fast"],
+    "translator": ["fast", "local"]
+  },
+  "local_eligible_roles": ["competitor", "analyst", "coach", "translator"],
+  "explicit_provider_classes": {
+    "anthropic": "frontier",
+    "mlx": "local",
+    "openclaw": "frontier",
+    "deterministic": "fast",
+    "agent_sdk": "frontier",
+    "openai": "mid_tier",
+    "openai-compatible": "mid_tier",
+    "ollama": "mid_tier",
+    "vllm": "mid_tier"
+  },
+  "class_model_fields": {
+    "frontier": { "python": "tier_opus_model", "typescript": "tierOpusModel" },
+    "mid_tier": { "python": "tier_sonnet_model", "typescript": "tierSonnetModel" },
+    "fast": { "python": "tier_haiku_model", "typescript": "tierHaikuModel" },
+    "local": { "python": "mlx_model_path", "typescript": "mlxModelPath" }
+  },
+  "role_model_fields": {
+    "competitor": { "python": "model_competitor", "typescript": "modelCompetitor" },
+    "analyst": { "python": "model_analyst", "typescript": "modelAnalyst" },
+    "coach": { "python": "model_coach", "typescript": "modelCoach" },
+    "architect": { "python": "model_architect", "typescript": "modelArchitect" },
+    "curator": { "python": "model_curator", "typescript": "modelCurator" },
+    "translator": { "python": "model_translator", "typescript": "modelTranslator" }
+  },
+  "precedence": [
+    "explicit per-role provider override",
+    "default provider and role model when role routing is off",
+    "auto routing table with available local artifacts preferred for eligible roles",
+    "first API-backed provider class in the role routing table",
+    "mid-tier fallback for unknown roles"
+  ]
+}

@@ -59,6 +59,7 @@ describe("AppSettings shared contract", () => {
   it("rejects representative invalid shared setting values", () => {
     const invalidCases: Array<{ field: string; value: unknown }> = [
       { field: "matchesPerGeneration", value: 0 },
+      { field: "roleRouting", value: "manual" },
       { field: "claudeTimeout", value: 0 },
       { field: "browserProfileMode", value: "shared" },
       { field: "monitorMaxConditions", value: 0 },

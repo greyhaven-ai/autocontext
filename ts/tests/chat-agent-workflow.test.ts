@@ -11,6 +11,7 @@ describe("chat agent workflow", () => {
   it("normalizes only generation roles used by the control plane", () => {
     expect(normalizeChatAgentRole("analyst")).toBe("analyst");
     expect(normalizeChatAgentRole("coach")).toBe("coach");
+    expect(normalizeChatAgentRole("translator")).toBe("translator");
     expect(normalizeChatAgentRole("not-a-role")).toBeUndefined();
   });
 

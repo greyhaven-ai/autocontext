@@ -23,7 +23,26 @@ export {
   buildRoleProviderBundle,
   createConfiguredProvider,
   withRuntimeSettings,
-  type GenerationRole,
+  type BuildRoleProviderBundleOptions,
   type RoleProviderBundle,
   type RoleProviderSettings,
 } from "./role-provider-bundle.js";
+
+export {
+  DEFAULT_ROLE_ROUTING_TABLE,
+  EXPLICIT_PROVIDER_CLASS,
+  LOCAL_ELIGIBLE_ROLES,
+  PROVIDER_CLASSES,
+  PROVIDER_CLASS_COST_PER_1K_TOKENS,
+  ROLE_ROUTING_MODES,
+  ROUTED_GENERATION_ROLES,
+  estimateRoleRoutingCost,
+  routeRoleProvider,
+  type GenerationRole,
+  type ProviderClass,
+  type RoleRoutingContext,
+  type RoleRoutingCostEstimate,
+  type RoleRoutingMode,
+  type RoleRoutingSettings,
+  type RoutedProviderConfig,
+} from "./role-routing.js";
