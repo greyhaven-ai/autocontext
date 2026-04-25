@@ -100,7 +100,7 @@ export const AppSettingsSchema = z.object({
   claudeTools: z.string().nullable().default(null),
   claudePermissionMode: z.string().default("bypassPermissions"),
   claudeSessionPersistence: z.boolean().default(false),
-  claudeTimeout: z.number().min(1).default(120.0),
+  claudeTimeout: z.number().min(1).default(600.0),
 
   // Codex CLI runtime
   codexModel: z.string().default("o4-mini"),
@@ -111,7 +111,7 @@ export const AppSettingsSchema = z.object({
 
   // Pi CLI runtime
   piCommand: z.string().default("pi"),
-  piTimeout: z.number().min(1).default(120.0),
+  piTimeout: z.number().min(1).default(300.0),
   piWorkspace: z.string().default(""),
   piModel: z.string().default(""),
   piNoContextFiles: z.boolean().default(false),
@@ -175,7 +175,7 @@ export const AppSettingsSchema = z.object({
   judgeModel: z.string().default("claude-sonnet-4-20250514"),
   judgeSamples: z.number().int().min(1).default(1),
   judgeTemperature: z.number().min(0).default(0.0),
-  judgeProvider: z.string().default("anthropic"),
+  judgeProvider: z.string().default("auto"),
   judgeBaseUrl: z.string().nullable().default(null),
   judgeApiKey: z.string().nullable().default(null),
   judgeDisagreementThreshold: z.number().min(0).max(1).default(0.15),

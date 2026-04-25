@@ -24,7 +24,7 @@ export class PiCLIConfig {
   constructor(opts: PiCLIConfigOpts = {}) {
     this.piCommand = opts.piCommand ?? "pi";
     this.model = opts.model ?? "";
-    this.timeout = opts.timeout ?? 120.0;
+    this.timeout = opts.timeout ?? 300.0;
     this.workspace = opts.workspace ?? "";
     this.noContextFiles = opts.noContextFiles ?? false;
   }

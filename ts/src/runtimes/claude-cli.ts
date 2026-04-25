@@ -37,7 +37,7 @@ export class ClaudeCLIRuntime implements AgentRuntime {
     this.config = {
       model: "sonnet",
       permissionMode: "bypassPermissions",
-      timeout: 120_000,
+      timeout: 600_000,
       ...config,
     };
     this._claudePath = which("claude");

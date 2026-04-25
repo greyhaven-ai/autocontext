@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "contract": "portable AppSettings fields shared by Python and TypeScript",
+  "unknown_field_policy": "ignore",
+  "fields": [
+    {
+      "python": "db_path",
+      "typescript": "dbPath",
+      "type": "path",
+      "default": "runs/autocontext.sqlite3",
+      "env": ["AUTOCONTEXT_DB_PATH"]
+    },
+    {
+      "python": "runs_root",
+      "typescript": "runsRoot",
+      "type": "path",
+      "default": "runs",
+      "env": ["AUTOCONTEXT_RUNS_ROOT"]
+    },
+    {
+      "python": "knowledge_root",
+      "typescript": "knowledgeRoot",
+      "type": "path",
+      "default": "knowledge",
+      "env": ["AUTOCONTEXT_KNOWLEDGE_ROOT"]
+    },
+    {
+      "python": "skills_root",
+      "typescript": "skillsRoot",
+      "type": "path",
+      "default": "skills",
+      "env": ["AUTOCONTEXT_SKILLS_ROOT"]
+    },
+    {
+      "python": "event_stream_path",
+      "typescript": "eventStreamPath",
+      "type": "path",
+      "default": "runs/events.ndjson",
+      "env": ["AUTOCONTEXT_EVENT_STREAM_PATH"]
+    },
+    {
+      "python": "agent_provider",
+      "typescript": "agentProvider",
+      "type": "string",
+      "default": "anthropic",
+      "env": ["AUTOCONTEXT_AGENT_PROVIDER", "AUTOCONTEXT_PROVIDER"]
+    },
+    {
+      "python": "anthropic_api_key",
+      "typescript": "anthropicApiKey",
+      "type": "nullable_string",
+      "default": null,
+      "env": ["ANTHROPIC_API_KEY", "AUTOCONTEXT_ANTHROPIC_API_KEY"]
+    },
+    {
+      "python": "matches_per_generation",
+      "typescript": "matchesPerGeneration",
+      "type": "integer",
+      "default": 3,
+      "env": ["AUTOCONTEXT_MATCHES_PER_GENERATION"],
+      "minimum": 1
+    },
+    {
+      "python": "default_generations",
+      "typescript": "defaultGenerations",
+      "type": "integer",
+      "default": 1,
+      "env": ["AUTOCONTEXT_DEFAULT_GENERATIONS"],
+      "minimum": 1
+    },
+    {
+      "python": "holdout_enabled",
+      "typescript": "holdoutEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": ["AUTOCONTEXT_HOLDOUT_ENABLED"]
+    },
+    {
+      "python": "holdout_min_score",
+      "typescript": "holdoutMinScore",
+      "type": "number",
+      "default": 0.0,
+      "env": ["AUTOCONTEXT_HOLDOUT_MIN_SCORE"],
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    {
+      "python": "claude_timeout",
+      "typescript": "claudeTimeout",
+      "type": "number",
+      "default": 600.0,
+      "env": ["AUTOCONTEXT_CLAUDE_TIMEOUT"],
+      "minimum": 1.0
+    },
+    {
+      "python": "codex_timeout",
+      "typescript": "codexTimeout",
+      "type": "number",
+      "default": 120.0,
+      "env": ["AUTOCONTEXT_CODEX_TIMEOUT"],
+      "minimum": 1.0
+    },
+    {
+      "python": "pi_timeout",
+      "typescript": "piTimeout",
+      "type": "number",
+      "default": 300.0,
+      "env": ["AUTOCONTEXT_PI_TIMEOUT"],
+      "minimum": 1.0
+    },
+    {
+      "python": "judge_provider",
+      "typescript": "judgeProvider",
+      "type": "string",
+      "default": "auto",
+      "env": ["AUTOCONTEXT_JUDGE_PROVIDER"]
+    },
+    {
+      "python": "browser_profile_mode",
+      "typescript": "browserProfileMode",
+      "type": "enum",
+      "default": "ephemeral",
+      "env": ["AUTOCONTEXT_BROWSER_PROFILE_MODE"],
+      "values": ["ephemeral", "isolated", "user-profile"]
+    },
+    {
+      "python": "monitor_enabled",
+      "typescript": "monitorEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": ["AUTOCONTEXT_MONITOR_ENABLED"]
+    },
+    {
+      "python": "monitor_max_conditions",
+      "typescript": "monitorMaxConditions",
+      "type": "integer",
+      "default": 100,
+      "env": ["AUTOCONTEXT_MONITOR_MAX_CONDITIONS"],
+      "minimum": 1
+    }
+  ]
+}

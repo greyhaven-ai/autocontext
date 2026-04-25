@@ -66,7 +66,7 @@ describe("AppSettingsSchema", () => {
     expect(settings.judgeModel).toContain("sonnet");
     expect(settings.judgeSamples).toBe(1);
     expect(settings.judgeTemperature).toBe(0.0);
-    expect(settings.judgeProvider).toBe("anthropic");
+    expect(settings.judgeProvider).toBe("auto");
   });
 
   it("should include boolean feature flag defaults", async () => {
