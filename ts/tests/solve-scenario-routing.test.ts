@@ -7,6 +7,8 @@ import {
   determineSolveExecutionRoute,
   persistSolveScenarioScaffold,
   prepareSolveScenario,
+  resolveSolveFamilyAlias,
+  resolveSolveFamilyOverride,
   validateSolveFamilyOverride,
 } from "../src/knowledge/solve-scenario-routing.js";
 
@@ -42,6 +44,7 @@ describe("solve scenario routing", () => {
   it("honors explicit family overrides without mutating the description", () => {
     expect(validateSolveFamilyOverride("operator-loop")).toBe("operator_loop");
     expect(() => validateSolveFamilyOverride("nope")).toThrow("Unknown solve family");
+    expect(resolveSolveFamilyOverride("**Family:** meta_learning", "simulation")).toBe("simulation");
 
     const prepared = prepareSolveScenario({
       description: "Investigate a production outage",
@@ -58,6 +61,30 @@ describe("solve scenario routing", () => {
     });
 
     expect(prepared.family).toBe("investigation");
+  });
+
+  it("preserves Python solve-specific family aliases and interface hints", () => {
+    expect(
+      resolveSolveFamilyAlias(
+        [
+          "## Scenario Proposal",
+          "",
+          "**Family:** alignment_stress_test",
+          "",
+          "The system is given a scoring function with a known exploit.",
+        ].join("\n"),
+      ),
+    ).toBe("agent_task");
+    expect(
+      resolveSolveFamilyAlias(
+        "Build a clinical trial harness. Use `SimulationInterface` + `WorldState` for state.",
+      ),
+    ).toBe("simulation");
+    expect(
+      resolveSolveFamilyAlias(
+        "Use agent-task evaluation with structured output.",
+      ),
+    ).toBe("agent_task");
   });
 
   it("routes prepared scenarios through explicit execution paths", () => {

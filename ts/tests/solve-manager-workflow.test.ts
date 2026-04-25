@@ -77,6 +77,60 @@ describe("solve manager workflow", () => {
     });
   });
 
+  it("threads solve-specific alias routing into scenario creation", async () => {
+    const job = createSolveJob(
+      "solve_alias",
+      [
+        "## Scenario Proposal",
+        "",
+        "**Family:** meta_learning",
+        "",
+        "The system summarizes what it learned across generations.",
+      ].join("\n"),
+      1,
+    );
+    const createScenarioFromDescription = vi.fn(async () => ({
+      name: "meta_learning_fixture",
+      family: "agent_task",
+      spec: { taskPrompt: "Summarize learned state", rubric: "Evaluate compression" },
+    }));
+    const prepareSolveScenario = vi.fn(({ created, familyOverride }) => ({
+      ...created,
+      family: familyOverride,
+    }));
+
+    await executeSolveJobWorkflow({
+      job,
+      provider: { name: "mock", defaultModel: () => "mock", complete: vi.fn() } as never,
+      store: {} as never,
+      runsRoot: "/tmp/runs",
+      knowledgeRoot: "/tmp/knowledge",
+      deps: {
+        createScenarioFromDescription,
+        listBuiltinScenarioNames: vi.fn(async () => []),
+        prepareSolveScenario: prepareSolveScenario as never,
+        determineSolveExecutionRoute: vi.fn(() => "agent_task") as never,
+        persistSolveScenarioScaffold: vi.fn(async () => ({ persisted: true, errors: [] })) as never,
+        executeBuiltInGameSolve: vi.fn() as never,
+        executeAgentTaskSolve: vi.fn(async () => ({ progress: 1, result: {} })) as never,
+        executeCodegenSolve: vi.fn() as never,
+        failSolveJob: vi.fn((failedJob, error) => {
+          failedJob.status = "failed";
+          failedJob.error = error instanceof Error ? error.message : String(error);
+        }),
+      },
+    });
+
+    expect(createScenarioFromDescription).toHaveBeenCalledWith(
+      job.description,
+      { familyOverride: "agent_task" },
+    );
+    expect(prepareSolveScenario).toHaveBeenCalledWith(
+      expect.objectContaining({ familyOverride: "agent_task" }),
+    );
+    expect(job.family).toBe("agent_task");
+  });
+
   it("reports built-in scenario solves as game family even when designer metadata drifts", async () => {
     const job = createSolveJob("solve_builtin", "grid ctf", 1, {
       generationTimeBudgetSeconds: 12,

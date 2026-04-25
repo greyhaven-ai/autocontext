@@ -9,7 +9,7 @@ import {
   determineSolveExecutionRoute,
   persistSolveScenarioScaffold,
   prepareSolveScenario,
-  validateSolveFamilyOverride,
+  resolveSolveFamilyOverride,
 } from "./solve-scenario-routing.js";
 import { failSolveJob, type SolveJob } from "./solve-workflow.js";
 
@@ -137,7 +137,10 @@ export async function executeSolveJobWorkflow(opts: {
 }): Promise<void> {
   opts.job.status = "creating_scenario";
   try {
-    const familyOverride = validateSolveFamilyOverride(opts.job.familyOverride);
+    const familyOverride = resolveSolveFamilyOverride(
+      opts.job.description,
+      opts.job.familyOverride,
+    );
     const created = await opts.deps.createScenarioFromDescription(
       opts.job.description,
       { familyOverride },
