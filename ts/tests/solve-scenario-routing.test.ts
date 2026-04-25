@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
-  buildSolveScenarioDescription,
   determineSolveExecutionRoute,
   persistSolveScenarioScaffold,
   prepareSolveScenario,
@@ -40,12 +39,9 @@ describe("solve scenario routing", () => {
     expect(prepared.spec.description).toBe("Incident summary task");
   });
 
-  it("honors explicit family overrides and builds classifier hints", () => {
+  it("honors explicit family overrides without mutating the description", () => {
     expect(validateSolveFamilyOverride("operator-loop")).toBe("operator_loop");
     expect(() => validateSolveFamilyOverride("nope")).toThrow("Unknown solve family");
-    expect(buildSolveScenarioDescription("Handle escalations", "operator_loop")).toContain(
-      "**Family:** operator_loop",
-    );
 
     const prepared = prepareSolveScenario({
       description: "Investigate a production outage",

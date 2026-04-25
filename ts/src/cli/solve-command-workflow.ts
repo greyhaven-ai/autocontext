@@ -12,7 +12,7 @@ Options:
   --family <name>            Force a scenario family before creation/routing
   --timeout <seconds>        Maximum time to wait for solve completion (default: 300)
   --generation-time-budget <seconds>
-                              Soft per-generation solve runtime budget metadata (0 = unlimited)
+                              Soft per-generation solve runtime budget (0 = unlimited)
   --output <path>            Write the solved package JSON to a file
   --json                     Output structured JSON
   -h, --help                 Show this help

@@ -33,6 +33,7 @@ import type { WorkflowSpec } from "./workflow-spec.js";
 export interface CreatedScenarioResult {
   name: string;
   family: string;
+  llmClassifierFallbackUsed?: boolean;
   spec: {
     taskPrompt: string;
     rubric: string;
@@ -42,6 +43,13 @@ export interface CreatedScenarioResult {
 }
 
 type ProviderLlmFn = (system: string, user: string) => Promise<string>;
+export interface CreateScenarioOptions {
+  familyOverride?: ScenarioFamilyName;
+}
+interface ScenarioFamilyDetection {
+  family: ScenarioFamilyName;
+  llmClassifierFallbackUsed: boolean;
+}
 type FamilyAwareScenarioFamily =
   | "coordination"
   | "investigation"
@@ -119,21 +127,40 @@ export function detectScenarioFamily(
   description: string,
   options?: { llmFn?: ClassifierLlmFn },
 ): ScenarioFamilyName {
-  if (!description.trim()) return "agent_task";
+  return detectScenarioFamilyWithMetadata(description, options).family;
+}
+
+export function detectScenarioFamilyWithMetadata(
+  description: string,
+  options?: { llmFn?: ClassifierLlmFn },
+): ScenarioFamilyDetection {
+  if (!description.trim()) {
+    return { family: "agent_task", llmClassifierFallbackUsed: false };
+  }
 
   const hintedFamily = resolveScenarioFamilyHint(description);
   if (hintedFamily) {
-    return normalizeDetectedFamily(hintedFamily);
+    return {
+      family: normalizeDetectedFamily(hintedFamily),
+      llmClassifierFallbackUsed: false,
+    };
   }
 
   try {
-    const family = routeToFamily(classifyScenarioFamily(description, options), 0.15);
-    return normalizeDetectedFamily(family);
+    const classification = classifyScenarioFamily(description, options);
+    const family = routeToFamily(classification, 0.15);
+    return {
+      family: normalizeDetectedFamily(family),
+      llmClassifierFallbackUsed: Boolean(classification.llmClassifierUsed),
+    };
   } catch (error) {
     if (!(error instanceof LowConfidenceError)) {
       throw error;
     }
-    return "agent_task";
+    return {
+      family: "agent_task",
+      llmClassifierFallbackUsed: false,
+    };
   }
 }
 
@@ -141,21 +168,40 @@ export async function detectScenarioFamilyAsync(
   description: string,
   options?: { llmFn?: ClassifierAsyncLlmFn },
 ): Promise<ScenarioFamilyName> {
-  if (!description.trim()) return "agent_task";
+  return (await detectScenarioFamilyWithMetadataAsync(description, options)).family;
+}
+
+export async function detectScenarioFamilyWithMetadataAsync(
+  description: string,
+  options?: { llmFn?: ClassifierAsyncLlmFn },
+): Promise<ScenarioFamilyDetection> {
+  if (!description.trim()) {
+    return { family: "agent_task", llmClassifierFallbackUsed: false };
+  }
 
   const hintedFamily = resolveScenarioFamilyHint(description);
   if (hintedFamily) {
-    return normalizeDetectedFamily(hintedFamily);
+    return {
+      family: normalizeDetectedFamily(hintedFamily),
+      llmClassifierFallbackUsed: false,
+    };
   }
 
   try {
-    const family = routeToFamily(await classifyScenarioFamilyAsync(description, options), 0.15);
-    return normalizeDetectedFamily(family);
+    const classification = await classifyScenarioFamilyAsync(description, options);
+    const family = routeToFamily(classification, 0.15);
+    return {
+      family: normalizeDetectedFamily(family),
+      llmClassifierFallbackUsed: Boolean(classification.llmClassifierUsed),
+    };
   } catch (error) {
     if (!(error instanceof LowConfidenceError)) {
       throw error;
     }
-    return "agent_task";
+    return {
+      family: "agent_task",
+      llmClassifierFallbackUsed: false,
+    };
   }
 }
 
@@ -500,10 +546,17 @@ async function createGenericScenarioFromDescription(
 export async function createScenarioFromDescription(
   description: string,
   provider: LLMProvider,
+  options: CreateScenarioOptions = {},
 ): Promise<CreatedScenarioResult> {
   const defaultName = deriveScenarioName(description);
   const providerLlmFn = createProviderLlmFn(provider);
-  const defaultFamily = await detectScenarioFamilyAsync(description, { llmFn: providerLlmFn });
+  const detection = options.familyOverride
+    ? {
+        family: normalizeDetectedFamily(options.familyOverride),
+        llmClassifierFallbackUsed: false,
+      }
+    : await detectScenarioFamilyWithMetadataAsync(description, { llmFn: providerLlmFn });
+  const defaultFamily = detection.family;
 
   if (hasFamilyAwareScenarioFactory(defaultFamily)) {
     try {
@@ -515,6 +568,7 @@ export async function createScenarioFromDescription(
       );
       return {
         ...created,
+        llmClassifierFallbackUsed: detection.llmClassifierFallbackUsed,
         spec: healSpec(
           created.spec as Record<string, unknown>,
           created.family,
@@ -528,5 +582,8 @@ export async function createScenarioFromDescription(
     }
   }
 
-  return createGenericScenarioFromDescription(description, provider, defaultName, defaultFamily);
+  return {
+    ...(await createGenericScenarioFromDescription(description, provider, defaultName, defaultFamily)),
+    llmClassifierFallbackUsed: detection.llmClassifierFallbackUsed,
+  };
 }

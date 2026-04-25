@@ -23,6 +23,7 @@ export interface BuiltInGameSolveDeps {
     matchesPerGeneration: number;
     maxRetries: number;
     minDelta: number;
+    generationTimeBudgetSeconds?: number | null;
   }) => { run(runId: string, generations: number): Promise<{ generationsCompleted: number }> };
   exportPackage?: (opts: {
     scenarioName: string;
@@ -45,6 +46,7 @@ async function defaultCreateRunner(opts: {
   matchesPerGeneration: number;
   maxRetries: number;
   minDelta: number;
+  generationTimeBudgetSeconds?: number | null;
 }): Promise<{ run(runId: string, generations: number): Promise<{ generationsCompleted: number }> }> {
   const { GenerationRunner } = await import("../loop/generation-runner.js");
   return new GenerationRunner(opts);
@@ -58,6 +60,7 @@ export async function executeBuiltInGameSolve(opts: {
   scenarioName: string;
   jobId: string;
   generations: number;
+  generationTimeBudgetSeconds?: number | null;
   deps?: BuiltInGameSolveDeps;
 }): Promise<BuiltInGameSolveExecutionResult> {
   const ScenarioClass = await (opts.deps?.resolveScenarioClass ?? defaultResolveScenarioClass)(opts.scenarioName);
@@ -76,6 +79,7 @@ export async function executeBuiltInGameSolve(opts: {
     matchesPerGeneration: 2,
     maxRetries: 0,
     minDelta: 0,
+    generationTimeBudgetSeconds: opts.generationTimeBudgetSeconds,
   });
 
   const runId = `solve_${opts.scenarioName}_${opts.jobId}`;

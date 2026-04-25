@@ -1,6 +1,7 @@
 import { ImprovementLoop } from "../execution/improvement-loop.js";
 import { createAgentTask } from "../scenarios/agent-task-factory.js";
 import { AgentTaskSpecSchema, type AgentTaskSpec } from "../scenarios/agent-task-spec.js";
+import { SolveGenerationBudget } from "./solve-generation-budget.js";
 import type {
   AgentTaskInterface,
   ImprovementResult,
@@ -111,6 +112,7 @@ export interface AgentTaskSolveExecutionDeps {
     task: AgentTaskSolveTask;
     maxRounds: number;
     qualityThreshold: number;
+    timeBudget?: SolveGenerationBudget;
   }) => AgentTaskSolveLoop;
 }
 
@@ -123,11 +125,13 @@ function defaultCreateLoop(opts: {
   task: AgentTaskSolveTask;
   maxRounds: number;
   qualityThreshold: number;
+  timeBudget?: SolveGenerationBudget;
 }): AgentTaskSolveLoop {
   return new ImprovementLoop({
     task: opts.task,
     maxRounds: opts.maxRounds,
     qualityThreshold: opts.qualityThreshold,
+    timeBudget: opts.timeBudget,
   });
 }
 
@@ -135,6 +139,7 @@ export async function executeAgentTaskSolve(opts: {
   provider: LLMProvider;
   created: { name: string; spec: Record<string, unknown> };
   generations: number;
+  generationTimeBudgetSeconds?: number | null;
   deps?: AgentTaskSolveExecutionDeps;
 }): Promise<AgentTaskSolveExecutionResult> {
   const spec = buildAgentTaskSolveSpec(
@@ -150,26 +155,36 @@ export async function executeAgentTaskSolve(opts: {
     name: opts.created.name,
     provider: opts.provider,
   });
+  const timeBudget = new SolveGenerationBudget({
+    scenarioName: opts.created.name,
+    budgetSeconds: opts.generationTimeBudgetSeconds,
+  });
   const loop = (opts.deps?.createLoop ?? defaultCreateLoop)({
     task,
     maxRounds: spec.maxRounds,
     qualityThreshold: spec.qualityThreshold,
+    timeBudget,
   });
 
+  timeBudget.check("initial state");
   const initialState = task.prepareContext
     ? await task.prepareContext(task.initialState())
     : task.initialState();
+  timeBudget.check("context preparation");
   const contextErrors = task.validateContext
     ? task.validateContext(initialState)
     : [];
+  timeBudget.check("context validation");
   if (contextErrors.length > 0) {
     throw new Error(`agent_task context preparation failed: ${contextErrors.join("; ")}`);
   }
 
+  timeBudget.check("initial generation");
   const initialOutput = await opts.provider.complete({
     systemPrompt: "You are a helpful assistant.",
     userPrompt: task.getTaskPrompt(initialState),
   });
+  timeBudget.check("initial generation");
 
   const result = await loop.run({
     initialOutput: initialOutput.text,
@@ -178,6 +193,7 @@ export async function executeAgentTaskSolve(opts: {
     requiredConcepts: spec.requiredConcepts ?? undefined,
     calibrationExamples: spec.calibrationExamples ?? undefined,
   });
+  timeBudget.check("improvement loop");
 
   const bestRound = result.rounds.find((round) => round.roundNumber === result.bestRound);
   return {

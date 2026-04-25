@@ -51,16 +51,6 @@ export function validateSolveFamilyOverride(family: string | undefined): Scenari
   );
 }
 
-export function buildSolveScenarioDescription(
-  description: string,
-  familyOverride?: ScenarioFamilyName,
-): string {
-  if (!familyOverride) {
-    return description;
-  }
-  return `**Family:** ${familyOverride}\n\n${description}`;
-}
-
 export function prepareSolveScenario(opts: {
   created: CreatedScenarioResult;
   description: string;
