@@ -28,6 +28,7 @@ export interface HttpApiParityMatrix {
 
 const PY_APP = "autocontext/src/autocontext/server/app.py";
 const TS_SERVER = "ts/src/server/ws-server.ts";
+const PY_COCKPIT_API = "autocontext/src/autocontext/server/cockpit_api.py";
 const PY_OPENCLAW_API = "autocontext/src/autocontext/server/openclaw_api.py";
 
 function both(
@@ -178,21 +179,19 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
     "Mission run, pause, resume, and cancel actions are currently TypeScript-only.",
   ),
 
-  ...pythonOnlyRoutes("cockpit", "autocontext/src/autocontext/server/cockpit_api.py", [
-    ["GET", "/api/cockpit/notebooks"],
-    ["GET", "/api/cockpit/notebooks/:session_id"],
-    ["GET", "/api/cockpit/notebooks/:session_id/effective-context"],
-    ["PUT", "/api/cockpit/notebooks/:session_id"],
-    ["DELETE", "/api/cockpit/notebooks/:session_id"],
-    ["GET", "/api/cockpit/runs"],
-    ["GET", "/api/cockpit/runs/:run_id/status"],
-    ["GET", "/api/cockpit/runs/:run_id/changelog"],
-    ["GET", "/api/cockpit/runs/:run_id/compare/:gen_a/:gen_b"],
-    ["GET", "/api/cockpit/runs/:run_id/resume"],
-    ["GET", "/api/cockpit/writeup/:run_id"],
-    ["POST", "/api/cockpit/runs/:run_id/consult"],
-    ["GET", "/api/cockpit/runs/:run_id/consultations"],
-  ]),
+  both("cockpit", "GET", "/api/cockpit/notebooks", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/notebooks/:session_id", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/notebooks/:session_id/effective-context", PY_COCKPIT_API),
+  both("cockpit", "PUT", "/api/cockpit/notebooks/:session_id", PY_COCKPIT_API),
+  both("cockpit", "DELETE", "/api/cockpit/notebooks/:session_id", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs/:run_id/status", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs/:run_id/changelog", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs/:run_id/compare/:gen_a/:gen_b", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs/:run_id/resume", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/writeup/:run_id", PY_COCKPIT_API),
+  both("cockpit", "POST", "/api/cockpit/runs/:run_id/consult", PY_COCKPIT_API),
+  both("cockpit", "GET", "/api/cockpit/runs/:run_id/consultations", PY_COCKPIT_API),
   ...pythonOnlyRoutes("hub", "autocontext/src/autocontext/server/hub_api.py", [
     ["GET", "/api/hub/sessions"],
     ["GET", "/api/hub/sessions/:session_id"],
