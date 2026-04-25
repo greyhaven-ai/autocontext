@@ -104,6 +104,10 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
     "/api/knowledge/playbook/:scenario",
     "TypeScript exposes direct playbook readback from the interactive server.",
   ),
+  both("notebooks", "GET", "/api/notebooks", "autocontext/src/autocontext/server/notebook_api.py"),
+  both("notebooks", "GET", "/api/notebooks/:session_id", "autocontext/src/autocontext/server/notebook_api.py"),
+  both("notebooks", "PUT", "/api/notebooks/:session_id", "autocontext/src/autocontext/server/notebook_api.py"),
+  both("notebooks", "DELETE", "/api/notebooks/:session_id", "autocontext/src/autocontext/server/notebook_api.py"),
 
   both(
     "discovery",
@@ -219,12 +223,6 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
     ["GET", "/api/hub/results/:result_id"],
     ["POST", "/api/hub/promotions"],
     ["GET", "/api/hub/feed"],
-  ]),
-  ...pythonOnlyRoutes("notebooks", "autocontext/src/autocontext/server/notebook_api.py", [
-    ["GET", "/api/notebooks"],
-    ["GET", "/api/notebooks/:session_id"],
-    ["PUT", "/api/notebooks/:session_id"],
-    ["DELETE", "/api/notebooks/:session_id"],
   ]),
   ...pythonOnlyRoutes("monitors", "autocontext/src/autocontext/server/monitor_api.py", [
     ["POST", "/api/monitors"],
