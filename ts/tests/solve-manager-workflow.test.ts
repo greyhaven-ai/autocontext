@@ -12,7 +12,21 @@ describe("solve manager workflow", () => {
   });
 
   it("routes agent-task jobs through scenario preparation, persistence, and execution", async () => {
-    const job = createSolveJob("solve_job", "Summarize outage escalations", 2);
+    const job = createSolveJob("solve_job", "Summarize outage escalations", 2, {
+      familyOverride: "agent_task",
+      generationTimeBudgetSeconds: 30,
+    });
+    const createScenarioFromDescription = vi.fn(async () => ({
+      name: "incident_triage",
+      family: "agent_task",
+      spec: { taskPrompt: "Summarize incident reports", rubric: "Evaluate completeness" },
+      llmClassifierFallbackUsed: true,
+    }));
+    const prepareSolveScenario = vi.fn(({ created, description, familyOverride }) => ({
+      ...created,
+      description,
+      family: familyOverride,
+    }));
     const executeAgentTaskSolve = vi.fn(async () => ({
       progress: 1,
       result: { scenario_name: "incident_triage", best_score: 0.93 },
@@ -25,13 +39,9 @@ describe("solve manager workflow", () => {
       runsRoot: "/tmp/runs",
       knowledgeRoot: "/tmp/knowledge",
       deps: {
-        createScenarioFromDescription: vi.fn(async () => ({
-          name: "incident_triage",
-          family: "agent_task",
-          spec: { taskPrompt: "Summarize incident reports", rubric: "Evaluate completeness" },
-        })),
+        createScenarioFromDescription,
         listBuiltinScenarioNames: vi.fn(async () => ["grid_ctf"]),
-        prepareSolveScenario: vi.fn(({ created, description }) => ({ ...created, description })) as never,
+        prepareSolveScenario: prepareSolveScenario as never,
         determineSolveExecutionRoute: vi.fn(() => "agent_task") as never,
         persistSolveScenarioScaffold: vi.fn(async () => ({ persisted: true, errors: [] })) as never,
         executeBuiltInGameSolve: vi.fn() as never,
@@ -44,22 +54,33 @@ describe("solve manager workflow", () => {
       },
     });
 
+    expect(createScenarioFromDescription).toHaveBeenCalledWith(
+      "Summarize outage escalations",
+      { familyOverride: "agent_task" },
+    );
+    expect(prepareSolveScenario).toHaveBeenCalledWith(
+      expect.objectContaining({ familyOverride: "agent_task" }),
+    );
     expect(executeAgentTaskSolve).toHaveBeenCalledWith({
       provider: expect.objectContaining({ name: "mock" }),
       created: expect.objectContaining({ name: "incident_triage" }),
       generations: 2,
+      generationTimeBudgetSeconds: 30,
     });
     expect(job).toMatchObject({
       status: "completed",
       scenarioName: "incident_triage",
       family: "agent_task",
+      llmClassifierFallbackUsed: true,
       progress: 1,
       result: { scenario_name: "incident_triage", best_score: 0.93 },
     });
   });
 
   it("reports built-in scenario solves as game family even when designer metadata drifts", async () => {
-    const job = createSolveJob("solve_builtin", "grid ctf", 1);
+    const job = createSolveJob("solve_builtin", "grid ctf", 1, {
+      generationTimeBudgetSeconds: 12,
+    });
     const executeBuiltInGameSolve = vi.fn(async () => ({
       progress: 1,
       result: { scenario_name: "grid_ctf", best_score: 0.73 },
@@ -95,6 +116,7 @@ describe("solve manager workflow", () => {
       expect.objectContaining({
         scenarioName: "grid_ctf",
         generations: 1,
+        generationTimeBudgetSeconds: 12,
       }),
     );
     expect(job).toMatchObject({
@@ -138,5 +160,54 @@ describe("solve manager workflow", () => {
     expect(failSolveJob).toHaveBeenCalledOnce();
     expect(job.status).toBe("failed");
     expect(job.error).toContain("Game scenario 'grid_ctf' not found in SCENARIO_REGISTRY");
+  });
+
+  it("passes generation budgets through generated-scenario solve routes", async () => {
+    const job = createSolveJob("solve_codegen", "Investigate outage", 1, {
+      generationTimeBudgetSeconds: 9,
+    });
+    const executeCodegenSolve = vi.fn(async () => ({
+      progress: 3,
+      result: { scenario_name: "outage_investigation", best_score: 0.81 },
+    }));
+
+    await executeSolveJobWorkflow({
+      job,
+      provider: { name: "mock", defaultModel: () => "mock", complete: vi.fn() } as never,
+      store: {} as never,
+      runsRoot: "/tmp/runs",
+      knowledgeRoot: "/tmp/knowledge",
+      deps: {
+        createScenarioFromDescription: vi.fn(async () => ({
+          name: "outage_investigation",
+          family: "investigation",
+          spec: { description: "Investigate outage", actions: [] },
+        })),
+        listBuiltinScenarioNames: vi.fn(async () => []),
+        prepareSolveScenario: vi.fn(({ created, description }) => ({ ...created, description })) as never,
+        determineSolveExecutionRoute: vi.fn(() => "codegen") as never,
+        persistSolveScenarioScaffold: vi.fn(async () => ({ persisted: true, errors: [] })) as never,
+        executeBuiltInGameSolve: vi.fn() as never,
+        executeAgentTaskSolve: vi.fn() as never,
+        executeCodegenSolve: executeCodegenSolve as never,
+        failSolveJob: vi.fn((failedJob, error) => {
+          failedJob.status = "failed";
+          failedJob.error = error instanceof Error ? error.message : String(error);
+        }),
+      },
+    });
+
+    expect(executeCodegenSolve).toHaveBeenCalledWith({
+      knowledgeRoot: "/tmp/knowledge",
+      created: expect.objectContaining({
+        name: "outage_investigation",
+        family: "investigation",
+      }),
+      generationTimeBudgetSeconds: 9,
+    });
+    expect(job).toMatchObject({
+      status: "completed",
+      progress: 3,
+    });
   });
 });

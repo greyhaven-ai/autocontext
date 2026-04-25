@@ -7,6 +7,7 @@ import {
   determineSolveExecutionRoute,
   persistSolveScenarioScaffold,
   prepareSolveScenario,
+  validateSolveFamilyOverride,
 } from "../src/knowledge/solve-scenario-routing.js";
 
 let tmpDir: string;
@@ -36,6 +37,27 @@ describe("solve scenario routing", () => {
 
     expect(prepared.family).toBe("agent_task");
     expect(prepared.spec.description).toBe("Incident summary task");
+  });
+
+  it("honors explicit family overrides without mutating the description", () => {
+    expect(validateSolveFamilyOverride("operator-loop")).toBe("operator_loop");
+    expect(() => validateSolveFamilyOverride("nope")).toThrow("Unknown solve family");
+
+    const prepared = prepareSolveScenario({
+      description: "Investigate a production outage",
+      familyOverride: "investigation",
+      created: {
+        name: "outage_summary",
+        family: "agent_task",
+        spec: {
+          taskPrompt: "Summarize outage reports",
+          rubric: "Evaluate completeness",
+          description: "Outage task",
+        },
+      },
+    });
+
+    expect(prepared.family).toBe("investigation");
   });
 
   it("routes prepared scenarios through explicit execution paths", () => {

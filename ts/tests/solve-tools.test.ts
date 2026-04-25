@@ -44,9 +44,14 @@ describe("solve MCP tools", () => {
     const result = await server.registeredTools.solve_scenario.handler({
       description: "grid ctf",
       generations: 2,
+      family: "game",
+      generation_time_budget: 10,
     });
 
-    expect(submit).toHaveBeenCalledWith("grid ctf", 2);
+    expect(submit).toHaveBeenCalledWith("grid ctf", 2, {
+      familyOverride: "game",
+      generationTimeBudgetSeconds: 10,
+    });
     expect(JSON.parse(result.content[0].text)).toEqual({
       jobId: "solve-123",
       status: "pending",

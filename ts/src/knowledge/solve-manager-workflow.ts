@@ -9,11 +9,15 @@ import {
   determineSolveExecutionRoute,
   persistSolveScenarioScaffold,
   prepareSolveScenario,
+  validateSolveFamilyOverride,
 } from "./solve-scenario-routing.js";
 import { failSolveJob, type SolveJob } from "./solve-workflow.js";
 
 export interface SolveExecutionDeps {
-  createScenarioFromDescription: (description: string) => Promise<unknown>;
+  createScenarioFromDescription: (
+    description: string,
+    opts?: { familyOverride?: ScenarioFamilyName },
+  ) => Promise<unknown>;
   listBuiltinScenarioNames: () => Promise<string[]>;
   persistSolveScenarioScaffold: typeof persistSolveScenarioScaffold;
   prepareSolveScenario: typeof prepareSolveScenario;
@@ -35,9 +39,9 @@ export function createSolveExecutionDeps(opts: {
   knowledgeRoot: string;
 }): SolveExecutionDeps {
   return {
-    createScenarioFromDescription: async (description) => {
+    createScenarioFromDescription: async (description, createOpts) => {
       const { createScenarioFromDescription } = await import("../scenarios/scenario-creator.js");
-      return createScenarioFromDescription(description, opts.provider);
+      return createScenarioFromDescription(description, opts.provider, createOpts);
     },
     listBuiltinScenarioNames: async () => {
       const { SCENARIO_REGISTRY } = await import("../scenarios/registry.js");
@@ -61,6 +65,7 @@ export async function runBuiltInGameSolveJob(opts: {
   knowledgeRoot: string;
   scenarioName: string;
   generations: number;
+  generationTimeBudgetSeconds?: number | null;
   executeBuiltInGameSolve: typeof executeBuiltInGameSolve;
 }): Promise<void> {
   opts.job.status = "running";
@@ -72,6 +77,7 @@ export async function runBuiltInGameSolveJob(opts: {
     scenarioName: opts.scenarioName,
     jobId: opts.job.jobId,
     generations: opts.generations,
+    generationTimeBudgetSeconds: opts.generationTimeBudgetSeconds,
   });
   opts.job.progress = result.progress;
   opts.job.status = "completed";
@@ -83,6 +89,7 @@ export async function runAgentTaskSolveJob(opts: {
   provider: LLMProvider;
   created: { name: string; spec: Record<string, unknown> };
   generations: number;
+  generationTimeBudgetSeconds?: number | null;
   executeAgentTaskSolve: typeof executeAgentTaskSolve;
 }): Promise<void> {
   opts.job.status = "running";
@@ -90,6 +97,7 @@ export async function runAgentTaskSolveJob(opts: {
     provider: opts.provider,
     created: opts.created,
     generations: opts.generations,
+    generationTimeBudgetSeconds: opts.generationTimeBudgetSeconds,
   });
   opts.job.progress = result.progress;
   opts.job.status = "completed";
@@ -101,6 +109,7 @@ export async function runCodegenSolveJob(opts: {
   knowledgeRoot: string;
   created: { name: string; family: string; spec: Record<string, unknown> };
   family: ScenarioFamilyName;
+  generationTimeBudgetSeconds?: number | null;
   executeCodegenSolve: typeof executeCodegenSolve;
 }): Promise<void> {
   opts.job.status = "running";
@@ -111,6 +120,7 @@ export async function runCodegenSolveJob(opts: {
       family: opts.family,
       spec: opts.created.spec,
     },
+    generationTimeBudgetSeconds: opts.generationTimeBudgetSeconds,
   });
   opts.job.progress = result.progress;
   opts.job.status = "completed";
@@ -127,10 +137,16 @@ export async function executeSolveJobWorkflow(opts: {
 }): Promise<void> {
   opts.job.status = "creating_scenario";
   try {
-    const created = await opts.deps.createScenarioFromDescription(opts.job.description);
+    const familyOverride = validateSolveFamilyOverride(opts.job.familyOverride);
+    const created = await opts.deps.createScenarioFromDescription(
+      opts.job.description,
+      { familyOverride },
+    );
+    opts.job.llmClassifierFallbackUsed = readClassifierFallbackUsed(created);
     const prepared = opts.deps.prepareSolveScenario({
       created: created as never,
       description: opts.job.description,
+      familyOverride,
     });
     opts.job.scenarioName = prepared.name;
     opts.job.family = prepared.family;
@@ -148,6 +164,7 @@ export async function executeSolveJobWorkflow(opts: {
         knowledgeRoot: opts.knowledgeRoot,
         scenarioName: prepared.name,
         generations: opts.job.generations,
+        generationTimeBudgetSeconds: opts.job.generationTimeBudgetSeconds,
         executeBuiltInGameSolve: opts.deps.executeBuiltInGameSolve,
       });
       return;
@@ -173,6 +190,7 @@ export async function executeSolveJobWorkflow(opts: {
         provider: opts.provider,
         created: prepared,
         generations: opts.job.generations,
+        generationTimeBudgetSeconds: opts.job.generationTimeBudgetSeconds,
         executeAgentTaskSolve: opts.deps.executeAgentTaskSolve,
       });
       return;
@@ -183,6 +201,7 @@ export async function executeSolveJobWorkflow(opts: {
         knowledgeRoot: opts.knowledgeRoot,
         created: prepared,
         family: prepared.family,
+        generationTimeBudgetSeconds: opts.job.generationTimeBudgetSeconds,
         executeCodegenSolve: opts.deps.executeCodegenSolve,
       });
       return;
@@ -191,4 +210,12 @@ export async function executeSolveJobWorkflow(opts: {
   } catch (error) {
     opts.deps.failSolveJob(opts.job, error);
   }
+}
+
+function readClassifierFallbackUsed(created: unknown): boolean {
+  if (typeof created !== "object" || created === null) {
+    return false;
+  }
+  const payload = created as Record<string, unknown>;
+  return payload.llmClassifierFallbackUsed === true;
 }

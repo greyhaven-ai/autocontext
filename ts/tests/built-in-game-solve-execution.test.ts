@@ -67,6 +67,7 @@ describe("built-in game solve execution", () => {
       scenarioName: "grid_ctf",
       jobId: "job_1",
       generations: 2,
+      generationTimeBudgetSeconds: 7,
       deps: {
         resolveScenarioClass: () => FakeGameScenario,
         createRunner,
@@ -75,6 +76,9 @@ describe("built-in game solve execution", () => {
     });
 
     expect(createRunner).toHaveBeenCalledOnce();
+    expect(createRunner).toHaveBeenCalledWith(
+      expect.objectContaining({ generationTimeBudgetSeconds: 7 }),
+    );
     expect(run).toHaveBeenCalledWith("solve_grid_ctf_job_1", 2);
     expect(exportPackage).toHaveBeenCalledOnce();
     expect(result.progress).toBe(2);

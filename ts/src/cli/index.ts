@@ -526,6 +526,9 @@ async function cmdSolve(dbPath: string): Promise<void> {
       description: { type: "string", short: "d" },
       gens: { type: "string", short: "g" },
       timeout: { type: "string" },
+      "generation-time-budget": { type: "string" },
+      family: { type: "string" },
+      output: { type: "string" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
@@ -536,6 +539,7 @@ async function cmdSolve(dbPath: string): Promise<void> {
     planSolveCommand,
     renderSolveCommandSummary,
     SOLVE_HELP_TEXT,
+    writeSolveOutputFile,
   } = await import("./solve-command-workflow.js");
 
   if (values.help) {
@@ -570,6 +574,10 @@ async function cmdSolve(dbPath: string): Promise<void> {
       }),
       plan,
     });
+    if (plan.outputPath) {
+      writeSolveOutputFile(summary.result, resolve(plan.outputPath));
+      summary.outputPath = resolve(plan.outputPath);
+    }
     console.log(renderSolveCommandSummary(summary, plan.json));
   } catch (error) {
     console.error(errorMessage(error));

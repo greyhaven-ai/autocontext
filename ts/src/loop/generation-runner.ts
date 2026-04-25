@@ -38,6 +38,7 @@ import {
   buildSupportPrompt,
 } from "./generation-prompts.js";
 import { createGenerationAttemptWorkflow, runGenerationAttemptWorkflow } from "./generation-attempt-workflow.js";
+import { SolveGenerationBudget } from "../knowledge/solve-generation-budget.js";
 import {
   completeGenerationLifecycleWorkflow,
   createGenerationLifecycleWorkflow,
@@ -91,6 +92,7 @@ export interface GenerationRunnerOpts {
   notifier?: Notifier | null;
   controller?: LoopController;
   events?: EventStreamEmitter;
+  generationTimeBudgetSeconds?: number | null;
 }
 
 export interface RunResult {
@@ -128,6 +130,7 @@ export class GenerationRunner {
   #notifyOn: Set<EventType>;
   #controller: LoopController | null;
   #events: EventStreamEmitter | null;
+  #generationTimeBudgetSeconds: number | null;
   #runState: GenerationRunState | null = null;
 
   constructor(opts: GenerationRunnerOpts) {
@@ -180,6 +183,7 @@ export class GenerationRunner {
       ?? buildConfiguredNotifier(opts.notifyWebhookUrl ?? null, [...this.#notifyOn]);
     this.#controller = opts.controller ?? null;
     this.#events = opts.events ?? null;
+    this.#generationTimeBudgetSeconds = opts.generationTimeBudgetSeconds ?? null;
   }
 
   async run(runId: string, generations: number): Promise<RunResult> {
@@ -197,6 +201,11 @@ export class GenerationRunner {
 
       while (hasRemainingGenerationCycles(orchestration.cycleState)) {
         await this.#controller?.waitIfPaused();
+        const generationBudget = new SolveGenerationBudget({
+          scenarioName: this.#scenario.name,
+          budgetSeconds: this.#generationTimeBudgetSeconds,
+        });
+        generationBudget.check("generation start");
         let lifecycle = await runGenerationLifecycleWorkflow(
           createGenerationLifecycleWorkflow({
             orchestration,
@@ -239,6 +248,7 @@ export class GenerationRunner {
             },
           }),
         );
+        generationBudget.check("generation lifecycle");
         orchestration = lifecycle.orchestration;
         this.#runState = orchestration.runState;
         for (const event of lifecycle.events) {
@@ -246,14 +256,17 @@ export class GenerationRunner {
         }
 
         this.#journal.persistGeneration(runId, lifecycle.generation, lifecycle.finalizedAttempt);
+        generationBudget.check("generation persistence");
         await this.#controller?.waitIfPaused();
         await this.runSupportRoles(runId, lifecycle.generation, lifecycle.finalizedAttempt);
+        generationBudget.check("support roles");
         await this.applyAdvancedFeatures(
           runId,
           lifecycle.generation,
           lifecycle.finalizedAttempt,
           lifecycle.phaseState.previousBestForGeneration,
         );
+        generationBudget.check("advanced generation features");
         lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
         orchestration = lifecycle.orchestration;
         this.emit("generation_completed", orchestration.events.generationCompleted!);

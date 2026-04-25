@@ -2,6 +2,9 @@ export interface SolveJob {
   jobId: string;
   description: string;
   generations: number;
+  familyOverride?: string;
+  generationTimeBudgetSeconds?: number | null;
+  llmClassifierFallbackUsed?: boolean;
   status: "pending" | "creating_scenario" | "running" | "completed" | "failed";
   scenarioName?: string;
   family?: string;
@@ -14,11 +17,18 @@ export function createSolveJob(
   jobId: string,
   description: string,
   generations: number,
+  opts: {
+    familyOverride?: string;
+    generationTimeBudgetSeconds?: number | null;
+  } = {},
 ): SolveJob {
   return {
     jobId,
     description,
     generations,
+    familyOverride: opts.familyOverride,
+    generationTimeBudgetSeconds: opts.generationTimeBudgetSeconds,
+    llmClassifierFallbackUsed: false,
     status: "pending",
   };
 }
@@ -37,7 +47,12 @@ export function getSolveJobStatus(
     description: job.description,
     scenarioName: job.scenarioName ?? null,
     family: job.family ?? null,
+    familyOverride: job.familyOverride ?? null,
     generations: job.generations,
+    generationTimeBudgetSeconds: job.generationTimeBudgetSeconds ?? null,
+    generation_time_budget_seconds: job.generationTimeBudgetSeconds ?? null,
+    llmClassifierFallbackUsed: job.llmClassifierFallbackUsed ?? false,
+    llm_classifier_fallback_used: job.llmClassifierFallbackUsed ?? false,
     progress: job.progress ?? 0,
     error: job.error,
   };

@@ -12,7 +12,14 @@ type McpToolRegistrar = {
 };
 
 interface SolveToolManager {
-  submit(description: string, generations: number): string;
+  submit(
+    description: string,
+    generations: number,
+    opts?: {
+      familyOverride?: string;
+      generationTimeBudgetSeconds?: number | null;
+    },
+  ): string;
   getStatus(jobId: string): Record<string, unknown>;
   getResult(jobId: string): Record<string, unknown> | null;
 }
@@ -72,29 +79,74 @@ function toPrefixedSolveStatusPayload(payload: Record<string, unknown>): Record<
   return prefixedPayload;
 }
 
+function solveSubmitSchema(): Record<string, unknown> {
+  return {
+    description: z.string(),
+    generations: z.number().int().default(5),
+    family: z.string().optional(),
+    generationTimeBudget: z.number().int().min(0).optional(),
+    generationTimeBudgetSeconds: z.number().int().min(0).optional(),
+    generation_time_budget: z.number().int().min(0).optional(),
+  };
+}
+
+function solveSubmitOptions(args: Record<string, unknown>):
+  | {
+    familyOverride?: string;
+    generationTimeBudgetSeconds?: number | null;
+  }
+  | undefined {
+  const familyOverride = typeof args.family === "string" && args.family.trim()
+    ? args.family.trim()
+    : undefined;
+  const generationTimeBudgetSeconds =
+    typeof args.generationTimeBudgetSeconds === "number"
+      ? args.generationTimeBudgetSeconds
+      : typeof args.generationTimeBudget === "number"
+        ? args.generationTimeBudget
+        : typeof args.generation_time_budget === "number"
+          ? args.generation_time_budget
+          : undefined;
+
+  if (familyOverride === undefined && generationTimeBudgetSeconds === undefined) {
+    return undefined;
+  }
+  return {
+    familyOverride,
+    generationTimeBudgetSeconds,
+  };
+}
+
+function submitSolveJob(
+  solveManager: SolveToolManager,
+  args: Record<string, unknown>,
+): string {
+  const description = String(args.description);
+  const generations = Number(args.generations ?? 5);
+  const options = solveSubmitOptions(args);
+  if (options === undefined) {
+    return solveManager.submit(description, generations);
+  }
+  return solveManager.submit(description, generations, options);
+}
+
 function buildSolveToolDefinitions(solveManager: SolveToolManager): SolveToolDefinition[] {
   return [
     {
       name: "solve_scenario",
       description: "Submit a problem for on-demand solving. Returns a job_id for polling.",
-      schema: { description: z.string(), generations: z.number().int().default(5) },
+      schema: solveSubmitSchema(),
       handler: async (args: Record<string, unknown>) => {
-        const jobId = solveManager.submit(
-          String(args.description),
-          Number(args.generations ?? 5),
-        );
+        const jobId = submitSolveJob(solveManager, args);
         return jsonText({ jobId, status: "pending" });
       },
       aliases: [
         {
           name: "autocontext_solve_scenario",
           description: "Submit a problem for on-demand solving. Returns a job_id for polling.",
-          schema: { description: z.string(), generations: z.number().int().default(5) },
+          schema: solveSubmitSchema(),
           handler: async (args: Record<string, unknown>) => {
-            const jobId = solveManager.submit(
-              String(args.description),
-              Number(args.generations ?? 5),
-            );
+            const jobId = submitSolveJob(solveManager, args);
             return jsonText({ job_id: jobId, status: "pending" });
           },
         },

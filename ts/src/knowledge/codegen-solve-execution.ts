@@ -6,6 +6,7 @@ import type { GeneratedScenarioExecutionResult } from "../scenarios/codegen/exec
 import type { ExecutionValidationResult } from "../scenarios/codegen/index.js";
 import type { SerializedSkillPackageDict } from "./package.js";
 import { buildGeneratedScenarioSolvePackage } from "./solve-workflow.js";
+import { SolveGenerationBudget } from "./solve-generation-budget.js";
 
 export interface CodegenSolveExecutionResult {
   progress: number;
@@ -86,28 +87,38 @@ export async function executeCodegenSolve(opts: {
     spec: Record<string, unknown>;
   };
   deps?: CodegenSolveDeps;
+  generationTimeBudgetSeconds?: number | null;
 }): Promise<CodegenSolveExecutionResult> {
   const generateSource = opts.deps?.generateSource ?? defaultGenerateSource;
   const executeScenario = opts.deps?.executeScenario ?? defaultExecuteScenario;
+  const timeBudget = new SolveGenerationBudget({
+    scenarioName: opts.created.name,
+    budgetSeconds: opts.generationTimeBudgetSeconds,
+  });
 
+  timeBudget.check("source generation");
   const { source, validation } = await generateSource(
     opts.created.family,
     opts.created.spec,
     opts.created.name,
   );
+  timeBudget.check("source generation");
 
   persistGeneratedScenarioSource({
     knowledgeRoot: opts.knowledgeRoot,
     name: opts.created.name,
     source,
   });
+  timeBudget.check("source persistence");
 
+  timeBudget.check("scenario execution");
   const execution = await executeScenario({
     source,
     family: opts.created.family,
     name: opts.created.name,
     maxSteps: resolveMaxSteps(opts.created.spec),
   });
+  timeBudget.check("scenario execution");
 
   return {
     progress: execution.stepsExecuted,

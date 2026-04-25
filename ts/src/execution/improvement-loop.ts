@@ -25,6 +25,7 @@ export interface ImprovementLoopOpts {
   maxScoreDelta?: number;
   capScoreJumps?: boolean;
   dimensionThreshold?: number;
+  timeBudget?: { check(phase: string): void };
 }
 
 export class ImprovementLoop {
@@ -35,6 +36,7 @@ export class ImprovementLoop {
   #maxScoreDelta: number;
   #capScoreJumps: boolean;
   #dimensionThreshold: number | null;
+  #timeBudget: { check(phase: string): void } | null;
 
   constructor(opts: ImprovementLoopOpts) {
     this.#task = opts.task;
@@ -44,6 +46,7 @@ export class ImprovementLoop {
     this.#maxScoreDelta = opts.maxScoreDelta ?? 0.5;
     this.#capScoreJumps = opts.capScoreJumps ?? false;
     this.#dimensionThreshold = opts.dimensionThreshold ?? null;
+    this.#timeBudget = opts.timeBudget ?? null;
   }
 
   async run(opts: {
@@ -74,12 +77,14 @@ export class ImprovementLoop {
 
     for (let roundNum = 1; roundNum <= this.#maxRounds; roundNum++) {
       const roundStart = performance.now();
+      this.#timeBudget?.check(`round ${roundNum} evaluation`);
       const result = await this.#task.evaluateOutput(currentOutput, opts.state, {
         referenceContext: opts.referenceContext,
         requiredConcepts: opts.requiredConcepts,
         calibrationExamples: opts.calibrationExamples,
         pinnedDimensions,
       });
+      this.#timeBudget?.check(`round ${roundNum} evaluation`);
       judgeCalls += 1;
       const roundMs = Math.round(performance.now() - roundStart);
       totalInternalRetries += result.internalRetries ?? 0;
@@ -111,7 +116,9 @@ export class ImprovementLoop {
             dimensionScores: lastGoodResult.dimensionScores,
             internalRetries: 0,
           };
+          this.#timeBudget?.check(`round ${roundNum} revision`);
           const revised = await this.#task.reviseOutput(currentOutput, feedbackResult, opts.state);
+          this.#timeBudget?.check(`round ${roundNum} revision`);
           const cleaned = cleanRevisionOutput(revised);
           if (cleaned !== currentOutput) {
             currentOutput = cleaned;
@@ -143,7 +150,9 @@ export class ImprovementLoop {
       let effectiveScore = scoreDeltaPolicy.effectiveScore;
 
       if (effectiveScore > 0 && this.#task.verifyFacts) {
+        this.#timeBudget?.check(`round ${roundNum} fact verification`);
         const verifyResult = await this.#task.verifyFacts(currentOutput, opts.state);
+        this.#timeBudget?.check(`round ${roundNum} fact verification`);
         if (verifyResult && !verifyResult.verified) {
           const issues = verifyResult.issues ?? [];
           if (issues.length > 0) {
@@ -211,7 +220,9 @@ export class ImprovementLoop {
                 previousValidRound: previousValidRound ?? undefined,
               })
             : result;
+        this.#timeBudget?.check(`round ${roundNum} revision`);
         const revised = await this.#task.reviseOutput(currentOutput, revisionFeedback, opts.state);
+        this.#timeBudget?.check(`round ${roundNum} revision`);
         const cleaned = cleanRevisionOutput(revised);
         if (cleaned === currentOutput) {
           terminationReason = "unchanged_output";

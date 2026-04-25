@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CreatedScenarioResult } from "../scenarios/scenario-creator.js";
-import { getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
+import { SCENARIO_TYPE_MARKERS, getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
 import { hasCodegen } from "../scenarios/codegen/registry.js";
 import { materializeScenario, type MaterializeResult } from "../scenarios/materialize.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
@@ -38,11 +38,25 @@ export function coerceSolveFamily(family: string): ScenarioFamilyName {
   }
 }
 
+export function validateSolveFamilyOverride(family: string | undefined): ScenarioFamilyName | undefined {
+  const normalized = family?.trim().toLowerCase().replace(/-/g, "_");
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized in SCENARIO_TYPE_MARKERS) {
+    return normalized as ScenarioFamilyName;
+  }
+  throw new Error(
+    `Unknown solve family '${family}'. Valid families: ${Object.keys(SCENARIO_TYPE_MARKERS).sort().join(", ")}`,
+  );
+}
+
 export function prepareSolveScenario(opts: {
   created: CreatedScenarioResult;
   description: string;
+  familyOverride?: ScenarioFamilyName;
 }): PreparedSolveScenario {
-  const family = coerceSolveFamily(opts.created.family);
+  const family = opts.familyOverride ?? coerceSolveFamily(opts.created.family);
   return {
     ...opts.created,
     family,

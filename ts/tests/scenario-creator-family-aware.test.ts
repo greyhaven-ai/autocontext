@@ -101,6 +101,7 @@ describe("createScenarioFromDescription family-aware routing", () => {
       }),
     );
     expect(created.family).toBe("workflow");
+    expect(created.llmClassifierFallbackUsed).toBe(true);
     expect(created.spec.description).toBe(workflowSpec.description);
   });
 

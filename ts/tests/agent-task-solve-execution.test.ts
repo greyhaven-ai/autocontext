@@ -104,11 +104,15 @@ describe("agent-task solve execution", () => {
         },
       },
       generations: 2,
+      generationTimeBudgetSeconds: 11,
       deps: {
         createTask: () => task,
-        createLoop: () => ({
-          run: vi.fn(async () => loopResult),
-        }),
+        createLoop: (opts) => {
+          expect(opts.timeBudget).toBeDefined();
+          return {
+            run: vi.fn(async () => loopResult),
+          };
+        },
       },
     });
 
