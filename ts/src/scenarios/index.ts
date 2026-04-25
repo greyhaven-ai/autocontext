@@ -28,8 +28,13 @@ export { createAgentTask } from "./agent-task-factory.js";
 export type { AgentTaskFactoryOpts } from "./agent-task-factory.js";
 export { AgentTaskCreator } from "./agent-task-creator.js";
 export type { AgentTaskCreatorOpts, CreatedScenario } from "./agent-task-creator.js";
-export { classifyScenarioFamily, routeToFamily, LowConfidenceError } from "./family-classifier.js";
-export type { FamilyCandidate, FamilyClassification } from "./family-classifier.js";
+export {
+  classifyScenarioFamily,
+  classifyScenarioFamilyAsync,
+  routeToFamily,
+  LowConfidenceError,
+} from "./family-classifier.js";
+export type { AsyncLlmFn, FamilyCandidate, FamilyClassification, LlmFn } from "./family-classifier.js";
 export { getPipeline, hasPipeline, UnsupportedFamilyError, validateForFamily } from "./family-pipeline.js";
 export type { FamilyPipeline } from "./family-pipeline.js";
 export {

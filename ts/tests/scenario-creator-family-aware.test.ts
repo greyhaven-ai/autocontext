@@ -5,8 +5,105 @@ import {
   OPERATOR_LOOP_SPEC_END,
   OPERATOR_LOOP_SPEC_START,
 } from "../src/scenarios/operator-loop-designer.js";
+import { WORKFLOW_SPEC_END, WORKFLOW_SPEC_START } from "../src/scenarios/workflow-designer.js";
 
 describe("createScenarioFromDescription family-aware routing", () => {
+  it("uses the provider-backed LLM classifier before choosing the family-aware designer", async () => {
+    const workflowSpec = {
+      description: "Opaque request routed by classifier",
+      environment_description: "A workflow with ordered side effects.",
+      initial_state_description: "No steps have run.",
+      workflow_steps: [
+        {
+          name: "prepare_payload",
+          description: "Prepare the payload.",
+          idempotent: true,
+          reversible: false,
+        },
+        {
+          name: "commit_payload",
+          description: "Commit the payload.",
+          idempotent: false,
+          reversible: true,
+          compensation: "rollback_payload",
+        },
+      ],
+      success_criteria: ["Prepare the payload.", "Commit the payload safely."],
+      failure_modes: ["Commit fails after preparation."],
+      max_steps: 5,
+      actions: [
+        {
+          name: "prepare_payload",
+          description: "Prepare the payload.",
+          parameters: {},
+          preconditions: [],
+          effects: ["payload_prepared"],
+        },
+        {
+          name: "commit_payload",
+          description: "Commit the payload.",
+          parameters: {},
+          preconditions: ["prepare_payload"],
+          effects: ["payload_committed"],
+        },
+      ],
+    };
+    const provider = {
+      defaultModel: () => "mock-model",
+      complete: vi.fn(async ({ systemPrompt }: { systemPrompt?: string }) => {
+        if (systemPrompt?.includes("You classify a natural-language scenario description")) {
+          return {
+            text: JSON.stringify({
+              family: "workflow",
+              confidence: 0.83,
+              rationale: "Opaque request requires ordered workflow execution",
+            }),
+            model: "mock-model",
+            usage: { inputTokens: 0, outputTokens: 0 },
+          };
+        }
+
+        if (systemPrompt?.includes("produce a WorkflowSpec JSON")) {
+          return {
+            text: [WORKFLOW_SPEC_START, JSON.stringify(workflowSpec), WORKFLOW_SPEC_END].join("\n"),
+            model: "mock-model",
+            usage: { inputTokens: 0, outputTokens: 0 },
+          };
+        }
+
+        return {
+          text: JSON.stringify({
+            family: "agent_task",
+            name: "generic_fallback",
+            taskPrompt: "Generic fallback.",
+            rubric: "Generic fallback rubric.",
+            description: "Generic fallback output",
+          }),
+          model: "mock-model",
+          usage: { inputTokens: 0, outputTokens: 0 },
+        };
+      }),
+    };
+
+    const created = await createScenarioFromDescription(
+      "glimmer plinth orbit vascade",
+      provider as never,
+    );
+
+    expect(provider.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("You classify a natural-language scenario description"),
+      }),
+    );
+    expect(provider.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("produce a WorkflowSpec JSON"),
+      }),
+    );
+    expect(created.family).toBe("workflow");
+    expect(created.spec.description).toBe(workflowSpec.description);
+  });
+
   it("uses the operator-loop designer for operator_loop descriptions", async () => {
     const provider = {
       defaultModel: () => "mock-model",

@@ -8,6 +8,14 @@ import {
 import { FAMILY_SIGNAL_GROUPS } from "./family-classifier-signals.js";
 
 export type LlmFn = (system: string, user: string) => string;
+export type AsyncLlmFn = (system: string, user: string) => string | Promise<string>;
+
+interface PreparedFamilyClassification {
+  description: string;
+  families: ScenarioFamilyName[];
+  threshold: number;
+  ranked: FamilyClassification | null;
+}
 
 export interface FamilyCandidate {
   familyName: ScenarioFamilyName;
@@ -67,13 +75,30 @@ function _llmClassify(
   llmFn: LlmFn,
 ): FamilyClassification | null {
   const system = _LLM_SYSTEM_PROMPT.replace("{family_list}", families.join(", "));
-  let raw: string;
   try {
-    raw = llmFn(system, description);
+    return parseLlmClassification(llmFn(system, description), families);
   } catch {
     return null;
   }
+}
 
+async function _llmClassifyAsync(
+  description: string,
+  families: ScenarioFamilyName[],
+  llmFn: AsyncLlmFn,
+): Promise<FamilyClassification | null> {
+  const system = _LLM_SYSTEM_PROMPT.replace("{family_list}", families.join(", "));
+  try {
+    return parseLlmClassification(await llmFn(system, description), families);
+  } catch {
+    return null;
+  }
+}
+
+function parseLlmClassification(
+  raw: string,
+  families: ScenarioFamilyName[],
+): FamilyClassification | null {
   const jsonStart = raw.indexOf("{");
   const jsonEnd = raw.lastIndexOf("}");
   if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) return null;
@@ -119,10 +144,17 @@ function _llmClassify(
 // Public API
 // ---------------------------------------------------------------------------
 
-export function classifyScenarioFamily(
-  description: string,
-  options?: { llmFn?: LlmFn },
-): FamilyClassification {
+function readClassifierFastPathThreshold(): number {
+  const envKey = "AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD";
+  const thresholdRaw = process.env[envKey] ?? "0.65";
+  const threshold = Number(thresholdRaw);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    throw new Error(`${envKey} must be a number between 0 and 1`);
+  }
+  return threshold;
+}
+
+function prepareFamilyClassification(description: string): PreparedFamilyClassification {
   if (!description.trim()) {
     throw new Error("description must be non-empty");
   }
@@ -139,43 +171,109 @@ export function classifyScenarioFamily(
   }
 
   const total = [...rawScores.values()].reduce((sum, score) => sum + score, 0);
-  const thresholdRaw = process.env["AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD"] ?? "0.65";
-  const threshold = parseFloat(thresholdRaw);
+  const threshold = readClassifierFastPathThreshold();
+
+  return {
+    description,
+    families,
+    threshold,
+    ranked:
+      total > 0
+        ? buildRankedFamilyClassification({ families, rawScores, matchedSignals, total })
+        : null,
+  };
+}
+
+function buildZeroSignalLowConfidenceError(
+  families: ScenarioFamilyName[],
+  threshold: number,
+  llmClassifierAttempted: boolean,
+): LowConfidenceError {
+  return new LowConfidenceError(
+    {
+      ...buildDefaultFamilyClassification(families),
+      noSignalsMatched: true,
+      llmClassifierAttempted,
+    },
+    threshold,
+  );
+}
+
+export function classifyScenarioFamily(
+  description: string,
+  options?: { llmFn?: LlmFn },
+): FamilyClassification {
+  const prepared = prepareFamilyClassification(description);
   const llmFn = options?.llmFn;
 
-  if (total === 0) {
+  if (prepared.ranked === null) {
     let llmClassifierAttempted = false;
     if (llmFn) {
-      const llmResult = _llmClassify(description, families, llmFn);
+      const llmResult = _llmClassify(prepared.description, prepared.families, llmFn);
       if (llmResult !== null) return llmResult;
       llmClassifierAttempted = true;
     }
-    throw new LowConfidenceError(
-      {
-        ...buildDefaultFamilyClassification(families),
-        noSignalsMatched: true,
-        llmClassifierAttempted,
-      },
-      threshold,
+    throw buildZeroSignalLowConfidenceError(
+      prepared.families,
+      prepared.threshold,
+      llmClassifierAttempted,
     );
   }
 
-  const ranked = buildRankedFamilyClassification({ families, rawScores, matchedSignals, total });
+  const ranked = prepared.ranked;
+  if (ranked === null) {
+    throw buildZeroSignalLowConfidenceError(prepared.families, prepared.threshold, false);
+  }
 
   // Gate 1 — fast-path: high-confidence keywords skip LLM.
-  if (ranked.confidence >= threshold) {
+  if (ranked.confidence >= prepared.threshold) {
     return ranked;
   }
 
   // Gate 2 — ambiguous: call LLM when available; return keyword result on failure.
   let llmClassifierAttempted = false;
   if (llmFn) {
-    const llmResult = _llmClassify(description, families, llmFn);
+    const llmResult = _llmClassify(prepared.description, prepared.families, llmFn);
     if (llmResult !== null) return llmResult;
     llmClassifierAttempted = true;
   }
 
   return { ...ranked, llmClassifierAttempted };
+}
+
+export async function classifyScenarioFamilyAsync(
+  description: string,
+  options?: { llmFn?: AsyncLlmFn },
+): Promise<FamilyClassification> {
+  const prepared = prepareFamilyClassification(description);
+  const llmFn = options?.llmFn;
+
+  if (prepared.ranked === null) {
+    let llmClassifierAttempted = false;
+    if (llmFn) {
+      const llmResult = await _llmClassifyAsync(prepared.description, prepared.families, llmFn);
+      if (llmResult !== null) return llmResult;
+      llmClassifierAttempted = true;
+    }
+    throw buildZeroSignalLowConfidenceError(
+      prepared.families,
+      prepared.threshold,
+      llmClassifierAttempted,
+    );
+  }
+
+  if (prepared.ranked.confidence >= prepared.threshold) {
+    return prepared.ranked;
+  }
+
+  let llmClassifierAttempted = false;
+  if (llmFn) {
+    const llmResult = await _llmClassifyAsync(prepared.description, prepared.families, llmFn);
+    if (llmResult !== null) return llmResult;
+    llmClassifierAttempted = true;
+  }
+
+  return { ...prepared.ranked, llmClassifierAttempted };
 }
 
 export function routeToFamily(

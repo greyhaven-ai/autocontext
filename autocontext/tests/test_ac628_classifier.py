@@ -9,10 +9,10 @@ RED tests — drive the full AC-628 implementation:
 """
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from autocontext.scenarios.custom.family_classifier import (
     FamilyClassification,
@@ -83,7 +83,7 @@ class TestFastPathThresholdConfig:
     def test_threshold_must_be_in_range(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD", "1.5")
         from autocontext.config.settings import AppSettings
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             AppSettings()
 
 

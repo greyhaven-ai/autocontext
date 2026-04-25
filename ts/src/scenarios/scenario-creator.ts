@@ -7,8 +7,11 @@ import type { LLMProvider } from "../types/index.js";
 import { designCoordination } from "./coordination-designer.js";
 import type { CoordinationSpec } from "./coordination-spec.js";
 import {
+  classifyScenarioFamilyAsync,
   classifyScenarioFamily,
+  LowConfidenceError,
   routeToFamily,
+  type AsyncLlmFn as ClassifierAsyncLlmFn,
   type LlmFn as ClassifierLlmFn,
 } from "./family-classifier.js";
 import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
@@ -38,7 +41,7 @@ export interface CreatedScenarioResult {
   };
 }
 
-type LlmFn = (system: string, user: string) => Promise<string>;
+type ProviderLlmFn = (system: string, user: string) => Promise<string>;
 type FamilyAwareScenarioFamily =
   | "coordination"
   | "investigation"
@@ -120,16 +123,44 @@ export function detectScenarioFamily(
 
   const hintedFamily = resolveScenarioFamilyHint(description);
   if (hintedFamily) {
-    return hintedFamily === "game" ? "agent_task" : hintedFamily;
+    return normalizeDetectedFamily(hintedFamily);
   }
 
   try {
     const family = routeToFamily(classifyScenarioFamily(description, options), 0.15);
-    return family === "game" ? "agent_task" : family;
-  } catch {
-    // LowConfidenceError — fall back to agent_task
+    return normalizeDetectedFamily(family);
+  } catch (error) {
+    if (!(error instanceof LowConfidenceError)) {
+      throw error;
+    }
     return "agent_task";
   }
+}
+
+export async function detectScenarioFamilyAsync(
+  description: string,
+  options?: { llmFn?: ClassifierAsyncLlmFn },
+): Promise<ScenarioFamilyName> {
+  if (!description.trim()) return "agent_task";
+
+  const hintedFamily = resolveScenarioFamilyHint(description);
+  if (hintedFamily) {
+    return normalizeDetectedFamily(hintedFamily);
+  }
+
+  try {
+    const family = routeToFamily(await classifyScenarioFamilyAsync(description, options), 0.15);
+    return normalizeDetectedFamily(family);
+  } catch (error) {
+    if (!(error instanceof LowConfidenceError)) {
+      throw error;
+    }
+    return "agent_task";
+  }
+}
+
+function normalizeDetectedFamily(family: ScenarioFamilyName): ScenarioFamilyName {
+  return family === "game" ? "agent_task" : family;
 }
 
 export function isScenarioFamilyName(value: string): value is ScenarioFamilyName {
@@ -157,7 +188,7 @@ export function buildScenarioCreationPrompt(description: string): string {
   return [scenarioCreationInstructions(), "", `User description: ${description}`].join("\n");
 }
 
-function createProviderLlmFn(provider: LLMProvider): LlmFn {
+function createProviderLlmFn(provider: LLMProvider): ProviderLlmFn {
   return async (system: string, user: string): Promise<string> => {
     const result = await provider.complete({
       systemPrompt: system,
@@ -364,7 +395,7 @@ function buildCoordinationCreatedSpec(
 
 const FAMILY_AWARE_SCENARIO_FACTORIES: Record<
   FamilyAwareScenarioFamily,
-  (description: string, llmFn: LlmFn) => Promise<CreatedScenarioResult["spec"]>
+  (description: string, llmFn: ProviderLlmFn) => Promise<CreatedScenarioResult["spec"]>
 > = {
   coordination: async (description, llmFn) =>
     buildCoordinationCreatedSpec(description, await designCoordination(description, llmFn)),
@@ -384,14 +415,14 @@ const FAMILY_AWARE_SCENARIO_FACTORIES: Record<
 
 async function createFamilyAwareScenarioFromDescription(
   description: string,
-  provider: LLMProvider,
   name: string,
   family: FamilyAwareScenarioFamily,
+  llmFn: ProviderLlmFn,
 ): Promise<CreatedScenarioResult> {
   return {
     name,
     family,
-    spec: await FAMILY_AWARE_SCENARIO_FACTORIES[family](description, createProviderLlmFn(provider)),
+    spec: await FAMILY_AWARE_SCENARIO_FACTORIES[family](description, llmFn),
   };
 }
 
@@ -471,15 +502,16 @@ export async function createScenarioFromDescription(
   provider: LLMProvider,
 ): Promise<CreatedScenarioResult> {
   const defaultName = deriveScenarioName(description);
-  const defaultFamily = detectScenarioFamily(description);
+  const providerLlmFn = createProviderLlmFn(provider);
+  const defaultFamily = await detectScenarioFamilyAsync(description, { llmFn: providerLlmFn });
 
   if (hasFamilyAwareScenarioFactory(defaultFamily)) {
     try {
       const created = await createFamilyAwareScenarioFromDescription(
         description,
-        provider,
         defaultName,
         defaultFamily,
+        providerLlmFn,
       );
       return {
         ...created,

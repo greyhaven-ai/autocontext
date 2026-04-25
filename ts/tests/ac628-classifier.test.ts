@@ -6,8 +6,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  classifyScenarioFamilyAsync,
   classifyScenarioFamily,
   LowConfidenceError,
+  type AsyncLlmFn,
   type LlmFn,
 } from "../src/scenarios/family-classifier.js";
 
@@ -86,6 +88,20 @@ describe("AC-628: fast-path threshold from env", () => {
     classifyScenarioFamily("evaluate some data and trace results", { llmFn });
     expect(llmCalled).toBe(false);
   });
+
+  it("rejects invalid threshold values instead of silently disabling the fast path", () => {
+    process.env[ENV_KEY] = "not-a-number";
+    expect(() => classifyScenarioFamily(HIGH_SIGNAL_DESCRIPTION)).toThrow(
+      "AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD",
+    );
+  });
+
+  it("rejects out-of-range threshold values consistently with Python settings", () => {
+    process.env[ENV_KEY] = "1.5";
+    expect(() => classifyScenarioFamily(HIGH_SIGNAL_DESCRIPTION)).toThrow(
+      "AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD",
+    );
+  });
 });
 
 describe("AC-628: fast-path skips LLM on high-signal input", () => {
@@ -158,6 +174,14 @@ describe("AC-628: zero-signal behaviour", () => {
     expect(c.familyName).toBe("simulation");
     expect(c.llmClassifierUsed).toBe(true);
     expect(c.noSignalsMatched).toBe(false);
+  });
+
+  it("awaits provider-backed async LLM classification for zero-signal descriptions", async () => {
+    const llmFn: AsyncLlmFn = async () =>
+      '{"family": "workflow", "confidence": 0.81, "rationale": "async provider classified it"}';
+    const c = await classifyScenarioFamilyAsync(ZERO_SIGNAL_DESCRIPTION, { llmFn });
+    expect(c.familyName).toBe("workflow");
+    expect(c.llmClassifierUsed).toBe(true);
   });
 
   it("raises LowConfidenceError with llmClassifierAttempted=true when zero-signal + llmFn fails", () => {
