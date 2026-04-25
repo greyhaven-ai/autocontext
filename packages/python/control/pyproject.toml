@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling>=1.26.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autocontext-control"
+version = "0.0.0"
+description = "Internal package skeleton for the future control-plane artifact."
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autocontext_control"]
