@@ -108,6 +108,11 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("notebooks", "GET", "/api/notebooks/:session_id", "autocontext/src/autocontext/server/notebook_api.py"),
   both("notebooks", "PUT", "/api/notebooks/:session_id", "autocontext/src/autocontext/server/notebook_api.py"),
   both("notebooks", "DELETE", "/api/notebooks/:session_id", "autocontext/src/autocontext/server/notebook_api.py"),
+  both("monitors", "POST", "/api/monitors", "autocontext/src/autocontext/server/monitor_api.py"),
+  both("monitors", "GET", "/api/monitors", "autocontext/src/autocontext/server/monitor_api.py"),
+  both("monitors", "DELETE", "/api/monitors/:condition_id", "autocontext/src/autocontext/server/monitor_api.py"),
+  both("monitors", "GET", "/api/monitors/alerts", "autocontext/src/autocontext/server/monitor_api.py"),
+  both("monitors", "POST", "/api/monitors/:condition_id/wait", "autocontext/src/autocontext/server/monitor_api.py"),
 
   both(
     "discovery",
@@ -223,13 +228,6 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
     ["GET", "/api/hub/results/:result_id"],
     ["POST", "/api/hub/promotions"],
     ["GET", "/api/hub/feed"],
-  ]),
-  ...pythonOnlyRoutes("monitors", "autocontext/src/autocontext/server/monitor_api.py", [
-    ["POST", "/api/monitors"],
-    ["GET", "/api/monitors"],
-    ["DELETE", "/api/monitors/:condition_id"],
-    ["GET", "/api/monitors/alerts"],
-    ["POST", "/api/monitors/:condition_id/wait"],
   ]),
   ...pythonOnlyRoutes("openclaw", "autocontext/src/autocontext/server/openclaw_api.py", [
     ["POST", "/api/openclaw/evaluate"],
