@@ -4,10 +4,10 @@
 
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
-import { URL, fileURLToPath } from "node:url";
+import { URL } from "node:url";
 import { MissionEventEmitter } from "../mission/events.js";
 import { CampaignManager } from "../mission/campaign.js";
 import { MissionManager } from "../mission/manager.js";
@@ -163,6 +163,7 @@ export class InteractiveServer {
     const knowledgeApi = buildKnowledgeApiRoutes({
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+      skillsRoot: this.#runManager.getSkillsRoot(),
       openStore: () => this.#openStore(),
       getSolveManager: () => this.#getSolveManager(),
     });
@@ -198,6 +199,7 @@ export class InteractiveServer {
           knowledge: {
             scenarios: "/api/knowledge/scenarios",
             export: "/api/knowledge/export/:scenario",
+            import: "/api/knowledge/import",
             search: "/api/knowledge/search",
             solve: "/api/knowledge/solve",
             playbook: "/api/knowledge/playbook/:scenario",
@@ -313,6 +315,13 @@ export class InteractiveServer {
     if (method === "GET" && knowledgeExportMatch) {
       const [, rawScenario] = knowledgeExportMatch;
       const response = knowledgeApi.exportScenario(decodeURIComponent(rawScenario!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/knowledge/import
+    if (method === "POST" && url === "/api/knowledge/import") {
+      const response = knowledgeApi.importPackage(await this.#readJsonBody(req));
       json(response.status, response.body);
       return;
     }

@@ -3,7 +3,7 @@
  * Mirrors Python's autocontext/server/run_manager.py.
  */
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { LoopController } from "../loop/controller.js";
 import { EventStreamEmitter } from "../loop/events.js";
 import type { EventCallback } from "../loop/events.js";
@@ -42,6 +42,7 @@ export interface RunManagerOpts {
   migrationsDir: string;
   runsRoot: string;
   knowledgeRoot: string;
+  skillsRoot?: string;
   providerType?: string;
   apiKey?: string;
   baseUrl?: string;
@@ -127,6 +128,10 @@ export class RunManager {
 
   getKnowledgeRoot(): string {
     return this.#opts.knowledgeRoot;
+  }
+
+  getSkillsRoot(): string {
+    return this.#opts.skillsRoot ?? join(dirname(this.#opts.knowledgeRoot), "skills");
   }
 
   buildMissionProvider() {

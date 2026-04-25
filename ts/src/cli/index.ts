@@ -621,6 +621,7 @@ async function cmdTui(dbPath: string): Promise<void> {
     migrationsDir: getMigrationsDir(),
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
+    skillsRoot: resolve(settings.skillsRoot),
     providerType: providerConfig.providerType,
     apiKey: providerConfig.apiKey,
     baseUrl: providerConfig.baseUrl,
@@ -994,6 +995,7 @@ async function cmdServeHttp(dbPath: string): Promise<void> {
     migrationsDir: getMigrationsDir(),
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
+    skillsRoot: resolve(settings.skillsRoot),
     providerType: settings.agentProvider,
   });
   const server = new InteractiveServer({
