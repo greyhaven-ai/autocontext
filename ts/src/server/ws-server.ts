@@ -32,6 +32,7 @@ import { executeInteractiveScenarioCommand } from "./interactive-scenario-comman
 import { buildHttpApiParityMatrix } from "./http-api-parity.js";
 import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
+import { buildMonitorApiRoutes } from "./monitor-api.js";
 import { buildNotebookApiRoutes } from "./notebook-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
@@ -180,6 +181,9 @@ export class InteractiveServer {
         this.#runManager.events.emit(event, payload, "notebook");
       },
     });
+    const monitorApi = buildMonitorApiRoutes({
+      openStore: () => this.#openStore(),
+    });
     const simulationApi = buildSimulationApiRoutes(this.#runManager.getKnowledgeRoot());
 
     // CORS headers for dashboard
@@ -194,6 +198,11 @@ export class InteractiveServer {
     }
 
     const json = (status: number, body: unknown) => {
+      if (status === 204) {
+        res.writeHead(status);
+        res.end();
+        return;
+      }
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body, null, 2));
     };
@@ -222,6 +231,7 @@ export class InteractiveServer {
           },
           campaigns: "/api/campaigns",
           missions: "/api/missions",
+          monitors: "/api/monitors",
           notebooks: "/api/notebooks",
           websocket: "/ws/interactive",
           events: "/ws/events",
@@ -276,6 +286,45 @@ export class InteractiveServer {
         json(response.status, response.body);
         return;
       }
+    }
+
+    // GET/POST /api/monitors
+    if (url === "/api/monitors" || url === "/api/monitors/") {
+      if (method === "GET") {
+        const response = monitorApi.list(requestUrl.searchParams);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "POST") {
+        const response = monitorApi.create(await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+    }
+
+    // GET /api/monitors/alerts
+    if (method === "GET" && url === "/api/monitors/alerts") {
+      const response = monitorApi.listAlerts(requestUrl.searchParams);
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/monitors/:conditionId/wait
+    const monitorWaitMatch = url.match(/^\/api\/monitors\/([^/]+)\/wait$/);
+    if (method === "POST" && monitorWaitMatch) {
+      const [, rawConditionId] = monitorWaitMatch;
+      const response = monitorApi.wait(decodeURIComponent(rawConditionId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // DELETE /api/monitors/:conditionId
+    const monitorMatch = url.match(/^\/api\/monitors\/([^/]+)$/);
+    if (method === "DELETE" && monitorMatch) {
+      const [, rawConditionId] = monitorMatch;
+      const response = monitorApi.delete(decodeURIComponent(rawConditionId!));
+      json(response.status, response.body);
+      return;
     }
 
     // GET /api/runs

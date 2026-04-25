@@ -119,6 +119,47 @@ export interface UpsertNotebookOpts {
   followUps?: string[] | null;
 }
 
+export interface MonitorConditionRow {
+  id: string;
+  name: string;
+  condition_type: string;
+  params: Record<string, unknown>;
+  scope: string;
+  active: number;
+  created_at: string;
+}
+
+export interface MonitorAlertRow {
+  id: string;
+  condition_id: string;
+  condition_name: string;
+  condition_type: string;
+  scope: string;
+  detail: string;
+  payload: Record<string, unknown>;
+  fired_at: string;
+}
+
+export interface InsertMonitorConditionOpts {
+  id: string;
+  name: string;
+  conditionType: string;
+  params?: Record<string, unknown>;
+  scope?: string;
+  active?: boolean;
+}
+
+export interface InsertMonitorAlertOpts {
+  id: string;
+  conditionId: string;
+  conditionName: string;
+  conditionType: string;
+  scope?: string;
+  detail?: string;
+  payload?: Record<string, unknown>;
+  firedAt?: string;
+}
+
 export interface UpsertGenerationOpts {
   meanScore: number;
   bestScore: number;

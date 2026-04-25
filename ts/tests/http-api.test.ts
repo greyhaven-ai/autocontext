@@ -168,6 +168,7 @@ describe("HTTP API — health", () => {
     expect(endpoints.capabilities).toMatchObject({
       http: "/api/capabilities/http",
     });
+    expect(endpoints.monitors).toBe("/api/monitors");
     expect(endpoints.notebooks).toBe("/api/notebooks");
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
@@ -199,6 +200,11 @@ describe("HTTP API — health", () => {
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "GET",
       path: "/api/notebooks",
+      status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/monitors",
       status: "aligned",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
@@ -384,6 +390,117 @@ describe("HTTP API — notebooks", () => {
     expect(existsSync(notebookPath)).toBe(false);
     const eventLog = readFileSync(join(dir, "runs", "_interactive", "events.ndjson"), "utf-8");
     expect(eventLog).toContain("notebook_deleted");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Monitor endpoints
+// ---------------------------------------------------------------------------
+
+describe("HTTP API — monitors", () => {
+  let dir: string;
+  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    dir = makeTempDir();
+    const s = await createTestServer(dir);
+    server = s.server;
+    baseUrl = s.baseUrl;
+  });
+
+  afterEach(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("POST /api/monitors creates a monitor condition", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/monitors`, {
+      name: "Score floor",
+      condition_type: "metric_threshold",
+      params: { metric: "best_score", threshold: 0.8, direction: "above" },
+      scope: "grid_ctf",
+    });
+
+    expect(status).toBe(201);
+    expect(body).toMatchObject({
+      name: "Score floor",
+      condition_type: "metric_threshold",
+      params: { metric: "best_score", threshold: 0.8, direction: "above" },
+      scope: "grid_ctf",
+      active: 1,
+    });
+    expect(typeof (body as Record<string, unknown>).id).toBe("string");
+  });
+
+  it("POST /api/monitors adds the default heartbeat timeout", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/monitors`, {
+      name: "Heartbeat",
+      condition_type: "heartbeat_lost",
+      params: {},
+    });
+
+    expect(status).toBe(201);
+    expect((body as Record<string, unknown>).params).toMatchObject({
+      timeout_seconds: 300,
+    });
+  });
+
+  it("GET /api/monitors lists active conditions and supports active_only=false", async () => {
+    const created = await postJson(`${baseUrl}/api/monitors`, {
+      name: "Exit",
+      condition_type: "process_exit",
+      params: {},
+    });
+    const conditionId = (created.body as Record<string, unknown>).id as string;
+    await fetch(`${baseUrl}/api/monitors/${conditionId}`, { method: "DELETE" });
+
+    const active = await fetchJson(`${baseUrl}/api/monitors`);
+    expect(active.body).toEqual([]);
+
+    const all = await fetchJson(`${baseUrl}/api/monitors?active_only=false`);
+    expect(all.body).toContainEqual(expect.objectContaining({
+      id: conditionId,
+      active: 0,
+    }));
+  });
+
+  it("DELETE /api/monitors/:condition_id deactivates conditions", async () => {
+    const created = await postJson(`${baseUrl}/api/monitors`, {
+      name: "Artifact",
+      condition_type: "artifact_created",
+      params: { path: "playbook.md" },
+    });
+    const conditionId = (created.body as Record<string, unknown>).id as string;
+
+    const res = await fetch(`${baseUrl}/api/monitors/${conditionId}`, { method: "DELETE" });
+
+    expect(res.status).toBe(204);
+    const missing = await fetch(`${baseUrl}/api/monitors/not-real`, { method: "DELETE" });
+    expect(missing.status).toBe(404);
+  });
+
+  it("GET /api/monitors/alerts lists alerts", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/monitors/alerts`);
+    expect(status).toBe(200);
+    expect(body).toEqual([]);
+  });
+
+  it("POST /api/monitors/:condition_id/wait reports unavailable engine", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/monitors/not-real/wait`, {});
+    expect(status).toBe(503);
+    expect((body as Record<string, unknown>).detail).toContain("Monitor engine not available");
+  });
+
+  it("POST /api/monitors rejects invalid condition types", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/monitors`, {
+      name: "Bad",
+      condition_type: "unknown",
+      params: {},
+    });
+
+    expect(status).toBe(409);
+    expect((body as Record<string, unknown>).detail).toContain("invalid monitor condition type");
   });
 });
 
