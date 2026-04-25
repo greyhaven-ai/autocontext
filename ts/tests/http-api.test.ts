@@ -177,14 +177,31 @@ describe("HTTP API — health", () => {
       summary: Record<string, number>;
       routes: Array<Record<string, unknown>>;
     };
+    const routeFor = (method: string, path: string) =>
+      matrix.routes.find((route) => route.method === method && route.path === path);
     expect(matrix.version).toBe(1);
     expect(matrix.summary.aligned).toBeGreaterThan(0);
     expect(matrix.summary.typescript_gap).toBeGreaterThan(0);
     expect(matrix.summary.python_gap).toBeGreaterThan(0);
+    expect(routeFor("GET", "/")).toMatchObject({
+      status: "aligned",
+      python: { support: "supported" },
+      typescript: { support: "supported" },
+    });
+    expect(routeFor("GET", "/dashboard")).toMatchObject({
+      status: "aligned",
+      python: { support: "supported" },
+      typescript: { support: "supported" },
+    });
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "POST",
       path: "/api/knowledge/import",
       status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/knowledge/playbook/:scenario",
+      status: "python_gap",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "GET",

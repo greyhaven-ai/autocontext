@@ -35,6 +35,7 @@ function both(
   path: string,
   pythonSource = PY_APP,
   typescriptSource = TS_SERVER,
+  notes?: string,
 ): HttpApiParityEntry {
   return {
     domain,
@@ -43,6 +44,7 @@ function both(
     python: { support: "supported", source: pythonSource },
     typescript: { support: "supported", source: typescriptSource },
     status: "aligned",
+    ...(notes ? { notes } : {}),
   };
 }
 
@@ -96,15 +98,35 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("knowledge", "POST", "/api/knowledge/search", "autocontext/src/autocontext/server/knowledge_api.py"),
   both("knowledge", "POST", "/api/knowledge/solve", "autocontext/src/autocontext/server/knowledge_api.py"),
   both("knowledge", "GET", "/api/knowledge/solve/:job_id", "autocontext/src/autocontext/server/knowledge_api.py"),
+  typescriptOnly(
+    "knowledge",
+    "GET",
+    "/api/knowledge/playbook/:scenario",
+    "TypeScript exposes direct playbook readback from the interactive server.",
+  ),
 
-  typescriptOnly("discovery", "GET", "/", "TypeScript advertises endpoint discovery from the root response."),
+  both(
+    "discovery",
+    "GET",
+    "/",
+    PY_APP,
+    TS_SERVER,
+    "Both runtimes advertise API information from the root response.",
+  ),
   typescriptOnly(
     "discovery",
     "GET",
     "/api/capabilities/http",
     "TypeScript exposes this parity matrix for clients that need runtime-aware HTTP discovery.",
   ),
-  typescriptOnly("dashboard", "GET", "/dashboard", "TypeScript serves the lightweight dashboard shell."),
+  both(
+    "dashboard",
+    "GET",
+    "/dashboard",
+    PY_APP,
+    TS_SERVER,
+    "Python returns the API-info placeholder; TypeScript serves the lightweight dashboard shell.",
+  ),
   typescriptOnly("scenarios", "GET", "/api/scenarios", "TypeScript exposes built-in and custom scenario discovery."),
   typescriptOnly("simulations", "GET", "/api/simulations", "TypeScript exposes simulation catalog routes."),
   typescriptOnly("simulations", "GET", "/api/simulations/:name", "TypeScript exposes simulation detail routes."),
