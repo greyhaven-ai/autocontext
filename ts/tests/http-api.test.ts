@@ -156,6 +156,9 @@ describe("HTTP API — health", () => {
     expect((body as Record<string, unknown>).service).toBe("autocontext");
     const endpoints = (body as Record<string, unknown>).endpoints as Record<string, unknown>;
     expect(endpoints).toBeDefined();
+    expect(endpoints.capabilities).toMatchObject({
+      http: "/api/capabilities/http",
+    });
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
       export: "/api/knowledge/export/:scenario",
@@ -164,6 +167,36 @@ describe("HTTP API — health", () => {
       solve: "/api/knowledge/solve",
       playbook: "/api/knowledge/playbook/:scenario",
     });
+  });
+
+  it("GET /api/capabilities/http returns the runtime parity matrix", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/capabilities/http`);
+    expect(status).toBe(200);
+    const matrix = body as {
+      version: number;
+      summary: Record<string, number>;
+      routes: Array<Record<string, unknown>>;
+    };
+    expect(matrix.version).toBe(1);
+    expect(matrix.summary.aligned).toBeGreaterThan(0);
+    expect(matrix.summary.typescript_gap).toBeGreaterThan(0);
+    expect(matrix.summary.python_gap).toBeGreaterThan(0);
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "POST",
+      path: "/api/knowledge/import",
+      status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/openclaw/capabilities",
+      status: "typescript_gap",
+      issue: "AC-627",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/missions",
+      status: "python_gap",
+    }));
   });
 });
 
