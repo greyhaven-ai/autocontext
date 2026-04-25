@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildKnowledgeApiRoutes } from "../src/server/knowledge-api.js";
@@ -15,6 +18,7 @@ describe("knowledge API workflow", () => {
     const routes = buildKnowledgeApiRoutes({
       runsRoot: "/unused/runs",
       knowledgeRoot: "/unused/knowledge",
+      skillsRoot: "/unused/skills",
       openStore: () => {
         throw new Error("store should not be opened for solve submission");
       },
@@ -53,6 +57,7 @@ describe("knowledge API workflow", () => {
     const routes = buildKnowledgeApiRoutes({
       runsRoot: "/unused/runs",
       knowledgeRoot: "/unused/knowledge",
+      skillsRoot: "/unused/skills",
       openStore: () => {
         throw new Error("store should not be opened for solve submission");
       },
@@ -76,5 +81,36 @@ describe("knowledge API workflow", () => {
       body: { error: "generationTimeBudgetSeconds must be a non-negative integer" },
     });
     expect(submitted).toBe(false);
+  });
+
+  it("rejects import packages whose scenario escapes knowledge and skills roots", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-knowledge-api-"));
+    const routes = buildKnowledgeApiRoutes({
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      skillsRoot: join(dir, "skills"),
+      openStore: () => {
+        throw new Error("store should not be opened for package import");
+      },
+      getSolveManager: () => ({
+        submit: () => "job_123",
+        getStatus: () => ({ status: "not_found" }),
+        getResult: () => null,
+      }),
+    });
+
+    const response = routes.importPackage({
+      package: {
+        scenario_name: "../outside",
+        playbook: "# should not be written",
+        skill_markdown: "# should not be written",
+      },
+      conflict_policy: "overwrite",
+    });
+
+    expect(response.status).toBe(422);
+    expect((response.body as Record<string, unknown>).detail).toContain("scenario");
+    expect(existsSync(join(dir, "outside", "playbook.md"))).toBe(false);
+    expect(existsSync(join(dir, "outside-ops", "SKILL.md"))).toBe(false);
   });
 });

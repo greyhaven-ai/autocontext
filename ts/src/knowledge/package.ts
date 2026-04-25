@@ -20,6 +20,7 @@ import {
   lessonsFromPlaybook,
 } from "./package-content.js";
 import { coercePackage } from "./package-coercion.js";
+import { assertSafeScenarioId } from "./scenario-id.js";
 import type {
   ConflictPolicy,
   ImportStrategyPackageResult,
@@ -103,6 +104,7 @@ export function importStrategyPackage(opts: {
 }): ImportStrategyPackageResult {
   const conflictPolicy = opts.conflictPolicy ?? "overwrite";
   const pkg = coercePackage(opts.rawPackage, opts.scenarioOverride);
+  assertSafeScenarioId(pkg.scenarioName, "scenario_name");
   const result: ImportStrategyPackageResult = {
     scenario: pkg.scenarioName,
     playbookWritten: false,

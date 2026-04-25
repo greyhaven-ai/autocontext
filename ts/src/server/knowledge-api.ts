@@ -2,7 +2,12 @@ import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { ArtifactStore } from "../knowledge/artifact-store.js";
-import { exportStrategyPackage } from "../knowledge/package.js";
+import {
+  exportStrategyPackage,
+  importStrategyPackage,
+  type ConflictPolicy,
+} from "../knowledge/package.js";
+import { isSafeScenarioId } from "../knowledge/scenario-id.js";
 import type { SolveSubmitOptions } from "../knowledge/solver.js";
 import type { GenerationRow, SQLiteStore } from "../storage/index.js";
 
@@ -20,6 +25,7 @@ export interface KnowledgeSolveManager {
 export interface KnowledgeApiRoutes {
   listSolved(): KnowledgeApiResponse;
   exportScenario(scenarioName: string): KnowledgeApiResponse;
+  importPackage(body: Record<string, unknown>): KnowledgeApiResponse;
   search(body: Record<string, unknown>): KnowledgeApiResponse;
   submitSolve(body: Record<string, unknown>): KnowledgeApiResponse;
   solveStatus(jobId: string): KnowledgeApiResponse;
@@ -28,6 +34,7 @@ export interface KnowledgeApiRoutes {
 export function buildKnowledgeApiRoutes(opts: {
   runsRoot: string;
   knowledgeRoot: string;
+  skillsRoot: string;
   openStore: () => SQLiteStore;
   getSolveManager: () => KnowledgeSolveManager;
 }): KnowledgeApiRoutes {
@@ -61,6 +68,28 @@ export function buildKnowledgeApiRoutes(opts: {
           },
         };
       });
+    },
+    importPackage: (body) => {
+      const request = parseImportPackageRequest(body);
+      if (!request.ok) {
+        return { status: 422, body: { detail: request.error } };
+      }
+      try {
+        const artifacts = new ArtifactStore({
+          runsRoot: opts.runsRoot,
+          knowledgeRoot: opts.knowledgeRoot,
+        });
+        const result = importStrategyPackage({
+          rawPackage: request.rawPackage,
+          artifacts,
+          skillsRoot: opts.skillsRoot,
+          conflictPolicy: request.conflictPolicy,
+        });
+        return { status: 200, body: result };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { status: 422, body: { detail: `Invalid package: ${message}` } };
+      }
     },
     search: (body) =>
       withStore(opts.openStore, (store) => {
@@ -106,6 +135,40 @@ export function buildKnowledgeApiRoutes(opts: {
   };
 }
 
+type ImportPackageRequestResult =
+  | {
+    ok: true;
+    rawPackage: Record<string, unknown>;
+    conflictPolicy: ConflictPolicy;
+  }
+  | { ok: false; error: string };
+
+const CONFLICT_POLICIES = new Set<ConflictPolicy>(["overwrite", "merge", "skip"]);
+
+function parseImportPackageRequest(body: Record<string, unknown>): ImportPackageRequestResult {
+  const packageEntry = firstPresent(body, ["package", "rawPackage", "raw_package"]);
+  if (!packageEntry || !isRecord(packageEntry.value)) {
+    return { ok: false, error: "package is required" };
+  }
+
+  const conflictEntry = firstPresent(body, ["conflict_policy", "conflictPolicy"]);
+  if (!conflictEntry) {
+    return { ok: true, rawPackage: packageEntry.value, conflictPolicy: "merge" };
+  }
+  if (typeof conflictEntry.value !== "string") {
+    return { ok: false, error: `${conflictEntry.key} must be one of overwrite, merge, skip` };
+  }
+  const conflictPolicy = conflictEntry.value.trim();
+  if (!CONFLICT_POLICIES.has(conflictPolicy as ConflictPolicy)) {
+    return { ok: false, error: `${conflictEntry.key} must be one of overwrite, merge, skip` };
+  }
+  return {
+    ok: true,
+    rawPackage: packageEntry.value,
+    conflictPolicy: conflictPolicy as ConflictPolicy,
+  };
+}
+
 function listSolvedScenarios(knowledgeRoot: string): Array<{ scenario: string; hasPlaybook: boolean }> {
   const solved: Array<{ scenario: string; hasPlaybook: boolean }> = [];
   if (!existsSync(knowledgeRoot)) {
@@ -128,10 +191,8 @@ function listSolvedScenarios(knowledgeRoot: string): Array<{ scenario: string; h
   return solved.sort((a, b) => a.scenario.localeCompare(b.scenario));
 }
 
-const KNOWLEDGE_SCENARIO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-
 function resolveKnowledgeScenarioDir(knowledgeRoot: string, scenarioName: string): string | null {
-  if (!KNOWLEDGE_SCENARIO_NAME_RE.test(scenarioName)) {
+  if (!isSafeScenarioId(scenarioName)) {
     return null;
   }
   const root = resolve(knowledgeRoot);
@@ -154,6 +215,10 @@ function resolveKnowledgeScenarioDir(knowledgeRoot: string, scenarioName: string
 function scenarioHasKnowledge(scenarioDir: string): boolean {
   return existsSync(join(scenarioDir, "playbook.md"))
     || existsSync(join(scenarioDir, "package_metadata.json"));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isChildPath(root: string, candidate: string): boolean {

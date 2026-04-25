@@ -1,5 +1,14 @@
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { SkillPackage, exportAgentTaskSkill, cleanLessons } from "../src/knowledge/index.js";
+import {
+  ArtifactStore,
+  SkillPackage,
+  cleanLessons,
+  exportAgentTaskSkill,
+  importStrategyPackage,
+} from "../src/knowledge/index.js";
 import type { SkillPackageData } from "../src/knowledge/index.js";
 
 function makeExampleOutputs() {
@@ -181,6 +190,32 @@ describe("exportAgentTaskSkill", () => {
     });
     expect(pkg.bestScore).toBe(0.0);
     expect(pkg.exampleOutputs).toBeNull();
+  });
+});
+
+describe("importStrategyPackage", () => {
+  it("rejects unsafe scenario identifiers before writing artifacts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ac-package-import-"));
+    const artifacts = new ArtifactStore({
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+    });
+
+    expect(() =>
+      importStrategyPackage({
+        rawPackage: {
+          scenario_name: "../outside",
+          playbook: "# should not be written",
+          skill_markdown: "# should not be written",
+        },
+        artifacts,
+        skillsRoot: join(dir, "skills"),
+        conflictPolicy: "overwrite",
+      }),
+    ).toThrow("scenario_name must be a safe scenario identifier");
+
+    expect(existsSync(join(dir, "outside", "playbook.md"))).toBe(false);
+    expect(existsSync(join(dir, "outside-ops", "SKILL.md"))).toBe(false);
   });
 });
 

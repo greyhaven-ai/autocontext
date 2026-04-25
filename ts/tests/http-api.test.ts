@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -159,6 +159,7 @@ describe("HTTP API — health", () => {
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
       export: "/api/knowledge/export/:scenario",
+      import: "/api/knowledge/import",
       search: "/api/knowledge/search",
       solve: "/api/knowledge/solve",
       playbook: "/api/knowledge/playbook/:scenario",
@@ -277,6 +278,57 @@ describe("HTTP API — knowledge", () => {
 
     expect(status).toBe(422);
     expect((body as Record<string, unknown>).error).toContain("Invalid scenario");
+  });
+
+  it("POST /api/knowledge/import imports a strategy package", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/knowledge/import`, {
+      package: {
+        scenario_name: "imported_task",
+        display_name: "Imported Task",
+        description: "A package imported over the REST API.",
+        playbook: "# Imported Task\n\nUse the imported strategy.",
+        lessons: ["Prefer known-good imported strategy."],
+        best_strategy: { answer: "imported" },
+        best_score: 0.93,
+        best_elo: 1510,
+        hints: "Keep the imported hint close.",
+        harness: {
+          validator: "def validate():\n    return True\n",
+        },
+        metadata: {
+          source: "http-test",
+        },
+        skill_markdown: "# Imported Skill\n\nUse the imported skill.",
+      },
+      conflict_policy: "overwrite",
+    });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      scenario: "imported_task",
+      playbookWritten: true,
+      harnessWritten: ["validator"],
+      skillWritten: true,
+      metadataWritten: true,
+      conflictPolicy: "overwrite",
+    });
+    expect(readFileSync(join(dir, "knowledge", "imported_task", "playbook.md"), "utf-8"))
+      .toContain("Use the imported strategy.");
+    expect(readFileSync(
+      join(dir, "knowledge", "imported_task", "package_metadata.json"),
+      "utf-8",
+    )).toContain("http-test");
+    expect(existsSync(join(dir, "skills", "imported-task-ops", "SKILL.md"))).toBe(true);
+  });
+
+  it("POST /api/knowledge/import rejects unknown conflict policies", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/knowledge/import`, {
+      package: { scenario_name: "imported_task" },
+      conflict_policy: "replace",
+    });
+
+    expect(status).toBe(422);
+    expect((body as Record<string, unknown>).detail).toContain("conflict_policy");
   });
 
   it("POST /api/knowledge/search finds prior strategy text", async () => {
