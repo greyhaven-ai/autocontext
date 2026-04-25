@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "terms": {
+    "umbrellaPackage": "User-facing compatibility distribution that preserves the current install and CLI experience while delegating behavior to core and control-plane artifacts.",
+    "corePackage": "Apache-friendly foundational runtime package that carries the reusable execution substrate.",
+    "controlPackage": "Higher-level operator and management package that will carry the separately licensed control-plane surfaces.",
+    "compatibilityShell": "Thin package layer that re-exports or dispatches into the new internal artifacts while the migration is in progress.",
+    "packageTopology": "The path and artifact map that defines which package owns each ecosystem role during the migration."
+  },
+  "python": {
+    "umbrella": {
+      "name": "autocontext",
+      "path": "autocontext",
+      "entrypoint": "autocontext.cli:app"
+    },
+    "core": {
+      "name": "autocontext-core",
+      "path": "packages/python/core",
+      "module": "autocontext_core"
+    },
+    "control": {
+      "name": "autocontext-control",
+      "path": "packages/python/control",
+      "module": "autocontext_control"
+    }
+  },
+  "typescript": {
+    "umbrella": {
+      "name": "autoctx",
+      "path": "ts",
+      "bin": "autoctx"
+    },
+    "core": {
+      "name": "@autocontext/core",
+      "path": "packages/ts/core",
+      "source": "src/index.ts"
+    },
+    "control": {
+      "name": "@autocontext/control-plane",
+      "path": "packages/ts/control-plane",
+      "source": "src/index.ts"
+    }
+  },
+  "pi": {
+    "name": "pi-autocontext",
+    "path": "pi",
+    "phaseOneDependency": "autoctx"
+  }
+}

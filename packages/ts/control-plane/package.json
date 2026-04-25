@@ -1,0 +1,24 @@
+{
+  "name": "@autocontext/control-plane",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Internal package skeleton for the future control-plane artifact.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  }
+}
