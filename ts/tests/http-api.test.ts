@@ -191,6 +191,7 @@ describe("HTTP API — health", () => {
     expect(endpoints.monitors).toBe("/api/monitors");
     expect(endpoints.notebooks).toBe("/api/notebooks");
     expect(endpoints.openclaw).toBe("/api/openclaw");
+    expect(endpoints.cockpit).toBe("/api/cockpit");
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
       export: "/api/knowledge/export/:scenario",
@@ -253,6 +254,11 @@ describe("HTTP API — health", () => {
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "POST",
       path: "/api/openclaw/evaluate",
+      status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/cockpit/runs",
       status: "aligned",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
@@ -622,6 +628,174 @@ describe("HTTP API — monitors", () => {
 
     expect(status).toBe(409);
     expect((body as Record<string, unknown>).detail).toContain("invalid monitor condition type");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cockpit endpoints
+// ---------------------------------------------------------------------------
+
+describe("HTTP API — cockpit", () => {
+  let dir: string;
+  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    dir = makeTempDir();
+    const s = await createTestServer(dir);
+    server = s.server;
+    baseUrl = s.baseUrl;
+  });
+
+  afterEach(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("mirrors notebook CRUD under /api/cockpit/notebooks", async () => {
+    const created = await putJson(`${baseUrl}/api/cockpit/notebooks/test-run-1`, {
+      scenario_name: "grid_ctf",
+      current_objective: "Keep center control.",
+      current_hypotheses: ["Center control raises capture odds."],
+      best_score: 0.1,
+      unresolved_questions: ["Does flank pressure matter?"],
+      operator_observations: ["Prior run preferred middle lanes."],
+      follow_ups: ["Try a higher path bias."],
+    });
+
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({
+      session_id: "test-run-1",
+      scenario_name: "grid_ctf",
+      current_objective: "Keep center control.",
+    });
+
+    const fetched = await fetchJson(`${baseUrl}/api/cockpit/notebooks/test-run-1`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body).toMatchObject({ session_id: "test-run-1" });
+
+    const listed = await fetchJson(`${baseUrl}/api/cockpit/notebooks`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toContainEqual(expect.objectContaining({ session_id: "test-run-1" }));
+
+    const effective = await fetchJson(`${baseUrl}/api/cockpit/notebooks/test-run-1/effective-context`);
+    expect(effective.status).toBe(200);
+    expect(effective.body).toMatchObject({
+      session_id: "test-run-1",
+      role_contexts: expect.objectContaining({
+        competitor: expect.stringContaining("Keep center control."),
+      }),
+      warnings: [expect.objectContaining({
+        field: "best_score",
+        warning_type: "stale_score",
+      })],
+      notebook_empty: false,
+    });
+
+    const deleted = await fetch(`${baseUrl}/api/cockpit/notebooks/test-run-1`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+  });
+
+  it("GET /api/cockpit/runs returns cockpit run summaries", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs`);
+
+    expect(status).toBe(200);
+    expect(body).toContainEqual(expect.objectContaining({
+      run_id: "test-run-1",
+      scenario_name: "grid_ctf",
+      generations_completed: 1,
+      best_score: 0.7,
+      best_elo: 1050,
+      status: "running",
+    }));
+  });
+
+  it("GET /api/cockpit/runs/:run_id/status returns detailed generation state", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/status`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      run_id: "test-run-1",
+      scenario_name: "grid_ctf",
+      target_generations: 3,
+      status: "running",
+      generations: [expect.objectContaining({
+        generation: 1,
+        best_score: 0.7,
+        elo: 1050,
+      })],
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/compare/:gen_a/:gen_b compares generations", async () => {
+    const { SQLiteStore } = await import("../src/storage/index.js");
+    const store = new SQLiteStore(join(dir, "test.db"));
+    store.upsertGeneration("test-run-1", 2, {
+      meanScore: 0.72,
+      bestScore: 0.78,
+      elo: 1105,
+      wins: 4,
+      losses: 1,
+      gateDecision: "advance",
+      status: "completed",
+    });
+    store.close();
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/compare/1/2`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      gen_a: expect.objectContaining({ generation: 1, best_score: 0.7 }),
+      gen_b: expect.objectContaining({ generation: 2, best_score: 0.78 }),
+      score_delta: 0.08,
+      elo_delta: 55,
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/resume returns resume affordances", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/resume`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      run_id: "test-run-1",
+      status: "running",
+      last_generation: 1,
+      can_resume: true,
+    });
+    expect((body as Record<string, unknown>).resume_hint).toContain("generation 2");
+  });
+
+  it("GET /api/cockpit/writeup/:run_id returns a markdown writeup", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/writeup/test-run-1`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      run_id: "test-run-1",
+      scenario_name: "grid_ctf",
+    });
+    expect((body as Record<string, unknown>).writeup_markdown).toContain("test-run-1");
+  });
+
+  it("GET /api/cockpit/runs/:run_id/changelog returns generation deltas", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/changelog`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      run_id: "test-run-1",
+      changes: [],
+    });
+  });
+
+  it("consultation routes are explicit when the TS consultation backend is unavailable", async () => {
+    const consultation = await postJson(`${baseUrl}/api/cockpit/runs/test-run-1/consult`, {
+      context_summary: "Need another opinion.",
+    });
+    expect(consultation.status).toBe(400);
+    expect((consultation.body as Record<string, unknown>).detail).toContain("Consultation is not enabled");
+
+    const listed = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/consultations`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([]);
   });
 });
 
