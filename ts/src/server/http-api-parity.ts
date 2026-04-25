@@ -28,6 +28,7 @@ export interface HttpApiParityMatrix {
 
 const PY_APP = "autocontext/src/autocontext/server/app.py";
 const TS_SERVER = "ts/src/server/ws-server.ts";
+const PY_OPENCLAW_API = "autocontext/src/autocontext/server/openclaw_api.py";
 
 function both(
   domain: string,
@@ -229,23 +230,21 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
     ["POST", "/api/hub/promotions"],
     ["GET", "/api/hub/feed"],
   ]),
-  ...pythonOnlyRoutes("openclaw", "autocontext/src/autocontext/server/openclaw_api.py", [
-    ["POST", "/api/openclaw/evaluate"],
-    ["POST", "/api/openclaw/validate"],
-    ["POST", "/api/openclaw/artifacts"],
-    ["GET", "/api/openclaw/artifacts"],
-    ["GET", "/api/openclaw/artifacts/:artifact_id"],
-    ["GET", "/api/openclaw/distill"],
-    ["POST", "/api/openclaw/distill"],
-    ["GET", "/api/openclaw/distill/:job_id"],
-    ["PATCH", "/api/openclaw/distill/:job_id"],
-    ["GET", "/api/openclaw/capabilities"],
-    ["GET", "/api/openclaw/discovery/capabilities"],
-    ["GET", "/api/openclaw/discovery/scenario/:scenario_name"],
-    ["GET", "/api/openclaw/discovery/health"],
-    ["GET", "/api/openclaw/discovery/scenario/:scenario_name/artifacts"],
-    ["GET", "/api/openclaw/skill/manifest"],
-  ]),
+  both("openclaw", "POST", "/api/openclaw/evaluate", PY_OPENCLAW_API),
+  both("openclaw", "POST", "/api/openclaw/validate", PY_OPENCLAW_API),
+  both("openclaw", "POST", "/api/openclaw/artifacts", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/artifacts", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/artifacts/:artifact_id", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/distill", PY_OPENCLAW_API),
+  both("openclaw", "POST", "/api/openclaw/distill", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/distill/:job_id", PY_OPENCLAW_API),
+  both("openclaw", "PATCH", "/api/openclaw/distill/:job_id", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/capabilities", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/discovery/capabilities", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/discovery/scenario/:scenario_name", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/discovery/health", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/discovery/scenario/:scenario_name/artifacts", PY_OPENCLAW_API),
+  both("openclaw", "GET", "/api/openclaw/skill/manifest", PY_OPENCLAW_API),
 ];
 
 function pythonOnlyRoutes(

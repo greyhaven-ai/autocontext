@@ -35,6 +35,7 @@ import { buildMissionApiRoutes } from "./mission-api.js";
 import { buildMonitorApiRoutes } from "./monitor-api.js";
 import { MonitorEngine } from "./monitor-engine.js";
 import { buildNotebookApiRoutes } from "./notebook-api.js";
+import { buildOpenClawApiRoutes } from "./openclaw-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
 import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-session-bootstrap.js";
@@ -47,6 +48,7 @@ import { loadSettings, type AppSettings } from "../config/index.js";
 import { SQLiteStore } from "../storage/index.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
+import { loadSettings } from "../config/index.js";
 
 export interface InteractiveServerOpts {
   runManager: RunManager;
@@ -192,6 +194,11 @@ export class InteractiveServer {
       defaultHeartbeatTimeoutSeconds: settings.monitorHeartbeatTimeout,
       maxConditions: settings.monitorMaxConditions,
     });
+    const openClawApi = buildOpenClawApiRoutes({
+      knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+      settings: loadSettings(),
+      openStore: () => this.#openStore(),
+    });
     const simulationApi = buildSimulationApiRoutes(this.#runManager.getKnowledgeRoot());
 
     // CORS headers for dashboard
@@ -241,6 +248,7 @@ export class InteractiveServer {
           missions: "/api/missions",
           monitors: "/api/monitors",
           notebooks: "/api/notebooks",
+          openclaw: "/api/openclaw",
           websocket: "/ws/interactive",
           events: "/ws/events",
         },
@@ -331,6 +339,122 @@ export class InteractiveServer {
     if (method === "DELETE" && monitorMatch) {
       const [, rawConditionId] = monitorMatch;
       const response = monitorApi.delete(decodeURIComponent(rawConditionId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/openclaw/evaluate
+    if (method === "POST" && url === "/api/openclaw/evaluate") {
+      const response = openClawApi.evaluate(await this.#readJsonBody(req));
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/openclaw/validate
+    if (method === "POST" && url === "/api/openclaw/validate") {
+      const response = openClawApi.validate(await this.#readJsonBody(req));
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET/POST /api/openclaw/artifacts
+    if (url === "/api/openclaw/artifacts" || url === "/api/openclaw/artifacts/") {
+      if (method === "GET") {
+        const response = openClawApi.listArtifacts(requestUrl.searchParams);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "POST") {
+        const response = openClawApi.publishArtifact(await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+    }
+
+    // GET /api/openclaw/artifacts/:artifactId
+    const openClawArtifactMatch = url.match(/^\/api\/openclaw\/artifacts\/([^/]+)$/);
+    if (method === "GET" && openClawArtifactMatch) {
+      const [, rawArtifactId] = openClawArtifactMatch;
+      const response = openClawApi.fetchArtifact(decodeURIComponent(rawArtifactId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET/POST /api/openclaw/distill
+    if (url === "/api/openclaw/distill" || url === "/api/openclaw/distill/") {
+      if (method === "GET") {
+        const response = openClawApi.distillStatus(requestUrl.searchParams);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "POST") {
+        const response = openClawApi.triggerDistillation(await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+    }
+
+    // GET/PATCH /api/openclaw/distill/:jobId
+    const openClawDistillMatch = url.match(/^\/api\/openclaw\/distill\/([^/]+)$/);
+    if (openClawDistillMatch) {
+      const [, rawJobId] = openClawDistillMatch;
+      const jobId = decodeURIComponent(rawJobId!);
+      if (method === "GET") {
+        const response = openClawApi.getDistillJob(jobId);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "PATCH") {
+        const response = openClawApi.updateDistillJob(jobId, await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+    }
+
+    // GET /api/openclaw/capabilities
+    if (method === "GET" && url === "/api/openclaw/capabilities") {
+      const response = openClawApi.capabilities();
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/openclaw/discovery/capabilities
+    if (method === "GET" && url === "/api/openclaw/discovery/capabilities") {
+      const response = openClawApi.discoveryCapabilities();
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/openclaw/discovery/health
+    if (method === "GET" && url === "/api/openclaw/discovery/health") {
+      const response = openClawApi.discoveryHealth();
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/openclaw/discovery/scenario/:scenarioName/artifacts
+    const openClawScenarioArtifactsMatch = url.match(
+      /^\/api\/openclaw\/discovery\/scenario\/([^/]+)\/artifacts$/,
+    );
+    if (method === "GET" && openClawScenarioArtifactsMatch) {
+      const [, rawScenarioName] = openClawScenarioArtifactsMatch;
+      const response = openClawApi.discoveryScenarioArtifacts(decodeURIComponent(rawScenarioName!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/openclaw/discovery/scenario/:scenarioName
+    const openClawScenarioMatch = url.match(/^\/api\/openclaw\/discovery\/scenario\/([^/]+)$/);
+    if (method === "GET" && openClawScenarioMatch) {
+      const [, rawScenarioName] = openClawScenarioMatch;
+      const response = openClawApi.discoveryScenario(decodeURIComponent(rawScenarioName!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/openclaw/skill/manifest
+    if (method === "GET" && url === "/api/openclaw/skill/manifest") {
+      const response = openClawApi.skillManifest();
       json(response.status, response.body);
       return;
     }
