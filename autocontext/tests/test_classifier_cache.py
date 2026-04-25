@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from autocontext.scenarios.custom.classifier_cache import ClassifierCache
 from autocontext.scenarios.custom.family_classifier import (
     FamilyCandidate,
     FamilyClassification,
+    LowConfidenceError,
 )
 
 FAMILIES_A = ["agent_task", "simulation", "game"]
@@ -172,6 +175,7 @@ class TestLlmFallbackCacheIntegration:
     def test_llm_failure_is_not_cached(self, tmp_path) -> None:
         # Negative results (LLM raised / parse failed) must not be written —
         # otherwise a transient provider hiccup would poison future lookups.
+        # AC-628: zero-signal + failed LLM raises LowConfidenceError; nothing cached.
         from autocontext.scenarios.custom.family_classifier import classify_scenario_family
 
         cache = ClassifierCache(tmp_path / "cache.json")
@@ -180,11 +184,11 @@ class TestLlmFallbackCacheIntegration:
             del system, user
             return "not json at all"
 
-        result = classify_scenario_family(self._gibberish(), llm_fn=bad_llm, cache=cache)
-        # Fallback failed → keyword fallback returned.
-        assert result.no_signals_matched is True
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family(self._gibberish(), llm_fn=bad_llm, cache=cache)
+        assert exc_info.value.classification.no_signals_matched is True
 
-        # Cache file should be empty (or non-existent) — no entries written.
+        # Cache file should be empty — failed LLM results must not be cached.
         cache_path = tmp_path / "cache.json"
         if cache_path.exists():
             data = json.loads(cache_path.read_text(encoding="utf-8"))

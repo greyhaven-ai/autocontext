@@ -44,8 +44,8 @@ class FamilyClassification(BaseModel):
     rationale: str
     alternatives: list[FamilyCandidate] = Field(default_factory=list)
     no_signals_matched: bool = False
-    llm_fallback_used: bool = False
-    llm_fallback_attempted: bool = False
+    llm_classifier_used: bool = False
+    llm_classifier_attempted: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -74,7 +74,7 @@ class LowConfidenceError(Exception):
         if classification.no_signals_matched:
             fallback_note = (
                 " LLM fallback was attempted but returned no parseable response."
-                if classification.llm_fallback_attempted
+                if classification.llm_classifier_attempted
                 else ""
             )
             return (
@@ -474,7 +474,7 @@ _LLM_FALLBACK_SYSTEM_PROMPT = (
 )
 
 
-def _llm_classify_fallback(
+def _llm_classify(
     description: str,
     registered_families: list[str],
     llm_fn: LlmFn,
@@ -493,7 +493,7 @@ def _llm_classify_fallback(
         cached = cache.get(description, registered_families)
         if cached is not None:
             logger.info(
-                "LLM classifier fallback: cache hit family=%s confidence=%.2f",
+                "LLM classifier: cache hit family=%s confidence=%.2f",
                 cached.family_name,
                 cached.confidence,
             )
@@ -504,20 +504,20 @@ def _llm_classify_fallback(
 
     try:
         raw = llm_fn(system, description)
-    except Exception as exc:  # noqa: BLE001 - fallback must tolerate any provider failure
-        logger.warning("LLM classifier fallback failed: llm_fn raised %s", exc)
+    except Exception as exc:  # noqa: BLE001 - classifier must tolerate any provider failure
+        logger.warning("LLM classifier failed: llm_fn raised %s", exc)
         return None
 
     json_start = raw.find("{")
     json_end = raw.rfind("}")
     if json_start == -1 or json_end == -1 or json_end <= json_start:
-        logger.warning("LLM classifier fallback failed: no JSON object in response")
+        logger.warning("LLM classifier failed: no JSON object in response")
         return None
 
     try:
         payload = json.loads(raw[json_start : json_end + 1])
     except json.JSONDecodeError as exc:
-        logger.warning("LLM classifier fallback failed: JSON decode error %s", exc)
+        logger.warning("LLM classifier failed: JSON decode error %s", exc)
         return None
 
     family = payload.get("family") if isinstance(payload, dict) else None
@@ -525,25 +525,25 @@ def _llm_classify_fallback(
     rationale = payload.get("rationale") if isinstance(payload, dict) else None
 
     if not isinstance(family, str) or family not in registered_families:
-        logger.warning("LLM classifier fallback failed: family %r not registered", family)
+        logger.warning("LLM classifier failed: family %r not registered", family)
         return None
     if not isinstance(rationale, str) or not rationale.strip():
-        logger.warning("LLM classifier fallback failed: missing rationale")
+        logger.warning("LLM classifier failed: missing rationale")
         return None
     try:
         conf_value = float(confidence)  # type: ignore[arg-type]
     except (TypeError, ValueError):
-        logger.warning("LLM classifier fallback failed: confidence %r not numeric", confidence)
+        logger.warning("LLM classifier failed: confidence %r not numeric", confidence)
         return None
 
     clamped = max(0.0, min(1.0, conf_value))
-    logger.info("LLM classifier fallback: family=%s confidence=%.2f", family, clamped)
+    logger.info("LLM classifier: family=%s confidence=%.2f", family, clamped)
 
     alternatives = [
         FamilyCandidate(
             family_name=other,
             confidence=0.0,
-            rationale="LLM fallback selected a different family",
+            rationale="LLM classifier selected a different family",
         )
         for other in registered_families
         if other != family
@@ -554,7 +554,7 @@ def _llm_classify_fallback(
         rationale=rationale,
         alternatives=alternatives,
         no_signals_matched=False,
-        llm_fallback_used=True,
+        llm_classifier_used=True,
     )
     if cache is not None:
         cache.put(description, registered_families, classification)
@@ -574,19 +574,19 @@ def classify_scenario_family(
 ) -> FamilyClassification:
     """Classify a natural-language description into a scenario family.
 
-    Returns a FamilyClassification with the top choice, confidence,
-    rationale, and ranked alternatives.
+    Two-gate flow (AC-628):
+      Gate 1 — keyword fast-path: if top keyword confidence >= threshold, return
+        immediately without calling the LLM.
+      Gate 2 — ambiguous: if total > 0 but confidence < threshold, call LLM when
+        available; fall back to the keyword result on failure.
+      Zero-signal: if no keywords matched, the LLM is required; raises
+        LowConfidenceError when the LLM is unavailable or fails.
 
-    When ``llm_fn`` is provided and the keyword classifier matches no signals,
-    a single structured LLM call is made to pick a family before returning the
-    keyword fallback (AC-580). If the LLM call fails for any reason, the
-    keyword fallback is returned unchanged.
-
-    When ``cache`` is provided (AC-581), the LLM fallback consults the cache
-    first and writes successful results back, eliminating repeat calls for
-    the same description as long as the registered family set is stable.
+    When ``cache`` is provided (AC-581), LLM calls consult the cache first and
+    write successful results back.
 
     Raises ValueError if description is empty/whitespace.
+    Raises LowConfidenceError on zero-signal when LLM unavailable or fails.
     """
     if not description or not description.strip():
         raise ValueError("description must be non-empty")
@@ -596,6 +596,9 @@ def classify_scenario_family(
     if not registered_families:
         raise ValueError("no scenario families are registered")
 
+    from autocontext.config.settings import AppSettings  # local import avoids circular dep
+    threshold = AppSettings().classifier_fast_path_threshold
+
     raw_scores: dict[str, float] = {}
     matched_signals: dict[str, list[str]] = {}
     for family_name in registered_families:
@@ -604,16 +607,15 @@ def classify_scenario_family(
         matched_signals[family_name] = matched
 
     total = sum(raw_scores.values())
+
     if total == 0:
-        llm_fallback_attempted = False
+        # Zero-signal: LLM required; raise if unavailable or failed.
+        llm_classifier_attempted = False
         if llm_fn is not None:
-            llm_result = _llm_classify_fallback(
-                description, registered_families, llm_fn, cache=cache
-            )
+            llm_result = _llm_classify(description, registered_families, llm_fn, cache=cache)
             if llm_result is not None:
                 return llm_result
-            llm_fallback_attempted = True
-        # No signals matched — default to agent_task with low confidence if available.
+            llm_classifier_attempted = True
         default_family = _DEFAULT_FAMILY_NAME if _DEFAULT_FAMILY_NAME in registered_families else registered_families[0]
         alternatives = [
             FamilyCandidate(
@@ -624,19 +626,18 @@ def classify_scenario_family(
             for family_name in registered_families
             if family_name != default_family
         ]
-        return FamilyClassification(
+        classification = FamilyClassification(
             family_name=default_family,
             confidence=0.2,
             rationale=f"No strong signals detected; defaulting to {default_family}",
             alternatives=alternatives,
             no_signals_matched=True,
-            llm_fallback_attempted=llm_fallback_attempted,
+            llm_classifier_attempted=llm_classifier_attempted,
         )
+        raise LowConfidenceError(classification, min_confidence=threshold)
 
     # Normalize to confidences
     confidences = {name: score / total for name, score in raw_scores.items()}
-
-    # Rank by confidence
     ranked = sorted(confidences.items(), key=lambda x: x[1], reverse=True)
     top_name, top_conf = ranked[0]
 
@@ -649,11 +650,29 @@ def classify_scenario_family(
         for name, conf in ranked[1:]
     ]
 
+    # Gate 1 — fast-path: high-confidence keywords skip LLM.
+    if top_conf >= threshold:
+        return FamilyClassification(
+            family_name=top_name,
+            confidence=round(top_conf, 4),
+            rationale=_build_rationale(matched_signals[top_name], top_name),
+            alternatives=alternatives,
+        )
+
+    # Gate 2 — ambiguous: call LLM when available; return keyword result on failure.
+    llm_classifier_attempted = False
+    if llm_fn is not None:
+        llm_result = _llm_classify(description, registered_families, llm_fn, cache=cache)
+        if llm_result is not None:
+            return llm_result
+        llm_classifier_attempted = True
+
     return FamilyClassification(
         family_name=top_name,
         confidence=round(top_conf, 4),
         rationale=_build_rationale(matched_signals[top_name], top_name),
         alternatives=alternatives,
+        llm_classifier_attempted=llm_classifier_attempted,
     )
 
 

@@ -47,8 +47,10 @@ class TestFamilyClassificationFlag:
         assert c.no_signals_matched is False
 
     def test_classify_sets_no_signals_matched_true_when_no_keywords_match(self) -> None:
-        # A totally noise-word description with no registered signals.
-        c = classify_scenario_family("xyz plop qux widget")
+        # AC-628: zero-signal raises LowConfidenceError; classification still has no_signals_matched=True.
+        with pytest.raises(LowConfidenceError) as exc_info:
+            classify_scenario_family("xyz plop qux widget")
+        c = exc_info.value.classification
         assert c.no_signals_matched is True
         assert c.confidence == pytest.approx(0.2)
 
