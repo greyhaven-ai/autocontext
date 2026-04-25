@@ -29,6 +29,7 @@ import { buildClientErrorMessage } from "./client-error-workflow.js";
 import { executeChatAgentCommand } from "./chat-agent-command-workflow.js";
 import { executeInteractiveControlCommand } from "./interactive-control-command-workflow.js";
 import { executeInteractiveScenarioCommand } from "./interactive-scenario-command-workflow.js";
+import { buildHttpApiParityMatrix } from "./http-api-parity.js";
 import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
@@ -193,6 +194,9 @@ export class InteractiveServer {
         endpoints: {
           health: "/health",
           dashboard: "/dashboard",
+          capabilities: {
+            http: "/api/capabilities/http",
+          },
           runs: "/api/runs",
           simulations: "/api/simulations",
           scenarios: "/api/scenarios",
@@ -223,6 +227,12 @@ export class InteractiveServer {
     // Health
     if (url === "/health") {
       json(200, { status: "ok" });
+      return;
+    }
+
+    // GET /api/capabilities/http
+    if (method === "GET" && url === "/api/capabilities/http") {
+      json(200, buildHttpApiParityMatrix());
       return;
     }
 

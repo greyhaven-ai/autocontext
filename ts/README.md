@@ -278,6 +278,8 @@ Credential resolution order is:
 
 `autoctx capabilities` returns structured JSON describing commands, providers, scenarios, the canonical concept model, and project-specific state such as the current project config, active runs, and knowledge directory summary.
 
+The HTTP server exposes `GET /api/capabilities/http` with a runtime parity matrix for Python and TypeScript REST/WebSocket routes, including explicit TypeScript gaps and TypeScript-only routes.
+
 `autoctx login` can prompt interactively for provider credentials. `autoctx login --provider ollama` validates that a local Ollama server is reachable before persisting the connection details, and `autoctx logout` clears the stored credentials.
 
 `autoctx replay` writes the selected generation and available generations to `stderr` before printing the replay JSON payload. `autoctx export-training-data` writes progress updates to `stderr` while keeping JSONL records on `stdout`.
