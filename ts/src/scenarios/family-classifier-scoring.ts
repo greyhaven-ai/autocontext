@@ -74,5 +74,6 @@ export function buildRankedFamilyClassification(opts: {
       confidence: normalizeConfidence(confidence),
       rationale: buildRationale(opts.matchedSignals.get(familyName) ?? [], familyName),
     })),
+    noSignalsMatched: false,
   };
 }

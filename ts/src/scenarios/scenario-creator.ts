@@ -6,7 +6,11 @@
 import type { LLMProvider } from "../types/index.js";
 import { designCoordination } from "./coordination-designer.js";
 import type { CoordinationSpec } from "./coordination-spec.js";
-import { classifyScenarioFamily, routeToFamily } from "./family-classifier.js";
+import {
+  classifyScenarioFamily,
+  routeToFamily,
+  type LlmFn as ClassifierLlmFn,
+} from "./family-classifier.js";
 import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
 import { designInvestigation } from "./investigation-designer.js";
 import { fallbackCodegenFamilyToAgentTask } from "./scenario-family-fallback.js";
@@ -108,7 +112,10 @@ export function deriveScenarioName(description: string): string {
  *
  * @see classifyScenarioFamily for the full classification with confidence scores
  */
-export function detectScenarioFamily(description: string): ScenarioFamilyName {
+export function detectScenarioFamily(
+  description: string,
+  options?: { llmFn?: ClassifierLlmFn },
+): ScenarioFamilyName {
   if (!description.trim()) return "agent_task";
 
   const hintedFamily = resolveScenarioFamilyHint(description);
@@ -117,7 +124,7 @@ export function detectScenarioFamily(description: string): ScenarioFamilyName {
   }
 
   try {
-    const family = routeToFamily(classifyScenarioFamily(description), 0.15);
+    const family = routeToFamily(classifyScenarioFamily(description, options), 0.15);
     return family === "game" ? "agent_task" : family;
   } catch {
     // LowConfidenceError — fall back to agent_task
