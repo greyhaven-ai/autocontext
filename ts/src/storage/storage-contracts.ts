@@ -119,6 +119,117 @@ export interface UpsertNotebookOpts {
   followUps?: string[] | null;
 }
 
+export interface HubSessionRow {
+  session_id: string;
+  owner: string;
+  status: string;
+  lease_expires_at: string;
+  last_heartbeat_at: string;
+  shared: boolean;
+  external_link: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertHubSessionOpts {
+  owner?: string | null;
+  status?: string | null;
+  leaseExpiresAt?: string | null;
+  lastHeartbeatAt?: string | null;
+  shared?: boolean | null;
+  externalLink?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface HubPackageRecordRow {
+  package_id: string;
+  scenario_name: string;
+  scenario_family: string;
+  source_run_id: string;
+  source_generation: number;
+  title: string;
+  description: string;
+  promotion_level: string;
+  best_score: number;
+  best_elo: number;
+  payload_path: string;
+  strategy_package_path: string;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SaveHubPackageRecordOpts {
+  packageId: string;
+  scenarioName: string;
+  scenarioFamily: string;
+  sourceRunId: string;
+  sourceGeneration: number;
+  title: string;
+  description: string;
+  promotionLevel: string;
+  bestScore: number;
+  bestElo: number;
+  payloadPath: string;
+  strategyPackagePath: string;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+}
+
+export interface HubResultRecordRow {
+  result_id: string;
+  scenario_name: string;
+  run_id: string;
+  package_id: string | null;
+  title: string;
+  best_score: number;
+  best_elo: number;
+  payload_path: string;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SaveHubResultRecordOpts {
+  resultId: string;
+  scenarioName: string;
+  runId: string;
+  packageId?: string | null;
+  title: string;
+  bestScore: number;
+  bestElo: number;
+  payloadPath: string;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+}
+
+export interface HubPromotionRecordRow {
+  event_id: string;
+  package_id: string;
+  source_run_id: string;
+  action: string;
+  actor: string;
+  label: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface SaveHubPromotionRecordOpts {
+  eventId: string;
+  packageId: string;
+  sourceRunId: string;
+  action: string;
+  actor: string;
+  label?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+}
+
 export interface MonitorConditionRow {
   id: string;
   name: string;

@@ -18,6 +18,7 @@ export const TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES: Record<string, readonly s
   ],
   "010_session_notebook.sql": ["010_session_notebook.sql"],
   "011_monitors.sql": ["011_monitors.sql"],
+  "012_research_hub.sql": ["012_research_hub.sql"],
 };
 
 const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[]> = {

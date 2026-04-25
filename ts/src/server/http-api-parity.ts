@@ -29,6 +29,7 @@ export interface HttpApiParityMatrix {
 const PY_APP = "autocontext/src/autocontext/server/app.py";
 const TS_SERVER = "ts/src/server/ws-server.ts";
 const PY_COCKPIT_API = "autocontext/src/autocontext/server/cockpit_api.py";
+const PY_HUB_API = "autocontext/src/autocontext/server/hub_api.py";
 const PY_OPENCLAW_API = "autocontext/src/autocontext/server/openclaw_api.py";
 
 function both(
@@ -192,21 +193,19 @@ export const HTTP_API_PARITY_ROUTES: readonly HttpApiParityEntry[] = [
   both("cockpit", "GET", "/api/cockpit/writeup/:run_id", PY_COCKPIT_API),
   both("cockpit", "POST", "/api/cockpit/runs/:run_id/consult", PY_COCKPIT_API),
   both("cockpit", "GET", "/api/cockpit/runs/:run_id/consultations", PY_COCKPIT_API),
-  ...pythonOnlyRoutes("hub", "autocontext/src/autocontext/server/hub_api.py", [
-    ["GET", "/api/hub/sessions"],
-    ["GET", "/api/hub/sessions/:session_id"],
-    ["PUT", "/api/hub/sessions/:session_id"],
-    ["POST", "/api/hub/sessions/:session_id/heartbeat"],
-    ["POST", "/api/hub/packages/from-run/:run_id"],
-    ["GET", "/api/hub/packages"],
-    ["GET", "/api/hub/packages/:package_id"],
-    ["POST", "/api/hub/packages/:package_id/adopt"],
-    ["POST", "/api/hub/results/from-run/:run_id"],
-    ["GET", "/api/hub/results"],
-    ["GET", "/api/hub/results/:result_id"],
-    ["POST", "/api/hub/promotions"],
-    ["GET", "/api/hub/feed"],
-  ]),
+  both("hub", "GET", "/api/hub/sessions", PY_HUB_API),
+  both("hub", "GET", "/api/hub/sessions/:session_id", PY_HUB_API),
+  both("hub", "PUT", "/api/hub/sessions/:session_id", PY_HUB_API),
+  both("hub", "POST", "/api/hub/sessions/:session_id/heartbeat", PY_HUB_API),
+  both("hub", "POST", "/api/hub/packages/from-run/:run_id", PY_HUB_API),
+  both("hub", "GET", "/api/hub/packages", PY_HUB_API),
+  both("hub", "GET", "/api/hub/packages/:package_id", PY_HUB_API),
+  both("hub", "POST", "/api/hub/packages/:package_id/adopt", PY_HUB_API),
+  both("hub", "POST", "/api/hub/results/from-run/:run_id", PY_HUB_API),
+  both("hub", "GET", "/api/hub/results", PY_HUB_API),
+  both("hub", "GET", "/api/hub/results/:result_id", PY_HUB_API),
+  both("hub", "POST", "/api/hub/promotions", PY_HUB_API),
+  both("hub", "GET", "/api/hub/feed", PY_HUB_API),
   both("openclaw", "POST", "/api/openclaw/evaluate", PY_OPENCLAW_API),
   both("openclaw", "POST", "/api/openclaw/validate", PY_OPENCLAW_API),
   both("openclaw", "POST", "/api/openclaw/artifacts", PY_OPENCLAW_API),

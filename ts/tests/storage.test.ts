@@ -99,4 +99,83 @@ describe("SQLiteStore", () => {
     store.enqueueTask("t1", "s");
     expect(store.dequeueTask()!.id).toBe("t1");
   });
+
+  it("persists research hub metadata records", () => {
+    store.upsertNotebook({
+      sessionId: "session-1",
+      scenarioName: "grid_ctf",
+      currentObjective: "Hold center.",
+    });
+    store.upsertHubSession("session-1", {
+      owner: "operator",
+      status: "active",
+      shared: true,
+      metadata: { source: "test" },
+    });
+
+    expect(store.getHubSession("session-1")).toMatchObject({
+      session_id: "session-1",
+      owner: "operator",
+      shared: true,
+      metadata: { source: "test" },
+    });
+
+    store.saveHubPackageRecord({
+      packageId: "pkg-1",
+      scenarioName: "grid_ctf",
+      scenarioFamily: "game",
+      sourceRunId: "run-1",
+      sourceGeneration: 1,
+      title: "Grid package",
+      description: "A package.",
+      promotionLevel: "experimental",
+      bestScore: 0.7,
+      bestElo: 1050,
+      payloadPath: "_hub/packages/pkg-1/shared_package.json",
+      strategyPackagePath: "_hub/packages/pkg-1/strategy_package.json",
+      tags: ["grid_ctf"],
+      metadata: { source_session_id: "session-1" },
+      createdAt: "2026-04-25T00:00:00.000Z",
+    });
+    expect(store.getHubPackageRecord("pkg-1")).toMatchObject({
+      package_id: "pkg-1",
+      scenario_name: "grid_ctf",
+      tags: ["grid_ctf"],
+      metadata: { source_session_id: "session-1" },
+    });
+
+    store.saveHubResultRecord({
+      resultId: "res-1",
+      scenarioName: "grid_ctf",
+      runId: "run-1",
+      packageId: "pkg-1",
+      title: "Grid result",
+      bestScore: 0.7,
+      bestElo: 1050,
+      payloadPath: "_hub/results/res-1.json",
+      tags: ["grid_ctf"],
+      metadata: { scenario_family: "game" },
+      createdAt: "2026-04-25T00:00:00.000Z",
+    });
+    expect(store.getHubResultRecord("res-1")).toMatchObject({
+      result_id: "res-1",
+      package_id: "pkg-1",
+      tags: ["grid_ctf"],
+    });
+
+    store.saveHubPromotionRecord({
+      eventId: "promo-1",
+      packageId: "pkg-1",
+      sourceRunId: "run-1",
+      action: "promote",
+      actor: "operator",
+      label: "experimental",
+      metadata: { source_generation: 1 },
+      createdAt: "2026-04-25T00:00:00.000Z",
+    });
+    expect(store.listHubPromotionRecords()).toContainEqual(expect.objectContaining({
+      event_id: "promo-1",
+      metadata: { source_generation: 1 },
+    }));
+  });
 });

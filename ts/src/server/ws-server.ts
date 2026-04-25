@@ -31,6 +31,7 @@ import { executeInteractiveControlCommand } from "./interactive-control-command-
 import { executeInteractiveScenarioCommand } from "./interactive-scenario-command-workflow.js";
 import { buildHttpApiParityMatrix } from "./http-api-parity.js";
 import { buildCockpitApiRoutes } from "./cockpit-api.js";
+import { buildHubApiRoutes } from "./hub-api.js";
 import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
 import { buildMonitorApiRoutes } from "./monitor-api.js";
@@ -195,6 +196,12 @@ export class InteractiveServer {
       openStore: () => this.#openStore(),
       notebookApi: cockpitNotebookApi,
     });
+    const hubApi = buildHubApiRoutes({
+      runsRoot: this.#runManager.getRunsRoot(),
+      knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+      skillsRoot: this.#runManager.getSkillsRoot(),
+      openStore: () => this.#openStore(),
+    });
     const monitorApi = buildMonitorApiRoutes({
       openStore: () => this.#openStore(),
     });
@@ -254,6 +261,7 @@ export class InteractiveServer {
           notebooks: "/api/notebooks",
           openclaw: "/api/openclaw",
           cockpit: "/api/cockpit",
+          hub: "/api/hub",
           websocket: "/ws/interactive",
           events: "/ws/events",
         },
@@ -555,6 +563,115 @@ export class InteractiveServer {
     if (method === "GET" && cockpitWriteupMatch) {
       const [, rawRunId] = cockpitWriteupMatch;
       const response = cockpitApi.writeup(decodeURIComponent(rawRunId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // Research hub session routes
+    if (method === "GET" && (url === "/api/hub/sessions" || url === "/api/hub/sessions/")) {
+      const response = hubApi.listSessions();
+      json(response.status, response.body);
+      return;
+    }
+
+    const hubSessionHeartbeatMatch = url.match(/^\/api\/hub\/sessions\/([^/]+)\/heartbeat$/);
+    if (method === "POST" && hubSessionHeartbeatMatch) {
+      const [, rawSessionId] = hubSessionHeartbeatMatch;
+      const response = hubApi.heartbeatSession(
+        decodeURIComponent(rawSessionId!),
+        await this.#readJsonBody(req),
+      );
+      json(response.status, response.body);
+      return;
+    }
+
+    const hubSessionMatch = url.match(/^\/api\/hub\/sessions\/([^/]+)$/);
+    if (hubSessionMatch) {
+      const [, rawSessionId] = hubSessionMatch;
+      const sessionId = decodeURIComponent(rawSessionId!);
+      if (method === "GET") {
+        const response = hubApi.getSession(sessionId);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "PUT") {
+        const response = hubApi.upsertSession(sessionId, await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+    }
+
+    // Research hub package routes
+    const hubPackageFromRunMatch = url.match(/^\/api\/hub\/packages\/from-run\/([^/]+)$/);
+    if (method === "POST" && hubPackageFromRunMatch) {
+      const [, rawRunId] = hubPackageFromRunMatch;
+      const response = hubApi.promotePackageFromRun(
+        decodeURIComponent(rawRunId!),
+        await this.#readJsonBody(req),
+      );
+      json(response.status, response.body);
+      return;
+    }
+
+    if (method === "GET" && (url === "/api/hub/packages" || url === "/api/hub/packages/")) {
+      const response = hubApi.listPackages();
+      json(response.status, response.body);
+      return;
+    }
+
+    const hubPackageAdoptMatch = url.match(/^\/api\/hub\/packages\/([^/]+)\/adopt$/);
+    if (method === "POST" && hubPackageAdoptMatch) {
+      const [, rawPackageId] = hubPackageAdoptMatch;
+      const response = hubApi.adoptPackage(
+        decodeURIComponent(rawPackageId!),
+        await this.#readJsonBody(req),
+      );
+      json(response.status, response.body);
+      return;
+    }
+
+    const hubPackageMatch = url.match(/^\/api\/hub\/packages\/([^/]+)$/);
+    if (method === "GET" && hubPackageMatch) {
+      const [, rawPackageId] = hubPackageMatch;
+      const response = hubApi.getPackage(decodeURIComponent(rawPackageId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // Research hub result and promotion routes
+    const hubResultFromRunMatch = url.match(/^\/api\/hub\/results\/from-run\/([^/]+)$/);
+    if (method === "POST" && hubResultFromRunMatch) {
+      const [, rawRunId] = hubResultFromRunMatch;
+      const response = hubApi.materializeResultFromRun(
+        decodeURIComponent(rawRunId!),
+        await this.#readJsonBody(req),
+      );
+      json(response.status, response.body);
+      return;
+    }
+
+    if (method === "GET" && (url === "/api/hub/results" || url === "/api/hub/results/")) {
+      const response = hubApi.listResults();
+      json(response.status, response.body);
+      return;
+    }
+
+    const hubResultMatch = url.match(/^\/api\/hub\/results\/([^/]+)$/);
+    if (method === "GET" && hubResultMatch) {
+      const [, rawResultId] = hubResultMatch;
+      const response = hubApi.getResult(decodeURIComponent(rawResultId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    if (method === "POST" && (url === "/api/hub/promotions" || url === "/api/hub/promotions/")) {
+      const response = hubApi.createPromotion(await this.#readJsonBody(req));
+      json(response.status, response.body);
+      return;
+    }
+
+    if (method === "GET" && (url === "/api/hub/feed" || url === "/api/hub/feed/")) {
+      const response = hubApi.feed();
       json(response.status, response.body);
       return;
     }
