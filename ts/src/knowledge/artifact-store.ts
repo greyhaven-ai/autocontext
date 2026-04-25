@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -92,6 +93,28 @@ export class ArtifactStore {
     const path = join(this.knowledgeRoot, scenarioName, "session_reports", `${runId}.md`);
     this.writeMarkdown(path, content);
     return path;
+  }
+
+  readNotebook(sessionId: string): Record<string, unknown> | null {
+    const path = join(this.runsRoot, "sessions", sessionId, "notebook.json");
+    if (!existsSync(path)) {
+      return null;
+    }
+    const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  }
+
+  writeNotebook(sessionId: string, notebook: Record<string, unknown>): void {
+    this.writeJson(join(this.runsRoot, "sessions", sessionId, "notebook.json"), notebook);
+  }
+
+  deleteNotebook(sessionId: string): void {
+    const path = join(this.runsRoot, "sessions", sessionId, "notebook.json");
+    if (existsSync(path)) {
+      unlinkSync(path);
+    }
   }
 
   readSessionReports(scenarioName: string, limit = 3): string {

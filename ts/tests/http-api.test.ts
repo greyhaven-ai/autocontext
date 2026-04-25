@@ -31,6 +31,15 @@ async function postJson(url: string, body: Record<string, unknown>): Promise<{ s
   return { status: res.status, body: await res.json() };
 }
 
+async function putJson(url: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 async function fetchText(url: string): Promise<{ status: number; body: string }> {
   const res = await fetch(url);
   const body = await res.text();
@@ -159,6 +168,7 @@ describe("HTTP API — health", () => {
     expect(endpoints.capabilities).toMatchObject({
       http: "/api/capabilities/http",
     });
+    expect(endpoints.notebooks).toBe("/api/notebooks");
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
       export: "/api/knowledge/export/:scenario",
@@ -184,6 +194,11 @@ describe("HTTP API — health", () => {
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "POST",
       path: "/api/knowledge/import",
+      status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/notebooks",
       status: "aligned",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
@@ -254,6 +269,121 @@ describe("HTTP API — runs", () => {
   it("GET /api/runs/:id/replay/:gen returns 404 when replay artifact is missing", async () => {
     const res = await fetch(`${baseUrl}/api/runs/test-run-1/replay/99`);
     expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Notebook endpoints
+// ---------------------------------------------------------------------------
+
+describe("HTTP API — notebooks", () => {
+  let dir: string;
+  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    dir = makeTempDir();
+    const s = await createTestServer(dir);
+    server = s.server;
+    baseUrl = s.baseUrl;
+  });
+
+  afterEach(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("GET /api/notebooks lists notebooks", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/notebooks`);
+    expect(status).toBe(200);
+    expect(body).toEqual([]);
+  });
+
+  it("PUT /api/notebooks/:session_id creates and syncs a notebook", async () => {
+    const { status, body } = await putJson(`${baseUrl}/api/notebooks/session-1`, {
+      scenario_name: "grid_ctf",
+      current_objective: "Hold the center route.",
+      current_hypotheses: ["Center pressure improves capture odds."],
+      best_run_id: "test-run-1",
+      best_generation: 1,
+      best_score: 0.7,
+      unresolved_questions: ["Does flank pressure help?"],
+      operator_observations: ["Blue team favored center."],
+      follow_ups: ["Try a lower-risk opening."],
+    });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      session_id: "session-1",
+      scenario_name: "grid_ctf",
+      current_objective: "Hold the center route.",
+      current_hypotheses: ["Center pressure improves capture odds."],
+      best_run_id: "test-run-1",
+      best_generation: 1,
+      best_score: 0.7,
+      unresolved_questions: ["Does flank pressure help?"],
+      operator_observations: ["Blue team favored center."],
+      follow_ups: ["Try a lower-risk opening."],
+    });
+    const notebookPath = join(dir, "runs", "sessions", "session-1", "notebook.json");
+    expect(JSON.parse(readFileSync(notebookPath, "utf-8"))).toMatchObject({
+      session_id: "session-1",
+      scenario_name: "grid_ctf",
+    });
+    const eventLog = readFileSync(join(dir, "runs", "_interactive", "events.ndjson"), "utf-8");
+    expect(eventLog).toContain("notebook_updated");
+  });
+
+  it("PUT /api/notebooks/:session_id merges partial updates", async () => {
+    await putJson(`${baseUrl}/api/notebooks/session-1`, {
+      scenario_name: "grid_ctf",
+      current_objective: "First objective.",
+      current_hypotheses: ["Keep this."],
+    });
+
+    const { status, body } = await putJson(`${baseUrl}/api/notebooks/session-1`, {
+      current_objective: "Updated objective.",
+    });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      scenario_name: "grid_ctf",
+      current_objective: "Updated objective.",
+      current_hypotheses: ["Keep this."],
+    });
+  });
+
+  it("PUT /api/notebooks/:session_id requires scenario_name for new notebooks", async () => {
+    const { status, body } = await putJson(`${baseUrl}/api/notebooks/session-2`, {
+      current_objective: "Missing scenario.",
+    });
+
+    expect(status).toBe(400);
+    expect((body as Record<string, unknown>).detail).toContain("scenario_name");
+  });
+
+  it("GET /api/notebooks/:session_id returns 404 for missing notebooks", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/notebooks/missing`);
+    expect(status).toBe(404);
+    expect((body as Record<string, unknown>).detail).toContain("Notebook not found");
+  });
+
+  it("DELETE /api/notebooks/:session_id deletes the notebook and artifact", async () => {
+    await putJson(`${baseUrl}/api/notebooks/session-1`, {
+      scenario_name: "grid_ctf",
+      current_objective: "Delete this.",
+    });
+    const notebookPath = join(dir, "runs", "sessions", "session-1", "notebook.json");
+    expect(existsSync(notebookPath)).toBe(true);
+
+    const res = await fetch(`${baseUrl}/api/notebooks/session-1`, { method: "DELETE" });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ status: "deleted", session_id: "session-1" });
+    expect(existsSync(notebookPath)).toBe(false);
+    const eventLog = readFileSync(join(dir, "runs", "_interactive", "events.ndjson"), "utf-8");
+    expect(eventLog).toContain("notebook_deleted");
   });
 });
 

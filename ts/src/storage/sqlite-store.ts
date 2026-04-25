@@ -5,10 +5,12 @@ import type {
   GenerationRow,
   HumanFeedbackRow,
   MatchRow,
+  NotebookRow,
   RecordMatchOpts,
   RunRow,
   TaskQueueRow,
   TrajectoryRow,
+  UpsertNotebookOpts,
   UpsertGenerationOpts,
 } from "./storage-contracts.js";
 import {
@@ -42,6 +44,12 @@ import {
   getStoreHumanFeedback,
   insertStoreHumanFeedback,
 } from "./storage-human-feedback-facade.js";
+import {
+  deleteStoreNotebook,
+  getStoreNotebook,
+  listStoreNotebooks,
+  upsertStoreNotebook,
+} from "./storage-notebook-facade.js";
 import { migrateDatabase } from "./storage-migration-workflow.js";
 
 export function configureSqliteDatabase(db: Pick<Database.Database, "pragma">): void {
@@ -129,6 +137,22 @@ export class SQLiteStore {
 
   getCalibrationExamples(scenarioName: string, limit = 5): HumanFeedbackRow[] {
     return getStoreCalibrationExamples(this.#db, scenarioName, limit);
+  }
+
+  upsertNotebook(opts: UpsertNotebookOpts): void {
+    upsertStoreNotebook(this.#db, opts);
+  }
+
+  getNotebook(sessionId: string): NotebookRow | null {
+    return getStoreNotebook(this.#db, sessionId);
+  }
+
+  listNotebooks(): NotebookRow[] {
+    return listStoreNotebooks(this.#db);
+  }
+
+  deleteNotebook(sessionId: string): boolean {
+    return deleteStoreNotebook(this.#db, sessionId);
   }
 
   createRun(

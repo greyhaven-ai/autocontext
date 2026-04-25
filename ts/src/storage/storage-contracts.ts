@@ -91,6 +91,34 @@ export interface TrajectoryRow {
   rating_uncertainty: number | null;
 }
 
+export interface NotebookRow {
+  session_id: string;
+  scenario_name: string;
+  current_objective: string;
+  current_hypotheses: string[];
+  best_run_id: string | null;
+  best_generation: number | null;
+  best_score: number | null;
+  unresolved_questions: string[];
+  operator_observations: string[];
+  follow_ups: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertNotebookOpts {
+  sessionId: string;
+  scenarioName: string;
+  currentObjective?: string | null;
+  currentHypotheses?: string[] | null;
+  bestRunId?: string | null;
+  bestGeneration?: number | null;
+  bestScore?: number | null;
+  unresolvedQuestions?: string[] | null;
+  operatorObservations?: string[] | null;
+  followUps?: string[] | null;
+}
+
 export interface UpsertGenerationOpts {
   meanScore: number;
   bestScore: number;
