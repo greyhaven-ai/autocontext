@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS runs (
     scenario TEXT NOT NULL,
     target_generations INTEGER NOT NULL,
     executor_mode TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'running',
+    status TEXT NOT NULL,
     agent_provider TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
