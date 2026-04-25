@@ -266,6 +266,19 @@ describe("HTTP API — knowledge", () => {
     expect(data.suggested_filename).toBe("grid-ctf-knowledge.md");
   });
 
+  it("GET /api/knowledge/export/:scenario rejects decoded path traversal", async () => {
+    const outsideDir = join(dir, "outside");
+    mkdirSync(outsideDir, { recursive: true });
+    writeFileSync(join(outsideDir, "playbook.md"), "# Outside\n\nshould not export", "utf-8");
+
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/knowledge/export/${encodeURIComponent("../outside")}`,
+    );
+
+    expect(status).toBe(422);
+    expect((body as Record<string, unknown>).error).toContain("Invalid scenario");
+  });
+
   it("POST /api/knowledge/search finds prior strategy text", async () => {
     const { status, body } = await postJson(`${baseUrl}/api/knowledge/search`, {
       query: "aggression",

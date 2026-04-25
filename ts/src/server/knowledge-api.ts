@@ -1,8 +1,9 @@
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { exportStrategyPackage } from "../knowledge/package.js";
+import type { SolveSubmitOptions } from "../knowledge/solver.js";
 import type { GenerationRow, SQLiteStore } from "../storage/index.js";
 
 export interface KnowledgeApiResponse {
@@ -11,7 +12,7 @@ export interface KnowledgeApiResponse {
 }
 
 export interface KnowledgeSolveManager {
-  submit(description: string, generations: number): string;
+  submit(description: string, generations: number, opts?: SolveSubmitOptions): string;
   getStatus(jobId: string): Record<string, unknown>;
   getResult(jobId: string): Record<string, unknown> | null;
 }
@@ -35,14 +36,18 @@ export function buildKnowledgeApiRoutes(opts: {
       status: 200,
       body: listSolvedScenarios(opts.knowledgeRoot),
     }),
-    exportScenario: (scenarioName) =>
-      withStore(opts.openStore, (store) => {
-        if (!scenarioHasKnowledge(opts.knowledgeRoot, scenarioName)) {
-          return {
-            status: 404,
-            body: { error: `No exported knowledge found for scenario '${scenarioName}'` },
-          };
-        }
+    exportScenario: (scenarioName) => {
+      const scenarioDir = resolveKnowledgeScenarioDir(opts.knowledgeRoot, scenarioName);
+      if (!scenarioDir) {
+        return { status: 422, body: { error: `Invalid scenario '${scenarioName}'` } };
+      }
+      if (!scenarioHasKnowledge(scenarioDir)) {
+        return {
+          status: 404,
+          body: { error: `No exported knowledge found for scenario '${scenarioName}'` },
+        };
+      }
+      return withStore(opts.openStore, (store) => {
         const artifacts = new ArtifactStore({
           runsRoot: opts.runsRoot,
           knowledgeRoot: opts.knowledgeRoot,
@@ -55,7 +60,8 @@ export function buildKnowledgeApiRoutes(opts: {
             suggested_filename: `${scenarioName.replace(/_/g, "-")}-knowledge.md`,
           },
         };
-      }),
+      });
+    },
     search: (body) =>
       withStore(opts.openStore, (store) => {
         const query = typeof body.query === "string" ? body.query.trim() : "";
@@ -74,7 +80,15 @@ export function buildKnowledgeApiRoutes(opts: {
         return { status: 422, body: { error: "description is required" } };
       }
       const generations = clampInteger(body.generations, 5, 1, 50);
-      const jobId = opts.getSolveManager().submit(description, generations);
+      const solveOptions = parseSolveSubmitOptions(body);
+      if (!solveOptions.ok) {
+        return { status: 422, body: { error: solveOptions.error } };
+      }
+      const jobId = opts.getSolveManager().submit(
+        description,
+        generations,
+        solveOptions.options,
+      );
       return { status: 200, body: { job_id: jobId, status: "pending" } };
     },
     solveStatus: (jobId) => {
@@ -102,7 +116,11 @@ function listSolvedScenarios(knowledgeRoot: string): Array<{ scenario: string; h
     if (name.startsWith("_")) {
       continue;
     }
-    const hasPlaybook = existsSync(join(knowledgeRoot, name, "playbook.md"));
+    const scenarioDir = resolveKnowledgeScenarioDir(knowledgeRoot, name);
+    if (!scenarioDir) {
+      continue;
+    }
+    const hasPlaybook = existsSync(join(scenarioDir, "playbook.md"));
     if (hasPlaybook) {
       solved.push({ scenario: name, hasPlaybook });
     }
@@ -110,9 +128,37 @@ function listSolvedScenarios(knowledgeRoot: string): Array<{ scenario: string; h
   return solved.sort((a, b) => a.scenario.localeCompare(b.scenario));
 }
 
-function scenarioHasKnowledge(knowledgeRoot: string, scenarioName: string): boolean {
-  return existsSync(join(knowledgeRoot, scenarioName, "playbook.md"))
-    || existsSync(join(knowledgeRoot, scenarioName, "package_metadata.json"));
+const KNOWLEDGE_SCENARIO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+function resolveKnowledgeScenarioDir(knowledgeRoot: string, scenarioName: string): string | null {
+  if (!KNOWLEDGE_SCENARIO_NAME_RE.test(scenarioName)) {
+    return null;
+  }
+  const root = resolve(knowledgeRoot);
+  const scenarioDir = resolve(root, scenarioName);
+  if (!isChildPath(root, scenarioDir)) {
+    return null;
+  }
+  if (!existsSync(scenarioDir)) {
+    return scenarioDir;
+  }
+  try {
+    const realRoot = realpathSync.native(root);
+    const realScenarioDir = realpathSync.native(scenarioDir);
+    return isChildPath(realRoot, realScenarioDir) ? scenarioDir : null;
+  } catch {
+    return null;
+  }
+}
+
+function scenarioHasKnowledge(scenarioDir: string): boolean {
+  return existsSync(join(scenarioDir, "playbook.md"))
+    || existsSync(join(scenarioDir, "package_metadata.json"));
+}
+
+function isChildPath(root: string, candidate: string): boolean {
+  const relativePath = relative(root, candidate);
+  return relativePath !== "" && !relativePath.startsWith("..") && !isAbsolute(relativePath);
 }
 
 function searchStrategies(
@@ -164,6 +210,82 @@ function clampInteger(value: unknown, fallback: number, min: number, max: number
     return fallback;
   }
   return Math.min(max, Math.max(min, value));
+}
+
+type SolveSubmitOptionsResult =
+  | { ok: true; options?: SolveSubmitOptions }
+  | { ok: false; error: string };
+
+function parseSolveSubmitOptions(body: Record<string, unknown>): SolveSubmitOptionsResult {
+  const family = readOptionalString(body, ["family", "familyOverride", "family_override"]);
+  if (!family.ok) {
+    return family;
+  }
+  const budget = readOptionalNonNegativeInteger(body, [
+    "generationTimeBudgetSeconds",
+    "generationTimeBudget",
+    "generation_time_budget_seconds",
+    "generation_time_budget",
+  ]);
+  if (!budget.ok) {
+    return budget;
+  }
+
+  if (family.value === undefined && budget.value === undefined) {
+    return { ok: true };
+  }
+  return {
+    ok: true,
+    options: {
+      familyOverride: family.value,
+      generationTimeBudgetSeconds: budget.value,
+    },
+  };
+}
+
+function readOptionalString(
+  body: Record<string, unknown>,
+  keys: string[],
+): { ok: true; value?: string } | { ok: false; error: string } {
+  const entry = firstPresent(body, keys);
+  if (!entry) {
+    return { ok: true };
+  }
+  if (typeof entry.value !== "string") {
+    return { ok: false, error: `${entry.key} must be a string` };
+  }
+  const value = entry.value.trim();
+  return value ? { ok: true, value } : { ok: true };
+}
+
+function readOptionalNonNegativeInteger(
+  body: Record<string, unknown>,
+  keys: string[],
+): { ok: true; value?: number } | { ok: false; error: string } {
+  const entry = firstPresent(body, keys);
+  if (!entry) {
+    return { ok: true };
+  }
+  if (
+    typeof entry.value !== "number"
+    || !Number.isInteger(entry.value)
+    || entry.value < 0
+  ) {
+    return { ok: false, error: `${entry.key} must be a non-negative integer` };
+  }
+  return { ok: true, value: entry.value };
+}
+
+function firstPresent(
+  body: Record<string, unknown>,
+  keys: string[],
+): { key: string; value: unknown } | null {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      return { key, value: body[key] };
+    }
+  }
+  return null;
 }
 
 function humanizeScenarioName(name: string): string {
