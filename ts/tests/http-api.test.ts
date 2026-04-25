@@ -22,6 +22,15 @@ async function fetchJson(url: string): Promise<{ status: number; body: unknown }
   return { status: res.status, body };
 }
 
+async function postJson(url: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 async function fetchText(url: string): Promise<{ status: number; body: string }> {
   const res = await fetch(url);
   const body = await res.text();
@@ -67,6 +76,24 @@ async function createTestServer(dir: string) {
       timeline: [{ turn: 1, action: "advance" }],
       matches: [{ seed: 42, score: 0.7, winner: "challenger" }],
     }, null, 2),
+    "utf-8",
+  );
+
+  const scenarioKnowledgeDir = join(dir, "knowledge", "grid_ctf");
+  mkdirSync(scenarioKnowledgeDir, { recursive: true });
+  writeFileSync(
+    join(scenarioKnowledgeDir, "playbook.md"),
+    [
+      "# Grid CTF Playbook",
+      "",
+      "<!-- LESSONS_START -->",
+      "- Hold the center route.",
+      "<!-- LESSONS_END -->",
+      "",
+      "<!-- COMPETITOR_HINTS_START -->",
+      "Use measured aggression around the flag.",
+      "<!-- COMPETITOR_HINTS_END -->",
+    ].join("\n"),
     "utf-8",
   );
 
@@ -127,7 +154,15 @@ describe("HTTP API — health", () => {
     const { status, body } = await fetchJson(`${baseUrl}/`);
     expect(status).toBe(200);
     expect((body as Record<string, unknown>).service).toBe("autocontext");
-    expect((body as Record<string, unknown>).endpoints).toBeDefined();
+    const endpoints = (body as Record<string, unknown>).endpoints as Record<string, unknown>;
+    expect(endpoints).toBeDefined();
+    expect(endpoints.knowledge).toMatchObject({
+      scenarios: "/api/knowledge/scenarios",
+      export: "/api/knowledge/export/:scenario",
+      search: "/api/knowledge/search",
+      solve: "/api/knowledge/solve",
+      playbook: "/api/knowledge/playbook/:scenario",
+    });
   });
 });
 
@@ -214,6 +249,51 @@ describe("HTTP API — knowledge", () => {
     expect(status).toBe(200);
     const data = body as Record<string, unknown>;
     expect(typeof data.content).toBe("string");
+  });
+
+  it("GET /api/knowledge/scenarios lists solved knowledge", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/knowledge/scenarios`);
+    expect(status).toBe(200);
+    expect(body).toContainEqual({ scenario: "grid_ctf", hasPlaybook: true });
+  });
+
+  it("GET /api/knowledge/export/:scenario exports a skill package", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/knowledge/export/grid_ctf`);
+    expect(status).toBe(200);
+    const data = body as Record<string, unknown>;
+    expect(data.scenario_name).toBe("grid_ctf");
+    expect(data.skill_markdown).toContain("Grid CTF");
+    expect(data.suggested_filename).toBe("grid-ctf-knowledge.md");
+  });
+
+  it("POST /api/knowledge/search finds prior strategy text", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/knowledge/search`, {
+      query: "aggression",
+      top_k: 3,
+    });
+    expect(status).toBe(200);
+    const results = body as Array<Record<string, unknown>>;
+    expect(results[0]).toMatchObject({
+      scenario: "grid_ctf",
+      display_name: "Grid Ctf",
+      best_score: 0.7,
+    });
+  });
+
+  it("POST /api/knowledge/solve submits a solve job", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/knowledge/solve`, {
+      description: "solve grid ctf",
+      generations: 1,
+    });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ status: "pending" });
+    expect(typeof (body as Record<string, unknown>).job_id).toBe("string");
+  });
+
+  it("GET /api/knowledge/solve/:jobId returns 404 for missing jobs", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/knowledge/solve/not-real`);
+    expect(status).toBe(404);
+    expect((body as Record<string, unknown>).detail).toContain("not found");
   });
 
   it("GET /api/scenarios returns scenario list", async () => {

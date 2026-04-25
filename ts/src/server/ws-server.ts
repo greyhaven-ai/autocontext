@@ -29,6 +29,7 @@ import { buildClientErrorMessage } from "./client-error-workflow.js";
 import { executeChatAgentCommand } from "./chat-agent-command-workflow.js";
 import { executeInteractiveControlCommand } from "./interactive-control-command-workflow.js";
 import { executeInteractiveScenarioCommand } from "./interactive-scenario-command-workflow.js";
+import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
@@ -40,6 +41,7 @@ import type { RunManagerState } from "./run-manager.js";
 import type { EventCallback } from "../loop/events.js";
 import { SQLiteStore } from "../storage/index.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
+import { SolveManager } from "../knowledge/solver.js";
 
 export interface InteractiveServerOpts {
   runManager: RunManager;
@@ -67,6 +69,8 @@ export class InteractiveServer {
   readonly #missionEvents: MissionEventEmitter;
   readonly #host: string;
   readonly #requestedPort: number;
+  #solveManager: SolveManager | null = null;
+  #solveStore: SQLiteStore | null = null;
   // Dashboard removed (AC-467) — server is API-only
   #httpServer: HttpServer | null = null;
   #wsServer: WebSocketServer | null = null;
@@ -156,6 +160,12 @@ export class InteractiveServer {
     const method = req.method ?? "GET";
     const campaignApi = buildCampaignApiRoutes(this.#campaignManager);
     const missionApi = buildMissionApiRoutes(this.#missionManager, this.#runManager.getRunsRoot());
+    const knowledgeApi = buildKnowledgeApiRoutes({
+      runsRoot: this.#runManager.getRunsRoot(),
+      knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+      openStore: () => this.#openStore(),
+      getSolveManager: () => this.#getSolveManager(),
+    });
     const simulationApi = buildSimulationApiRoutes(this.#runManager.getKnowledgeRoot());
 
     // CORS headers for dashboard
@@ -185,7 +195,13 @@ export class InteractiveServer {
           runs: "/api/runs",
           simulations: "/api/simulations",
           scenarios: "/api/scenarios",
-          knowledge: "/api/knowledge/playbook/:scenario",
+          knowledge: {
+            scenarios: "/api/knowledge/scenarios",
+            export: "/api/knowledge/export/:scenario",
+            search: "/api/knowledge/search",
+            solve: "/api/knowledge/solve",
+            playbook: "/api/knowledge/playbook/:scenario",
+          },
           campaigns: "/api/campaigns",
           missions: "/api/missions",
           websocket: "/ws/interactive",
@@ -281,6 +297,45 @@ export class InteractiveServer {
           loadReplayArtifactResponse,
         },
       });
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/knowledge/scenarios
+    if (method === "GET" && url === "/api/knowledge/scenarios") {
+      const response = knowledgeApi.listSolved();
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/knowledge/export/:scenario
+    const knowledgeExportMatch = url.match(/^\/api\/knowledge\/export\/([^/]+)$/);
+    if (method === "GET" && knowledgeExportMatch) {
+      const [, rawScenario] = knowledgeExportMatch;
+      const response = knowledgeApi.exportScenario(decodeURIComponent(rawScenario!));
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/knowledge/search
+    if (method === "POST" && url === "/api/knowledge/search") {
+      const response = knowledgeApi.search(await this.#readJsonBody(req));
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/knowledge/solve
+    if (method === "POST" && url === "/api/knowledge/solve") {
+      const response = knowledgeApi.submitSolve(await this.#readJsonBody(req));
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET /api/knowledge/solve/:jobId
+    const knowledgeSolveMatch = url.match(/^\/api\/knowledge\/solve\/([^/]+)$/);
+    if (method === "GET" && knowledgeSolveMatch) {
+      const [, rawJobId] = knowledgeSolveMatch;
+      const response = knowledgeApi.solveStatus(decodeURIComponent(rawJobId!));
       json(response.status, response.body);
       return;
     }
@@ -556,6 +611,19 @@ export class InteractiveServer {
     }
   }
 
+  #getSolveManager(): SolveManager {
+    if (!this.#solveManager) {
+      this.#solveStore = this.#openStore();
+      this.#solveManager = new SolveManager({
+        provider: this.#runManager.buildProvider(),
+        store: this.#solveStore,
+        runsRoot: this.#runManager.getRunsRoot(),
+        knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+      });
+    }
+    return this.#solveManager;
+  }
+
   async #readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
@@ -609,6 +677,9 @@ export class InteractiveServer {
 
     this.#campaignManager.close();
     this.#missionManager.close();
+    this.#solveStore?.close();
+    this.#solveStore = null;
+    this.#solveManager = null;
   }
 
   #attachClient(ws: WebSocket): void {
