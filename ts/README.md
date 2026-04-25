@@ -278,7 +278,7 @@ Credential resolution order is:
 
 `autoctx capabilities` returns structured JSON describing commands, providers, scenarios, the canonical concept model, and project-specific state such as the current project config, active runs, and knowledge directory summary.
 
-The HTTP server exposes `GET /api/capabilities/http` with a runtime parity matrix for Python and TypeScript REST/WebSocket routes, including explicit TypeScript gaps and TypeScript-only routes. Session notebook CRUD routes are available under `/api/notebooks`, cockpit notebook/run/readout routes are available under `/api/cockpit`, monitor condition/alert routes are available under `/api/monitors`, and OpenClaw-compatible evaluation, artifact, distillation, discovery, capability, and skill manifest routes are available under `/api/openclaw`.
+The HTTP server exposes `GET /api/capabilities/http` with a runtime parity matrix for Python and TypeScript REST/WebSocket routes, including explicit TypeScript gaps and TypeScript-only routes. Session notebook CRUD routes are available under `/api/notebooks`, cockpit notebook/run/readout routes are available under `/api/cockpit`, research hub session/package/result routes are available under `/api/hub`, monitor condition/alert routes are available under `/api/monitors`, and OpenClaw-compatible evaluation, artifact, distillation, discovery, capability, and skill manifest routes are available under `/api/openclaw`.
 
 `autoctx login` can prompt interactively for provider credentials. `autoctx login --provider ollama` validates that a local Ollama server is reachable before persisting the connection details, and `autoctx logout` clears the stored credentials.
 
