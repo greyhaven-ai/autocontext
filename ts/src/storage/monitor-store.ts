@@ -20,10 +20,8 @@ function parseRecordJson(raw: unknown): Record<string, unknown> {
     return {};
   }
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {};
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed) ? parsed : {};
   } catch {
     return {};
   }
@@ -37,6 +35,53 @@ function parseConditionRow(row: RawMonitorConditionRow): MonitorConditionRow {
 function parseAlertRow(row: RawMonitorAlertRow): MonitorAlertRow {
   const { payload_json: payloadJson, ...rest } = row;
   return { ...rest, payload: parseRecordJson(payloadJson) };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isRawMonitorConditionRow(value: unknown): value is RawMonitorConditionRow {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.name === "string"
+    && typeof value.condition_type === "string"
+    && typeof value.params_json === "string"
+    && typeof value.scope === "string"
+    && typeof value.active === "number"
+    && typeof value.created_at === "string";
+}
+
+function isRawMonitorAlertRow(value: unknown): value is RawMonitorAlertRow {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.condition_id === "string"
+    && typeof value.condition_name === "string"
+    && typeof value.condition_type === "string"
+    && typeof value.scope === "string"
+    && typeof value.detail === "string"
+    && typeof value.payload_json === "string"
+    && typeof value.fired_at === "string";
+}
+
+function requireConditionRow(value: unknown): RawMonitorConditionRow {
+  if (!isRawMonitorConditionRow(value)) {
+    throw new Error("invalid monitor condition row");
+  }
+  return value;
+}
+
+function requireAlertRow(value: unknown): RawMonitorAlertRow {
+  if (!isRawMonitorAlertRow(value)) {
+    throw new Error("invalid monitor alert row");
+  }
+  return value;
+}
+
+function readNumberField(value: unknown, field: string): number | null {
+  if (!isRecord(value)) return null;
+  const raw = value[field];
+  return typeof raw === "number" ? raw : null;
 }
 
 export function insertMonitorConditionRecord(
@@ -71,8 +116,8 @@ export function listMonitorConditionRecords(
     params.push(opts.scope);
   }
   query += " ORDER BY created_at DESC";
-  const rows = db.prepare(query).all(...params) as RawMonitorConditionRow[];
-  return rows.map((row) => parseConditionRow(row));
+  const rows = db.prepare(query).all(...params);
+  return rows.map((row) => parseConditionRow(requireConditionRow(row)));
 }
 
 export function countMonitorConditionRecords(
@@ -88,8 +133,8 @@ export function countMonitorConditionRecords(
     query += " AND scope = ?";
     params.push(opts.scope);
   }
-  const row = db.prepare(query).get(...params) as { cnt: number } | undefined;
-  return row?.cnt ?? 0;
+  const row = db.prepare(query).get(...params);
+  return readNumberField(row, "cnt") ?? 0;
 }
 
 export function getMonitorConditionRecord(
@@ -98,8 +143,8 @@ export function getMonitorConditionRecord(
 ): MonitorConditionRow | null {
   const row = db.prepare(
     "SELECT * FROM monitor_conditions WHERE id = ?",
-  ).get(conditionId) as RawMonitorConditionRow | undefined;
-  return row ? parseConditionRow(row) : null;
+  ).get(conditionId);
+  return isRawMonitorConditionRow(row) ? parseConditionRow(row) : null;
 }
 
 export function deactivateMonitorConditionRecord(
@@ -159,8 +204,8 @@ export function listMonitorAlertRecords(
   }
   query += " ORDER BY fired_at DESC LIMIT ?";
   params.push(opts.limit ?? 100);
-  const rows = db.prepare(query).all(...params) as RawMonitorAlertRow[];
-  return rows.map((row) => parseAlertRow(row));
+  const rows = db.prepare(query).all(...params);
+  return rows.map((row) => parseAlertRow(requireAlertRow(row)));
 }
 
 export function getLatestMonitorAlertRecord(

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { MonitorEngine } from "./monitor-engine.js";
 import type { SQLiteStore } from "../storage/index.js";
 
 export interface MonitorApiResponse {
@@ -12,7 +13,7 @@ export interface MonitorApiRoutes {
   list(query: URLSearchParams): MonitorApiResponse;
   delete(conditionId: string): MonitorApiResponse;
   listAlerts(query: URLSearchParams): MonitorApiResponse;
-  wait(conditionId: string): MonitorApiResponse;
+  wait(conditionId: string, query: URLSearchParams): Promise<MonitorApiResponse>;
 }
 
 const CONDITION_TYPES = new Set([
@@ -23,14 +24,14 @@ const CONDITION_TYPES = new Set([
   "heartbeat_lost",
 ]);
 
-const DEFAULT_MAX_MONITOR_CONDITIONS = 100;
-const DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 300;
-
 export function buildMonitorApiRoutes(opts: {
   openStore: () => SQLiteStore;
+  monitorEngine?: MonitorEngine | null;
+  defaultHeartbeatTimeoutSeconds: number;
+  maxConditions: number;
 }): MonitorApiRoutes {
   return {
-    create: (body) => withStore(opts.openStore, (store) => {
+    create: (body) => {
       const request = parseCreateMonitorRequest(body);
       if (!request.ok) {
         return { status: 422, body: { detail: request.error } };
@@ -38,29 +39,51 @@ export function buildMonitorApiRoutes(opts: {
       if (!CONDITION_TYPES.has(request.conditionType)) {
         return { status: 409, body: { detail: `invalid monitor condition type: ${request.conditionType}` } };
       }
-      if (store.countMonitorConditions({ activeOnly: true }) >= DEFAULT_MAX_MONITOR_CONDITIONS) {
-        return {
-          status: 409,
-          body: { detail: `maximum active monitor conditions reached (${DEFAULT_MAX_MONITOR_CONDITIONS})` },
-        };
-      }
       const params = request.conditionType === "heartbeat_lost"
         && request.params.timeout_seconds === undefined
-        ? { ...request.params, timeout_seconds: DEFAULT_HEARTBEAT_TIMEOUT_SECONDS }
+        ? { ...request.params, timeout_seconds: opts.defaultHeartbeatTimeoutSeconds }
         : request.params;
       const conditionId = randomUUID().replace(/-/g, "");
-      store.insertMonitorCondition({
-        id: conditionId,
-        name: request.name,
-        conditionType: request.conditionType,
-        params,
-        scope: request.scope,
+
+      if (opts.monitorEngine) {
+        try {
+          opts.monitorEngine.createCondition({
+            id: conditionId,
+            name: request.name,
+            conditionType: request.conditionType,
+            params,
+            scope: request.scope,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return { status: 409, body: { detail: message } };
+        }
+        return withStore(opts.openStore, (store) => ({
+          status: 201,
+          body: store.getMonitorCondition(conditionId) ?? { id: conditionId, name: request.name },
+        }));
+      }
+
+      return withStore(opts.openStore, (store) => {
+        if (store.countMonitorConditions({ activeOnly: true }) >= opts.maxConditions) {
+          return {
+            status: 409,
+            body: { detail: `maximum active monitor conditions reached (${opts.maxConditions})` },
+          };
+        }
+        store.insertMonitorCondition({
+          id: conditionId,
+          name: request.name,
+          conditionType: request.conditionType,
+          params,
+          scope: request.scope,
+        });
+        return {
+          status: 201,
+          body: store.getMonitorCondition(conditionId) ?? { id: conditionId, name: request.name },
+        };
       });
-      return {
-        status: 201,
-        body: store.getMonitorCondition(conditionId) ?? { id: conditionId, name: request.name },
-      };
-    }),
+    },
     list: (query) => withStore(opts.openStore, (store) => ({
       status: 200,
       body: store.listMonitorConditions({
@@ -84,10 +107,23 @@ export function buildMonitorApiRoutes(opts: {
         since: query.get("since") ?? undefined,
       }),
     })),
-    wait: () => ({
-      status: 503,
-      body: { detail: "Monitor engine not available" },
-    }),
+    wait: async (conditionId, query) => {
+      if (!opts.monitorEngine) {
+        return {
+          status: 503,
+          body: { detail: "Monitor engine not available" },
+        };
+      }
+      const timeout = readNumberQuery(query, "timeout", 30);
+      const alert = await opts.monitorEngine.waitForAlert(conditionId, timeout);
+      return {
+        status: 200,
+        body: {
+          fired: alert !== null,
+          alert,
+        },
+      };
+    },
   };
 }
 
@@ -152,4 +188,11 @@ function readIntegerQuery(query: URLSearchParams, key: string, fallback: number)
   if (value === null) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readNumberQuery(query: URLSearchParams, key: string, fallback: number): number {
+  const value = query.get(key);
+  if (value === null) return fallback;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
