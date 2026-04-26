@@ -15,6 +15,10 @@ ExecutorResources: Any = _server_protocol.ExecutorResources
 ExecutorInfo: Any = _server_protocol.ExecutorInfo
 StrategyParam: Any = _server_protocol.StrategyParam
 ScoringComponent: Any = _server_protocol.ScoringComponent
+HelloMsg: Any = _server_protocol.HelloMsg
+StateMsg: Any = _server_protocol.StateMsg
+AckMsg: Any = _server_protocol.AckMsg
+ErrorMsg: Any = _server_protocol.ErrorMsg
 Urgency: Any = _research_types.Urgency
 ResearchQuery: Any = _research_types.ResearchQuery
 Citation: Any = _research_types.Citation
@@ -55,12 +59,15 @@ __all__ = [
     "Citation",
     "EndedAt",
     "EnvContext",
+    "AckMsg",
     "Error",
+    "ErrorMsg",
     "EvalExampleId",
     "FeedbackRef",
     "Items",
     "ExecutorInfo",
     "ExecutorResources",
+    "HelloMsg",
     "Message",
     "PACKAGE_ROLE",
     "PACKAGE_TOPOLOGY_VERSION",
@@ -78,6 +85,7 @@ __all__ = [
     "ScoringComponent",
     "Sdk",
     "SessionIdentifier",
+    "StateMsg",
     "StrategyParam",
     "TimingInfo",
     "ToolCall",

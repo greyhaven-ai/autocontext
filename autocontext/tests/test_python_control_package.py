@@ -101,6 +101,28 @@ def test_python_control_reexports_shared_server_protocol_models() -> None:
     assert scoring.weight == 0.7
 
 
+def test_python_control_reexports_basic_server_protocol_messages() -> None:
+    AckMsg = control_package.AckMsg
+    ErrorMsg = control_package.ErrorMsg
+    HelloMsg = control_package.HelloMsg
+    StateMsg = control_package.StateMsg
+
+    hello = HelloMsg()
+    state = StateMsg(paused=True, generation=3, phase="evaluation")
+    ack = AckMsg(action="pause", decision="accepted")
+    error = ErrorMsg(message="run failed")
+
+    assert hello.type == "hello"
+    assert hello.protocol_version == control_package.PROTOCOL_VERSION
+    assert state.paused is True
+    assert state.generation == 3
+    assert state.phase == "evaluation"
+    assert ack.action == "pause"
+    assert ack.decision == "accepted"
+    assert error.type == "error"
+    assert error.message == "run failed"
+
+
 def test_python_control_reexports_production_trace_contracts() -> None:
     Chosen = control_package.Chosen
     EndedAt = control_package.EndedAt
