@@ -11,14 +11,19 @@ import type { SQLiteStore } from "../storage/index.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import { detectFamily } from "../scenarios/family-interfaces.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
-import { DistillJobError, DistillJobStore, type DistillJob, type DistillJobStatus } from "./distill-job-store.js";
+import { ensureSafeArtifactId, validateOpenClawArtifactPayload } from "./artifact-contract.js";
+import {
+  DistillJobError,
+  DistillJobStore,
+  isDistillJobStatus,
+  type DistillJob,
+  type DistillJobStatus,
+} from "./distill-job-store.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../../package.json") as { version: string };
 
 const DISCOVERY_VERSION = "0.1.0";
-const ARTIFACT_TYPES = new Set(["harness", "policy", "distilled_model"]);
-const SAFE_FILE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export interface OpenClawServiceOpts {
   knowledgeRoot: string;
@@ -89,13 +94,6 @@ function readStringList(body: Record<string, unknown>, key: string): string[] {
   return value;
 }
 
-function ensureSafeArtifactId(artifactId: string): string {
-  if (!SAFE_FILE_ID.test(artifactId)) {
-    throw new Error(`invalid artifact id: ${artifactId}`);
-  }
-  return artifactId;
-}
-
 function toHarnessModuleName(artifactId: string): string {
   return `openclaw_${artifactId.replace(/[^A-Za-z0-9_]/g, "_")}`;
 }
@@ -118,7 +116,7 @@ function artifactPath(knowledgeRoot: string, artifactId: string): string {
 
 function readJsonRecord(path: string): Record<string, unknown> | null {
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
+    const parsed = JSON.parse(readFileSync(path, "utf-8"));
     return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
@@ -233,20 +231,7 @@ export class OpenClawService {
   }
 
   publishArtifact(body: Record<string, unknown>): Record<string, unknown> {
-    const artifactType = readRequiredString(body, "artifact_type");
-    if (!ARTIFACT_TYPES.has(artifactType)) {
-      throw new Error(
-        `Invalid or missing artifact_type: ${artifactType}. Must be harness, policy, or distilled_model.`,
-      );
-    }
-    const artifactId = ensureSafeArtifactId(readRequiredString(body, "id"));
-    const scenario = readRequiredString(body, "scenario");
-    const data: Record<string, unknown> = {
-      ...body,
-      id: artifactId,
-      artifact_type: artifactType,
-      scenario,
-    };
+    const { artifactId, artifactType, scenario, data } = validateOpenClawArtifactPayload(body);
     const path = artifactPath(this.#knowledgeRoot, artifactId);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, JSON.stringify(data, null, 2) + "\n", "utf-8");
@@ -353,13 +338,13 @@ export class OpenClawService {
 
   updateDistillJob(jobId: string, body: Record<string, unknown>): DistillJob | null {
     const status = readRequiredString(body, "status");
-    if (!["pending", "running", "completed", "failed"].includes(status)) {
+    if (!isDistillJobStatus(status)) {
       throw new DistillJobError(`Invalid distill job status: ${status}`);
     }
     const trainingMetrics = body.training_metrics === undefined || body.training_metrics === null
       ? null
       : readRecord(body, "training_metrics");
-    return this.#distillJobs.transition(jobId, status as DistillJobStatus, {
+    return this.#distillJobs.transition(jobId, status, {
       resultArtifactId: readOptionalString(body, "result_artifact_id") ?? null,
       errorMessage: readOptionalString(body, "error_message") ?? null,
       trainingMetrics,

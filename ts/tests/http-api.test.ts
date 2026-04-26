@@ -714,7 +714,13 @@ describe("HTTP API — OpenClaw", () => {
       artifact_type: "policy",
       scenario: "grid_ctf",
       version: 1,
-      policy: { aggression: 0.6 },
+      provenance: {
+        run_id: "test-run-1",
+        generation: 1,
+        scenario: "grid_ctf",
+        settings: {},
+      },
+      source_code: "def strategy(state):\n    return {'aggression': 0.6}\n",
       tags: ["smoke"],
       created_at: "2026-04-25T00:00:00Z",
     };
@@ -740,6 +746,46 @@ describe("HTTP API — OpenClaw", () => {
     const fetched = await fetchJson(`${baseUrl}/api/openclaw/artifacts/artifact-1`);
     expect(fetched.status).toBe(200);
     expect(fetched.body).toMatchObject(artifact);
+  });
+
+  it("POST /api/openclaw/artifacts rejects malformed policy artifacts", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/artifacts`, {
+      id: "artifact-missing-source",
+      name: "Grid policy",
+      artifact_type: "policy",
+      scenario: "grid_ctf",
+      version: 1,
+      provenance: {
+        run_id: "test-run-1",
+        generation: 1,
+        scenario: "grid_ctf",
+        settings: {},
+      },
+    });
+
+    expect(status).toBe(400);
+    expect((body as Record<string, unknown>).detail).toContain("source_code");
+  });
+
+  it("POST /api/openclaw/artifacts rejects scenario traversal before harness writes", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/artifacts`, {
+      id: "harness-escape",
+      name: "Escaping harness",
+      artifact_type: "harness",
+      scenario: "../outside",
+      version: 1,
+      provenance: {
+        run_id: "test-run-1",
+        generation: 1,
+        scenario: "../outside",
+        settings: {},
+      },
+      source_code: "def validate(state, strategy):\n    return True\n",
+    });
+
+    expect(status).toBe(400);
+    expect((body as Record<string, unknown>).detail).toContain("scenario");
+    expect(existsSync(join(dir, "outside", "harness"))).toBe(false);
   });
 
   it("GET /api/openclaw/discovery endpoints advertise runtime and scenario state", async () => {

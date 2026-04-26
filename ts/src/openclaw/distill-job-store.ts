@@ -44,14 +44,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+export function isDistillJobStatus(value: string): value is DistillJobStatus {
+  return value === "pending" || value === "running" || value === "completed" || value === "failed";
+}
+
 function parseJob(raw: unknown): DistillJob | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.job_id !== "string" || typeof raw.scenario !== "string") return null;
-  if (!["pending", "running", "completed", "failed"].includes(String(raw.status))) return null;
+  if (typeof raw.status !== "string" || !isDistillJobStatus(raw.status)) return null;
   return {
     job_id: raw.job_id,
     scenario: raw.scenario,
-    status: raw.status as DistillJobStatus,
+    status: raw.status,
     source_artifact_ids: Array.isArray(raw.source_artifact_ids)
       ? raw.source_artifact_ids.filter((entry): entry is string => typeof entry === "string")
       : [],
@@ -169,7 +173,7 @@ export class DistillJobStore {
       return null;
     }
     try {
-      return parseJob(JSON.parse(readFileSync(path, "utf-8")) as unknown);
+      return parseJob(JSON.parse(readFileSync(path, "utf-8")));
     } catch {
       return null;
     }

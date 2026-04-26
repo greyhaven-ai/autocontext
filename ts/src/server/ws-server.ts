@@ -48,7 +48,6 @@ import { loadSettings, type AppSettings } from "../config/index.js";
 import { SQLiteStore } from "../storage/index.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
-import { loadSettings } from "../config/index.js";
 
 export interface InteractiveServerOpts {
   runManager: RunManager;
