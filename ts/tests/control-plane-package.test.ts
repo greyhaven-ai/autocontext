@@ -15,12 +15,18 @@ import type {
 } from "../../packages/ts/control-plane/src/index.ts";
 import {
   Citation,
+  ExecutorInfoSchema,
+  ExecutorResourcesSchema,
   PRODUCTION_TRACE_SCHEMA_VERSION,
+  PROTOCOL_VERSION,
   packageRole,
   packageTopologyVersion,
   ResearchConfig,
   ResearchQuery,
   ResearchResult,
+  ScenarioInfoSchema,
+  ScoringComponentSchema,
+  StrategyParamSchema,
   Urgency,
 } from "../../packages/ts/control-plane/src/index.ts";
 
@@ -74,6 +80,41 @@ describe("@autocontext/control-plane facade", () => {
     expect(config.enabled).toBe(true);
     expect(config.adapterName).toBe("demo");
     expect(config.maxQueriesPerTurn).toBe(1);
+  });
+
+  it("re-exports shared server protocol models", () => {
+    const scenario = ScenarioInfoSchema.parse({
+      name: "grid_ctf",
+      description: "Capture the flag",
+    });
+    const resources = ExecutorResourcesSchema.parse({
+      docker_image: "ghcr.io/greyhaven/executor:latest",
+      cpu_cores: 4,
+      memory_gb: 8,
+      disk_gb: 20,
+      timeout_minutes: 15,
+    });
+    const executor = ExecutorInfoSchema.parse({
+      mode: "docker",
+      available: true,
+      description: "Local Docker executor",
+      resources,
+    });
+    const param = StrategyParamSchema.parse({
+      name: "aggression",
+      description: "How aggressively to pursue flags",
+    });
+    const scoring = ScoringComponentSchema.parse({
+      name: "win_rate",
+      description: "Percent of matches won",
+      weight: 0.7,
+    });
+
+    expect(PROTOCOL_VERSION).toBe(1);
+    expect(scenario.name).toBe("grid_ctf");
+    expect(executor.resources?.cpu_cores).toBe(4);
+    expect(param.name).toBe("aggression");
+    expect(scoring.weight).toBe(0.7);
   });
 
   it("re-exports production trace contract types", () => {

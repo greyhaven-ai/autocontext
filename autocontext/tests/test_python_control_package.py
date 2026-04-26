@@ -69,6 +69,38 @@ def test_python_control_reexports_research_domain_contracts() -> None:
     assert config.max_queries_per_turn == 1
 
 
+def test_python_control_reexports_shared_server_protocol_models() -> None:
+    ExecutorInfo = control_package.ExecutorInfo
+    ExecutorResources = control_package.ExecutorResources
+    PROTOCOL_VERSION = control_package.PROTOCOL_VERSION
+    ScenarioInfo = control_package.ScenarioInfo
+    ScoringComponent = control_package.ScoringComponent
+    StrategyParam = control_package.StrategyParam
+
+    scenario = ScenarioInfo(name="grid_ctf", description="Capture the flag")
+    resources = ExecutorResources(
+        docker_image="ghcr.io/greyhaven/executor:latest",
+        cpu_cores=4,
+        memory_gb=8,
+        disk_gb=20,
+        timeout_minutes=15,
+    )
+    executor = ExecutorInfo(
+        mode="docker",
+        available=True,
+        description="Local Docker executor",
+        resources=resources,
+    )
+    param = StrategyParam(name="aggression", description="How aggressively to pursue flags")
+    scoring = ScoringComponent(name="win_rate", description="Percent of matches won", weight=0.7)
+
+    assert PROTOCOL_VERSION == 1
+    assert scenario.name == "grid_ctf"
+    assert executor.resources.cpu_cores == 4
+    assert param.name == "aggression"
+    assert scoring.weight == 0.7
+
+
 def test_python_control_reexports_production_trace_contracts() -> None:
     Chosen = control_package.Chosen
     EndedAt = control_package.EndedAt
