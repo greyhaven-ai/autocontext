@@ -51,6 +51,15 @@ async function putJson(url: string, body: Record<string, unknown>): Promise<{ st
   return { status: res.status, body: await res.json() };
 }
 
+async function patchJson(url: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 async function fetchText(url: string): Promise<{ status: number; body: string }> {
   const res = await fetch(url);
   const body = await res.text();
@@ -181,6 +190,7 @@ describe("HTTP API — health", () => {
     });
     expect(endpoints.monitors).toBe("/api/monitors");
     expect(endpoints.notebooks).toBe("/api/notebooks");
+    expect(endpoints.openclaw).toBe("/api/openclaw");
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
       export: "/api/knowledge/export/:scenario",
@@ -238,8 +248,12 @@ describe("HTTP API — health", () => {
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "GET",
       path: "/api/openclaw/capabilities",
-      status: "typescript_gap",
-      issue: "AC-627",
+      status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "POST",
+      path: "/api/openclaw/evaluate",
+      status: "aligned",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "GET",
@@ -608,6 +622,274 @@ describe("HTTP API — monitors", () => {
 
     expect(status).toBe(409);
     expect((body as Record<string, unknown>).detail).toContain("invalid monitor condition type");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OpenClaw endpoints
+// ---------------------------------------------------------------------------
+
+describe("HTTP API — OpenClaw", () => {
+  let dir: string;
+  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    dir = makeTempDir();
+    const s = await createTestServer(dir);
+    server = s.server;
+    baseUrl = s.baseUrl;
+  });
+
+  afterEach(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("POST /api/openclaw/evaluate scores a built-in game strategy", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/evaluate`, {
+      scenario_name: "grid_ctf",
+      strategy: { aggression: 0.6, defense: 0.4, path_bias: 0.7 },
+      num_matches: 2,
+      seed_base: 42,
+    });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      scenario: "grid_ctf",
+      matches: 2,
+    });
+    expect((body as Record<string, unknown>).scores).toHaveLength(2);
+    expect(typeof (body as Record<string, unknown>).mean_score).toBe("number");
+    expect(typeof (body as Record<string, unknown>).best_score).toBe("number");
+  });
+
+  it("POST /api/openclaw/validate returns harness-compatible validation shape", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/validate`, {
+      scenario_name: "grid_ctf",
+      strategy: { aggression: 0.6, defense: 0.4, path_bias: 0.7 },
+    });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      valid: true,
+      reason: "ok",
+      scenario: "grid_ctf",
+      harness_loaded: [],
+      harness_passed: true,
+      harness_errors: [],
+    });
+  });
+
+  it("POST /api/openclaw/validate reports invalid strategies without transport failure", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/validate`, {
+      scenario_name: "grid_ctf",
+      strategy: { aggression: 0.9, defense: 0.8, path_bias: 0.7 },
+    });
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      valid: false,
+      reason: expect.stringContaining("combined aggression"),
+      scenario: "grid_ctf",
+      harness_passed: false,
+      harness_errors: [expect.stringContaining("combined aggression")],
+    });
+  });
+
+  it("POST /api/openclaw/validate returns 400 for unknown scenarios", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/validate`, {
+      scenario_name: "not_real",
+      strategy: {},
+    });
+
+    expect(status).toBe(400);
+    expect((body as Record<string, unknown>).detail).toContain("Unknown scenario");
+  });
+
+  it("POST /api/openclaw/artifacts publishes and lists artifacts", async () => {
+    const artifact = {
+      id: "artifact-1",
+      name: "Grid policy",
+      artifact_type: "policy",
+      scenario: "grid_ctf",
+      version: 1,
+      provenance: {
+        run_id: "test-run-1",
+        generation: 1,
+        scenario: "grid_ctf",
+        settings: {},
+      },
+      source_code: "def strategy(state):\n    return {'aggression': 0.6}\n",
+      tags: ["smoke"],
+      created_at: "2026-04-25T00:00:00Z",
+    };
+
+    const published = await postJson(`${baseUrl}/api/openclaw/artifacts`, artifact);
+    expect(published.status).toBe(200);
+    expect(published.body).toMatchObject({
+      status: "published",
+      artifact_id: "artifact-1",
+      artifact_type: "policy",
+    });
+
+    const listed = await fetchJson(`${baseUrl}/api/openclaw/artifacts?scenario=grid_ctf&artifact_type=policy`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toContainEqual(expect.objectContaining({
+      id: "artifact-1",
+      name: "Grid policy",
+      artifact_type: "policy",
+      scenario: "grid_ctf",
+      version: 1,
+    }));
+
+    const fetched = await fetchJson(`${baseUrl}/api/openclaw/artifacts/artifact-1`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body).toMatchObject(artifact);
+  });
+
+  it("POST /api/openclaw/artifacts rejects malformed policy artifacts", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/artifacts`, {
+      id: "artifact-missing-source",
+      name: "Grid policy",
+      artifact_type: "policy",
+      scenario: "grid_ctf",
+      version: 1,
+      provenance: {
+        run_id: "test-run-1",
+        generation: 1,
+        scenario: "grid_ctf",
+        settings: {},
+      },
+    });
+
+    expect(status).toBe(400);
+    expect((body as Record<string, unknown>).detail).toContain("source_code");
+  });
+
+  it("POST /api/openclaw/artifacts rejects scenario traversal before harness writes", async () => {
+    const { status, body } = await postJson(`${baseUrl}/api/openclaw/artifacts`, {
+      id: "harness-escape",
+      name: "Escaping harness",
+      artifact_type: "harness",
+      scenario: "../outside",
+      version: 1,
+      provenance: {
+        run_id: "test-run-1",
+        generation: 1,
+        scenario: "../outside",
+        settings: {},
+      },
+      source_code: "def validate(state, strategy):\n    return True\n",
+    });
+
+    expect(status).toBe(400);
+    expect((body as Record<string, unknown>).detail).toContain("scenario");
+    expect(existsSync(join(dir, "outside", "harness"))).toBe(false);
+  });
+
+  it("GET /api/openclaw/discovery endpoints advertise runtime and scenario state", async () => {
+    const capabilities = await fetchJson(`${baseUrl}/api/openclaw/discovery/capabilities`);
+    expect(capabilities.status).toBe(200);
+    expect(capabilities.body).toMatchObject({
+      version: "0.1.0",
+      runtime_health: expect.objectContaining({
+        executor_mode: expect.any(String),
+        agent_provider: expect.any(String),
+      }),
+      scenario_capabilities: expect.objectContaining({
+        grid_ctf: expect.objectContaining({
+          scenario_name: "grid_ctf",
+          evaluation_mode: "tournament",
+          has_playbook: true,
+        }),
+      }),
+    });
+
+    const scenario = await fetchJson(`${baseUrl}/api/openclaw/discovery/scenario/grid_ctf`);
+    expect(scenario.status).toBe(200);
+    expect(scenario.body).toMatchObject({
+      scenario_name: "grid_ctf",
+      evaluation_mode: "tournament",
+      has_playbook: true,
+      best_score: 0.7,
+      best_elo: 1050,
+    });
+
+    const health = await fetchJson(`${baseUrl}/api/openclaw/discovery/health`);
+    expect(health.status).toBe(200);
+    expect(health.body).toMatchObject({
+      executor_mode: expect.any(String),
+      openclaw_runtime_kind: "factory",
+      openclaw_compatibility_version: "1.0",
+    });
+  });
+
+  it("GET /api/openclaw/skill/manifest returns a ClawHub manifest", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/openclaw/skill/manifest`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      name: "autocontext",
+      rest_base_path: "/api/openclaw",
+    });
+    expect((body as Record<string, unknown>).scenarios).toContainEqual(expect.objectContaining({
+      name: "grid_ctf",
+      display_name: "Grid Ctf",
+      scenario_type: "parametric",
+    }));
+  });
+
+  it("distillation job endpoints keep Python-compatible lifecycle semantics", async () => {
+    const triggered = await postJson(`${baseUrl}/api/openclaw/distill`, {
+      scenario: "grid_ctf",
+      source_artifact_ids: ["artifact-1"],
+      training_config: { epochs: 1 },
+    });
+
+    expect(triggered.status).toBe(400);
+    expect(triggered.body).toMatchObject({
+      status: "failed",
+      scenario: "grid_ctf",
+    });
+    expect((triggered.body as Record<string, unknown>).error).toContain("No distillation sidecar configured");
+    const jobId = (triggered.body as Record<string, unknown>).job_id as string;
+
+    const job = await fetchJson(`${baseUrl}/api/openclaw/distill/${jobId}`);
+    expect(job.status).toBe(200);
+    expect(job.body).toMatchObject({
+      job_id: jobId,
+      status: "failed",
+      scenario: "grid_ctf",
+    });
+
+    const status = await fetchJson(`${baseUrl}/api/openclaw/distill?scenario=grid_ctf`);
+    expect(status.status).toBe(200);
+    expect(status.body).toMatchObject({
+      active_jobs: 0,
+      jobs: [expect.objectContaining({ job_id: jobId })],
+    });
+  });
+
+  it("PATCH /api/openclaw/distill/:job_id rejects invalid transitions", async () => {
+    const triggered = await postJson(`${baseUrl}/api/openclaw/distill`, {
+      scenario: "grid_ctf",
+    });
+    const jobId = (triggered.body as Record<string, unknown>).job_id as string;
+
+    const updated = await patchJson(`${baseUrl}/api/openclaw/distill/${jobId}`, {
+      status: "completed",
+      result_artifact_id: "artifact-1",
+    });
+
+    expect(updated.status).toBe(400);
+    expect((updated.body as Record<string, unknown>).detail).toContain("Invalid transition");
+  });
+
+  it("GET /api/openclaw/artifacts/:artifact_id returns 404 for unknown artifacts", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/openclaw/artifacts/not-real`);
+    expect(status).toBe(404);
+    expect((body as Record<string, unknown>).detail).toContain("not found");
   });
 });
 
