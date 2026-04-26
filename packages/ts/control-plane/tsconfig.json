@@ -9,6 +9,7 @@
     "src/**/*.ts",
     "../../../ts/src/production-traces/contract/types.ts",
     "../../../ts/src/production-traces/contract/branded-ids.ts",
-    "../../../ts/src/control-plane/contract/branded-ids.ts"
+    "../../../ts/src/control-plane/contract/branded-ids.ts",
+    "../../../ts/src/research/types.ts"
   ]
 }

@@ -6,7 +6,14 @@ from typing import Any
 _production_traces_contract = import_module(
     "autocontext.production_traces.contract.models"
 )
+_research_types = import_module("autocontext.research.types")
 
+Urgency: Any = _research_types.Urgency
+ResearchQuery: Any = _research_types.ResearchQuery
+Citation: Any = _research_types.Citation
+ResearchResult: Any = _research_types.ResearchResult
+ResearchAdapter: Any = _research_types.ResearchAdapter
+ResearchConfig: Any = _research_types.ResearchConfig
 Sdk: Any = _production_traces_contract.Sdk
 TraceSource: Any = _production_traces_contract.TraceSource
 Provider: Any = _production_traces_contract.Provider
@@ -38,6 +45,7 @@ package_topology_version = PACKAGE_TOPOLOGY_VERSION
 
 __all__ = [
     "Chosen",
+    "Citation",
     "EndedAt",
     "EnvContext",
     "Error",
@@ -51,6 +59,10 @@ __all__ = [
     "ProductionTrace",
     "Provider",
     "RedactionMarker",
+    "ResearchAdapter",
+    "ResearchConfig",
+    "ResearchQuery",
+    "ResearchResult",
     "Routing",
     "Sdk",
     "SessionIdentifier",
@@ -59,6 +71,7 @@ __all__ = [
     "TraceLinks",
     "TraceSource",
     "TrainingRecordId",
+    "Urgency",
     "UsageInfo",
     "UserIdHash",
     "package_role",
