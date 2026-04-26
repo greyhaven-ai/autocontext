@@ -4,7 +4,11 @@ import type {
   AgentOutputRow,
   GenerationRow,
   HumanFeedbackRow,
+  InsertMonitorAlertOpts,
+  InsertMonitorConditionOpts,
   MatchRow,
+  MonitorAlertRow,
+  MonitorConditionRow,
   NotebookRow,
   RecordMatchOpts,
   RunRow,
@@ -50,6 +54,16 @@ import {
   listStoreNotebooks,
   upsertStoreNotebook,
 } from "./storage-notebook-facade.js";
+import {
+  countStoreMonitorConditions,
+  deactivateStoreMonitorCondition,
+  getStoreLatestMonitorAlert,
+  getStoreMonitorCondition,
+  insertStoreMonitorAlert,
+  insertStoreMonitorCondition,
+  listStoreMonitorAlerts,
+  listStoreMonitorConditions,
+} from "./storage-monitor-facade.js";
 import { migrateDatabase } from "./storage-migration-workflow.js";
 
 export function configureSqliteDatabase(db: Pick<Database.Database, "pragma">): void {
@@ -153,6 +167,43 @@ export class SQLiteStore {
 
   deleteNotebook(sessionId: string): boolean {
     return deleteStoreNotebook(this.#db, sessionId);
+  }
+
+  insertMonitorCondition(opts: InsertMonitorConditionOpts): string {
+    return insertStoreMonitorCondition(this.#db, opts);
+  }
+
+  listMonitorConditions(opts?: { activeOnly?: boolean; scope?: string }): MonitorConditionRow[] {
+    return listStoreMonitorConditions(this.#db, opts);
+  }
+
+  countMonitorConditions(opts?: { activeOnly?: boolean; scope?: string }): number {
+    return countStoreMonitorConditions(this.#db, opts);
+  }
+
+  getMonitorCondition(conditionId: string): MonitorConditionRow | null {
+    return getStoreMonitorCondition(this.#db, conditionId);
+  }
+
+  deactivateMonitorCondition(conditionId: string): boolean {
+    return deactivateStoreMonitorCondition(this.#db, conditionId);
+  }
+
+  insertMonitorAlert(opts: InsertMonitorAlertOpts): string {
+    return insertStoreMonitorAlert(this.#db, opts);
+  }
+
+  listMonitorAlerts(opts?: {
+    conditionId?: string;
+    scope?: string;
+    limit?: number;
+    since?: string;
+  }): MonitorAlertRow[] {
+    return listStoreMonitorAlerts(this.#db, opts);
+  }
+
+  getLatestMonitorAlert(conditionId: string): MonitorAlertRow | null {
+    return getStoreLatestMonitorAlert(this.#db, conditionId);
   }
 
   createRun(

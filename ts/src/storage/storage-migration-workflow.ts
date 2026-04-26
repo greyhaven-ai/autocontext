@@ -17,6 +17,7 @@ export const TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES: Record<string, readonly s
     "015_match_replay.sql",
   ],
   "010_session_notebook.sql": ["010_session_notebook.sql"],
+  "011_monitors.sql": ["011_monitors.sql"],
 };
 
 const TYPESCRIPT_BASELINE_SCHEMA_RECONCILIATION: Record<string, readonly string[]> = {

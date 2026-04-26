@@ -32,6 +32,8 @@ import { executeInteractiveScenarioCommand } from "./interactive-scenario-comman
 import { buildHttpApiParityMatrix } from "./http-api-parity.js";
 import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
+import { buildMonitorApiRoutes } from "./monitor-api.js";
+import { MonitorEngine } from "./monitor-engine.js";
 import { buildNotebookApiRoutes } from "./notebook-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
@@ -41,6 +43,7 @@ import type { ClientMessage, ServerMessage } from "./protocol.js";
 import { RunManager } from "./run-manager.js";
 import type { RunManagerState } from "./run-manager.js";
 import type { EventCallback } from "../loop/events.js";
+import { loadSettings, type AppSettings } from "../config/index.js";
 import { SQLiteStore } from "../storage/index.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
@@ -73,6 +76,8 @@ export class InteractiveServer {
   readonly #requestedPort: number;
   #solveManager: SolveManager | null = null;
   #solveStore: SQLiteStore | null = null;
+  #monitorEngine: MonitorEngine | null = null;
+  #monitorStore: SQLiteStore | null = null;
   // Dashboard removed (AC-467) — server is API-only
   #httpServer: HttpServer | null = null;
   #wsServer: WebSocketServer | null = null;
@@ -160,6 +165,7 @@ export class InteractiveServer {
     const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const url = requestUrl.pathname;
     const method = req.method ?? "GET";
+    const settings = loadSettings();
     const campaignApi = buildCampaignApiRoutes(this.#campaignManager);
     const missionApi = buildMissionApiRoutes(this.#missionManager, this.#runManager.getRunsRoot());
     const artifactStore = new ArtifactStore({
@@ -180,6 +186,12 @@ export class InteractiveServer {
         this.#runManager.events.emit(event, payload, "notebook");
       },
     });
+    const monitorApi = buildMonitorApiRoutes({
+      openStore: () => this.#openStore(),
+      monitorEngine: settings.monitorEnabled ? this.#getMonitorEngine(settings) : null,
+      defaultHeartbeatTimeoutSeconds: settings.monitorHeartbeatTimeout,
+      maxConditions: settings.monitorMaxConditions,
+    });
     const simulationApi = buildSimulationApiRoutes(this.#runManager.getKnowledgeRoot());
 
     // CORS headers for dashboard
@@ -194,6 +206,11 @@ export class InteractiveServer {
     }
 
     const json = (status: number, body: unknown) => {
+      if (status === 204) {
+        res.writeHead(status);
+        res.end();
+        return;
+      }
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body, null, 2));
     };
@@ -222,6 +239,7 @@ export class InteractiveServer {
           },
           campaigns: "/api/campaigns",
           missions: "/api/missions",
+          monitors: "/api/monitors",
           notebooks: "/api/notebooks",
           websocket: "/ws/interactive",
           events: "/ws/events",
@@ -276,6 +294,45 @@ export class InteractiveServer {
         json(response.status, response.body);
         return;
       }
+    }
+
+    // GET/POST /api/monitors
+    if (url === "/api/monitors" || url === "/api/monitors/") {
+      if (method === "GET") {
+        const response = monitorApi.list(requestUrl.searchParams);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "POST") {
+        const response = monitorApi.create(await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+    }
+
+    // GET /api/monitors/alerts
+    if (method === "GET" && url === "/api/monitors/alerts") {
+      const response = monitorApi.listAlerts(requestUrl.searchParams);
+      json(response.status, response.body);
+      return;
+    }
+
+    // POST /api/monitors/:conditionId/wait
+    const monitorWaitMatch = url.match(/^\/api\/monitors\/([^/]+)\/wait$/);
+    if (method === "POST" && monitorWaitMatch) {
+      const [, rawConditionId] = monitorWaitMatch;
+      const response = await monitorApi.wait(decodeURIComponent(rawConditionId!), requestUrl.searchParams);
+      json(response.status, response.body);
+      return;
+    }
+
+    // DELETE /api/monitors/:conditionId
+    const monitorMatch = url.match(/^\/api\/monitors\/([^/]+)$/);
+    if (method === "DELETE" && monitorMatch) {
+      const [, rawConditionId] = monitorMatch;
+      const response = monitorApi.delete(decodeURIComponent(rawConditionId!));
+      json(response.status, response.body);
+      return;
     }
 
     // GET /api/runs
@@ -685,6 +742,20 @@ export class InteractiveServer {
     return this.#solveManager;
   }
 
+  #getMonitorEngine(settings: AppSettings): MonitorEngine {
+    if (!this.#monitorEngine) {
+      this.#monitorStore = this.#openStore();
+      this.#monitorEngine = new MonitorEngine({
+        store: this.#monitorStore,
+        emitter: this.#runManager.events,
+        defaultHeartbeatTimeoutSeconds: settings.monitorHeartbeatTimeout,
+        maxConditions: settings.monitorMaxConditions,
+      });
+      this.#monitorEngine.start();
+    }
+    return this.#monitorEngine;
+  }
+
   async #readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
@@ -738,6 +809,10 @@ export class InteractiveServer {
 
     this.#campaignManager.close();
     this.#missionManager.close();
+    this.#monitorEngine?.stop();
+    this.#monitorEngine = null;
+    this.#monitorStore?.close();
+    this.#monitorStore = null;
     this.#solveStore?.close();
     this.#solveStore = null;
     this.#solveManager = null;
