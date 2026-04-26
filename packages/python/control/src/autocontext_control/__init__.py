@@ -7,7 +7,14 @@ _production_traces_contract = import_module(
     "autocontext.production_traces.contract.models"
 )
 _research_types = import_module("autocontext.research.types")
+_server_protocol = import_module("autocontext.server.protocol")
 
+PROTOCOL_VERSION = _server_protocol.PROTOCOL_VERSION
+ScenarioInfo: Any = _server_protocol.ScenarioInfo
+ExecutorResources: Any = _server_protocol.ExecutorResources
+ExecutorInfo: Any = _server_protocol.ExecutorInfo
+StrategyParam: Any = _server_protocol.StrategyParam
+ScoringComponent: Any = _server_protocol.ScoringComponent
 Urgency: Any = _research_types.Urgency
 ResearchQuery: Any = _research_types.ResearchQuery
 Citation: Any = _research_types.Citation
@@ -52,9 +59,12 @@ __all__ = [
     "EvalExampleId",
     "FeedbackRef",
     "Items",
+    "ExecutorInfo",
+    "ExecutorResources",
     "Message",
     "PACKAGE_ROLE",
     "PACKAGE_TOPOLOGY_VERSION",
+    "PROTOCOL_VERSION",
     "ProductionOutcome",
     "ProductionTrace",
     "Provider",
@@ -64,8 +74,11 @@ __all__ = [
     "ResearchQuery",
     "ResearchResult",
     "Routing",
+    "ScenarioInfo",
+    "ScoringComponent",
     "Sdk",
     "SessionIdentifier",
+    "StrategyParam",
     "TimingInfo",
     "ToolCall",
     "TraceLinks",
