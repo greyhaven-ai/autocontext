@@ -47,10 +47,14 @@ export {
 	Urgency,
 } from "../../../../ts/src/research/types.js";
 export {
+	AckMsgSchema,
+	ErrorMsgSchema,
 	ExecutorInfoSchema,
 	ExecutorResourcesSchema,
+	HelloMsgSchema,
 	PROTOCOL_VERSION,
 	ScenarioInfoSchema,
 	ScoringComponentSchema,
+	StateMsgSchema,
 	StrategyParamSchema,
 } from "../../../../ts/src/server/protocol.js";

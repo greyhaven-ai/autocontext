@@ -14,11 +14,15 @@ import type {
   UserIdHash,
 } from "../../packages/ts/control-plane/src/index.ts";
 import {
+  AckMsgSchema,
   Citation,
+  ErrorMsgSchema,
   ExecutorInfoSchema,
   ExecutorResourcesSchema,
+  HelloMsgSchema,
   PRODUCTION_TRACE_SCHEMA_VERSION,
   PROTOCOL_VERSION,
+  StateMsgSchema,
   packageRole,
   packageTopologyVersion,
   ResearchConfig,
@@ -115,6 +119,36 @@ describe("@autocontext/control-plane facade", () => {
     expect(executor.resources?.cpu_cores).toBe(4);
     expect(param.name).toBe("aggression");
     expect(scoring.weight).toBe(0.7);
+  });
+
+  it("re-exports basic server protocol message models", () => {
+    const hello = HelloMsgSchema.parse({
+      type: "hello",
+      protocol_version: PROTOCOL_VERSION,
+    });
+    const state = StateMsgSchema.parse({
+      type: "state",
+      paused: true,
+      generation: 3,
+      phase: "evaluation",
+    });
+    const ack = AckMsgSchema.parse({
+      type: "ack",
+      action: "pause",
+      decision: "accepted",
+    });
+    const error = ErrorMsgSchema.parse({
+      type: "error",
+      message: "run failed",
+    });
+
+    expect(hello.protocol_version).toBe(1);
+    expect(state.paused).toBe(true);
+    expect(state.generation).toBe(3);
+    expect(state.phase).toBe("evaluation");
+    expect(ack.action).toBe("pause");
+    expect(ack.decision).toBe("accepted");
+    expect(error.message).toBe("run failed");
   });
 
   it("re-exports production trace contract types", () => {
