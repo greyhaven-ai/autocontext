@@ -123,6 +123,44 @@ def test_python_control_reexports_basic_server_protocol_messages() -> None:
     assert error.message == "run failed"
 
 
+def test_python_control_reexports_scenario_generation_lifecycle_messages() -> None:
+    ScenarioErrorMsg = control_package.ScenarioErrorMsg
+    ScenarioGeneratingMsg = control_package.ScenarioGeneratingMsg
+    ScenarioPreviewMsg = control_package.ScenarioPreviewMsg
+    ScenarioReadyMsg = control_package.ScenarioReadyMsg
+    ScoringComponent = control_package.ScoringComponent
+    StrategyParam = control_package.StrategyParam
+
+    generating = ScenarioGeneratingMsg(name="schema_repair")
+    preview = ScenarioPreviewMsg(
+        name="schema_repair",
+        display_name="Schema Repair",
+        description="Recover a schema from examples.",
+        strategy_params=[
+            StrategyParam(name="depth", description="Reasoning depth"),
+        ],
+        scoring_components=[
+            ScoringComponent(name="accuracy", description="Schema fidelity", weight=0.8),
+        ],
+        constraints=["No external tools"],
+        win_threshold=0.75,
+    )
+    ready = ScenarioReadyMsg(name="schema_repair", test_scores=[0.8, 0.9])
+    error = ScenarioErrorMsg(message="designer failed", stage="preview")
+
+    assert generating.type == "scenario_generating"
+    assert generating.name == "schema_repair"
+    assert preview.type == "scenario_preview"
+    assert preview.strategy_params[0].name == "depth"
+    assert preview.scoring_components[0].weight == 0.8
+    assert preview.constraints == ["No external tools"]
+    assert preview.win_threshold == 0.75
+    assert ready.type == "scenario_ready"
+    assert ready.test_scores == [0.8, 0.9]
+    assert error.type == "scenario_error"
+    assert error.stage == "preview"
+
+
 def test_python_control_reexports_production_trace_contracts() -> None:
     Chosen = control_package.Chosen
     EndedAt = control_package.EndedAt
