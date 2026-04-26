@@ -19,6 +19,56 @@ def test_python_control_package_identity() -> None:
     assert package_topology_version == 1
 
 
+def test_python_control_reexports_research_domain_contracts() -> None:
+    Citation = control_package.Citation
+    ResearchAdapter = control_package.ResearchAdapter
+    ResearchConfig = control_package.ResearchConfig
+    ResearchQuery = control_package.ResearchQuery
+    ResearchResult = control_package.ResearchResult
+    Urgency = control_package.Urgency
+
+    query = ResearchQuery(
+        topic="refund policy changes",
+        context="customer support escalation",
+        urgency=Urgency.HIGH,
+        max_results=3,
+        constraints=["cite primary sources"],
+        scenario_family="agent_task",
+        metadata={"ticket": "t-1"},
+    )
+    citation = Citation(
+        source="policy handbook",
+        url="https://example.com/policy",
+        relevance=0.95,
+        snippet="Refunds require manager sign-off after 30 days.",
+        retrieved_at="2026-04-25T00:00:00Z",
+    )
+
+    class DemoResearchAdapter:
+        def search(self, query: ResearchQuery) -> ResearchResult:
+            return ResearchResult(
+                query_topic=query.topic,
+                summary="Manager sign-off required after 30 days.",
+                citations=[citation],
+                confidence=0.91,
+                metadata={"adapter": "demo"},
+            )
+
+    adapter = DemoResearchAdapter()
+    result = adapter.search(query)
+    config = ResearchConfig(enabled=True, adapter_name="demo", max_queries_per_turn=1)
+
+    assert query.urgency is Urgency.HIGH
+    assert query.constraints == ["cite primary sources"]
+    assert isinstance(adapter, ResearchAdapter)
+    assert result.has_citations is True
+    assert result.citations[0].source == "policy handbook"
+    assert result.metadata == {"adapter": "demo"}
+    assert config.enabled is True
+    assert config.adapter_name == "demo"
+    assert config.max_queries_per_turn == 1
+
+
 def test_python_control_reexports_production_trace_contracts() -> None:
     Chosen = control_package.Chosen
     EndedAt = control_package.EndedAt
