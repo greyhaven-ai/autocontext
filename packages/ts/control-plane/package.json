@@ -4,12 +4,12 @@
   "private": true,
   "description": "Internal package skeleton for the future control-plane artifact.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/packages/ts/control-plane/src/index.js",
+  "types": "dist/packages/ts/control-plane/src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/packages/ts/control-plane/src/index.js",
+      "types": "./dist/packages/ts/control-plane/src/index.d.ts"
     }
   },
   "files": [
