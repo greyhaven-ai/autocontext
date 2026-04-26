@@ -10,9 +10,10 @@ import {
   readdirSync,
   readFileSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { PlaybookManager, EMPTY_PLAYBOOK_SENTINEL } from "./playbook.js";
 
 export interface ArtifactStoreOpts {
@@ -91,6 +92,38 @@ export class ArtifactStore {
   writeSessionReport(scenarioName: string, runId: string, content: string): string {
     const path = join(this.knowledgeRoot, scenarioName, "session_reports", `${runId}.md`);
     this.writeMarkdown(path, content);
+    return path;
+  }
+
+  readNotebook(sessionId: string): Record<string, unknown> | null {
+    const path = this.notebookPath(sessionId);
+    if (!existsSync(path)) {
+      return null;
+    }
+    const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  }
+
+  writeNotebook(sessionId: string, notebook: Record<string, unknown>): void {
+    this.writeJson(this.notebookPath(sessionId), notebook);
+  }
+
+  deleteNotebook(sessionId: string): void {
+    const path = this.notebookPath(sessionId);
+    if (existsSync(path)) {
+      unlinkSync(path);
+    }
+  }
+
+  private notebookPath(sessionId: string): string {
+    const sessionsRoot = resolve(this.runsRoot, "sessions");
+    const path = resolve(sessionsRoot, sessionId, "notebook.json");
+    const relativePath = relative(sessionsRoot, path);
+    if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+      throw new Error("session_id must stay within the notebook sessions root");
+    }
     return path;
   }
 

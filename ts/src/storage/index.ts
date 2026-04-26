@@ -3,10 +3,12 @@ export type {
   GenerationRow,
   HumanFeedbackRow,
   MatchRow,
+  NotebookRow,
   RecordMatchOpts,
   RunRow,
   TaskQueueRow,
   TrajectoryRow,
+  UpsertNotebookOpts,
   UpsertGenerationOpts,
 } from "./storage-contracts.js";
 

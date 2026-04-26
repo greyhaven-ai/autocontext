@@ -32,6 +32,7 @@ import { executeInteractiveScenarioCommand } from "./interactive-scenario-comman
 import { buildHttpApiParityMatrix } from "./http-api-parity.js";
 import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
+import { buildNotebookApiRoutes } from "./notebook-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
 import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-session-bootstrap.js";
@@ -161,6 +162,10 @@ export class InteractiveServer {
     const method = req.method ?? "GET";
     const campaignApi = buildCampaignApiRoutes(this.#campaignManager);
     const missionApi = buildMissionApiRoutes(this.#missionManager, this.#runManager.getRunsRoot());
+    const artifactStore = new ArtifactStore({
+      runsRoot: this.#runManager.getRunsRoot(),
+      knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+    });
     const knowledgeApi = buildKnowledgeApiRoutes({
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
@@ -168,11 +173,18 @@ export class InteractiveServer {
       openStore: () => this.#openStore(),
       getSolveManager: () => this.#getSolveManager(),
     });
+    const notebookApi = buildNotebookApiRoutes({
+      openStore: () => this.#openStore(),
+      artifacts: artifactStore,
+      emitNotebookEvent: (event, payload) => {
+        this.#runManager.events.emit(event, payload, "notebook");
+      },
+    });
     const simulationApi = buildSimulationApiRoutes(this.#runManager.getKnowledgeRoot());
 
     // CORS headers for dashboard
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (method === "OPTIONS") {
@@ -210,6 +222,7 @@ export class InteractiveServer {
           },
           campaigns: "/api/campaigns",
           missions: "/api/missions",
+          notebooks: "/api/notebooks",
           websocket: "/ws/interactive",
           events: "/ws/events",
         },
@@ -234,6 +247,35 @@ export class InteractiveServer {
     if (method === "GET" && url === "/api/capabilities/http") {
       json(200, buildHttpApiParityMatrix());
       return;
+    }
+
+    // GET /api/notebooks
+    if (method === "GET" && (url === "/api/notebooks" || url === "/api/notebooks/")) {
+      const response = notebookApi.list();
+      json(response.status, response.body);
+      return;
+    }
+
+    // GET/PUT/DELETE /api/notebooks/:sessionId
+    const notebookMatch = url.match(/^\/api\/notebooks\/([^/]+)$/);
+    if (notebookMatch) {
+      const [, rawSessionId] = notebookMatch;
+      const sessionId = decodeURIComponent(rawSessionId!);
+      if (method === "GET") {
+        const response = notebookApi.get(sessionId);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "PUT") {
+        const response = notebookApi.upsert(sessionId, await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "DELETE") {
+        const response = notebookApi.delete(sessionId);
+        json(response.status, response.body);
+        return;
+      }
     }
 
     // GET /api/runs
