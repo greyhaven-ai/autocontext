@@ -11,6 +11,7 @@ import type {
 	ProviderInfo,
 	ResearchAdapter,
 	RoleCompletedPayload,
+	RunFailedPayload,
 	Scenario,
 	SessionIdHash,
 	StagnationReport,
@@ -202,6 +203,16 @@ describe("@autocontext/control-plane facade", () => {
 		expect(payload.role).toBe("coach");
 		expect(payload.latency_ms).toBe(125);
 		expect(payload.tokens).toBe(42);
+	});
+
+	it("re-exports run failed payload types", () => {
+		const payload: RunFailedPayload = {
+			run_id: "run-123",
+			error: "boom",
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.error).toBe("boom");
 	});
 
 	it("re-exports generation kickoff payload types", () => {
