@@ -254,6 +254,8 @@ export async function executeAgentTaskCustomStartRun(opts: {
     completed_generations: completedGenerations,
     best_score: bestScore,
     elo: 1000,
+    session_report_path: null,
+    dead_ends_found: 0,
     family: "agent_task",
     saved_custom: true,
   });
@@ -332,6 +334,8 @@ export async function executeGeneratedCustomStartRun(opts: {
     completed_generations: opts.generations,
     best_score: bestScoreOverall,
     elo: 1000,
+    session_report_path: null,
+    dead_ends_found: 0,
     family: opts.family,
     generated_custom: true,
   });

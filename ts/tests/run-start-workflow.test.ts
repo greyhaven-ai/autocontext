@@ -221,6 +221,9 @@ describe("run start workflow", () => {
     const completed = emitted.find((entry) => entry.event === "run_completed");
     expect(completed?.payload.best_score).toBe(0.9);
     expect(completed?.payload.completed_generations).toBe(2);
+    expect(completed?.payload.elo).toBe(1000);
+    expect(completed?.payload.session_report_path).toBeNull();
+    expect(completed?.payload.dead_ends_found).toBe(0);
   });
 
   it("executes saved agent-task runs and emits lifecycle events", async () => {
@@ -267,6 +270,11 @@ describe("run start workflow", () => {
     ]);
     expect(emitted.filter((entry) => entry.event === "generation_completed")).toHaveLength(2);
     expect(emitted.find((entry) => entry.event === "generation_completed")?.payload.best_score).toBe(0.82);
-    expect(emitted.find((entry) => entry.event === "run_completed")?.payload.completed_generations).toBe(2);
+    const completed = emitted.find((entry) => entry.event === "run_completed");
+    expect(completed?.payload.completed_generations).toBe(2);
+    expect(completed?.payload.best_score).toBe(0.82);
+    expect(completed?.payload.elo).toBe(1000);
+    expect(completed?.payload.session_report_path).toBeNull();
+    expect(completed?.payload.dead_ends_found).toBe(0);
   });
 });

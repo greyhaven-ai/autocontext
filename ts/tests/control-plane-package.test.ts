@@ -261,7 +261,7 @@ describe("@autocontext/control-plane facade", () => {
 			completed_generations: 4,
 			best_score: 0.82,
 			elo: 1042,
-			session_report_path: "/tmp/report.md",
+			session_report_path: null,
 			dead_ends_found: 2,
 		};
 
@@ -269,7 +269,7 @@ describe("@autocontext/control-plane facade", () => {
 		expect(payload.completed_generations).toBe(4);
 		expect(payload.best_score).toBe(0.82);
 		expect(payload.elo).toBe(1042);
-		expect(payload.session_report_path).toBe("/tmp/report.md");
+		expect(payload.session_report_path).toBeNull();
 		expect(payload.dead_ends_found).toBe(2);
 	});
 

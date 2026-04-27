@@ -232,7 +232,17 @@ class TestEventPayloads:
                     "created_tools": ["tool_a.py"],
                 },
             ),
-            (RunCompletedPayload, {"run_id": "r1", "completed_generations": 5}),
+            (
+                RunCompletedPayload,
+                {
+                    "run_id": "r1",
+                    "completed_generations": 5,
+                    "best_score": 0.9,
+                    "elo": 1088.0,
+                    "session_report_path": None,
+                    "dead_ends_found": 0,
+                },
+            ),
         ],
     )
     def test_validates(self, model: type, kwargs: dict) -> None:

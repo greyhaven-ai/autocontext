@@ -402,6 +402,10 @@ class RunCompletedPayload(BaseModel):
 
     run_id: str
     completed_generations: int
+    best_score: float
+    elo: float
+    session_report_path: str | None
+    dead_ends_found: int
 
 
 # ---------------------------------------------------------------------------
