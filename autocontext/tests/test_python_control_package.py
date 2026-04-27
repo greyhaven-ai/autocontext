@@ -138,6 +138,17 @@ def test_python_control_reexports_environment_discovery_messages() -> None:
     assert environments.agent_provider == "pi"
 
 
+def test_python_control_reexports_run_acceptance_messages() -> None:
+    RunAcceptedMsg = control_package.RunAcceptedMsg
+
+    accepted = RunAcceptedMsg(run_id="run-123", scenario="schema_repair", generations=4)
+
+    assert accepted.type == "run_accepted"
+    assert accepted.run_id == "run-123"
+    assert accepted.scenario == "schema_repair"
+    assert accepted.generations == 4
+
+
 def test_python_control_reexports_basic_server_protocol_messages() -> None:
     AckMsg = control_package.AckMsg
     ErrorMsg = control_package.ErrorMsg
