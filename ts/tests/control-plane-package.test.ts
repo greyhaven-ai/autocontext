@@ -12,6 +12,7 @@ import type {
 	ResearchAdapter,
 	RoleCompletedPayload,
 	RunFailedPayload,
+	RunStartedPayload,
 	Scenario,
 	SessionIdHash,
 	StagnationReport,
@@ -203,6 +204,18 @@ describe("@autocontext/control-plane facade", () => {
 		expect(payload.role).toBe("coach");
 		expect(payload.latency_ms).toBe(125);
 		expect(payload.tokens).toBe(42);
+	});
+
+	it("re-exports run started payload types", () => {
+		const payload: RunStartedPayload = {
+			run_id: "run-123",
+			scenario: "grid_ctf",
+			target_generations: 5,
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.scenario).toBe("grid_ctf");
+		expect(payload.target_generations).toBe(5);
 	});
 
 	it("re-exports run failed payload types", () => {

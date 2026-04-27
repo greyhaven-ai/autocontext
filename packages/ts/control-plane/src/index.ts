@@ -5,6 +5,7 @@ export type {
 	AgentsStartedPayload,
 	GenerationStartedPayload,
 	RunFailedPayload,
+	RunStartedPayload,
 	TournamentCompletedPayload,
 } from "../../../../ts/src/loop/generation-event-coordinator.js";
 export type { RoleCompletedPayload } from "../../../../ts/src/loop/generation-side-effect-coordinator.js";
