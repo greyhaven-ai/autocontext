@@ -53,6 +53,7 @@ export {
 	ErrorMsgSchema,
 	EventMsgSchema,
 	ExecutorInfoSchema,
+	MonitorAlertMsgSchema,
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
 	PROTOCOL_VERSION,

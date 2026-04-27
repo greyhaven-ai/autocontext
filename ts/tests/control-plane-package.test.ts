@@ -21,6 +21,7 @@ import {
 	ErrorMsgSchema,
 	EventMsgSchema,
 	ExecutorInfoSchema,
+	MonitorAlertMsgSchema,
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
 	PRODUCTION_TRACE_SCHEMA_VERSION,
@@ -229,6 +230,30 @@ describe("@autocontext/control-plane facade", () => {
 		expect(ack.action).toBe("pause");
 		expect(ack.decision).toBe("accepted");
 		expect(error.message).toBe("run failed");
+	});
+
+	it("re-exports monitor alert messages", () => {
+		const alert = MonitorAlertMsgSchema.parse({
+			type: "monitor_alert",
+			alert_id: "alert-1",
+			condition_id: "cond-1",
+			condition_name: "stalled-run",
+			condition_type: "stall_window",
+			scope: "run:run-123",
+			detail: "No events for 30.0s (timeout=30.0s)",
+		});
+
+		expect(alert.condition_name).toBe("stalled-run");
+		expect(alert.detail).toBe("No events for 30.0s (timeout=30.0s)");
+	});
+
+	it("requires stage for scenario error messages", () => {
+		const parsed = ScenarioErrorMsgSchema.safeParse({
+			type: "scenario_error",
+			message: "designer failed",
+		});
+
+		expect(parsed.success).toBe(false);
 	});
 
 	it("re-exports scenario generation lifecycle messages", () => {

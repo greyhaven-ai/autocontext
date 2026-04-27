@@ -4,6 +4,8 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
+from pydantic import ValidationError
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PY_CONTROL_SRC = REPO_ROOT / "packages" / "python" / "control" / "src"
 if str(PY_CONTROL_SRC) not in sys.path:
@@ -189,6 +191,34 @@ def test_python_control_reexports_basic_server_protocol_messages() -> None:
     assert ack.decision == "accepted"
     assert error.type == "error"
     assert error.message == "run failed"
+
+
+def test_python_control_reexports_monitor_alert_messages() -> None:
+    MonitorAlertMsg = control_package.MonitorAlertMsg
+
+    alert = MonitorAlertMsg(
+        alert_id="alert-1",
+        condition_id="cond-1",
+        condition_name="stalled-run",
+        condition_type="stall_window",
+        scope="run:run-123",
+        detail="No events for 30.0s (timeout=30.0s)",
+    )
+
+    assert alert.type == "monitor_alert"
+    assert alert.condition_name == "stalled-run"
+    assert alert.detail == "No events for 30.0s (timeout=30.0s)"
+
+
+def test_python_control_requires_stage_for_scenario_error_messages() -> None:
+    ScenarioErrorMsg = control_package.ScenarioErrorMsg
+
+    try:
+        ScenarioErrorMsg(message="designer failed")
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("ScenarioErrorMsg should require stage")
 
 
 def test_python_control_reexports_scenario_generation_lifecycle_messages() -> None:
