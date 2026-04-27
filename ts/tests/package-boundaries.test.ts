@@ -21,7 +21,19 @@ type TsControlBoundary = {
 	blockedPackageDependencies: string[];
 };
 
+type LicensingGuardrails = {
+	status: string;
+	licenseMetadataIssue: string;
+	rightsAuditIssue: string;
+	forbiddenPathsUntilAC645: string[];
+	typescriptPackageMetadata: {
+		paths: string[];
+		forbiddenPackageKeys: string[];
+	};
+};
+
 type PackageBoundaries = {
+	licensing: LicensingGuardrails;
 	typescript: {
 		core: TsCoreBoundary;
 		control: TsControlBoundary;
@@ -71,6 +83,43 @@ function loadJson<T>(path: string): T {
 describe("package boundaries", () => {
 	it("defines a shared package-boundary contract", () => {
 		expect(existsSync(boundariesPath)).toBe(true);
+	});
+
+	it("keeps license metadata publication deferred to the blocking Linear issues", () => {
+		const licensing = loadBoundaries().licensing;
+
+		expect(licensing.status).toBe("deferred");
+		expect(licensing.licenseMetadataIssue).toBe("AC-645");
+		expect(licensing.rightsAuditIssue).toBe("AC-646");
+	});
+
+	it("keeps deferred license publication files absent", () => {
+		const licensing = loadBoundaries().licensing;
+
+		expect(licensing.forbiddenPathsUntilAC645).toEqual([
+			"LICENSING.md",
+			"packages/python/core/LICENSE",
+			"packages/python/control/LICENSE",
+			"packages/ts/core/LICENSE",
+			"packages/ts/control-plane/LICENSE",
+		]);
+		for (const relativePath of licensing.forbiddenPathsUntilAC645) {
+			expect(existsSync(join(repoRoot, relativePath))).toBe(false);
+		}
+	});
+
+	it("keeps TypeScript package license metadata deferred for new package artifacts", () => {
+		const metadata = loadBoundaries().licensing.typescriptPackageMetadata;
+
+		expect(metadata.forbiddenPackageKeys).toEqual(["license"]);
+		for (const relativePath of metadata.paths) {
+			const packageJson = loadJson<Record<string, unknown>>(
+				join(repoRoot, relativePath),
+			);
+			for (const key of metadata.forbiddenPackageKeys) {
+				expect(packageJson).not.toHaveProperty(key);
+			}
+		}
 	});
 
 	it("reuses the topology path for the TypeScript core package", () => {

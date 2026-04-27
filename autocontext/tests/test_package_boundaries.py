@@ -77,8 +77,70 @@ def _dependency_name(requirement: object) -> str:
     )
 
 
+def _licensing_guardrails() -> dict[str, object]:
+    boundaries = _load_boundaries()
+    licensing = boundaries["licensing"]
+    assert isinstance(licensing, dict)
+    return licensing
+
+
 def test_package_boundaries_manifest_exists() -> None:
     assert BOUNDARIES_PATH.exists()
+
+
+def test_license_metadata_publication_is_deferred_to_linear_guardrails() -> None:
+    licensing = _licensing_guardrails()
+
+    assert licensing["status"] == "deferred"
+    assert licensing["licenseMetadataIssue"] == "AC-645"
+    assert licensing["rightsAuditIssue"] == "AC-646"
+
+
+def test_deferred_license_publication_files_are_absent() -> None:
+    licensing = _licensing_guardrails()
+    forbidden_paths = licensing["forbiddenPathsUntilAC645"]
+    assert isinstance(forbidden_paths, list)
+    assert forbidden_paths == [
+        "LICENSING.md",
+        "packages/python/core/LICENSE",
+        "packages/python/control/LICENSE",
+        "packages/ts/core/LICENSE",
+        "packages/ts/control-plane/LICENSE",
+    ]
+
+    for relative_path in forbidden_paths:
+        assert isinstance(relative_path, str)
+        assert not (REPO_ROOT / relative_path).exists()
+
+
+def test_python_license_metadata_stays_deferred_for_new_package_artifacts() -> None:
+    licensing = _licensing_guardrails()
+    python_metadata = licensing["pythonProjectMetadata"]
+    assert isinstance(python_metadata, dict)
+    pyproject_paths = python_metadata["paths"]
+    forbidden_project_keys = python_metadata["forbiddenProjectKeys"]
+    forbidden_classifier_prefixes = python_metadata["forbiddenClassifierPrefixes"]
+    assert isinstance(pyproject_paths, list)
+    assert isinstance(forbidden_project_keys, list)
+    assert isinstance(forbidden_classifier_prefixes, list)
+    assert forbidden_project_keys == ["license", "license-files"]
+    assert forbidden_classifier_prefixes == ["License ::"]
+
+    for relative_path in pyproject_paths:
+        assert isinstance(relative_path, str)
+        pyproject = _load_pyproject(REPO_ROOT / relative_path)
+        project = pyproject["project"]
+        assert isinstance(project, dict)
+        for key in forbidden_project_keys:
+            assert isinstance(key, str)
+            assert key not in project
+        classifiers = project.get("classifiers", [])
+        assert isinstance(classifiers, list)
+        for classifier in classifiers:
+            assert isinstance(classifier, str)
+            for prefix in forbidden_classifier_prefixes:
+                assert isinstance(prefix, str)
+                assert not classifier.startswith(prefix)
 
 
 def test_python_boundary_contract_reuses_topology_core_module() -> None:
