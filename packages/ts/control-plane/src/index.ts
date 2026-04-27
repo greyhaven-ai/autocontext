@@ -1,6 +1,10 @@
 export const packageRole = "control";
 export const packageTopologyVersion = 1;
 
+export type {
+	AgentsStartedPayload,
+	GenerationStartedPayload,
+} from "../../../../ts/src/loop/generation-event-coordinator.js";
 export type { StagnationReport } from "../../../../ts/src/loop/stagnation.js";
 export type {
 	AppId,

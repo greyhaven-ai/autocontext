@@ -113,6 +113,24 @@ def test_python_control_reexports_research_brief() -> None:
     assert "Research Brief: Summarize refund policy changes" in brief.to_markdown()
 
 
+def test_python_control_reexports_generation_kickoff_payloads() -> None:
+    AgentsStartedPayload = control_package.AgentsStartedPayload
+    GenerationStartedPayload = control_package.GenerationStartedPayload
+
+    generation_started = GenerationStartedPayload(run_id="run-123", generation=2)
+    agents_started = AgentsStartedPayload(
+        run_id="run-123",
+        generation=2,
+        roles=["competitor", "analyst", "coach", "curator"],
+    )
+
+    assert generation_started.run_id == "run-123"
+    assert generation_started.generation == 2
+    assert agents_started.run_id == "run-123"
+    assert agents_started.generation == 2
+    assert agents_started.roles == ["competitor", "analyst", "coach", "curator"]
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources

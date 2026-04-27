@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type {
+	AgentsStartedPayload,
 	AppId,
 	EnvironmentTag,
 	FeedbackRef,
 	FeedbackRefId,
+	GenerationStartedPayload,
 	ProductionTrace,
 	ProductionTraceId,
 	ProviderInfo,
@@ -151,6 +153,27 @@ describe("@autocontext/control-plane facade", () => {
 		expect(brief.toMarkdown()).toContain(
 			"Research Brief: Summarize refund policy changes",
 		);
+	});
+
+	it("re-exports generation kickoff payload types", () => {
+		const generationStarted: GenerationStartedPayload = {
+			run_id: "run-123",
+			generation: 2,
+		};
+		const agentsStarted: AgentsStartedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			roles: ["competitor", "analyst", "coach", "curator"],
+		};
+
+		expect(generationStarted.run_id).toBe("run-123");
+		expect(generationStarted.generation).toBe(2);
+		expect(agentsStarted.roles).toEqual([
+			"competitor",
+			"analyst",
+			"coach",
+			"curator",
+		]);
 	});
 
 	it("re-exports shared server protocol models", () => {
