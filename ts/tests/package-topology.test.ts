@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const topologyPath = join(repoRoot, "packages", "package-topology.json");
+const boundariesPath = join(repoRoot, "packages", "package-boundaries.json");
 
 type PackageEntry = {
   name: string;
@@ -22,8 +23,20 @@ type Topology = {
   };
 };
 
+type PackageBoundaries = {
+  typescript: {
+    core: {
+      exactIncludes: string[];
+    };
+  };
+};
+
 function loadTopology(): Topology {
   return JSON.parse(readFileSync(topologyPath, "utf-8")) as Topology;
+}
+
+function loadBoundaries(): PackageBoundaries {
+  return JSON.parse(readFileSync(boundariesPath, "utf-8")) as PackageBoundaries;
 }
 
 function loadPackageJson(relativePath: string): Record<string, unknown> {
@@ -110,23 +123,16 @@ describe("package topology", () => {
 
   it("keeps the TypeScript core external source scope exact", () => {
     const topology = loadTopology();
+    const boundaries = loadBoundaries();
     const coreConfig = loadTsConfig(topology.typescript.core.path);
     const externalCoreSources = (coreConfig.include ?? []).filter((entry) =>
       entry.startsWith("../../../ts/src/"),
     );
+    const expectedExternalCoreSources = boundaries.typescript.core.exactIncludes.filter((entry) =>
+      entry.startsWith("../../../ts/src/"),
+    );
 
-    expect(externalCoreSources).toEqual([
-      "../../../ts/src/execution/elo.ts",
-      "../../../ts/src/judge/parse.ts",
-      "../../../ts/src/judge/rubric-coherence.ts",
-      "../../../ts/src/prompts/context-budget.ts",
-      "../../../ts/src/prompts/templates.ts",
-      "../../../ts/src/scenarios/game-interface.ts",
-      "../../../ts/src/scenarios/primary-family-interface-types.ts",
-      "../../../ts/src/scenarios/simulation-family-interface-types.ts",
-      "../../../ts/src/storage/storage-contracts.ts",
-      "../../../ts/src/types/index.ts",
-    ]);
+    expect(externalCoreSources).toEqual(expectedExternalCoreSources);
     expect(externalCoreSources.every((entry) => !entry.includes("*"))).toBe(true);
   });
 });

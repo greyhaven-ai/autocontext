@@ -32,8 +32,18 @@ type LicensingGuardrails = {
 	};
 };
 
+type ProductionTraceBoundary = {
+	typescriptOpenContract: {
+		coreOwnedSourceIncludes: string[];
+		coreOwnedProgramPathSubstrings: string[];
+	};
+};
+
 type PackageBoundaries = {
 	licensing: LicensingGuardrails;
+	mixedDomains: {
+		productionTraces: ProductionTraceBoundary;
+	};
 	typescript: {
 		core: TsCoreBoundary;
 		control: TsControlBoundary;
@@ -78,6 +88,19 @@ function loadTopology(): Topology {
 
 function loadJson<T>(path: string): T {
 	return JSON.parse(readFileSync(path, "utf-8")) as T;
+}
+
+function listTypeScriptProgramFiles(tsconfigPath: string): string[] {
+	const output = execFileSync(
+		join(repoRoot, "ts", "node_modules", ".bin", "tsc"),
+		["-p", tsconfigPath, "--listFilesOnly"],
+		{
+			cwd: repoRoot,
+			encoding: "utf-8",
+		},
+	);
+
+	return output.split(/\r?\n/).filter(Boolean);
 }
 
 describe("package boundaries", () => {
@@ -153,6 +176,43 @@ describe("package boundaries", () => {
 		expect(tsconfig.include.every((entry) => !entry.includes("*"))).toBe(true);
 	});
 
+	it("claims only explicit production trace open contract sources in the TypeScript core package", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const productionTraces =
+			boundaries.mixedDomains.productionTraces.typescriptOpenContract;
+
+		expect(productionTraces.coreOwnedSourceIncludes).toEqual([
+			"../../../ts/src/production-traces/contract/generated-types.ts",
+		]);
+		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual([
+			"/ts/src/production-traces/contract/generated-types.ts",
+		]);
+		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
+			expect(core.exactIncludes).toContain(sourceInclude);
+		}
+
+		const fileList = listTypeScriptProgramFiles(core.tsconfigPath);
+		const productionTraceFiles = fileList.filter((entry) =>
+			entry.includes("/ts/src/production-traces/"),
+		);
+		expect(productionTraceFiles).toHaveLength(
+			productionTraces.coreOwnedProgramPathSubstrings.length,
+		);
+		for (const ownedPath of productionTraces.coreOwnedProgramPathSubstrings) {
+			expect(
+				productionTraceFiles.some((entry) => entry.includes(ownedPath)),
+			).toBe(true);
+		}
+		for (const filePath of productionTraceFiles) {
+			expect(
+				productionTraces.coreOwnedProgramPathSubstrings.some((ownedPath) =>
+					filePath.includes(ownedPath),
+				),
+			).toBe(true);
+		}
+	});
+
 	it("keeps the TypeScript core package dependencies pointed away from control and umbrella packages", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
@@ -214,17 +274,8 @@ describe("package boundaries", () => {
 	it("keeps the TypeScript core program free of control-plane paths", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
+		const fileList = listTypeScriptProgramFiles(core.tsconfigPath);
 
-		const output = execFileSync(
-			join(repoRoot, "ts", "node_modules", ".bin", "tsc"),
-			["-p", core.tsconfigPath, "--listFilesOnly"],
-			{
-				cwd: repoRoot,
-				encoding: "utf-8",
-			},
-		);
-
-		const fileList = output.split(/\r?\n/).filter(Boolean);
 		for (const blocked of core.blockedProgramPathSubstrings) {
 			expect(fileList.some((entry) => entry.includes(blocked))).toBe(false);
 		}

@@ -16,6 +16,7 @@
 		"../../../ts/src/scenarios/primary-family-interface-types.ts",
 		"../../../ts/src/scenarios/simulation-family-interface-types.ts",
 		"../../../ts/src/storage/storage-contracts.ts",
-		"../../../ts/src/types/index.ts"
+		"../../../ts/src/types/index.ts",
+		"../../../ts/src/production-traces/contract/generated-types.ts"
 	]
 }

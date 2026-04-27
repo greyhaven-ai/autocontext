@@ -9,6 +9,12 @@ export type {
 export { parseJudgeResponse } from "../../../../ts/src/judge/parse.js";
 export type { RubricCoherenceResult } from "../../../../ts/src/judge/rubric-coherence.js";
 export { checkRubricCoherence } from "../../../../ts/src/judge/rubric-coherence.js";
+export type {
+	ProductionOutcome,
+	ProductionTrace,
+	TraceLinks,
+	TraceSource,
+} from "../../../../ts/src/production-traces/contract/generated-types.js";
 export {
 	ContextBudget,
 	estimateTokens,

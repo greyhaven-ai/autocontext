@@ -107,18 +107,23 @@
 				"../../../ts/src/scenarios/primary-family-interface-types.ts",
 				"../../../ts/src/scenarios/simulation-family-interface-types.ts",
 				"../../../ts/src/storage/storage-contracts.ts",
-				"../../../ts/src/types/index.ts"
+				"../../../ts/src/types/index.ts",
+				"../../../ts/src/production-traces/contract/generated-types.ts"
 			],
 			"blockedProgramPathSubstrings": [
 				"/ts/src/control-plane/",
-				"/ts/src/production-traces/",
 				"/ts/src/research/",
 				"/ts/src/server/",
 				"/ts/src/loop/",
 				"/ts/src/config/",
 				"/ts/src/runtimes/",
 				"/ts/src/providers/",
-				"/ts/src/agents/"
+				"/ts/src/agents/",
+				"/ts/src/production-traces/cli/",
+				"/ts/src/production-traces/ingest/",
+				"/ts/src/production-traces/dataset/",
+				"/ts/src/production-traces/retention/",
+				"/ts/src/traces/"
 			],
 			"blockedPackageDependencies": [
 				"@autocontext/control-plane",
@@ -144,6 +149,18 @@
 			"blockedPackageDependencies": [
 				"autoctx"
 			]
+		}
+	},
+	"mixedDomains": {
+		"productionTraces": {
+			"typescriptOpenContract": {
+				"coreOwnedSourceIncludes": [
+					"../../../ts/src/production-traces/contract/generated-types.ts"
+				],
+				"coreOwnedProgramPathSubstrings": [
+					"/ts/src/production-traces/contract/generated-types.ts"
+				]
+			}
 		}
 	}
 }
