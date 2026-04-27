@@ -177,7 +177,7 @@ export const OverrideGateCmdSchema = z.object({
 export const ChatAgentCmdSchema = z.object({
   type: z.literal("chat_agent"),
   role: z.string(),
-  message: z.string(),
+  message: z.string().min(1),
 });
 
 export const StartRunCmdSchema = z.object({
