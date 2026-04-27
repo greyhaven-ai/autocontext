@@ -113,6 +113,56 @@ def test_python_control_reexports_research_brief() -> None:
     assert "Research Brief: Summarize refund policy changes" in brief.to_markdown()
 
 
+def test_python_control_reexports_generation_kickoff_payloads() -> None:
+    AgentsStartedPayload = control_package.AgentsStartedPayload
+    GenerationStartedPayload = control_package.GenerationStartedPayload
+
+    generation_started = GenerationStartedPayload(run_id="run-123", generation=2)
+    agents_started = AgentsStartedPayload(
+        run_id="run-123",
+        generation=2,
+        roles=["competitor", "analyst", "coach", "curator"],
+    )
+
+    assert generation_started.run_id == "run-123"
+    assert generation_started.generation == 2
+    assert agents_started.run_id == "run-123"
+    assert agents_started.generation == 2
+    assert agents_started.roles == ["competitor", "analyst", "coach", "curator"]
+
+
+def test_python_control_reexports_role_completed_payload() -> None:
+    RoleCompletedPayload = control_package.RoleCompletedPayload
+
+    payload = RoleCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        role="coach",
+        latency_ms=125,
+        tokens=42,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.role == "coach"
+    assert payload.latency_ms == 125
+    assert payload.tokens == 42
+
+
+def test_python_control_reexports_tournament_started_payload() -> None:
+    TournamentStartedPayload = control_package.TournamentStartedPayload
+
+    payload = TournamentStartedPayload(
+        run_id="run-123",
+        generation=2,
+        matches=8,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.matches == 8
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources
