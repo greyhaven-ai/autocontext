@@ -210,6 +210,38 @@ def test_python_control_reexports_monitor_alert_messages() -> None:
     assert alert.detail == "No events for 30.0s (timeout=30.0s)"
 
 
+def test_python_control_reexports_monitor_domain_value_objects() -> None:
+    ConditionType = control_package.ConditionType
+    MonitorAlert = control_package.MonitorAlert
+    MonitorCondition = control_package.MonitorCondition
+
+    condition = MonitorCondition(
+        id="cond-1",
+        name="stall-window",
+        condition_type=ConditionType.STALL_WINDOW,
+        params={"window": 3},
+        scope="run:run-123",
+        created_at="2026-04-25T00:00:00Z",
+    )
+    alert = MonitorAlert(
+        id="alert-1",
+        condition_id=condition.id,
+        condition_name=condition.name,
+        condition_type=condition.condition_type,
+        scope=condition.scope,
+        detail="3 consecutive rollbacks",
+        fired_at="2026-04-25T00:01:00Z",
+        payload={"window": 3},
+    )
+
+    assert ConditionType.STALL_WINDOW == "stall_window"
+    assert condition.condition_type is ConditionType.STALL_WINDOW
+    assert condition.params == {"window": 3}
+    assert alert.condition_type is ConditionType.STALL_WINDOW
+    assert alert.detail == "3 consecutive rollbacks"
+    assert alert.payload == {"window": 3}
+
+
 def test_python_control_requires_stage_for_scenario_error_messages() -> None:
     ScenarioErrorMsg = control_package.ScenarioErrorMsg
 

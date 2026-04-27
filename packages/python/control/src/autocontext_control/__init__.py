@@ -8,6 +8,7 @@ _production_traces_contract = import_module(
 )
 _research_types = import_module("autocontext.research.types")
 _server_protocol = import_module("autocontext.server.protocol")
+_monitor_types = import_module("autocontext.monitor.types")
 
 PROTOCOL_VERSION = _server_protocol.PROTOCOL_VERSION
 ScenarioInfo: Any = _server_protocol.ScenarioInfo
@@ -24,6 +25,9 @@ AckMsg: Any = _server_protocol.AckMsg
 RunAcceptedMsg: Any = _server_protocol.RunAcceptedMsg
 ErrorMsg: Any = _server_protocol.ErrorMsg
 MonitorAlertMsg: Any = _server_protocol.MonitorAlertMsg
+ConditionType: Any = _monitor_types.ConditionType
+MonitorCondition: Any = _monitor_types.MonitorCondition
+MonitorAlert: Any = _monitor_types.MonitorAlert
 ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
@@ -67,6 +71,7 @@ __all__ = [
     "ChatResponseMsg",
     "Chosen",
     "Citation",
+    "ConditionType",
     "EndedAt",
     "EnvContext",
     "EventMsg",
@@ -74,7 +79,9 @@ __all__ = [
     "AckMsg",
     "Error",
     "ErrorMsg",
+    "MonitorAlert",
     "MonitorAlertMsg",
+    "MonitorCondition",
     "EvalExampleId",
     "FeedbackRef",
     "Items",
