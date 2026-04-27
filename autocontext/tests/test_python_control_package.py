@@ -242,6 +242,48 @@ def test_python_control_reexports_monitor_domain_value_objects() -> None:
     assert alert.payload == {"window": 3}
 
 
+def test_python_control_reexports_agent_contract_dataclasses() -> None:
+    AnalystOutput = control_package.AnalystOutput
+    ArchitectOutput = control_package.ArchitectOutput
+    CoachOutput = control_package.CoachOutput
+    CompetitorOutput = control_package.CompetitorOutput
+
+    competitor = CompetitorOutput(
+        raw_text="Use beam search.",
+        strategy={"approach": "beam-search"},
+        reasoning="It keeps more candidate programs alive.",
+        is_code_strategy=True,
+    )
+    analyst = AnalystOutput(
+        raw_markdown="# Findings",
+        findings=["plateau detected"],
+        root_causes=["search space too narrow"],
+        recommendations=["increase branching"],
+    )
+    coach = CoachOutput(
+        raw_markdown="# Coaching",
+        playbook="Try wider exploration.",
+        lessons="Diversity matters.",
+        hints="Look for alternate decompositions.",
+    )
+    architect = ArchitectOutput(
+        raw_markdown="# Architecture",
+        tool_specs=[{"name": "scratchpad"}],
+        harness_specs=[{"id": "h1"}],
+        changelog_entry="Added scratchpad tool.",
+    )
+
+    assert competitor.is_code_strategy is True
+    assert competitor.strategy == {"approach": "beam-search"}
+    assert analyst.findings == ["plateau detected"]
+    assert analyst.root_causes == ["search space too narrow"]
+    assert coach.playbook == "Try wider exploration."
+    assert coach.hints == "Look for alternate decompositions."
+    assert architect.tool_specs == [{"name": "scratchpad"}]
+    assert architect.harness_specs == [{"id": "h1"}]
+    assert architect.changelog_entry == "Added scratchpad tool."
+
+
 def test_python_control_requires_stage_for_scenario_error_messages() -> None:
     ScenarioErrorMsg = control_package.ScenarioErrorMsg
 

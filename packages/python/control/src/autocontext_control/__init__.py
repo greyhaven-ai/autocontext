@@ -9,6 +9,7 @@ _production_traces_contract = import_module(
 _research_types = import_module("autocontext.research.types")
 _server_protocol = import_module("autocontext.server.protocol")
 _monitor_types = import_module("autocontext.monitor.types")
+_agent_contracts = import_module("autocontext.agents.contracts")
 
 PROTOCOL_VERSION = _server_protocol.PROTOCOL_VERSION
 ScenarioInfo: Any = _server_protocol.ScenarioInfo
@@ -33,6 +34,10 @@ ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
 ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
 Urgency: Any = _research_types.Urgency
+CompetitorOutput: Any = _agent_contracts.CompetitorOutput
+AnalystOutput: Any = _agent_contracts.AnalystOutput
+CoachOutput: Any = _agent_contracts.CoachOutput
+ArchitectOutput: Any = _agent_contracts.ArchitectOutput
 ResearchQuery: Any = _research_types.ResearchQuery
 Citation: Any = _research_types.Citation
 ResearchResult: Any = _research_types.ResearchResult
@@ -68,9 +73,12 @@ package_role = PACKAGE_ROLE
 package_topology_version = PACKAGE_TOPOLOGY_VERSION
 
 __all__ = [
+    "AnalystOutput",
+    "ArchitectOutput",
     "ChatResponseMsg",
     "Chosen",
     "Citation",
+    "CoachOutput",
     "ConditionType",
     "EndedAt",
     "EnvContext",
@@ -95,6 +103,7 @@ __all__ = [
     "ProductionOutcome",
     "ProductionTrace",
     "Provider",
+    "CompetitorOutput",
     "RunAcceptedMsg",
     "RedactionMarker",
     "ResearchAdapter",
