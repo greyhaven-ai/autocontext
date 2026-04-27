@@ -149,6 +149,20 @@ def test_python_control_reexports_role_completed_payload() -> None:
     assert payload.tokens == 42
 
 
+def test_python_control_reexports_tournament_started_payload() -> None:
+    TournamentStartedPayload = control_package.TournamentStartedPayload
+
+    payload = TournamentStartedPayload(
+        run_id="run-123",
+        generation=2,
+        matches=8,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.matches == 8
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources

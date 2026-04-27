@@ -6,6 +6,13 @@ export interface GenerationLoopEventSequenceItem {
   payload: Record<string, unknown>;
 }
 
+export interface TournamentStartedPayload {
+  [key: string]: unknown;
+  run_id: string;
+  generation: number;
+  matches: number;
+}
+
 export function buildGenerationTournamentEventSequence(opts: {
   runId: string;
   generation: number;
@@ -32,7 +39,7 @@ function buildTournamentStartedEvent(
       run_id: runId,
       generation,
       matches: scheduledMatches,
-    },
+    } as TournamentStartedPayload,
   };
 }
 
