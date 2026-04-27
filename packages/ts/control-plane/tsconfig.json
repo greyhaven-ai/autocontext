@@ -1,17 +1,20 @@
 {
-  "extends": "../../../ts/tsconfig.json",
-  "compilerOptions": {
-    "rootDir": "../../..",
-    "outDir": "./dist",
-    "noEmit": false
-  },
-  "include": [
-    "src/**/*.ts",
-    "../../../ts/src/production-traces/contract/types.ts",
-    "../../../ts/src/production-traces/contract/branded-ids.ts",
-    "../../../ts/src/control-plane/contract/branded-ids.ts",
-    "../../../ts/src/research/types.ts",
-    "../../../ts/src/server/protocol.ts",
-    "../../../ts/src/loop/stagnation.ts"
-  ]
+	"extends": "../../../ts/tsconfig.json",
+	"compilerOptions": {
+		"rootDir": "../../..",
+		"outDir": "./dist",
+		"noEmit": false,
+		"types": ["node"],
+		"typeRoots": ["../../../ts/node_modules/@types"]
+	},
+	"include": [
+		"src/**/*.ts",
+		"../../../ts/src/production-traces/contract/types.ts",
+		"../../../ts/src/production-traces/contract/branded-ids.ts",
+		"../../../ts/src/control-plane/contract/branded-ids.ts",
+		"../../../ts/src/research/types.ts",
+		"../../../ts/src/research/consultation.ts",
+		"../../../ts/src/server/protocol.ts",
+		"../../../ts/src/loop/stagnation.ts"
+	]
 }
