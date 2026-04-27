@@ -1,0 +1,1780 @@
+{
+  "version": 1,
+  "contract": "portable AppSettings fields present in both Python and TypeScript",
+  "unknown_field_policy": "ignore",
+  "env_alias_policy": "env applies to both runtimes unless python_env or typescript_env is provided",
+  "fields": [
+    {
+      "python": "ablation_no_feedback",
+      "typescript": "ablationNoFeedback",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_ABLATION_NO_FEEDBACK"
+      ]
+    },
+    {
+      "python": "agent_provider",
+      "typescript": "agentProvider",
+      "type": "string",
+      "default": "anthropic",
+      "env": [
+        "AUTOCONTEXT_AGENT_PROVIDER",
+        "AUTOCONTEXT_PROVIDER"
+      ]
+    },
+    {
+      "python": "analyst_api_key",
+      "typescript": "analystApiKey",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_ANALYST_API_KEY"
+      ]
+    },
+    {
+      "python": "analyst_base_url",
+      "typescript": "analystBaseUrl",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_ANALYST_BASE_URL"
+      ]
+    },
+    {
+      "python": "analyst_provider",
+      "typescript": "analystProvider",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_ANALYST_PROVIDER"
+      ]
+    },
+    {
+      "python": "anthropic_api_key",
+      "typescript": "anthropicApiKey",
+      "type": "nullable_string",
+      "default": null,
+      "env": [
+        "ANTHROPIC_API_KEY",
+        "AUTOCONTEXT_ANTHROPIC_API_KEY"
+      ]
+    },
+    {
+      "python": "architect_api_key",
+      "typescript": "architectApiKey",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_ARCHITECT_API_KEY"
+      ]
+    },
+    {
+      "python": "architect_base_url",
+      "typescript": "architectBaseUrl",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_ARCHITECT_BASE_URL"
+      ]
+    },
+    {
+      "python": "architect_every_n_gens",
+      "typescript": "architectEveryNGens",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_ARCHITECT_EVERY_N_GENS"
+      ]
+    },
+    {
+      "python": "architect_provider",
+      "typescript": "architectProvider",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_ARCHITECT_PROVIDER"
+      ]
+    },
+    {
+      "python": "audit_enabled",
+      "typescript": "auditEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_AUDIT_ENABLED"
+      ]
+    },
+    {
+      "python": "backpressure_min_delta",
+      "typescript": "backpressureMinDelta",
+      "type": "number",
+      "default": 0.005,
+      "env": [
+        "AUTOCONTEXT_BACKPRESSURE_MIN_DELTA"
+      ]
+    },
+    {
+      "python": "backpressure_mode",
+      "typescript": "backpressureMode",
+      "type": "string",
+      "default": "simple",
+      "env": [
+        "AUTOCONTEXT_BACKPRESSURE_MODE"
+      ]
+    },
+    {
+      "python": "backpressure_plateau_relaxation",
+      "typescript": "backpressurePlateauRelaxation",
+      "type": "number",
+      "default": 0.5,
+      "env": [
+        "AUTOCONTEXT_BACKPRESSURE_PLATEAU_RELAXATION"
+      ]
+    },
+    {
+      "python": "backpressure_plateau_window",
+      "typescript": "backpressurePlateauWindow",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_BACKPRESSURE_PLATEAU_WINDOW"
+      ]
+    },
+    {
+      "python": "blob_store_backend",
+      "typescript": "blobStoreBackend",
+      "type": "string",
+      "default": "local",
+      "env": [
+        "AUTOCONTEXT_BLOB_STORE_BACKEND"
+      ]
+    },
+    {
+      "python": "blob_store_cache_max_mb",
+      "typescript": "blobStoreCacheMaxMb",
+      "type": "integer",
+      "default": 500,
+      "env": [
+        "AUTOCONTEXT_BLOB_STORE_CACHE_MAX_MB"
+      ]
+    },
+    {
+      "python": "blob_store_enabled",
+      "typescript": "blobStoreEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_BLOB_STORE_ENABLED"
+      ]
+    },
+    {
+      "python": "blob_store_min_size_bytes",
+      "typescript": "blobStoreMinSizeBytes",
+      "type": "integer",
+      "default": 1024,
+      "env": [
+        "AUTOCONTEXT_BLOB_STORE_MIN_SIZE_BYTES"
+      ]
+    },
+    {
+      "python": "blob_store_repo",
+      "typescript": "blobStoreRepo",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_BLOB_STORE_REPO"
+      ]
+    },
+    {
+      "python": "blob_store_root",
+      "typescript": "blobStoreRoot",
+      "type": "path",
+      "default": "./blobs",
+      "env": [
+        "AUTOCONTEXT_BLOB_STORE_ROOT"
+      ]
+    },
+    {
+      "python": "browser_allow_auth",
+      "typescript": "browserAllowAuth",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_BROWSER_ALLOW_AUTH"
+      ]
+    },
+    {
+      "python": "browser_allow_downloads",
+      "typescript": "browserAllowDownloads",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_BROWSER_ALLOW_DOWNLOADS"
+      ]
+    },
+    {
+      "python": "browser_allow_uploads",
+      "typescript": "browserAllowUploads",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_BROWSER_ALLOW_UPLOADS"
+      ]
+    },
+    {
+      "python": "browser_allowed_domains",
+      "typescript": "browserAllowedDomains",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_BROWSER_ALLOWED_DOMAINS"
+      ]
+    },
+    {
+      "python": "browser_backend",
+      "typescript": "browserBackend",
+      "type": "string",
+      "default": "chrome-cdp",
+      "env": [
+        "AUTOCONTEXT_BROWSER_BACKEND"
+      ]
+    },
+    {
+      "python": "browser_capture_screenshots",
+      "typescript": "browserCaptureScreenshots",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_BROWSER_CAPTURE_SCREENSHOTS"
+      ]
+    },
+    {
+      "python": "browser_debugger_url",
+      "typescript": "browserDebuggerUrl",
+      "type": "string",
+      "default": "http://127.0.0.1:9222",
+      "env": [
+        "AUTOCONTEXT_BROWSER_DEBUGGER_URL"
+      ]
+    },
+    {
+      "python": "browser_downloads_root",
+      "typescript": "browserDownloadsRoot",
+      "type": "path",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_BROWSER_DOWNLOADS_ROOT"
+      ]
+    },
+    {
+      "python": "browser_enabled",
+      "typescript": "browserEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_BROWSER_ENABLED"
+      ]
+    },
+    {
+      "python": "browser_headless",
+      "typescript": "browserHeadless",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_BROWSER_HEADLESS"
+      ]
+    },
+    {
+      "python": "browser_preferred_target_url",
+      "typescript": "browserPreferredTargetUrl",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_BROWSER_PREFERRED_TARGET_URL"
+      ]
+    },
+    {
+      "python": "browser_profile_mode",
+      "typescript": "browserProfileMode",
+      "type": "enum",
+      "default": "ephemeral",
+      "env": [
+        "AUTOCONTEXT_BROWSER_PROFILE_MODE"
+      ],
+      "values": [
+        "ephemeral",
+        "isolated",
+        "user-profile"
+      ]
+    },
+    {
+      "python": "browser_uploads_root",
+      "typescript": "browserUploadsRoot",
+      "type": "path",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_BROWSER_UPLOADS_ROOT"
+      ]
+    },
+    {
+      "python": "claude_model",
+      "typescript": "claudeModel",
+      "type": "string",
+      "default": "sonnet",
+      "env": [
+        "AUTOCONTEXT_CLAUDE_MODEL"
+      ]
+    },
+    {
+      "python": "claude_permission_mode",
+      "typescript": "claudePermissionMode",
+      "type": "string",
+      "default": "bypassPermissions",
+      "env": [
+        "AUTOCONTEXT_CLAUDE_PERMISSION_MODE"
+      ]
+    },
+    {
+      "python": "claude_session_persistence",
+      "typescript": "claudeSessionPersistence",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_CLAUDE_SESSION_PERSISTENCE"
+      ]
+    },
+    {
+      "python": "claude_skills_path",
+      "typescript": "claudeSkillsPath",
+      "type": "path",
+      "default": ".claude/skills",
+      "env": [
+        "AUTOCONTEXT_CLAUDE_SKILLS_PATH"
+      ]
+    },
+    {
+      "python": "claude_timeout",
+      "typescript": "claudeTimeout",
+      "type": "number",
+      "default": 600.0,
+      "env": [
+        "AUTOCONTEXT_CLAUDE_TIMEOUT"
+      ]
+    },
+    {
+      "python": "claude_tools",
+      "typescript": "claudeTools",
+      "type": "nullable_string",
+      "default": null,
+      "env": [
+        "AUTOCONTEXT_CLAUDE_TOOLS"
+      ]
+    },
+    {
+      "python": "coach_api_key",
+      "typescript": "coachApiKey",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_COACH_API_KEY"
+      ]
+    },
+    {
+      "python": "coach_base_url",
+      "typescript": "coachBaseUrl",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_COACH_BASE_URL"
+      ]
+    },
+    {
+      "python": "coach_provider",
+      "typescript": "coachProvider",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_COACH_PROVIDER"
+      ]
+    },
+    {
+      "python": "code_strategies_enabled",
+      "typescript": "codeStrategiesEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_CODE_STRATEGIES_ENABLED"
+      ]
+    },
+    {
+      "python": "codex_approval_mode",
+      "typescript": "codexApprovalMode",
+      "type": "string",
+      "default": "full-auto",
+      "env": [
+        "AUTOCONTEXT_CODEX_APPROVAL_MODE"
+      ]
+    },
+    {
+      "python": "codex_model",
+      "typescript": "codexModel",
+      "type": "string",
+      "default": "o4-mini",
+      "env": [
+        "AUTOCONTEXT_CODEX_MODEL"
+      ]
+    },
+    {
+      "python": "codex_quiet",
+      "typescript": "codexQuiet",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_CODEX_QUIET"
+      ]
+    },
+    {
+      "python": "codex_timeout",
+      "typescript": "codexTimeout",
+      "type": "number",
+      "default": 120.0,
+      "env": [
+        "AUTOCONTEXT_CODEX_TIMEOUT"
+      ]
+    },
+    {
+      "python": "codex_workspace",
+      "typescript": "codexWorkspace",
+      "type": "path",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_CODEX_WORKSPACE"
+      ]
+    },
+    {
+      "python": "coherence_check_enabled",
+      "typescript": "coherenceCheckEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_COHERENCE_CHECK_ENABLED"
+      ]
+    },
+    {
+      "python": "competitor_api_key",
+      "typescript": "competitorApiKey",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_COMPETITOR_API_KEY"
+      ]
+    },
+    {
+      "python": "competitor_base_url",
+      "typescript": "competitorBaseUrl",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_COMPETITOR_BASE_URL"
+      ]
+    },
+    {
+      "python": "competitor_provider",
+      "typescript": "competitorProvider",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_COMPETITOR_PROVIDER"
+      ]
+    },
+    {
+      "python": "constraint_prompts_enabled",
+      "typescript": "constraintPromptsEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_CONSTRAINT_PROMPTS_ENABLED"
+      ]
+    },
+    {
+      "python": "consultation_api_key",
+      "typescript": "consultationApiKey",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_CONSULTATION_API_KEY"
+      ]
+    },
+    {
+      "python": "consultation_base_url",
+      "typescript": "consultationBaseUrl",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_CONSULTATION_BASE_URL"
+      ]
+    },
+    {
+      "python": "consultation_cost_budget",
+      "typescript": "consultationCostBudget",
+      "type": "number",
+      "default": 0.0,
+      "env": [
+        "AUTOCONTEXT_CONSULTATION_COST_BUDGET"
+      ]
+    },
+    {
+      "python": "consultation_enabled",
+      "typescript": "consultationEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_CONSULTATION_ENABLED"
+      ]
+    },
+    {
+      "python": "consultation_model",
+      "typescript": "consultationModel",
+      "type": "string",
+      "default": "claude-sonnet-4-20250514",
+      "env": [
+        "AUTOCONTEXT_CONSULTATION_MODEL"
+      ]
+    },
+    {
+      "python": "consultation_provider",
+      "typescript": "consultationProvider",
+      "type": "string",
+      "default": "anthropic",
+      "env": [
+        "AUTOCONTEXT_CONSULTATION_PROVIDER"
+      ]
+    },
+    {
+      "python": "consultation_stagnation_threshold",
+      "typescript": "consultationStagnationThreshold",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_CONSULTATION_STAGNATION_THRESHOLD"
+      ]
+    },
+    {
+      "python": "context_budget_tokens",
+      "typescript": "contextBudgetTokens",
+      "type": "integer",
+      "default": 100000,
+      "env": [
+        "AUTOCONTEXT_CONTEXT_BUDGET_TOKENS"
+      ]
+    },
+    {
+      "python": "cost_budget_limit",
+      "typescript": "costBudgetLimit",
+      "type": "nullable_number",
+      "default": null,
+      "env": [
+        "AUTOCONTEXT_COST_BUDGET_LIMIT"
+      ]
+    },
+    {
+      "python": "cost_max_per_delta_point",
+      "typescript": "costMaxPerDeltaPoint",
+      "type": "number",
+      "default": 10.0,
+      "env": [
+        "AUTOCONTEXT_COST_MAX_PER_DELTA_POINT"
+      ]
+    },
+    {
+      "python": "cost_per_generation_limit",
+      "typescript": "costPerGenerationLimit",
+      "type": "number",
+      "default": 0.0,
+      "env": [
+        "AUTOCONTEXT_COST_PER_GENERATION_LIMIT"
+      ]
+    },
+    {
+      "python": "cost_throttle_above_total",
+      "typescript": "costThrottleAboveTotal",
+      "type": "number",
+      "default": 0.0,
+      "env": [
+        "AUTOCONTEXT_COST_THROTTLE_ABOVE_TOTAL"
+      ]
+    },
+    {
+      "python": "cost_tracking_enabled",
+      "typescript": "costTrackingEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_COST_TRACKING_ENABLED"
+      ]
+    },
+    {
+      "python": "cross_run_inheritance",
+      "typescript": "crossRunInheritance",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_CROSS_RUN_INHERITANCE"
+      ]
+    },
+    {
+      "python": "curator_consolidate_every_n_gens",
+      "typescript": "curatorConsolidateEveryNGens",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_CURATOR_CONSOLIDATE_EVERY_N_GENS"
+      ]
+    },
+    {
+      "python": "curator_enabled",
+      "typescript": "curatorEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_CURATOR_ENABLED"
+      ]
+    },
+    {
+      "python": "db_path",
+      "typescript": "dbPath",
+      "type": "path",
+      "default": "runs/autocontext.sqlite3",
+      "env": [
+        "AUTOCONTEXT_DB_PATH"
+      ]
+    },
+    {
+      "python": "dead_end_max_entries",
+      "typescript": "deadEndMaxEntries",
+      "type": "integer",
+      "default": 20,
+      "env": [
+        "AUTOCONTEXT_DEAD_END_MAX_ENTRIES"
+      ]
+    },
+    {
+      "python": "dead_end_tracking_enabled",
+      "typescript": "deadEndTrackingEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_DEAD_END_TRACKING_ENABLED"
+      ]
+    },
+    {
+      "python": "default_generations",
+      "typescript": "defaultGenerations",
+      "type": "integer",
+      "default": 1,
+      "env": [
+        "AUTOCONTEXT_DEFAULT_GENERATIONS"
+      ]
+    },
+    {
+      "python": "divergent_competitor_enabled",
+      "typescript": "divergentCompetitorEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_DIVERGENT_COMPETITOR_ENABLED"
+      ]
+    },
+    {
+      "python": "divergent_rollback_threshold",
+      "typescript": "divergentRollbackThreshold",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_DIVERGENT_ROLLBACK_THRESHOLD"
+      ]
+    },
+    {
+      "python": "divergent_temperature",
+      "typescript": "divergentTemperature",
+      "type": "number",
+      "default": 0.7,
+      "env": [
+        "AUTOCONTEXT_DIVERGENT_TEMPERATURE"
+      ]
+    },
+    {
+      "python": "ecosystem_convergence_enabled",
+      "typescript": "ecosystemConvergenceEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_ECOSYSTEM_CONVERGENCE_ENABLED"
+      ]
+    },
+    {
+      "python": "ecosystem_divergence_threshold",
+      "typescript": "ecosystemDivergenceThreshold",
+      "type": "number",
+      "default": 0.3,
+      "env": [
+        "AUTOCONTEXT_ECOSYSTEM_DIVERGENCE_THRESHOLD"
+      ]
+    },
+    {
+      "python": "ecosystem_oscillation_window",
+      "typescript": "ecosystemOscillationWindow",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_ECOSYSTEM_OSCILLATION_WINDOW"
+      ]
+    },
+    {
+      "python": "event_stream_path",
+      "typescript": "eventStreamPath",
+      "type": "path",
+      "default": "runs/events.ndjson",
+      "env": [
+        "AUTOCONTEXT_EVENT_STREAM_PATH"
+      ]
+    },
+    {
+      "python": "evidence_freshness_enabled",
+      "typescript": "evidenceFreshnessEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_EVIDENCE_FRESHNESS_ENABLED"
+      ]
+    },
+    {
+      "python": "evidence_freshness_max_age_gens",
+      "typescript": "evidenceFreshnessMaxAgeGens",
+      "type": "integer",
+      "default": 10,
+      "env": [
+        "AUTOCONTEXT_EVIDENCE_FRESHNESS_MAX_AGE_GENS"
+      ]
+    },
+    {
+      "python": "evidence_freshness_min_confidence",
+      "typescript": "evidenceFreshnessMinConfidence",
+      "type": "number",
+      "default": 0.4,
+      "env": [
+        "AUTOCONTEXT_EVIDENCE_FRESHNESS_MIN_CONFIDENCE"
+      ]
+    },
+    {
+      "python": "evidence_freshness_min_support",
+      "typescript": "evidenceFreshnessMinSupport",
+      "type": "integer",
+      "default": 1,
+      "env": [
+        "AUTOCONTEXT_EVIDENCE_FRESHNESS_MIN_SUPPORT"
+      ]
+    },
+    {
+      "python": "executor_mode",
+      "typescript": "executorMode",
+      "type": "string",
+      "default": "local",
+      "env": [
+        "AUTOCONTEXT_EXECUTOR_MODE"
+      ]
+    },
+    {
+      "python": "exploration_mode",
+      "typescript": "explorationMode",
+      "type": "enum",
+      "default": "linear",
+      "env": [
+        "AUTOCONTEXT_EXPLORATION_MODE"
+      ],
+      "values": [
+        "linear",
+        "rapid",
+        "tree"
+      ]
+    },
+    {
+      "python": "generation_phase_budget_rollover_enabled",
+      "typescript": "generationPhaseBudgetRolloverEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_GENERATION_PHASE_BUDGET_ROLLOVER_ENABLED"
+      ]
+    },
+    {
+      "python": "generation_scaffolding_budget_ratio",
+      "typescript": "generationScaffoldingBudgetRatio",
+      "type": "number",
+      "default": 0.4,
+      "env": [
+        "AUTOCONTEXT_GENERATION_SCAFFOLDING_BUDGET_RATIO"
+      ]
+    },
+    {
+      "python": "generation_time_budget_seconds",
+      "typescript": "generationTimeBudgetSeconds",
+      "type": "integer",
+      "default": 0,
+      "env": [
+        "AUTOCONTEXT_GENERATION_TIME_BUDGET_SECONDS"
+      ]
+    },
+    {
+      "python": "harness_inheritance_enabled",
+      "typescript": "harnessInheritanceEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_HARNESS_INHERITANCE_ENABLED"
+      ]
+    },
+    {
+      "python": "harness_mode",
+      "typescript": "harnessMode",
+      "type": "enum",
+      "default": "none",
+      "env": [
+        "AUTOCONTEXT_HARNESS_MODE"
+      ],
+      "values": [
+        "none",
+        "filter",
+        "verify",
+        "policy"
+      ]
+    },
+    {
+      "python": "harness_timeout_seconds",
+      "typescript": "harnessTimeoutSeconds",
+      "type": "number",
+      "default": 5.0,
+      "env": [
+        "AUTOCONTEXT_HARNESS_TIMEOUT_SECONDS"
+      ]
+    },
+    {
+      "python": "harness_validators_enabled",
+      "typescript": "harnessValidatorsEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_HARNESS_VALIDATORS_ENABLED"
+      ]
+    },
+    {
+      "python": "hint_volume_archive_rotated",
+      "typescript": "hintVolumeArchiveRotated",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_HINT_VOLUME_ARCHIVE_ROTATED"
+      ]
+    },
+    {
+      "python": "hint_volume_enabled",
+      "typescript": "hintVolumeEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_HINT_VOLUME_ENABLED"
+      ]
+    },
+    {
+      "python": "hint_volume_max_hints",
+      "typescript": "hintVolumeMaxHints",
+      "type": "integer",
+      "default": 7,
+      "env": [
+        "AUTOCONTEXT_HINT_VOLUME_MAX_HINTS"
+      ]
+    },
+    {
+      "python": "holdout_enabled",
+      "typescript": "holdoutEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_HOLDOUT_ENABLED"
+      ]
+    },
+    {
+      "python": "holdout_max_regression_gap",
+      "typescript": "holdoutMaxRegressionGap",
+      "type": "number",
+      "default": 0.2,
+      "env": [
+        "AUTOCONTEXT_HOLDOUT_MAX_REGRESSION_GAP"
+      ]
+    },
+    {
+      "python": "holdout_min_score",
+      "typescript": "holdoutMinScore",
+      "type": "number",
+      "default": 0.0,
+      "env": [
+        "AUTOCONTEXT_HOLDOUT_MIN_SCORE"
+      ]
+    },
+    {
+      "python": "holdout_seed_offset",
+      "typescript": "holdoutSeedOffset",
+      "type": "integer",
+      "default": 10000,
+      "env": [
+        "AUTOCONTEXT_HOLDOUT_SEED_OFFSET"
+      ]
+    },
+    {
+      "python": "holdout_seeds",
+      "typescript": "holdoutSeeds",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_HOLDOUT_SEEDS"
+      ]
+    },
+    {
+      "python": "judge_api_key",
+      "typescript": "judgeApiKey",
+      "type": "nullable_string",
+      "default": null,
+      "env": [
+        "AUTOCONTEXT_JUDGE_API_KEY"
+      ]
+    },
+    {
+      "python": "judge_base_url",
+      "typescript": "judgeBaseUrl",
+      "type": "nullable_string",
+      "default": null,
+      "env": [
+        "AUTOCONTEXT_JUDGE_BASE_URL"
+      ]
+    },
+    {
+      "python": "judge_bias_probes_enabled",
+      "typescript": "judgeBiasProbesEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_JUDGE_BIAS_PROBES_ENABLED"
+      ]
+    },
+    {
+      "python": "judge_disagreement_threshold",
+      "typescript": "judgeDisagreementThreshold",
+      "type": "number",
+      "default": 0.15,
+      "env": [
+        "AUTOCONTEXT_JUDGE_DISAGREEMENT_THRESHOLD"
+      ]
+    },
+    {
+      "python": "judge_model",
+      "typescript": "judgeModel",
+      "type": "string",
+      "default": "claude-sonnet-4-20250514",
+      "env": [
+        "AUTOCONTEXT_JUDGE_MODEL"
+      ]
+    },
+    {
+      "python": "judge_provider",
+      "typescript": "judgeProvider",
+      "type": "string",
+      "default": "auto",
+      "env": [
+        "AUTOCONTEXT_JUDGE_PROVIDER"
+      ]
+    },
+    {
+      "python": "judge_samples",
+      "typescript": "judgeSamples",
+      "type": "integer",
+      "default": 1,
+      "env": [
+        "AUTOCONTEXT_JUDGE_SAMPLES"
+      ]
+    },
+    {
+      "python": "judge_temperature",
+      "typescript": "judgeTemperature",
+      "type": "number",
+      "default": 0.0,
+      "env": [
+        "AUTOCONTEXT_JUDGE_TEMPERATURE"
+      ]
+    },
+    {
+      "python": "knowledge_root",
+      "typescript": "knowledgeRoot",
+      "type": "path",
+      "default": "knowledge",
+      "env": [
+        "AUTOCONTEXT_KNOWLEDGE_ROOT"
+      ]
+    },
+    {
+      "python": "matches_per_generation",
+      "typescript": "matchesPerGeneration",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_MATCHES_PER_GENERATION"
+      ]
+    },
+    {
+      "python": "max_retries",
+      "typescript": "maxRetries",
+      "type": "integer",
+      "default": 2,
+      "env": [
+        "AUTOCONTEXT_MAX_RETRIES"
+      ]
+    },
+    {
+      "python": "model_analyst",
+      "typescript": "modelAnalyst",
+      "type": "string",
+      "default": "claude-sonnet-4-5-20250929",
+      "python_env": [
+        "AUTOCONTEXT_MODEL_ANALYST"
+      ],
+      "typescript_env": [
+        "AUTOCONTEXT_MODEL_ANALYST",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+        "AUTOCONTEXT_MODEL"
+      ]
+    },
+    {
+      "python": "model_architect",
+      "typescript": "modelArchitect",
+      "type": "string",
+      "default": "claude-opus-4-6",
+      "python_env": [
+        "AUTOCONTEXT_MODEL_ARCHITECT"
+      ],
+      "typescript_env": [
+        "AUTOCONTEXT_MODEL_ARCHITECT",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+        "AUTOCONTEXT_MODEL"
+      ]
+    },
+    {
+      "python": "model_coach",
+      "typescript": "modelCoach",
+      "type": "string",
+      "default": "claude-opus-4-6",
+      "python_env": [
+        "AUTOCONTEXT_MODEL_COACH"
+      ],
+      "typescript_env": [
+        "AUTOCONTEXT_MODEL_COACH",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+        "AUTOCONTEXT_MODEL"
+      ]
+    },
+    {
+      "python": "model_competitor",
+      "typescript": "modelCompetitor",
+      "type": "string",
+      "default": "claude-sonnet-4-5-20250929",
+      "python_env": [
+        "AUTOCONTEXT_MODEL_COMPETITOR"
+      ],
+      "typescript_env": [
+        "AUTOCONTEXT_MODEL_COMPETITOR",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+        "AUTOCONTEXT_MODEL"
+      ]
+    },
+    {
+      "python": "model_curator",
+      "typescript": "modelCurator",
+      "type": "string",
+      "default": "claude-opus-4-6",
+      "python_env": [
+        "AUTOCONTEXT_MODEL_CURATOR"
+      ],
+      "typescript_env": [
+        "AUTOCONTEXT_MODEL_CURATOR",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+        "AUTOCONTEXT_MODEL"
+      ]
+    },
+    {
+      "python": "model_skeptic",
+      "typescript": "modelSkeptic",
+      "type": "string",
+      "default": "claude-opus-4-6",
+      "python_env": [
+        "AUTOCONTEXT_MODEL_SKEPTIC"
+      ],
+      "typescript_env": [
+        "AUTOCONTEXT_MODEL_SKEPTIC",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+        "AUTOCONTEXT_MODEL"
+      ]
+    },
+    {
+      "python": "model_translator",
+      "typescript": "modelTranslator",
+      "type": "string",
+      "default": "claude-sonnet-4-5-20250929",
+      "python_env": [
+        "AUTOCONTEXT_MODEL_TRANSLATOR"
+      ],
+      "typescript_env": [
+        "AUTOCONTEXT_MODEL_TRANSLATOR",
+        "AUTOCONTEXT_AGENT_DEFAULT_MODEL",
+        "AUTOCONTEXT_MODEL"
+      ]
+    },
+    {
+      "python": "monitor_enabled",
+      "typescript": "monitorEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_MONITOR_ENABLED"
+      ]
+    },
+    {
+      "python": "monitor_heartbeat_timeout",
+      "typescript": "monitorHeartbeatTimeout",
+      "type": "number",
+      "default": 300.0,
+      "env": [
+        "AUTOCONTEXT_MONITOR_HEARTBEAT_TIMEOUT"
+      ]
+    },
+    {
+      "python": "monitor_max_conditions",
+      "typescript": "monitorMaxConditions",
+      "type": "integer",
+      "default": 100,
+      "env": [
+        "AUTOCONTEXT_MONITOR_MAX_CONDITIONS"
+      ]
+    },
+    {
+      "python": "multi_basin_candidates",
+      "typescript": "multiBasinCandidates",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_MULTI_BASIN_CANDIDATES"
+      ]
+    },
+    {
+      "python": "multi_basin_enabled",
+      "typescript": "multiBasinEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_MULTI_BASIN_ENABLED"
+      ]
+    },
+    {
+      "python": "multi_basin_periodic_every_n",
+      "typescript": "multiBasinPeriodicEveryN",
+      "type": "integer",
+      "default": 0,
+      "env": [
+        "AUTOCONTEXT_MULTI_BASIN_PERIODIC_EVERY_N"
+      ]
+    },
+    {
+      "python": "multi_basin_trigger_rollbacks",
+      "typescript": "multiBasinTriggerRollbacks",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_MULTI_BASIN_TRIGGER_ROLLBACKS"
+      ]
+    },
+    {
+      "python": "notify_on",
+      "typescript": "notifyOn",
+      "type": "string",
+      "default": "threshold_met,failure",
+      "env": [
+        "AUTOCONTEXT_NOTIFY_ON"
+      ]
+    },
+    {
+      "python": "notify_webhook_url",
+      "typescript": "notifyWebhookUrl",
+      "type": "nullable_string",
+      "default": null,
+      "env": [
+        "AUTOCONTEXT_NOTIFY_WEBHOOK_URL"
+      ]
+    },
+    {
+      "python": "novelty_enabled",
+      "typescript": "noveltyEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_NOVELTY_ENABLED"
+      ]
+    },
+    {
+      "python": "novelty_history_window",
+      "typescript": "noveltyHistoryWindow",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_NOVELTY_HISTORY_WINDOW"
+      ]
+    },
+    {
+      "python": "novelty_weight",
+      "typescript": "noveltyWeight",
+      "type": "number",
+      "default": 0.1,
+      "env": [
+        "AUTOCONTEXT_NOVELTY_WEIGHT"
+      ]
+    },
+    {
+      "python": "openclaw_agent_command",
+      "typescript": "openclawAgentCommand",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_AGENT_COMMAND"
+      ]
+    },
+    {
+      "python": "openclaw_agent_factory",
+      "typescript": "openclawAgentFactory",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_AGENT_FACTORY"
+      ]
+    },
+    {
+      "python": "openclaw_agent_http_endpoint",
+      "typescript": "openclawAgentHttpEndpoint",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_ENDPOINT"
+      ]
+    },
+    {
+      "python": "openclaw_agent_http_headers",
+      "typescript": "openclawAgentHttpHeaders",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_AGENT_HTTP_HEADERS"
+      ]
+    },
+    {
+      "python": "openclaw_compatibility_version",
+      "typescript": "openclawCompatibilityVersion",
+      "type": "string",
+      "default": "1.0",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_COMPATIBILITY_VERSION"
+      ]
+    },
+    {
+      "python": "openclaw_distill_sidecar_command",
+      "typescript": "openclawDistillSidecarCommand",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_DISTILL_SIDECAR_COMMAND"
+      ]
+    },
+    {
+      "python": "openclaw_distill_sidecar_factory",
+      "typescript": "openclawDistillSidecarFactory",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_DISTILL_SIDECAR_FACTORY"
+      ]
+    },
+    {
+      "python": "openclaw_max_retries",
+      "typescript": "openclawMaxRetries",
+      "type": "integer",
+      "default": 2,
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_MAX_RETRIES"
+      ]
+    },
+    {
+      "python": "openclaw_retry_base_delay",
+      "typescript": "openclawRetryBaseDelay",
+      "type": "number",
+      "default": 0.25,
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_RETRY_BASE_DELAY"
+      ]
+    },
+    {
+      "python": "openclaw_runtime_kind",
+      "typescript": "openclawRuntimeKind",
+      "type": "string",
+      "default": "factory",
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_RUNTIME_KIND"
+      ]
+    },
+    {
+      "python": "openclaw_timeout_seconds",
+      "typescript": "openclawTimeoutSeconds",
+      "type": "number",
+      "default": 30.0,
+      "env": [
+        "AUTOCONTEXT_OPENCLAW_TIMEOUT_SECONDS"
+      ]
+    },
+    {
+      "python": "pi_command",
+      "typescript": "piCommand",
+      "type": "string",
+      "default": "pi",
+      "env": [
+        "AUTOCONTEXT_PI_COMMAND"
+      ]
+    },
+    {
+      "python": "pi_model",
+      "typescript": "piModel",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_PI_MODEL"
+      ]
+    },
+    {
+      "python": "pi_no_context_files",
+      "typescript": "piNoContextFiles",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_PI_NO_CONTEXT_FILES"
+      ]
+    },
+    {
+      "python": "pi_rpc_api_key",
+      "typescript": "piRpcApiKey",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_PI_RPC_API_KEY"
+      ]
+    },
+    {
+      "python": "pi_rpc_endpoint",
+      "typescript": "piRpcEndpoint",
+      "type": "string",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_PI_RPC_ENDPOINT"
+      ]
+    },
+    {
+      "python": "pi_rpc_session_persistence",
+      "typescript": "piRpcSessionPersistence",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_PI_RPC_SESSION_PERSISTENCE"
+      ]
+    },
+    {
+      "python": "pi_timeout",
+      "typescript": "piTimeout",
+      "type": "number",
+      "default": 300.0,
+      "env": [
+        "AUTOCONTEXT_PI_TIMEOUT"
+      ]
+    },
+    {
+      "python": "pi_workspace",
+      "typescript": "piWorkspace",
+      "type": "path",
+      "default": "",
+      "env": [
+        "AUTOCONTEXT_PI_WORKSPACE"
+      ]
+    },
+    {
+      "python": "playbook_max_versions",
+      "typescript": "playbookMaxVersions",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_PLAYBOOK_MAX_VERSIONS"
+      ]
+    },
+    {
+      "python": "policy_refinement_enabled",
+      "typescript": "policyRefinementEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_POLICY_REFINEMENT_ENABLED"
+      ]
+    },
+    {
+      "python": "prevalidation_dry_run_enabled",
+      "typescript": "prevalidationDryRunEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_PREVALIDATION_DRY_RUN_ENABLED"
+      ]
+    },
+    {
+      "python": "prevalidation_enabled",
+      "typescript": "prevalidationEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_PREVALIDATION_ENABLED"
+      ]
+    },
+    {
+      "python": "prevalidation_max_retries",
+      "typescript": "prevalidationMaxRetries",
+      "type": "integer",
+      "default": 2,
+      "env": [
+        "AUTOCONTEXT_PREVALIDATION_MAX_RETRIES"
+      ]
+    },
+    {
+      "python": "prevalidation_regression_fixture_limit",
+      "typescript": "prevalidationRegressionFixtureLimit",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_PREVALIDATION_REGRESSION_FIXTURE_LIMIT"
+      ]
+    },
+    {
+      "python": "prevalidation_regression_fixtures_enabled",
+      "typescript": "prevalidationRegressionFixturesEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_PREVALIDATION_REGRESSION_FIXTURES_ENABLED"
+      ]
+    },
+    {
+      "python": "primeintellect_api_base",
+      "typescript": "primeintellectApiBase",
+      "type": "string",
+      "default": "https://api.primeintellect.ai",
+      "env": [
+        "AUTOCONTEXT_PRIMEINTELLECT_API_BASE"
+      ]
+    },
+    {
+      "python": "primeintellect_api_key",
+      "typescript": "primeintellectApiKey",
+      "type": "nullable_string",
+      "default": null,
+      "env": [
+        "AUTOCONTEXT_PRIMEINTELLECT_API_KEY"
+      ]
+    },
+    {
+      "python": "probe_matches",
+      "typescript": "probeMatches",
+      "type": "integer",
+      "default": 0,
+      "env": [
+        "AUTOCONTEXT_PROBE_MATCHES"
+      ]
+    },
+    {
+      "python": "progress_json_enabled",
+      "typescript": "progressJsonEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_PROGRESS_JSON_ENABLED"
+      ]
+    },
+    {
+      "python": "rapid_gens",
+      "typescript": "rapidGens",
+      "type": "integer",
+      "default": 0,
+      "env": [
+        "AUTOCONTEXT_RAPID_GENS"
+      ]
+    },
+    {
+      "python": "regression_fixture_min_occurrences",
+      "typescript": "regressionFixtureMinOccurrences",
+      "type": "integer",
+      "default": 2,
+      "env": [
+        "AUTOCONTEXT_REGRESSION_FIXTURE_MIN_OCCURRENCES"
+      ]
+    },
+    {
+      "python": "regression_fixtures_enabled",
+      "typescript": "regressionFixturesEnabled",
+      "type": "boolean",
+      "default": true,
+      "env": [
+        "AUTOCONTEXT_REGRESSION_FIXTURES_ENABLED"
+      ]
+    },
+    {
+      "python": "retry_backoff_seconds",
+      "typescript": "retryBackoffSeconds",
+      "type": "number",
+      "default": 0.25,
+      "env": [
+        "AUTOCONTEXT_RETRY_BACKOFF_SECONDS"
+      ]
+    },
+    {
+      "python": "rlm_backend",
+      "typescript": "rlmBackend",
+      "type": "string",
+      "default": "exec",
+      "env": [
+        "AUTOCONTEXT_RLM_BACKEND"
+      ]
+    },
+    {
+      "python": "rlm_code_timeout_seconds",
+      "typescript": "rlmCodeTimeoutSeconds",
+      "type": "number",
+      "default": 10.0,
+      "env": [
+        "AUTOCONTEXT_RLM_CODE_TIMEOUT_SECONDS"
+      ]
+    },
+    {
+      "python": "rlm_competitor_enabled",
+      "typescript": "rlmCompetitorEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_RLM_COMPETITOR_ENABLED"
+      ]
+    },
+    {
+      "python": "rlm_enabled",
+      "typescript": "rlmEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_RLM_ENABLED"
+      ]
+    },
+    {
+      "python": "rlm_max_stdout_chars",
+      "typescript": "rlmMaxStdoutChars",
+      "type": "integer",
+      "default": 8192,
+      "env": [
+        "AUTOCONTEXT_RLM_MAX_STDOUT_CHARS"
+      ]
+    },
+    {
+      "python": "rlm_max_turns",
+      "typescript": "rlmMaxTurns",
+      "type": "integer",
+      "default": 25,
+      "env": [
+        "AUTOCONTEXT_RLM_MAX_TURNS"
+      ]
+    },
+    {
+      "python": "rlm_sub_model",
+      "typescript": "rlmSubModel",
+      "type": "string",
+      "default": "claude-haiku-4-5-20251001",
+      "env": [
+        "AUTOCONTEXT_RLM_SUB_MODEL"
+      ]
+    },
+    {
+      "python": "runs_root",
+      "typescript": "runsRoot",
+      "type": "path",
+      "default": "runs",
+      "env": [
+        "AUTOCONTEXT_RUNS_ROOT"
+      ]
+    },
+    {
+      "python": "scoring_backend",
+      "typescript": "scoringBackend",
+      "type": "string",
+      "default": "elo",
+      "env": [
+        "AUTOCONTEXT_SCORING_BACKEND"
+      ]
+    },
+    {
+      "python": "scoring_dimension_regression_threshold",
+      "typescript": "scoringDimensionRegressionThreshold",
+      "type": "number",
+      "default": 0.1,
+      "env": [
+        "AUTOCONTEXT_SCORING_DIMENSION_REGRESSION_THRESHOLD"
+      ]
+    },
+    {
+      "python": "seed_base",
+      "typescript": "seedBase",
+      "type": "integer",
+      "default": 1000,
+      "env": [
+        "AUTOCONTEXT_SEED_BASE"
+      ]
+    },
+    {
+      "python": "self_play_enabled",
+      "typescript": "selfPlayEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_SELF_PLAY_ENABLED"
+      ]
+    },
+    {
+      "python": "self_play_pool_size",
+      "typescript": "selfPlayPoolSize",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_SELF_PLAY_POOL_SIZE"
+      ]
+    },
+    {
+      "python": "self_play_weight",
+      "typescript": "selfPlayWeight",
+      "type": "number",
+      "default": 0.5,
+      "env": [
+        "AUTOCONTEXT_SELF_PLAY_WEIGHT"
+      ]
+    },
+    {
+      "python": "skeptic_can_block",
+      "typescript": "skepticCanBlock",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_SKEPTIC_CAN_BLOCK"
+      ]
+    },
+    {
+      "python": "skeptic_enabled",
+      "typescript": "skepticEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_SKEPTIC_ENABLED"
+      ]
+    },
+    {
+      "python": "skill_max_lessons",
+      "typescript": "skillMaxLessons",
+      "type": "integer",
+      "default": 30,
+      "env": [
+        "AUTOCONTEXT_SKILL_MAX_LESSONS"
+      ]
+    },
+    {
+      "python": "skills_root",
+      "typescript": "skillsRoot",
+      "type": "path",
+      "default": "skills",
+      "env": [
+        "AUTOCONTEXT_SKILLS_ROOT"
+      ]
+    },
+    {
+      "python": "stagnation_distill_top_lessons",
+      "typescript": "stagnationDistillTopLessons",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_STAGNATION_DISTILL_TOP_LESSONS"
+      ]
+    },
+    {
+      "python": "stagnation_plateau_epsilon",
+      "typescript": "stagnationPlateauEpsilon",
+      "type": "number",
+      "default": 0.01,
+      "env": [
+        "AUTOCONTEXT_STAGNATION_PLATEAU_EPSILON"
+      ]
+    },
+    {
+      "python": "stagnation_plateau_window",
+      "typescript": "stagnationPlateauWindow",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_STAGNATION_PLATEAU_WINDOW"
+      ]
+    },
+    {
+      "python": "stagnation_reset_enabled",
+      "typescript": "stagnationResetEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_STAGNATION_RESET_ENABLED"
+      ]
+    },
+    {
+      "python": "stagnation_rollback_threshold",
+      "typescript": "stagnationRollbackThreshold",
+      "type": "integer",
+      "default": 5,
+      "env": [
+        "AUTOCONTEXT_STAGNATION_ROLLBACK_THRESHOLD"
+      ]
+    },
+    {
+      "python": "two_tier_gating_enabled",
+      "typescript": "twoTierGatingEnabled",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_TWO_TIER_GATING_ENABLED"
+      ]
+    },
+    {
+      "python": "validity_max_retries",
+      "typescript": "validityMaxRetries",
+      "type": "integer",
+      "default": 3,
+      "env": [
+        "AUTOCONTEXT_VALIDITY_MAX_RETRIES"
+      ]
+    }
+  ]
+}

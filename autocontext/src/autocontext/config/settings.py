@@ -14,8 +14,14 @@ from autocontext.runtimes.pi_defaults import PI_DEFAULT_TIMEOUT_SECONDS
 logger = logging.getLogger(__name__)
 
 _ENV_ALIASES: dict[str, tuple[str, ...]] = {
+    "agent_provider": ("AUTOCONTEXT_AGENT_PROVIDER", "AUTOCONTEXT_PROVIDER"),
     "anthropic_api_key": ("ANTHROPIC_API_KEY", "AUTOCONTEXT_ANTHROPIC_API_KEY"),
 }
+
+
+def setting_env_keys(field_name: str) -> tuple[str, ...]:
+    """Return the env keys accepted for an AppSettings field."""
+    return _ENV_ALIASES.get(field_name, (f"AUTOCONTEXT_{field_name.upper()}",))
 
 
 class HarnessMode(StrEnum):
@@ -620,7 +626,7 @@ class AppSettings(BaseModel):
     # Browser exploration (AC-598)
     browser_enabled: bool = Field(default=False, description="Enable optional browser exploration surfaces")
     browser_backend: str = Field(default="chrome-cdp", description="Browser backend name")
-    browser_profile_mode: str = Field(
+    browser_profile_mode: Literal["ephemeral", "isolated", "user-profile"] = Field(
         default="ephemeral",
         description="Browser profile mode: ephemeral, isolated, or user-profile",
     )
@@ -724,7 +730,7 @@ def load_settings() -> AppSettings:
 
     kwargs: dict[str, Any] = {}
     for field_name in AppSettings.model_fields:
-        env_keys = _ENV_ALIASES.get(field_name, (f"AUTOCONTEXT_{field_name.upper()}",))
+        env_keys = setting_env_keys(field_name)
         env_val = next((value for key in env_keys if (value := os.getenv(key)) is not None), None)
         if env_val is not None:
             kwargs[field_name] = env_val

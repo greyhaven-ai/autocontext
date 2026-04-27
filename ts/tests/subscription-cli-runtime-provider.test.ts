@@ -26,7 +26,7 @@ describe("subscription-backed CLI runtime provider parity", () => {
     expect(settings.claudeTools).toBeNull();
     expect(settings.claudePermissionMode).toBe("bypassPermissions");
     expect(settings.claudeSessionPersistence).toBe(false);
-    expect(settings.claudeTimeout).toBe(120.0);
+    expect(settings.claudeTimeout).toBe(600.0);
 
     expect(settings.codexModel).toBe("o4-mini");
     expect(settings.codexTimeout).toBe(120.0);
