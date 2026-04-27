@@ -54,6 +54,7 @@ export {
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
 	PROTOCOL_VERSION,
+	RunAcceptedMsgSchema,
 	ScenarioErrorMsgSchema,
 	ScenarioGeneratingMsgSchema,
 	ScenarioInfoSchema,

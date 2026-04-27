@@ -28,6 +28,7 @@ import {
 	ResearchConfig,
 	ResearchQuery,
 	ResearchResult,
+	RunAcceptedMsgSchema,
 	ScenarioErrorMsgSchema,
 	ScenarioGeneratingMsgSchema,
 	ScenarioInfoSchema,
@@ -161,6 +162,19 @@ describe("@autocontext/control-plane facade", () => {
 		expect(environments.executors[0]?.resources?.cpu_cores).toBe(4);
 		expect(environments.current_executor).toBe("docker");
 		expect(environments.agent_provider).toBe("pi");
+	});
+
+	it("re-exports run acceptance messages", () => {
+		const accepted = RunAcceptedMsgSchema.parse({
+			type: "run_accepted",
+			run_id: "run-123",
+			scenario: "schema_repair",
+			generations: 4,
+		});
+
+		expect(accepted.run_id).toBe("run-123");
+		expect(accepted.scenario).toBe("schema_repair");
+		expect(accepted.generations).toBe(4);
 	});
 
 	it("re-exports basic server protocol message models", () => {

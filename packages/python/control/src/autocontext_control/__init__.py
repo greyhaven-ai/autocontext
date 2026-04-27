@@ -19,6 +19,7 @@ HelloMsg: Any = _server_protocol.HelloMsg
 EnvironmentsMsg: Any = _server_protocol.EnvironmentsMsg
 StateMsg: Any = _server_protocol.StateMsg
 AckMsg: Any = _server_protocol.AckMsg
+RunAcceptedMsg: Any = _server_protocol.RunAcceptedMsg
 ErrorMsg: Any = _server_protocol.ErrorMsg
 ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
@@ -81,6 +82,7 @@ __all__ = [
     "ProductionOutcome",
     "ProductionTrace",
     "Provider",
+    "RunAcceptedMsg",
     "RedactionMarker",
     "ResearchAdapter",
     "ResearchConfig",
