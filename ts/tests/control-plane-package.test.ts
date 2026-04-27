@@ -21,9 +21,10 @@ import {
 	ErrorMsgSchema,
 	EventMsgSchema,
 	ExecutorInfoSchema,
-	MonitorAlertMsgSchema,
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
+	MissionProgressMsgSchema,
+	MonitorAlertMsgSchema,
 	PRODUCTION_TRACE_SCHEMA_VERSION,
 	PROTOCOL_VERSION,
 	packageRole,
@@ -230,6 +231,25 @@ describe("@autocontext/control-plane facade", () => {
 		expect(ack.action).toBe("pause");
 		expect(ack.decision).toBe("accepted");
 		expect(error.message).toBe("run failed");
+	});
+
+	it("re-exports mission progress messages", () => {
+		const progress = MissionProgressMsgSchema.parse({
+			type: "mission_progress",
+			missionId: "mission-1",
+			status: "running",
+			stepsCompleted: 3,
+			latestStep: "evaluate candidate",
+			budgetUsed: 1.25,
+			budgetMax: 5,
+		});
+
+		expect(progress.missionId).toBe("mission-1");
+		expect(progress.status).toBe("running");
+		expect(progress.stepsCompleted).toBe(3);
+		expect(progress.latestStep).toBe("evaluate candidate");
+		expect(progress.budgetUsed).toBe(1.25);
+		expect(progress.budgetMax).toBe(5);
 	});
 
 	it("re-exports monitor alert messages", () => {
