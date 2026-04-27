@@ -15,6 +15,7 @@ import type {
 } from "../../packages/ts/control-plane/src/index.ts";
 import {
 	AckMsgSchema,
+	ChatResponseMsgSchema,
 	Citation,
 	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
@@ -175,6 +176,17 @@ describe("@autocontext/control-plane facade", () => {
 		expect(accepted.run_id).toBe("run-123");
 		expect(accepted.scenario).toBe("schema_repair");
 		expect(accepted.generations).toBe(4);
+	});
+
+	it("re-exports chat response messages", () => {
+		const response = ChatResponseMsgSchema.parse({
+			type: "chat_response",
+			role: "assistant",
+			text: "Schema looks valid.",
+		});
+
+		expect(response.role).toBe("assistant");
+		expect(response.text).toBe("Schema looks valid.");
 	});
 
 	it("re-exports basic server protocol message models", () => {

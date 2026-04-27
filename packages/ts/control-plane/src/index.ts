@@ -48,6 +48,7 @@ export {
 } from "../../../../ts/src/research/types.js";
 export {
 	AckMsgSchema,
+	ChatResponseMsgSchema,
 	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
 	ExecutorInfoSchema,

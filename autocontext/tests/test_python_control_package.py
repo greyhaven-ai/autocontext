@@ -149,6 +149,16 @@ def test_python_control_reexports_run_acceptance_messages() -> None:
     assert accepted.generations == 4
 
 
+def test_python_control_reexports_chat_response_messages() -> None:
+    ChatResponseMsg = control_package.ChatResponseMsg
+
+    response = ChatResponseMsg(role="assistant", text="Schema looks valid.")
+
+    assert response.type == "chat_response"
+    assert response.role == "assistant"
+    assert response.text == "Schema looks valid."
+
+
 def test_python_control_reexports_basic_server_protocol_messages() -> None:
     AckMsg = control_package.AckMsg
     ErrorMsg = control_package.ErrorMsg
