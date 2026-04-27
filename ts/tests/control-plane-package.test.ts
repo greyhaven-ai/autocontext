@@ -11,6 +11,7 @@ import type {
 	ProviderInfo,
 	ResearchAdapter,
 	RoleCompletedPayload,
+	RunCompletedPayload,
 	RunFailedPayload,
 	RunStartedPayload,
 	Scenario,
@@ -216,6 +217,24 @@ describe("@autocontext/control-plane facade", () => {
 		expect(payload.run_id).toBe("run-123");
 		expect(payload.scenario).toBe("grid_ctf");
 		expect(payload.target_generations).toBe(5);
+	});
+
+	it("re-exports run completed payload types", () => {
+		const payload: RunCompletedPayload = {
+			run_id: "run-123",
+			completed_generations: 4,
+			best_score: 0.82,
+			elo: 1042,
+			session_report_path: "/tmp/report.md",
+			dead_ends_found: 2,
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.completed_generations).toBe(4);
+		expect(payload.best_score).toBe(0.82);
+		expect(payload.elo).toBe(1042);
+		expect(payload.session_report_path).toBe("/tmp/report.md");
+		expect(payload.dead_ends_found).toBe(2);
 	});
 
 	it("re-exports run failed payload types", () => {
