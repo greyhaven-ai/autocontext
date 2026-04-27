@@ -23,6 +23,7 @@ StateMsg: Any = _server_protocol.StateMsg
 AckMsg: Any = _server_protocol.AckMsg
 RunAcceptedMsg: Any = _server_protocol.RunAcceptedMsg
 ErrorMsg: Any = _server_protocol.ErrorMsg
+MonitorAlertMsg: Any = _server_protocol.MonitorAlertMsg
 ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
@@ -73,6 +74,7 @@ __all__ = [
     "AckMsg",
     "Error",
     "ErrorMsg",
+    "MonitorAlertMsg",
     "EvalExampleId",
     "FeedbackRef",
     "Items",

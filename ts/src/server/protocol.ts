@@ -121,7 +121,7 @@ export const ScenarioReadyMsgSchema = z.object({
 export const ScenarioErrorMsgSchema = z.object({
   type: z.literal("scenario_error"),
   message: z.string(),
-  stage: z.string().optional(),
+  stage: z.string(),
 });
 
 export const MonitorAlertMsgSchema = z.object({
@@ -131,7 +131,7 @@ export const MonitorAlertMsgSchema = z.object({
   condition_name: z.string(),
   condition_type: z.string(),
   scope: z.string(),
-  detail: z.record(z.unknown()),
+  detail: z.string(),
 });
 
 // Mission progress (AC-414)
