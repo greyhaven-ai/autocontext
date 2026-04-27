@@ -47,7 +47,11 @@
 			"blockedDependencies": [
 				"autocontext"
 			],
-			"allowedImports": []
+			"allowedImports": [
+				"autocontext.production_traces.contract.models",
+				"autocontext.research.types",
+				"autocontext.research.consultation"
+			]
 		}
 	},
 	"typescript": {
@@ -87,7 +91,12 @@
 			"packagePath": "packages/ts/control-plane",
 			"tsconfigPath": "packages/ts/control-plane/tsconfig.json",
 			"exactIncludes": [
-				"src/index.ts"
+				"src/index.ts",
+				"../../../ts/src/production-traces/contract/types.ts",
+				"../../../ts/src/production-traces/contract/branded-ids.ts",
+				"../../../ts/src/control-plane/contract/branded-ids.ts",
+				"../../../ts/src/research/types.ts",
+				"../../../ts/src/research/consultation.ts"
 			],
 			"blockedPackageDependencies": [
 				"autoctx"
