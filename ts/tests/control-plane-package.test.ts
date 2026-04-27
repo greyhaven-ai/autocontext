@@ -18,6 +18,7 @@ import {
 	AckMsgSchema,
 	AuthStatusMsgSchema,
 	CancelScenarioCmdSchema,
+	ChatAgentCmdSchema,
 	ChatResponseMsgSchema,
 	Citation,
 	ConfirmScenarioCmdSchema,
@@ -303,6 +304,23 @@ describe("@autocontext/control-plane facade", () => {
 		expect(injectHint.text).toBe("Try broader search.");
 		expect(overrideGate.decision).toBe("retry");
 		expect(invalidHint.success).toBe(false);
+	});
+
+	it("re-exports chat agent command", () => {
+		const chatAgent = ChatAgentCmdSchema.parse({
+			type: "chat_agent",
+			role: "coach",
+			message: "Try broader search.",
+		});
+		const invalidChatAgent = ChatAgentCmdSchema.safeParse({
+			type: "chat_agent",
+			role: "coach",
+			message: "",
+		});
+
+		expect(chatAgent.role).toBe("coach");
+		expect(chatAgent.message).toBe("Try broader search.");
+		expect(invalidChatAgent.success).toBe(false);
 	});
 
 	it("re-exports run setup commands", () => {

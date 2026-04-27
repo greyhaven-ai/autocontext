@@ -349,6 +349,23 @@ def test_python_control_reexports_run_setup_commands() -> None:
     assert start_run.generations == 3
 
 
+def test_python_control_reexports_chat_agent_command() -> None:
+    ChatAgentCmd = control_package.ChatAgentCmd
+
+    chat = ChatAgentCmd(role="coach", message="Try broader search.")
+
+    assert chat.type == "chat_agent"
+    assert chat.role == "coach"
+    assert chat.message == "Try broader search."
+
+    try:
+        ChatAgentCmd(role="coach", message="")
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("ChatAgentCmd should require non-empty message")
+
+
 def test_python_control_requires_stage_for_scenario_error_messages() -> None:
     ScenarioErrorMsg = control_package.ScenarioErrorMsg
 

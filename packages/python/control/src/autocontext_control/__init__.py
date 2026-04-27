@@ -38,6 +38,7 @@ PauseCmd: Any = _server_protocol.PauseCmd
 ResumeCmd: Any = _server_protocol.ResumeCmd
 InjectHintCmd: Any = _server_protocol.InjectHintCmd
 OverrideGateCmd: Any = _server_protocol.OverrideGateCmd
+ChatAgentCmd: Any = _server_protocol.ChatAgentCmd
 CreateScenarioCmd: Any = _server_protocol.CreateScenarioCmd
 ConfirmScenarioCmd: Any = _server_protocol.ConfirmScenarioCmd
 ReviseScenarioCmd: Any = _server_protocol.ReviseScenarioCmd
@@ -91,6 +92,7 @@ __all__ = [
     "Chosen",
     "Citation",
     "CancelScenarioCmd",
+    "ChatAgentCmd",
     "CoachOutput",
     "ConditionType",
     "ConfirmScenarioCmd",

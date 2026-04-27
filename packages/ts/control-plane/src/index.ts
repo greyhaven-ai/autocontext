@@ -51,6 +51,7 @@ export {
 	AckMsgSchema,
 	AuthStatusMsgSchema,
 	CancelScenarioCmdSchema,
+	ChatAgentCmdSchema,
 	ChatResponseMsgSchema,
 	ConfirmScenarioCmdSchema,
 	CreateScenarioCmdSchema,
