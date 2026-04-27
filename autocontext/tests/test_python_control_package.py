@@ -183,6 +183,32 @@ def test_python_control_reexports_tournament_completed_payload() -> None:
     assert payload.losses == 1
 
 
+def test_python_control_reexports_curator_started_payload() -> None:
+    CuratorStartedPayload = control_package.CuratorStartedPayload
+
+    payload = CuratorStartedPayload(
+        run_id="run-123",
+        generation=2,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+
+
+def test_python_control_reexports_curator_completed_payload() -> None:
+    CuratorCompletedPayload = control_package.CuratorCompletedPayload
+
+    payload = CuratorCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        decision="accept",
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.decision == "accept"
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources

@@ -40,6 +40,8 @@ AgentsStartedPayload: Any = _server_protocol.AgentsStartedPayload
 RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
 TournamentStartedPayload: Any = _server_protocol.TournamentStartedPayload
 TournamentCompletedPayload: Any = _server_protocol.TournamentCompletedPayload
+CuratorStartedPayload: Any = _server_protocol.CuratorStartedPayload
+CuratorCompletedPayload: Any = _server_protocol.CuratorCompletedPayload
 PauseCmd: Any = _server_protocol.PauseCmd
 ResumeCmd: Any = _server_protocol.ResumeCmd
 InjectHintCmd: Any = _server_protocol.InjectHintCmd
@@ -104,6 +106,8 @@ __all__ = [
     "ConditionType",
     "ConfirmScenarioCmd",
     "CreateScenarioCmd",
+    "CuratorCompletedPayload",
+    "CuratorStartedPayload",
     "EndedAt",
     "EnvContext",
     "EventMsg",
