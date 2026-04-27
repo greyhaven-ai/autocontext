@@ -14,6 +14,7 @@
     "../../../ts/src/control-plane/contract/branded-ids.ts",
     "../../../ts/src/research/types.ts",
     "../../../ts/src/research/consultation.ts",
-    "../../../ts/src/server/protocol.ts"
+    "../../../ts/src/server/protocol.ts",
+    "../../../ts/src/loop/stagnation.ts"
   ]
 }

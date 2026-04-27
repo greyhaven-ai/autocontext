@@ -9,6 +9,9 @@ _production_traces_contract = import_module(
 _research_types = import_module("autocontext.research.types")
 _research_consultation = import_module("autocontext.research.consultation")
 _server_protocol = import_module("autocontext.server.protocol")
+_monitor_types = import_module("autocontext.monitor.types")
+_agent_contracts = import_module("autocontext.agents.contracts")
+_stagnation = import_module("autocontext.knowledge.stagnation")
 
 PROTOCOL_VERSION = _server_protocol.PROTOCOL_VERSION
 ScenarioInfo: Any = _server_protocol.ScenarioInfo
@@ -25,6 +28,9 @@ AckMsg: Any = _server_protocol.AckMsg
 RunAcceptedMsg: Any = _server_protocol.RunAcceptedMsg
 ErrorMsg: Any = _server_protocol.ErrorMsg
 MonitorAlertMsg: Any = _server_protocol.MonitorAlertMsg
+ConditionType: Any = _monitor_types.ConditionType
+MonitorCondition: Any = _monitor_types.MonitorCondition
+MonitorAlert: Any = _monitor_types.MonitorAlert
 ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
@@ -41,6 +47,11 @@ CancelScenarioCmd: Any = _server_protocol.CancelScenarioCmd
 StartRunCmd: Any = _server_protocol.StartRunCmd
 ListScenariosCmd: Any = _server_protocol.ListScenariosCmd
 Urgency: Any = _research_types.Urgency
+CompetitorOutput: Any = _agent_contracts.CompetitorOutput
+AnalystOutput: Any = _agent_contracts.AnalystOutput
+CoachOutput: Any = _agent_contracts.CoachOutput
+ArchitectOutput: Any = _agent_contracts.ArchitectOutput
+StagnationReport: Any = _stagnation.StagnationReport
 ResearchQuery: Any = _research_types.ResearchQuery
 Citation: Any = _research_types.Citation
 ResearchResult: Any = _research_types.ResearchResult
@@ -77,11 +88,15 @@ package_role = PACKAGE_ROLE
 package_topology_version = PACKAGE_TOPOLOGY_VERSION
 
 __all__ = [
+    "AnalystOutput",
+    "ArchitectOutput",
     "ChatResponseMsg",
     "Chosen",
     "Citation",
     "CancelScenarioCmd",
     "ChatAgentCmd",
+    "CoachOutput",
+    "ConditionType",
     "ConfirmScenarioCmd",
     "CreateScenarioCmd",
     "EndedAt",
@@ -91,7 +106,9 @@ __all__ = [
     "AckMsg",
     "Error",
     "ErrorMsg",
+    "MonitorAlert",
     "MonitorAlertMsg",
+    "MonitorCondition",
     "EvalExampleId",
     "ExecutorInfo",
     "ExecutorResources",
@@ -108,6 +125,7 @@ __all__ = [
     "ProductionOutcome",
     "ProductionTrace",
     "Provider",
+    "CompetitorOutput",
     "RunAcceptedMsg",
     "RedactionMarker",
     "ResearchAdapter",
@@ -128,6 +146,7 @@ __all__ = [
     "ScoringComponent",
     "Sdk",
     "SessionIdentifier",
+    "StagnationReport",
     "StateMsg",
     "StrategyParam",
     "TimingInfo",

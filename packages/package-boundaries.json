@@ -85,7 +85,10 @@
 				"autocontext.production_traces.contract.models",
 				"autocontext.research.types",
 				"autocontext.research.consultation",
-				"autocontext.server.protocol"
+				"autocontext.server.protocol",
+				"autocontext.monitor.types",
+				"autocontext.agents.contracts",
+				"autocontext.knowledge.stagnation"
 			]
 		}
 	},
@@ -132,7 +135,8 @@
 				"../../../ts/src/control-plane/contract/branded-ids.ts",
 				"../../../ts/src/research/types.ts",
 				"../../../ts/src/research/consultation.ts",
-				"../../../ts/src/server/protocol.ts"
+				"../../../ts/src/server/protocol.ts",
+				"../../../ts/src/loop/stagnation.ts"
 			],
 			"blockedPackageDependencies": [
 				"autoctx"
