@@ -1,5 +1,39 @@
 {
 	"version": 1,
+	"licensing": {
+		"status": "deferred",
+		"licenseMetadataIssue": "AC-645",
+		"rightsAuditIssue": "AC-646",
+		"forbiddenPathsUntilAC645": [
+			"LICENSING.md",
+			"packages/python/core/LICENSE",
+			"packages/python/control/LICENSE",
+			"packages/ts/core/LICENSE",
+			"packages/ts/control-plane/LICENSE"
+		],
+		"pythonProjectMetadata": {
+			"paths": [
+				"packages/python/core/pyproject.toml",
+				"packages/python/control/pyproject.toml"
+			],
+			"forbiddenProjectKeys": [
+				"license",
+				"license-files"
+			],
+			"forbiddenClassifierPrefixes": [
+				"License ::"
+			]
+		},
+		"typescriptPackageMetadata": {
+			"paths": [
+				"packages/ts/core/package.json",
+				"packages/ts/control-plane/package.json"
+			],
+			"forbiddenPackageKeys": [
+				"license"
+			]
+		}
+	},
 	"python": {
 		"core": {
 			"module": "autocontext_core",
