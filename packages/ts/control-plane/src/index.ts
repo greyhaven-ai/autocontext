@@ -51,6 +51,7 @@ export {
 	ChatResponseMsgSchema,
 	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
+	EventMsgSchema,
 	ExecutorInfoSchema,
 	ExecutorResourcesSchema,
 	HelloMsgSchema,

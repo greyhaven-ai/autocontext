@@ -19,6 +19,7 @@ import {
 	Citation,
 	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
+	EventMsgSchema,
 	ExecutorInfoSchema,
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
@@ -187,6 +188,17 @@ describe("@autocontext/control-plane facade", () => {
 
 		expect(response.role).toBe("assistant");
 		expect(response.text).toBe("Schema looks valid.");
+	});
+
+	it("re-exports event messages", () => {
+		const event = EventMsgSchema.parse({
+			type: "event",
+			event: "run_progress",
+			payload: { run_id: "run-123", percent: 50 },
+		});
+
+		expect(event.event).toBe("run_progress");
+		expect(event.payload).toEqual({ run_id: "run-123", percent: 50 });
 	});
 
 	it("re-exports basic server protocol message models", () => {

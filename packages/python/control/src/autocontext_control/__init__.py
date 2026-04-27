@@ -17,6 +17,7 @@ StrategyParam: Any = _server_protocol.StrategyParam
 ScoringComponent: Any = _server_protocol.ScoringComponent
 HelloMsg: Any = _server_protocol.HelloMsg
 ChatResponseMsg: Any = _server_protocol.ChatResponseMsg
+EventMsg: Any = _server_protocol.EventMsg
 EnvironmentsMsg: Any = _server_protocol.EnvironmentsMsg
 StateMsg: Any = _server_protocol.StateMsg
 AckMsg: Any = _server_protocol.AckMsg
@@ -67,6 +68,7 @@ __all__ = [
     "Citation",
     "EndedAt",
     "EnvContext",
+    "EventMsg",
     "EnvironmentsMsg",
     "AckMsg",
     "Error",

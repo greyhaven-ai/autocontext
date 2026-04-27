@@ -159,6 +159,16 @@ def test_python_control_reexports_chat_response_messages() -> None:
     assert response.text == "Schema looks valid."
 
 
+def test_python_control_reexports_event_messages() -> None:
+    EventMsg = control_package.EventMsg
+
+    event = EventMsg(event="run_progress", payload={"run_id": "run-123", "percent": 50})
+
+    assert event.type == "event"
+    assert event.event == "run_progress"
+    assert event.payload == {"run_id": "run-123", "percent": 50}
+
+
 def test_python_control_reexports_basic_server_protocol_messages() -> None:
     AckMsg = control_package.AckMsg
     ErrorMsg = control_package.ErrorMsg
