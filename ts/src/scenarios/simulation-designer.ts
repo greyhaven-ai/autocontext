@@ -1,10 +1,21 @@
 import type { SimulationSpec } from "./simulation-spec.js";
 import { parseRawSimulationSpec } from "./simulation-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
-import { parseDelimitedJsonObject } from "./llm-json-response.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const SIM_SPEC_START = "<!-- SIMULATION_SPEC_START -->";
 export const SIM_SPEC_END = "<!-- SIMULATION_SPEC_END -->";
+
+const SIMULATION_DESCRIPTOR: FamilyDesignerDescriptor<SimulationSpec> = {
+  family: "simulation",
+  startDelimiter: SIM_SPEC_START,
+  endDelimiter: SIM_SPEC_END,
+  missingDelimiterLabel: "SIMULATION_SPEC",
+  parseRaw: parseRawSimulationSpec,
+};
 
 const EXAMPLE_SPEC = {
   description: "Recover a multi-step API workflow after a mid-flow cancellation.",
@@ -74,24 +85,17 @@ ${SIM_SPEC_END}
 `;
 
 export function parseSimulationSpec(text: string): SimulationSpec {
-  return parseRawSimulationSpec(
-    healSpec(
-      parseDelimitedJsonObject({
-        text,
-        startDelimiter: SIM_SPEC_START,
-        endDelimiter: SIM_SPEC_END,
-        missingDelimiterLabel: "SIMULATION_SPEC",
-      }),
-      "simulation",
-    ),
-  );
+  return parseFamilyDesignerSpec(text, SIMULATION_DESCRIPTOR);
 }
 
 export async function designSimulation(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<SimulationSpec> {
-  return parseSimulationSpec(
-    await llmFn(SIMULATION_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    SIMULATION_DESIGNER_SYSTEM,
+    SIMULATION_DESCRIPTOR,
+    llmFn,
   );
 }

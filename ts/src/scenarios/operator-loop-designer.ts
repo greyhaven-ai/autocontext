@@ -1,10 +1,21 @@
 import type { OperatorLoopSpec } from "./operator-loop-spec.js";
 import { parseRawOperatorLoopSpec } from "./operator-loop-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
-import { parseDelimitedJsonObject } from "./llm-json-response.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const OPERATOR_LOOP_SPEC_START = "<!-- OPERATOR_LOOP_SPEC_START -->";
 export const OPERATOR_LOOP_SPEC_END = "<!-- OPERATOR_LOOP_SPEC_END -->";
+
+const OPERATOR_LOOP_DESCRIPTOR: FamilyDesignerDescriptor<OperatorLoopSpec> = {
+  family: "operator_loop",
+  startDelimiter: OPERATOR_LOOP_SPEC_START,
+  endDelimiter: OPERATOR_LOOP_SPEC_END,
+  missingDelimiterLabel: "OPERATOR_LOOP_SPEC",
+  parseRaw: parseRawOperatorLoopSpec,
+};
 
 export const OPERATOR_LOOP_DESIGNER_SYSTEM = `You are describing operator-in-the-loop capabilities for autocontext.
 Given a natural-language request for an operator-in-the-loop scenario, produce an OperatorLoopSpec JSON.
@@ -42,24 +53,17 @@ Rules:
 `;
 
 export function parseOperatorLoopSpec(text: string): OperatorLoopSpec {
-  return parseRawOperatorLoopSpec(
-    healSpec(
-      parseDelimitedJsonObject({
-        text,
-        startDelimiter: OPERATOR_LOOP_SPEC_START,
-        endDelimiter: OPERATOR_LOOP_SPEC_END,
-        missingDelimiterLabel: "OPERATOR_LOOP_SPEC",
-      }),
-      "operator_loop",
-    ),
-  );
+  return parseFamilyDesignerSpec(text, OPERATOR_LOOP_DESCRIPTOR);
 }
 
 export async function designOperatorLoop(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<OperatorLoopSpec> {
-  return parseOperatorLoopSpec(
-    await llmFn(OPERATOR_LOOP_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    OPERATOR_LOOP_DESIGNER_SYSTEM,
+    OPERATOR_LOOP_DESCRIPTOR,
+    llmFn,
   );
 }
