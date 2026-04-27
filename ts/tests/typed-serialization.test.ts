@@ -69,7 +69,7 @@ describe("typed serialization contracts", () => {
       targetGenerations: 3,
     });
     const gateDecided = buildGateDecidedPayload("run-1", 2, "advance", 0.1, 0.05);
-    const roleCompleted = buildRoleCompletedPayload("competitor", 125, {
+    const roleCompleted = buildRoleCompletedPayload("run-1", 2, "competitor", 125, {
       input_tokens: 2,
       outputTokens: 5,
     });
@@ -81,6 +81,8 @@ describe("typed serialization contracts", () => {
     expect(runStarted.target_generations).toBe(3);
     expect(gateDecided.decision).toBe("advance");
     expect(roleCompleted.tokens).toBe(7);
+    expect(roleCompleted.run_id).toBe("run-1");
+    expect(roleCompleted.generation).toBe(2);
   });
 
   it("exposes an explicit dict type for skill packages and serialized package payloads", () => {

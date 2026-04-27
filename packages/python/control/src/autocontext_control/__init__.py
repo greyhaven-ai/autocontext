@@ -37,6 +37,7 @@ ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
 ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
 GenerationStartedPayload: Any = _server_protocol.GenerationStartedPayload
 AgentsStartedPayload: Any = _server_protocol.AgentsStartedPayload
+RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
 PauseCmd: Any = _server_protocol.PauseCmd
 ResumeCmd: Any = _server_protocol.ResumeCmd
 InjectHintCmd: Any = _server_protocol.InjectHintCmd
@@ -138,6 +139,7 @@ __all__ = [
     "ResearchQuery",
     "ResearchResult",
     "ReviseScenarioCmd",
+    "RoleCompletedPayload",
     "ResumeCmd",
     "Routing",
     "ScenarioErrorMsg",
