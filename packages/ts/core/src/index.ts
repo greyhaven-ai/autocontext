@@ -10,6 +10,28 @@ export { parseJudgeResponse } from "../../../../ts/src/judge/parse.js";
 export type { RubricCoherenceResult } from "../../../../ts/src/judge/rubric-coherence.js";
 export { checkRubricCoherence } from "../../../../ts/src/judge/rubric-coherence.js";
 export type {
+	AppId,
+	ContentHash,
+	EnvironmentTag,
+	FeedbackRefId,
+	ProductionTraceId,
+	Scenario,
+	SessionIdHash,
+	UserIdHash,
+} from "../../../../ts/src/production-traces/contract/branded-ids.js";
+export {
+	defaultEnvironmentTag,
+	newProductionTraceId,
+	parseAppId,
+	parseContentHash,
+	parseEnvironmentTag,
+	parseFeedbackRefId,
+	parseProductionTraceId,
+	parseScenario,
+	parseSessionIdHash,
+	parseUserIdHash,
+} from "../../../../ts/src/production-traces/contract/branded-ids.js";
+export type {
 	ProductionOutcome,
 	ProductionTrace,
 	TraceLinks,

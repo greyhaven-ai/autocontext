@@ -37,8 +37,13 @@ type ProductionTraceSourceClaim = {
 	coreOwnedProgramPathSubstrings: string[];
 };
 
+type ProductionTraceOpenContractClaim = ProductionTraceSourceClaim & {
+	forbiddenImportPathSubstrings: string[];
+	requiredPackageDependencies: string[];
+};
+
 type ProductionTraceBoundary = {
-	typescriptOpenContract: ProductionTraceSourceClaim;
+	typescriptOpenContract: ProductionTraceOpenContractClaim;
 	typescriptOpenTaxonomy: ProductionTraceSourceClaim;
 };
 
@@ -113,6 +118,12 @@ function listProductionTraceCoreClaims(
 		productionTraces.typescriptOpenContract,
 		productionTraces.typescriptOpenTaxonomy,
 	];
+}
+
+function importSpecifiers(sourceText: string): string[] {
+	return [...sourceText.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)].map(
+		(match) => match[1],
+	);
 }
 
 describe("package boundaries", () => {
@@ -196,9 +207,11 @@ describe("package boundaries", () => {
 
 		expect(productionTraces.coreOwnedSourceIncludes).toEqual([
 			"../../../ts/src/production-traces/contract/generated-types.ts",
+			"../../../ts/src/production-traces/contract/branded-ids.ts",
 		]);
 		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual([
 			"/ts/src/production-traces/contract/generated-types.ts",
+			"/ts/src/production-traces/contract/branded-ids.ts",
 		]);
 		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
 			expect(core.exactIncludes).toContain(sourceInclude);
@@ -252,6 +265,43 @@ describe("package boundaries", () => {
 					filePath.includes(ownedPath),
 				),
 			).toBe(true);
+		}
+	});
+
+	it("keeps production trace open contract sources independent of control-plane imports", () => {
+		const productionTraces =
+			loadBoundaries().mixedDomains.productionTraces.typescriptOpenContract;
+
+		expect(productionTraces.forbiddenImportPathSubstrings).toEqual([
+			"control-plane/",
+		]);
+		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
+			const sourceText = readFileSync(
+				join(repoRoot, "packages", "ts", "core", sourceInclude),
+				"utf-8",
+			);
+			const imports = importSpecifiers(sourceText);
+			for (const forbidden of productionTraces.forbiddenImportPathSubstrings) {
+				expect(imports.some((specifier) => specifier.includes(forbidden))).toBe(
+					false,
+				);
+			}
+		}
+	});
+
+	it("declares runtime dependencies needed by production trace open contract sources", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const productionTraces =
+			boundaries.mixedDomains.productionTraces.typescriptOpenContract;
+		const packageJson = loadJson<TsPackageJson>(
+			join(repoRoot, core.packagePath, "package.json"),
+		);
+		const dependencies = packageJson.dependencies ?? {};
+
+		expect(productionTraces.requiredPackageDependencies).toEqual(["ulid"]);
+		for (const dependency of productionTraces.requiredPackageDependencies) {
+			expect(Object.keys(dependencies)).toContain(dependency);
 		}
 	});
 

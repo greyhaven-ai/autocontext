@@ -20,5 +20,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "ulid": "^3.0.2"
   }
 }
