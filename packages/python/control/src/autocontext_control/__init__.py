@@ -35,10 +35,18 @@ ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
 ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
+RunStartedPayload: Any = _server_protocol.RunStartedPayload
+RunCompletedPayload: Any = _server_protocol.RunCompletedPayload
 GenerationStartedPayload: Any = _server_protocol.GenerationStartedPayload
+GenerationCompletedPayload: Any = _server_protocol.GenerationCompletedPayload
 AgentsStartedPayload: Any = _server_protocol.AgentsStartedPayload
 RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
 TournamentStartedPayload: Any = _server_protocol.TournamentStartedPayload
+MatchCompletedPayload: Any = _server_protocol.MatchCompletedPayload
+TournamentCompletedPayload: Any = _server_protocol.TournamentCompletedPayload
+GateDecidedPayload: Any = _server_protocol.GateDecidedPayload
+CuratorStartedPayload: Any = _server_protocol.CuratorStartedPayload
+CuratorCompletedPayload: Any = _server_protocol.CuratorCompletedPayload
 PauseCmd: Any = _server_protocol.PauseCmd
 ResumeCmd: Any = _server_protocol.ResumeCmd
 InjectHintCmd: Any = _server_protocol.InjectHintCmd
@@ -103,6 +111,8 @@ __all__ = [
     "ConditionType",
     "ConfirmScenarioCmd",
     "CreateScenarioCmd",
+    "CuratorCompletedPayload",
+    "CuratorStartedPayload",
     "EndedAt",
     "EnvContext",
     "EventMsg",
@@ -111,7 +121,9 @@ __all__ = [
     "AgentsStartedPayload",
     "Error",
     "ErrorMsg",
+    "GenerationCompletedPayload",
     "GenerationStartedPayload",
+    "GateDecidedPayload",
     "MonitorAlert",
     "MonitorAlertMsg",
     "MonitorCondition",
@@ -123,6 +135,7 @@ __all__ = [
     "InjectHintCmd",
     "Items",
     "ListScenariosCmd",
+    "MatchCompletedPayload",
     "Message",
     "PACKAGE_ROLE",
     "PACKAGE_TOPOLOGY_VERSION",
@@ -136,11 +149,14 @@ __all__ = [
     "RedactionMarker",
     "ResearchAdapter",
     "ResearchBrief",
+    "RunCompletedPayload",
+    "RunStartedPayload",
     "ResearchConfig",
     "ResearchQuery",
     "ResearchResult",
     "ReviseScenarioCmd",
     "RoleCompletedPayload",
+    "TournamentCompletedPayload",
     "TournamentStartedPayload",
     "ResumeCmd",
     "Routing",
