@@ -225,6 +225,18 @@ def test_python_control_reexports_curator_completed_payload() -> None:
     assert payload.decision == "accept"
 
 
+def test_python_control_reexports_run_started_payload() -> None:
+    RunStartedPayload = control_package.RunStartedPayload
+
+    payload = RunStartedPayload(
+        run_id="run-123",
+        scenario="grid_ctf",
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.scenario == "grid_ctf"
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources

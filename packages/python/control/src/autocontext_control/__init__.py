@@ -35,6 +35,7 @@ ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
 ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
+RunStartedPayload: Any = _server_protocol.RunStartedPayload
 GenerationStartedPayload: Any = _server_protocol.GenerationStartedPayload
 AgentsStartedPayload: Any = _server_protocol.AgentsStartedPayload
 RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
@@ -143,6 +144,7 @@ __all__ = [
     "RedactionMarker",
     "ResearchAdapter",
     "ResearchBrief",
+    "RunStartedPayload",
     "ResearchConfig",
     "ResearchQuery",
     "ResearchResult",
