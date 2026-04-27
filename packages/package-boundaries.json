@@ -1,0 +1,97 @@
+{
+	"version": 1,
+	"python": {
+		"core": {
+			"module": "autocontext_core",
+			"blockedDependencies": [
+				"autocontext",
+				"autocontext-control"
+			],
+			"blockedImportPrefixes": [
+				"autocontext.cli",
+				"autocontext.consultation",
+				"autocontext.knowledge",
+				"autocontext.mcp",
+				"autocontext.monitor",
+				"autocontext.notebook",
+				"autocontext.openclaw",
+				"autocontext.production_traces",
+				"autocontext.research",
+				"autocontext.server",
+				"autocontext.sharing",
+				"autocontext.training"
+			],
+			"allowedImports": [
+				"autocontext.harness.scoring.elo",
+				"autocontext.prompts.context_budget",
+				"autocontext.prompts.templates",
+				"autocontext.providers.base",
+				"autocontext.execution.judge",
+				"autocontext.execution.rubric_coherence",
+				"autocontext.scenarios.agent_task",
+				"autocontext.scenarios.artifact_editing",
+				"autocontext.scenarios.base",
+				"autocontext.scenarios.coordination",
+				"autocontext.scenarios.investigation",
+				"autocontext.scenarios.negotiation",
+				"autocontext.scenarios.operator_loop",
+				"autocontext.scenarios.schema_evolution",
+				"autocontext.scenarios.simulation",
+				"autocontext.scenarios.tool_fragility",
+				"autocontext.scenarios.workflow",
+				"autocontext.storage.row_types"
+			]
+		},
+		"control": {
+			"module": "autocontext_control",
+			"blockedDependencies": [
+				"autocontext"
+			],
+			"allowedImports": []
+		}
+	},
+	"typescript": {
+		"core": {
+			"packagePath": "packages/ts/core",
+			"tsconfigPath": "packages/ts/core/tsconfig.json",
+			"exactIncludes": [
+				"src/index.ts",
+				"../../../ts/src/execution/elo.ts",
+				"../../../ts/src/judge/parse.ts",
+				"../../../ts/src/judge/rubric-coherence.ts",
+				"../../../ts/src/prompts/context-budget.ts",
+				"../../../ts/src/prompts/templates.ts",
+				"../../../ts/src/scenarios/game-interface.ts",
+				"../../../ts/src/scenarios/primary-family-interface-types.ts",
+				"../../../ts/src/scenarios/simulation-family-interface-types.ts",
+				"../../../ts/src/storage/storage-contracts.ts",
+				"../../../ts/src/types/index.ts"
+			],
+			"blockedProgramPathSubstrings": [
+				"/ts/src/control-plane/",
+				"/ts/src/production-traces/",
+				"/ts/src/research/",
+				"/ts/src/server/",
+				"/ts/src/loop/",
+				"/ts/src/config/",
+				"/ts/src/runtimes/",
+				"/ts/src/providers/",
+				"/ts/src/agents/"
+			],
+			"blockedPackageDependencies": [
+				"@autocontext/control-plane",
+				"autoctx"
+			]
+		},
+		"control": {
+			"packagePath": "packages/ts/control-plane",
+			"tsconfigPath": "packages/ts/control-plane/tsconfig.json",
+			"exactIncludes": [
+				"src/index.ts"
+			],
+			"blockedPackageDependencies": [
+				"autoctx"
+			]
+		}
+	}
+}
