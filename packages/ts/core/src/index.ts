@@ -31,6 +31,7 @@ export {
 	parseSessionIdHash,
 	parseUserIdHash,
 } from "../../../../ts/src/production-traces/contract/branded-ids.js";
+export { deriveDatasetId } from "../../../../ts/src/production-traces/contract/content-address.js";
 export type {
 	ProductionOutcome,
 	ProductionTrace,
