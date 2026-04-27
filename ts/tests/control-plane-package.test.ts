@@ -17,8 +17,11 @@ import type {
 import {
 	AckMsgSchema,
 	AuthStatusMsgSchema,
+	CancelScenarioCmdSchema,
 	ChatResponseMsgSchema,
 	Citation,
+	ConfirmScenarioCmdSchema,
+	CreateScenarioCmdSchema,
 	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
 	EventMsgSchema,
@@ -38,6 +41,7 @@ import {
 	ResearchQuery,
 	ResearchResult,
 	ResumeCmdSchema,
+	ReviseScenarioCmdSchema,
 	RunAcceptedMsgSchema,
 	ScenarioErrorMsgSchema,
 	ScenarioGeneratingMsgSchema,
@@ -297,6 +301,33 @@ describe("@autocontext/control-plane facade", () => {
 		expect(injectHint.text).toBe("Try broader search.");
 		expect(overrideGate.decision).toBe("retry");
 		expect(invalidHint.success).toBe(false);
+	});
+
+	it("re-exports scenario authoring commands", () => {
+		const create = CreateScenarioCmdSchema.parse({
+			type: "create_scenario",
+			description: "Design a schema repair scenario.",
+		});
+		const confirm = ConfirmScenarioCmdSchema.parse({
+			type: "confirm_scenario",
+		});
+		const revise = ReviseScenarioCmdSchema.parse({
+			type: "revise_scenario",
+			feedback: "Make the failure mode more concrete.",
+		});
+		const cancel = CancelScenarioCmdSchema.parse({
+			type: "cancel_scenario",
+		});
+		const invalidCreate = CreateScenarioCmdSchema.safeParse({
+			type: "create_scenario",
+			description: "",
+		});
+
+		expect(create.description).toBe("Design a schema repair scenario.");
+		expect(confirm.type).toBe("confirm_scenario");
+		expect(revise.feedback).toBe("Make the failure mode more concrete.");
+		expect(cancel.type).toBe("cancel_scenario");
+		expect(invalidCreate.success).toBe(false);
 	});
 
 	it("re-exports stagnation report types", () => {
