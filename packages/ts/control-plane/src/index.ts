@@ -39,6 +39,7 @@ export type {
 	ValidationResult,
 } from "../../../../ts/src/production-traces/contract/types.js";
 export { PRODUCTION_TRACE_SCHEMA_VERSION } from "../../../../ts/src/production-traces/contract/types.js";
+export { ResearchBrief } from "../../../../ts/src/research/consultation.js";
 export type { ResearchAdapter } from "../../../../ts/src/research/types.js";
 export {
 	Citation,

@@ -71,6 +71,48 @@ def test_python_control_reexports_research_domain_contracts() -> None:
     assert config.max_queries_per_turn == 1
 
 
+def test_python_control_reexports_research_brief() -> None:
+    Citation = control_package.Citation
+    ResearchBrief = control_package.ResearchBrief
+    ResearchResult = control_package.ResearchResult
+
+    citation = Citation(
+        source="policy handbook",
+        url="https://example.com/policy",
+        relevance=0.95,
+        snippet="Refunds require manager sign-off after 30 days.",
+        retrieved_at="2026-04-25T00:00:00Z",
+    )
+    strong_result = ResearchResult(
+        query_topic="refund policy",
+        summary="Manager sign-off required after 30 days.",
+        citations=[citation],
+        confidence=0.91,
+        metadata={"adapter": "demo"},
+    )
+    weak_result = ResearchResult(
+        query_topic="escalation policy",
+        summary="Escalate unusual refund cases.",
+        citations=[citation],
+        confidence=0.42,
+        metadata={"adapter": "demo"},
+    )
+
+    brief = ResearchBrief.from_results(
+        goal="Summarize refund policy changes",
+        results=[strong_result, weak_result],
+        min_confidence=0.9,
+    )
+
+    assert brief.goal == "Summarize refund policy changes"
+    assert len(brief.findings) == 1
+    assert brief.findings[0].query_topic == "refund policy"
+    assert len(brief.unique_citations) == 1
+    assert brief.unique_citations[0].source == "policy handbook"
+    assert brief.avg_confidence == 0.91
+    assert "Research Brief: Summarize refund policy changes" in brief.to_markdown()
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources

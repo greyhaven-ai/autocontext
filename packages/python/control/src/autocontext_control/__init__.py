@@ -7,6 +7,7 @@ _production_traces_contract = import_module(
     "autocontext.production_traces.contract.models"
 )
 _research_types = import_module("autocontext.research.types")
+_research_consultation = import_module("autocontext.research.consultation")
 _server_protocol = import_module("autocontext.server.protocol")
 _monitor_types = import_module("autocontext.monitor.types")
 _agent_contracts = import_module("autocontext.agents.contracts")
@@ -56,6 +57,7 @@ Citation: Any = _research_types.Citation
 ResearchResult: Any = _research_types.ResearchResult
 ResearchAdapter: Any = _research_types.ResearchAdapter
 ResearchConfig: Any = _research_types.ResearchConfig
+ResearchBrief: Any = _research_consultation.ResearchBrief
 Sdk: Any = _production_traces_contract.Sdk
 TraceSource: Any = _production_traces_contract.TraceSource
 Provider: Any = _production_traces_contract.Provider
@@ -127,6 +129,7 @@ __all__ = [
     "RunAcceptedMsg",
     "RedactionMarker",
     "ResearchAdapter",
+    "ResearchBrief",
     "ResearchConfig",
     "ResearchQuery",
     "ResearchResult",

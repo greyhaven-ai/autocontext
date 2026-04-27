@@ -41,6 +41,7 @@ import {
 	PROTOCOL_VERSION,
 	packageRole,
 	packageTopologyVersion,
+	ResearchBrief,
 	ResearchConfig,
 	ResearchQuery,
 	ResearchResult,
@@ -111,6 +112,45 @@ describe("@autocontext/control-plane facade", () => {
 		expect(config.enabled).toBe(true);
 		expect(config.adapterName).toBe("demo");
 		expect(config.maxQueriesPerTurn).toBe(1);
+	});
+
+	it("re-exports research brief values", () => {
+		const citation = new Citation({
+			source: "policy handbook",
+			url: "https://example.com/policy",
+			relevance: 0.95,
+			snippet: "Refunds require manager sign-off after 30 days.",
+			retrievedAt: "2026-04-25T00:00:00Z",
+		});
+		const strongResult = new ResearchResult({
+			queryTopic: "refund policy",
+			summary: "Manager sign-off required after 30 days.",
+			citations: [citation],
+			confidence: 0.91,
+			metadata: { adapter: "demo" },
+		});
+		const weakResult = new ResearchResult({
+			queryTopic: "escalation policy",
+			summary: "Escalate unusual refund cases.",
+			citations: [citation],
+			confidence: 0.42,
+			metadata: { adapter: "demo" },
+		});
+		const brief = ResearchBrief.fromResults(
+			"Summarize refund policy changes",
+			[strongResult, weakResult],
+			0.9,
+		);
+
+		expect(brief.goal).toBe("Summarize refund policy changes");
+		expect(brief.findings).toHaveLength(1);
+		expect(brief.findings[0]?.queryTopic).toBe("refund policy");
+		expect(brief.uniqueCitations).toHaveLength(1);
+		expect(brief.uniqueCitations[0]?.source).toBe("policy handbook");
+		expect(brief.avgConfidence).toBe(0.91);
+		expect(brief.toMarkdown()).toContain(
+			"Research Brief: Summarize refund policy changes",
+		);
 	});
 
 	it("re-exports shared server protocol models", () => {
