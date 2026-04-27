@@ -195,6 +195,22 @@ def test_python_control_reexports_curator_started_payload() -> None:
     assert payload.generation == 2
 
 
+def test_python_control_reexports_match_completed_payload() -> None:
+    MatchCompletedPayload = control_package.MatchCompletedPayload
+
+    payload = MatchCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        match_index=3,
+        score=0.55,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.match_index == 3
+    assert payload.score == 0.55
+
+
 def test_python_control_reexports_curator_completed_payload() -> None:
     CuratorCompletedPayload = control_package.CuratorCompletedPayload
 

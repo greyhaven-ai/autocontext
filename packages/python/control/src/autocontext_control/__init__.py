@@ -39,6 +39,7 @@ GenerationStartedPayload: Any = _server_protocol.GenerationStartedPayload
 AgentsStartedPayload: Any = _server_protocol.AgentsStartedPayload
 RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
 TournamentStartedPayload: Any = _server_protocol.TournamentStartedPayload
+MatchCompletedPayload: Any = _server_protocol.MatchCompletedPayload
 TournamentCompletedPayload: Any = _server_protocol.TournamentCompletedPayload
 CuratorStartedPayload: Any = _server_protocol.CuratorStartedPayload
 CuratorCompletedPayload: Any = _server_protocol.CuratorCompletedPayload
@@ -128,6 +129,7 @@ __all__ = [
     "HelloMsg",
     "InjectHintCmd",
     "ListScenariosCmd",
+    "MatchCompletedPayload",
     "Message",
     "PACKAGE_ROLE",
     "PACKAGE_TOPOLOGY_VERSION",
