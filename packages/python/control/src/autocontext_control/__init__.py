@@ -10,6 +10,7 @@ _research_types = import_module("autocontext.research.types")
 _server_protocol = import_module("autocontext.server.protocol")
 _monitor_types = import_module("autocontext.monitor.types")
 _agent_contracts = import_module("autocontext.agents.contracts")
+_stagnation = import_module("autocontext.knowledge.stagnation")
 
 PROTOCOL_VERSION = _server_protocol.PROTOCOL_VERSION
 ScenarioInfo: Any = _server_protocol.ScenarioInfo
@@ -38,6 +39,7 @@ CompetitorOutput: Any = _agent_contracts.CompetitorOutput
 AnalystOutput: Any = _agent_contracts.AnalystOutput
 CoachOutput: Any = _agent_contracts.CoachOutput
 ArchitectOutput: Any = _agent_contracts.ArchitectOutput
+StagnationReport: Any = _stagnation.StagnationReport
 ResearchQuery: Any = _research_types.ResearchQuery
 Citation: Any = _research_types.Citation
 ResearchResult: Any = _research_types.ResearchResult
@@ -119,6 +121,7 @@ __all__ = [
     "ScoringComponent",
     "Sdk",
     "SessionIdentifier",
+    "StagnationReport",
     "StateMsg",
     "StrategyParam",
     "TimingInfo",

@@ -284,6 +284,20 @@ def test_python_control_reexports_agent_contract_dataclasses() -> None:
     assert architect.changelog_entry == "Added scratchpad tool."
 
 
+def test_python_control_reexports_stagnation_report() -> None:
+    StagnationReport = control_package.StagnationReport
+
+    report = StagnationReport(
+        is_stagnated=True,
+        trigger="score_plateau",
+        detail="score variance 0.000001 < epsilon 0.01 over last 5 gens",
+    )
+
+    assert report.is_stagnated is True
+    assert report.trigger == "score_plateau"
+    assert report.detail == "score variance 0.000001 < epsilon 0.01 over last 5 gens"
+
+
 def test_python_control_requires_stage_for_scenario_error_messages() -> None:
     ScenarioErrorMsg = control_package.ScenarioErrorMsg
 
