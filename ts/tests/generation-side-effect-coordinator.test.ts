@@ -12,11 +12,13 @@ import type { TournamentExecutionPlan } from "../src/loop/generation-execution-s
 describe("generation side-effect coordinator", () => {
   it("builds role completion payloads from mixed usage token formats", () => {
     expect(
-      buildRoleCompletedPayload("competitor", 125, {
+      buildRoleCompletedPayload("run-1", 2, "competitor", 125, {
         input_tokens: 2,
         outputTokens: 5,
       }),
     ).toEqual({
+      run_id: "run-1",
+      generation: 2,
       role: "competitor",
       latency_ms: 125,
       tokens: 7,
@@ -27,6 +29,8 @@ describe("generation side-effect coordinator", () => {
     const marks = [1000, 1145];
 
     const completed = await executeRoleCompletionSideEffect({
+      runId: "run-1",
+      generation: 2,
       role: "competitor",
       execute: async () => ({
         text: '{"aggression":0.7}',
@@ -38,6 +42,8 @@ describe("generation side-effect coordinator", () => {
 
     expect(completed.result.text).toBe('{"aggression":0.7}');
     expect(completed.roleCompletedPayload).toEqual({
+      run_id: "run-1",
+      generation: 2,
       role: "competitor",
       latency_ms: 145,
       tokens: 7,

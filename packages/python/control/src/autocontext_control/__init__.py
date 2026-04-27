@@ -35,6 +35,10 @@ ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
 ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
+GenerationStartedPayload: Any = _server_protocol.GenerationStartedPayload
+AgentsStartedPayload: Any = _server_protocol.AgentsStartedPayload
+RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
+TournamentStartedPayload: Any = _server_protocol.TournamentStartedPayload
 PauseCmd: Any = _server_protocol.PauseCmd
 ResumeCmd: Any = _server_protocol.ResumeCmd
 InjectHintCmd: Any = _server_protocol.InjectHintCmd
@@ -104,8 +108,10 @@ __all__ = [
     "EventMsg",
     "EnvironmentsMsg",
     "AckMsg",
+    "AgentsStartedPayload",
     "Error",
     "ErrorMsg",
+    "GenerationStartedPayload",
     "MonitorAlert",
     "MonitorAlertMsg",
     "MonitorCondition",
@@ -134,6 +140,8 @@ __all__ = [
     "ResearchQuery",
     "ResearchResult",
     "ReviseScenarioCmd",
+    "RoleCompletedPayload",
+    "TournamentStartedPayload",
     "ResumeCmd",
     "Routing",
     "ScenarioErrorMsg",

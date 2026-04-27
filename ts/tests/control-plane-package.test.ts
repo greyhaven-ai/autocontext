@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type {
+	AgentsStartedPayload,
 	AppId,
 	EnvironmentTag,
 	FeedbackRef,
 	FeedbackRefId,
+	GenerationStartedPayload,
 	ProductionTrace,
 	ProductionTraceId,
 	ProviderInfo,
 	ResearchAdapter,
+	RoleCompletedPayload,
 	Scenario,
 	SessionIdHash,
 	StagnationReport,
+	TournamentStartedPayload,
 	TraceSource,
 	UserIdHash,
 } from "../../packages/ts/control-plane/src/index.ts";
@@ -151,6 +155,55 @@ describe("@autocontext/control-plane facade", () => {
 		expect(brief.toMarkdown()).toContain(
 			"Research Brief: Summarize refund policy changes",
 		);
+	});
+
+	it("re-exports tournament started payload types", () => {
+		const payload: TournamentStartedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			matches: 8,
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.generation).toBe(2);
+		expect(payload.matches).toBe(8);
+	});
+
+	it("re-exports role completed payload types", () => {
+		const payload: RoleCompletedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			role: "coach",
+			latency_ms: 125,
+			tokens: 42,
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.generation).toBe(2);
+		expect(payload.role).toBe("coach");
+		expect(payload.latency_ms).toBe(125);
+		expect(payload.tokens).toBe(42);
+	});
+
+	it("re-exports generation kickoff payload types", () => {
+		const generationStarted: GenerationStartedPayload = {
+			run_id: "run-123",
+			generation: 2,
+		};
+		const agentsStarted: AgentsStartedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			roles: ["competitor", "analyst", "coach", "curator"],
+		};
+
+		expect(generationStarted.run_id).toBe("run-123");
+		expect(generationStarted.generation).toBe(2);
+		expect(agentsStarted.roles).toEqual([
+			"competitor",
+			"analyst",
+			"coach",
+			"curator",
+		]);
 	});
 
 	it("re-exports shared server protocol models", () => {

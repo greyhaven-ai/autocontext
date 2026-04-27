@@ -15,6 +15,9 @@
     "../../../ts/src/research/types.ts",
     "../../../ts/src/research/consultation.ts",
     "../../../ts/src/server/protocol.ts",
+    "../../../ts/src/loop/generation-event-coordinator.ts",
+    "../../../ts/src/loop/generation-side-effect-coordinator.ts",
+    "../../../ts/src/loop/generation-tournament-event-sequencing.ts",
     "../../../ts/src/loop/stagnation.ts"
   ]
 }

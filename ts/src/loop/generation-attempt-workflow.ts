@@ -62,6 +62,8 @@ export async function runGenerationAttemptWorkflow(
   );
 
   const competitorCompletion = await executeRoleCompletionSideEffect({
+    runId: workflow.runId,
+    generation: workflow.generation,
     role: "competitor",
     execute: workflow.executeCompetitor,
   });
