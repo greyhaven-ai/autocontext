@@ -94,7 +94,7 @@ describe("Pi config in AppSettingsSchema", () => {
     const { AppSettingsSchema } = await import("../src/config/index.js");
     const settings = AppSettingsSchema.parse({});
     expect(settings.piCommand).toBe("pi");
-    expect(settings.piTimeout).toBe(120.0);
+    expect(settings.piTimeout).toBe(300.0);
     expect(settings.piWorkspace).toBe("");
     expect(settings.piModel).toBe("");
     expect(settings.piNoContextFiles).toBe(false);
@@ -207,7 +207,7 @@ describe("PiCLIRuntime", () => {
     const { PiCLIConfig } = await import("../src/runtimes/pi-cli.js");
     const config = new PiCLIConfig();
     expect(config.piCommand).toBe("pi");
-    expect(config.timeout).toBe(120.0);
+    expect(config.timeout).toBe(300.0);
     expect(config.model).toBe("");
   });
 
