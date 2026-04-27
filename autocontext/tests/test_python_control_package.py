@@ -317,6 +317,25 @@ def test_python_control_reexports_basic_client_control_commands() -> None:
     assert override_gate.decision == "retry"
 
 
+def test_python_control_reexports_scenario_authoring_commands() -> None:
+    CancelScenarioCmd = control_package.CancelScenarioCmd
+    ConfirmScenarioCmd = control_package.ConfirmScenarioCmd
+    CreateScenarioCmd = control_package.CreateScenarioCmd
+    ReviseScenarioCmd = control_package.ReviseScenarioCmd
+
+    create = CreateScenarioCmd(description="Design a schema repair scenario.")
+    confirm = ConfirmScenarioCmd()
+    revise = ReviseScenarioCmd(feedback="Make the failure mode more concrete.")
+    cancel = CancelScenarioCmd()
+
+    assert create.type == "create_scenario"
+    assert create.description == "Design a schema repair scenario."
+    assert confirm.type == "confirm_scenario"
+    assert revise.type == "revise_scenario"
+    assert revise.feedback == "Make the failure mode more concrete."
+    assert cancel.type == "cancel_scenario"
+
+
 def test_python_control_requires_stage_for_scenario_error_messages() -> None:
     ScenarioErrorMsg = control_package.ScenarioErrorMsg
 

@@ -38,6 +38,10 @@ PauseCmd: Any = _server_protocol.PauseCmd
 ResumeCmd: Any = _server_protocol.ResumeCmd
 InjectHintCmd: Any = _server_protocol.InjectHintCmd
 OverrideGateCmd: Any = _server_protocol.OverrideGateCmd
+CreateScenarioCmd: Any = _server_protocol.CreateScenarioCmd
+ConfirmScenarioCmd: Any = _server_protocol.ConfirmScenarioCmd
+ReviseScenarioCmd: Any = _server_protocol.ReviseScenarioCmd
+CancelScenarioCmd: Any = _server_protocol.CancelScenarioCmd
 Urgency: Any = _research_types.Urgency
 CompetitorOutput: Any = _agent_contracts.CompetitorOutput
 AnalystOutput: Any = _agent_contracts.AnalystOutput
@@ -84,8 +88,11 @@ __all__ = [
     "ChatResponseMsg",
     "Chosen",
     "Citation",
+    "CancelScenarioCmd",
     "CoachOutput",
     "ConditionType",
+    "ConfirmScenarioCmd",
+    "CreateScenarioCmd",
     "EndedAt",
     "EnvContext",
     "EventMsg",
@@ -118,6 +125,7 @@ __all__ = [
     "ResearchConfig",
     "ResearchQuery",
     "ResearchResult",
+    "ReviseScenarioCmd",
     "ResumeCmd",
     "Routing",
     "ScenarioErrorMsg",

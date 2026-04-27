@@ -50,7 +50,10 @@ export {
 export {
 	AckMsgSchema,
 	AuthStatusMsgSchema,
+	CancelScenarioCmdSchema,
 	ChatResponseMsgSchema,
+	ConfirmScenarioCmdSchema,
+	CreateScenarioCmdSchema,
 	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
 	EventMsgSchema,
@@ -64,6 +67,7 @@ export {
 	PauseCmdSchema,
 	PROTOCOL_VERSION,
 	ResumeCmdSchema,
+	ReviseScenarioCmdSchema,
 	RunAcceptedMsgSchema,
 	ScenarioErrorMsgSchema,
 	ScenarioGeneratingMsgSchema,
