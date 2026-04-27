@@ -31,6 +31,8 @@ import {
 	HelloMsgSchema,
 	InjectHintCmdSchema,
 	ListScenariosCmdSchema,
+	LoginCmdSchema,
+	LogoutCmdSchema,
 	MissionProgressMsgSchema,
 	MonitorAlertMsgSchema,
 	OverrideGateCmdSchema,
@@ -54,7 +56,9 @@ import {
 	StartRunCmdSchema,
 	StateMsgSchema,
 	StrategyParamSchema,
+	SwitchProviderCmdSchema,
 	Urgency,
+	WhoamiCmdSchema,
 } from "../../packages/ts/control-plane/src/index.ts";
 
 describe("@autocontext/control-plane facade", () => {
@@ -304,6 +308,41 @@ describe("@autocontext/control-plane facade", () => {
 		expect(injectHint.text).toBe("Try broader search.");
 		expect(overrideGate.decision).toBe("retry");
 		expect(invalidHint.success).toBe(false);
+	});
+
+	it("re-exports auth commands", () => {
+		const login = LoginCmdSchema.parse({
+			type: "login",
+			provider: "anthropic",
+			apiKey: "test-key",
+			model: "claude-sonnet",
+			baseUrl: "https://api.anthropic.com",
+		});
+		const logout = LogoutCmdSchema.parse({
+			type: "logout",
+			provider: "anthropic",
+		});
+		const switchProvider = SwitchProviderCmdSchema.parse({
+			type: "switch_provider",
+			provider: "openai",
+		});
+		const whoami = WhoamiCmdSchema.parse({ type: "whoami" });
+		const invalidLogin = LoginCmdSchema.safeParse({
+			type: "login",
+			provider: "",
+		});
+		const invalidSwitch = SwitchProviderCmdSchema.safeParse({
+			type: "switch_provider",
+			provider: "",
+		});
+
+		expect(login.provider).toBe("anthropic");
+		expect(login.model).toBe("claude-sonnet");
+		expect(logout.provider).toBe("anthropic");
+		expect(switchProvider.provider).toBe("openai");
+		expect(whoami.type).toBe("whoami");
+		expect(invalidLogin.success).toBe(false);
+		expect(invalidSwitch.success).toBe(false);
 	});
 
 	it("re-exports chat agent command", () => {
