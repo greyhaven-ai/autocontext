@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CreatedScenarioResult } from "../scenarios/scenario-creator.js";
+import { buildFamilyClassificationBrief } from "../scenarios/family-classifier-input.js";
 import { SCENARIO_TYPE_MARKERS, getScenarioTypeMarker, type ScenarioFamilyName } from "../scenarios/families.js";
 import { hasCodegen } from "../scenarios/codegen/registry.js";
 import { materializeScenario, type MaterializeResult } from "../scenarios/materialize.js";
@@ -17,6 +18,82 @@ export type SolveExecutionRoute =
 export interface PreparedSolveScenario extends CreatedScenarioResult {
   family: ScenarioFamilyName;
   spec: CreatedScenarioResult["spec"];
+}
+
+export const SOLVE_FAMILY_ALIASES: Readonly<Record<string, ScenarioFamilyName>> = {
+  alignment_stress_test: "agent_task",
+  capability_bootstrapping: "agent_task",
+  compositional_generalization: "agent_task",
+  meta_learning: "agent_task",
+};
+
+const FAMILY_HEADER_REGEX = /^\s*\*{0,2}family\*{0,2}:\s*(.+?)\s*$/im;
+const SIMULATION_INTERFACE_HINT_REGEX =
+  /\bsimulationinterface\b.*\bworldstate\b|\bworldstate\b.*\bsimulationinterface\b/is;
+const AGENT_TASK_INTERFACE_HINT_REGEX = /\bagent[- ]task evaluation\b/i;
+
+function normalizeSolveFamilyHintToken(token: string): string {
+  return token
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-\s]/g, " ")
+    .trim()
+    .replace(/-/g, "_")
+    .replace(/\s+/g, "_");
+}
+
+function asScenarioFamilyName(candidate: string): ScenarioFamilyName | null {
+  return candidate in SCENARIO_TYPE_MARKERS ? candidate as ScenarioFamilyName : null;
+}
+
+function readSolveFamilyHeaderTokens(description: string): string[] {
+  const brief = buildFamilyClassificationBrief(description);
+  const match = FAMILY_HEADER_REGEX.exec(brief);
+  if (!match) {
+    return [];
+  }
+  const rawHint = match[1] ?? "";
+  return rawHint.split(/[\/,|]/).map(normalizeSolveFamilyHintToken).filter(Boolean);
+}
+
+export function resolveSolveFamilyHint(description: string): ScenarioFamilyName | null {
+  const tokens = readSolveFamilyHeaderTokens(description);
+  for (const token of tokens) {
+    const family = asScenarioFamilyName(token);
+    if (family) {
+      return family;
+    }
+  }
+  for (const token of tokens) {
+    const aliased = SOLVE_FAMILY_ALIASES[token];
+    if (aliased) {
+      return aliased;
+    }
+  }
+  return null;
+}
+
+export function resolveSolveFamilyAlias(description: string): ScenarioFamilyName | null {
+  const hinted = resolveSolveFamilyHint(description);
+  if (hinted) {
+    return hinted;
+  }
+  const brief = buildFamilyClassificationBrief(description);
+  if (SIMULATION_INTERFACE_HINT_REGEX.test(brief)) {
+    return "simulation";
+  }
+  if (AGENT_TASK_INTERFACE_HINT_REGEX.test(brief)) {
+    return "agent_task";
+  }
+  return null;
+}
+
+export function resolveSolveFamilyOverride(
+  description: string,
+  explicitFamily?: string,
+): ScenarioFamilyName | undefined {
+  return validateSolveFamilyOverride(explicitFamily)
+    ?? resolveSolveFamilyAlias(description)
+    ?? undefined;
 }
 
 export function coerceSolveFamily(family: string): ScenarioFamilyName {

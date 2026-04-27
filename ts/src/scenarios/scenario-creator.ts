@@ -14,6 +14,7 @@ import {
   type AsyncLlmFn as ClassifierAsyncLlmFn,
   type LlmFn as ClassifierLlmFn,
 } from "./family-classifier.js";
+import { buildFamilyClassificationBrief } from "./family-classifier-input.js";
 import { SCENARIO_TYPE_MARKERS, type ScenarioFamilyName } from "./families.js";
 import { designInvestigation } from "./investigation-designer.js";
 import { fallbackCodegenFamilyToAgentTask } from "./scenario-family-fallback.js";
@@ -138,7 +139,8 @@ export function detectScenarioFamilyWithMetadata(
     return { family: "agent_task", llmClassifierFallbackUsed: false };
   }
 
-  const hintedFamily = resolveScenarioFamilyHint(description);
+  const brief = buildFamilyClassificationBrief(description);
+  const hintedFamily = resolveScenarioFamilyHint(brief);
   if (hintedFamily) {
     return {
       family: normalizeDetectedFamily(hintedFamily),
@@ -147,7 +149,7 @@ export function detectScenarioFamilyWithMetadata(
   }
 
   try {
-    const classification = classifyScenarioFamily(description, options);
+    const classification = classifyScenarioFamily(brief, options);
     const family = routeToFamily(classification, 0.15);
     return {
       family: normalizeDetectedFamily(family),
@@ -179,7 +181,8 @@ export async function detectScenarioFamilyWithMetadataAsync(
     return { family: "agent_task", llmClassifierFallbackUsed: false };
   }
 
-  const hintedFamily = resolveScenarioFamilyHint(description);
+  const brief = buildFamilyClassificationBrief(description);
+  const hintedFamily = resolveScenarioFamilyHint(brief);
   if (hintedFamily) {
     return {
       family: normalizeDetectedFamily(hintedFamily),
@@ -188,7 +191,7 @@ export async function detectScenarioFamilyWithMetadataAsync(
   }
 
   try {
-    const classification = await classifyScenarioFamilyAsync(description, options);
+    const classification = await classifyScenarioFamilyAsync(brief, options);
     const family = routeToFamily(classification, 0.15);
     return {
       family: normalizeDetectedFamily(family),
