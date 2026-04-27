@@ -140,6 +140,22 @@ export interface MonitorAlertRow {
   fired_at: string;
 }
 
+export interface ConsultationRow {
+  id: number;
+  run_id: string;
+  generation_index: number;
+  trigger: string;
+  context_summary: string;
+  critique: string;
+  alternative_hypothesis: string;
+  tiebreak_recommendation: string;
+  suggested_next_action: string;
+  raw_response: string;
+  model_used: string;
+  cost_usd: number | null;
+  created_at: string;
+}
+
 export interface InsertMonitorConditionOpts {
   id: string;
   name: string;
@@ -158,6 +174,20 @@ export interface InsertMonitorAlertOpts {
   detail?: string;
   payload?: Record<string, unknown>;
   firedAt?: string;
+}
+
+export interface InsertConsultationOpts {
+  runId: string;
+  generationIndex: number;
+  trigger: string;
+  contextSummary?: string;
+  critique?: string;
+  alternativeHypothesis?: string;
+  tiebreakRecommendation?: string;
+  suggestedNextAction?: string;
+  rawResponse?: string;
+  modelUsed?: string;
+  costUsd?: number | null;
 }
 
 export interface UpsertGenerationOpts {

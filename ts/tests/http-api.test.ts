@@ -773,7 +773,41 @@ describe("HTTP API — cockpit", () => {
       run_id: "test-run-1",
       scenario_name: "grid_ctf",
     });
-    expect((body as Record<string, unknown>).writeup_markdown).toContain("test-run-1");
+    const writeup = readStringProperty(body, "writeup_markdown");
+    expect(writeup).toContain("test-run-1");
+    expect(writeup).toContain("## Playbook");
+    expect(writeup).toContain("Hold the center route.");
+  });
+
+  it("GET /api/cockpit/writeup/:run_id prefers persisted trace writeups", async () => {
+    const writeupsDir = join(dir, "knowledge", "analytics", "writeups");
+    mkdirSync(writeupsDir, { recursive: true });
+    writeFileSync(
+      join(writeupsDir, "trace-writeup-test-run-1.json"),
+      JSON.stringify({
+        writeup_id: "trace-writeup-test-run-1",
+        run_id: "test-run-1",
+        generation_index: 1,
+        findings: [],
+        failure_motifs: [],
+        recovery_paths: [],
+        summary: "Persisted trace-grounded summary.",
+        created_at: "2025-01-01T00:00:00.000Z",
+        metadata: {
+          scenario: "grid_ctf",
+          scenario_family: "game",
+        },
+      }, null, 2),
+      "utf-8",
+    );
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/writeup/test-run-1`);
+
+    expect(status).toBe(200);
+    const writeup = readStringProperty(body, "writeup_markdown");
+    expect(writeup).toContain("## Trace Summary");
+    expect(writeup).toContain("Persisted trace-grounded summary.");
+    expect(writeup).not.toContain("## Playbook");
   });
 
   it("GET /api/cockpit/runs/:run_id/changelog returns generation deltas", async () => {
@@ -782,20 +816,64 @@ describe("HTTP API — cockpit", () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({
       run_id: "test-run-1",
-      changes: [],
+      generations: [
+        {
+          generation: 1,
+          score_delta: 0.7,
+          elo_delta: 50,
+          gate_decision: "advance",
+          new_tools: [],
+          playbook_changed: false,
+        },
+      ],
     });
   });
 
-  it("consultation routes are explicit when the TS consultation backend is unavailable", async () => {
-    const consultation = await postJson(`${baseUrl}/api/cockpit/runs/test-run-1/consult`, {
-      context_summary: "Need another opinion.",
-    });
-    expect(consultation.status).toBe(400);
-    expect((consultation.body as Record<string, unknown>).detail).toContain("Consultation is not enabled");
+  it("POST /api/cockpit/runs/:run_id/consult persists a settings-backed advisory", async () => {
+    const savedEnv = {
+      enabled: process.env.AUTOCONTEXT_CONSULTATION_ENABLED,
+      provider: process.env.AUTOCONTEXT_CONSULTATION_PROVIDER,
+      model: process.env.AUTOCONTEXT_CONSULTATION_MODEL,
+    };
+    process.env.AUTOCONTEXT_CONSULTATION_ENABLED = "true";
+    process.env.AUTOCONTEXT_CONSULTATION_PROVIDER = "deterministic";
+    process.env.AUTOCONTEXT_CONSULTATION_MODEL = "deterministic-dev";
 
-    const listed = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/consultations`);
-    expect(listed.status).toBe(200);
-    expect(listed.body).toEqual([]);
+    try {
+      const consultation = await postJson(`${baseUrl}/api/cockpit/runs/test-run-1/consult`, {
+        context_summary: "Need another opinion.",
+      });
+      expect(consultation.status).toBe(200);
+      expect(consultation.body).toMatchObject({
+        run_id: "test-run-1",
+        generation: 1,
+        trigger: "operator_request",
+        model_used: "deterministic-dev",
+      });
+      expect(readStringProperty(consultation.body, "advisory_markdown")).toContain("Consultation model");
+
+      const listed = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/consultations`);
+      expect(listed.status).toBe(200);
+      expect(listed.body).toEqual([
+        expect.objectContaining({
+          run_id: "test-run-1",
+          generation_index: 1,
+          trigger: "operator_request",
+          context_summary: "Need another opinion.",
+          model_used: "deterministic-dev",
+        }),
+      ]);
+      expect(
+        existsSync(join(dir, "runs", "test-run-1", "generations", "gen_1", "consultation.md")),
+      ).toBe(true);
+    } finally {
+      if (savedEnv.enabled === undefined) delete process.env.AUTOCONTEXT_CONSULTATION_ENABLED;
+      else process.env.AUTOCONTEXT_CONSULTATION_ENABLED = savedEnv.enabled;
+      if (savedEnv.provider === undefined) delete process.env.AUTOCONTEXT_CONSULTATION_PROVIDER;
+      else process.env.AUTOCONTEXT_CONSULTATION_PROVIDER = savedEnv.provider;
+      if (savedEnv.model === undefined) delete process.env.AUTOCONTEXT_CONSULTATION_MODEL;
+      else process.env.AUTOCONTEXT_CONSULTATION_MODEL = savedEnv.model;
+    }
   });
 });
 

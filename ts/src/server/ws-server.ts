@@ -198,6 +198,9 @@ export class InteractiveServer {
     const cockpitApi = buildCockpitApiRoutes({
       openStore: () => this.#openStore(),
       notebookApi: cockpitNotebookApi,
+      settings,
+      runsRoot: this.#runManager.getRunsRoot(),
+      knowledgeRoot: this.#runManager.getKnowledgeRoot(),
     });
     const monitorApi = buildMonitorApiRoutes({
       openStore: () => this.#openStore(),
@@ -550,7 +553,7 @@ export class InteractiveServer {
     const cockpitConsultMatch = url.match(/^\/api\/cockpit\/runs\/([^/]+)\/consult$/);
     if (method === "POST" && cockpitConsultMatch) {
       const [, rawRunId] = cockpitConsultMatch;
-      const response = cockpitApi.requestConsultation(
+      const response = await cockpitApi.requestConsultation(
         decodeURIComponent(rawRunId!),
         await this.#readJsonBody(req),
       );

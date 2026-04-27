@@ -1,10 +1,16 @@
+import type { AppSettings } from "../config/index.js";
+import { createProvider as defaultCreateProvider } from "../providers/provider-factory.js";
+import type { CreateProviderOpts } from "../providers/provider-factory.js";
 import type {
   GenerationRow,
   NotebookRow,
   RunRow,
   SQLiteStore,
-  TrajectoryRow,
 } from "../storage/index.js";
+import type { LLMProvider } from "../types/index.js";
+import { buildChangelog } from "./cockpit-changelog.js";
+import { requestConsultation } from "./cockpit-consultation.js";
+import { buildWriteup } from "./cockpit-writeup.js";
 import type { NotebookApiRoutes } from "./notebook-api.js";
 
 export interface CockpitApiResponse {
@@ -24,7 +30,7 @@ export interface CockpitApiRoutes {
   compareGenerations(runId: string, genA: number, genB: number): CockpitApiResponse;
   resumeInfo(runId: string): CockpitApiResponse;
   writeup(runId: string): CockpitApiResponse;
-  requestConsultation(runId: string, body: Record<string, unknown>): CockpitApiResponse;
+  requestConsultation(runId: string, body: Record<string, unknown>): Promise<CockpitApiResponse>;
   listConsultations(runId: string): CockpitApiResponse;
 }
 
@@ -54,7 +60,12 @@ const FIELD_HEADERS: Record<NotebookField, string> = {
 export function buildCockpitApiRoutes(opts: {
   openStore: () => SQLiteStore;
   notebookApi: NotebookApiRoutes;
+  settings: AppSettings;
+  runsRoot: string;
+  knowledgeRoot: string;
+  createProvider?: (opts: CreateProviderOpts) => LLMProvider;
 }): CockpitApiRoutes {
+  const createProvider = opts.createProvider ?? defaultCreateProvider;
   return {
     listNotebooks: () => opts.notebookApi.list(),
     getNotebook: (sessionId) => opts.notebookApi.get(sessionId),
@@ -163,15 +174,24 @@ export function buildCockpitApiRoutes(opts: {
         body: {
           run_id: run.run_id,
           scenario_name: run.scenario,
-          writeup_markdown: buildWriteup(store, run),
+          writeup_markdown: buildWriteup(store, run, opts.knowledgeRoot),
         },
       };
     }),
-    requestConsultation: () => ({
-      status: 400,
-      body: { detail: "Consultation is not enabled in the TypeScript cockpit backend" },
+    requestConsultation: (runId, body) => withStoreAsync(opts.openStore, async (store) =>
+      requestConsultation(store, {
+        body,
+        createProvider,
+        runId,
+        runsRoot: opts.runsRoot,
+        settings: opts.settings,
+      })),
+    listConsultations: (runId) => withStore(opts.openStore, (store) => {
+      if (!store.getRun(runId)) {
+        return { status: 404, body: { detail: `Run '${runId}' not found` } };
+      }
+      return { status: 200, body: store.getConsultationsForRun(runId) };
     }),
-    listConsultations: () => ({ status: 200, body: [] }),
   };
 }
 
@@ -182,6 +202,18 @@ function withStore(
   const store = openStore();
   try {
     return fn(store);
+  } finally {
+    store.close();
+  }
+}
+
+async function withStoreAsync(
+  openStore: () => SQLiteStore,
+  fn: (store: SQLiteStore) => Promise<CockpitApiResponse>,
+): Promise<CockpitApiResponse> {
+  const store = openStore();
+  try {
+    return await fn(store);
   } finally {
     store.close();
   }
@@ -232,101 +264,6 @@ function formatGenerationComparison(generation: GenerationRow): Record<string, u
     best_score: generation.best_score,
     elo: generation.elo,
     gate_decision: generation.gate_decision,
-  };
-}
-
-function buildChangelog(store: SQLiteStore, runId: string): Record<string, unknown> {
-  const generations = store.getGenerations(runId);
-  if (generations.length < 2) {
-    return { run_id: runId, changes: [] };
-  }
-  const changes = generations.slice(1).map((generation, index) => {
-    const previous = generations[index]!;
-    return {
-      generation: generation.generation_index,
-      previous_generation: previous.generation_index,
-      score_delta: roundDelta(generation.best_score - previous.best_score),
-      elo_delta: roundDelta(generation.elo - previous.elo),
-      gate_decision: generation.gate_decision,
-      duration_seconds: generation.duration_seconds,
-    };
-  });
-  return { run_id: runId, changes };
-}
-
-function buildWriteup(store: SQLiteStore, run: RunRow): string {
-  const trajectory = store.getScoreTrajectory(run.run_id);
-  const sections = [
-    `# Run Summary: ${run.run_id}`,
-    "",
-    `- **Scenario**: ${run.scenario}`,
-    `- **Target generations**: ${run.target_generations}`,
-    `- **Status**: ${run.status}`,
-    `- **Created**: ${run.created_at}`,
-    "",
-    "## Score Trajectory",
-    "",
-  ];
-
-  if (trajectory.length === 0) {
-    sections.push("No completed generations.", "");
-  } else {
-    sections.push("| Gen | Best Score | Elo | Delta | Gate |");
-    sections.push("|-----|------------|-----|-------|------|");
-    for (const generation of trajectory) {
-      sections.push(
-        `| ${generation.generation_index} | ${generation.best_score.toFixed(2)} `
-          + `| ${generation.elo.toFixed(0)} | ${formatDelta(generation.delta)} `
-          + `| ${generation.gate_decision} |`,
-      );
-    }
-    sections.push("");
-  }
-
-  sections.push("## Gate Decisions", "");
-  if (trajectory.length === 0) {
-    sections.push("No gate decisions recorded.", "");
-  } else {
-    for (const generation of trajectory) {
-      sections.push(`- Generation ${generation.generation_index}: **${generation.gate_decision}**`);
-    }
-    sections.push("");
-  }
-
-  const bestOutput = bestCompetitorOutput(store, run.run_id, trajectory);
-  if (bestOutput) {
-    sections.push("## Best Strategy", "");
-    sections.push(`Generation ${bestOutput.generation} (score: ${bestOutput.bestScore.toFixed(2)}):`, "");
-    sections.push("```");
-    sections.push(truncate(bestOutput.content, 500));
-    sections.push("```", "");
-  }
-
-  return sections.join("\n");
-}
-
-function bestCompetitorOutput(
-  store: SQLiteStore,
-  runId: string,
-  trajectory: TrajectoryRow[],
-): { generation: number; bestScore: number; content: string } | null {
-  if (trajectory.length === 0) {
-    return null;
-  }
-  const best = trajectory.reduce((current, candidate) => (
-    candidate.best_score > current.best_score ? candidate : current
-  ));
-  const output = store
-    .getAgentOutputs(runId, best.generation_index)
-    .filter((entry) => entry.role === "competitor")
-    .at(-1);
-  if (!output) {
-    return null;
-  }
-  return {
-    generation: best.generation_index,
-    bestScore: best.best_score,
-    content: output.content,
   };
 }
 
@@ -409,12 +346,4 @@ function getRunBestScore(store: SQLiteStore, runId: string): number | null {
 
 function roundDelta(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
-}
-
-function formatDelta(value: number): string {
-  return value >= 0 ? `+${value.toFixed(4)}` : value.toFixed(4);
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }

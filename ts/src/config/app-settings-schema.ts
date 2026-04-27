@@ -256,6 +256,15 @@ export const AppSettingsSchema = z.object({
   monitorHeartbeatTimeout: z.number().min(1).default(300.0),
   monitorMaxConditions: z.number().int().min(1).default(100),
 
+  // Provider consultation
+  consultationEnabled: z.boolean().default(false),
+  consultationProvider: z.string().default("anthropic"),
+  consultationModel: z.string().default("claude-sonnet-4-20250514"),
+  consultationApiKey: z.string().default(""),
+  consultationBaseUrl: z.string().default(""),
+  consultationStagnationThreshold: z.number().int().min(2).default(3),
+  consultationCostBudget: z.number().min(0).default(0.0),
+
   // Blob store (AC-518)
   blobStoreEnabled: z.boolean().default(false),
   blobStoreBackend: z.string().default("local"),

@@ -2,8 +2,10 @@ import Database from "better-sqlite3";
 
 import type {
   AgentOutputRow,
+  ConsultationRow,
   GenerationRow,
   HumanFeedbackRow,
+  InsertConsultationOpts,
   InsertMonitorAlertOpts,
   InsertMonitorConditionOpts,
   MatchRow,
@@ -64,6 +66,11 @@ import {
   listStoreMonitorAlerts,
   listStoreMonitorConditions,
 } from "./storage-monitor-facade.js";
+import {
+  getStoreTotalConsultationCost,
+  insertStoreConsultation,
+  listStoreConsultations,
+} from "./storage-consultation-facade.js";
 import { migrateDatabase } from "./storage-migration-workflow.js";
 
 export function configureSqliteDatabase(db: Pick<Database.Database, "pragma">): void {
@@ -204,6 +211,18 @@ export class SQLiteStore {
 
   getLatestMonitorAlert(conditionId: string): MonitorAlertRow | null {
     return getStoreLatestMonitorAlert(this.#db, conditionId);
+  }
+
+  insertConsultation(opts: InsertConsultationOpts): number {
+    return insertStoreConsultation(this.#db, opts);
+  }
+
+  getConsultationsForRun(runId: string): ConsultationRow[] {
+    return listStoreConsultations(this.#db, runId);
+  }
+
+  getTotalConsultationCost(runId: string): number {
+    return getStoreTotalConsultationCost(this.#db, runId);
   }
 
   createRun(

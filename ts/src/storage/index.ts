@@ -1,7 +1,9 @@
 export type {
   AgentOutputRow,
+  ConsultationRow,
   GenerationRow,
   HumanFeedbackRow,
+  InsertConsultationOpts,
   InsertMonitorAlertOpts,
   InsertMonitorConditionOpts,
   MatchRow,
