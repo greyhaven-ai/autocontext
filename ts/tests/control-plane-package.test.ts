@@ -25,8 +25,11 @@ import {
 	ExecutorInfoSchema,
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
+	InjectHintCmdSchema,
 	MissionProgressMsgSchema,
 	MonitorAlertMsgSchema,
+	OverrideGateCmdSchema,
+	PauseCmdSchema,
 	PRODUCTION_TRACE_SCHEMA_VERSION,
 	PROTOCOL_VERSION,
 	packageRole,
@@ -34,6 +37,7 @@ import {
 	ResearchConfig,
 	ResearchQuery,
 	ResearchResult,
+	ResumeCmdSchema,
 	RunAcceptedMsgSchema,
 	ScenarioErrorMsgSchema,
 	ScenarioGeneratingMsgSchema,
@@ -270,6 +274,29 @@ describe("@autocontext/control-plane facade", () => {
 		expect(progress.latestStep).toBe("evaluate candidate");
 		expect(progress.budgetUsed).toBe(1.25);
 		expect(progress.budgetMax).toBe(5);
+	});
+
+	it("re-exports basic client control commands", () => {
+		const pause = PauseCmdSchema.parse({ type: "pause" });
+		const resume = ResumeCmdSchema.parse({ type: "resume" });
+		const injectHint = InjectHintCmdSchema.parse({
+			type: "inject_hint",
+			text: "Try broader search.",
+		});
+		const overrideGate = OverrideGateCmdSchema.parse({
+			type: "override_gate",
+			decision: "retry",
+		});
+		const invalidHint = InjectHintCmdSchema.safeParse({
+			type: "inject_hint",
+			text: "",
+		});
+
+		expect(pause.type).toBe("pause");
+		expect(resume.type).toBe("resume");
+		expect(injectHint.text).toBe("Try broader search.");
+		expect(overrideGate.decision).toBe("retry");
+		expect(invalidHint.success).toBe(false);
 	});
 
 	it("re-exports stagnation report types", () => {
