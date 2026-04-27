@@ -20,6 +20,23 @@ function columnNames(db: Database.Database, tableName: string): Set<string> {
   );
 }
 
+function columnDefault(
+  db: Database.Database,
+  tableName: string,
+  columnName: string,
+): string | null {
+  const row = (
+    db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+      dflt_value: string | null;
+      name: string;
+    }>
+  ).find((column) => column.name === columnName);
+  if (!row) {
+    throw new Error(`missing column ${tableName}.${columnName}`);
+  }
+  return row.dflt_value;
+}
+
 describe("storage migration workflow", () => {
   let dir: string;
   let db: Database.Database;
@@ -63,8 +80,11 @@ describe("storage migration workflow", () => {
          applied_at TEXT NOT NULL DEFAULT (datetime('now'))
        )`,
     );
+    const pythonMigrations = [...new Set(Object.values(TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES).flat())]
+      .sort();
     const insert = db.prepare("INSERT INTO schema_migrations(version) VALUES (?)");
-    for (const pythonMigration of Object.values(TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES).flat()) {
+    for (const pythonMigration of pythonMigrations) {
+      db.exec(readFileSync(join(PYTHON_MIGRATIONS_DIR, pythonMigration), "utf8"));
       insert.run(pythonMigration);
     }
 
@@ -121,5 +141,59 @@ describe("storage migration workflow", () => {
     for (const pythonMigration of TYPESCRIPT_TO_PYTHON_MIGRATION_BASELINES["009_generation_loop.sql"]) {
       expect(appliedPython.has(pythonMigration)).toBe(true);
     }
+  });
+
+  it("removes the historical runs.status default from existing TypeScript databases", () => {
+    db.exec(
+      `CREATE TABLE runs (
+         run_id TEXT PRIMARY KEY,
+         scenario TEXT NOT NULL,
+         target_generations INTEGER NOT NULL,
+         executor_mode TEXT NOT NULL,
+         status TEXT NOT NULL DEFAULT 'running',
+         agent_provider TEXT NOT NULL DEFAULT '',
+         created_at TEXT NOT NULL DEFAULT (datetime('now')),
+         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+       );
+       INSERT INTO runs(
+         run_id,
+         scenario,
+         target_generations,
+         executor_mode,
+         status,
+         agent_provider,
+         created_at,
+         updated_at
+       )
+       VALUES (
+         'run-1',
+         'grid_ctf',
+         2,
+         'codex',
+         'queued',
+         'claude',
+         '2026-04-25T00:00:00.000Z',
+         '2026-04-25T00:00:01.000Z'
+       );
+       CREATE TABLE schema_version (
+         filename TEXT PRIMARY KEY,
+         applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+       );
+       INSERT INTO schema_version(filename) VALUES ('009_generation_loop.sql');`,
+    );
+
+    migrateDatabase(db, MIGRATIONS_DIR);
+
+    expect(columnDefault(db, "runs", "status")).toBeNull();
+    expect(
+      db.prepare("SELECT status, agent_provider FROM runs WHERE run_id = ?").get("run-1"),
+    ).toEqual({
+      agent_provider: "claude",
+      status: "queued",
+    });
+    expect(
+      db.prepare("SELECT filename FROM schema_version WHERE filename = ?")
+        .get("013_runs_status_default_parity.sql"),
+    ).toEqual({ filename: "013_runs_status_default_parity.sql" });
   });
 });
