@@ -4,6 +4,7 @@ export const packageTopologyVersion = 1;
 export type {
 	AgentsStartedPayload,
 	GateDecidedPayload,
+	GenerationCompletedPayload,
 	GenerationStartedPayload,
 	RunCompletedPayload,
 	RunFailedPayload,

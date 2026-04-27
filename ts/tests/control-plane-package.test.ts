@@ -6,6 +6,7 @@ import type {
 	FeedbackRef,
 	FeedbackRefId,
 	GateDecidedPayload,
+	GenerationCompletedPayload,
 	GenerationStartedPayload,
 	ProductionTrace,
 	ProductionTraceId,
@@ -234,6 +235,24 @@ describe("@autocontext/control-plane facade", () => {
 		expect(payload.decision).toBe("advance");
 		expect(payload.delta).toBe(0.18);
 		expect(payload.threshold).toBe(0.005);
+	});
+
+	it("re-exports generation completed payload types", () => {
+		const payload: GenerationCompletedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			mean_score: 0.68,
+			best_score: 0.72,
+			elo: 1068,
+			gate_decision: "advance",
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.generation).toBe(2);
+		expect(payload.mean_score).toBe(0.68);
+		expect(payload.best_score).toBe(0.72);
+		expect(payload.elo).toBe(1068);
+		expect(payload.gate_decision).toBe("advance");
 	});
 
 	it("re-exports run completed payload types", () => {
