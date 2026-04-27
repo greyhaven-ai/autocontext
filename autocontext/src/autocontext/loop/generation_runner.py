@@ -1062,6 +1062,7 @@ class GenerationRunner:
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
+        target_generations = generations
         existing_run = self.sqlite.get_run(active_run_id)
         if existing_run is None:
             self.sqlite.create_run(
@@ -1071,11 +1072,11 @@ class GenerationRunner:
         else:
             self._recover_stale_run_state(active_run_id)
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
+            target_generations = max(
+                self._int_value(refreshed_run.get("target_generations"), generations),
+                generations,
+            )
             if str(refreshed_run.get("status") or "") != "completed":
-                target_generations = max(
-                    self._int_value(refreshed_run.get("target_generations"), generations),
-                    generations,
-                )
                 self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
         (
             previous_best,
@@ -1085,7 +1086,10 @@ class GenerationRunner:
             gate_decision_history,
         ) = self._hydrate_run_state(active_run_id)
         completed = 0
-        self.events.emit("run_started", {"run_id": active_run_id, "scenario": scenario_name})
+        self.events.emit(
+            "run_started",
+            {"run_id": active_run_id, "scenario": scenario_name, "target_generations": target_generations},
+        )
 
         # Seed scenario-specific tools before first generation
         if not self.artifacts.tools_dir(scenario_name).exists():

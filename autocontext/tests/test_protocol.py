@@ -207,7 +207,7 @@ class TestEventPayloads:
     @pytest.mark.parametrize(
         "model,kwargs",
         [
-            (RunStartedPayload, {"run_id": "r1", "scenario": "grid_ctf"}),
+            (RunStartedPayload, {"run_id": "r1", "scenario": "grid_ctf", "target_generations": 3}),
             (GenerationStartedPayload, {"run_id": "r1", "generation": 1}),
             (AgentsStartedPayload, {"run_id": "r1", "generation": 1, "roles": ["competitor", "analyst"]}),
             (RoleCompletedPayload, {"run_id": "r1", "generation": 1, "role": "analyst", "latency_ms": 1200, "tokens": 500}),

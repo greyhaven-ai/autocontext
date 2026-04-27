@@ -305,6 +305,7 @@ class RunStartedPayload(BaseModel):
 
     run_id: str
     scenario: str
+    target_generations: int
 
 
 class GenerationStartedPayload(BaseModel):

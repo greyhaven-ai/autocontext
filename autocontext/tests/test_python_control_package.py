@@ -231,10 +231,12 @@ def test_python_control_reexports_run_started_payload() -> None:
     payload = RunStartedPayload(
         run_id="run-123",
         scenario="grid_ctf",
+        target_generations=5,
     )
 
     assert payload.run_id == "run-123"
     assert payload.scenario == "grid_ctf"
+    assert payload.target_generations == 5
 
 
 def test_python_control_reexports_run_completed_payload() -> None:

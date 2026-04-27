@@ -37,6 +37,15 @@ def test_single_generation_persists_metadata_and_artifacts(tmp_path: Path) -> No
     assert payload["generation_index"] == 1
     assert "elo" in payload
 
+    event_stream_path = tmp_path / "runs" / "events.ndjson"
+    events = [json.loads(line) for line in event_stream_path.read_text(encoding="utf-8").splitlines()]
+    run_started = next(event for event in events if event["event"] == "run_started")
+    assert run_started["payload"] == {
+        "run_id": run_id,
+        "scenario": "grid_ctf",
+        "target_generations": 1,
+    }
+
     # Coach history should exist as audit trail
     coach_history_path = tmp_path / "knowledge" / "grid_ctf" / "coach_history.md"
     assert coach_history_path.exists()
