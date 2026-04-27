@@ -336,6 +336,19 @@ def test_python_control_reexports_scenario_authoring_commands() -> None:
     assert cancel.type == "cancel_scenario"
 
 
+def test_python_control_reexports_run_setup_commands() -> None:
+    ListScenariosCmd = control_package.ListScenariosCmd
+    StartRunCmd = control_package.StartRunCmd
+
+    list_scenarios = ListScenariosCmd()
+    start_run = StartRunCmd(scenario="schema_repair", generations=3)
+
+    assert list_scenarios.type == "list_scenarios"
+    assert start_run.type == "start_run"
+    assert start_run.scenario == "schema_repair"
+    assert start_run.generations == 3
+
+
 def test_python_control_requires_stage_for_scenario_error_messages() -> None:
     ScenarioErrorMsg = control_package.ScenarioErrorMsg
 

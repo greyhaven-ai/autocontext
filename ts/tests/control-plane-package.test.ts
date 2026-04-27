@@ -29,6 +29,7 @@ import {
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
 	InjectHintCmdSchema,
+	ListScenariosCmdSchema,
 	MissionProgressMsgSchema,
 	MonitorAlertMsgSchema,
 	OverrideGateCmdSchema,
@@ -49,6 +50,7 @@ import {
 	ScenarioPreviewMsgSchema,
 	ScenarioReadyMsgSchema,
 	ScoringComponentSchema,
+	StartRunCmdSchema,
 	StateMsgSchema,
 	StrategyParamSchema,
 	Urgency,
@@ -301,6 +303,27 @@ describe("@autocontext/control-plane facade", () => {
 		expect(injectHint.text).toBe("Try broader search.");
 		expect(overrideGate.decision).toBe("retry");
 		expect(invalidHint.success).toBe(false);
+	});
+
+	it("re-exports run setup commands", () => {
+		const listScenarios = ListScenariosCmdSchema.parse({
+			type: "list_scenarios",
+		});
+		const startRun = StartRunCmdSchema.parse({
+			type: "start_run",
+			scenario: "schema_repair",
+			generations: 3,
+		});
+		const invalidStartRun = StartRunCmdSchema.safeParse({
+			type: "start_run",
+			scenario: "schema_repair",
+			generations: 0,
+		});
+
+		expect(listScenarios.type).toBe("list_scenarios");
+		expect(startRun.scenario).toBe("schema_repair");
+		expect(startRun.generations).toBe(3);
+		expect(invalidStartRun.success).toBe(false);
 	});
 
 	it("re-exports scenario authoring commands", () => {
