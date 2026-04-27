@@ -4,6 +4,8 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
+from pydantic import ValidationError
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PY_CONTROL_SRC = REPO_ROOT / "packages" / "python" / "control" / "src"
 if str(PY_CONTROL_SRC) not in sys.path:
@@ -109,6 +111,262 @@ def test_python_control_reexports_research_brief() -> None:
     assert brief.unique_citations[0].source == "policy handbook"
     assert brief.avg_confidence == 0.91
     assert "Research Brief: Summarize refund policy changes" in brief.to_markdown()
+
+
+def test_python_control_reexports_shared_server_protocol_models() -> None:
+    ExecutorInfo = control_package.ExecutorInfo
+    ExecutorResources = control_package.ExecutorResources
+    PROTOCOL_VERSION = control_package.PROTOCOL_VERSION
+    ScenarioInfo = control_package.ScenarioInfo
+    ScoringComponent = control_package.ScoringComponent
+    StrategyParam = control_package.StrategyParam
+
+    scenario = ScenarioInfo(name="grid_ctf", description="Capture the flag")
+    resources = ExecutorResources(
+        docker_image="ghcr.io/greyhaven/executor:latest",
+        cpu_cores=4,
+        memory_gb=8,
+        disk_gb=20,
+        timeout_minutes=15,
+    )
+    executor = ExecutorInfo(
+        mode="docker",
+        available=True,
+        description="Local Docker executor",
+        resources=resources,
+    )
+    param = StrategyParam(name="aggression", description="How aggressively to pursue flags")
+    scoring = ScoringComponent(name="win_rate", description="Percent of matches won", weight=0.7)
+
+    assert PROTOCOL_VERSION == 1
+    assert scenario.name == "grid_ctf"
+    assert executor.resources.cpu_cores == 4
+    assert param.name == "aggression"
+    assert scoring.weight == 0.7
+
+
+def test_python_control_reexports_environment_discovery_messages() -> None:
+    EnvironmentsMsg = control_package.EnvironmentsMsg
+    ExecutorInfo = control_package.ExecutorInfo
+    ExecutorResources = control_package.ExecutorResources
+    ScenarioInfo = control_package.ScenarioInfo
+
+    environments = EnvironmentsMsg(
+        scenarios=[
+            ScenarioInfo(name="grid_ctf", description="Capture the flag"),
+            ScenarioInfo(name="schema_repair", description="Recover a schema from examples."),
+        ],
+        executors=[
+            ExecutorInfo(
+                mode="docker",
+                available=True,
+                description="Local Docker executor",
+                resources=ExecutorResources(
+                    docker_image="ghcr.io/greyhaven/executor:latest",
+                    cpu_cores=4,
+                    memory_gb=8,
+                    disk_gb=20,
+                    timeout_minutes=15,
+                ),
+            ),
+        ],
+        current_executor="docker",
+        agent_provider="pi",
+    )
+
+    assert environments.type == "environments"
+    assert environments.scenarios[1].name == "schema_repair"
+    assert environments.executors[0].resources is not None
+    assert environments.executors[0].resources.cpu_cores == 4
+    assert environments.current_executor == "docker"
+    assert environments.agent_provider == "pi"
+
+
+def test_python_control_reexports_run_acceptance_messages() -> None:
+    RunAcceptedMsg = control_package.RunAcceptedMsg
+
+    accepted = RunAcceptedMsg(run_id="run-123", scenario="schema_repair", generations=4)
+
+    assert accepted.type == "run_accepted"
+    assert accepted.run_id == "run-123"
+    assert accepted.scenario == "schema_repair"
+    assert accepted.generations == 4
+
+
+def test_python_control_reexports_chat_response_messages() -> None:
+    ChatResponseMsg = control_package.ChatResponseMsg
+
+    response = ChatResponseMsg(role="assistant", text="Schema looks valid.")
+
+    assert response.type == "chat_response"
+    assert response.role == "assistant"
+    assert response.text == "Schema looks valid."
+
+
+def test_python_control_reexports_event_messages() -> None:
+    EventMsg = control_package.EventMsg
+
+    event = EventMsg(event="run_progress", payload={"run_id": "run-123", "percent": 50})
+
+    assert event.type == "event"
+    assert event.event == "run_progress"
+    assert event.payload == {"run_id": "run-123", "percent": 50}
+
+
+def test_python_control_reexports_basic_server_protocol_messages() -> None:
+    AckMsg = control_package.AckMsg
+    ErrorMsg = control_package.ErrorMsg
+    HelloMsg = control_package.HelloMsg
+    StateMsg = control_package.StateMsg
+
+    hello = HelloMsg()
+    state = StateMsg(paused=True, generation=3, phase="evaluation")
+    ack = AckMsg(action="pause", decision="accepted")
+    error = ErrorMsg(message="run failed")
+
+    assert hello.type == "hello"
+    assert hello.protocol_version == control_package.PROTOCOL_VERSION
+    assert state.paused is True
+    assert state.generation == 3
+    assert state.phase == "evaluation"
+    assert ack.action == "pause"
+    assert ack.decision == "accepted"
+    assert error.type == "error"
+    assert error.message == "run failed"
+
+
+def test_python_control_reexports_monitor_alert_messages() -> None:
+    MonitorAlertMsg = control_package.MonitorAlertMsg
+
+    alert = MonitorAlertMsg(
+        alert_id="alert-1",
+        condition_id="cond-1",
+        condition_name="stalled-run",
+        condition_type="stall_window",
+        scope="run:run-123",
+        detail="No events for 30.0s (timeout=30.0s)",
+    )
+
+    assert alert.type == "monitor_alert"
+    assert alert.condition_name == "stalled-run"
+    assert alert.detail == "No events for 30.0s (timeout=30.0s)"
+
+
+def test_python_control_reexports_basic_client_control_commands() -> None:
+    InjectHintCmd = control_package.InjectHintCmd
+    OverrideGateCmd = control_package.OverrideGateCmd
+    PauseCmd = control_package.PauseCmd
+    ResumeCmd = control_package.ResumeCmd
+
+    pause = PauseCmd()
+    resume = ResumeCmd()
+    inject_hint = InjectHintCmd(text="Try broader search.")
+    override_gate = OverrideGateCmd(decision="retry")
+
+    assert pause.type == "pause"
+    assert resume.type == "resume"
+    assert inject_hint.type == "inject_hint"
+    assert inject_hint.text == "Try broader search."
+    assert override_gate.type == "override_gate"
+    assert override_gate.decision == "retry"
+
+
+def test_python_control_reexports_scenario_authoring_commands() -> None:
+    CancelScenarioCmd = control_package.CancelScenarioCmd
+    ConfirmScenarioCmd = control_package.ConfirmScenarioCmd
+    CreateScenarioCmd = control_package.CreateScenarioCmd
+    ReviseScenarioCmd = control_package.ReviseScenarioCmd
+
+    create = CreateScenarioCmd(description="Design a schema repair scenario.")
+    confirm = ConfirmScenarioCmd()
+    revise = ReviseScenarioCmd(feedback="Make the failure mode more concrete.")
+    cancel = CancelScenarioCmd()
+
+    assert create.type == "create_scenario"
+    assert create.description == "Design a schema repair scenario."
+    assert confirm.type == "confirm_scenario"
+    assert revise.type == "revise_scenario"
+    assert revise.feedback == "Make the failure mode more concrete."
+    assert cancel.type == "cancel_scenario"
+
+
+def test_python_control_reexports_run_setup_commands() -> None:
+    ListScenariosCmd = control_package.ListScenariosCmd
+    StartRunCmd = control_package.StartRunCmd
+
+    list_scenarios = ListScenariosCmd()
+    start_run = StartRunCmd(scenario="schema_repair", generations=3)
+
+    assert list_scenarios.type == "list_scenarios"
+    assert start_run.type == "start_run"
+    assert start_run.scenario == "schema_repair"
+    assert start_run.generations == 3
+
+
+def test_python_control_reexports_chat_agent_command() -> None:
+    ChatAgentCmd = control_package.ChatAgentCmd
+
+    chat = ChatAgentCmd(role="coach", message="Try broader search.")
+
+    assert chat.type == "chat_agent"
+    assert chat.role == "coach"
+    assert chat.message == "Try broader search."
+
+    try:
+        ChatAgentCmd(role="coach", message="")
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("ChatAgentCmd should require non-empty message")
+
+
+def test_python_control_requires_stage_for_scenario_error_messages() -> None:
+    ScenarioErrorMsg = control_package.ScenarioErrorMsg
+
+    try:
+        ScenarioErrorMsg(message="designer failed")
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("ScenarioErrorMsg should require stage")
+
+
+def test_python_control_reexports_scenario_generation_lifecycle_messages() -> None:
+    ScenarioErrorMsg = control_package.ScenarioErrorMsg
+    ScenarioGeneratingMsg = control_package.ScenarioGeneratingMsg
+    ScenarioPreviewMsg = control_package.ScenarioPreviewMsg
+    ScenarioReadyMsg = control_package.ScenarioReadyMsg
+    ScoringComponent = control_package.ScoringComponent
+    StrategyParam = control_package.StrategyParam
+
+    generating = ScenarioGeneratingMsg(name="schema_repair")
+    preview = ScenarioPreviewMsg(
+        name="schema_repair",
+        display_name="Schema Repair",
+        description="Recover a schema from examples.",
+        strategy_params=[
+            StrategyParam(name="depth", description="Reasoning depth"),
+        ],
+        scoring_components=[
+            ScoringComponent(name="accuracy", description="Schema fidelity", weight=0.8),
+        ],
+        constraints=["No external tools"],
+        win_threshold=0.75,
+    )
+    ready = ScenarioReadyMsg(name="schema_repair", test_scores=[0.8, 0.9])
+    error = ScenarioErrorMsg(message="designer failed", stage="preview")
+
+    assert generating.type == "scenario_generating"
+    assert generating.name == "schema_repair"
+    assert preview.type == "scenario_preview"
+    assert preview.strategy_params[0].name == "depth"
+    assert preview.scoring_components[0].weight == 0.8
+    assert preview.constraints == ["No external tools"]
+    assert preview.win_threshold == 0.75
+    assert ready.type == "scenario_ready"
+    assert ready.test_scores == [0.8, 0.9]
+    assert error.type == "scenario_error"
+    assert error.stage == "preview"
 
 
 def test_python_control_reexports_production_trace_contracts() -> None:

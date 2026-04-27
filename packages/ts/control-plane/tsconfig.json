@@ -13,6 +13,7 @@
     "../../../ts/src/production-traces/contract/branded-ids.ts",
     "../../../ts/src/control-plane/contract/branded-ids.ts",
     "../../../ts/src/research/types.ts",
-    "../../../ts/src/research/consultation.ts"
+    "../../../ts/src/research/consultation.ts",
+    "../../../ts/src/server/protocol.ts"
   ]
 }

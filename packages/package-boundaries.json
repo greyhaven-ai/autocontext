@@ -50,7 +50,8 @@
 			"allowedImports": [
 				"autocontext.production_traces.contract.models",
 				"autocontext.research.types",
-				"autocontext.research.consultation"
+				"autocontext.research.consultation",
+				"autocontext.server.protocol"
 			]
 		}
 	},
@@ -96,7 +97,8 @@
 				"../../../ts/src/production-traces/contract/branded-ids.ts",
 				"../../../ts/src/control-plane/contract/branded-ids.ts",
 				"../../../ts/src/research/types.ts",
-				"../../../ts/src/research/consultation.ts"
+				"../../../ts/src/research/consultation.ts",
+				"../../../ts/src/server/protocol.ts"
 			],
 			"blockedPackageDependencies": [
 				"autoctx"

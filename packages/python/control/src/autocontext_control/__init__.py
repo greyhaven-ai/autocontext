@@ -8,7 +8,38 @@ _production_traces_contract = import_module(
 )
 _research_types = import_module("autocontext.research.types")
 _research_consultation = import_module("autocontext.research.consultation")
+_server_protocol = import_module("autocontext.server.protocol")
 
+PROTOCOL_VERSION = _server_protocol.PROTOCOL_VERSION
+ScenarioInfo: Any = _server_protocol.ScenarioInfo
+ExecutorResources: Any = _server_protocol.ExecutorResources
+ExecutorInfo: Any = _server_protocol.ExecutorInfo
+StrategyParam: Any = _server_protocol.StrategyParam
+ScoringComponent: Any = _server_protocol.ScoringComponent
+HelloMsg: Any = _server_protocol.HelloMsg
+ChatResponseMsg: Any = _server_protocol.ChatResponseMsg
+EventMsg: Any = _server_protocol.EventMsg
+EnvironmentsMsg: Any = _server_protocol.EnvironmentsMsg
+StateMsg: Any = _server_protocol.StateMsg
+AckMsg: Any = _server_protocol.AckMsg
+RunAcceptedMsg: Any = _server_protocol.RunAcceptedMsg
+ErrorMsg: Any = _server_protocol.ErrorMsg
+MonitorAlertMsg: Any = _server_protocol.MonitorAlertMsg
+ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
+ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
+ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
+ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
+PauseCmd: Any = _server_protocol.PauseCmd
+ResumeCmd: Any = _server_protocol.ResumeCmd
+InjectHintCmd: Any = _server_protocol.InjectHintCmd
+OverrideGateCmd: Any = _server_protocol.OverrideGateCmd
+ChatAgentCmd: Any = _server_protocol.ChatAgentCmd
+CreateScenarioCmd: Any = _server_protocol.CreateScenarioCmd
+ConfirmScenarioCmd: Any = _server_protocol.ConfirmScenarioCmd
+ReviseScenarioCmd: Any = _server_protocol.ReviseScenarioCmd
+CancelScenarioCmd: Any = _server_protocol.CancelScenarioCmd
+StartRunCmd: Any = _server_protocol.StartRunCmd
+ListScenariosCmd: Any = _server_protocol.ListScenariosCmd
 Urgency: Any = _research_types.Urgency
 ResearchQuery: Any = _research_types.ResearchQuery
 Citation: Any = _research_types.Citation
@@ -46,29 +77,59 @@ package_role = PACKAGE_ROLE
 package_topology_version = PACKAGE_TOPOLOGY_VERSION
 
 __all__ = [
+    "ChatResponseMsg",
     "Chosen",
     "Citation",
+    "CancelScenarioCmd",
+    "ChatAgentCmd",
+    "ConfirmScenarioCmd",
+    "CreateScenarioCmd",
     "EndedAt",
     "EnvContext",
+    "EventMsg",
+    "EnvironmentsMsg",
+    "AckMsg",
     "Error",
+    "ErrorMsg",
+    "MonitorAlertMsg",
     "EvalExampleId",
+    "ExecutorInfo",
+    "ExecutorResources",
     "FeedbackRef",
+    "HelloMsg",
+    "InjectHintCmd",
     "Items",
+    "ListScenariosCmd",
     "Message",
     "PACKAGE_ROLE",
     "PACKAGE_TOPOLOGY_VERSION",
+    "PROTOCOL_VERSION",
+    "PauseCmd",
     "ProductionOutcome",
     "ProductionTrace",
     "Provider",
+    "RunAcceptedMsg",
     "RedactionMarker",
     "ResearchAdapter",
     "ResearchBrief",
     "ResearchConfig",
     "ResearchQuery",
     "ResearchResult",
+    "ReviseScenarioCmd",
+    "ResumeCmd",
     "Routing",
+    "ScenarioErrorMsg",
+    "ScenarioGeneratingMsg",
+    "ScenarioInfo",
+    "ScenarioPreviewMsg",
+    "ScenarioReadyMsg",
+    "StartRunCmd",
+    "OverrideGateCmd",
+    "ScoringComponent",
     "Sdk",
     "SessionIdentifier",
+    "StateMsg",
+    "StrategyParam",
     "TimingInfo",
     "ToolCall",
     "TraceLinks",
