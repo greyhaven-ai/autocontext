@@ -63,6 +63,8 @@ export {
 	HelloMsgSchema,
 	InjectHintCmdSchema,
 	ListScenariosCmdSchema,
+	LoginCmdSchema,
+	LogoutCmdSchema,
 	MissionProgressMsgSchema,
 	MonitorAlertMsgSchema,
 	OverrideGateCmdSchema,
@@ -80,4 +82,6 @@ export {
 	StartRunCmdSchema,
 	StateMsgSchema,
 	StrategyParamSchema,
+	SwitchProviderCmdSchema,
+	WhoamiCmdSchema,
 } from "../../../../ts/src/server/protocol.js";
