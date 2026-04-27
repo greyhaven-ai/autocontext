@@ -14,6 +14,7 @@ import type {
 	Scenario,
 	SessionIdHash,
 	StagnationReport,
+	TournamentCompletedPayload,
 	TournamentStartedPayload,
 	TraceSource,
 	UserIdHash,
@@ -167,6 +168,24 @@ describe("@autocontext/control-plane facade", () => {
 		expect(payload.run_id).toBe("run-123");
 		expect(payload.generation).toBe(2);
 		expect(payload.matches).toBe(8);
+	});
+
+	it("re-exports tournament completed payload types", () => {
+		const payload: TournamentCompletedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			mean_score: 0.55,
+			best_score: 0.7,
+			wins: 3,
+			losses: 1,
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.generation).toBe(2);
+		expect(payload.mean_score).toBe(0.55);
+		expect(payload.best_score).toBe(0.7);
+		expect(payload.wins).toBe(3);
+		expect(payload.losses).toBe(1);
 	});
 
 	it("re-exports role completed payload types", () => {

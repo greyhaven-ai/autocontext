@@ -163,6 +163,26 @@ def test_python_control_reexports_tournament_started_payload() -> None:
     assert payload.matches == 8
 
 
+def test_python_control_reexports_tournament_completed_payload() -> None:
+    TournamentCompletedPayload = control_package.TournamentCompletedPayload
+
+    payload = TournamentCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        mean_score=0.55,
+        best_score=0.7,
+        wins=3,
+        losses=1,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.mean_score == 0.55
+    assert payload.best_score == 0.7
+    assert payload.wins == 3
+    assert payload.losses == 1
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources
