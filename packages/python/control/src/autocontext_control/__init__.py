@@ -42,6 +42,8 @@ CreateScenarioCmd: Any = _server_protocol.CreateScenarioCmd
 ConfirmScenarioCmd: Any = _server_protocol.ConfirmScenarioCmd
 ReviseScenarioCmd: Any = _server_protocol.ReviseScenarioCmd
 CancelScenarioCmd: Any = _server_protocol.CancelScenarioCmd
+StartRunCmd: Any = _server_protocol.StartRunCmd
+ListScenariosCmd: Any = _server_protocol.ListScenariosCmd
 Urgency: Any = _research_types.Urgency
 CompetitorOutput: Any = _agent_contracts.CompetitorOutput
 AnalystOutput: Any = _agent_contracts.AnalystOutput
@@ -110,6 +112,7 @@ __all__ = [
     "ExecutorResources",
     "HelloMsg",
     "InjectHintCmd",
+    "ListScenariosCmd",
     "Message",
     "PACKAGE_ROLE",
     "PACKAGE_TOPOLOGY_VERSION",
@@ -133,6 +136,7 @@ __all__ = [
     "ScenarioInfo",
     "ScenarioPreviewMsg",
     "ScenarioReadyMsg",
+    "StartRunCmd",
     "OverrideGateCmd",
     "ScoringComponent",
     "Sdk",

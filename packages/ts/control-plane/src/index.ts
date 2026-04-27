@@ -61,6 +61,7 @@ export {
 	ExecutorResourcesSchema,
 	HelloMsgSchema,
 	InjectHintCmdSchema,
+	ListScenariosCmdSchema,
 	MissionProgressMsgSchema,
 	MonitorAlertMsgSchema,
 	OverrideGateCmdSchema,
@@ -75,6 +76,7 @@ export {
 	ScenarioPreviewMsgSchema,
 	ScenarioReadyMsgSchema,
 	ScoringComponentSchema,
+	StartRunCmdSchema,
 	StateMsgSchema,
 	StrategyParamSchema,
 } from "../../../../ts/src/server/protocol.js";
