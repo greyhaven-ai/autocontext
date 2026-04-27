@@ -298,6 +298,25 @@ def test_python_control_reexports_stagnation_report() -> None:
     assert report.detail == "score variance 0.000001 < epsilon 0.01 over last 5 gens"
 
 
+def test_python_control_reexports_basic_client_control_commands() -> None:
+    InjectHintCmd = control_package.InjectHintCmd
+    OverrideGateCmd = control_package.OverrideGateCmd
+    PauseCmd = control_package.PauseCmd
+    ResumeCmd = control_package.ResumeCmd
+
+    pause = PauseCmd()
+    resume = ResumeCmd()
+    inject_hint = InjectHintCmd(text="Try broader search.")
+    override_gate = OverrideGateCmd(decision="retry")
+
+    assert pause.type == "pause"
+    assert resume.type == "resume"
+    assert inject_hint.type == "inject_hint"
+    assert inject_hint.text == "Try broader search."
+    assert override_gate.type == "override_gate"
+    assert override_gate.decision == "retry"
+
+
 def test_python_control_requires_stage_for_scenario_error_messages() -> None:
     ScenarioErrorMsg = control_package.ScenarioErrorMsg
 

@@ -34,6 +34,10 @@ ScenarioGeneratingMsg: Any = _server_protocol.ScenarioGeneratingMsg
 ScenarioPreviewMsg: Any = _server_protocol.ScenarioPreviewMsg
 ScenarioReadyMsg: Any = _server_protocol.ScenarioReadyMsg
 ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
+PauseCmd: Any = _server_protocol.PauseCmd
+ResumeCmd: Any = _server_protocol.ResumeCmd
+InjectHintCmd: Any = _server_protocol.InjectHintCmd
+OverrideGateCmd: Any = _server_protocol.OverrideGateCmd
 Urgency: Any = _research_types.Urgency
 CompetitorOutput: Any = _agent_contracts.CompetitorOutput
 AnalystOutput: Any = _agent_contracts.AnalystOutput
@@ -98,10 +102,12 @@ __all__ = [
     "ExecutorInfo",
     "ExecutorResources",
     "HelloMsg",
+    "InjectHintCmd",
     "Message",
     "PACKAGE_ROLE",
     "PACKAGE_TOPOLOGY_VERSION",
     "PROTOCOL_VERSION",
+    "PauseCmd",
     "ProductionOutcome",
     "ProductionTrace",
     "Provider",
@@ -112,12 +118,14 @@ __all__ = [
     "ResearchConfig",
     "ResearchQuery",
     "ResearchResult",
+    "ResumeCmd",
     "Routing",
     "ScenarioErrorMsg",
     "ScenarioGeneratingMsg",
     "ScenarioInfo",
     "ScenarioPreviewMsg",
     "ScenarioReadyMsg",
+    "OverrideGateCmd",
     "ScoringComponent",
     "Sdk",
     "SessionIdentifier",
