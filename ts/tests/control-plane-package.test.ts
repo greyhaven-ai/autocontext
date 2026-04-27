@@ -15,6 +15,7 @@ import type {
 } from "../../packages/ts/control-plane/src/index.ts";
 import {
 	AckMsgSchema,
+	AuthStatusMsgSchema,
 	ChatResponseMsgSchema,
 	Citation,
 	EnvironmentsMsgSchema,
@@ -231,6 +232,24 @@ describe("@autocontext/control-plane facade", () => {
 		expect(ack.action).toBe("pause");
 		expect(ack.decision).toBe("accepted");
 		expect(error.message).toBe("run failed");
+	});
+
+	it("re-exports auth status messages", () => {
+		const auth = AuthStatusMsgSchema.parse({
+			type: "auth_status",
+			provider: "anthropic",
+			authenticated: true,
+			model: "claude-sonnet",
+			configuredProviders: [
+				{ provider: "anthropic", hasApiKey: true },
+				{ provider: "openai", hasApiKey: false },
+			],
+		});
+
+		expect(auth.provider).toBe("anthropic");
+		expect(auth.authenticated).toBe(true);
+		expect(auth.model).toBe("claude-sonnet");
+		expect(auth.configuredProviders?.[1]?.hasApiKey).toBe(false);
 	});
 
 	it("re-exports mission progress messages", () => {
