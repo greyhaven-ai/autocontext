@@ -1,0 +1,21 @@
+{
+  "extends": "../../../ts/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../..",
+    "outDir": "./dist",
+    "noEmit": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../../ts/src/execution/elo.ts",
+    "../../../ts/src/judge/parse.ts",
+    "../../../ts/src/judge/rubric-coherence.ts",
+    "../../../ts/src/prompts/context-budget.ts",
+    "../../../ts/src/prompts/templates.ts",
+    "../../../ts/src/scenarios/game-interface.ts",
+    "../../../ts/src/scenarios/primary-family-interface-types.ts",
+    "../../../ts/src/scenarios/simulation-family-interface-types.ts",
+    "../../../ts/src/storage/storage-contracts.ts",
+    "../../../ts/src/types/index.ts"
+  ]
+}
