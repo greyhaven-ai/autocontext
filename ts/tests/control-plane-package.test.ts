@@ -5,6 +5,7 @@ import type {
 	EnvironmentTag,
 	FeedbackRef,
 	FeedbackRefId,
+	GateDecidedPayload,
 	GenerationStartedPayload,
 	ProductionTrace,
 	ProductionTraceId,
@@ -217,6 +218,22 @@ describe("@autocontext/control-plane facade", () => {
 		expect(payload.run_id).toBe("run-123");
 		expect(payload.scenario).toBe("grid_ctf");
 		expect(payload.target_generations).toBe(5);
+	});
+
+	it("re-exports gate decided payload types", () => {
+		const payload: GateDecidedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			decision: "advance",
+			delta: 0.18,
+			threshold: 0.005,
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.generation).toBe(2);
+		expect(payload.decision).toBe("advance");
+		expect(payload.delta).toBe(0.18);
+		expect(payload.threshold).toBe(0.005);
 	});
 
 	it("re-exports run completed payload types", () => {
