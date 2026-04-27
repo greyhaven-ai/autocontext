@@ -30,6 +30,7 @@ import { executeChatAgentCommand } from "./chat-agent-command-workflow.js";
 import { executeInteractiveControlCommand } from "./interactive-control-command-workflow.js";
 import { executeInteractiveScenarioCommand } from "./interactive-scenario-command-workflow.js";
 import { buildHttpApiParityMatrix } from "./http-api-parity.js";
+import { buildCockpitApiRoutes } from "./cockpit-api.js";
 import { buildKnowledgeApiRoutes } from "./knowledge-api.js";
 import { buildMissionApiRoutes } from "./mission-api.js";
 import { buildMonitorApiRoutes } from "./monitor-api.js";
@@ -187,6 +188,20 @@ export class InteractiveServer {
         this.#runManager.events.emit(event, payload, "notebook");
       },
     });
+    const cockpitNotebookApi = buildNotebookApiRoutes({
+      openStore: () => this.#openStore(),
+      artifacts: artifactStore,
+      emitNotebookEvent: (event, payload) => {
+        this.#runManager.events.emit(event, { ...payload, source: "cockpit" }, "cockpit");
+      },
+    });
+    const cockpitApi = buildCockpitApiRoutes({
+      openStore: () => this.#openStore(),
+      notebookApi: cockpitNotebookApi,
+      settings,
+      runsRoot: this.#runManager.getRunsRoot(),
+      knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+    });
     const monitorApi = buildMonitorApiRoutes({
       openStore: () => this.#openStore(),
       monitorEngine: settings.monitorEnabled ? this.#getMonitorEngine(settings) : null,
@@ -248,6 +263,7 @@ export class InteractiveServer {
           monitors: "/api/monitors",
           notebooks: "/api/notebooks",
           openclaw: "/api/openclaw",
+          cockpit: "/api/cockpit",
           websocket: "/ws/interactive",
           events: "/ws/events",
         },
@@ -454,6 +470,101 @@ export class InteractiveServer {
     // GET /api/openclaw/skill/manifest
     if (method === "GET" && url === "/api/openclaw/skill/manifest") {
       const response = openClawApi.skillManifest();
+      json(response.status, response.body);
+      return;
+    }
+
+    // Cockpit notebook context routes
+    if (method === "GET" && (url === "/api/cockpit/notebooks" || url === "/api/cockpit/notebooks/")) {
+      const response = cockpitApi.listNotebooks();
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitNotebookEffectiveMatch = url.match(
+      /^\/api\/cockpit\/notebooks\/([^/]+)\/effective-context$/,
+    );
+    if (method === "GET" && cockpitNotebookEffectiveMatch) {
+      const [, rawSessionId] = cockpitNotebookEffectiveMatch;
+      const response = cockpitApi.effectiveNotebookContext(decodeURIComponent(rawSessionId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitNotebookMatch = url.match(/^\/api\/cockpit\/notebooks\/([^/]+)$/);
+    if (cockpitNotebookMatch) {
+      const [, rawSessionId] = cockpitNotebookMatch;
+      const sessionId = decodeURIComponent(rawSessionId!);
+      if (method === "GET") {
+        const response = cockpitApi.getNotebook(sessionId);
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "PUT") {
+        const response = cockpitApi.upsertNotebook(sessionId, await this.#readJsonBody(req));
+        json(response.status, response.body);
+        return;
+      }
+      if (method === "DELETE") {
+        const response = cockpitApi.deleteNotebook(sessionId);
+        json(response.status, response.body);
+        return;
+      }
+    }
+
+    // Cockpit run routes
+    if (method === "GET" && (url === "/api/cockpit/runs" || url === "/api/cockpit/runs/")) {
+      const response = cockpitApi.listRuns();
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitCompareMatch = url.match(
+      /^\/api\/cockpit\/runs\/([^/]+)\/compare\/(\d+)\/(\d+)$/,
+    );
+    if (method === "GET" && cockpitCompareMatch) {
+      const [, rawRunId, rawGenA, rawGenB] = cockpitCompareMatch;
+      const response = cockpitApi.compareGenerations(
+        decodeURIComponent(rawRunId!),
+        Number.parseInt(rawGenA!, 10),
+        Number.parseInt(rawGenB!, 10),
+      );
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitRunResourceMatch = url.match(
+      /^\/api\/cockpit\/runs\/([^/]+)\/(status|changelog|resume|consultations)$/,
+    );
+    if (method === "GET" && cockpitRunResourceMatch) {
+      const [, rawRunId, resource] = cockpitRunResourceMatch;
+      const runId = decodeURIComponent(rawRunId!);
+      const response = resource === "status"
+        ? cockpitApi.runStatus(runId)
+        : resource === "changelog"
+          ? cockpitApi.changelog(runId)
+          : resource === "resume"
+            ? cockpitApi.resumeInfo(runId)
+            : cockpitApi.listConsultations(runId);
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitConsultMatch = url.match(/^\/api\/cockpit\/runs\/([^/]+)\/consult$/);
+    if (method === "POST" && cockpitConsultMatch) {
+      const [, rawRunId] = cockpitConsultMatch;
+      const response = await cockpitApi.requestConsultation(
+        decodeURIComponent(rawRunId!),
+        await this.#readJsonBody(req),
+      );
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitWriteupMatch = url.match(/^\/api\/cockpit\/writeup\/([^/]+)$/);
+    if (method === "GET" && cockpitWriteupMatch) {
+      const [, rawRunId] = cockpitWriteupMatch;
+      const response = cockpitApi.writeup(decodeURIComponent(rawRunId!));
       json(response.status, response.body);
       return;
     }
