@@ -4,6 +4,8 @@ import type { GenerationRole } from "../providers/index.js";
 
 export interface RoleCompletedPayload {
   [key: string]: unknown;
+  run_id: string;
+  generation: number;
   role: "competitor" | "analyst" | "coach" | "curator";
   latency_ms: number;
   tokens: number;
@@ -17,6 +19,8 @@ import {
 export type { GenerationLoopEventSequenceItem };
 
 export function buildRoleCompletedPayload(
+  runId: string,
+  generation: number,
   role: "competitor" | "analyst" | "coach" | "curator",
   latencyMs: number,
   usage: Record<string, number>,
@@ -25,6 +29,8 @@ export function buildRoleCompletedPayload(
   const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
 
   return {
+    run_id: runId,
+    generation,
     role,
     latency_ms: latencyMs,
     tokens: inputTokens + outputTokens,
@@ -32,6 +38,8 @@ export function buildRoleCompletedPayload(
 }
 
 export async function executeRoleCompletionSideEffect(opts: {
+  runId: string;
+  generation: number;
   role: "competitor" | "analyst" | "coach" | "curator";
   execute: () => Promise<CompletionResult>;
   now?: () => number;
@@ -47,6 +55,8 @@ export async function executeRoleCompletionSideEffect(opts: {
   return {
     result,
     roleCompletedPayload: buildRoleCompletedPayload(
+      opts.runId,
+      opts.generation,
       opts.role,
       finishedAt - startedAt,
       result.usage,

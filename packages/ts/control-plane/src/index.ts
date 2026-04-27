@@ -5,6 +5,7 @@ export type {
 	AgentsStartedPayload,
 	GenerationStartedPayload,
 } from "../../../../ts/src/loop/generation-event-coordinator.js";
+export type { RoleCompletedPayload } from "../../../../ts/src/loop/generation-side-effect-coordinator.js";
 export type { StagnationReport } from "../../../../ts/src/loop/stagnation.js";
 export type {
 	AppId,

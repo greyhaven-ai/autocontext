@@ -131,6 +131,24 @@ def test_python_control_reexports_generation_kickoff_payloads() -> None:
     assert agents_started.roles == ["competitor", "analyst", "coach", "curator"]
 
 
+def test_python_control_reexports_role_completed_payload() -> None:
+    RoleCompletedPayload = control_package.RoleCompletedPayload
+
+    payload = RoleCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        role="coach",
+        latency_ms=125,
+        tokens=42,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.role == "coach"
+    assert payload.latency_ms == 125
+    assert payload.tokens == 42
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources

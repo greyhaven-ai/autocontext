@@ -10,6 +10,7 @@ import type {
 	ProductionTraceId,
 	ProviderInfo,
 	ResearchAdapter,
+	RoleCompletedPayload,
 	Scenario,
 	SessionIdHash,
 	StagnationReport,
@@ -153,6 +154,22 @@ describe("@autocontext/control-plane facade", () => {
 		expect(brief.toMarkdown()).toContain(
 			"Research Brief: Summarize refund policy changes",
 		);
+	});
+
+	it("re-exports role completed payload types", () => {
+		const payload: RoleCompletedPayload = {
+			run_id: "run-123",
+			generation: 2,
+			role: "coach",
+			latency_ms: 125,
+			tokens: 42,
+		};
+
+		expect(payload.run_id).toBe("run-123");
+		expect(payload.generation).toBe(2);
+		expect(payload.role).toBe("coach");
+		expect(payload.latency_ms).toBe(125);
+		expect(payload.tokens).toBe(42);
 	});
 
 	it("re-exports generation kickoff payload types", () => {

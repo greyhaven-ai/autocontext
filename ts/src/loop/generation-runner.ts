@@ -405,8 +405,8 @@ export class GenerationRunner {
       this.completeRole("analyst", this.buildSupportPrompt("analyst", runId, attempt)),
       this.completeRole("coach", this.buildSupportPrompt("coach", runId, attempt)),
     ]);
-    this.emitRoleCompleted("analyst", analystStartedAt, analystResult.usage);
-    this.emitRoleCompleted("coach", coachStartedAt, coachResult.usage);
+    this.emitRoleCompleted(runId, gen, "analyst", analystStartedAt, analystResult.usage);
+    this.emitRoleCompleted(runId, gen, "coach", coachStartedAt, coachResult.usage);
 
     this.#store.appendAgentOutput(runId, gen, "analyst", analystResult.text);
     this.#store.appendAgentOutput(runId, gen, "coach", coachResult.text);
@@ -449,7 +449,7 @@ export class GenerationRunner {
         "curator",
         this.buildCuratorPrompt(runId, normalizedPlaybook, nextPlaybook, attempt),
       );
-      this.emitRoleCompleted("curator", curatorStartedAt, curatorResult.usage);
+      this.emitRoleCompleted(runId, gen, "curator", curatorStartedAt, curatorResult.usage);
       this.#store.appendAgentOutput(runId, gen, "curator", curatorResult.text);
       this.#artifactStore.writeMarkdown(join(generationDir, "curator.md"), curatorResult.text);
       this.#artifactStore.appendMarkdown(
@@ -595,13 +595,21 @@ export class GenerationRunner {
   }
 
   private emitRoleCompleted(
+    runId: string,
+    generation: number,
     role: "competitor" | "analyst" | "coach" | "curator",
     startedAt: number,
     usage: Record<string, number>,
   ): void {
     this.emit(
       "role_completed",
-      buildRoleCompletedPayload(role, Date.now() - startedAt, usage),
+      buildRoleCompletedPayload(
+        runId,
+        generation,
+        role,
+        Date.now() - startedAt,
+        usage,
+      ),
     );
   }
 }
