@@ -13,7 +13,7 @@ import { CampaignManager } from "../mission/campaign.js";
 import { MissionManager } from "../mission/manager.js";
 import { executeAuthCommand } from "./auth-command-workflow.js";
 import {
-  buildGenerationEventEnvelope,
+  buildEventStreamEnvelope,
   buildMissionProgressEventEnvelope,
 } from "./event-stream-envelope.js";
 import {
@@ -1211,11 +1211,23 @@ export class InteractiveServer {
   }
 
   #attachEventStreamClient(ws: WebSocket): void {
-    const eventCallback: EventCallback = (event, payload) => {
+    let sequence = 0;
+    const nextSequence = () => {
+      sequence += 1;
+      return sequence;
+    };
+
+    const eventCallback: EventCallback = (event, payload, record) => {
       if (ws.readyState !== WebSocket.OPEN) {
         return;
       }
-      ws.send(JSON.stringify(buildGenerationEventEnvelope(event, payload)));
+      ws.send(JSON.stringify(buildEventStreamEnvelope({
+        channel: record?.channel ?? "generation",
+        event,
+        payload,
+        seq: nextSequence(),
+        timestamp: record?.ts,
+      })));
     };
 
     this.#runManager.subscribeEvents(eventCallback);
@@ -1227,7 +1239,7 @@ export class InteractiveServer {
         if (ws.readyState !== WebSocket.OPEN) {
           return;
         }
-        ws.send(JSON.stringify(buildMissionProgressEventEnvelope(progress)));
+        ws.send(JSON.stringify(buildMissionProgressEventEnvelope(progress, nextSequence())));
       },
     });
 

@@ -6,7 +6,20 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-export type EventCallback = (event: string, payload: Record<string, unknown>) => void;
+export interface EventStreamRecord {
+  channel: string;
+  event: string;
+  payload: Record<string, unknown>;
+  seq: number;
+  ts: string;
+  v: 1;
+}
+
+export type EventCallback = (
+  event: string,
+  payload: Record<string, unknown>,
+  record?: EventStreamRecord,
+) => void;
 
 export class EventStreamEmitter {
   readonly path: string;
@@ -40,7 +53,7 @@ export class EventStreamEmitter {
     const seq = this.#sequence;
     const subscribersCopy = [...this.#subscribers];
 
-    const line = {
+    const line: EventStreamRecord = {
       channel,
       event,
       payload,
@@ -53,7 +66,7 @@ export class EventStreamEmitter {
 
     for (const cb of subscribersCopy) {
       try {
-        cb(event, payload);
+        cb(event, payload, line);
       } catch {
         // subscriber errors must never crash the loop
       }

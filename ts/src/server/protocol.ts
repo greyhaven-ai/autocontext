@@ -7,36 +7,90 @@ import { z } from "zod";
 
 export const PROTOCOL_VERSION = 1;
 
+const protocolObject = <T extends z.ZodRawShape>(shape: T) => z.object(shape).strict();
+
+export const PYTHON_SHARED_SERVER_MESSAGE_TYPES = [
+  "hello",
+  "event",
+  "state",
+  "chat_response",
+  "environments",
+  "run_accepted",
+  "ack",
+  "error",
+  "scenario_generating",
+  "scenario_preview",
+  "scenario_ready",
+  "scenario_error",
+  "monitor_alert",
+] as const;
+
+export const TYPESCRIPT_ONLY_SERVER_MESSAGE_TYPES = [
+  "auth_status",
+  "mission_progress",
+] as const;
+
+export const SERVER_MESSAGE_TYPES = [
+  ...PYTHON_SHARED_SERVER_MESSAGE_TYPES,
+  ...TYPESCRIPT_ONLY_SERVER_MESSAGE_TYPES,
+] as const;
+
+export const PYTHON_SHARED_CLIENT_MESSAGE_TYPES = [
+  "pause",
+  "resume",
+  "inject_hint",
+  "override_gate",
+  "chat_agent",
+  "start_run",
+  "list_scenarios",
+  "create_scenario",
+  "confirm_scenario",
+  "revise_scenario",
+  "cancel_scenario",
+] as const;
+
+export const TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES = [
+  "login",
+  "logout",
+  "switch_provider",
+  "whoami",
+] as const;
+
+export const CLIENT_MESSAGE_TYPES = [
+  ...PYTHON_SHARED_CLIENT_MESSAGE_TYPES,
+  ...TYPESCRIPT_ONLY_CLIENT_MESSAGE_TYPES,
+] as const;
+
 // ---------------------------------------------------------------------------
 // Nested models
 // ---------------------------------------------------------------------------
 
-export const ScenarioInfoSchema = z.object({
+export const ScenarioInfoSchema = protocolObject({
   name: z.string(),
   description: z.string(),
 });
 
-export const ExecutorResourcesSchema = z.object({
+export const ExecutorResourcesSchema = protocolObject({
   docker_image: z.string(),
-  cpu_cores: z.number(),
-  memory_gb: z.number(),
-  disk_gb: z.number(),
+  cpu_cores: z.number().int(),
+  memory_gb: z.number().int(),
+  disk_gb: z.number().int(),
   timeout_minutes: z.number().int(),
 });
 
-export const ExecutorInfoSchema = z.object({
+export const ExecutorInfoSchema = protocolObject({
   mode: z.string(),
   available: z.boolean(),
   description: z.string(),
   resources: ExecutorResourcesSchema.optional().nullable(),
 });
 
-export const StrategyParamSchema = z.object({
+export const StrategyParamSchema = protocolObject({
   name: z.string(),
   description: z.string(),
 });
 
-export const ScoringComponentSchema = z.object({
+export const ScoringComponentSchema = protocolObject({
   name: z.string(),
   description: z.string(),
   weight: z.number(),
@@ -46,31 +100,31 @@ export const ScoringComponentSchema = z.object({
 // Server → Client messages
 // ---------------------------------------------------------------------------
 
-export const HelloMsgSchema = z.object({
+export const HelloMsgSchema = protocolObject({
   type: z.literal("hello"),
   protocol_version: z.number().int().optional(),
 });
 
-export const EventMsgSchema = z.object({
+export const EventMsgSchema = protocolObject({
   type: z.literal("event"),
   event: z.string(),
   payload: z.record(z.unknown()),
 });
 
-export const StateMsgSchema = z.object({
+export const StateMsgSchema = protocolObject({
   type: z.literal("state"),
   paused: z.boolean(),
   generation: z.number().int().optional(),
   phase: z.string().optional(),
 });
 
-export const ChatResponseMsgSchema = z.object({
+export const ChatResponseMsgSchema = protocolObject({
   type: z.literal("chat_response"),
   role: z.string(),
   text: z.string(),
 });
 
-export const EnvironmentsMsgSchema = z.object({
+export const EnvironmentsMsgSchema = protocolObject({
   type: z.literal("environments"),
   scenarios: z.array(ScenarioInfoSchema),
   executors: z.array(ExecutorInfoSchema),
@@ -78,30 +132,30 @@ export const EnvironmentsMsgSchema = z.object({
   agent_provider: z.string(),
 });
 
-export const RunAcceptedMsgSchema = z.object({
+export const RunAcceptedMsgSchema = protocolObject({
   type: z.literal("run_accepted"),
   run_id: z.string(),
   scenario: z.string(),
   generations: z.number().int(),
 });
 
-export const AckMsgSchema = z.object({
+export const AckMsgSchema = protocolObject({
   type: z.literal("ack"),
   action: z.string(),
-  decision: z.string().optional(),
+  decision: z.string().optional().nullable(),
 });
 
-export const ErrorMsgSchema = z.object({
+export const ErrorMsgSchema = protocolObject({
   type: z.literal("error"),
   message: z.string(),
 });
 
-export const ScenarioGeneratingMsgSchema = z.object({
+export const ScenarioGeneratingMsgSchema = protocolObject({
   type: z.literal("scenario_generating"),
   name: z.string(),
 });
 
-export const ScenarioPreviewMsgSchema = z.object({
+export const ScenarioPreviewMsgSchema = protocolObject({
   type: z.literal("scenario_preview"),
   name: z.string(),
   display_name: z.string(),
@@ -112,30 +166,30 @@ export const ScenarioPreviewMsgSchema = z.object({
   win_threshold: z.number(),
 });
 
-export const ScenarioReadyMsgSchema = z.object({
+export const ScenarioReadyMsgSchema = protocolObject({
   type: z.literal("scenario_ready"),
   name: z.string(),
   test_scores: z.array(z.number()),
 });
 
-export const ScenarioErrorMsgSchema = z.object({
+export const ScenarioErrorMsgSchema = protocolObject({
   type: z.literal("scenario_error"),
   message: z.string(),
-  stage: z.string().optional(),
+  stage: z.string(),
 });
 
-export const MonitorAlertMsgSchema = z.object({
+export const MonitorAlertMsgSchema = protocolObject({
   type: z.literal("monitor_alert"),
   alert_id: z.string(),
   condition_id: z.string(),
   condition_name: z.string(),
   condition_type: z.string(),
   scope: z.string(),
-  detail: z.record(z.unknown()),
+  detail: z.string(),
 });
 
 // Mission progress (AC-414)
-export const MissionProgressMsgSchema = z.object({
+export const MissionProgressMsgSchema = protocolObject({
   type: z.literal("mission_progress"),
   missionId: z.string(),
   status: z.string(),
@@ -146,12 +200,12 @@ export const MissionProgressMsgSchema = z.object({
 });
 
 // Auth status response (AC-408)
-export const AuthStatusMsgSchema = z.object({
+export const AuthStatusMsgSchema = protocolObject({
   type: z.literal("auth_status"),
   provider: z.string(),
   authenticated: z.boolean(),
   model: z.string().optional(),
-  configuredProviders: z.array(z.object({
+  configuredProviders: z.array(protocolObject({
     provider: z.string(),
     hasApiKey: z.boolean(),
   })).optional(),
@@ -161,55 +215,55 @@ export const AuthStatusMsgSchema = z.object({
 // Client → Server commands
 // ---------------------------------------------------------------------------
 
-export const PauseCmdSchema = z.object({ type: z.literal("pause") });
-export const ResumeCmdSchema = z.object({ type: z.literal("resume") });
+export const PauseCmdSchema = protocolObject({ type: z.literal("pause") });
+export const ResumeCmdSchema = protocolObject({ type: z.literal("resume") });
 
-export const InjectHintCmdSchema = z.object({
+export const InjectHintCmdSchema = protocolObject({
   type: z.literal("inject_hint"),
   text: z.string().min(1),
 });
 
-export const OverrideGateCmdSchema = z.object({
+export const OverrideGateCmdSchema = protocolObject({
   type: z.literal("override_gate"),
   decision: z.enum(["advance", "retry", "rollback"]),
 });
 
-export const ChatAgentCmdSchema = z.object({
+export const ChatAgentCmdSchema = protocolObject({
   type: z.literal("chat_agent"),
   role: z.string(),
-  message: z.string(),
+  message: z.string().min(1),
 });
 
-export const StartRunCmdSchema = z.object({
+export const StartRunCmdSchema = protocolObject({
   type: z.literal("start_run"),
   scenario: z.string(),
   generations: z.number().int().positive(),
 });
 
-export const ListScenariosCmdSchema = z.object({
+export const ListScenariosCmdSchema = protocolObject({
   type: z.literal("list_scenarios"),
 });
 
-export const CreateScenarioCmdSchema = z.object({
+export const CreateScenarioCmdSchema = protocolObject({
   type: z.literal("create_scenario"),
   description: z.string().min(1),
 });
 
-export const ConfirmScenarioCmdSchema = z.object({
+export const ConfirmScenarioCmdSchema = protocolObject({
   type: z.literal("confirm_scenario"),
 });
 
-export const ReviseScenarioCmdSchema = z.object({
+export const ReviseScenarioCmdSchema = protocolObject({
   type: z.literal("revise_scenario"),
   feedback: z.string().min(1),
 });
 
-export const CancelScenarioCmdSchema = z.object({
+export const CancelScenarioCmdSchema = protocolObject({
   type: z.literal("cancel_scenario"),
 });
 
 // Auth commands (AC-408)
-export const LoginCmdSchema = z.object({
+export const LoginCmdSchema = protocolObject({
   type: z.literal("login"),
   provider: z.string().min(1),
   apiKey: z.string().optional(),
@@ -217,17 +271,17 @@ export const LoginCmdSchema = z.object({
   baseUrl: z.string().optional(),
 });
 
-export const LogoutCmdSchema = z.object({
+export const LogoutCmdSchema = protocolObject({
   type: z.literal("logout"),
   provider: z.string().optional(),
 });
 
-export const SwitchProviderCmdSchema = z.object({
+export const SwitchProviderCmdSchema = protocolObject({
   type: z.literal("switch_provider"),
   provider: z.string().min(1),
 });
 
-export const WhoamiCmdSchema = z.object({
+export const WhoamiCmdSchema = protocolObject({
   type: z.literal("whoami"),
 });
 
