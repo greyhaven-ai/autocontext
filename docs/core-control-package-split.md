@@ -39,13 +39,16 @@ layout must make the licensing model true before the repo advertises it.
 ## Package Topology
 
 The machine-readable topology map lives in
-[`packages/package-topology.json`](../packages/package-topology.json).
+[`packages/package-topology.json`](../packages/package-topology.json). The
+machine-readable boundary-enforcement contract lives in
+[`packages/package-boundaries.json`](../packages/package-boundaries.json) and is
+checked in CI.
 
-| Ecosystem | Umbrella package | Apache core artifact | Control-plane artifact |
-| --- | --- | --- | --- |
-| Python | `autocontext` | `autocontext-core` | `autocontext-control` |
-| TypeScript | `autoctx` | `@autocontext/core` | `@autocontext/control-plane` |
-| Pi | `pi-autocontext` initially depends on `autoctx` | Deferred | Deferred |
+| Ecosystem  | Umbrella package                                | Apache core artifact | Control-plane artifact       |
+| ---------- | ----------------------------------------------- | -------------------- | ---------------------------- |
+| Python     | `autocontext`                                   | `autocontext-core`   | `autocontext-control`        |
+| TypeScript | `autoctx`                                       | `@autocontext/core`  | `@autocontext/control-plane` |
+| Pi         | `pi-autocontext` initially depends on `autoctx` | Deferred             | Deferred                     |
 
 The umbrella packages preserve the default install and CLI experience. The new
 core/control artifacts make the future license boundary real at the artifact
@@ -213,8 +216,12 @@ Move to the control plane:
 ## Review Checks
 
 - Core package builds must not compile or ship control-plane-only code.
+- Core packages must not depend on control-plane artifacts or umbrella
+  compatibility packages.
 - Control-plane package builds may depend on core, but core must not depend on
   control-plane artifacts.
+- Control-plane package facades must update the boundary manifest when they add
+  source imports or TypeScript build includes.
 - Broad package globs should be treated suspiciously during the split; prefer
   exact includes until ownership is settled.
 - Any PR that changes existing protocol or payload semantics should say so

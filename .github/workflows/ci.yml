@@ -59,8 +59,37 @@ jobs:
           path: autocontext/htmlcov/
           retention-days: 14
 
+  package-boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: ts/package-lock.json
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install Python deps
+        working-directory: autocontext
+        run: uv sync --group dev
+      - name: Install TypeScript deps
+        working-directory: ts
+        run: npm ci
+      - name: Python package boundary checks
+        working-directory: autocontext
+        run: uv run pytest tests/test_package_topology.py tests/test_package_boundaries.py -q
+      - name: TypeScript package boundary checks
+        working-directory: ts
+        run: npx vitest run tests/package-topology.test.ts tests/package-boundaries.test.ts
+
   smoke:
-    needs: [lint, test]
+    needs: [lint, test, package-boundaries]
     runs-on: ubuntu-latest
     defaults:
       run:
