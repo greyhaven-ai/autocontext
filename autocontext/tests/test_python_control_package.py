@@ -231,10 +231,12 @@ def test_python_control_reexports_run_started_payload() -> None:
     payload = RunStartedPayload(
         run_id="run-123",
         scenario="grid_ctf",
+        target_generations=5,
     )
 
     assert payload.run_id == "run-123"
     assert payload.scenario == "grid_ctf"
+    assert payload.target_generations == 5
 
 
 def test_python_control_reexports_run_completed_payload() -> None:
@@ -243,10 +245,18 @@ def test_python_control_reexports_run_completed_payload() -> None:
     payload = RunCompletedPayload(
         run_id="run-123",
         completed_generations=4,
+        best_score=0.82,
+        elo=1042,
+        session_report_path=None,
+        dead_ends_found=2,
     )
 
     assert payload.run_id == "run-123"
     assert payload.completed_generations == 4
+    assert payload.best_score == 0.82
+    assert payload.elo == 1042
+    assert payload.session_report_path is None
+    assert payload.dead_ends_found == 2
 
 
 def test_python_control_reexports_gate_decided_payload() -> None:

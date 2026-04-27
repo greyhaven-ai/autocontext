@@ -55,7 +55,7 @@ export interface RunCompletedPayload {
   completed_generations: number;
   best_score: number;
   elo: number;
-  session_report_path: string;
+  session_report_path: string | null;
   dead_ends_found: number;
 }
 
@@ -162,7 +162,7 @@ export function buildRunCompletedPayload(opts: {
   completedGenerations: number;
   bestScore: number;
   currentElo: number;
-  sessionReportPath: string;
+  sessionReportPath: string | null;
   deadEndsFound: number;
 }): RunCompletedPayload {
   return {

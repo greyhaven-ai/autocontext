@@ -1031,11 +1031,12 @@ class ArtifactStore:
                 continue  # Real file/dir exists, don't overwrite
             os.symlink(entry.resolve(), link)
 
-    def write_session_report(self, scenario_name: str, run_id: str, content: str) -> None:
+    def write_session_report(self, scenario_name: str, run_id: str, content: str) -> Path:
         """Write a session report for a completed run."""
         path = self.knowledge_root / scenario_name / "reports" / f"{run_id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+        return path
 
     # --- Normalized progress reports (AC-190) ---------------------------------
 
