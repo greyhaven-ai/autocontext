@@ -208,11 +208,13 @@ describe("package boundaries", () => {
 		expect(productionTraces.coreOwnedSourceIncludes).toEqual([
 			"../../../ts/src/production-traces/contract/generated-types.ts",
 			"../../../ts/src/production-traces/contract/branded-ids.ts",
+			"../../../ts/src/production-traces/contract/types.ts",
 			"../../../ts/src/production-traces/contract/content-address.ts",
 		]);
 		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual([
 			"/ts/src/production-traces/contract/generated-types.ts",
 			"/ts/src/production-traces/contract/branded-ids.ts",
+			"/ts/src/production-traces/contract/types.ts",
 			"/ts/src/production-traces/contract/content-address.ts",
 		]);
 		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
@@ -253,9 +255,7 @@ describe("package boundaries", () => {
 		const productionTraceFiles = fileList.filter((entry) =>
 			entry.includes("/ts/src/production-traces/"),
 		);
-		expect(productionTraceFiles).toHaveLength(
-			ownedPathSubstrings.length,
-		);
+		expect(productionTraceFiles).toHaveLength(ownedPathSubstrings.length);
 		for (const ownedPath of ownedPathSubstrings) {
 			expect(
 				productionTraceFiles.some((entry) => entry.includes(ownedPath)),
@@ -263,9 +263,7 @@ describe("package boundaries", () => {
 		}
 		for (const filePath of productionTraceFiles) {
 			expect(
-				ownedPathSubstrings.some((ownedPath) =>
-					filePath.includes(ownedPath),
-				),
+				ownedPathSubstrings.some((ownedPath) => filePath.includes(ownedPath)),
 			).toBe(true);
 		}
 	});

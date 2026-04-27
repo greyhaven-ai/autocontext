@@ -132,8 +132,9 @@ These are not AC-645 license metadata. They are future product placement notes.
 
 ### TypeScript Production Traces and Public Traces
 
-The first source-ownership slices claim `ts/src/production-traces/contract/generated-types.ts`
-`ts/src/production-traces/contract/branded-ids.ts`, and
+The first source-ownership slices claim `ts/src/production-traces/contract/generated-types.ts`,
+`ts/src/production-traces/contract/branded-ids.ts`,
+`ts/src/production-traces/contract/types.ts`, and
 `ts/src/production-traces/contract/content-address.ts` for the TypeScript core
 package because they are public production-trace contract sources with no CLI,
 ingestion, dataset, retention, server, MCP, or control-plane dependencies.

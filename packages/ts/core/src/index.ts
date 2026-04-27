@@ -33,11 +33,22 @@ export {
 } from "../../../../ts/src/production-traces/contract/branded-ids.js";
 export { deriveDatasetId } from "../../../../ts/src/production-traces/contract/content-address.js";
 export type {
+	DetectedBy,
+	FeedbackKind,
+	MessageRole,
+	ModelRoutingDecisionReason,
+	ModelRoutingFallbackReason,
+	OutcomeLabel,
 	ProductionOutcome,
 	ProductionTrace,
+	ProductionTraceSchemaVersion,
+	ProviderName,
+	RedactionReason,
 	TraceLinks,
 	TraceSource,
-} from "../../../../ts/src/production-traces/contract/generated-types.js";
+	ValidationResult,
+} from "../../../../ts/src/production-traces/contract/types.js";
+export { PRODUCTION_TRACE_SCHEMA_VERSION } from "../../../../ts/src/production-traces/contract/types.js";
 export type {
 	AnthropicErrorReasonKey,
 	OpenAiErrorReasonKey,
