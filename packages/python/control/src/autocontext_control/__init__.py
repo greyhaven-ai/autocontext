@@ -43,6 +43,7 @@ RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
 TournamentStartedPayload: Any = _server_protocol.TournamentStartedPayload
 MatchCompletedPayload: Any = _server_protocol.MatchCompletedPayload
 TournamentCompletedPayload: Any = _server_protocol.TournamentCompletedPayload
+GateDecidedPayload: Any = _server_protocol.GateDecidedPayload
 CuratorStartedPayload: Any = _server_protocol.CuratorStartedPayload
 CuratorCompletedPayload: Any = _server_protocol.CuratorCompletedPayload
 PauseCmd: Any = _server_protocol.PauseCmd
@@ -120,6 +121,7 @@ __all__ = [
     "Error",
     "ErrorMsg",
     "GenerationStartedPayload",
+    "GateDecidedPayload",
     "MonitorAlert",
     "MonitorAlertMsg",
     "MonitorCondition",

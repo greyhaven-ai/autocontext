@@ -249,6 +249,22 @@ def test_python_control_reexports_run_completed_payload() -> None:
     assert payload.completed_generations == 4
 
 
+def test_python_control_reexports_gate_decided_payload() -> None:
+    GateDecidedPayload = control_package.GateDecidedPayload
+
+    payload = GateDecidedPayload(
+        run_id="run-123",
+        generation=2,
+        decision="advance",
+        delta=0.18,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.decision == "advance"
+    assert payload.delta == 0.18
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources
