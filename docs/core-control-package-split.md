@@ -132,6 +132,9 @@ review discovers a boundary mistake.
 
 ## Mixed Domains
 
+The detailed planning map for knowledge and trace ownership lives in
+[`knowledge-production-trace-boundary-map.md`](./knowledge-production-trace-boundary-map.md).
+
 ### Knowledge
 
 Do not move `knowledge` as one unit.
