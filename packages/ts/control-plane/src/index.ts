@@ -3,7 +3,13 @@ export const packageTopologyVersion = 1;
 
 export type {
 	AgentsStartedPayload,
+	GateDecidedPayload,
+	GenerationCompletedPayload,
 	GenerationStartedPayload,
+	RunCompletedPayload,
+	RunFailedPayload,
+	RunStartedPayload,
+	TournamentCompletedPayload,
 } from "../../../../ts/src/loop/generation-event-coordinator.js";
 export type { RoleCompletedPayload } from "../../../../ts/src/loop/generation-side-effect-coordinator.js";
 export type { TournamentStartedPayload } from "../../../../ts/src/loop/generation-tournament-event-sequencing.js";

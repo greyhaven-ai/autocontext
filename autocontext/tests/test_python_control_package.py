@@ -163,6 +163,130 @@ def test_python_control_reexports_tournament_started_payload() -> None:
     assert payload.matches == 8
 
 
+def test_python_control_reexports_tournament_completed_payload() -> None:
+    TournamentCompletedPayload = control_package.TournamentCompletedPayload
+
+    payload = TournamentCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        mean_score=0.55,
+        best_score=0.7,
+        wins=3,
+        losses=1,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.mean_score == 0.55
+    assert payload.best_score == 0.7
+    assert payload.wins == 3
+    assert payload.losses == 1
+
+
+def test_python_control_reexports_curator_started_payload() -> None:
+    CuratorStartedPayload = control_package.CuratorStartedPayload
+
+    payload = CuratorStartedPayload(
+        run_id="run-123",
+        generation=2,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+
+
+def test_python_control_reexports_match_completed_payload() -> None:
+    MatchCompletedPayload = control_package.MatchCompletedPayload
+
+    payload = MatchCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        match_index=3,
+        score=0.55,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.match_index == 3
+    assert payload.score == 0.55
+
+
+def test_python_control_reexports_curator_completed_payload() -> None:
+    CuratorCompletedPayload = control_package.CuratorCompletedPayload
+
+    payload = CuratorCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        decision="accept",
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.decision == "accept"
+
+
+def test_python_control_reexports_run_started_payload() -> None:
+    RunStartedPayload = control_package.RunStartedPayload
+
+    payload = RunStartedPayload(
+        run_id="run-123",
+        scenario="grid_ctf",
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.scenario == "grid_ctf"
+
+
+def test_python_control_reexports_run_completed_payload() -> None:
+    RunCompletedPayload = control_package.RunCompletedPayload
+
+    payload = RunCompletedPayload(
+        run_id="run-123",
+        completed_generations=4,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.completed_generations == 4
+
+
+def test_python_control_reexports_gate_decided_payload() -> None:
+    GateDecidedPayload = control_package.GateDecidedPayload
+
+    payload = GateDecidedPayload(
+        run_id="run-123",
+        generation=2,
+        decision="advance",
+        delta=0.18,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.decision == "advance"
+    assert payload.delta == 0.18
+
+
+def test_python_control_reexports_generation_completed_payload() -> None:
+    GenerationCompletedPayload = control_package.GenerationCompletedPayload
+
+    payload = GenerationCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        mean_score=0.68,
+        best_score=0.72,
+        elo=1068,
+        gate_decision="advance",
+        created_tools=["tool_a.py"],
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.mean_score == 0.68
+    assert payload.best_score == 0.72
+    assert payload.elo == 1068
+    assert payload.gate_decision == "advance"
+    assert payload.created_tools == ["tool_a.py"]
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources
