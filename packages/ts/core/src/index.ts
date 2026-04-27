@@ -15,6 +15,18 @@ export type {
 	TraceLinks,
 	TraceSource,
 } from "../../../../ts/src/production-traces/contract/generated-types.js";
+export type {
+	AnthropicErrorReasonKey,
+	OpenAiErrorReasonKey,
+	OutcomeReasonKey,
+} from "../../../../ts/src/production-traces/taxonomy/index.js";
+export {
+	ANTHROPIC_ERROR_REASON_KEYS,
+	ANTHROPIC_ERROR_REASONS,
+	OPENAI_ERROR_REASON_KEYS,
+	OPENAI_ERROR_REASONS,
+	OUTCOME_REASON_KEYS,
+} from "../../../../ts/src/production-traces/taxonomy/index.js";
 export {
 	ContextBudget,
 	estimateTokens,

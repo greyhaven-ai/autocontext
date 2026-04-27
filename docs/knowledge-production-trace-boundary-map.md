@@ -137,6 +137,11 @@ for the TypeScript core package because it is generated from the public
 production-trace JSON schemas and has no CLI, ingestion, dataset, retention,
 server, MCP, or control-plane dependencies.
 
+The next independent source-ownership slice claims `ts/src/production-traces/taxonomy/**`
+for the TypeScript core package because it is shared provider error/outcome
+vocabulary and does not depend on branded IDs, emit SDK helpers, CLI workflows,
+ingestion, dataset generation, retention, or `ts/src/traces` workflows.
+
 | Surface                               | Current path                                                                                            | Proposed owner                 | Boundary rule                                                                                          |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Production trace contract             | `ts/src/production-traces/contract/**`                                                                  | Core/open SDK                  | Public wire format, branded IDs, validators, generated types.                                          |

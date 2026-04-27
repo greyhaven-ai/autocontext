@@ -32,11 +32,14 @@ type LicensingGuardrails = {
 	};
 };
 
+type ProductionTraceSourceClaim = {
+	coreOwnedSourceIncludes: string[];
+	coreOwnedProgramPathSubstrings: string[];
+};
+
 type ProductionTraceBoundary = {
-	typescriptOpenContract: {
-		coreOwnedSourceIncludes: string[];
-		coreOwnedProgramPathSubstrings: string[];
-	};
+	typescriptOpenContract: ProductionTraceSourceClaim;
+	typescriptOpenTaxonomy: ProductionTraceSourceClaim;
 };
 
 type PackageBoundaries = {
@@ -101,6 +104,15 @@ function listTypeScriptProgramFiles(tsconfigPath: string): string[] {
 	);
 
 	return output.split(/\r?\n/).filter(Boolean);
+}
+
+function listProductionTraceCoreClaims(
+	productionTraces: ProductionTraceBoundary,
+): ProductionTraceSourceClaim[] {
+	return [
+		productionTraces.typescriptOpenContract,
+		productionTraces.typescriptOpenTaxonomy,
+	];
 }
 
 describe("package boundaries", () => {
@@ -191,22 +203,52 @@ describe("package boundaries", () => {
 		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
 			expect(core.exactIncludes).toContain(sourceInclude);
 		}
+	});
+
+	it("claims production trace taxonomy as explicit TypeScript core-owned open vocabulary", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const productionTraces =
+			boundaries.mixedDomains.productionTraces.typescriptOpenTaxonomy;
+
+		expect(productionTraces.coreOwnedSourceIncludes).toEqual([
+			"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
+			"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
+			"../../../ts/src/production-traces/taxonomy/index.ts",
+		]);
+		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual([
+			"/ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
+			"/ts/src/production-traces/taxonomy/openai-error-reasons.ts",
+			"/ts/src/production-traces/taxonomy/index.ts",
+		]);
+		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
+			expect(core.exactIncludes).toContain(sourceInclude);
+		}
+	});
+
+	it("keeps TypeScript production trace core ownership limited to explicit open claims", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const productionTraces = boundaries.mixedDomains.productionTraces;
+		const ownedPathSubstrings = listProductionTraceCoreClaims(
+			productionTraces,
+		).flatMap((claim) => claim.coreOwnedProgramPathSubstrings);
 
 		const fileList = listTypeScriptProgramFiles(core.tsconfigPath);
 		const productionTraceFiles = fileList.filter((entry) =>
 			entry.includes("/ts/src/production-traces/"),
 		);
 		expect(productionTraceFiles).toHaveLength(
-			productionTraces.coreOwnedProgramPathSubstrings.length,
+			ownedPathSubstrings.length,
 		);
-		for (const ownedPath of productionTraces.coreOwnedProgramPathSubstrings) {
+		for (const ownedPath of ownedPathSubstrings) {
 			expect(
 				productionTraceFiles.some((entry) => entry.includes(ownedPath)),
 			).toBe(true);
 		}
 		for (const filePath of productionTraceFiles) {
 			expect(
-				productionTraces.coreOwnedProgramPathSubstrings.some((ownedPath) =>
+				ownedPathSubstrings.some((ownedPath) =>
 					filePath.includes(ownedPath),
 				),
 			).toBe(true);
