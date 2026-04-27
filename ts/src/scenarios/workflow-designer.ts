@@ -1,10 +1,21 @@
 import type { WorkflowSpec } from "./workflow-spec.js";
 import { parseRawWorkflowSpec } from "./workflow-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
-import { parseDelimitedJsonObject } from "./llm-json-response.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const WORKFLOW_SPEC_START = "<!-- WORKFLOW_SPEC_START -->";
 export const WORKFLOW_SPEC_END = "<!-- WORKFLOW_SPEC_END -->";
+
+const WORKFLOW_DESCRIPTOR: FamilyDesignerDescriptor<WorkflowSpec> = {
+  family: "workflow",
+  startDelimiter: WORKFLOW_SPEC_START,
+  endDelimiter: WORKFLOW_SPEC_END,
+  missingDelimiterLabel: "WORKFLOW_SPEC",
+  parseRaw: parseRawWorkflowSpec,
+};
 
 const EXAMPLE_SPEC = {
   description: "Execute an order-processing workflow with compensation when downstream steps fail.",
@@ -113,24 +124,17 @@ ${WORKFLOW_SPEC_END}
 `;
 
 export function parseWorkflowSpec(text: string): WorkflowSpec {
-  return parseRawWorkflowSpec(
-    healSpec(
-      parseDelimitedJsonObject({
-        text,
-        startDelimiter: WORKFLOW_SPEC_START,
-        endDelimiter: WORKFLOW_SPEC_END,
-        missingDelimiterLabel: "WORKFLOW_SPEC",
-      }),
-      "workflow",
-    ),
-  );
+  return parseFamilyDesignerSpec(text, WORKFLOW_DESCRIPTOR);
 }
 
 export async function designWorkflow(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<WorkflowSpec> {
-  return parseWorkflowSpec(
-    await llmFn(WORKFLOW_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    WORKFLOW_DESIGNER_SYSTEM,
+    WORKFLOW_DESCRIPTOR,
+    llmFn,
   );
 }

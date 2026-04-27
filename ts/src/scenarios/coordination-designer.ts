@@ -1,10 +1,21 @@
 import type { CoordinationSpec } from "./coordination-spec.js";
 import { parseRawCoordinationSpec } from "./coordination-spec.js";
-import { healSpec } from "./spec-auto-heal.js";
-import { parseDelimitedJsonObject } from "./llm-json-response.js";
+import {
+  designFamilySpec,
+  parseFamilyDesignerSpec,
+  type FamilyDesignerDescriptor,
+} from "./family-designer.js";
 
 export const COORDINATION_SPEC_START = "<!-- COORDINATION_SPEC_START -->";
 export const COORDINATION_SPEC_END = "<!-- COORDINATION_SPEC_END -->";
+
+const COORDINATION_DESCRIPTOR: FamilyDesignerDescriptor<CoordinationSpec> = {
+  family: "coordination",
+  startDelimiter: COORDINATION_SPEC_START,
+  endDelimiter: COORDINATION_SPEC_END,
+  missingDelimiterLabel: "COORDINATION_SPEC",
+  parseRaw: parseRawCoordinationSpec,
+};
 
 const EXAMPLE_SPEC = {
   description: "Multi-agent research report writing.",
@@ -81,24 +92,17 @@ ${COORDINATION_SPEC_END}
 `;
 
 export function parseCoordinationSpec(text: string): CoordinationSpec {
-  return parseRawCoordinationSpec(
-    healSpec(
-      parseDelimitedJsonObject({
-        text,
-        startDelimiter: COORDINATION_SPEC_START,
-        endDelimiter: COORDINATION_SPEC_END,
-        missingDelimiterLabel: "COORDINATION_SPEC",
-      }),
-      "coordination",
-    ),
-  );
+  return parseFamilyDesignerSpec(text, COORDINATION_DESCRIPTOR);
 }
 
 export async function designCoordination(
   description: string,
   llmFn: (system: string, user: string) => Promise<string>,
 ): Promise<CoordinationSpec> {
-  return parseCoordinationSpec(
-    await llmFn(COORDINATION_DESIGNER_SYSTEM, `User description:\n${description}`),
+  return designFamilySpec(
+    description,
+    COORDINATION_DESIGNER_SYSTEM,
+    COORDINATION_DESCRIPTOR,
+    llmFn,
   );
 }
