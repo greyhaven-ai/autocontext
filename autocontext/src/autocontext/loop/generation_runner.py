@@ -214,11 +214,10 @@ class GenerationRunner:
         return content.count("### Dead End")
 
     def _generate_session_report(
-        self, run_id: str, scenario_name: str, duration_seconds: float,
-    ) -> None:
+        self, run_id: str, scenario_name: str, duration_seconds: float, dead_ends_found: int,
+    ) -> str:
         """Generate and persist a session report for a completed run."""
         trajectory_rows = self.sqlite.get_generation_trajectory(run_id)
-        dead_ends_count = self._count_dead_ends(scenario_name)
         current_generation = max(
             (int(row.get("generation_index", 0)) for row in trajectory_rows),
             default=0,
@@ -242,12 +241,12 @@ class GenerationRunner:
             trajectory_rows=trajectory_rows,
             exploration_mode=self.settings.exploration_mode,
             duration_seconds=duration_seconds,
-            dead_ends_found=dead_ends_count,
+            dead_ends_found=dead_ends_found,
             stale_lessons_count=stale_lessons_count,
             superseded_lessons_count=superseded_lessons_count,
         )
         markdown = report.to_markdown()
-        self.artifacts.write_session_report(scenario_name, run_id, markdown)
+        return str(self.artifacts.write_session_report(scenario_name, run_id, markdown))
 
     def _generate_trace_grounded_reports(self, run_id: str, scenario_name: str) -> None:
         """Generate trace-backed writeups and weakness reports for a completed run.
@@ -1062,6 +1061,7 @@ class GenerationRunner:
         scenario = self._scenario(scenario_name)
         active_run_id = run_id or f"run_{uuid.uuid4().hex[:12]}"
         run_start_time = time.monotonic()
+        target_generations = generations
         existing_run = self.sqlite.get_run(active_run_id)
         if existing_run is None:
             self.sqlite.create_run(
@@ -1071,11 +1071,11 @@ class GenerationRunner:
         else:
             self._recover_stale_run_state(active_run_id)
             refreshed_run = self.sqlite.get_run(active_run_id) or existing_run
+            target_generations = max(
+                self._int_value(refreshed_run.get("target_generations"), generations),
+                generations,
+            )
             if str(refreshed_run.get("status") or "") != "completed":
-                target_generations = max(
-                    self._int_value(refreshed_run.get("target_generations"), generations),
-                    generations,
-                )
                 self.sqlite.mark_run_running(active_run_id, target_generations=target_generations)
         (
             previous_best,
@@ -1085,7 +1085,10 @@ class GenerationRunner:
             gate_decision_history,
         ) = self._hydrate_run_state(active_run_id)
         completed = 0
-        self.events.emit("run_started", {"run_id": active_run_id, "scenario": scenario_name})
+        self.events.emit(
+            "run_started",
+            {"run_id": active_run_id, "scenario": scenario_name, "target_generations": target_generations},
+        )
 
         # Seed scenario-specific tools before first generation
         if not self.artifacts.tools_dir(scenario_name).exists():
@@ -1304,11 +1307,19 @@ class GenerationRunner:
         finally:
             self.artifacts.shutdown_writer()
 
+        dead_ends_found = self._count_dead_ends(scenario_name)
+        session_report_path: str | None = None
+
         # Generate session report
         if self.settings.session_reports_enabled:
             duration = time.monotonic() - run_start_time
             try:
-                self._generate_session_report(active_run_id, scenario_name, duration)
+                session_report_path = self._generate_session_report(
+                    active_run_id,
+                    scenario_name,
+                    duration,
+                    dead_ends_found,
+                )
             except Exception:
                 logger.warning("failed to generate session report for run %s", active_run_id, exc_info=True)
         try:
@@ -1343,7 +1354,17 @@ class GenerationRunner:
                 rating_uncertainty=challenger_uncertainty,
             )
 
-        self.events.emit("run_completed", {"run_id": active_run_id, "completed_generations": completed})
+        self.events.emit(
+            "run_completed",
+            {
+                "run_id": active_run_id,
+                "completed_generations": completed,
+                "best_score": previous_best,
+                "elo": challenger_elo,
+                "session_report_path": session_report_path,
+                "dead_ends_found": dead_ends_found,
+            },
+        )
         return RunSummary(
             run_id=active_run_id,
             scenario=scenario_name,

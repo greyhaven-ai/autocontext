@@ -37,6 +37,25 @@ def test_single_generation_persists_metadata_and_artifacts(tmp_path: Path) -> No
     assert payload["generation_index"] == 1
     assert "elo" in payload
 
+    event_stream_path = tmp_path / "runs" / "events.ndjson"
+    events = [json.loads(line) for line in event_stream_path.read_text(encoding="utf-8").splitlines()]
+    run_started = next(event for event in events if event["event"] == "run_started")
+    assert run_started["payload"] == {
+        "run_id": run_id,
+        "scenario": "grid_ctf",
+        "target_generations": 1,
+    }
+
+    run_completed = next(event for event in events if event["event"] == "run_completed")
+    assert run_completed["payload"] == {
+        "run_id": run_id,
+        "completed_generations": 1,
+        "best_score": summary.best_score,
+        "elo": summary.current_elo,
+        "session_report_path": str(tmp_path / "knowledge" / "grid_ctf" / "reports" / f"{run_id}.md"),
+        "dead_ends_found": 0,
+    }
+
     # Coach history should exist as audit trail
     coach_history_path = tmp_path / "knowledge" / "grid_ctf" / "coach_history.md"
     assert coach_history_path.exists()
@@ -106,6 +125,38 @@ def test_playbook_not_updated_on_rollback(tmp_path: Path) -> None:
     assert "ROLLBACK" in skills_content
     # Bundled playbook should exist (from gen 1 advance)
     assert (skill_dir / "playbook.md").exists()
+
+
+def test_run_completed_omits_session_report_path_when_reports_disabled(tmp_path: Path) -> None:
+    settings = AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        event_stream_path=tmp_path / "runs" / "events.ndjson",
+        seed_base=2000,
+        agent_provider="deterministic",
+        matches_per_generation=2,
+        session_reports_enabled=False,
+    )
+    runner = GenerationRunner(settings)
+    migrations_dir = Path(__file__).resolve().parents[1] / "migrations"
+    runner.migrate(migrations_dir)
+
+    run_id = "test_run_no_report"
+    summary = runner.run(scenario_name="grid_ctf", generations=1, run_id=run_id)
+
+    event_stream_path = tmp_path / "runs" / "events.ndjson"
+    events = [json.loads(line) for line in event_stream_path.read_text(encoding="utf-8").splitlines()]
+    run_completed = next(event for event in events if event["event"] == "run_completed")
+    assert run_completed["payload"] == {
+        "run_id": run_id,
+        "completed_generations": 1,
+        "best_score": summary.best_score,
+        "elo": summary.current_elo,
+        "session_report_path": None,
+        "dead_ends_found": 0,
+    }
 
 
 def test_resume_is_idempotent_for_existing_generation(tmp_path: Path) -> None:

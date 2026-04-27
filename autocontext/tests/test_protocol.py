@@ -207,7 +207,7 @@ class TestEventPayloads:
     @pytest.mark.parametrize(
         "model,kwargs",
         [
-            (RunStartedPayload, {"run_id": "r1", "scenario": "grid_ctf"}),
+            (RunStartedPayload, {"run_id": "r1", "scenario": "grid_ctf", "target_generations": 3}),
             (GenerationStartedPayload, {"run_id": "r1", "generation": 1}),
             (AgentsStartedPayload, {"run_id": "r1", "generation": 1, "roles": ["competitor", "analyst"]}),
             (RoleCompletedPayload, {"run_id": "r1", "generation": 1, "role": "analyst", "latency_ms": 1200, "tokens": 500}),
@@ -232,7 +232,17 @@ class TestEventPayloads:
                     "created_tools": ["tool_a.py"],
                 },
             ),
-            (RunCompletedPayload, {"run_id": "r1", "completed_generations": 5}),
+            (
+                RunCompletedPayload,
+                {
+                    "run_id": "r1",
+                    "completed_generations": 5,
+                    "best_score": 0.9,
+                    "elo": 1088.0,
+                    "session_report_path": None,
+                    "dead_ends_found": 0,
+                },
+            ),
         ],
     )
     def test_validates(self, model: type, kwargs: dict) -> None:
