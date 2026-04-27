@@ -237,6 +237,18 @@ def test_python_control_reexports_run_started_payload() -> None:
     assert payload.scenario == "grid_ctf"
 
 
+def test_python_control_reexports_run_completed_payload() -> None:
+    RunCompletedPayload = control_package.RunCompletedPayload
+
+    payload = RunCompletedPayload(
+        run_id="run-123",
+        completed_generations=4,
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.completed_generations == 4
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources
