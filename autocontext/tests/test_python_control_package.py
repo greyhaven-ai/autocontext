@@ -252,6 +252,94 @@ def test_python_control_reexports_monitor_alert_messages() -> None:
     assert alert.detail == "No events for 30.0s (timeout=30.0s)"
 
 
+def test_python_control_reexports_monitor_domain_value_objects() -> None:
+    ConditionType = control_package.ConditionType
+    MonitorAlert = control_package.MonitorAlert
+    MonitorCondition = control_package.MonitorCondition
+
+    condition = MonitorCondition(
+        id="cond-1",
+        name="stall-window",
+        condition_type=ConditionType.STALL_WINDOW,
+        params={"window": 3},
+        scope="run:run-123",
+        created_at="2026-04-25T00:00:00Z",
+    )
+    alert = MonitorAlert(
+        id="alert-1",
+        condition_id=condition.id,
+        condition_name=condition.name,
+        condition_type=condition.condition_type,
+        scope=condition.scope,
+        detail="3 consecutive rollbacks",
+        fired_at="2026-04-25T00:01:00Z",
+        payload={"window": 3},
+    )
+
+    assert ConditionType.STALL_WINDOW == "stall_window"
+    assert condition.condition_type is ConditionType.STALL_WINDOW
+    assert condition.params == {"window": 3}
+    assert alert.condition_type is ConditionType.STALL_WINDOW
+    assert alert.detail == "3 consecutive rollbacks"
+    assert alert.payload == {"window": 3}
+
+
+def test_python_control_reexports_agent_contract_dataclasses() -> None:
+    AnalystOutput = control_package.AnalystOutput
+    ArchitectOutput = control_package.ArchitectOutput
+    CoachOutput = control_package.CoachOutput
+    CompetitorOutput = control_package.CompetitorOutput
+
+    competitor = CompetitorOutput(
+        raw_text="Use beam search.",
+        strategy={"approach": "beam-search"},
+        reasoning="It keeps more candidate programs alive.",
+        is_code_strategy=True,
+    )
+    analyst = AnalystOutput(
+        raw_markdown="# Findings",
+        findings=["plateau detected"],
+        root_causes=["search space too narrow"],
+        recommendations=["increase branching"],
+    )
+    coach = CoachOutput(
+        raw_markdown="# Coaching",
+        playbook="Try wider exploration.",
+        lessons="Diversity matters.",
+        hints="Look for alternate decompositions.",
+    )
+    architect = ArchitectOutput(
+        raw_markdown="# Architecture",
+        tool_specs=[{"name": "scratchpad"}],
+        harness_specs=[{"id": "h1"}],
+        changelog_entry="Added scratchpad tool.",
+    )
+
+    assert competitor.is_code_strategy is True
+    assert competitor.strategy == {"approach": "beam-search"}
+    assert analyst.findings == ["plateau detected"]
+    assert analyst.root_causes == ["search space too narrow"]
+    assert coach.playbook == "Try wider exploration."
+    assert coach.hints == "Look for alternate decompositions."
+    assert architect.tool_specs == [{"name": "scratchpad"}]
+    assert architect.harness_specs == [{"id": "h1"}]
+    assert architect.changelog_entry == "Added scratchpad tool."
+
+
+def test_python_control_reexports_stagnation_report() -> None:
+    StagnationReport = control_package.StagnationReport
+
+    report = StagnationReport(
+        is_stagnated=True,
+        trigger="score_plateau",
+        detail="score variance 0.000001 < epsilon 0.01 over last 5 gens",
+    )
+
+    assert report.is_stagnated is True
+    assert report.trigger == "score_plateau"
+    assert report.detail == "score variance 0.000001 < epsilon 0.01 over last 5 gens"
+
+
 def test_python_control_reexports_basic_client_control_commands() -> None:
     InjectHintCmd = control_package.InjectHintCmd
     OverrideGateCmd = control_package.OverrideGateCmd

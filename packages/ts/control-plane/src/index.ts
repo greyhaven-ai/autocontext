@@ -1,6 +1,7 @@
 export const packageRole = "control";
 export const packageTopologyVersion = 1;
 
+export type { StagnationReport } from "../../../../ts/src/loop/stagnation.js";
 export type {
 	AppId,
 	ContentHash,

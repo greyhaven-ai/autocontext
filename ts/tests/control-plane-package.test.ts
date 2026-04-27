@@ -10,6 +10,7 @@ import type {
 	ResearchAdapter,
 	Scenario,
 	SessionIdHash,
+	StagnationReport,
 	TraceSource,
 	UserIdHash,
 } from "../../packages/ts/control-plane/src/index.ts";
@@ -324,6 +325,20 @@ describe("@autocontext/control-plane facade", () => {
 		expect(progress.latestStep).toBe("evaluate candidate");
 		expect(progress.budgetUsed).toBe(1.25);
 		expect(progress.budgetMax).toBe(5);
+	});
+
+	it("re-exports stagnation report types", () => {
+		const report: StagnationReport = {
+			isStagnated: true,
+			trigger: "score_plateau",
+			detail: "score stddev 0.000001 < epsilon 0.01 over last 5 gens",
+		};
+
+		expect(report.isStagnated).toBe(true);
+		expect(report.trigger).toBe("score_plateau");
+		expect(report.detail).toBe(
+			"score stddev 0.000001 < epsilon 0.01 over last 5 gens",
+		);
 	});
 
 	it("re-exports basic client control commands", () => {
