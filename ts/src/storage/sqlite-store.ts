@@ -4,6 +4,10 @@ import type {
   AgentOutputRow,
   ConsultationRow,
   GenerationRow,
+  HubPackageRecordRow,
+  HubPromotionRecordRow,
+  HubResultRecordRow,
+  HubSessionRow,
   HumanFeedbackRow,
   InsertConsultationOpts,
   InsertMonitorAlertOpts,
@@ -13,9 +17,13 @@ import type {
   MonitorConditionRow,
   NotebookRow,
   RecordMatchOpts,
+  SaveHubPackageRecordOpts,
+  SaveHubPromotionRecordOpts,
+  SaveHubResultRecordOpts,
   RunRow,
   TaskQueueRow,
   TrajectoryRow,
+  UpsertHubSessionOpts,
   UpsertNotebookOpts,
   UpsertGenerationOpts,
 } from "./storage-contracts.js";
@@ -50,6 +58,21 @@ import {
   getStoreHumanFeedback,
   insertStoreHumanFeedback,
 } from "./storage-human-feedback-facade.js";
+import {
+  getStoreHubPackageRecord,
+  getStoreHubPromotionRecord,
+  getStoreHubResultRecord,
+  getStoreHubSession,
+  heartbeatStoreHubSession,
+  listStoreHubPackageRecords,
+  listStoreHubPromotionRecords,
+  listStoreHubResultRecords,
+  listStoreHubSessions,
+  saveStoreHubPackageRecord,
+  saveStoreHubPromotionRecord,
+  saveStoreHubResultRecord,
+  upsertStoreHubSession,
+} from "./storage-hub-facade.js";
 import {
   deleteStoreNotebook,
   getStoreNotebook,
@@ -174,6 +197,61 @@ export class SQLiteStore {
 
   deleteNotebook(sessionId: string): boolean {
     return deleteStoreNotebook(this.#db, sessionId);
+  }
+
+  upsertHubSession(sessionId: string, opts: UpsertHubSessionOpts): void {
+    upsertStoreHubSession(this.#db, sessionId, opts);
+  }
+
+  heartbeatHubSession(
+    sessionId: string,
+    opts: { lastHeartbeatAt: string; leaseExpiresAt?: string | null },
+  ): void {
+    heartbeatStoreHubSession(this.#db, sessionId, opts);
+  }
+
+  getHubSession(sessionId: string): HubSessionRow | null {
+    return getStoreHubSession(this.#db, sessionId);
+  }
+
+  listHubSessions(): HubSessionRow[] {
+    return listStoreHubSessions(this.#db);
+  }
+
+  saveHubPackageRecord(opts: SaveHubPackageRecordOpts): void {
+    saveStoreHubPackageRecord(this.#db, opts);
+  }
+
+  getHubPackageRecord(packageId: string): HubPackageRecordRow | null {
+    return getStoreHubPackageRecord(this.#db, packageId);
+  }
+
+  listHubPackageRecords(): HubPackageRecordRow[] {
+    return listStoreHubPackageRecords(this.#db);
+  }
+
+  saveHubResultRecord(opts: SaveHubResultRecordOpts): void {
+    saveStoreHubResultRecord(this.#db, opts);
+  }
+
+  getHubResultRecord(resultId: string): HubResultRecordRow | null {
+    return getStoreHubResultRecord(this.#db, resultId);
+  }
+
+  listHubResultRecords(): HubResultRecordRow[] {
+    return listStoreHubResultRecords(this.#db);
+  }
+
+  saveHubPromotionRecord(opts: SaveHubPromotionRecordOpts): void {
+    saveStoreHubPromotionRecord(this.#db, opts);
+  }
+
+  getHubPromotionRecord(eventId: string): HubPromotionRecordRow | null {
+    return getStoreHubPromotionRecord(this.#db, eventId);
+  }
+
+  listHubPromotionRecords(): HubPromotionRecordRow[] {
+    return listStoreHubPromotionRecords(this.#db);
   }
 
   insertMonitorCondition(opts: InsertMonitorConditionOpts): string {

@@ -125,6 +125,95 @@ async function createTestServer(dir: string) {
     ].join("\n"),
     "utf-8",
   );
+  const progressDir = join(scenarioKnowledgeDir, "progress_reports");
+  mkdirSync(progressDir, { recursive: true });
+  writeFileSync(
+    join(progressDir, "test-run-1.json"),
+    JSON.stringify({
+      run_id: "test-run-1",
+      scenario: "grid_ctf",
+      total_generations: 1,
+      advances: 1,
+      rollbacks: 0,
+      retries: 0,
+      progress: {
+        raw_score: 0.7,
+        normalized_score: 0.7,
+        score_floor: 0,
+        score_ceiling: 1,
+        pct_of_ceiling: 70,
+      },
+      cost: {
+        total_input_tokens: 20000,
+        total_output_tokens: 10000,
+        total_tokens: 30000,
+        total_cost_usd: 0.15,
+      },
+    }, null, 2),
+    "utf-8",
+  );
+  const weaknessDir = join(scenarioKnowledgeDir, "weakness_reports");
+  mkdirSync(weaknessDir, { recursive: true });
+  writeFileSync(
+    join(weaknessDir, "test-run-1.json"),
+    JSON.stringify({
+      run_id: "test-run-1",
+      scenario: "grid_ctf",
+      total_generations: 1,
+      weaknesses: [{
+        category: "validation_failure",
+        severity: "medium",
+        affected_generations: [1],
+        description: "Parse failure on generation 1",
+        evidence: { count: 1 },
+        frequency: 1,
+      }],
+    }, null, 2),
+    "utf-8",
+  );
+  const facetDir = join(dir, "knowledge", "analytics", "facets");
+  mkdirSync(facetDir, { recursive: true });
+  writeFileSync(
+    join(facetDir, "test-run-1.json"),
+    JSON.stringify({
+      run_id: "test-run-1",
+      scenario: "grid_ctf",
+      scenario_family: "game",
+      agent_provider: "deterministic",
+      executor_mode: "local",
+      total_generations: 1,
+      advances: 1,
+      retries: 0,
+      rollbacks: 0,
+      best_score: 0.7,
+      best_elo: 1050,
+      total_duration_seconds: 12,
+      total_tokens: 30000,
+      total_cost_usd: 0.15,
+      tool_invocations: 2,
+      validation_failures: 1,
+      consultation_count: 0,
+      consultation_cost_usd: 0,
+      friction_signals: [{
+        signal_type: "validation_failure",
+        severity: "medium",
+        generation_index: 1,
+        description: "Parse failure on generation 1",
+        evidence: ["ev-1"],
+        recoverable: true,
+      }],
+      delight_signals: [{
+        signal_type: "strong_improvement",
+        generation_index: 1,
+        description: "Center route improved quickly",
+        evidence: ["ev-2"],
+      }],
+      events: [],
+      metadata: {},
+      created_at: "2026-04-25T00:00:00Z",
+    }, null, 2),
+    "utf-8",
+  );
 
   const customDir = join(dir, "knowledge", "_custom_scenarios", "custom_agent_task");
   mkdirSync(customDir, { recursive: true });
@@ -192,6 +281,7 @@ describe("HTTP API — health", () => {
     expect(endpoints.notebooks).toBe("/api/notebooks");
     expect(endpoints.openclaw).toBe("/api/openclaw");
     expect(endpoints.cockpit).toBe("/api/cockpit");
+    expect(endpoints.hub).toBe("/api/hub");
     expect(endpoints.knowledge).toMatchObject({
       scenarios: "/api/knowledge/scenarios",
       export: "/api/knowledge/export/:scenario",
@@ -214,7 +304,7 @@ describe("HTTP API — health", () => {
       matrix.routes.find((route) => route.method === method && route.path === path);
     expect(matrix.version).toBe(1);
     expect(matrix.summary.aligned).toBeGreaterThan(0);
-    expect(matrix.summary.typescript_gap).toBeGreaterThan(0);
+    expect(matrix.summary.typescript_gap).toBeGreaterThanOrEqual(0);
     expect(matrix.summary.python_gap).toBeGreaterThan(0);
     expect(routeFor("GET", "/")).toMatchObject({
       status: "aligned",
@@ -259,6 +349,11 @@ describe("HTTP API — health", () => {
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "GET",
       path: "/api/cockpit/runs",
+      status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/hub/feed",
       status: "aligned",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
@@ -874,6 +969,188 @@ describe("HTTP API — cockpit", () => {
       if (savedEnv.model === undefined) delete process.env.AUTOCONTEXT_CONSULTATION_MODEL;
       else process.env.AUTOCONTEXT_CONSULTATION_MODEL = savedEnv.model;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Research hub endpoints
+// ---------------------------------------------------------------------------
+
+describe("HTTP API — research hub", () => {
+  let dir: string;
+  let server: Awaited<ReturnType<typeof createTestServer>>["server"];
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    dir = makeTempDir();
+    const s = await createTestServer(dir);
+    server = s.server;
+    baseUrl = s.baseUrl;
+  });
+
+  afterEach(async () => {
+    await server.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("upserts, lists, fetches, and heartbeats hub sessions", async () => {
+    const created = await putJson(`${baseUrl}/api/hub/sessions/session-1`, {
+      scenario_name: "grid_ctf",
+      current_objective: "Coordinate shared research.",
+      current_hypotheses: ["Center control is still promising."],
+      owner: "operator",
+      status: "active",
+      shared: true,
+      metadata: { channel: "ci" },
+    });
+
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({
+      session_id: "session-1",
+      scenario_name: "grid_ctf",
+      owner: "operator",
+      shared: true,
+      metadata: { channel: "ci" },
+      artifact_path: expect.stringContaining("notebook.json"),
+    });
+
+    const listed = await fetchJson(`${baseUrl}/api/hub/sessions`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toContainEqual(expect.objectContaining({ session_id: "session-1" }));
+
+    const fetched = await fetchJson(`${baseUrl}/api/hub/sessions/session-1`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body).toMatchObject({ session_id: "session-1", owner: "operator" });
+
+    const heartbeat = await postJson(`${baseUrl}/api/hub/sessions/session-1/heartbeat`, {
+      lease_seconds: 60,
+    });
+    expect(heartbeat.status).toBe(200);
+    expect(heartbeat.body).toMatchObject({
+      session_id: "session-1",
+      lease_expires_at: expect.any(String),
+      last_heartbeat_at: expect.any(String),
+    });
+  });
+
+  it("rejects hub session ids that would escape notebook artifact storage", async () => {
+    const escaped = await putJson(`${baseUrl}/api/hub/sessions/..%2F..%2Foutside`, {
+      scenario_name: "grid_ctf",
+      current_objective: "Do not write outside the session root.",
+    });
+
+    expect(escaped.status).toBe(422);
+    expect((escaped.body as Record<string, unknown>).detail).toContain("invalid hub id");
+    expect(existsSync(join(dir, "outside", "notebook.json"))).toBe(false);
+  });
+
+  it("promotes a run to a package and adopts it through the package importer", async () => {
+    await putJson(`${baseUrl}/api/hub/sessions/session-1`, {
+      scenario_name: "grid_ctf",
+      current_hypotheses: ["Use measured aggression."],
+    });
+
+    const promoted = await postJson(`${baseUrl}/api/hub/packages/from-run/test-run-1`, {
+      title: "Grid CTF shared package",
+      session_id: "session-1",
+      actor: "operator",
+      compatibility_tags: ["grid_ctf", "ci"],
+      adoption_notes: "Adopt after review.",
+    });
+
+    expect(promoted.status).toBe(200);
+    expect(promoted.body).toMatchObject({
+      scenario_name: "grid_ctf",
+      source_run_id: "test-run-1",
+      source_generation: 1,
+      title: "Grid CTF shared package",
+      best_score: 0.7,
+      best_elo: 1050,
+      strategy: { aggression: 0.6 },
+      notebook_hypotheses: ["Use measured aggression."],
+      compatibility_tags: ["grid_ctf", "ci"],
+    });
+    const packageId = (promoted.body as Record<string, unknown>).package_id as string;
+    expect(packageId).toMatch(/^pkg-/);
+    expect(existsSync(join(dir, "knowledge", "_hub", "packages", packageId, "shared_package.json"))).toBe(true);
+    expect(existsSync(join(dir, "knowledge", "_hub", "packages", packageId, "strategy_package.json"))).toBe(true);
+
+    const listed = await fetchJson(`${baseUrl}/api/hub/packages`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toContainEqual(expect.objectContaining({ package_id: packageId }));
+
+    const fetched = await fetchJson(`${baseUrl}/api/hub/packages/${packageId}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body).toMatchObject({ package_id: packageId, scenario_name: "grid_ctf" });
+
+    const adopted = await postJson(`${baseUrl}/api/hub/packages/${packageId}/adopt`, {
+      actor: "operator",
+      conflict_policy: "merge",
+    });
+    expect(adopted.status).toBe(200);
+    expect(adopted.body).toMatchObject({
+      import_result: expect.objectContaining({
+        scenario: "grid_ctf",
+        conflictPolicy: "merge",
+        metadataWritten: true,
+      }),
+      promotion_event: expect.objectContaining({
+        package_id: packageId,
+        action: "adopt",
+      }),
+    });
+    expect(existsSync(join(dir, "skills", "grid-ctf-ops", "SKILL.md"))).toBe(true);
+  });
+
+  it("materializes run results, records promotions, and returns the hub feed", async () => {
+    const result = await postJson(`${baseUrl}/api/hub/results/from-run/test-run-1`, {
+      title: "Grid result",
+    });
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      scenario_name: "grid_ctf",
+      run_id: "test-run-1",
+      title: "Grid result",
+      best_score: 0.7,
+      best_elo: 1050,
+      normalized_progress: expect.stringContaining("70.00% of ceiling"),
+      cost_summary: "$0.15 total, 30000 tokens",
+      weakness_summary: expect.stringContaining("Parse failure"),
+      friction_signals: ["Parse failure on generation 1"],
+      delight_signals: ["Center route improved quickly"],
+    });
+    const resultId = (result.body as Record<string, unknown>).result_id as string;
+    expect(resultId).toMatch(/^res-/);
+
+    const listedResults = await fetchJson(`${baseUrl}/api/hub/results`);
+    expect(listedResults.status).toBe(200);
+    expect(listedResults.body).toContainEqual(expect.objectContaining({ result_id: resultId }));
+
+    const fetchedResult = await fetchJson(`${baseUrl}/api/hub/results/${resultId}`);
+    expect(fetchedResult.status).toBe(200);
+    expect(fetchedResult.body).toMatchObject({ result_id: resultId, summary: expect.stringContaining("test-run-1") });
+
+    const promotion = await postJson(`${baseUrl}/api/hub/promotions`, {
+      package_id: "pkg-external",
+      source_run_id: "test-run-1",
+      action: "label",
+      actor: "operator",
+      label: "recommended",
+      metadata: { note: "manual label" },
+    });
+    expect(promotion.status).toBe(200);
+    expect(promotion.body).toMatchObject({
+      package_id: "pkg-external",
+      action: "label",
+      label: "recommended",
+    });
+
+    const feed = await fetchJson(`${baseUrl}/api/hub/feed`);
+    expect(feed.status).toBe(200);
+    expect(feed.body).toMatchObject({
+      results: [expect.objectContaining({ result_id: resultId })],
+      promotions: [expect.objectContaining({ package_id: "pkg-external" })],
+    });
   });
 });
 
