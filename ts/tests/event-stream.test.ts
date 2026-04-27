@@ -113,6 +113,38 @@ describe("EventStreamEmitter", () => {
     expect(received[1].payload.score).toBe(0.8);
   });
 
+  it("should dispatch canonical envelope records to subscribers", async () => {
+    const { EventStreamEmitter } = await import("../src/loop/events.js");
+    const path = join(dir, "events.ndjson");
+    const emitter = new EventStreamEmitter(path);
+
+    const records: Array<{
+      channel: string;
+      event: string;
+      payload: Record<string, unknown>;
+      seq: number;
+      ts: string;
+      v: 1;
+    }> = [];
+    emitter.subscribe((_event, _payload, record) => {
+      if (record) {
+        records.push(record);
+      }
+    });
+
+    emitter.emit("session_updated", { session_id: "session_1" }, "notebook");
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      channel: "notebook",
+      event: "session_updated",
+      payload: { session_id: "session_1" },
+      seq: 1,
+      v: 1,
+    });
+    expect(typeof records[0]?.ts).toBe("string");
+  });
+
   it("should support multiple subscribers", async () => {
     const { EventStreamEmitter } = await import("../src/loop/events.js");
     const path = join(dir, "events.ndjson");

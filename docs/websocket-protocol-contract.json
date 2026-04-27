@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "contract": "interactive WebSocket protocol surface shared by Python and TypeScript with runtime-only extensions marked explicitly",
+  "protocol_version": 1,
+  "endpoints": [
+    {
+      "path": "/ws/interactive",
+      "runtimes": ["python", "typescript"],
+      "message_contract": "interactive"
+    },
+    {
+      "path": "/ws/events",
+      "runtimes": ["python", "typescript"],
+      "message_contract": "event-stream"
+    }
+  ],
+  "top_level_unknown_field_policy": "forbid",
+  "event_stream_envelope": {
+    "version": 1,
+    "unknown_field_policy": "forbid",
+    "required_fields": ["ts", "v", "seq", "channel", "event", "payload"],
+    "fields": {
+      "ts": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "v": {
+        "type": "integer",
+        "const": 1
+      },
+      "seq": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "channel": {
+        "type": "string",
+        "known_values": ["generation", "mission", "notebook", "cockpit"]
+      },
+      "event": {
+        "type": "string"
+      },
+      "payload": {
+        "type": "object"
+      }
+    }
+  },
+  "shared_server_messages": [
+    "hello",
+    "event",
+    "state",
+    "chat_response",
+    "environments",
+    "run_accepted",
+    "ack",
+    "error",
+    "scenario_generating",
+    "scenario_preview",
+    "scenario_ready",
+    "scenario_error",
+    "monitor_alert"
+  ],
+  "shared_client_messages": [
+    "pause",
+    "resume",
+    "inject_hint",
+    "override_gate",
+    "chat_agent",
+    "start_run",
+    "list_scenarios",
+    "create_scenario",
+    "confirm_scenario",
+    "revise_scenario",
+    "cancel_scenario"
+  ],
+  "typescript_only_server_messages": [
+    {
+      "type": "auth_status",
+      "reason": "TypeScript TUI provider-auth workflow"
+    },
+    {
+      "type": "mission_progress",
+      "reason": "TypeScript mission dashboard workflow"
+    }
+  ],
+  "typescript_only_client_messages": [
+    {
+      "type": "login",
+      "reason": "TypeScript TUI provider-auth workflow"
+    },
+    {
+      "type": "logout",
+      "reason": "TypeScript TUI provider-auth workflow"
+    },
+    {
+      "type": "switch_provider",
+      "reason": "TypeScript TUI provider-auth workflow"
+    },
+    {
+      "type": "whoami",
+      "reason": "TypeScript TUI provider-auth workflow"
+    }
+  ],
+  "python_only_server_messages": [],
+  "python_only_client_messages": []
+}
