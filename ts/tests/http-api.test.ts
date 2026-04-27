@@ -125,6 +125,95 @@ async function createTestServer(dir: string) {
     ].join("\n"),
     "utf-8",
   );
+  const progressDir = join(scenarioKnowledgeDir, "progress_reports");
+  mkdirSync(progressDir, { recursive: true });
+  writeFileSync(
+    join(progressDir, "test-run-1.json"),
+    JSON.stringify({
+      run_id: "test-run-1",
+      scenario: "grid_ctf",
+      total_generations: 1,
+      advances: 1,
+      rollbacks: 0,
+      retries: 0,
+      progress: {
+        raw_score: 0.7,
+        normalized_score: 0.7,
+        score_floor: 0,
+        score_ceiling: 1,
+        pct_of_ceiling: 70,
+      },
+      cost: {
+        total_input_tokens: 20000,
+        total_output_tokens: 10000,
+        total_tokens: 30000,
+        total_cost_usd: 0.15,
+      },
+    }, null, 2),
+    "utf-8",
+  );
+  const weaknessDir = join(scenarioKnowledgeDir, "weakness_reports");
+  mkdirSync(weaknessDir, { recursive: true });
+  writeFileSync(
+    join(weaknessDir, "test-run-1.json"),
+    JSON.stringify({
+      run_id: "test-run-1",
+      scenario: "grid_ctf",
+      total_generations: 1,
+      weaknesses: [{
+        category: "validation_failure",
+        severity: "medium",
+        affected_generations: [1],
+        description: "Parse failure on generation 1",
+        evidence: { count: 1 },
+        frequency: 1,
+      }],
+    }, null, 2),
+    "utf-8",
+  );
+  const facetDir = join(dir, "knowledge", "analytics", "facets");
+  mkdirSync(facetDir, { recursive: true });
+  writeFileSync(
+    join(facetDir, "test-run-1.json"),
+    JSON.stringify({
+      run_id: "test-run-1",
+      scenario: "grid_ctf",
+      scenario_family: "game",
+      agent_provider: "deterministic",
+      executor_mode: "local",
+      total_generations: 1,
+      advances: 1,
+      retries: 0,
+      rollbacks: 0,
+      best_score: 0.7,
+      best_elo: 1050,
+      total_duration_seconds: 12,
+      total_tokens: 30000,
+      total_cost_usd: 0.15,
+      tool_invocations: 2,
+      validation_failures: 1,
+      consultation_count: 0,
+      consultation_cost_usd: 0,
+      friction_signals: [{
+        signal_type: "validation_failure",
+        severity: "medium",
+        generation_index: 1,
+        description: "Parse failure on generation 1",
+        evidence: ["ev-1"],
+        recoverable: true,
+      }],
+      delight_signals: [{
+        signal_type: "strong_improvement",
+        generation_index: 1,
+        description: "Center route improved quickly",
+        evidence: ["ev-2"],
+      }],
+      events: [],
+      metadata: {},
+      created_at: "2026-04-25T00:00:00Z",
+    }, null, 2),
+    "utf-8",
+  );
 
   const customDir = join(dir, "knowledge", "_custom_scenarios", "custom_agent_task");
   mkdirSync(customDir, { recursive: true });
@@ -944,6 +1033,17 @@ describe("HTTP API — research hub", () => {
     });
   });
 
+  it("rejects hub session ids that would escape notebook artifact storage", async () => {
+    const escaped = await putJson(`${baseUrl}/api/hub/sessions/..%2F..%2Foutside`, {
+      scenario_name: "grid_ctf",
+      current_objective: "Do not write outside the session root.",
+    });
+
+    expect(escaped.status).toBe(422);
+    expect((escaped.body as Record<string, unknown>).detail).toContain("invalid hub id");
+    expect(existsSync(join(dir, "outside", "notebook.json"))).toBe(false);
+  });
+
   it("promotes a run to a package and adopts it through the package importer", async () => {
     await putJson(`${baseUrl}/api/hub/sessions/session-1`, {
       scenario_name: "grid_ctf",
@@ -1013,6 +1113,11 @@ describe("HTTP API — research hub", () => {
       title: "Grid result",
       best_score: 0.7,
       best_elo: 1050,
+      normalized_progress: expect.stringContaining("70.00% of ceiling"),
+      cost_summary: "$0.15 total, 30000 tokens",
+      weakness_summary: expect.stringContaining("Parse failure"),
+      friction_signals: ["Parse failure on generation 1"],
+      delight_signals: ["Center route improved quickly"],
     });
     const resultId = (result.body as Record<string, unknown>).result_id as string;
     expect(resultId).toMatch(/^res-/);

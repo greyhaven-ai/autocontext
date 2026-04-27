@@ -11,7 +11,6 @@ import type {
   HubResultRecordRow,
   HubSessionRow,
   NotebookRow,
-  RunRow,
   SQLiteStore,
 } from "../storage/index.js";
 import { ArtifactStore } from "./artifact-store.js";
@@ -40,6 +39,16 @@ export class ResearchHubError extends Error {
 
 const SAFE_HUB_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const CONFLICT_POLICIES = new Set<ConflictPolicy>(["overwrite", "merge", "skip"]);
+
+interface HubRunEvidence {
+  normalizedProgress: string;
+  costSummary: string;
+  weaknessSummary: string;
+  consultationSummary: string;
+  frictionSignals: string[];
+  delightSignals: string[];
+  linkedArtifacts: string[];
+}
 
 export class ResearchHubService {
   readonly #runsRoot: string;
@@ -72,26 +81,28 @@ export class ResearchHubService {
   }
 
   getSession(sessionId: string): Record<string, unknown> {
+    const safeSessionId = ensureSafeHubId(sessionId);
     return this.#withStore((store) => {
-      const session = this.#loadSessionFromStore(store, sessionId);
+      const session = this.#loadSessionFromStore(store, safeSessionId);
       if (!session) {
-        throw new ResearchHubError(`Hub session not found: ${sessionId}`, 404);
+        throw new ResearchHubError(`Hub session not found: ${safeSessionId}`, 404);
       }
       return session;
     });
   }
 
   upsertSession(sessionId: string, body: Record<string, unknown>): Record<string, unknown> {
+    const safeSessionId = ensureSafeHubId(sessionId);
     return this.#withStore((store) => {
-      const existingNotebook = store.getNotebook(sessionId);
-      const existingMetadata = store.getHubSession(sessionId);
+      const existingNotebook = store.getNotebook(safeSessionId);
+      const existingMetadata = store.getHubSession(safeSessionId);
       const scenarioName = readOptionalString(body, "scenario_name") ?? existingNotebook?.scenario_name ?? "";
       if (!scenarioName) {
         throw new ResearchHubError("scenario_name is required when creating a hub session", 400);
       }
 
       store.upsertNotebook({
-        sessionId,
+        sessionId: safeSessionId,
         scenarioName,
         currentObjective: readOptionalString(body, "current_objective") ?? existingNotebook?.current_objective,
         currentHypotheses: readOptionalStringList(body, "current_hypotheses") ?? existingNotebook?.current_hypotheses,
@@ -103,7 +114,7 @@ export class ResearchHubService {
           readOptionalStringList(body, "operator_observations") ?? existingNotebook?.operator_observations,
         followUps: readOptionalStringList(body, "follow_ups") ?? existingNotebook?.follow_ups,
       });
-      store.upsertHubSession(sessionId, {
+      store.upsertHubSession(safeSessionId, {
         owner: readOptionalString(body, "owner") ?? existingMetadata?.owner ?? "",
         status: readOptionalString(body, "status") ?? existingMetadata?.status ?? "active",
         leaseExpiresAt: readOptionalString(body, "lease_expires_at") ?? existingMetadata?.lease_expires_at ?? "",
@@ -113,33 +124,34 @@ export class ResearchHubService {
         metadata: readOptionalRecord(body, "metadata") ?? existingMetadata?.metadata ?? {},
       });
 
-      const notebook = store.getNotebook(sessionId);
+      const notebook = store.getNotebook(safeSessionId);
       if (!notebook) {
-        throw new ResearchHubError(`Failed to persist notebook for session ${sessionId}`, 500);
+        throw new ResearchHubError(`Failed to persist notebook for session ${safeSessionId}`, 500);
       }
-      this.#artifacts.writeNotebook(sessionId, notebook as unknown as Record<string, unknown>);
+      this.#artifacts.writeNotebook(safeSessionId, notebook as unknown as Record<string, unknown>);
       return {
-        ...this.#composeSession(notebook, store.getHubSession(sessionId)),
-        artifact_path: join(this.#runsRoot, "sessions", sessionId, "notebook.json"),
+        ...this.#composeSession(notebook, store.getHubSession(safeSessionId)),
+        artifact_path: join(this.#runsRoot, "sessions", safeSessionId, "notebook.json"),
       };
     });
   }
 
   heartbeatSession(sessionId: string, body: Record<string, unknown>): Record<string, unknown> {
+    const safeSessionId = ensureSafeHubId(sessionId);
     return this.#withStore((store) => {
-      const notebook = store.getNotebook(sessionId);
+      const notebook = store.getNotebook(safeSessionId);
       if (!notebook) {
-        throw new ResearchHubError(`Notebook not found for session ${sessionId}`, 404);
+        throw new ResearchHubError(`Notebook not found for session ${safeSessionId}`, 404);
       }
       const leaseSeconds = readOptionalInteger(body, "lease_seconds");
       const leaseExpiresAt = leaseSeconds !== undefined
         ? new Date(Date.now() + leaseSeconds * 1000).toISOString()
         : readOptionalString(body, "lease_expires_at");
-      store.heartbeatHubSession(sessionId, {
+      store.heartbeatHubSession(safeSessionId, {
         lastHeartbeatAt: nowIso(),
         leaseExpiresAt: leaseExpiresAt ?? null,
       });
-      return this.#composeSession(notebook, store.getHubSession(sessionId));
+      return this.#composeSession(notebook, store.getHubSession(safeSessionId));
     });
   }
 
@@ -303,6 +315,13 @@ export class ResearchHubService {
     const packageId = `pkg-${uid()}`;
     const family = scenarioFamily(run.scenario);
     const session = this.#sessionForPackage(store, readOptionalString(body, "session_id"), runId);
+    const evidence = buildRunEvidence({
+      store,
+      knowledgeRoot: this.#knowledgeRoot,
+      scenarioName: run.scenario,
+      runId,
+      generations: store.getGenerations(runId),
+    });
     const compatibilityTags = readOptionalStringList(body, "compatibility_tags")
       ?? [run.scenario, family, run.agent_provider, run.executor_mode].filter(Boolean);
     return {
@@ -320,11 +339,11 @@ export class ResearchHubService {
         executor_summary: run.executor_mode,
         best_score: best.best_score,
         best_elo: best.elo,
-        normalized_progress: progressSummary(store.getGenerations(runId)),
-        weakness_summary: "",
+        normalized_progress: evidence.normalizedProgress,
+        weakness_summary: evidence.weaknessSummary,
         result_summary: `Best score ${best.best_score.toFixed(2)} on run ${runId}`,
         notebook_hypotheses: session?.current_hypotheses ?? [],
-        linked_artifacts: linkedArtifacts(this.#knowledgeRoot, run.scenario, runId),
+        linked_artifacts: evidence.linkedArtifacts,
         compatibility_tags: compatibilityTags,
         adoption_notes: readOptionalString(body, "adoption_notes") ?? "",
         promotion_level: readOptionalString(body, "promotion_level") ?? "experimental",
@@ -352,6 +371,13 @@ export class ResearchHubService {
       throw new ResearchHubError(`No generation metrics found for run ${runId}`, 404);
     }
     const family = scenarioFamily(run.scenario);
+    const evidence = buildRunEvidence({
+      store,
+      knowledgeRoot: this.#knowledgeRoot,
+      scenarioName: run.scenario,
+      runId,
+      generations,
+    });
     return {
       result_id: `res-${uid()}`,
       scenario_name: run.scenario,
@@ -359,22 +385,22 @@ export class ResearchHubService {
       package_id: readOptionalString(body, "package_id") ?? null,
       title: readOptionalString(body, "title") || `${humanize(run.scenario)} result for ${runId}`,
       summary: `Run ${runId} on ${run.scenario}: best score ${best.best_score.toFixed(2)}, `
-        + `${generations.length} generation(s), ${progressSummary(generations)}.`,
+        + `${generations.length} generation(s), ${evidence.normalizedProgress}.`,
       best_score: best.best_score,
       best_elo: best.elo,
-      normalized_progress: progressSummary(generations),
-      cost_summary: "$0.00 total, 0 tokens",
-      weakness_summary: "",
-      consultation_summary: "",
-      friction_signals: [],
-      delight_signals: [],
+      normalized_progress: evidence.normalizedProgress,
+      cost_summary: evidence.costSummary,
+      weakness_summary: evidence.weaknessSummary,
+      consultation_summary: evidence.consultationSummary,
+      friction_signals: evidence.frictionSignals,
+      delight_signals: evidence.delightSignals,
       created_at: nowIso(),
       tags: [run.scenario, family, run.agent_provider].filter(Boolean),
       metadata: {
         scenario_family: family,
         agent_provider: run.agent_provider,
         executor_mode: run.executor_mode,
-        linked_artifacts: linkedArtifacts(this.#knowledgeRoot, run.scenario, runId),
+        linked_artifacts: evidence.linkedArtifacts,
       },
     };
   }
@@ -466,7 +492,7 @@ export class ResearchHubService {
     runId: string,
   ): NotebookRow | null {
     if (sessionId) {
-      return store.getNotebook(sessionId);
+      return store.getNotebook(ensureSafeHubId(sessionId));
     }
     return store.listNotebooks().find((notebook) => notebook.best_run_id === runId) ?? null;
   }
@@ -542,6 +568,116 @@ function progressSummary(generations: GenerationRow[]): string {
   return parts.join(", ") || "No generations";
 }
 
+function buildRunEvidence(opts: {
+  store: SQLiteStore;
+  knowledgeRoot: string;
+  scenarioName: string;
+  runId: string;
+  generations: GenerationRow[];
+}): HubRunEvidence {
+  const progressReport = readJsonRecord(join(
+    opts.knowledgeRoot,
+    opts.scenarioName,
+    "progress_reports",
+    `${opts.runId}.json`,
+  ));
+  const weaknessReport = readJsonRecord(join(
+    opts.knowledgeRoot,
+    opts.scenarioName,
+    "weakness_reports",
+    `${opts.runId}.json`,
+  ));
+  const facet = readJsonRecord(join(opts.knowledgeRoot, "analytics", "facets", `${opts.runId}.json`));
+  return {
+    normalizedProgress: progressSummaryFromReport(progressReport, progressSummary(opts.generations)),
+    costSummary: costSummaryFromFacet(facet) ?? costSummaryFromProgressReport(progressReport) ?? "$0.00 total, 0 tokens",
+    weaknessSummary: weaknessSummaryFromReport(weaknessReport),
+    consultationSummary: consultationSummary(opts.store, opts.runId),
+    frictionSignals: signalDescriptions(facet, "friction_signals"),
+    delightSignals: signalDescriptions(facet, "delight_signals"),
+    linkedArtifacts: linkedArtifacts(opts.knowledgeRoot, opts.scenarioName, opts.runId),
+  };
+}
+
+function progressSummaryFromReport(report: Record<string, unknown> | null, fallback: string): string {
+  if (!report) {
+    return fallback;
+  }
+  const progress = readRecordValue(report.progress);
+  const pctOfCeiling = numberFrom(progress.pct_of_ceiling);
+  if (pctOfCeiling === null) {
+    return fallback;
+  }
+  const advances = integerFrom(report.advances) ?? 0;
+  const retries = integerFrom(report.retries) ?? 0;
+  const rollbacks = integerFrom(report.rollbacks) ?? 0;
+  return `${pctOfCeiling.toFixed(2)}% of ceiling, `
+    + `${advances} advance(s), ${retries} retry(ies), ${rollbacks} rollback(s)`;
+}
+
+function costSummaryFromFacet(facet: Record<string, unknown> | null): string | null {
+  if (!facet) {
+    return null;
+  }
+  const totalCost = numberFrom(facet.total_cost_usd);
+  const totalTokens = integerFrom(facet.total_tokens);
+  if (totalCost === null || totalTokens === null) {
+    return null;
+  }
+  return `$${totalCost.toFixed(2)} total, ${totalTokens} tokens`;
+}
+
+function costSummaryFromProgressReport(report: Record<string, unknown> | null): string | null {
+  if (!report) {
+    return null;
+  }
+  const cost = readRecordValue(report.cost);
+  const totalCost = numberFrom(cost.total_cost_usd);
+  const totalTokens = integerFrom(cost.total_tokens);
+  if (totalCost === null || totalTokens === null) {
+    return null;
+  }
+  return `$${totalCost.toFixed(2)} total, ${totalTokens} tokens`;
+}
+
+function weaknessSummaryFromReport(report: Record<string, unknown> | null): string {
+  const weaknesses = report?.weaknesses;
+  if (!Array.isArray(weaknesses)) {
+    return "";
+  }
+  return weaknesses
+    .slice(0, 3)
+    .map((weakness) => {
+      const record = readRecordValue(weakness);
+      return readStringValue(record.title) || readStringValue(record.description);
+    })
+    .filter(Boolean)
+    .join("; ");
+}
+
+function consultationSummary(store: SQLiteStore, runId: string): string {
+  const consultations = store.getConsultationsForRun(runId);
+  if (consultations.length === 0) {
+    return "";
+  }
+  const totalCost = store.getTotalConsultationCost(runId);
+  const latest = consultations.at(-1);
+  const trigger = latest?.trigger.trim() ?? "";
+  return trigger
+    ? `${consultations.length} consultation(s), $${totalCost.toFixed(2)} total, latest trigger: ${trigger}`
+    : `${consultations.length} consultation(s), $${totalCost.toFixed(2)} total`;
+}
+
+function signalDescriptions(facet: Record<string, unknown> | null, key: string): string[] {
+  const signals = facet?.[key];
+  if (!Array.isArray(signals)) {
+    return [];
+  }
+  return signals
+    .map((signal) => readStringValue(readRecordValue(signal).description))
+    .filter(Boolean);
+}
+
 function parseStrategyOutput(raw: string): Record<string, unknown> {
   if (!raw) {
     return {};
@@ -562,6 +698,7 @@ function linkedArtifacts(knowledgeRoot: string, scenarioName: string, runId: str
     join(knowledgeRoot, scenarioName, "reports", `${runId}.md`),
     join(knowledgeRoot, scenarioName, "progress_reports", `${runId}.json`),
     join(knowledgeRoot, scenarioName, "weakness_reports", `${runId}.json`),
+    join(knowledgeRoot, "analytics", "facets", `${runId}.json`),
   ];
   return candidates
     .filter((path) => existsSync(path))
@@ -650,6 +787,22 @@ function readStringValue(value: unknown): string {
 
 function readNumberValue(value: unknown, fallback: number): number {
   return typeof value === "number" ? value : fallback;
+}
+
+function numberFrom(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function integerFrom(value: unknown): number | null {
+  const parsed = numberFrom(value);
+  return parsed === null ? null : Math.trunc(parsed);
 }
 
 function readJsonRecord(path: string): Record<string, unknown> | null {
