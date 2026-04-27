@@ -1,9 +1,18 @@
 {
   "extends": "../../../ts/tsconfig.json",
   "compilerOptions": {
-    "rootDir": "./src",
+    "rootDir": "../../..",
     "outDir": "./dist",
-    "noEmit": false
+    "noEmit": false,
+    "types": ["node"],
+    "typeRoots": ["../../../ts/node_modules/@types"]
   },
-  "include": ["src/index.ts"]
+  "include": [
+    "src/index.ts",
+    "../../../ts/src/production-traces/contract/types.ts",
+    "../../../ts/src/production-traces/contract/branded-ids.ts",
+    "../../../ts/src/control-plane/contract/branded-ids.ts",
+    "../../../ts/src/research/types.ts",
+    "../../../ts/src/research/consultation.ts"
+  ]
 }
