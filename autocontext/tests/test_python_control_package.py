@@ -265,6 +265,28 @@ def test_python_control_reexports_gate_decided_payload() -> None:
     assert payload.delta == 0.18
 
 
+def test_python_control_reexports_generation_completed_payload() -> None:
+    GenerationCompletedPayload = control_package.GenerationCompletedPayload
+
+    payload = GenerationCompletedPayload(
+        run_id="run-123",
+        generation=2,
+        mean_score=0.68,
+        best_score=0.72,
+        elo=1068,
+        gate_decision="advance",
+        created_tools=["tool_a.py"],
+    )
+
+    assert payload.run_id == "run-123"
+    assert payload.generation == 2
+    assert payload.mean_score == 0.68
+    assert payload.best_score == 0.72
+    assert payload.elo == 1068
+    assert payload.gate_decision == "advance"
+    assert payload.created_tools == ["tool_a.py"]
+
+
 def test_python_control_reexports_shared_server_protocol_models() -> None:
     ExecutorInfo = control_package.ExecutorInfo
     ExecutorResources = control_package.ExecutorResources

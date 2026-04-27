@@ -38,6 +38,7 @@ ScenarioErrorMsg: Any = _server_protocol.ScenarioErrorMsg
 RunStartedPayload: Any = _server_protocol.RunStartedPayload
 RunCompletedPayload: Any = _server_protocol.RunCompletedPayload
 GenerationStartedPayload: Any = _server_protocol.GenerationStartedPayload
+GenerationCompletedPayload: Any = _server_protocol.GenerationCompletedPayload
 AgentsStartedPayload: Any = _server_protocol.AgentsStartedPayload
 RoleCompletedPayload: Any = _server_protocol.RoleCompletedPayload
 TournamentStartedPayload: Any = _server_protocol.TournamentStartedPayload
@@ -120,6 +121,7 @@ __all__ = [
     "AgentsStartedPayload",
     "Error",
     "ErrorMsg",
+    "GenerationCompletedPayload",
     "GenerationStartedPayload",
     "GateDecidedPayload",
     "MonitorAlert",
