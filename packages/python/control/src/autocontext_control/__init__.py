@@ -16,6 +16,7 @@ ExecutorInfo: Any = _server_protocol.ExecutorInfo
 StrategyParam: Any = _server_protocol.StrategyParam
 ScoringComponent: Any = _server_protocol.ScoringComponent
 HelloMsg: Any = _server_protocol.HelloMsg
+EnvironmentsMsg: Any = _server_protocol.EnvironmentsMsg
 StateMsg: Any = _server_protocol.StateMsg
 AckMsg: Any = _server_protocol.AckMsg
 ErrorMsg: Any = _server_protocol.ErrorMsg
@@ -63,6 +64,7 @@ __all__ = [
     "Citation",
     "EndedAt",
     "EnvContext",
+    "EnvironmentsMsg",
     "AckMsg",
     "Error",
     "ErrorMsg",

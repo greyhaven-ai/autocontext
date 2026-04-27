@@ -101,6 +101,43 @@ def test_python_control_reexports_shared_server_protocol_models() -> None:
     assert scoring.weight == 0.7
 
 
+def test_python_control_reexports_environment_discovery_messages() -> None:
+    EnvironmentsMsg = control_package.EnvironmentsMsg
+    ExecutorInfo = control_package.ExecutorInfo
+    ExecutorResources = control_package.ExecutorResources
+    ScenarioInfo = control_package.ScenarioInfo
+
+    environments = EnvironmentsMsg(
+        scenarios=[
+            ScenarioInfo(name="grid_ctf", description="Capture the flag"),
+            ScenarioInfo(name="schema_repair", description="Recover a schema from examples."),
+        ],
+        executors=[
+            ExecutorInfo(
+                mode="docker",
+                available=True,
+                description="Local Docker executor",
+                resources=ExecutorResources(
+                    docker_image="ghcr.io/greyhaven/executor:latest",
+                    cpu_cores=4,
+                    memory_gb=8,
+                    disk_gb=20,
+                    timeout_minutes=15,
+                ),
+            ),
+        ],
+        current_executor="docker",
+        agent_provider="pi",
+    )
+
+    assert environments.type == "environments"
+    assert environments.scenarios[1].name == "schema_repair"
+    assert environments.executors[0].resources is not None
+    assert environments.executors[0].resources.cpu_cores == 4
+    assert environments.current_executor == "docker"
+    assert environments.agent_provider == "pi"
+
+
 def test_python_control_reexports_basic_server_protocol_messages() -> None:
     AckMsg = control_package.AckMsg
     ErrorMsg = control_package.ErrorMsg

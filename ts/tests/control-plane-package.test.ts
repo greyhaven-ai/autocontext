@@ -16,6 +16,7 @@ import type {
 import {
 	AckMsgSchema,
 	Citation,
+	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
 	ExecutorInfoSchema,
 	ExecutorResourcesSchema,
@@ -123,6 +124,43 @@ describe("@autocontext/control-plane facade", () => {
 		expect(executor.resources?.cpu_cores).toBe(4);
 		expect(param.name).toBe("aggression");
 		expect(scoring.weight).toBe(0.7);
+	});
+
+	it("re-exports environment discovery messages", () => {
+		const environments = EnvironmentsMsgSchema.parse({
+			type: "environments",
+			scenarios: [
+				ScenarioInfoSchema.parse({
+					name: "grid_ctf",
+					description: "Capture the flag",
+				}),
+				ScenarioInfoSchema.parse({
+					name: "schema_repair",
+					description: "Recover a schema from examples.",
+				}),
+			],
+			executors: [
+				ExecutorInfoSchema.parse({
+					mode: "docker",
+					available: true,
+					description: "Local Docker executor",
+					resources: ExecutorResourcesSchema.parse({
+						docker_image: "ghcr.io/greyhaven/executor:latest",
+						cpu_cores: 4,
+						memory_gb: 8,
+						disk_gb: 20,
+						timeout_minutes: 15,
+					}),
+				}),
+			],
+			current_executor: "docker",
+			agent_provider: "pi",
+		});
+
+		expect(environments.scenarios[1]?.name).toBe("schema_repair");
+		expect(environments.executors[0]?.resources?.cpu_cores).toBe(4);
+		expect(environments.current_executor).toBe("docker");
+		expect(environments.agent_provider).toBe("pi");
 	});
 
 	it("re-exports basic server protocol message models", () => {

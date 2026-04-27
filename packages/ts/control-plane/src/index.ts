@@ -48,6 +48,7 @@ export {
 } from "../../../../ts/src/research/types.js";
 export {
 	AckMsgSchema,
+	EnvironmentsMsgSchema,
 	ErrorMsgSchema,
 	ExecutorInfoSchema,
 	ExecutorResourcesSchema,
