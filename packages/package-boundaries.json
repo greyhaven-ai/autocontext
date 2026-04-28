@@ -110,6 +110,7 @@
 				"../../../ts/src/types/index.ts",
 				"../../../ts/src/production-traces/contract/generated-types.ts",
 				"../../../ts/src/production-traces/contract/branded-ids.ts",
+				"../../../ts/src/production-traces/contract/types.ts",
 				"../../../ts/src/production-traces/contract/content-address.ts",
 				"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
@@ -162,11 +163,13 @@
 				"coreOwnedSourceIncludes": [
 					"../../../ts/src/production-traces/contract/generated-types.ts",
 					"../../../ts/src/production-traces/contract/branded-ids.ts",
+					"../../../ts/src/production-traces/contract/types.ts",
 					"../../../ts/src/production-traces/contract/content-address.ts"
 				],
 				"coreOwnedProgramPathSubstrings": [
 					"/ts/src/production-traces/contract/generated-types.ts",
 					"/ts/src/production-traces/contract/branded-ids.ts",
+					"/ts/src/production-traces/contract/types.ts",
 					"/ts/src/production-traces/contract/content-address.ts"
 				],
 				"forbiddenImportPathSubstrings": [

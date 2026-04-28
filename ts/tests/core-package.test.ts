@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type {
   AgentOutputRow,
   AgentTaskInterface,
   AgentTaskResult,
+  AppId,
   ArtifactEditingInterface,
+  EnvironmentTag,
   ExecutionLimits,
+  FeedbackRefId,
   GenerationRow,
   HumanFeedbackRow,
   InvestigationInterface,
@@ -14,18 +19,24 @@ import type {
   CoordinationInterface,
   Observation,
   OperatorLoopInterface,
+  ProductionTrace,
+  ProductionTraceId,
   RecordMatchOpts,
   ReplayEnvelope,
   Result,
   RunRow,
+  Scenario,
   ScenarioInterface,
   SchemaEvolutionInterface,
   ScoringDimension,
+  SessionIdHash,
   SimulationInterface,
   TaskQueueRow,
   ToolFragilityInterface,
+  TraceSource,
   TrajectoryRow,
   UpsertGenerationOpts,
+  UserIdHash,
   WorkflowInterface,
 } from "../../packages/ts/core/src/index.ts";
 import {
@@ -39,6 +50,7 @@ import {
   expectedScore,
   ObservationSchema,
   ProviderError,
+  PRODUCTION_TRACE_SCHEMA_VERSION,
   packageRole,
   packageTopologyVersion,
   parseJudgeResponse,
@@ -47,10 +59,86 @@ import {
   updateElo,
 } from "../../packages/ts/core/src/index.ts";
 
+const repoRoot = join(import.meta.dirname, "..", "..");
+
 describe("@autocontext/core facade", () => {
   it("preserves the core package identity", () => {
     expect(packageRole).toBe("core");
     expect(packageTopologyVersion).toBe(1);
+  });
+
+  it("re-exports production trace contracts from the handwritten contract surface", () => {
+    const facadeSource = readFileSync(
+      join(repoRoot, "packages", "ts", "core", "src", "index.ts"),
+      "utf-8",
+    );
+    const typeExports = [
+      ...facadeSource.matchAll(/export type \{([\s\S]*?)\} from "([^"]+)";/g),
+    ].map((match) => ({
+      specifiers: match[1]?.match(/\b[A-Za-z][A-Za-z0-9_]*\b/g) ?? [],
+      source: match[2],
+    }));
+    const sourceFor = (specifier: string) =>
+      typeExports.find((entry) => entry.specifiers.includes(specifier))?.source;
+
+    expect(PRODUCTION_TRACE_SCHEMA_VERSION).toBe("1.0");
+    expect(sourceFor("ProductionTrace")).toBe(
+      "../../../../ts/src/production-traces/contract/types.js",
+    );
+    expect(sourceFor("ProductionOutcome")).toBe(
+      "../../../../ts/src/production-traces/contract/types.js",
+    );
+
+    const traceSource: TraceSource = {
+      emitter: "gateway",
+      sdk: { name: "autoctx", version: "0.1.0" },
+    };
+    const trace: ProductionTrace = {
+      schemaVersion: PRODUCTION_TRACE_SCHEMA_VERSION,
+      traceId: "01ARZ3NDEKTSV4RRFFQ69G5FAV" as ProductionTraceId,
+      source: traceSource,
+      provider: { name: "anthropic" },
+      model: "claude-sonnet",
+      session: {
+        userIdHash: "a".repeat(64) as UserIdHash,
+        sessionIdHash: "b".repeat(64) as SessionIdHash,
+      },
+      env: {
+        environmentTag: "production" as EnvironmentTag,
+        appId: "support-bot" as AppId,
+      },
+      messages: [
+        {
+          role: "user",
+          content: "help me with a refund",
+          timestamp: "2026-04-25T00:00:00Z",
+        },
+      ],
+      toolCalls: [],
+      timing: {
+        startedAt: "2026-04-25T00:00:00Z",
+        endedAt: "2026-04-25T00:00:01Z",
+        latencyMs: 1000,
+      },
+      usage: {
+        tokensIn: 10,
+        tokensOut: 5,
+      },
+      feedbackRefs: [
+        {
+          kind: "rating",
+          submittedAt: "2026-04-25T00:00:02Z",
+          ref: "feedback-1" as FeedbackRefId,
+        },
+      ],
+      links: {
+        scenarioId: "grid_ctf" as Scenario,
+      },
+      redactions: [],
+    };
+
+    expect(trace.source).toBe(traceSource);
+    expect(trace.traceId).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
   });
 
   it("re-exports Elo primitives from the core-safe execution surface", () => {
