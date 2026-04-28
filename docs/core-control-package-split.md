@@ -39,7 +39,8 @@ layout must make the licensing model true before the repo advertises it.
 The boundary-enforcement contract also encodes the deferred licensing
 publication rule: no root `LICENSING.md`, no per-package `LICENSE` files, and no
 new core/control package license metadata until AC-645. Any non-Apache
-relicensing remains blocked by the AC-646 rights audit.
+relicensing remains blocked by the AC-646 rights audit. The current engineering
+audit lives in [`contributor-rights-audit.md`](./contributor-rights-audit.md).
 
 ## Package Topology
 

@@ -12,15 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BOUNDARIES_PATH = REPO_ROOT / "packages" / "package-boundaries.json"
 TOPOLOGY_PATH = REPO_ROOT / "packages" / "package-topology.json"
 CORE_INIT_PATH = REPO_ROOT / "packages" / "python" / "core" / "src" / "autocontext_core" / "__init__.py"
-CONTROL_INIT_PATH = (
-    REPO_ROOT
-    / "packages"
-    / "python"
-    / "control"
-    / "src"
-    / "autocontext_control"
-    / "__init__.py"
-)
+CONTROL_INIT_PATH = REPO_ROOT / "packages" / "python" / "control" / "src" / "autocontext_control" / "__init__.py"
 
 
 def _load_boundaries() -> dict[str, object]:
@@ -111,6 +103,29 @@ def test_deferred_license_publication_files_are_absent() -> None:
     for relative_path in forbidden_paths:
         assert isinstance(relative_path, str)
         assert not (REPO_ROOT / relative_path).exists()
+
+
+def test_rights_audit_records_controlled_identity_and_final_signoff_blocker() -> None:
+    licensing = _licensing_guardrails()
+    rights_audit = licensing["rightsAudit"]
+    assert isinstance(rights_audit, dict)
+
+    assert rights_audit["status"] == "in-progress"
+    assert rights_audit["auditDoc"] == "docs/contributor-rights-audit.md"
+    assert (REPO_ROOT / str(rights_audit["auditDoc"])).exists()
+    assert rights_audit["confirmedControlledContributorIdentities"] == [
+        {
+            "canonicalContributor": "cirdan-greyhaven",
+            "rightsHolder": "greyhaven-ai",
+            "basis": "grey-haven-controlled-contributor-identity",
+            "confirmedAt": "2026-04-28",
+        }
+    ]
+    assert rights_audit["blockedRelicensingPathsUntilConfirmed"] == []
+    assert rights_audit["requiredFinalSignoffs"] == [
+        "grey-haven-authority-for-controlled-contributor-identities",
+        "grey-haven-legal-business-approval",
+    ]
 
 
 def test_python_license_metadata_stays_deferred_for_new_package_artifacts() -> None:

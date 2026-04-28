@@ -11,6 +11,23 @@
 			"packages/ts/core/LICENSE",
 			"packages/ts/control-plane/LICENSE"
 		],
+		"rightsAudit": {
+			"status": "in-progress",
+			"auditDoc": "docs/contributor-rights-audit.md",
+			"confirmedControlledContributorIdentities": [
+				{
+					"canonicalContributor": "cirdan-greyhaven",
+					"rightsHolder": "greyhaven-ai",
+					"basis": "grey-haven-controlled-contributor-identity",
+					"confirmedAt": "2026-04-28"
+				}
+			],
+			"blockedRelicensingPathsUntilConfirmed": [],
+			"requiredFinalSignoffs": [
+				"grey-haven-authority-for-controlled-contributor-identities",
+				"grey-haven-legal-business-approval"
+			]
+		},
 		"pythonProjectMetadata": {
 			"paths": [
 				"packages/python/core/pyproject.toml",
