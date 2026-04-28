@@ -30,6 +30,10 @@
     "./production-traces/hashing": {
       "import": "./dist/ts/src/production-traces/sdk/hashing-core.js",
       "types": "./dist/ts/src/production-traces/sdk/hashing-core.d.ts"
+    },
+    "./production-traces/redaction/apply": {
+      "import": "./dist/ts/src/production-traces/redaction/apply.js",
+      "types": "./dist/ts/src/production-traces/redaction/apply.d.ts"
     }
   },
   "files": [

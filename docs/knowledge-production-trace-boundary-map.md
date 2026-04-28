@@ -182,6 +182,14 @@ helper subpath through `@autocontext/core/production-traces/hashing`. This
 claims `hashUserId` and `hashSessionId` as deterministic privacy primitives
 while leaving install-salt file lifecycle and rotation surfaces on the
 umbrella/control side until they receive an explicit ownership decision.
+The redaction apply slice adds exactly
+`ts/src/production-traces/redaction/types.ts` and
+`ts/src/production-traces/redaction/apply.ts`, exposed through
+`@autocontext/core/production-traces/redaction/apply`. It is customer-side
+export-boundary rewriting over caller-provided traces, policies, and salts. It
+does not claim redaction policy file IO, install-salt lifecycle, mark-at-ingest
+detection, CLI workflows, ingestion, dataset generation, retention, or
+`ts/src/traces` workflows.
 
 The next independent source-ownership slice claims the current exact taxonomy
 files, `ts/src/production-traces/taxonomy/anthropic-error-reasons.ts`,
@@ -197,7 +205,7 @@ explicit manifest/test update before core owns them.
 | Production trace contract             | Manifest-listed contract files: `index.ts`, generated/types/ID/helper/validator/canonical JSON files, plus schema assets | Core/open SDK                  | Public wire format, branded IDs, validators, deterministic serialization, generated types, and the composition-only contract barrel. |
 | Customer emit SDK                     | Currently exact files `ts/src/production-traces/sdk/{validate.ts,build-trace.ts,write-jsonl.ts,trace-batch.ts,hashing-core.ts}`; other SDK files are pending exact-file claims | Core/open SDK                  | Preserve customer validation/build/write/batch/hash ergonomics; keep broader SDK helpers tree-shakable and management-free. |
 | Taxonomy                              | `ts/src/production-traces/taxonomy/{anthropic-error-reasons.ts,openai-error-reasons.ts,index.ts}`        | Core/open SDK                  | Exact shared provider error/outcome vocabulary files; future taxonomy additions require manifest tests. |
-| Redaction primitives                  | Currently exact file `ts/src/production-traces/redaction/hash-primitives.ts`; other redaction files are pending exact-file claims | Open SDK if pure               | Keep pure local privacy helpers open; CLI policy management and install-salt lifecycle stay outside core until explicitly claimed. |
+| Redaction apply helpers               | Currently exact files `ts/src/production-traces/redaction/{hash-primitives.ts,types.ts,apply.ts}`; other redaction files are pending exact-file claims | Open SDK if pure               | Keep pure local privacy/export helpers open; CLI policy management, mark-at-ingest detection, and install-salt lifecycle stay outside core until explicitly claimed. |
 | Ingestion                             | `ts/src/production-traces/ingest/**`                                                                    | Control-plane                  | Scans incoming traces, locks, dedupes, validates receipts.                                             |
 | Retention                             | `ts/src/production-traces/retention/**`                                                                 | Control-plane                  | Project/fleet policy enforcement and GC logs.                                                          |
 | Dataset generation                    | `ts/src/production-traces/dataset/**`                                                                   | Control-plane                  | Selection, clustering, splitting, manifests, and provenance workflows.                                 |
