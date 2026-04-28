@@ -191,6 +191,7 @@ describe("@autocontext/core facade", () => {
     expect(trace.feedbackRefs).toEqual([]);
     expect(validateTimingSanity(trace.timing).valid).toBe(true);
     expect(validateJsonPointer(trace, "/messages/0/content").valid).toBe(true);
+    expect(validateJsonPointer({ "bad~": true }, "/bad~").valid).toBe(false);
     expect(validateRedactionPaths(trace).valid).toBe(true);
   });
 
