@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - TypeScript capabilities now report the provider factory support surface and no longer mark the visible `train` command as Python-only (AC-626).
 - TypeScript `run` now supports saved custom `agent_task` scenarios through the agent-task improvement runner instead of rejecting scenarios already discoverable in the control plane (AC-625).
 
+### Changed
+
+- Restructured the top-level `README.md`: leads with the Pi runtime quick start, adds an MCP-driven natural-language entry path ("Or Just Talk To Your Agent"), shows a structured artifact tree with concrete `playbook.md` and `trace.jsonl` excerpts, surfaces production-trace capture as its own section, merges the surfaces table with command examples, and adds a short FAQ. Removes redundant "How People Use It" / "Choose An Entry Point" / "Repository Layout" sections (the last is already covered in `AGENTS.md`).
+- Bumped subpackage README references from `0.4.4` to `0.4.7` (`autocontext/README.md`, `ts/README.md`) to track the next release line.
+
 ## [0.4.6] - 2026-04-23
 
 ### Added

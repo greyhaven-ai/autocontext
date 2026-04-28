@@ -10,7 +10,7 @@ The intended use is to hand the harness a real task in plain language, let it so
 pip install autocontext
 ```
 
-The current PyPI release line is `autocontext==0.4.6`.
+The current PyPI release line is `autocontext==0.4.7`.
 The PyPI package name is now `autocontext`. The CLI entrypoint remains `autoctx`.
 
 ## Working Directory
@@ -105,7 +105,7 @@ uv run autoctx solve --description "improve customer-support replies for billing
 
 `autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER`, other role-routing overrides, and per-call `--provider <name>` overrides all apply to live simulation generation.
 
-`autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too. When browser exploration is enabled, `--browser-url <url>` captures a policy-checked snapshot and folds that evidence into the investigation prompts and report artifacts.
+`autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too.
 
 Run with Pi RPC (local Pi subprocess using `pi --mode rpc` JSONL):
 
@@ -153,9 +153,7 @@ uv run autoctx solve --description "improve customer-support replies for billing
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
 uv run autoctx simulate --description "simulate deploying a web service with rollback" --provider claude-cli
 uv run autoctx investigate --description "why did conversion drop after Tuesday's release"
-uv run autoctx investigate --description "checkout is failing in prod" --browser-url https://status.example.com
 uv run autoctx queue add --task-prompt "Write a 1-line fact about primes" --rubric "correct" --threshold 0.8 --rounds 2
-uv run autoctx queue --spec support_triage --browser-url https://status.example.com
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
@@ -207,25 +205,10 @@ uv sync --group dev --extra mlx
 uv run autoctx train \
   --scenario support_triage \
   --data training/support_triage.jsonl \
-  --backend mlx \
   --time-budget 300
 ```
 
 MLX training is host-only. It must run on an Apple Silicon macOS machine with Metal access. It will not run correctly inside a Docker sandbox on macOS.
-
-CUDA training uses the same autoresearch loop with a PyTorch model branch:
-
-```bash
-uv sync --group dev
-uv pip install torch rustbpe tiktoken
-uv run autoctx train \
-  --scenario support_triage \
-  --data training/support_triage.jsonl \
-  --backend cuda \
-  --time-budget 300
-```
-
-CUDA requires a CUDA-enabled PyTorch install where `torch.cuda.is_available()` is true. The CUDA bundle writes `config.json`, `tokenizer.json`, and `model.pt` under the selected checkpoint directory. Until a Torch provider loader lands, CUDA checkpoints are published as checkpoint artifacts only and are not auto-routed as live provider models.
 
 If you only want to inspect generated training data first, export without training and open the JSONL directly.
 
@@ -247,14 +230,6 @@ Common settings:
 - `AUTOCONTEXT_RLM_ENABLED`
 - `AUTOCONTEXT_HARNESS_PREFLIGHT_ENABLED`
 - `AUTOCONTEXT_STAGED_VALIDATION_ENABLED`
-- `AUTOCONTEXT_BROWSER_ENABLED`
-- `AUTOCONTEXT_BROWSER_ALLOWED_DOMAINS`
-- `AUTOCONTEXT_BROWSER_PROFILE_MODE`
-- `AUTOCONTEXT_BROWSER_ALLOW_AUTH`
-- `AUTOCONTEXT_BROWSER_ALLOW_DOWNLOADS` and `AUTOCONTEXT_BROWSER_DOWNLOADS_ROOT`
-
-Browser exploration defaults to a secure disabled posture and uses the shared contract described in [../docs/browser-exploration-contract.md](../docs/browser-exploration-contract.md).
-The Python package includes a thin Chrome CDP backend that attaches to an existing debugger endpoint, enforces the browser allowlist, and stores browser evidence under run-local roots.
 
 See the repo-level [.env.example](../.env.example) for a working starting point.
 
@@ -369,7 +344,41 @@ sink.close()
 Emitted trace line (pretty-printed for readability):
 
 ```jsonl
-{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","choices":[{"message":{"role":"assistant","content":"Hi! How can I help?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":7,"total_tokens":16}},"durationMs":342,"errorReason":null}
+{
+  "schemaVersion": "1.0",
+  "traceId": "...",
+  "sessionContext": {
+    "userId": "u_123"
+  },
+  "request": {
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  },
+  "response": {
+    "id": "...",
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "Hi! How can I help?"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 9,
+      "completion_tokens": 7,
+      "total_tokens": 16
+    }
+  },
+  "durationMs": 342,
+  "errorReason": null
+}
 ```
 
 For the TypeScript equivalent, see `ts/src/integrations/openai/STABILITY.md`.
@@ -450,7 +459,38 @@ sink.close()
 Emitted trace line (pretty-printed for readability):
 
 ```jsonl
-{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"claude-opus-4-7-20251101","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","content":[{"type":"text","text":"Hi! How can I help?"}],"stop_reason":"end_turn","usage":{"input_tokens":9,"output_tokens":7}},"durationMs":342,"errorReason":null}
+{
+  "schemaVersion": "1.0",
+  "traceId": "...",
+  "sessionContext": {
+    "userId": "u_123"
+  },
+  "request": {
+    "model": "claude-opus-4-7-20251101",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  },
+  "response": {
+    "id": "...",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hi! How can I help?"
+      }
+    ],
+    "stop_reason": "end_turn",
+    "usage": {
+      "input_tokens": 9,
+      "output_tokens": 7
+    }
+  },
+  "durationMs": 342,
+  "errorReason": null
+}
 ```
 
 For the TypeScript equivalent, see `ts/src/integrations/anthropic/STABILITY.md`.

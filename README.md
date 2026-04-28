@@ -3,7 +3,7 @@
   <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" style="max-width: 100%; height: auto;" />
 </p>
 
-<p align="center"><strong>turn repeated agent work into validated, reusable execution</strong></p>
+<p align="center"><strong>a recursive self-improving harness designed to help your agents (and future iterations of those agents) succeed on any task</strong></p>
 
 <p align="center">
   <a href="https://github.com/greyhaven-ai/autocontext/blob/main/LICENSE"><img src="https://img.shields.io/github/license/greyhaven-ai/autocontext" alt="License"></a>
@@ -15,108 +15,230 @@
 
 <!-- autocontext-readme-hero:end -->
 
-autocontext runs LLM agents through structured scenarios, evaluates their outputs, and accumulates the knowledge that improved results — so repeated runs get better, not just different. Point the harness at a real task in plain language, let it work the problem, and then inspect the traces, reports, artifacts, datasets, playbooks, and optional distilled model it produces.
+Autocontext is a harness. You point it at a goal in plain language. It iterates against real evaluation, keeps what worked, throws out what didn't, and produces a structured trace of the work plus the artifacts, playbooks, datasets, and (optionally) a distilled local model that the next agent inherits. Repeated runs get better, not just different.
 
-## Table of Contents
+## Try It In 30 Seconds
 
-- [What's New](#whats-new)
-- [What actually is autocontext?](#what-actually-is-autocontext)
-- [How People Use It](#how-people-use-it)
-- [How It Works](#how-it-works)
-- [Which Surface Fits Which Job](#which-surface-fits-which-job)
-- [Choose An Entry Point](#choose-an-entry-point)
-- [Scenario Families](#scenario-families)
-- [Core Capabilities](#core-capabilities)
-- [Quick Start From Source](#quick-start-from-source)
-- [Installable Packages](#installable-packages)
-- [Which Package Should You Use?](#which-package-should-you-use)
-- [Common Workflows](#common-workflows)
-- [Repository Layout](#repository-layout)
-- [Where To Look Next](#where-to-look-next)
+The fastest path uses our **Pi runtime**, a local coding agent that handles its own auth. No API key plumbing, no provider config: install Pi, install autocontext, point one at the other.
 
-<!-- autocontext-whats-new:start -->
-## What's New
+```bash
+uv tool install autocontext==0.4.7
 
-- Browser integration now spans Python and TypeScript CDP backends, investigations, queued tasks, and policy-gated evidence.
-- Anthropic SDK instrumentation captures Python and TypeScript production traces, streaming outcomes, and cross-runtime parity.
-- Production trace datasets gained provider/app/env/outcome filters and shared OpenAI/Anthropic E2E coverage.
-- Scenario family designers now share parser logic across TypeScript families, preserving family-specific prompt semantics.
-- Investigation evidence, secondary prompt reducers, migration ledgers, CLI dispatch, and proxy runtime plumbing were hardened.
-<!-- autocontext-whats-new:end -->
+AUTOCONTEXT_AGENT_PROVIDER=pi \
+AUTOCONTEXT_PI_COMMAND=pi \
+uv run autoctx solve \
+  --description "improve customer-support replies for billing disputes" \
+  --gens 3
+```
 
-## What actually is autocontext?
+Pi runs locally as a subprocess and emits live traces back into the harness. For a hosted Pi, set `AUTOCONTEXT_AGENT_PROVIDER=pi-rpc` and `AUTOCONTEXT_PI_RPC_ENDPOINT` instead.
 
-Most agent systems still start every run cold. They do not reliably preserve what worked, separate signal from noise, or turn repeated success into a reusable asset.
+Prefer TypeScript? Same surface, same command:
 
-autocontext is built to close that loop:
+```bash
+bun add -g autoctx@0.4.7
+AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
+  --description "improve customer-support replies for billing disputes" \
+  --gens 5 --json
+```
 
-- run a scenario, task, or mission
-- evaluate what actually happened
-- persist validated knowledge and artifacts
-- replay, analyze, or compare results
-- distill stable behavior into cheaper local runtimes when it is ready
+Already on Anthropic, OpenAI, Gemini, Mistral, Groq, OpenRouter, Azure, Claude CLI, Codex CLI, or MLX? Set `AUTOCONTEXT_AGENT_PROVIDER` and the matching credential env var:
 
-## How People Use It
+```bash
+AUTOCONTEXT_AGENT_PROVIDER=anthropic \
+ANTHROPIC_API_KEY=sk-ant-... \
+uv run autoctx solve --description "..." --gens 3
+```
 
-- hand the harness a real task, let it iterate mostly hands-off, and review the resulting traces, datasets, playbooks, artifacts, and optional distilled model
-- improve agent behavior across repeated runs instead of prompting from scratch every time
-- model and test environments through reusable scenarios
-- run plain-language simulations with sweeps, replay, compare, and export
-- run evidence-driven investigations and analyze the resulting artifacts
-- operate verifier-driven missions for longer-running goals
-- analyze runs, replays, and artifacts to understand regressions and stable wins
-- export knowledge, artifacts, and training data for downstream systems
-- expose the system over CLI, MCP, API, and TUI/operator surfaces for external agents and operator tooling
+See [`.env.example`](.env.example) for every provider's variables. Prefer to clone and run a starter? [`examples/README.md`](examples/README.md) has copy-paste recipes for Python CLI, Claude Code MCP, Python SDK, and TypeScript library usage.
+
+## Or Just Talk To Your Agent
+
+If you already work inside a coding agent (Claude Code, Pi, Cursor, or anything MCP-aware), you don't need to learn the CLI. Wire autocontext in once and your agent gets a natural-language entry point.
+
+**Pi** ships an autocontext skill out of the box. Install the autocontext Pi extension and Pi loads `autocontext_solve`, `autocontext_judge`, `autocontext_improve`, `autocontext_status`, and `autocontext_scenarios` as native tools. Then you just ask:
+
+> "Solve: improve customer-support replies for billing disputes."
+>
+> "Judge this output against this rubric and improve it until it scores 0.85."
+
+**Claude Code** (and any other MCP client) gets the same surface by adding one entry to `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "autocontext": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/autocontext", "autoctx", "mcp-serve"],
+      "env": { "AUTOCONTEXT_AGENT_PROVIDER": "pi", "AUTOCONTEXT_PI_COMMAND": "pi" }
+    }
+  }
+}
+```
+
+After that, the harness exposes `autocontext_solve_scenario`, `autocontext_judge`, `autocontext_improve`, `autocontext_run_*`, `autocontext_export_skill`, and `autocontext_search_strategies`. The MCP server runs on stdio. The TypeScript package exposes the same tools via `bunx autoctx mcp-serve`.
+
+Full integration guide: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md).
+
+## What You Get Back
+
+Every run leaves a structured record on disk. Replay it, diff it, export it, feed it back into training.
+
+```
+runs/<run_id>/
+├── trace.jsonl              # every prompt, tool call, and outcome, in order
+├── generations/
+│   ├── gen_1/
+│   │   ├── strategy.json    # what the competitor proposed
+│   │   ├── analysis.md      # what the analyst observed
+│   │   └── score.json       # how it was evaluated
+│   └── gen_2/ ...
+├── report.md                # human-readable summary of the whole run
+└── artifacts/               # files, configs, packages the run produced
+
+knowledge/<scenario>/
+├── playbook.md              # accumulated lessons that carried forward
+├── hints.md                 # competitor hints that survived the curator
+└── tools/                   # any helper tools the architect generated
+```
+
+A `playbook.md` is plain markdown the next run reads as context:
+
+```markdown
+<!-- PLAYBOOK_START -->
+
+## Billing dispute replies
+
+- Always restate the disputed charge in the first sentence; refunds requested without
+  explicit confirmation cause loops.
+- "Pending" charges are not yet billable. Don't promise a refund until status flips
+  to `posted`. Verified gen_4, regressed in gen_7 when omitted.
+- Empathy + specific next step beats empathy alone. Escalation rate dropped from
+0.31 to 0.12 once the second sentence named the next-step owner.
+<!-- PLAYBOOK_END -->
+```
+
+A `trace.jsonl` line is one event:
+
+```json
+{
+  "ts": "2026-04-28T17:42:11Z",
+  "gen": 4,
+  "role": "competitor",
+  "event": "strategy_proposed",
+  "score": 0.78,
+  "tokens_in": 1840,
+  "tokens_out": 612,
+  "strategy_id": "s_4f2a"
+}
+```
+
+Inspect, replay, or compare any of it:
+
+```bash
+uv run autoctx list
+uv run autoctx status <run_id>
+uv run autoctx replay <run_id> --generation 2
+```
 
 ## How It Works
 
-The product model centers on a few stable ideas:
+Inside each run, five roles cooperate:
 
-- `Scenario`: a reusable environment or evaluation context with stable rules and scoring
-- `Task`: a prompt-centric unit of work that can be evaluated directly or embedded elsewhere
-- `Mission`: a long-running goal advanced step by step until a verifier says it is done
-- `Campaign`: a planned grouping of missions under long-term goals; today it has partial TypeScript CLI/API/MCP support but is not yet a Python package surface
-- `Run`: a concrete execution instance of a scenario or task
-- `Verifier`: the runtime check that decides whether a mission, step, or output is acceptable
-- `Knowledge`: validated lessons that should carry forward across runs
-- `Artifact`: persisted outputs such as replays, checkpoints, reports, packages, and exports
-- `Budget` and `Policy`: the constraints and rules that shape how runs and missions are allowed to proceed
+- **competitor** proposes a strategy or artifact for the task
+- **analyst** explains what happened and why
+- **coach** turns that analysis into playbook updates and future hints
+- **architect** proposes tools or harness changes when the loop is stuck
+- **curator** gates what knowledge is allowed to persist across runs
 
-Inside a run, autocontext uses a structured multi-agent loop:
+Strategies are evaluated through scenario execution, staged validation, and gating. Weak changes are rolled back. Successful changes accumulate as reusable knowledge that future runs (and future agents) inherit automatically.
 
-- `competitor` proposes a strategy or artifact for the task
-- `analyst` explains what happened and why
-- `coach` turns that analysis into playbook updates and future hints
-- `architect` proposes tools, harness improvements, or structural changes
-- `curator` gates what knowledge is allowed to persist
+The full vocabulary (Scenario, Task, Mission, Campaign, Run, Verifier, Knowledge, Artifact, Budget, Policy) lives in [docs/concept-model.md](docs/concept-model.md).
 
-Strategies are then evaluated through scenario execution, staged validation, and gating. Weak changes are rolled back. Successful changes accumulate into reusable knowledge.
+## Capture What's Happening In Production
 
-## Which Surface Fits Which Job
+Autocontext can sit alongside your live application and record what your agents do, then turn that into training data. Wrap your existing Anthropic or OpenAI client once:
 
-| Surface       | When to use it                                                                            |
-| ------------- | ----------------------------------------------------------------------------------------- |
-| `run`         | Improve behavior inside a reusable scenario or task across generations                    |
-| `simulate`    | Model a system, explore parameter sweeps, or compare replayable outcomes                  |
-| `investigate` | Evidence-driven diagnosis with hypotheses, confidence scoring, and optional browser context |
-| `analyze`     | Inspect or compare runs, simulations, investigations, or missions after the fact          |
-| `mission`     | Verifier-driven goal advanced step by step with checkpoints and completion criteria       |
-| `campaign`    | Coordinate multiple missions with budget tracking, dependencies, and progress aggregation |
-| `train`       | Distill stable exported data into a cheaper local runtime                                 |
-| `replay`      | Inspect what happened before deciding what knowledge should persist                       |
+```python
+from anthropic import Anthropic
+from autocontext.production_traces import instrument_client
 
-`campaign` now ships as a TypeScript CLI/API/MCP workflow for multi-mission coordination. The Python package still does not expose a campaign control-plane surface.
+client = instrument_client(Anthropic(), app="billing-bot", env="prod")
+# use `client` exactly like before; calls are captured to JSONL with content blocks,
+# cache-aware usage, and Anthropic-native outcome taxonomy.
+```
 
-## Choose An Entry Point
+```ts
+import Anthropic from "@anthropic-ai/sdk";
+import { instrumentClient } from "autoctx/production-traces";
 
-- Want the full Python control plane for scenario execution, training, API serving, and operator workflows? Start with `autocontext/`.
-- Want the Node/TypeScript package for simulations, investigations, analysis, mission control, operator tooling, and external integrations? Start with `ts/`.
-- Want to wire another agent into autocontext? Start with the CLI-first guide in `autocontext/docs/agent-integration.md`.
-- Want to contribute or point a coding agent at the repo? Read `CONTRIBUTING.md` and `AGENTS.md`.
+const client = instrumentClient(new Anthropic(), { app: "billing-bot", env: "prod" });
+```
+
+Then build scoped datasets from the captured traces:
+
+```bash
+uv run autoctx build-dataset \
+  --app billing-bot --provider anthropic \
+  --env prod --outcome success \
+  --output training/billing.jsonl
+```
+
+And distill them into a smaller local model with MLX (Apple Silicon) or CUDA (Linux GPUs):
+
+```bash
+uv run autoctx train --scenario support_triage --data training/billing.jsonl --time-budget 300
+```
+
+<!-- autocontext-whats-new:start -->
+
+## What's New in 0.4.7
+
+- **Anthropic SDK instrumentation** in Python and TypeScript: wrap any existing Anthropic client with `instrument_client` / `instrumentClient` to capture streaming and non-streaming production traces.
+- **TypeScript `autoctx solve` CLI** brings one-command scenario generation and execution to full parity with Python.
+- **`autoctx build-dataset` filters** (`--provider`, `--app`, `--env`, `--outcome`) turn captured production traces into scoped training datasets.
+- **CUDA training backend** alongside MLX, so distillation is no longer Apple Silicon only.
+- **Semantic prompt compaction** with tail-preserving reducers for longer sessions.
+- **Hierarchical investigation evidence** with artifact drill-down for richer diagnosis traces.
+<!-- autocontext-whats-new:end -->
+
+## Choose Your Package
+
+| If you want to...                                               | Start here                                                                     |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Run the full multi-generation control plane (Python)            | [autocontext/README.md](autocontext/README.md)                                 |
+| Run from Node, or operate missions, simulations, investigations | [ts/README.md](ts/README.md)                                                   |
+| Wire an external coding agent into autocontext over MCP         | [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md) |
+| Grab copy-paste integration snippets                            | [examples/README.md](examples/README.md)                                       |
+
+```bash
+# Python: library or CLI tool
+uv pip install autocontext==0.4.7
+uv tool install autocontext==0.4.7
+
+# TypeScript
+bun add -g autoctx@0.4.7
+```
+
+> The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm package is `autoctx` (note: an unrelated package on npm uses the name `autocontext`; that is not this project).
+
+## Surfaces
+
+| Surface       | Command                                            | When to use it                                                                         |
+| ------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `solve`       | `autoctx solve --description "..." --gens 3`       | Hand the harness a goal in plain language; it generates the scenario and runs the loop |
+| `run`         | `autoctx run --scenario <name> --gens 3`           | Improve behavior inside a saved scenario across generations                            |
+| `simulate`    | `autoctx simulate -d "..."`                        | Model a system, sweep parameters, replay, compare                                      |
+| `investigate` | `autoctx investigate -d "..."`                     | Evidence-driven diagnosis with hypotheses and confidence scoring                       |
+| `analyze`     | `autoctx analyze --id <id> --type <kind>`          | Inspect or compare runs, simulations, investigations, or missions after the fact       |
+| `mission`     | `autoctx mission create --name "..." --goal "..."` | Verifier-driven goal advanced step by step until done                                  |
+| `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
+| `train`       | `autoctx train --scenario <name> --data <jsonl>`   | Distill stable exported data into a cheaper local runtime                              |
+| `replay`      | `autoctx replay <run_id> --generation N`           | Inspect what happened before deciding what knowledge should persist                    |
 
 ## Scenario Families
 
-All 11 families are executable in both Python and TypeScript. TypeScript uses V8 isolate codegen for secure execution; Python uses subprocess-based executors.
+All 11 families execute in both Python and TypeScript. TypeScript uses V8 isolate codegen; Python uses subprocess executors.
 
 | Family             | Evaluation              | What it tests                                                           |
 | ------------------ | ----------------------- | ----------------------------------------------------------------------- |
@@ -132,184 +254,45 @@ All 11 families are executable in both Python and TypeScript. TypeScript uses V8
 | `operator_loop`    | Judgment evaluation     | Escalation and clarification judgment in operator-in-the-loop workflows |
 | `coordination`     | Coordination evaluation | Multi-agent partial context, handoff, merge, and duplication detection  |
 
-## Core Capabilities
+## Providers, Runtimes, Executors
 
-- Persistent playbooks, hints, tools, reports, and progress snapshots across runs
-- Staged validation, harness synthesis, and harness-aware execution
-- Replays, checkpoints, reports, and exported artifacts for inspection and reuse
-- Frontier-to-local distillation with MLX on Apple Silicon
-- Notification hooks via Slack, HTTP webhooks, stdout, and composite routing (`AUTOCONTEXT_NOTIFY_*`)
-- OpenClaw-facing APIs and agent integration surfaces
-- CLI, API server, MCP, and TypeScript/TUI surfaces for operators and external agents
+**LLM providers**: Anthropic (with `instrument_client` capture), OpenAI-compatible (vLLM, Ollama, Hermes), Gemini, Mistral, Groq, OpenRouter, Azure OpenAI, MLX (Apple Silicon), CUDA (Linux GPUs), Pi (CLI and RPC).
 
-### Providers
+**Agent runtimes**: Claude CLI, Codex CLI, Hermes CLI, Direct API, Pi variants.
 
-Runtime routing across multiple LLM backends:
+**Executors**: Local subprocess, SSH remote, Monty (`pydantic-monty` sandbox), PrimeIntellect remote sandbox.
 
-- **Anthropic** — native Anthropic API and Agent SDK
-- **OpenAI-compatible** — any OpenAI-compatible endpoint (vLLM, Ollama, Hermes)
-- **Gemini, Mistral, Groq, OpenRouter, Azure OpenAI** — env-driven config in TypeScript
-- **MLX** — Apple Silicon local inference
-- **Pi** — CLI and RPC-based Pi agent runtimes
-- **Deterministic** — reproducible testing without API keys
+A deterministic offline provider exists for the test suite. Configuration matrix: [`.env.example`](.env.example) and [docs/concept-model.md](docs/concept-model.md).
 
-### Runtimes
+## FAQ
 
-Agent runtimes control how agents execute during runs:
+**Is autocontext a benchmark?**
+No. It's a harness for improving real agent behavior on real work. Benchmarks (the 11 scenario families) are one of many surfaces; you can also point it at production tasks, missions, or simulations.
 
-- **Claude CLI** and **Codex CLI** — subprocess-based agent execution
-- **Hermes CLI** — Hermes gateway runtime
-- **Direct API** — in-process API calls
-- **Pi CLI, Pi RPC, Pi Artifacts** — Pi agent runtime variants
+**How is this different from DSPy, Inspect, TextGrad, or a prompt optimizer?**
+Those tools optimize prompts. Autocontext takes a goal in plain language, generates the scenario, runs a multi-role loop with verifier-driven gating, and produces transferable artifacts (playbooks, datasets, distilled models) that the next run inherits. Prompt optimization is a special case.
 
-### Executors
+**Do I need API keys?**
+No. The Pi runtime runs locally and handles its own auth. Anthropic, OpenAI, Gemini, Mistral, Groq, OpenRouter, Azure, MLX, and Claude/Codex CLI are all opt-in via env vars.
 
-Strategy and code execution backends:
+**Where does the knowledge live?**
+On your filesystem. Runs go to `runs/`, accumulated knowledge to `knowledge/`. Indexed metadata is in SQLite. Everything is inspectable, diffable, and portable.
 
-- **Local** — subprocess execution with timeout and memory limits
-- **SSH** — remote execution over SSH
-- **Monty** — sandboxed execution via pydantic-monty (`AUTOCONTEXT_EXECUTOR_MODE=monty`)
-- **PrimeIntellect** — remote sandbox via PrimeIntellect SDK
-
-## Quick Start From Source
-
-The Python application lives in `autocontext/`, and most `uv`, `pytest`, `ruff`, and `mypy` commands should be run from there.
-
-```bash
-cd autocontext
-uv venv
-source .venv/bin/activate
-uv sync --group dev
-
-AUTOCONTEXT_AGENT_PROVIDER=deterministic uv run autoctx solve \
-  --description "improve customer-support replies for billing disputes" \
-  --gens 3
-```
-
-That hands the harness a real task, materializes the working scenario, runs the loop, and writes traces and artifacts under `runs/` and `knowledge/`. It also works without external API keys.
-
-Run with Anthropic:
-
-```bash
-cd autocontext
-AUTOCONTEXT_AGENT_PROVIDER=anthropic \
-ANTHROPIC_API_KEY=your-key \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
-```
-
-`ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
-
-Run with Claude CLI:
-
-```bash
-cd autocontext
-AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
-AUTOCONTEXT_CLAUDE_MODEL=sonnet \
-AUTOCONTEXT_CLAUDE_TIMEOUT=300 \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
-```
-
-For longer live prompts, `autoctx solve`, `autoctx judge`, and `autoctx improve` all accept `--timeout <seconds>`. `autoctx solve` also accepts `--generation-time-budget <seconds>` to cap per-generation solve runtime. You can still use provider env vars such as `AUTOCONTEXT_CLAUDE_TIMEOUT` or `AUTOCONTEXT_PI_TIMEOUT`.
-
-Run with Codex CLI:
-
-```bash
-cd autocontext
-AUTOCONTEXT_AGENT_PROVIDER=codex \
-AUTOCONTEXT_CODEX_MODEL=o4-mini \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
-```
-
-Start the API server:
-
-```bash
-cd autocontext
-uv run autoctx serve --host 127.0.0.1 --port 8000
-```
-
-Then inspect `http://127.0.0.1:8000/` for the API index, or use `npx autoctx tui` for the interactive terminal UI.
-
-Use the repo-level `.env.example` as the reference for available `AUTOCONTEXT_*` settings and supported provider-native credential aliases such as `ANTHROPIC_API_KEY`.
-
-## Installable Packages
-
-The repo publishes two installable packages with different scopes:
-
-- Python package: `pip install autocontext`
-- TypeScript package: `npm install autoctx`
-- Current release line: `autocontext==0.4.6` and `autoctx@0.4.6`
-
-Important:
-
-- The Python package on PyPI is now `autocontext`.
-- The CLI entrypoint remains `autoctx`.
-- The npm package for this project is still `autoctx`.
-- `autocontext` on npm is a different package.
-
-The Python package exposes the full `autoctx` control-plane CLI for scenario execution, API serving, exports, training, and operator workflows. The TypeScript package exposes the `autoctx` CLI and library surface for simulations, investigations, analysis, mission control, MCP serving, and Node integrations.
-
-Both packages share an optional, disabled-by-default browser exploration contract for thin browser control without bundling a heavyweight browser framework. The TypeScript CLI can attach a policy-gated browser snapshot to investigations and queued tasks with `--browser-url`. See [docs/browser-exploration-contract.md](docs/browser-exploration-contract.md).
-
-## Which Package Should You Use?
-
-| If you want to...                                                | Start here                                                                     | Why                                                                                                             |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| Run the full multi-generation control plane                      | [autocontext/README.md](autocontext/README.md)                                 | Python has the API server, training loop, scenario scaffolding, export/import, and full CLI surface.            |
-| Run simulations, investigations, analysis, or missions from Node | [ts/README.md](ts/README.md)                                                   | The TypeScript package is focused on operator-facing workflows, integrations, mission control, and MCP serving. |
-| Embed autocontext in a Node app or operator workflow             | [ts/README.md](ts/README.md)                                                   | The TypeScript package also exposes library surfaces for evaluation, artifacts, publishing, and integrations.   |
-| Point an external agent at autocontext                           | [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md) | It documents the CLI-first contract, JSON output, MCP usage, and SDK options.                                   |
-| Grab copy-paste integration snippets                             | [examples/README.md](examples/README.md)                                       | The examples cover Python CLI, Claude Code MCP, Python SDK, and TypeScript library usage.                       |
-| Catch up on recent repo evolution                                | [CHANGELOG.md](CHANGELOG.md)                                                   | It summarizes recent public releases and notable changes.                                                       |
-
-## Common Workflows
-
-- Hand the harness a task in plain language: `uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3`
-- Run and improve a saved scenario: `uv run autoctx run --scenario support_triage --gens 3`
-- Inspect or replay outputs: `uv run autoctx list`, `uv run autoctx status <run_id>`
-- Run an investigation from Python: `uv run autoctx investigate -d "why did conversion drop after Tuesday's release"`
-- Add a policy-checked browser snapshot to an investigation: `uv run autoctx investigate -d "checkout is failing in prod" --browser-url https://status.example.com`
-- Enqueue an ad hoc queued task from Python: `uv run autoctx queue add --task-prompt "Write a 1-line fact about primes" --rubric "correct" --threshold 0.8 --rounds 2`
-- Enqueue a browser-enriched queued task when browser exploration is configured: `uv run autoctx queue --spec support_triage --browser-url https://status.example.com`
-- Override the simulation provider per call: `uv run autoctx simulate -d "simulate deploying a web service with rollback" --provider claude-cli`
-- Scaffold a custom scenario: `uv run autoctx new-scenario --template prompt-optimization --name my-task`
-- Export training data: `uv run autoctx export-training-data --scenario support_triage --all-runs --output training/support_triage.jsonl`
-- Train a local model: `uv run autoctx train --scenario support_triage --data training/support_triage.jsonl --time-budget 300`
-- Start operator surfaces: `uv run autoctx serve --host 127.0.0.1 --port 8000`, `uv run autoctx mcp-serve`
-- Wait on a monitor condition: `uv run autoctx wait <condition_id> --json`
-
-Representative TypeScript operator workflows:
-
-- Run a simulation: `npx autoctx simulate -d "simulate deploying a web service with rollback"`
-- Analyze an artifact: `npx autoctx analyze --id deploy_sim --type simulation`
-- Operate a mission: `npx autoctx mission create --name "Ship login" --goal "Implement OAuth"`
-
-`operator-in-the-loop` is a fully runnable scenario family in both Python and TypeScript. It tests escalation and clarification judgment with real escalation/clarification hooks and behavioral-contract signals across multi-run, sweep, and replay flows.
-
-MLX training is host-only on Apple Silicon macOS. If you want a sandboxed OpenClaw agent to trigger training, use the file-based host watcher flow documented in [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md).
-
-## Repository Layout
-
-- `autocontext/`: Python package, CLI, API server, and training loop
-- `ts/`: published TypeScript package, CLI, and MCP-compatible tooling
-- `docs/`: docs landing page and maintainer checklists
-- `examples/`: copy-paste integration snippets for package users and external agents
-- `infra/`: Docker, Fly.io, and bootstrap scripts
-- `protocol/`: shared protocol artifacts
-- `scripts/`: repo maintenance and generation scripts
+**Can my coding agent drive autocontext directly?**
+Yes. Wire `autoctx mcp-serve` (or `bunx autoctx mcp-serve`) into Claude Code, Cursor, or Pi as an MCP server, and the agent gets natural-language access to `solve`, `judge`, `improve`, `status`, `export_skill`, and the rest. See [Or Just Talk To Your Agent](#or-just-talk-to-your-agent).
 
 ## Where To Look Next
 
 - Canonical vocabulary and object model: [docs/concept-model.md](docs/concept-model.md)
 - Docs overview: [docs/README.md](docs/README.md)
-- Analytics and adoption: [docs/analytics.md](docs/analytics.md)
 - Python package guide: [autocontext/README.md](autocontext/README.md)
 - TypeScript package guide: [ts/README.md](ts/README.md)
 - Copy-paste examples: [examples/README.md](examples/README.md)
 - External agent integration: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md)
 - Recent changes: [CHANGELOG.md](CHANGELOG.md)
 - Contributor setup: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Repo agent guide: [AGENTS.md](AGENTS.md)
-- MLX host training and OpenClaw bridge: [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md)
+- Repo layout for coding agents: [AGENTS.md](AGENTS.md)
+- Sandboxed agents that need to trigger MLX training on the host: [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md)
 - Sandbox and executor notes: [autocontext/docs/sandbox.md](autocontext/docs/sandbox.md)
 - License: [LICENSE](LICENSE)
 
