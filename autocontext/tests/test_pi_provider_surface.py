@@ -145,6 +145,20 @@ class TestPiRPCProvider:
         assert config.no_context_files is True
         assert config.pi_command == "pi"
 
+    def test_pi_rpc_persistent_setting_uses_persistent_runtime(self) -> None:
+        settings = _settings(agent_provider="pi-rpc", pi_rpc_persistent=True)
+        with (
+            patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as MockRuntime,
+            patch("autocontext.runtimes.pi_rpc.PiPersistentRPCRuntime") as MockPersistentRuntime,
+        ):
+            MockRuntime.return_value = MagicMock()
+            MockPersistentRuntime.return_value = MagicMock()
+            client = build_client_from_settings(settings)
+
+        assert client is not None
+        MockPersistentRuntime.assert_called_once()
+        MockRuntime.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Judge/provider registry parity
@@ -174,6 +188,14 @@ class TestPiRegistryProvider:
         config = provider._runtime._config  # type: ignore[attr-defined]
         assert config.model == "local-rpc-model"
         assert config.no_context_files is True
+
+    def test_registry_pi_rpc_uses_persistent_runtime_when_enabled(self) -> None:
+        from autocontext.runtimes.pi_rpc import PiPersistentRPCRuntime
+
+        settings = _settings(judge_provider="pi-rpc", pi_rpc_persistent=True)
+        provider = get_provider(settings)
+
+        assert isinstance(provider._runtime, PiPersistentRPCRuntime)  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------

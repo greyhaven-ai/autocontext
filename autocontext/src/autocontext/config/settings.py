@@ -648,6 +648,10 @@ class AppSettings(BaseModel):
         default=True,
         description="Persist Pi sessions across turns when launching pi --mode rpc",
     )
+    pi_rpc_persistent: bool = Field(
+        default=False,
+        description="Keep one Pi RPC subprocess alive across provider calls; opt-in for Pi-shaped workflows",
+    )
     # Browser exploration (AC-598)
     browser_enabled: bool = Field(default=False, description="Enable optional browser exploration surfaces")
     browser_backend: str = Field(default="chrome-cdp", description="Browser backend name")

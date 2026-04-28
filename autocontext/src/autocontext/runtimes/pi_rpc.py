@@ -513,3 +513,10 @@ class PiPersistentRPCRuntime(PiRPCRuntime):
         response = self._collect_response({"type": "get_messages"})
         messages = response.get("messages", [])
         return messages if isinstance(messages, list) else []
+
+
+def build_pi_rpc_runtime(config: PiRPCConfig, *, persistent: bool = False) -> AgentRuntime:
+    """Build the Pi RPC runtime selected by config and operator settings."""
+    if persistent:
+        return PiPersistentRPCRuntime(config)
+    return PiRPCRuntime(config)

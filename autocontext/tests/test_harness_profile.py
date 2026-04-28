@@ -58,6 +58,31 @@ def test_lean_harness_profile_parses_custom_tool_allowlist() -> None:
     assert profile.tool_allowlist == ("read", "grep", "find")
 
 
+def test_standard_harness_profile_keeps_generated_tool_context() -> None:
+    from autocontext.config.harness_profile import render_harness_tool_context, resolve_harness_runtime_profile
+    from autocontext.config.settings import AppSettings
+
+    profile = resolve_harness_runtime_profile(AppSettings())
+
+    assert render_harness_tool_context(profile, "Generated tool source") == "Generated tool source"
+
+
+def test_lean_harness_profile_replaces_generated_tool_context_with_allowlist() -> None:
+    from autocontext.config.harness_profile import render_harness_tool_context, resolve_harness_runtime_profile
+    from autocontext.config.settings import AppSettings, HarnessProfile
+
+    profile = resolve_harness_runtime_profile(
+        AppSettings(harness_profile=HarnessProfile.LEAN, lean_tool_allowlist="read,bash"),
+    )
+
+    rendered = render_harness_tool_context(profile, "Generated tool source")
+
+    assert "Generated tool source" not in rendered
+    assert "Lean harness tool allowlist" in rendered
+    assert "- read" in rendered
+    assert "- bash" in rendered
+
+
 def test_load_settings_reads_harness_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
     from autocontext.config.settings import HarnessProfile, load_settings
 

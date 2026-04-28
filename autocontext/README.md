@@ -127,6 +127,7 @@ For Pi-shaped harness runs with a tighter prompt budget and minimal tool surface
 AUTOCONTEXT_HARNESS_PROFILE=lean
 AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS=32000
 AUTOCONTEXT_LEAN_TOOL_ALLOWLIST=read,bash,edit,write
+AUTOCONTEXT_PI_RPC_PERSISTENT=true
 ```
 
 Run with Hermes (via OpenAI-compatible gateway):
@@ -256,6 +257,7 @@ Common settings:
 - `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`
 - `AUTOCONTEXT_LEAN_HIDDEN_CONTEXT_BUDGET_TOKENS`
 - `AUTOCONTEXT_LEAN_TOOL_ALLOWLIST`
+- `AUTOCONTEXT_PI_RPC_PERSISTENT`
 - `AUTOCONTEXT_RLM_ENABLED`
 - `AUTOCONTEXT_HARNESS_PREFLIGHT_ENABLED`
 - `AUTOCONTEXT_STAGED_VALIDATION_ENABLED`
@@ -268,7 +270,7 @@ Common settings:
 Browser exploration defaults to a secure disabled posture and uses the shared contract described in [../docs/browser-exploration-contract.md](../docs/browser-exploration-contract.md).
 The Python package includes a thin Chrome CDP backend that attaches to an existing debugger endpoint, enforces the browser allowlist, and stores browser evidence under run-local roots.
 
-`AUTOCONTEXT_HARNESS_PROFILE=lean` resolves a Pi-shaped runtime profile: prompt context is capped by `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`, hidden/implicit context defaults to zero, and the lean tool allowlist is available for agent surfaces that need Pi-like minimal affordances.
+`AUTOCONTEXT_HARNESS_PROFILE=lean` resolves a Pi-shaped runtime profile: prompt context is capped by `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`, hidden/implicit context defaults to zero, and generated tool context is replaced by the lean allowlist before agent execution. `AUTOCONTEXT_PI_RPC_PERSISTENT=true` opts Pi RPC into a long-lived subprocess; one-shot Pi RPC remains the default.
 
 See the repo-level [.env.example](../.env.example) for a working starting point.
 
