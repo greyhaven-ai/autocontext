@@ -63,3 +63,16 @@ def resolve_harness_runtime_profile(settings: AppSettings) -> HarnessRuntimeProf
         tool_allowlist=(),
         context_files_enabled=True,
     )
+
+
+def render_harness_tool_context(profile: HarnessRuntimeProfile, generated_tool_context: str) -> str:
+    """Render the tool context allowed by a runtime harness profile."""
+    if profile.name != _LEAN_PROFILE:
+        return generated_tool_context
+
+    lines = ["Lean harness tool allowlist:"]
+    if profile.tool_allowlist:
+        lines.extend(f"- {tool}" for tool in profile.tool_allowlist)
+    else:
+        lines.append("- none")
+    return "\n".join(lines)

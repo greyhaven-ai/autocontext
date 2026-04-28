@@ -83,6 +83,7 @@ def test_settings_pi_rpc_fields() -> None:
     assert s.pi_rpc_endpoint == ""
     assert s.pi_rpc_api_key == ""
     assert s.pi_rpc_session_persistence is True
+    assert s.pi_rpc_persistent is False
 
 
 # ---------------------------------------------------------------------------
@@ -309,3 +310,19 @@ def test_create_role_client_pi_rpc() -> None:
     assert isinstance(client, RuntimeBridgeClient)
     config = MockRuntime.call_args.args[0]
     assert config.timeout == 240.0
+
+
+def test_create_role_client_pi_rpc_uses_persistent_runtime_when_enabled() -> None:
+    """Persistent Pi RPC is opt-in and should not change default pi-rpc behavior."""
+    settings = AppSettings(pi_rpc_persistent=True)
+    with (
+        patch("autocontext.runtimes.pi_rpc.PiRPCRuntime") as MockRuntime,
+        patch("autocontext.runtimes.pi_rpc.PiPersistentRPCRuntime") as MockPersistentRuntime,
+    ):
+        MockRuntime.return_value = MagicMock()
+        MockPersistentRuntime.return_value = MagicMock()
+        client = create_role_client("pi-rpc", settings)
+
+    assert isinstance(client, RuntimeBridgeClient)
+    MockPersistentRuntime.assert_called_once()
+    MockRuntime.assert_not_called()

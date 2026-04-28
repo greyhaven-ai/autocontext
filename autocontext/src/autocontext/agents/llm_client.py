@@ -631,7 +631,7 @@ def build_client_from_settings(
         return RuntimeBridgeClient(PiCLIRuntime(pi_config))
     if settings.agent_provider == "pi-rpc":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
-        from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
+        from autocontext.runtimes.pi_rpc import PiRPCConfig, build_pi_rpc_runtime
 
         rpc_config = PiRPCConfig(
             pi_command=settings.pi_command,
@@ -641,7 +641,7 @@ def build_client_from_settings(
             session_persistence=settings.pi_rpc_session_persistence,
             no_context_files=settings.pi_no_context_files,
         )
-        return RuntimeBridgeClient(PiRPCRuntime(rpc_config))
+        return RuntimeBridgeClient(build_pi_rpc_runtime(rpc_config, persistent=settings.pi_rpc_persistent))
     if settings.agent_provider == "hermes":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime

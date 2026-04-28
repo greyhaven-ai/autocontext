@@ -261,6 +261,38 @@ class TestStageKnowledgeSetup:
         assert result.prompts is not None
         assert captured["context_budget_tokens"] == 16_000
 
+    def test_lean_harness_profile_enforces_tool_allowlist(self) -> None:
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = "Generated helper source"
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        settings = AppSettings(
+            agent_provider="deterministic",
+            harness_profile=HarnessProfile.LEAN,
+            lean_tool_allowlist="read,bash",
+            evidence_freshness_enabled=False,
+            evidence_workspace_enabled=False,
+            progress_json_enabled=False,
+            session_reports_enabled=False,
+        )
+        ctx = _make_ctx(settings=settings)
+
+        result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert "Generated helper source" not in result.tool_context
+        assert "Lean harness tool allowlist" in result.tool_context
+        assert "- read" in result.tool_context
+        assert "- bash" in result.tool_context
+
     def test_ablation_skips_knowledge(self) -> None:
         settings = AppSettings(agent_provider="deterministic", ablation_no_feedback=True)
         artifacts = MagicMock()
