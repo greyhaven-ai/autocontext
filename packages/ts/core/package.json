@@ -10,6 +10,10 @@
     ".": {
       "import": "./dist/packages/ts/core/src/index.js",
       "types": "./dist/packages/ts/core/src/index.d.ts"
+    },
+    "./production-traces/validate": {
+      "import": "./dist/ts/src/production-traces/sdk/validate.js",
+      "types": "./dist/ts/src/production-traces/sdk/validate.d.ts"
     }
   },
   "files": [

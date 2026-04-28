@@ -116,6 +116,7 @@
 				"../../../ts/src/production-traces/contract/factories.ts",
 				"../../../ts/src/production-traces/contract/invariants.ts",
 				"../../../ts/src/production-traces/contract/validators.ts",
+				"../../../ts/src/production-traces/sdk/validate.ts",
 				"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/index.ts"
@@ -236,6 +237,24 @@
 					"ajv",
 					"ajv-formats"
 				]
+			},
+			"typescriptOpenSdk": {
+				"coreOwnedSourceIncludes": [
+					"../../../ts/src/production-traces/sdk/validate.ts"
+				],
+				"coreOwnedSchemaAssetIncludes": [],
+				"coreOwnedProgramPathSubstrings": [
+					"/ts/src/production-traces/sdk/validate.ts"
+				],
+				"forbiddenImportPathSubstrings": [
+					"control-plane/",
+					"../cli/",
+					"../ingest/",
+					"../dataset/",
+					"../retention/",
+					"../../traces/"
+				],
+				"requiredPackageDependencies": []
 			},
 			"typescriptOpenTaxonomy": {
 				"coreOwnedSourceIncludes": [
