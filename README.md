@@ -137,6 +137,7 @@ All 11 families are executable in both Python and TypeScript. TypeScript uses V8
 - Persistent playbooks, hints, tools, reports, and progress snapshots across runs
 - Staged validation, harness synthesis, and harness-aware execution
 - Replays, checkpoints, reports, and exported artifacts for inspection and reuse
+- Pi-shaped lean harness profiles, branch-aware sessions, and persistent Pi RPC scaffolding for local agent loops
 - Frontier-to-local distillation with MLX on Apple Silicon
 - Notification hooks via Slack, HTTP webhooks, stdout, and composite routing (`AUTOCONTEXT_NOTIFY_*`)
 - OpenClaw-facing APIs and agent integration surfaces

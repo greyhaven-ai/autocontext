@@ -17,6 +17,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -36,6 +37,7 @@ class PiRPCConfig:
     pi_command: str = "pi"
     model: str = ""
     timeout: float = 120.0
+    workspace: str = ""
     session_persistence: bool = True
     no_context_files: bool = False
     branch_on_retry: bool = True
@@ -164,6 +166,7 @@ class PiRPCRuntime(AgentRuntime):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                cwd=self._config.workspace or None,
             )
             if process.stdin is None or process.stdout is None or process.stderr is None:
                 return AgentOutput(text="", metadata={"error": "pi_rpc_pipe_unavailable"})
@@ -326,3 +329,187 @@ class PiRPCRuntime(AgentRuntime):
                 },
             )
         return AgentOutput(text=raw.strip(), metadata={"exit_code": exit_code})
+
+
+class PiPersistentRPCRuntime(PiRPCRuntime):
+    """Long-lived Pi RPC runtime for Pi-shaped harness workflows.
+
+    The regular :class:`PiRPCRuntime` is deliberately one-shot for existing
+    provider calls. This variant keeps ``pi --mode rpc`` alive so callers can
+    use Pi's queue/state commands across a single session.
+    """
+
+    def __init__(self, config: PiRPCConfig | None = None) -> None:
+        super().__init__(config)
+        self._process: subprocess.Popen[str] | None = None
+        self._stdout_queue: queue.Queue[str | None] = queue.Queue()
+        self._stderr_queue: queue.Queue[str | None] = queue.Queue()
+        self._stderr_lines: list[str] = []
+
+    def close(self) -> None:
+        """Close the underlying Pi RPC process if it is running."""
+        if self._process is None:
+            return
+        self._shutdown_process(self._process)
+        self._process = None
+
+    def __enter__(self) -> PiPersistentRPCRuntime:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+    def _ensure_process(self) -> subprocess.Popen[str]:
+        if self._process is not None and self._process.poll() is None:
+            return self._process
+
+        self._stdout_queue = queue.Queue()
+        self._stderr_queue = queue.Queue()
+        self._stderr_lines = []
+        process = subprocess.Popen(
+            self._build_args(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=self._config.workspace or None,
+        )
+        if process.stdin is None or process.stdout is None or process.stderr is None:
+            raise RuntimeError("pi RPC pipe unavailable")
+        threading.Thread(target=self._read_stream, args=(process.stdout, self._stdout_queue), daemon=True).start()
+        threading.Thread(target=self._read_stream, args=(process.stderr, self._stderr_queue), daemon=True).start()
+        self._process = process
+        return process
+
+    @staticmethod
+    def _with_id(command: dict[str, Any]) -> dict[str, Any]:
+        if "id" in command:
+            return command
+        return {**command, "id": uuid.uuid4().hex[:8]}
+
+    @staticmethod
+    def _loads_event(line: str) -> dict[str, Any] | None:
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return event if isinstance(event, dict) else None
+
+    @staticmethod
+    def _is_response_for(event: dict[str, Any], command: dict[str, Any]) -> bool:
+        if event.get("type") != "response":
+            return False
+        event_id = event.get("id")
+        command_id = command.get("id")
+        if event_id is not None and command_id is not None:
+            return bool(event_id == command_id)
+        return bool(event.get("command") == command.get("type"))
+
+    def _write_command(self, process: subprocess.Popen[str], command: dict[str, Any]) -> None:
+        if process.stdin is None or process.stdin.closed:
+            raise RuntimeError("pi RPC stdin unavailable")
+        process.stdin.write(json.dumps(command) + "\n")
+        process.stdin.flush()
+
+    def _collect_until(
+        self,
+        command: dict[str, Any],
+        terminal: Callable[[str], bool],
+    ) -> list[str]:
+        process = self._ensure_process()
+        self._write_command(process, command)
+
+        deadline = time.monotonic() + self._config.timeout
+        lines: list[str] = []
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(self._build_args(), self._config.timeout)
+
+            try:
+                line = self._stdout_queue.get(timeout=min(0.1, remaining))
+            except queue.Empty:
+                self._drain_queue(self._stderr_queue, self._stderr_lines)
+                if process.poll() is not None:
+                    break
+                continue
+
+            if line is None:
+                if process.poll() is not None:
+                    break
+                continue
+
+            lines.append(line)
+            if terminal(line):
+                break
+
+        self._drain_queue(self._stderr_queue, self._stderr_lines)
+        return lines
+
+    def _collect_response(self, command: dict[str, Any]) -> dict[str, Any]:
+        resolved_command = self._with_id(command)
+
+        def _terminal(line: str) -> bool:
+            event = self._loads_event(line)
+            return bool(event and self._is_response_for(event, resolved_command))
+
+        lines = self._collect_until(resolved_command, _terminal)
+        for line in reversed(lines):
+            event = self._loads_event(line)
+            if event and self._is_response_for(event, resolved_command):
+                if event.get("success") is False:
+                    return {
+                        "success": False,
+                        "error": event.get("error", ""),
+                        "command": event.get("command", command.get("type", "")),
+                    }
+                data = event.get("data", {})
+                if isinstance(data, dict):
+                    return {"success": True, **data}
+                return {"success": True, "data": data}
+        return {"success": False, "error": "missing_rpc_response"}
+
+    def generate(
+        self,
+        prompt: str,
+        system: str | None = None,
+        schema: dict | None = None,
+    ) -> AgentOutput:
+        del schema
+        full_prompt = f"{system}\n\n{prompt}" if system else prompt
+        command = self._with_id(self._build_prompt_command(full_prompt))
+        try:
+            lines = self._collect_until(command, self._is_terminal_rpc_event)
+        except subprocess.TimeoutExpired:
+            logger.error("persistent pi RPC timed out after %.0fs", self._config.timeout)
+            self.close()
+            return AgentOutput(text="", metadata={"error": "timeout"})
+        return self._parse_rpc_output(
+            "".join(lines),
+            exit_code=0,
+            stderr="".join(self._stderr_lines),
+        )
+
+    def steer(self, message: str) -> dict[str, Any]:
+        """Queue a steering message while Pi is running."""
+        return self._collect_response({"type": "steer", "message": message})
+
+    def follow_up(self, message: str) -> dict[str, Any]:
+        """Queue a follow-up message for when Pi finishes current work."""
+        return self._collect_response({"type": "follow_up", "message": message})
+
+    def abort(self) -> dict[str, Any]:
+        """Abort the current Pi operation."""
+        return self._collect_response({"type": "abort"})
+
+    def get_state(self) -> dict[str, Any]:
+        """Return Pi's current session state payload."""
+        response = self._collect_response({"type": "get_state"})
+        response.pop("success", None)
+        return response
+
+    def get_messages(self) -> list[dict[str, Any]]:
+        """Return Pi's current message list."""
+        response = self._collect_response({"type": "get_messages"})
+        messages = response.get("messages", [])
+        return messages if isinstance(messages, list) else []

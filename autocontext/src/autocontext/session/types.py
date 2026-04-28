@@ -52,6 +52,9 @@ class SessionEventType(StrEnum):
     TURN_COMPLETED = "turn_completed"
     TURN_INTERRUPTED = "turn_interrupted"
     TURN_FAILED = "turn_failed"
+    BRANCH_CREATED = "branch_created"
+    BRANCH_SWITCHED = "branch_switched"
+    BRANCH_SUMMARIZED = "branch_summarized"
 
 
 class SessionEvent(BaseModel):
@@ -70,6 +73,9 @@ class Turn(BaseModel):
     turn_index: int
     prompt: str
     role: str
+    parent_turn_id: str = ""
+    branch_id: str = "main"
+    label: str = ""
     response: str = ""
     outcome: TurnOutcome = TurnOutcome.PENDING
     error: str = ""
@@ -80,6 +86,20 @@ class Turn(BaseModel):
     @property
     def succeeded(self) -> bool:
         return self.outcome == TurnOutcome.COMPLETED
+
+
+class Branch(BaseModel):
+    """A named session branch with lineage back to a parent turn."""
+
+    branch_id: str
+    parent_turn_id: str = ""
+    label: str = ""
+    summary: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+
+def _default_branches() -> list[Branch]:
+    return [Branch(branch_id="main", label="Main")]
 
 
 class Session(BaseModel):
@@ -93,6 +113,9 @@ class Session(BaseModel):
     status: SessionStatus = SessionStatus.ACTIVE
     summary: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
+    active_branch_id: str = "main"
+    active_turn_id: str = ""
+    branches: list[Branch] = Field(default_factory=_default_branches)
     turns: list[Turn] = Field(default_factory=list)
     events: list[SessionEvent] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -113,11 +136,21 @@ class Session(BaseModel):
             msg = f"Cannot submit turn: session is not active (status={self.status})"
             raise ValueError(msg)
 
-        turn = Turn(turn_index=len(self.turns), prompt=prompt, role=role)
+        turn = Turn(
+            turn_index=len(self.turns),
+            prompt=prompt,
+            role=role,
+            parent_turn_id=self.active_turn_id,
+            branch_id=self.active_branch_id,
+        )
         self.turns.append(turn)
+        self.active_turn_id = turn.turn_id
+        self._touch()
         self._emit(SessionEventType.TURN_SUBMITTED, {
             "turn_id": turn.turn_id,
             "role": role,
+            "branch_id": turn.branch_id,
+            "parent_turn_id": turn.parent_turn_id,
         })
         return turn
 
@@ -191,6 +224,60 @@ class Session(BaseModel):
         self._touch()
         self._emit(SessionEventType.SESSION_CANCELED, {})
 
+    # -- Branch management --
+
+    def fork_from_turn(
+        self,
+        turn_id: str,
+        *,
+        branch_id: str | None = None,
+        label: str = "",
+        summary: str = "",
+    ) -> Branch:
+        """Create a branch from an existing turn and switch to it."""
+        parent = self._get_turn(turn_id)
+        resolved_branch_id = branch_id or uuid.uuid4().hex[:8]
+        if any(branch.branch_id == resolved_branch_id for branch in self.branches):
+            msg = f"Branch {resolved_branch_id} already exists"
+            raise ValueError(msg)
+
+        branch = Branch(
+            branch_id=resolved_branch_id,
+            parent_turn_id=parent.turn_id,
+            label=label,
+            summary=summary,
+        )
+        self.branches.append(branch)
+        self._touch()
+        self._emit(SessionEventType.BRANCH_CREATED, {
+            "branch_id": branch.branch_id,
+            "parent_turn_id": branch.parent_turn_id,
+            "label": label,
+        })
+        self.switch_branch(branch.branch_id)
+        return branch
+
+    def switch_branch(self, branch_id: str) -> None:
+        """Switch the active branch and set the active turn to that branch leaf."""
+        branch = self._get_branch(branch_id)
+        self.active_branch_id = branch.branch_id
+        self.active_turn_id = self._branch_leaf_turn_id(branch.branch_id)
+        self._touch()
+        self._emit(SessionEventType.BRANCH_SWITCHED, {
+            "branch_id": branch.branch_id,
+            "active_turn_id": self.active_turn_id,
+        })
+
+    def summarize_branch(self, branch_id: str, summary: str) -> None:
+        """Attach a summary to a branch without altering its turns."""
+        branch = self._get_branch(branch_id)
+        branch.summary = summary
+        self._touch()
+        self._emit(SessionEventType.BRANCH_SUMMARIZED, {
+            "branch_id": branch_id,
+            "summary": summary,
+        })
+
     # -- Queries --
 
     @property
@@ -201,6 +288,23 @@ class Session(BaseModel):
     def turn_count(self) -> int:
         return len(self.turns)
 
+    def branch_path(self, branch_id: str | None = None) -> list[Turn]:
+        """Return turns on a branch lineage from root to leaf."""
+        resolved_branch_id = branch_id or self.active_branch_id
+        self._get_branch(resolved_branch_id)
+        leaf_id = self._branch_leaf_turn_id(resolved_branch_id)
+        by_id = {turn.turn_id: turn for turn in self.turns}
+        path: list[Turn] = []
+        current_id = leaf_id
+        while current_id:
+            turn = by_id.get(current_id)
+            if turn is None:
+                break
+            path.append(turn)
+            current_id = turn.parent_turn_id
+        path.reverse()
+        return path
+
     # -- Internal --
 
     def _get_turn(self, turn_id: str) -> Turn:
@@ -209,6 +313,20 @@ class Session(BaseModel):
                 return turn
         msg = f"Turn {turn_id} not found in session {self.session_id}"
         raise KeyError(msg)
+
+    def _get_branch(self, branch_id: str) -> Branch:
+        for branch in self.branches:
+            if branch.branch_id == branch_id:
+                return branch
+        msg = f"Branch {branch_id} not found in session {self.session_id}"
+        raise KeyError(msg)
+
+    def _branch_leaf_turn_id(self, branch_id: str) -> str:
+        branch = self._get_branch(branch_id)
+        for turn in reversed(self.turns):
+            if turn.branch_id == branch_id:
+                return turn.turn_id
+        return branch.parent_turn_id
 
     def _require_status(self, expected: SessionStatus, action: str) -> None:
         if self.status != expected:

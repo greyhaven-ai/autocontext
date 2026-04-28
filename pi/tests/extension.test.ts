@@ -197,6 +197,11 @@ describe("Package manifest", () => {
     expect(pkg.peerDependencies["@mariozechner/pi-coding-agent"]).toBe("*");
     expect(pkg.peerDependencies["@mariozechner/pi-ai"]).toBe("*");
   });
+
+  it("depends on the current autoctx toolkit line", () => {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    expect(pkg.dependencies.autoctx).toBe("^0.4.6");
+  });
 });
 
 beforeEach(() => {

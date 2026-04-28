@@ -113,6 +113,72 @@ class TestSessionDomainModel:
         assert session.turn_count == 2
 
 
+class TestSessionBranchLineage:
+    """Branchable session lineage for Pi-shaped harness workflows."""
+
+    def test_session_starts_on_main_branch(self) -> None:
+        from autocontext.session.types import Session
+
+        session = Session.create(goal="explore")
+        turn = session.submit_turn(prompt="p1", role="competitor")
+
+        assert session.active_branch_id == "main"
+        assert turn.branch_id == "main"
+        assert turn.parent_turn_id == ""
+
+    def test_fork_from_turn_creates_branch_with_parent_lineage(self) -> None:
+        from autocontext.session.types import Session, SessionEventType
+
+        session = Session.create(goal="explore")
+        root = session.submit_turn(prompt="root", role="competitor")
+        session.complete_turn(root.turn_id, response="r1")
+
+        branch = session.fork_from_turn(root.turn_id, branch_id="experimental", label="try alternate")
+        next_turn = session.submit_turn(prompt="branch prompt", role="competitor")
+
+        assert branch.branch_id == "experimental"
+        assert branch.parent_turn_id == root.turn_id
+        assert branch.label == "try alternate"
+        assert session.active_branch_id == "experimental"
+        assert next_turn.branch_id == "experimental"
+        assert next_turn.parent_turn_id == root.turn_id
+        assert session.active_turn_id == next_turn.turn_id
+
+        event_types = [event.event_type for event in session.events]
+        assert SessionEventType.BRANCH_CREATED in event_types
+        assert SessionEventType.BRANCH_SWITCHED in event_types
+
+    def test_switch_branch_sets_next_turn_parent_to_branch_leaf(self) -> None:
+        from autocontext.session.types import Session
+
+        session = Session.create(goal="explore")
+        main = session.submit_turn(prompt="main", role="competitor")
+        session.complete_turn(main.turn_id, response="main response")
+        session.fork_from_turn(main.turn_id, branch_id="alt")
+        alt = session.submit_turn(prompt="alt", role="competitor")
+        session.complete_turn(alt.turn_id, response="alt response")
+
+        session.switch_branch("main")
+        followup = session.submit_turn(prompt="main followup", role="analyst")
+
+        assert followup.branch_id == "main"
+        assert followup.parent_turn_id == main.turn_id
+
+    def test_branch_path_returns_only_turns_on_active_lineage(self) -> None:
+        from autocontext.session.types import Session
+
+        session = Session.create(goal="explore")
+        root = session.submit_turn(prompt="root", role="competitor")
+        session.complete_turn(root.turn_id, response="root response")
+        session.fork_from_turn(root.turn_id, branch_id="alt")
+        alt = session.submit_turn(prompt="alt", role="competitor")
+        session.complete_turn(alt.turn_id, response="alt response")
+
+        path = session.branch_path("alt")
+
+        assert [turn.turn_id for turn in path] == [root.turn_id, alt.turn_id]
+
+
 class TestSessionEvents:
     """Session emits structured events for replay and observation."""
 
