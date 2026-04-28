@@ -139,9 +139,11 @@ function defaultSource(): TraceSource {
   };
 }
 
-// Resolved once at module load. The autoctx package version is baked into
-// ``package.json``; in test / dev we fall back to "0.0.0" to match Python's
-// behavior when ``importlib.metadata.version`` fails on an editable install.
+// Resolved once at module load. The emitted helper can live under the umbrella
+// ``autoctx`` package or under the split ``@autocontext/core`` package. In
+// test / dev we fall back to "0.0.0" to match Python's behavior when
+// ``importlib.metadata.version`` fails on an editable install.
+const sdkVersionPackageNames = new Set(["autoctx", "@autocontext/core"]);
 let cachedVersion: string | null = null;
 
 function sdkVersion(): string {
@@ -151,9 +153,9 @@ function sdkVersion(): string {
 }
 
 /**
- * Resolve the running autoctx package version. Walks up from this module
- * looking for the first ``package.json`` whose ``name`` is ``autoctx``.
- * Pure synchronous resolution — no dynamic imports and no network.
+ * Resolve the running package version. Walks up from this module looking for
+ * the nearest ``package.json`` whose ``name`` is one of the emitted SDK package
+ * identities. Pure synchronous resolution — no dynamic imports and no network.
  */
 function resolveVersionFromPackageJson(): string {
   try {
@@ -162,7 +164,11 @@ function resolveVersionFromPackageJson(): string {
       const candidate = join(dir, "package.json");
       if (existsSync(candidate)) {
         const pkg = JSON.parse(readFileSync(candidate, "utf-8")) as { name?: string; version?: string };
-        if (pkg.name === "autoctx" && typeof pkg.version === "string") {
+        if (
+          typeof pkg.name === "string"
+          && sdkVersionPackageNames.has(pkg.name)
+          && typeof pkg.version === "string"
+        ) {
           return pkg.version;
         }
       }
