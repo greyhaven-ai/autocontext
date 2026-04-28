@@ -22,6 +22,8 @@
     "lint": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
     "ulid": "^3.0.2"
   }
 }

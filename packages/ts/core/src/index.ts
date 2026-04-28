@@ -39,6 +39,20 @@ export {
 	validateRedactionPaths,
 	validateTimingSanity,
 } from "../../../../ts/src/production-traces/contract/invariants.js";
+export {
+	validateEnvContext,
+	validateFeedbackRef,
+	validateProductionOutcome,
+	validateProductionTrace,
+	validateRedactionMarker,
+	validateRedactionPolicy,
+	validateRetentionPolicy,
+	validateSession,
+	validateTimingInfo,
+	validateTraceLinks,
+	validateTraceSource,
+	validateUsageInfo,
+} from "../../../../ts/src/production-traces/contract/validators.js";
 export type {
 	DetectedBy,
 	FeedbackKind,

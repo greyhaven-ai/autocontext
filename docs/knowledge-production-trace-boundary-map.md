@@ -141,6 +141,12 @@ package. The next pure-helper slice adds
 `ts/src/production-traces/contract/invariants.ts` because they are public
 production-trace contract helpers with no CLI,
 ingestion, dataset, retention, server, MCP, or control-plane dependencies.
+The validator/schema slice adds
+`ts/src/production-traces/contract/validators.ts` plus the JSON schema assets
+it imports. That claim is limited to schema validation and package artifact
+emission; dataset generation, retention enforcement, ingestion receipts, and
+CLI workflows remain control-plane even when their wire schemas are registered
+by the shared validator module.
 
 The next independent source-ownership slice claims `ts/src/production-traces/taxonomy/**`
 for the TypeScript core package because it is shared provider error/outcome

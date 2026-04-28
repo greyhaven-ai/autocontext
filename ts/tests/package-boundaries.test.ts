@@ -5,6 +5,43 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
 const boundariesPath = join(repoRoot, "packages", "package-boundaries.json");
+const productionTraceOpenContractSourcePaths = [
+	"ts/src/production-traces/contract/generated-types.ts",
+	"ts/src/production-traces/contract/branded-ids.ts",
+	"ts/src/production-traces/contract/types.ts",
+	"ts/src/production-traces/contract/content-address.ts",
+	"ts/src/production-traces/contract/factories.ts",
+	"ts/src/production-traces/contract/invariants.ts",
+	"ts/src/production-traces/contract/validators.ts",
+];
+const productionTraceOpenContractSchemaAssetPaths = [
+	"ts/src/production-traces/contract/json-schemas/shared-defs.schema.json",
+	"ts/src/production-traces/contract/json-schemas/trace-source.schema.json",
+	"ts/src/production-traces/contract/json-schemas/session.schema.json",
+	"ts/src/production-traces/contract/json-schemas/env-context.schema.json",
+	"ts/src/production-traces/contract/json-schemas/timing-info.schema.json",
+	"ts/src/production-traces/contract/json-schemas/usage-info.schema.json",
+	"ts/src/production-traces/contract/json-schemas/production-outcome.schema.json",
+	"ts/src/production-traces/contract/json-schemas/feedback-ref.schema.json",
+	"ts/src/production-traces/contract/json-schemas/trace-links.schema.json",
+	"ts/src/production-traces/contract/json-schemas/redaction-marker.schema.json",
+	"ts/src/production-traces/contract/json-schemas/redaction-policy.schema.json",
+	"ts/src/production-traces/contract/json-schemas/retention-policy.schema.json",
+	"ts/src/production-traces/contract/json-schemas/production-trace.schema.json",
+	"ts/src/production-traces/contract/json-schemas/selection-rule.schema.json",
+	"ts/src/production-traces/contract/json-schemas/cluster-config.schema.json",
+	"ts/src/production-traces/contract/json-schemas/rubric-config.schema.json",
+	"ts/src/production-traces/contract/json-schemas/dataset-row.schema.json",
+	"ts/src/production-traces/contract/json-schemas/dataset-manifest.schema.json",
+];
+const productionTraceOpenContractSourceIncludes =
+	productionTraceOpenContractSourcePaths.map((entry) => `../../../${entry}`);
+const productionTraceOpenContractSchemaAssetIncludes =
+	productionTraceOpenContractSchemaAssetPaths.map((entry) => `../../../${entry}`);
+const productionTraceOpenContractProgramPathSubstrings = [
+	...productionTraceOpenContractSourcePaths,
+	...productionTraceOpenContractSchemaAssetPaths,
+].map((entry) => `/${entry}`);
 
 type TsCoreBoundary = {
 	packagePath: string;
@@ -38,6 +75,7 @@ type ProductionTraceSourceClaim = {
 };
 
 type ProductionTraceOpenContractClaim = ProductionTraceSourceClaim & {
+	coreOwnedSchemaAssetIncludes: string[];
 	forbiddenImportPathSubstrings: string[];
 	requiredPackageDependencies: string[];
 };
@@ -205,24 +243,23 @@ describe("package boundaries", () => {
 		const productionTraces =
 			boundaries.mixedDomains.productionTraces.typescriptOpenContract;
 
-		expect(productionTraces.coreOwnedSourceIncludes).toEqual([
-			"../../../ts/src/production-traces/contract/generated-types.ts",
-			"../../../ts/src/production-traces/contract/branded-ids.ts",
-			"../../../ts/src/production-traces/contract/types.ts",
-			"../../../ts/src/production-traces/contract/content-address.ts",
-			"../../../ts/src/production-traces/contract/factories.ts",
-			"../../../ts/src/production-traces/contract/invariants.ts",
-		]);
-		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual([
-			"/ts/src/production-traces/contract/generated-types.ts",
-			"/ts/src/production-traces/contract/branded-ids.ts",
-			"/ts/src/production-traces/contract/types.ts",
-			"/ts/src/production-traces/contract/content-address.ts",
-			"/ts/src/production-traces/contract/factories.ts",
-			"/ts/src/production-traces/contract/invariants.ts",
-		]);
+		expect(productionTraces.coreOwnedSourceIncludes).toEqual(
+			productionTraceOpenContractSourceIncludes,
+		);
+		expect(productionTraces.coreOwnedSchemaAssetIncludes).toEqual(
+			productionTraceOpenContractSchemaAssetIncludes,
+		);
+		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual(
+			productionTraceOpenContractProgramPathSubstrings,
+		);
 		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
 			expect(core.exactIncludes).toContain(sourceInclude);
+		}
+		for (const schemaAssetInclude of productionTraces.coreOwnedSchemaAssetIncludes) {
+			expect(schemaAssetInclude).not.toContain("*");
+			expect(
+				existsSync(join(repoRoot, "packages", "ts", "core", schemaAssetInclude)),
+			).toBe(true);
 		}
 	});
 
@@ -303,7 +340,11 @@ describe("package boundaries", () => {
 		);
 		const dependencies = packageJson.dependencies ?? {};
 
-		expect(productionTraces.requiredPackageDependencies).toEqual(["ulid"]);
+		expect(productionTraces.requiredPackageDependencies).toEqual([
+			"ulid",
+			"ajv",
+			"ajv-formats",
+		]);
 		for (const dependency of productionTraces.requiredPackageDependencies) {
 			expect(Object.keys(dependencies)).toContain(dependency);
 		}
@@ -401,6 +442,18 @@ describe("package boundaries", () => {
 			expect(existsSync(join(packageDir, packageJson.exports["."].types))).toBe(
 				true,
 			);
+
+			if (packageDir.endsWith(join("packages", "ts", "core"))) {
+				const productionTraces =
+					loadBoundaries().mixedDomains.productionTraces.typescriptOpenContract;
+				for (const schemaAssetInclude of productionTraces.coreOwnedSchemaAssetIncludes) {
+					const emittedPath = schemaAssetInclude.replace(
+						/^\.\.\/\.\.\/\.\.\//,
+						"",
+					);
+					expect(existsSync(join(packageDir, "dist", emittedPath))).toBe(true);
+				}
+			}
 		}
 	});
 });

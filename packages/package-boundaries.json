@@ -114,6 +114,7 @@
 				"../../../ts/src/production-traces/contract/content-address.ts",
 				"../../../ts/src/production-traces/contract/factories.ts",
 				"../../../ts/src/production-traces/contract/invariants.ts",
+				"../../../ts/src/production-traces/contract/validators.ts",
 				"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/index.ts"
@@ -168,7 +169,28 @@
 					"../../../ts/src/production-traces/contract/types.ts",
 					"../../../ts/src/production-traces/contract/content-address.ts",
 					"../../../ts/src/production-traces/contract/factories.ts",
-					"../../../ts/src/production-traces/contract/invariants.ts"
+					"../../../ts/src/production-traces/contract/invariants.ts",
+					"../../../ts/src/production-traces/contract/validators.ts"
+				],
+				"coreOwnedSchemaAssetIncludes": [
+					"../../../ts/src/production-traces/contract/json-schemas/shared-defs.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/trace-source.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/session.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/env-context.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/timing-info.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/usage-info.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/production-outcome.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/feedback-ref.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/trace-links.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/redaction-marker.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/redaction-policy.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/retention-policy.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/production-trace.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/selection-rule.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/cluster-config.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/rubric-config.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/dataset-row.schema.json",
+					"../../../ts/src/production-traces/contract/json-schemas/dataset-manifest.schema.json"
 				],
 				"coreOwnedProgramPathSubstrings": [
 					"/ts/src/production-traces/contract/generated-types.ts",
@@ -176,13 +198,34 @@
 					"/ts/src/production-traces/contract/types.ts",
 					"/ts/src/production-traces/contract/content-address.ts",
 					"/ts/src/production-traces/contract/factories.ts",
-					"/ts/src/production-traces/contract/invariants.ts"
+					"/ts/src/production-traces/contract/invariants.ts",
+					"/ts/src/production-traces/contract/validators.ts",
+					"/ts/src/production-traces/contract/json-schemas/shared-defs.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/trace-source.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/session.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/env-context.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/timing-info.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/usage-info.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/production-outcome.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/feedback-ref.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/trace-links.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/redaction-marker.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/redaction-policy.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/retention-policy.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/production-trace.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/selection-rule.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/cluster-config.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/rubric-config.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/dataset-row.schema.json",
+					"/ts/src/production-traces/contract/json-schemas/dataset-manifest.schema.json"
 				],
 				"forbiddenImportPathSubstrings": [
 					"control-plane/"
 				],
 				"requiredPackageDependencies": [
-					"ulid"
+					"ulid",
+					"ajv",
+					"ajv-formats"
 				]
 			},
 			"typescriptOpenTaxonomy": {

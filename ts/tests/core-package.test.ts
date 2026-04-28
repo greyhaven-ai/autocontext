@@ -60,7 +60,10 @@ import {
   ResultSchema,
   updateElo,
   validateJsonPointer,
+  validateProductionTrace,
+  validateRetentionPolicy,
   validateRedactionPaths,
+  validateTraceSource,
   validateTimingSanity,
 } from "../../packages/ts/core/src/index.ts";
 
@@ -193,6 +196,53 @@ describe("@autocontext/core facade", () => {
     expect(validateJsonPointer(trace, "/messages/0/content").valid).toBe(true);
     expect(validateJsonPointer({ "bad~": true }, "/bad~").valid).toBe(false);
     expect(validateRedactionPaths(trace).valid).toBe(true);
+  });
+
+  it("re-exports production trace schema validators", () => {
+    const trace = createProductionTrace({
+      id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" as ProductionTraceId,
+      source: {
+        emitter: "gateway",
+        sdk: { name: "autoctx", version: "0.1.0" },
+      },
+      provider: { name: "anthropic" },
+      model: "claude-sonnet",
+      env: {
+        environmentTag: "production" as EnvironmentTag,
+        appId: "support-bot" as AppId,
+      },
+      messages: [
+        {
+          role: "user",
+          content: "help me with a refund",
+          timestamp: "2026-04-25T00:00:00Z",
+        },
+      ],
+      timing: {
+        startedAt: "2026-04-25T00:00:00Z",
+        endedAt: "2026-04-25T00:00:01Z",
+        latencyMs: 1000,
+      },
+      usage: {
+        tokensIn: 10,
+        tokensOut: 5,
+      },
+    });
+
+    expect(validateProductionTrace(trace).valid).toBe(true);
+    expect(
+      validateProductionTrace({ ...trace, schemaVersion: "2.0" }).valid,
+    ).toBe(false);
+    expect(validateTraceSource(trace.source).valid).toBe(true);
+    expect(
+      validateRetentionPolicy({
+        schemaVersion: "1.0",
+        retentionDays: 30,
+        preserveAll: false,
+        preserveCategories: [],
+        gcBatchSize: 100,
+      }).valid,
+    ).toBe(true);
   });
 
   it("re-exports Elo primitives from the core-safe execution surface", () => {
