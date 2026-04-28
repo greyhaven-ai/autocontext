@@ -147,6 +147,10 @@ it imports. That claim is limited to schema validation and package artifact
 emission; dataset generation, retention enforcement, ingestion receipts, and
 CLI workflows remain control-plane even when their wire schemas are registered
 by the shared validator module.
+The contract-barrel slice adds `ts/src/production-traces/contract/index.ts` as
+a composition-only public contract entrypoint. The barrel may re-export only the
+already claimed contract files; adding a new re-export requires an explicit
+manifest/test update before core owns that file.
 
 The next independent source-ownership slice claims the current exact taxonomy
 files, `ts/src/production-traces/taxonomy/anthropic-error-reasons.ts`,
@@ -159,7 +163,7 @@ explicit manifest/test update before core owns them.
 
 | Surface                               | Current path                                                                                            | Proposed owner                 | Boundary rule                                                                                          |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Production trace contract             | `ts/src/production-traces/contract/**`                                                                  | Core/open SDK                  | Public wire format, branded IDs, validators, generated types.                                          |
+| Production trace contract             | Manifest-listed contract files: `index.ts`, generated/types/ID/helper/validator files, plus schema assets | Core/open SDK                  | Public wire format, branded IDs, validators, generated types, and the composition-only contract barrel. |
 | Customer emit SDK                     | `ts/src/production-traces/sdk/**`                                                                       | Core/open SDK                  | Preserve `autoctx/production-traces` style surface; keep tree-shakable and management-free.            |
 | Taxonomy                              | `ts/src/production-traces/taxonomy/{anthropic-error-reasons.ts,openai-error-reasons.ts,index.ts}`        | Core/open SDK                  | Exact shared provider error/outcome vocabulary files; future taxonomy additions require manifest tests. |
 | Redaction primitives                  | `ts/src/production-traces/redaction/types.ts`, `policy.ts`, `hash-primitives.ts`, `apply.ts`, `mark.ts` | Open SDK if pure               | Keep pure local privacy helpers open; CLI policy management stays control-plane.                       |

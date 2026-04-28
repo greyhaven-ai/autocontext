@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const repoRoot = join(import.meta.dirname, "..", "..");
 const boundariesPath = join(repoRoot, "packages", "package-boundaries.json");
 const productionTraceOpenContractSourcePaths = [
+	"ts/src/production-traces/contract/index.ts",
 	"ts/src/production-traces/contract/generated-types.ts",
 	"ts/src/production-traces/contract/branded-ids.ts",
 	"ts/src/production-traces/contract/types.ts",
@@ -163,6 +164,13 @@ function importSpecifiers(sourceText: string): string[] {
 	return [...sourceText.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)].map(
 		(match) => match[1],
 	);
+}
+
+function resolveProductionTraceContractSpecifier(specifier: string): string {
+	if (!specifier.startsWith("./") || !specifier.endsWith(".js")) {
+		throw new Error(`Unexpected production-trace contract specifier: ${specifier}`);
+	}
+	return `ts/src/production-traces/contract/${specifier.slice(2, -3)}.ts`;
 }
 
 describe("package boundaries", () => {
@@ -328,6 +336,29 @@ describe("package boundaries", () => {
 					false,
 				);
 			}
+		}
+	});
+
+	it("keeps the production trace contract barrel limited to core-owned contract sources", () => {
+		const contractBarrel = readFileSync(
+			join(repoRoot, "ts", "src", "production-traces", "contract", "index.ts"),
+			"utf-8",
+		);
+		const imports = importSpecifiers(contractBarrel);
+		const importedPaths = [
+			...new Set(imports.map(resolveProductionTraceContractSpecifier)),
+		];
+
+		expect(importedPaths).toEqual([
+			"ts/src/production-traces/contract/branded-ids.ts",
+			"ts/src/production-traces/contract/types.ts",
+			"ts/src/production-traces/contract/validators.ts",
+			"ts/src/production-traces/contract/factories.ts",
+			"ts/src/production-traces/contract/invariants.ts",
+			"ts/src/production-traces/contract/content-address.ts",
+		]);
+		for (const importedPath of importedPaths) {
+			expect(productionTraceOpenContractSourcePaths).toContain(importedPath);
 		}
 	});
 
