@@ -1,5 +1,9 @@
 import type { ProductionTrace, TimingInfo, ValidationResult } from "./types.js";
 
+export type JsonPointerParseResult =
+  | { valid: true; tokens: string[] }
+  | { valid: false; error: string };
+
 /**
  * I3 — Timing sanity: endedAt must be >= startedAt, latencyMs must be >= 0.
  * Timestamps must be parseable as dates.
@@ -44,23 +48,12 @@ export function validateTimingSanity(timing: TimingInfo): ValidationResult {
  *   - paths that traverse into a missing field
  */
 export function validateJsonPointer(obj: unknown, pointer: string): ValidationResult {
-  if (pointer === "") return { valid: true };
-  if (!pointer.startsWith("/")) {
-    return { valid: false, errors: [`json pointer '${pointer}' missing leading '/'`] };
+  const parsed = parseJsonPointerTokens(pointer);
+  if (!parsed.valid) {
+    return { valid: false, errors: [parsed.error] };
   }
-  // Split; first element is always empty (before the leading /) so drop it.
-  const rawTokens = pointer.slice(1).split("/");
-  for (const rawToken of rawTokens) {
-    if (/~(?![01])/.test(rawToken)) {
-      return {
-        valid: false,
-        errors: [
-          `json pointer '${pointer}': token '${rawToken}' contains invalid escape; use '~0' for '~' and '~1' for '/'`,
-        ],
-      };
-    }
-  }
-  const tokens = rawTokens.map(unescapeToken);
+  if (parsed.tokens.length === 0) return { valid: true };
+  const tokens = parsed.tokens;
   let current: unknown = obj;
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
@@ -85,6 +78,24 @@ export function validateJsonPointer(obj: unknown, pointer: string): ValidationRe
     }
   }
   return { valid: true };
+}
+
+export function parseJsonPointerTokens(pointer: string): JsonPointerParseResult {
+  if (pointer === "") return { valid: true, tokens: [] };
+  if (!pointer.startsWith("/")) {
+    return { valid: false, error: `json pointer '${pointer}' missing leading '/'` };
+  }
+  // Split; first element is always empty (before the leading /) so drop it.
+  const rawTokens = pointer.slice(1).split("/");
+  for (const rawToken of rawTokens) {
+    if (/~(?![01])/.test(rawToken)) {
+      return {
+        valid: false,
+        error: `json pointer '${pointer}': token '${rawToken}' contains invalid escape; use '~0' for '~' and '~1' for '/'`,
+      };
+    }
+  }
+  return { valid: true, tokens: rawTokens.map(unescapeToken) };
 }
 
 function unescapeToken(t: string): string {

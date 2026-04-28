@@ -68,6 +68,8 @@ const productionTraceOpenSdkProgramPathSubstrings =
 	productionTraceOpenSdkSourcePaths.map((entry) => `/${entry}`);
 const productionTraceOpenRedactionSourcePaths = [
 	"ts/src/production-traces/redaction/hash-primitives.ts",
+	"ts/src/production-traces/redaction/types.ts",
+	"ts/src/production-traces/redaction/apply.ts",
 ];
 const productionTraceOpenRedactionSourceIncludes =
 	productionTraceOpenRedactionSourcePaths.map((entry) => `../../../${entry}`);
@@ -118,6 +120,10 @@ type ProductionTraceSourceClaim = {
 	coreOwnedProgramPathSubstrings: string[];
 };
 
+type ProductionTraceOpenRedactionClaim = ProductionTraceSourceClaim & {
+	forbiddenImportPathSubstrings: string[];
+};
+
 type ProductionTraceOpenContractClaim = ProductionTraceSourceClaim & {
 	coreOwnedSchemaAssetIncludes: string[];
 	forbiddenImportPathSubstrings: string[];
@@ -127,7 +133,7 @@ type ProductionTraceOpenContractClaim = ProductionTraceSourceClaim & {
 type ProductionTraceBoundary = {
 	typescriptOpenContract: ProductionTraceOpenContractClaim;
 	typescriptOpenSdk: ProductionTraceOpenContractClaim;
-	typescriptOpenRedaction: ProductionTraceSourceClaim;
+	typescriptOpenRedaction: ProductionTraceOpenRedactionClaim;
 	typescriptOpenTaxonomy: ProductionTraceSourceClaim;
 };
 
@@ -382,7 +388,7 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("claims production trace redaction primitives as explicit TypeScript core-owned open privacy helpers", () => {
+	it("claims production trace redaction apply helpers as explicit TypeScript core-owned open privacy helpers", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
 		const productionTraces =
@@ -425,6 +431,10 @@ describe("package boundaries", () => {
 		expect(packageJson.exports["./production-traces/hashing"]).toEqual({
 			import: "./dist/ts/src/production-traces/sdk/hashing-core.js",
 			types: "./dist/ts/src/production-traces/sdk/hashing-core.d.ts",
+		});
+		expect(packageJson.exports["./production-traces/redaction/apply"]).toEqual({
+			import: "./dist/ts/src/production-traces/redaction/apply.js",
+			types: "./dist/ts/src/production-traces/redaction/apply.d.ts",
 		});
 	});
 
@@ -606,6 +616,32 @@ describe("package boundaries", () => {
 	it("keeps production trace SDK helpers independent of control-plane workflows", () => {
 		const productionTraces =
 			loadBoundaries().mixedDomains.productionTraces.typescriptOpenSdk;
+
+		expect(productionTraces.forbiddenImportPathSubstrings).toEqual([
+			"control-plane/",
+			"../cli/",
+			"../ingest/",
+			"../dataset/",
+			"../retention/",
+			"../../traces/",
+		]);
+		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
+			const sourceText = readFileSync(
+				join(repoRoot, "packages", "ts", "core", sourceInclude),
+				"utf-8",
+			);
+			const imports = importSpecifiers(sourceText);
+			for (const forbidden of productionTraces.forbiddenImportPathSubstrings) {
+				expect(imports.some((specifier) => specifier.includes(forbidden))).toBe(
+					false,
+				);
+			}
+		}
+	});
+
+	it("keeps production trace redaction apply helpers independent of control-plane workflows", () => {
+		const productionTraces =
+			loadBoundaries().mixedDomains.productionTraces.typescriptOpenRedaction;
 
 		expect(productionTraces.forbiddenImportPathSubstrings).toEqual([
 			"control-plane/",

@@ -2,12 +2,23 @@ import type {
   ProductionTrace,
   RedactionMarker,
 } from "../contract/types.js";
+import { parseJsonPointerTokens } from "../contract/invariants.js";
 import type {
   CategoryAction,
   CategoryOverride,
   LoadedRedactionPolicy,
 } from "./types.js";
 import { hashValue } from "./hash-primitives.js";
+
+export type {
+  CategoryAction,
+  CategoryOverride,
+  CustomPolicyPattern,
+  ExportPolicy,
+  LoadedRedactionPolicy,
+  RawProviderPayloadBehavior,
+  RedactionMode,
+} from "./types.js";
 
 /**
  * Apply-at-export redaction (spec §7.3, §7.6).
@@ -200,13 +211,8 @@ function dropField(root: unknown, pointer: string): void {
 }
 
 function parsePointer(pointer: string): string[] | null {
-  if (!pointer.startsWith("/")) return null;
-  return pointer.slice(1).split("/").map(unescapeToken);
-}
-
-function unescapeToken(t: string): string {
-  // Per RFC 6901: decode ~1 before ~0.
-  return t.replace(/~1/g, "/").replace(/~0/g, "~");
+  const parsed = parseJsonPointerTokens(pointer);
+  return parsed.valid ? parsed.tokens : null;
 }
 
 function stepInto(value: unknown, token: string): unknown {

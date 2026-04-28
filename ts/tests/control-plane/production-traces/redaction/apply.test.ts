@@ -467,4 +467,35 @@ describe("applyRedactions", () => {
     const out = applyRedactions(trace, policy, SALT);
     expect(out.messages[0].content).toBe("[redacted]");
   });
+
+  test("malformed JSON pointer escapes are ignored before rewriting literal keys", () => {
+    const trace = traceWith({
+      metadata: {
+        "bad~": "secret",
+        "a~2b": "also-secret",
+      },
+      redactions: [
+        {
+          path: "/metadata/bad~",
+          reason: "pii-custom",
+          category: "pii-custom",
+          detectedBy: "client",
+          detectedAt: "2026-04-17T12:00:00.500Z",
+        },
+        {
+          path: "/metadata/a~2b",
+          reason: "pii-custom",
+          category: "pii-custom",
+          detectedBy: "client",
+          detectedAt: "2026-04-17T12:00:00.500Z",
+        },
+      ],
+    });
+
+    const out = applyRedactions(trace, policy, SALT);
+    const meta = out.metadata as Record<string, unknown>;
+
+    expect(meta["bad~"]).toBe("secret");
+    expect(meta["a~2b"]).toBe("also-secret");
+  });
 });
