@@ -15,33 +15,37 @@ can proceed.
 
 - Audit snapshot: `0aa0114e` (`main`, after production-trace SDK build helper)
 - License metadata status: still deferred to AC-645.
-- Non-Apache relicensing status: **not approved yet**.
-- Current blocker: contributor authority must be confirmed for the non-Jay lines
-  listed below, and Jay's own company/IP authority should be recorded in the
-  final sign-off packet.
+- Non-Apache relicensing status: **not finally approved yet**.
+- Grey Haven confirmation received on 2026-04-28: contributions authored under
+  `cirdan-greyhaven` are treated as a Grey Haven-controlled contributor identity
+  for this engineering audit.
+- Current blocker: Grey Haven still needs a final business/legal sign-off that
+  it has authority to license/relicense the affected contributions from all
+  observed Grey Haven-controlled contributor identities.
 - Repository records checked: `CONTRIBUTING.md`, `.github/`, docs, and root
   license files. No CLA, DCO, copyright assignment, or contributor license
   agreement was found in-repo.
-- The currently blocked paths are also encoded in
-  `packages/package-boundaries.json` under `licensing.rightsAudit` so CI can
-  keep AC-645 metadata blocked while authority is unclear.
+- The controlled-identity confirmation, empty current path-specific block list,
+  and required final sign-offs are encoded in `packages/package-boundaries.json` under
+  `licensing.rightsAudit` so CI can keep AC-645 metadata blocked while final
+  authority is pending.
 
 ## Go / No-Go Summary
 
-| Area                             | Current evidence                                                                                                                                                               | Relicensing status                                                                                                                                   |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Jay-only affected paths          | Git history/blame show only Jay Scambler aliases in the current source lines for those path groups.                                                                            | **Conditionally clear** once Grey Haven records confirm Jay's authority to license/relicense those contributions.                                    |
-| Affected paths with Cirdan lines | Current line blame shows Cirdan/Cirdan Shipwright authored lines in Python MCP, Python knowledge control candidates, and TypeScript skill-package code.                        | **Blocked / unclear** until employment, contractor, assignment, or explicit permission records confirm Grey Haven can relicense those contributions. |
-| Gingiris contribution            | Git history shows one contribution touching `README.md` and `autocontext/src/autocontext/banner.py`; neither is currently in the proposed non-Apache path groups audited here. | **Not a current non-Apache blocker**, but re-check if either path is moved into a non-Apache package or root docs are relicensed.                    |
-| AC-645 license metadata          | Guarded by tests and `packages/package-boundaries.json`.                                                                                                                       | **Blocked** until this audit is complete and reviewed.                                                                                               |
+| Area                               | Current evidence                                                                                                                                                                 | Relicensing status                                                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Grey Haven-controlled affected paths | Git history/blame show Jay Scambler identities and `cirdan-greyhaven` identities confirmed as Grey Haven-controlled in the current source lines for audited non-Apache candidate path groups. | **Conditionally clear** once Grey Haven records confirm authority to license/relicense those contributions. |
+| Path-specific third-party blockers | No current non-Grey-Haven-controlled source-line blockers were found in the audited non-Apache candidate paths after recording the Cirdan identity confirmation. | **No current path-specific blocker** from git evidence; re-run if path ownership changes. |
+| Gingiris contribution              | Git history shows one contribution touching `README.md` and `autocontext/src/autocontext/banner.py`; neither is currently in the proposed non-Apache path groups audited here.   | **Not a current non-Apache blocker**, but re-check if either path is moved into a non-Apache package or root docs are relicensed. |
+| AC-645 license metadata            | Guarded by tests and `packages/package-boundaries.json`.                                                                                                                         | **Blocked** until final Grey Haven sign-off is recorded.                                                                          |
 
 ## Contributor Identities Seen in Affected Areas
 
-| Canonical audit identity | Git aliases observed                                                      | Required authority evidence                                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jay-scambler`           | `Jay Scambler <jayscambler@gmail.com>`, `Jay Scambler <jay@greyhaven.ai>` | Confirm Grey Haven ownership/assignment or maintainer authorization covering both aliases.                                                           |
-| `cirdan-greyhaven`       | `Cirdan <cirdan@greyhaven.ai>`, `Cirdan Shipwright <cirdan@greyhaven.ai>` | Confirm employment/contractor IP assignment, CLA, DCO-equivalent, or explicit relicensing permission for the commits and current lines listed below. |
-| `gingiris`               | `Gingiris <iris103195@gmail.com>`                                         | No current non-Apache path impact found. If future path maps include the touched files, request explicit permission or keep those files Apache.      |
+| Canonical audit identity | Git author identities observed                                                      | Audit treatment                                 | Required authority evidence                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `jay-scambler`           | `Jay Scambler <jayscambler@gmail.com>`, `Jay Scambler <jay@greyhaven.ai>` | Grey Haven contributor identity. | Confirm Grey Haven ownership/assignment or authorization covering both observed email identities. |
+| `cirdan-greyhaven`       | `Cirdan <cirdan@greyhaven.ai>`, `Cirdan Shipwright <cirdan@greyhaven.ai>` | Grey Haven-controlled contributor identity. | Covered by final Grey Haven authority confirmation; preserve the 2026-04-28 confirmation in AC-646 records. |
+| `gingiris`               | `Gingiris <iris103195@gmail.com>`                                         | No current non-Apache path impact found.        | If future path maps include the touched files, request explicit permission or keep those files Apache.       |
 
 ## Affected Path Groups Audited
 
@@ -67,17 +71,17 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                       |
-| ------------------ | -----------------------: | ----------------------------: | ------------------------------------------------------------ |
-| `jay-scambler`     |                       75 |                        12,016 | Conditionally clear pending internal authority confirmation. |
-| `cirdan-greyhaven` |                        1 |                           117 | Blocked/unclear pending contributor-rights confirmation.     |
+| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                                                  |
+| ------------------ | -------------------------------: | ----------------------------: | ------------------------------------------------------------------------------------------------------- |
+| `jay-scambler`     |                               75 |                        12,016 | Conditionally clear pending final Grey Haven authority confirmation.                                    |
+| `cirdan-greyhaven` |                                1 |                           117 | Treated as Grey Haven-controlled contributor identity; conditionally clear with final Grey Haven sign-off. |
 
-Current files with non-Jay lines:
+Current files with Cirdan-identity lines:
 
-| Path                                        | Cirdan lines | Representative blamed commits                                                                                                           |
-| ------------------------------------------- | -----------: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `autocontext/src/autocontext/mcp/server.py` |          107 | `909e0779` MCP server hardening; `0f2329e3` agent-task human feedback; `4a4135b2` MCP tool gaps; `2a38bb91` multi-step improvement loop |
-| `autocontext/src/autocontext/mcp/tools.py`  |           10 | `909e0779` MCP server hardening; `9b193391` agent task foundation; `0f2329e3` human feedback loop; `4a4135b2` MCP tool gaps             |
+| Path                                        | Cirdan-identity lines | Representative blamed commits                                                                                                           |
+| ------------------------------------------- | -----------------: | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `autocontext/src/autocontext/mcp/server.py` |                107 | `909e0779` MCP server hardening; `0f2329e3` agent-task human feedback; `4a4135b2` MCP tool gaps; `2a38bb91` multi-step improvement loop |
+| `autocontext/src/autocontext/mcp/tools.py`  |                 10 | `909e0779` MCP server hardening; `9b193391` agent task foundation; `0f2329e3` human feedback loop; `4a4135b2` MCP tool gaps             |
 
 ### Python knowledge control candidates
 
@@ -92,17 +96,17 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                       |
-| ------------------ | -----------------------: | ----------------------------: | ------------------------------------------------------------ |
-| `jay-scambler`     |                       28 |                         2,399 | Conditionally clear pending internal authority confirmation. |
-| `cirdan-greyhaven` | See blamed commits below |                           170 | Blocked/unclear pending contributor-rights confirmation.     |
+| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                                                  |
+| ------------------ | -------------------------------: | ----------------------------: | ------------------------------------------------------------------------------------------------------- |
+| `jay-scambler`     |                               28 |                         2,399 | Conditionally clear pending final Grey Haven authority confirmation.                                    |
+| `cirdan-greyhaven` |         See blamed commits below |                           170 | Treated as Grey Haven-controlled contributor identity; conditionally clear with final Grey Haven sign-off. |
 
-Current files with non-Jay lines:
+Current files with Cirdan-identity lines:
 
-| Path                                              | Cirdan lines | Representative blamed commits                                                                                                                              |
-| ------------------------------------------------- | -----------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autocontext/src/autocontext/knowledge/export.py` |          160 | `9b193391` agent task foundation; `93d8e4d3` reference context + judge enhancement; `4fdc79b0` context preparation; `2a38bb91` multi-step improvement loop |
-| `autocontext/src/autocontext/knowledge/search.py` |           10 | `9b193391` agent task foundation                                                                                                                           |
+| Path                                              | Cirdan-identity lines | Representative blamed commits                                                                                                                              |
+| ------------------------------------------------- | -----------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autocontext/src/autocontext/knowledge/export.py` |                160 | `9b193391` agent task foundation; `93d8e4d3` reference context + judge enhancement; `4fdc79b0` context preparation; `2a38bb91` multi-step improvement loop |
+| `autocontext/src/autocontext/knowledge/search.py` |                 10 | `9b193391` agent task foundation                                                                                                                           |
 
 ### TypeScript control-plane directories
 
@@ -119,11 +123,11 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                       |
-| -------------- | -----------------------: | ----------------------------: | ------------------------------------------------------------ |
-| `jay-scambler` |                      146 |                        32,004 | Conditionally clear pending internal authority confirmation. |
+| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                               |
+| -------------- | -------------------------------: | ----------------------------: | -------------------------------------------------------------------- |
+| `jay-scambler` |                              146 |                        32,004 | Conditionally clear pending final Grey Haven authority confirmation. |
 
-No non-Jay current source lines were found in this path group.
+No non-Grey-Haven-controlled current source lines were found in this path group.
 
 ### TypeScript production-trace control candidates
 
@@ -136,11 +140,11 @@ Audited paths:
 
 Evidence summary:
 
-| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                       |
-| -------------- | -----------------------: | ----------------------------: | ------------------------------------------------------------ |
-| `jay-scambler` |                        4 |                         5,014 | Conditionally clear pending internal authority confirmation. |
+| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                               |
+| -------------- | -------------------------------: | ----------------------------: | -------------------------------------------------------------------- |
+| `jay-scambler` |                                4 |                         5,014 | Conditionally clear pending final Grey Haven authority confirmation. |
 
-No non-Jay current source lines were found in this path group.
+No non-Grey-Haven-controlled current source lines were found in this path group.
 
 ### TypeScript public-trace control candidates
 
@@ -151,11 +155,11 @@ set.
 
 Evidence summary:
 
-| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                       |
-| -------------- | -----------------------: | ----------------------------: | ------------------------------------------------------------ |
-| `jay-scambler` |                       16 |                         2,756 | Conditionally clear pending internal authority confirmation. |
+| Contributor    | Direct path-log commits in group | Current blamed lines in group | Status                                                               |
+| -------------- | -------------------------------: | ----------------------------: | -------------------------------------------------------------------- |
+| `jay-scambler` |                               16 |                         2,756 | Conditionally clear pending final Grey Haven authority confirmation. |
 
-No non-Jay current source lines were found in this path group.
+No non-Grey-Haven-controlled current source lines were found in this path group.
 
 ### TypeScript knowledge control candidates
 
@@ -167,41 +171,34 @@ excluded unless the path map later assigns them to the non-Apache tier.
 
 Evidence summary:
 
-| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                       |
-| ------------------ | -----------------------: | ----------------------------: | ------------------------------------------------------------ |
-| `jay-scambler`     |                       22 |                         2,836 | Conditionally clear pending internal authority confirmation. |
-| `cirdan-greyhaven` |                        1 |                            70 | Blocked/unclear pending contributor-rights confirmation.     |
+| Contributor        | Direct path-log commits in group | Current blamed lines in group | Status                                                                                                  |
+| ------------------ | -------------------------------: | ----------------------------: | ------------------------------------------------------------------------------------------------------- |
+| `jay-scambler`     |                               22 |                         2,836 | Conditionally clear pending final Grey Haven authority confirmation.                                    |
+| `cirdan-greyhaven` |                                1 |                            70 | Treated as Grey Haven-controlled contributor identity; conditionally clear with final Grey Haven sign-off. |
 
-Current files with non-Jay lines:
+Current files with Cirdan-identity lines:
 
-| Path                                | Cirdan lines | Representative blamed commits                           |
-| ----------------------------------- | -----------: | ------------------------------------------------------- |
-| `ts/src/knowledge/skill-package.ts` |           70 | `27d79071` skill export + agent task markdown rendering |
+| Path                                | Cirdan-identity lines | Representative blamed commits                           |
+| ----------------------------------- | -----------------: | ------------------------------------------------------- |
+| `ts/src/knowledge/skill-package.ts` |                 70 | `27d79071` skill export + agent task markdown rendering |
 
-## Paths That Must Not Be Relicensed Yet
+## Current Path-Specific Blockers
 
-Until the required Cirdan authority evidence is found, one of these actions is
-required before moving the following files to a non-Apache tier:
+No current path-specific third-party relicensing blockers remain in the audited
+non-Apache candidate paths after recording the `cirdan-greyhaven` Grey Haven
+controlled-identity confirmation.
 
-1. obtain and record explicit permission or assignment coverage;
-2. keep the file/path Apache; or
-3. rewrite/remove the affected contribution before relicensing.
-
-Blocked/unclear current paths:
-
-- `autocontext/src/autocontext/mcp/server.py`
-- `autocontext/src/autocontext/mcp/tools.py`
-- `autocontext/src/autocontext/knowledge/export.py`
-- `autocontext/src/autocontext/knowledge/search.py`
-- `ts/src/knowledge/skill-package.ts`
+This does **not** approve non-Apache relicensing yet. AC-645 remains blocked
+until final Grey Haven authority/sign-off is recorded for affected
+contributions across all observed Grey Haven-controlled contributor identities.
 
 ## Required Follow-Up Before AC-645
 
-1. Confirm whether Grey Haven has employment, contractor, assignment, CLA, or
-   explicit relicensing records for `cirdan-greyhaven` covering the commits
-   listed above.
-2. Record Jay Scambler's Grey Haven authority/ownership confirmation for both
-   observed author emails.
+1. Record final Grey Haven authority/ownership confirmation for affected
+   contributions across all observed Grey Haven-controlled contributor identities.
+2. Preserve the 2026-04-28 confirmation that `cirdan-greyhaven` contributions
+   are covered by Grey Haven AI licensing authority in the AC-646 Linear/PR
+   records.
 3. Decide how to handle `gingiris` if root docs, banner code, or other currently
    Apache-compatible surfaces become part of a non-Apache package or path-level
    notice.

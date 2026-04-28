@@ -14,12 +14,18 @@
 		"rightsAudit": {
 			"status": "in-progress",
 			"auditDoc": "docs/contributor-rights-audit.md",
-			"blockedRelicensingPathsUntilConfirmed": [
-				"autocontext/src/autocontext/mcp/server.py",
-				"autocontext/src/autocontext/mcp/tools.py",
-				"autocontext/src/autocontext/knowledge/export.py",
-				"autocontext/src/autocontext/knowledge/search.py",
-				"ts/src/knowledge/skill-package.ts"
+			"confirmedControlledContributorIdentities": [
+				{
+					"canonicalContributor": "cirdan-greyhaven",
+					"rightsHolder": "greyhaven-ai",
+					"basis": "grey-haven-controlled-contributor-identity",
+					"confirmedAt": "2026-04-28"
+				}
+			],
+			"blockedRelicensingPathsUntilConfirmed": [],
+			"requiredFinalSignoffs": [
+				"grey-haven-authority-for-controlled-contributor-identities",
+				"grey-haven-legal-business-approval"
 			]
 		},
 		"pythonProjectMetadata": {

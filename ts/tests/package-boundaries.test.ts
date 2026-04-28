@@ -98,7 +98,14 @@ type LicensingGuardrails = {
 	rightsAudit: {
 		status: string;
 		auditDoc: string;
+		confirmedControlledContributorIdentities: Array<{
+			canonicalContributor: string;
+			rightsHolder: string;
+			basis: string;
+			confirmedAt: string;
+		}>;
 		blockedRelicensingPathsUntilConfirmed: string[];
+		requiredFinalSignoffs: string[];
 	};
 	typescriptPackageMetadata: {
 		paths: string[];
@@ -242,22 +249,25 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("blocks unclear contributor paths from non-Apache relicensing", () => {
+	it("records controlled contributor identity while preserving final signoff blockers", () => {
 		const rightsAudit = loadBoundaries().licensing.rightsAudit;
 
 		expect(rightsAudit.status).toBe("in-progress");
 		expect(rightsAudit.auditDoc).toBe("docs/contributor-rights-audit.md");
 		expect(existsSync(join(repoRoot, rightsAudit.auditDoc))).toBe(true);
-		expect(rightsAudit.blockedRelicensingPathsUntilConfirmed).toEqual([
-			"autocontext/src/autocontext/mcp/server.py",
-			"autocontext/src/autocontext/mcp/tools.py",
-			"autocontext/src/autocontext/knowledge/export.py",
-			"autocontext/src/autocontext/knowledge/search.py",
-			"ts/src/knowledge/skill-package.ts",
+		expect(rightsAudit.confirmedControlledContributorIdentities).toEqual([
+			{
+				canonicalContributor: "cirdan-greyhaven",
+				rightsHolder: "greyhaven-ai",
+				basis: "grey-haven-controlled-contributor-identity",
+				confirmedAt: "2026-04-28",
+			},
 		]);
-		for (const relativePath of rightsAudit.blockedRelicensingPathsUntilConfirmed) {
-			expect(existsSync(join(repoRoot, relativePath))).toBe(true);
-		}
+		expect(rightsAudit.blockedRelicensingPathsUntilConfirmed).toEqual([]);
+		expect(rightsAudit.requiredFinalSignoffs).toEqual([
+			"grey-haven-authority-for-controlled-contributor-identities",
+			"grey-haven-legal-business-approval",
+		]);
 	});
 
 	it("keeps TypeScript package license metadata deferred for new package artifacts", () => {
