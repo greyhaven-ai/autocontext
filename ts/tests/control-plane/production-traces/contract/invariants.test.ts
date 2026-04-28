@@ -122,6 +122,13 @@ describe("validateJsonPointer", () => {
     expect(validateJsonPointer(escaped, "/a~1b").valid).toBe(true);
     expect(validateJsonPointer(escaped, "/c~0d").valid).toBe(true);
   });
+
+  test("rejects invalid RFC 6901 escape sequences before resolving fields", () => {
+    const escaped = { "a~2b": 1, "bad~": 2 };
+
+    expect(validateJsonPointer(escaped, "/a~2b").valid).toBe(false);
+    expect(validateJsonPointer(escaped, "/bad~").valid).toBe(false);
+  });
 });
 
 describe("validateRedactionPaths", () => {
@@ -165,5 +172,24 @@ describe("validateRedactionPaths", () => {
     const r = validateRedactionPaths(t);
     expect(r.valid).toBe(false);
     if (!r.valid) expect(r.errors.some((e) => /messages/.test(e))).toBe(true);
+  });
+
+  test("rejects trace with malformed escaped redaction paths", () => {
+    const t: ProductionTrace = {
+      ...baseTrace(),
+      metadata: { "bad~": "secret" },
+      redactions: [
+        {
+          path: "/metadata/bad~",
+          reason: "pii-custom",
+          detectedBy: "operator",
+          detectedAt: "2026-04-17T12:00:02.000Z",
+        },
+      ],
+    };
+
+    const r = validateRedactionPaths(t);
+    expect(r.valid).toBe(false);
+    if (!r.valid) expect(r.errors.some((e) => /invalid/.test(e))).toBe(true);
   });
 });

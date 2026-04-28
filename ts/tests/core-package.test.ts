@@ -7,6 +7,7 @@ import type {
   AgentTaskResult,
   AppId,
   ArtifactEditingInterface,
+  CreateProductionTraceInputs,
   EnvironmentTag,
   ExecutionLimits,
   FeedbackRefId,
@@ -45,6 +46,7 @@ import {
   CompletionResultSchema,
   ContextBudget,
   checkRubricCoherence,
+  createProductionTrace,
   ExecutionLimitsSchema,
   estimateTokens,
   expectedScore,
@@ -57,6 +59,9 @@ import {
   ReplayEnvelopeSchema,
   ResultSchema,
   updateElo,
+  validateJsonPointer,
+  validateRedactionPaths,
+  validateTimingSanity,
 } from "../../packages/ts/core/src/index.ts";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
@@ -139,6 +144,55 @@ describe("@autocontext/core facade", () => {
 
     expect(trace.source).toBe(traceSource);
     expect(trace.traceId).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
+  });
+
+  it("re-exports production trace pure contract helpers", () => {
+    const inputs: CreateProductionTraceInputs = {
+      id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" as ProductionTraceId,
+      source: {
+        emitter: "gateway",
+        sdk: { name: "autoctx", version: "0.1.0" },
+      },
+      provider: { name: "anthropic" },
+      model: "claude-sonnet",
+      env: {
+        environmentTag: "production" as EnvironmentTag,
+        appId: "support-bot" as AppId,
+      },
+      messages: [
+        {
+          role: "user",
+          content: "help me with a refund",
+          timestamp: "2026-04-25T00:00:00Z",
+        },
+      ],
+      timing: {
+        startedAt: "2026-04-25T00:00:00Z",
+        endedAt: "2026-04-25T00:00:01Z",
+        latencyMs: 1000,
+      },
+      usage: {
+        tokensIn: 10,
+        tokensOut: 5,
+      },
+      redactions: [
+        {
+          path: "/messages/0/content",
+          reason: "pii-name",
+          detectedBy: "operator",
+          detectedAt: "2026-04-25T00:00:02Z",
+        },
+      ],
+    };
+    const trace = createProductionTrace(inputs);
+
+    expect(trace.schemaVersion).toBe(PRODUCTION_TRACE_SCHEMA_VERSION);
+    expect(trace.toolCalls).toEqual([]);
+    expect(trace.feedbackRefs).toEqual([]);
+    expect(validateTimingSanity(trace.timing).valid).toBe(true);
+    expect(validateJsonPointer(trace, "/messages/0/content").valid).toBe(true);
+    expect(validateJsonPointer({ "bad~": true }, "/bad~").valid).toBe(false);
+    expect(validateRedactionPaths(trace).valid).toBe(true);
   });
 
   it("re-exports Elo primitives from the core-safe execution surface", () => {

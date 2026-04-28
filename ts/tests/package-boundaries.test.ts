@@ -210,12 +210,16 @@ describe("package boundaries", () => {
 			"../../../ts/src/production-traces/contract/branded-ids.ts",
 			"../../../ts/src/production-traces/contract/types.ts",
 			"../../../ts/src/production-traces/contract/content-address.ts",
+			"../../../ts/src/production-traces/contract/factories.ts",
+			"../../../ts/src/production-traces/contract/invariants.ts",
 		]);
 		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual([
 			"/ts/src/production-traces/contract/generated-types.ts",
 			"/ts/src/production-traces/contract/branded-ids.ts",
 			"/ts/src/production-traces/contract/types.ts",
 			"/ts/src/production-traces/contract/content-address.ts",
+			"/ts/src/production-traces/contract/factories.ts",
+			"/ts/src/production-traces/contract/invariants.ts",
 		]);
 		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
 			expect(core.exactIncludes).toContain(sourceInclude);

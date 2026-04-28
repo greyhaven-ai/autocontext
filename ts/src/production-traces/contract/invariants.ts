@@ -49,7 +49,18 @@ export function validateJsonPointer(obj: unknown, pointer: string): ValidationRe
     return { valid: false, errors: [`json pointer '${pointer}' missing leading '/'`] };
   }
   // Split; first element is always empty (before the leading /) so drop it.
-  const tokens = pointer.slice(1).split("/").map(unescapeToken);
+  const rawTokens = pointer.slice(1).split("/");
+  for (const rawToken of rawTokens) {
+    if (/~(?![01])/.test(rawToken)) {
+      return {
+        valid: false,
+        errors: [
+          `json pointer '${pointer}': token '${rawToken}' contains invalid escape; use '~0' for '~' and '~1' for '/'`,
+        ],
+      };
+    }
+  }
+  const tokens = rawTokens.map(unescapeToken);
   let current: unknown = obj;
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];

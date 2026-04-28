@@ -32,6 +32,13 @@ export {
 	parseUserIdHash,
 } from "../../../../ts/src/production-traces/contract/branded-ids.js";
 export { deriveDatasetId } from "../../../../ts/src/production-traces/contract/content-address.js";
+export type { CreateProductionTraceInputs } from "../../../../ts/src/production-traces/contract/factories.js";
+export { createProductionTrace } from "../../../../ts/src/production-traces/contract/factories.js";
+export {
+	validateJsonPointer,
+	validateRedactionPaths,
+	validateTimingSanity,
+} from "../../../../ts/src/production-traces/contract/invariants.js";
 export type {
 	DetectedBy,
 	FeedbackKind,
