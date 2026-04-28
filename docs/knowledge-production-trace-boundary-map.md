@@ -151,6 +151,11 @@ The contract-barrel slice adds `ts/src/production-traces/contract/index.ts` as
 a composition-only public contract entrypoint. The barrel may re-export only the
 already claimed contract files; adding a new re-export requires an explicit
 manifest/test update before core owns that file.
+The canonical-JSON slice moves the pure serializer to
+`ts/src/production-traces/contract/canonical-json.ts` so SDK emit helpers can
+produce deterministic contract bytes without importing control-plane modules.
+The old `ts/src/control-plane/contract/canonical-json.ts` path remains as a
+compatibility re-export for existing control-plane callers.
 The first emit-SDK slices claim only
 `ts/src/production-traces/sdk/validate.ts` and
 `ts/src/production-traces/sdk/build-trace.ts`. They are customer-facing SDK
@@ -171,7 +176,7 @@ explicit manifest/test update before core owns them.
 
 | Surface                               | Current path                                                                                            | Proposed owner                 | Boundary rule                                                                                          |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Production trace contract             | Manifest-listed contract files: `index.ts`, generated/types/ID/helper/validator files, plus schema assets | Core/open SDK                  | Public wire format, branded IDs, validators, generated types, and the composition-only contract barrel. |
+| Production trace contract             | Manifest-listed contract files: `index.ts`, generated/types/ID/helper/validator/canonical JSON files, plus schema assets | Core/open SDK                  | Public wire format, branded IDs, validators, deterministic serialization, generated types, and the composition-only contract barrel. |
 | Customer emit SDK                     | Currently `ts/src/production-traces/sdk/{validate.ts,build-trace.ts}`; other SDK files are pending exact-file claims | Core/open SDK                  | Preserve customer validation/build ergonomics; keep broader SDK helpers tree-shakable and management-free. |
 | Taxonomy                              | `ts/src/production-traces/taxonomy/{anthropic-error-reasons.ts,openai-error-reasons.ts,index.ts}`        | Core/open SDK                  | Exact shared provider error/outcome vocabulary files; future taxonomy additions require manifest tests. |
 | Redaction primitives                  | `ts/src/production-traces/redaction/types.ts`, `policy.ts`, `hash-primitives.ts`, `apply.ts`, `mark.ts` | Open SDK if pure               | Keep pure local privacy helpers open; CLI policy management stays control-plane.                       |
