@@ -141,17 +141,27 @@ package. The next pure-helper slice adds
 `ts/src/production-traces/contract/invariants.ts` because they are public
 production-trace contract helpers with no CLI,
 ingestion, dataset, retention, server, MCP, or control-plane dependencies.
+The validator/schema slice adds
+`ts/src/production-traces/contract/validators.ts` plus the JSON schema assets
+it imports. That claim is limited to schema validation and package artifact
+emission; dataset generation, retention enforcement, ingestion receipts, and
+CLI workflows remain control-plane even when their wire schemas are registered
+by the shared validator module.
 
-The next independent source-ownership slice claims `ts/src/production-traces/taxonomy/**`
-for the TypeScript core package because it is shared provider error/outcome
-vocabulary and does not depend on branded IDs, emit SDK helpers, CLI workflows,
-ingestion, dataset generation, retention, or `ts/src/traces` workflows.
+The next independent source-ownership slice claims the current exact taxonomy
+files, `ts/src/production-traces/taxonomy/anthropic-error-reasons.ts`,
+`ts/src/production-traces/taxonomy/openai-error-reasons.ts`, and
+`ts/src/production-traces/taxonomy/index.ts`, for the TypeScript core package
+because they are shared provider error/outcome vocabulary and do not depend on
+branded IDs, emit SDK helpers, CLI workflows, ingestion, dataset generation,
+retention, or `ts/src/traces` workflows. Future taxonomy files require an
+explicit manifest/test update before core owns them.
 
 | Surface                               | Current path                                                                                            | Proposed owner                 | Boundary rule                                                                                          |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Production trace contract             | `ts/src/production-traces/contract/**`                                                                  | Core/open SDK                  | Public wire format, branded IDs, validators, generated types.                                          |
 | Customer emit SDK                     | `ts/src/production-traces/sdk/**`                                                                       | Core/open SDK                  | Preserve `autoctx/production-traces` style surface; keep tree-shakable and management-free.            |
-| Taxonomy                              | `ts/src/production-traces/taxonomy/**`                                                                  | Core/open SDK                  | Shared provider error/outcome vocabulary.                                                              |
+| Taxonomy                              | `ts/src/production-traces/taxonomy/{anthropic-error-reasons.ts,openai-error-reasons.ts,index.ts}`        | Core/open SDK                  | Exact shared provider error/outcome vocabulary files; future taxonomy additions require manifest tests. |
 | Redaction primitives                  | `ts/src/production-traces/redaction/types.ts`, `policy.ts`, `hash-primitives.ts`, `apply.ts`, `mark.ts` | Open SDK if pure               | Keep pure local privacy helpers open; CLI policy management stays control-plane.                       |
 | Ingestion                             | `ts/src/production-traces/ingest/**`                                                                    | Control-plane                  | Scans incoming traces, locks, dedupes, validates receipts.                                             |
 | Retention                             | `ts/src/production-traces/retention/**`                                                                 | Control-plane                  | Project/fleet policy enforcement and GC logs.                                                          |
