@@ -26,7 +26,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 npm install autoctx
 ```
 
-The current npm release line is `autoctx@0.4.6`.
+The current npm release line is `autoctx@0.4.7`.
 Important: use `autoctx`, not `autocontext`.
 `autocontext` on npm is a different package and not this project.
 
@@ -64,9 +64,7 @@ const userIdHash = hashUserId(session.user.id, salt);
 const trace = buildTrace({
   provider: "openai",
   model: "gpt-4o-mini",
-  messages: [
-    { role: "user", content: prompt, timestamp: new Date().toISOString() },
-  ],
+  messages: [{ role: "user", content: prompt, timestamp: new Date().toISOString() }],
   timing: {
     startedAt: "2026-04-17T12:00:00.000Z",
     endedAt: "2026-04-17T12:00:01.250Z",
@@ -82,7 +80,7 @@ writeJsonl(trace);
 
 const batch = new TraceBatch();
 for (const event of stream) batch.add(buildTrace(/* ... */));
-batch.flush();  // writes accumulated traces as one file
+batch.flush(); // writes accumulated traces as one file
 ```
 
 Both ESM and CommonJS consumers are supported via the `"exports"` map:
@@ -138,7 +136,6 @@ autoctx providers
 autoctx models
 
 # Scenario execution
-autoctx solve --description "improve customer-support replies" --family agent_task --gens 3 --output package.json --json
 autoctx run --scenario support_triage --gens 3 --json
 autoctx list --json
 autoctx replay --run-id <id> --generation 1
@@ -242,20 +239,20 @@ Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mist
 
 Key environment variables:
 
-| Variable | Purpose |
-|----------|---------|
-| `AUTOCONTEXT_AGENT_PROVIDER` | Agent provider selection |
-| `AUTOCONTEXT_AGENT_API_KEY` | Global API key override (or use provider-specific env vars) |
-| `AUTOCONTEXT_AGENT_BASE_URL` | Global base URL override for compatible providers |
-| `AUTOCONTEXT_AGENT_DEFAULT_MODEL` | Override default model |
-| `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential/endpoint override |
-| `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL` | Optional analyst-specific credential/endpoint override |
-| `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL` | Optional coach-specific credential/endpoint override |
-| `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL` | Optional architect-specific credential/endpoint override |
-| `AUTOCONTEXT_CLAUDE_MODEL` | Claude CLI model alias override |
-| `AUTOCONTEXT_CODEX_MODEL` | Codex CLI model override |
-| `AUTOCONTEXT_CONFIG_DIR` | Override where `login` / `whoami` read saved credentials |
-| `AUTOCONTEXT_DB_PATH` | SQLite database path |
+| Variable                                                             | Purpose                                                     |
+| -------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `AUTOCONTEXT_AGENT_PROVIDER`                                         | Agent provider selection                                    |
+| `AUTOCONTEXT_AGENT_API_KEY`                                          | Global API key override (or use provider-specific env vars) |
+| `AUTOCONTEXT_AGENT_BASE_URL`                                         | Global base URL override for compatible providers           |
+| `AUTOCONTEXT_AGENT_DEFAULT_MODEL`                                    | Override default model                                      |
+| `AUTOCONTEXT_COMPETITOR_API_KEY` / `AUTOCONTEXT_COMPETITOR_BASE_URL` | Optional competitor-specific credential/endpoint override   |
+| `AUTOCONTEXT_ANALYST_API_KEY` / `AUTOCONTEXT_ANALYST_BASE_URL`       | Optional analyst-specific credential/endpoint override      |
+| `AUTOCONTEXT_COACH_API_KEY` / `AUTOCONTEXT_COACH_BASE_URL`           | Optional coach-specific credential/endpoint override        |
+| `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL`   | Optional architect-specific credential/endpoint override    |
+| `AUTOCONTEXT_CLAUDE_MODEL`                                           | Claude CLI model alias override                             |
+| `AUTOCONTEXT_CODEX_MODEL`                                            | Codex CLI model override                                    |
+| `AUTOCONTEXT_CONFIG_DIR`                                             | Override where `login` / `whoami` read saved credentials    |
+| `AUTOCONTEXT_DB_PATH`                                                | SQLite database path                                        |
 
 Credential resolution order is:
 
@@ -278,8 +275,6 @@ Credential resolution order is:
 
 `autoctx capabilities` returns structured JSON describing commands, providers, scenarios, the canonical concept model, and project-specific state such as the current project config, active runs, and knowledge directory summary.
 
-The HTTP server exposes `GET /api/capabilities/http` with a runtime parity matrix for Python and TypeScript REST/WebSocket routes, including explicit TypeScript gaps and TypeScript-only routes. Session notebook CRUD routes are available under `/api/notebooks`, cockpit notebook/run/readout routes are available under `/api/cockpit`, research hub session/package/result routes are available under `/api/hub`, monitor condition/alert routes are available under `/api/monitors`, and OpenClaw-compatible evaluation, artifact, distillation, discovery, capability, and skill manifest routes are available under `/api/openclaw`.
-
 `autoctx login` can prompt interactively for provider credentials. `autoctx login --provider ollama` validates that a local Ollama server is reachable before persisting the connection details, and `autoctx logout` clears the stored credentials.
 
 `autoctx replay` writes the selected generation and available generations to `stderr` before printing the replay JSON payload. `autoctx export-training-data` writes progress updates to `stderr` while keeping JSONL records on `stdout`.
@@ -290,20 +285,20 @@ Saved custom scenarios under `knowledge/_custom_scenarios/` can be reused direct
 
 `mcp-serve` starts the MCP server on stdio with tools across these families:
 
-| Family | Tools |
-|--------|-------|
-| Scenarios | list_scenarios, get_scenario, validate_strategy, run_match, run_tournament, run_scenario |
-| Runs | list_runs, get_run_status, get_generation_detail, run_replay |
-| Knowledge | get_playbook, read_trajectory, read_hints, read_analysis, read_tools, read_skills |
-| Evaluation | evaluate_output, run_improvement_loop, run_repl_session, generate_output |
-| Task queue | queue_task, get_queue_status, get_task_result |
-| Export/Search | export_skill, export_package, import_package, list_solved, search_strategies |
-| Feedback | record_feedback, get_feedback |
-| Solve | solve_scenario, solve_status, solve_result |
-| Sandbox | sandbox_create, sandbox_run, sandbox_status, sandbox_playbook, sandbox_list, sandbox_destroy |
-| Agent tasks | create_agent_task, list_agent_tasks, get_agent_task |
-| Missions | create_mission, mission_status, mission_result, mission_artifacts, pause_mission, resume_mission, cancel_mission |
-| Discovery | capabilities |
+| Family        | Tools                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Scenarios     | list_scenarios, get_scenario, validate_strategy, run_match, run_tournament, run_scenario                         |
+| Runs          | list_runs, get_run_status, get_generation_detail, run_replay                                                     |
+| Knowledge     | get_playbook, read_trajectory, read_hints, read_analysis, read_tools, read_skills                                |
+| Evaluation    | evaluate_output, run_improvement_loop, run_repl_session, generate_output                                         |
+| Task queue    | queue_task, get_queue_status, get_task_result                                                                    |
+| Export/Search | export_skill, export_package, import_package, list_solved, search_strategies                                     |
+| Feedback      | record_feedback, get_feedback                                                                                    |
+| Solve         | solve_scenario, solve_status, solve_result                                                                       |
+| Sandbox       | sandbox_create, sandbox_run, sandbox_status, sandbox_playbook, sandbox_list, sandbox_destroy                     |
+| Agent tasks   | create_agent_task, list_agent_tasks, get_agent_task                                                              |
+| Missions      | create_mission, mission_status, mission_result, mission_artifacts, pause_mission, resume_mission, cancel_mission |
+| Discovery     | capabilities                                                                                                     |
 
 `create_mission` and `autoctx mission create` both support a code-mission variant with `type=code` plus `repo_path` / `test_command` (and optional `lint_command` / `build_command`) so mission success is tied to external checks instead of model self-report.
 
@@ -326,12 +321,7 @@ Saved custom scenarios under `knowledge/_custom_scenarios/` can be reused direct
 ## Library Usage
 
 ```ts
-import {
-  createProvider,
-  LLMJudge,
-  ImprovementLoop,
-  SimpleAgentTask,
-} from "autoctx";
+import { createProvider, LLMJudge, ImprovementLoop, SimpleAgentTask } from "autoctx";
 
 // One-shot evaluation
 const provider = createProvider({ providerType: "anthropic", apiKey: "sk-ant-..." });
@@ -342,9 +332,16 @@ const result = await judge.evaluate({
 });
 
 // Multi-round improvement
-const task = new SimpleAgentTask("Draft a support reply for a billing dispute.", "Score accuracy, policy compliance, and tone.", provider);
+const task = new SimpleAgentTask(
+  "Draft a support reply for a billing dispute.",
+  "Score accuracy, policy compliance, and tone.",
+  provider,
+);
 const loop = new ImprovementLoop({ task, maxRounds: 3, qualityThreshold: 0.9 });
-const improved = await loop.run({ initialOutput: "We can help with that billing issue.", state: {} });
+const improved = await loop.run({
+  initialOutput: "We can help with that billing issue.",
+  state: {},
+});
 ```
 
 ## TS / Python Scope
@@ -457,7 +454,41 @@ await sink.close();
 Emitted trace line (pretty-printed for readability):
 
 ```jsonl
-{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","choices":[{"message":{"role":"assistant","content":"Hi! How can I help?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":7,"total_tokens":16}},"durationMs":342,"errorReason":null}
+{
+  "schemaVersion": "1.0",
+  "traceId": "...",
+  "sessionContext": {
+    "userId": "u_123"
+  },
+  "request": {
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  },
+  "response": {
+    "id": "...",
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "Hi! How can I help?"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 9,
+      "completion_tokens": 7,
+      "total_tokens": 16
+    }
+  },
+  "durationMs": 342,
+  "errorReason": null
+}
 ```
 
 For the Python equivalent, see
@@ -540,7 +571,38 @@ await sink.close();
 Emitted trace line (pretty-printed for readability):
 
 ```jsonl
-{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"claude-opus-4-7-20251101","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","content":[{"type":"text","text":"Hi! How can I help?"}],"stop_reason":"end_turn","usage":{"input_tokens":9,"output_tokens":7}},"durationMs":342,"errorReason":null}
+{
+  "schemaVersion": "1.0",
+  "traceId": "...",
+  "sessionContext": {
+    "userId": "u_123"
+  },
+  "request": {
+    "model": "claude-opus-4-7-20251101",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  },
+  "response": {
+    "id": "...",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hi! How can I help?"
+      }
+    ],
+    "stop_reason": "end_turn",
+    "usage": {
+      "input_tokens": 9,
+      "output_tokens": 7
+    }
+  },
+  "durationMs": 342,
+  "errorReason": null
+}
 ```
 
 For the Python equivalent, see

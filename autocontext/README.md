@@ -10,7 +10,7 @@ The intended use is to hand the harness a real task in plain language, let it so
 pip install autocontext
 ```
 
-The current PyPI release line is `autocontext==0.4.6`.
+The current PyPI release line is `autocontext==0.4.7`.
 The PyPI package name is now `autocontext`. The CLI entrypoint remains `autoctx`.
 
 ## Working Directory
@@ -207,25 +207,10 @@ uv sync --group dev --extra mlx
 uv run autoctx train \
   --scenario support_triage \
   --data training/support_triage.jsonl \
-  --backend mlx \
   --time-budget 300
 ```
 
 MLX training is host-only. It must run on an Apple Silicon macOS machine with Metal access. It will not run correctly inside a Docker sandbox on macOS.
-
-CUDA training uses the same autoresearch loop with a PyTorch model branch:
-
-```bash
-uv sync --group dev
-uv pip install torch rustbpe tiktoken
-uv run autoctx train \
-  --scenario support_triage \
-  --data training/support_triage.jsonl \
-  --backend cuda \
-  --time-budget 300
-```
-
-CUDA requires a CUDA-enabled PyTorch install where `torch.cuda.is_available()` is true. The CUDA bundle writes `config.json`, `tokenizer.json`, and `model.pt` under the selected checkpoint directory. Until a Torch provider loader lands, CUDA checkpoints are published as checkpoint artifacts only and are not auto-routed as live provider models.
 
 If you only want to inspect generated training data first, export without training and open the JSONL directly.
 
@@ -369,7 +354,41 @@ sink.close()
 Emitted trace line (pretty-printed for readability):
 
 ```jsonl
-{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"gpt-4o","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","choices":[{"message":{"role":"assistant","content":"Hi! How can I help?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":7,"total_tokens":16}},"durationMs":342,"errorReason":null}
+{
+  "schemaVersion": "1.0",
+  "traceId": "...",
+  "sessionContext": {
+    "userId": "u_123"
+  },
+  "request": {
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  },
+  "response": {
+    "id": "...",
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "Hi! How can I help?"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 9,
+      "completion_tokens": 7,
+      "total_tokens": 16
+    }
+  },
+  "durationMs": 342,
+  "errorReason": null
+}
 ```
 
 For the TypeScript equivalent, see `ts/src/integrations/openai/STABILITY.md`.
@@ -450,7 +469,38 @@ sink.close()
 Emitted trace line (pretty-printed for readability):
 
 ```jsonl
-{"schemaVersion":"1.0","traceId":"...","sessionContext":{"userId":"u_123"},"request":{"model":"claude-opus-4-7-20251101","messages":[{"role":"user","content":"Hello!"}]},"response":{"id":"...","content":[{"type":"text","text":"Hi! How can I help?"}],"stop_reason":"end_turn","usage":{"input_tokens":9,"output_tokens":7}},"durationMs":342,"errorReason":null}
+{
+  "schemaVersion": "1.0",
+  "traceId": "...",
+  "sessionContext": {
+    "userId": "u_123"
+  },
+  "request": {
+    "model": "claude-opus-4-7-20251101",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello!"
+      }
+    ]
+  },
+  "response": {
+    "id": "...",
+    "content": [
+      {
+        "type": "text",
+        "text": "Hi! How can I help?"
+      }
+    ],
+    "stop_reason": "end_turn",
+    "usage": {
+      "input_tokens": 9,
+      "output_tokens": 7
+    }
+  },
+  "durationMs": 342,
+  "errorReason": null
+}
 ```
 
 For the TypeScript equivalent, see `ts/src/integrations/anthropic/STABILITY.md`.

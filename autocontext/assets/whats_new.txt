@@ -1,5 +1,6 @@
-Browser integration now spans Python and TypeScript CDP backends, investigations, queued tasks, and policy-gated evidence.
-Anthropic SDK instrumentation captures Python and TypeScript production traces, streaming outcomes, and cross-runtime parity.
-Production trace datasets gained provider/app/env/outcome filters and shared OpenAI/Anthropic E2E coverage.
-Scenario family designers now share parser logic across TypeScript families, preserving family-specific prompt semantics.
-Investigation evidence, secondary prompt reducers, migration ledgers, CLI dispatch, and proxy runtime plumbing were hardened.
+**Anthropic SDK instrumentation** in Python and TypeScript: wrap any existing Anthropic client with `instrument_client` / `instrumentClient` to capture streaming and non-streaming production traces.
+**TypeScript `autoctx solve` CLI** brings one-command scenario generation and execution to full parity with Python.
+**`autoctx build-dataset` filters** (`--provider`, `--app`, `--env`, `--outcome`) turn captured production traces into scoped training datasets.
+**CUDA training backend** alongside MLX, so distillation is no longer Apple Silicon only.
+**Semantic prompt compaction** with tail-preserving reducers for longer sessions.
+**Hierarchical investigation evidence** with artifact drill-down for richer diagnosis traces.
