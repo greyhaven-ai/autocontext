@@ -1,3 +1,3 @@
 # autocontext-control skeleton
 
-Internal package skeleton for the future Python control-plane artifact.
+Internal Apache-2.0 package skeleton for the Python control-plane boundary.

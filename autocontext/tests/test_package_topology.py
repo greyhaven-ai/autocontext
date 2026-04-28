@@ -61,6 +61,23 @@ def test_package_topology_declares_expected_domain_terms() -> None:
     }
 
 
+def test_package_topology_declares_apache_boundary_wrap_up_guardrails() -> None:
+    topology = _load_topology()
+    assert topology["status"] == "apache-boundary-wrap-up"
+    guardrails = topology["guardrails"]
+    assert isinstance(guardrails, dict)
+
+    assert guardrails["repoWideLicenseFlip"] == (
+        "out-of-scope-existing-code-remains-apache-2.0"
+    )
+    assert guardrails["dualLicenseMetadata"] == "do-not-publish-for-existing-repo"
+    assert guardrails["historicalRelicensing"] == "out-of-scope"
+    assert guardrails["futureProprietaryWork"] == "separate-repository"
+    assert guardrails["defaultInstallCompatibility"] == (
+        "preserve-autocontext-autoctx-and-autoctx-cli"
+    )
+
+
 def test_python_package_shells_exist() -> None:
     for shell in _python_shells():
         assert shell.path.exists(), shell.path

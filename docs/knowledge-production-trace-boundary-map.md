@@ -15,8 +15,8 @@ facade only that row while preserving the existing compatibility surfaces.
 - Do not move all trace code as one unit.
 - Do not change `autocontext`, `autoctx`, or the `autoctx` CLI compatibility
   paths while the split is in progress.
-- Do not publish AC-645 license metadata or any non-Apache relicensing while
-  AC-646 remains unresolved.
+- Do not publish dual-license metadata or non-Apache relicensing for the
+  existing public repo. Existing code remains Apache-2.0.
 
 ## Ubiquitous Language
 
@@ -63,17 +63,19 @@ Owns operator workflows and management surfaces:
 Control-plane code may depend on core contracts and SDK helpers. Core code must
 not depend on control-plane code.
 
-### Proprietary / Deferred Cloud + Box
+### Future Proprietary / Separate Repo
 
-Keep these out of Apache/core and source-available control-plane artifacts until
-the product boundary is explicitly implemented:
+Keep these out of the existing Apache repo unless they are intentionally made
+Apache-2.0. Future proprietary implementations should live in a separate repo
+under their own license:
 
 - hosted trace warehouse, cross-tenant registry, or fleet retention service;
 - enterprise-only dataset marketplace, promotion approval UI, or policy center;
 - managed knowledge sharing across organizations;
 - Cloud/Box deployment automation and hosted control-plane infrastructure.
 
-These are not AC-645 license metadata. They are future product placement notes.
+These are not AC-645 license metadata. They are future product placement notes
+for net-new proprietary work, not a plan to relicense historical code.
 
 ## Knowledge Split Map
 
@@ -252,10 +254,13 @@ families:
 6. **Compatibility smoke tests** — keep `autocontext.production_traces`,
    `autocontext.knowledge`, `autoctx`, `autoctx/production-traces`, and
    `autoctx production-traces` working while internals move.
-7. **No premature licensing publication** — reuse the AC-645/AC-646 guardrail;
-   extraction PRs must not add license metadata.
+7. **No dual-license publication for this repo** — keep the public repo
+   Apache-2.0; extraction PRs must not add non-Apache or dual-license metadata.
 
 ## Recommended Extraction Order
+
+This order is now capped to boundary wrap-up. Do not continue extracting
+historical code only to prepare a non-Apache licensing split.
 
 1. Production trace contract and emit SDK package ownership. This is the cleanest
    boundary: schemas, branded IDs, validation, hashing, taxonomy, and emit
@@ -274,4 +279,6 @@ families:
    distillation, and dataset workflows to control-plane.
 
 Each step should be a small PR with one manifest change, one RED boundary test,
-one GREEN extraction/facade change, and compatibility smoke coverage.
+one GREEN extraction/facade change, and compatibility smoke coverage. Stop the
+sequence once the Apache package boundary is clear enough for users and future
+separate-repo proprietary work.

@@ -2,7 +2,7 @@
   "name": "@autocontext/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Internal package skeleton for the future Apache core artifact.",
+  "description": "Internal Apache-2.0 package skeleton for the TypeScript core boundary.",
   "type": "module",
   "main": "dist/packages/ts/core/src/index.js",
   "types": "dist/packages/ts/core/src/index.d.ts",

@@ -1,10 +1,14 @@
 {
 	"version": 1,
 	"licensing": {
-		"status": "deferred",
+		"status": "apache-only",
+		"decisionDate": "2026-04-28",
+		"existingCodeLicense": "Apache-2.0",
+		"historicalRelicensing": "out-of-scope",
+		"futureProprietaryWork": "separate-repository",
 		"licenseMetadataIssue": "AC-645",
 		"rightsAuditIssue": "AC-646",
-		"forbiddenPathsUntilAC645": [
+		"forbiddenDualLicenseMetadataPaths": [
 			"LICENSING.md",
 			"packages/python/core/LICENSE",
 			"packages/python/control/LICENSE",
@@ -12,7 +16,7 @@
 			"packages/ts/control-plane/LICENSE"
 		],
 		"rightsAudit": {
-			"status": "in-progress",
+			"status": "historical-context",
 			"auditDoc": "docs/contributor-rights-audit.md",
 			"confirmedControlledContributorIdentities": [
 				{
@@ -23,10 +27,7 @@
 				}
 			],
 			"blockedRelicensingPathsUntilConfirmed": [],
-			"requiredFinalSignoffs": [
-				"grey-haven-authority-for-controlled-contributor-identities",
-				"grey-haven-legal-business-approval"
-			]
+			"requiredFinalSignoffs": []
 		},
 		"pythonProjectMetadata": {
 			"paths": [
