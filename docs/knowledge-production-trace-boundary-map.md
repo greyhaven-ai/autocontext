@@ -162,7 +162,7 @@ The first emit-SDK slices claim only
 helpers exposed through `@autocontext/core/production-traces/validate` and
 `@autocontext/core/production-traces/build-trace`, with validation delegated to
 the already claimed contract validator. The broader SDK barrel stays mixed
-until hashing, trace-batch, and JSONL writing helpers are each checked for
+until hashing and any remaining SDK composition helpers are each checked for
 workflow and dependency ownership.
 The JSONL writer slice adds exactly
 `ts/src/production-traces/sdk/write-jsonl.ts` and exposes it through
@@ -170,6 +170,11 @@ The JSONL writer slice adds exactly
 customer-side emit SDK: it writes caller-provided traces to the local incoming
 partition using core-owned canonical JSON, and it does not import CLI,
 ingestion, dataset, retention, public-trace, or control-plane workflows.
+The trace-batch slice adds exactly
+`ts/src/production-traces/sdk/trace-batch.ts` and exposes it through
+`@autocontext/core/production-traces/trace-batch`. It is a customer-side
+in-memory accumulator over the already claimed JSONL writer; it does not claim
+the broader SDK barrel or hashing/install-salt lifecycle.
 
 The next independent source-ownership slice claims the current exact taxonomy
 files, `ts/src/production-traces/taxonomy/anthropic-error-reasons.ts`,
@@ -183,7 +188,7 @@ explicit manifest/test update before core owns them.
 | Surface                               | Current path                                                                                            | Proposed owner                 | Boundary rule                                                                                          |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Production trace contract             | Manifest-listed contract files: `index.ts`, generated/types/ID/helper/validator/canonical JSON files, plus schema assets | Core/open SDK                  | Public wire format, branded IDs, validators, deterministic serialization, generated types, and the composition-only contract barrel. |
-| Customer emit SDK                     | Currently exact files `ts/src/production-traces/sdk/{validate.ts,build-trace.ts,write-jsonl.ts}`; other SDK files are pending exact-file claims | Core/open SDK                  | Preserve customer validation/build/write ergonomics; keep broader SDK helpers tree-shakable and management-free. |
+| Customer emit SDK                     | Currently exact files `ts/src/production-traces/sdk/{validate.ts,build-trace.ts,write-jsonl.ts,trace-batch.ts}`; other SDK files are pending exact-file claims | Core/open SDK                  | Preserve customer validation/build/write/batch ergonomics; keep broader SDK helpers tree-shakable and management-free. |
 | Taxonomy                              | `ts/src/production-traces/taxonomy/{anthropic-error-reasons.ts,openai-error-reasons.ts,index.ts}`        | Core/open SDK                  | Exact shared provider error/outcome vocabulary files; future taxonomy additions require manifest tests. |
 | Redaction primitives                  | `ts/src/production-traces/redaction/types.ts`, `policy.ts`, `hash-primitives.ts`, `apply.ts`, `mark.ts` | Open SDK if pure               | Keep pure local privacy helpers open; CLI policy management stays control-plane.                       |
 | Ingestion                             | `ts/src/production-traces/ingest/**`                                                                    | Control-plane                  | Scans incoming traces, locks, dedupes, validates receipts.                                             |
