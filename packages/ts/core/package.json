@@ -22,6 +22,10 @@
     "./production-traces/write-jsonl": {
       "import": "./dist/ts/src/production-traces/sdk/write-jsonl.js",
       "types": "./dist/ts/src/production-traces/sdk/write-jsonl.d.ts"
+    },
+    "./production-traces/trace-batch": {
+      "import": "./dist/ts/src/production-traces/sdk/trace-batch.js",
+      "types": "./dist/ts/src/production-traces/sdk/trace-batch.d.ts"
     }
   },
   "files": [

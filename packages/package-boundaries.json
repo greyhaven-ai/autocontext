@@ -120,6 +120,7 @@
 				"../../../ts/src/production-traces/sdk/validate.ts",
 				"../../../ts/src/production-traces/sdk/build-trace.ts",
 				"../../../ts/src/production-traces/sdk/write-jsonl.ts",
+				"../../../ts/src/production-traces/sdk/trace-batch.ts",
 				"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/index.ts"
@@ -247,13 +248,15 @@
 				"coreOwnedSourceIncludes": [
 					"../../../ts/src/production-traces/sdk/validate.ts",
 					"../../../ts/src/production-traces/sdk/build-trace.ts",
-					"../../../ts/src/production-traces/sdk/write-jsonl.ts"
+					"../../../ts/src/production-traces/sdk/write-jsonl.ts",
+					"../../../ts/src/production-traces/sdk/trace-batch.ts"
 				],
 				"coreOwnedSchemaAssetIncludes": [],
 				"coreOwnedProgramPathSubstrings": [
 					"/ts/src/production-traces/sdk/validate.ts",
 					"/ts/src/production-traces/sdk/build-trace.ts",
-					"/ts/src/production-traces/sdk/write-jsonl.ts"
+					"/ts/src/production-traces/sdk/write-jsonl.ts",
+					"/ts/src/production-traces/sdk/trace-batch.ts"
 				],
 				"forbiddenImportPathSubstrings": [
 					"control-plane/",
