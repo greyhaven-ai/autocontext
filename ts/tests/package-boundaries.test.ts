@@ -56,6 +56,7 @@ const productionTraceOpenContractProgramPathSubstrings = [
 const productionTraceOpenSdkSourcePaths = [
 	"ts/src/production-traces/sdk/validate.ts",
 	"ts/src/production-traces/sdk/build-trace.ts",
+	"ts/src/production-traces/sdk/write-jsonl.ts",
 ];
 const productionTraceOpenSdkSourceIncludes =
 	productionTraceOpenSdkSourcePaths.map((entry) => `../../../${entry}`);
@@ -345,6 +346,10 @@ describe("package boundaries", () => {
 		expect(packageJson.exports["./production-traces/build-trace"]).toEqual({
 			import: "./dist/ts/src/production-traces/sdk/build-trace.js",
 			types: "./dist/ts/src/production-traces/sdk/build-trace.d.ts",
+		});
+		expect(packageJson.exports["./production-traces/write-jsonl"]).toEqual({
+			import: "./dist/ts/src/production-traces/sdk/write-jsonl.js",
+			types: "./dist/ts/src/production-traces/sdk/write-jsonl.d.ts",
 		});
 	});
 
