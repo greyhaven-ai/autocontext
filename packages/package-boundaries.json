@@ -112,6 +112,8 @@
 				"../../../ts/src/production-traces/contract/branded-ids.ts",
 				"../../../ts/src/production-traces/contract/types.ts",
 				"../../../ts/src/production-traces/contract/content-address.ts",
+				"../../../ts/src/production-traces/contract/factories.ts",
+				"../../../ts/src/production-traces/contract/invariants.ts",
 				"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/index.ts"
@@ -164,13 +166,17 @@
 					"../../../ts/src/production-traces/contract/generated-types.ts",
 					"../../../ts/src/production-traces/contract/branded-ids.ts",
 					"../../../ts/src/production-traces/contract/types.ts",
-					"../../../ts/src/production-traces/contract/content-address.ts"
+					"../../../ts/src/production-traces/contract/content-address.ts",
+					"../../../ts/src/production-traces/contract/factories.ts",
+					"../../../ts/src/production-traces/contract/invariants.ts"
 				],
 				"coreOwnedProgramPathSubstrings": [
 					"/ts/src/production-traces/contract/generated-types.ts",
 					"/ts/src/production-traces/contract/branded-ids.ts",
 					"/ts/src/production-traces/contract/types.ts",
-					"/ts/src/production-traces/contract/content-address.ts"
+					"/ts/src/production-traces/contract/content-address.ts",
+					"/ts/src/production-traces/contract/factories.ts",
+					"/ts/src/production-traces/contract/invariants.ts"
 				],
 				"forbiddenImportPathSubstrings": [
 					"control-plane/"

@@ -136,7 +136,10 @@ The first source-ownership slices claim `ts/src/production-traces/contract/gener
 `ts/src/production-traces/contract/branded-ids.ts`,
 `ts/src/production-traces/contract/types.ts`, and
 `ts/src/production-traces/contract/content-address.ts` for the TypeScript core
-package because they are public production-trace contract sources with no CLI,
+package. The next pure-helper slice adds
+`ts/src/production-traces/contract/factories.ts` and
+`ts/src/production-traces/contract/invariants.ts` because they are public
+production-trace contract helpers with no CLI,
 ingestion, dataset, retention, server, MCP, or control-plane dependencies.
 
 The next independent source-ownership slice claims `ts/src/production-traces/taxonomy/**`
