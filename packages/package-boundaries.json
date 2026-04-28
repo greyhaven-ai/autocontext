@@ -11,6 +11,17 @@
 			"packages/ts/core/LICENSE",
 			"packages/ts/control-plane/LICENSE"
 		],
+		"rightsAudit": {
+			"status": "in-progress",
+			"auditDoc": "docs/contributor-rights-audit.md",
+			"blockedRelicensingPathsUntilConfirmed": [
+				"autocontext/src/autocontext/mcp/server.py",
+				"autocontext/src/autocontext/mcp/tools.py",
+				"autocontext/src/autocontext/knowledge/export.py",
+				"autocontext/src/autocontext/knowledge/search.py",
+				"ts/src/knowledge/skill-package.ts"
+			]
+		},
 		"pythonProjectMetadata": {
 			"paths": [
 				"packages/python/core/pyproject.toml",

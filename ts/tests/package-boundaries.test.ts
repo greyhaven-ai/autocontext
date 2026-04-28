@@ -47,7 +47,9 @@ const productionTraceOpenContractSchemaAssetPaths = [
 const productionTraceOpenContractSourceIncludes =
 	productionTraceOpenContractSourcePaths.map((entry) => `../../../${entry}`);
 const productionTraceOpenContractSchemaAssetIncludes =
-	productionTraceOpenContractSchemaAssetPaths.map((entry) => `../../../${entry}`);
+	productionTraceOpenContractSchemaAssetPaths.map(
+		(entry) => `../../../${entry}`,
+	);
 const productionTraceOpenContractProgramPathSubstrings = [
 	...productionTraceOpenContractSourcePaths,
 	...productionTraceOpenContractSchemaAssetPaths,
@@ -82,6 +84,11 @@ type LicensingGuardrails = {
 	licenseMetadataIssue: string;
 	rightsAuditIssue: string;
 	forbiddenPathsUntilAC645: string[];
+	rightsAudit: {
+		status: string;
+		auditDoc: string;
+		blockedRelicensingPathsUntilConfirmed: string[];
+	};
 	typescriptPackageMetadata: {
 		paths: string[];
 		forbiddenPackageKeys: string[];
@@ -187,7 +194,9 @@ function importSpecifiers(sourceText: string): string[] {
 
 function resolveProductionTraceContractSpecifier(specifier: string): string {
 	if (!specifier.startsWith("./") || !specifier.endsWith(".js")) {
-		throw new Error(`Unexpected production-trace contract specifier: ${specifier}`);
+		throw new Error(
+			`Unexpected production-trace contract specifier: ${specifier}`,
+		);
 	}
 	return `ts/src/production-traces/contract/${specifier.slice(2, -3)}.ts`;
 }
@@ -217,6 +226,24 @@ describe("package boundaries", () => {
 		]);
 		for (const relativePath of licensing.forbiddenPathsUntilAC645) {
 			expect(existsSync(join(repoRoot, relativePath))).toBe(false);
+		}
+	});
+
+	it("blocks unclear contributor paths from non-Apache relicensing", () => {
+		const rightsAudit = loadBoundaries().licensing.rightsAudit;
+
+		expect(rightsAudit.status).toBe("in-progress");
+		expect(rightsAudit.auditDoc).toBe("docs/contributor-rights-audit.md");
+		expect(existsSync(join(repoRoot, rightsAudit.auditDoc))).toBe(true);
+		expect(rightsAudit.blockedRelicensingPathsUntilConfirmed).toEqual([
+			"autocontext/src/autocontext/mcp/server.py",
+			"autocontext/src/autocontext/mcp/tools.py",
+			"autocontext/src/autocontext/knowledge/export.py",
+			"autocontext/src/autocontext/knowledge/search.py",
+			"ts/src/knowledge/skill-package.ts",
+		]);
+		for (const relativePath of rightsAudit.blockedRelicensingPathsUntilConfirmed) {
+			expect(existsSync(join(repoRoot, relativePath))).toBe(true);
 		}
 	});
 
@@ -286,7 +313,9 @@ describe("package boundaries", () => {
 		for (const schemaAssetInclude of productionTraces.coreOwnedSchemaAssetIncludes) {
 			expect(schemaAssetInclude).not.toContain("*");
 			expect(
-				existsSync(join(repoRoot, "packages", "ts", "core", schemaAssetInclude)),
+				existsSync(
+					join(repoRoot, "packages", "ts", "core", schemaAssetInclude),
+				),
 			).toBe(true);
 		}
 	});

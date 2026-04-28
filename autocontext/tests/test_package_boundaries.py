@@ -12,15 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BOUNDARIES_PATH = REPO_ROOT / "packages" / "package-boundaries.json"
 TOPOLOGY_PATH = REPO_ROOT / "packages" / "package-topology.json"
 CORE_INIT_PATH = REPO_ROOT / "packages" / "python" / "core" / "src" / "autocontext_core" / "__init__.py"
-CONTROL_INIT_PATH = (
-    REPO_ROOT
-    / "packages"
-    / "python"
-    / "control"
-    / "src"
-    / "autocontext_control"
-    / "__init__.py"
-)
+CONTROL_INIT_PATH = REPO_ROOT / "packages" / "python" / "control" / "src" / "autocontext_control" / "__init__.py"
 
 
 def _load_boundaries() -> dict[str, object]:
@@ -111,6 +103,29 @@ def test_deferred_license_publication_files_are_absent() -> None:
     for relative_path in forbidden_paths:
         assert isinstance(relative_path, str)
         assert not (REPO_ROOT / relative_path).exists()
+
+
+def test_rights_audit_blocks_unclear_paths_from_non_apache_relicensing() -> None:
+    licensing = _licensing_guardrails()
+    rights_audit = licensing["rightsAudit"]
+    assert isinstance(rights_audit, dict)
+
+    assert rights_audit["status"] == "in-progress"
+    assert rights_audit["auditDoc"] == "docs/contributor-rights-audit.md"
+    assert (REPO_ROOT / str(rights_audit["auditDoc"])).exists()
+    blocked_paths = rights_audit["blockedRelicensingPathsUntilConfirmed"]
+    assert isinstance(blocked_paths, list)
+    assert blocked_paths == [
+        "autocontext/src/autocontext/mcp/server.py",
+        "autocontext/src/autocontext/mcp/tools.py",
+        "autocontext/src/autocontext/knowledge/export.py",
+        "autocontext/src/autocontext/knowledge/search.py",
+        "ts/src/knowledge/skill-package.ts",
+    ]
+
+    for relative_path in blocked_paths:
+        assert isinstance(relative_path, str)
+        assert (REPO_ROOT / relative_path).exists()
 
 
 def test_python_license_metadata_stays_deferred_for_new_package_artifacts() -> None:
