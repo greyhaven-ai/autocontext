@@ -162,4 +162,46 @@ describe("Session branch lineage", () => {
     expect(session.turns[0]).toBe(root);
     expect(session.events.map((event) => event.eventType)).toContain(SessionEventType.BRANCH_SUMMARIZED);
   });
+
+  it("loads legacy flat sessions as ordered main-branch lineage", () => {
+    const session = Session.fromJSON({
+      sessionId: "legacy-session",
+      goal: "legacy work",
+      status: "active",
+      metadata: {},
+      turns: [
+        {
+          turnId: "t1",
+          turnIndex: 0,
+          prompt: "first",
+          role: "competitor",
+          response: "r1",
+          outcome: "completed",
+          tokensUsed: 10,
+          startedAt: "2026-04-28T00:00:00.000Z",
+          completedAt: "2026-04-28T00:01:00.000Z",
+        },
+        {
+          turnId: "t2",
+          turnIndex: 1,
+          prompt: "second",
+          role: "analyst",
+          response: "r2",
+          outcome: "completed",
+          tokensUsed: 20,
+          startedAt: "2026-04-28T00:02:00.000Z",
+          completedAt: "2026-04-28T00:03:00.000Z",
+        },
+      ],
+      events: [],
+      createdAt: "2026-04-28T00:00:00.000Z",
+      updatedAt: "2026-04-28T00:03:00.000Z",
+    });
+
+    expect(session.activeBranchId).toBe("main");
+    expect(session.activeTurnId).toBe("t2");
+    expect(session.turns.map((turn) => turn.parentTurnId)).toEqual(["", "t1"]);
+    expect(session.turns.map((turn) => turn.branchId)).toEqual(["main", "main"]);
+    expect(session.branchPath("main").map((turn) => turn.turnId)).toEqual(["t1", "t2"]);
+  });
 });

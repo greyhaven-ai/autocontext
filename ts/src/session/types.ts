@@ -215,13 +215,13 @@ export class Turn {
     };
   }
 
-  static fromJSON(data: Record<string, unknown>): Turn {
+  static fromJSON(data: Record<string, unknown>, opts: { parentTurnId?: string; branchId?: string } = {}): Turn {
     const t = new Turn({
       turnIndex: readNumber(data, "turnIndex"),
       prompt: readString(data, "prompt"),
       role: readString(data, "role"),
-      parentTurnId: readString(data, "parentTurnId"),
-      branchId: readString(data, "branchId", "main"),
+      parentTurnId: readString(data, "parentTurnId", opts.parentTurnId ?? ""),
+      branchId: readString(data, "branchId", opts.branchId ?? "main"),
     });
     Object.assign(t, {
       turnId: readString(data, "turnId", t.turnId),
@@ -527,21 +527,37 @@ export class Session {
 
   static fromJSON(data: Record<string, unknown>): Session {
     const s = new Session({ goal: readString(data, "goal"), metadata: readRecord(data, "metadata") ?? {} });
+    const branchRecords = readRecordArray(data, "branches");
+    const activeBranchId = readString(data, "activeBranchId", "main");
+    const activeTurnId = readString(data, "activeTurnId");
     Object.assign(s, {
       sessionId: readString(data, "sessionId", s.sessionId),
       status: readSessionStatus(data, "status"),
       summary: readString(data, "summary"),
-      activeBranchId: readString(data, "activeBranchId", "main"),
-      activeTurnId: readString(data, "activeTurnId"),
+      activeBranchId,
+      activeTurnId,
       createdAt: readString(data, "createdAt", s.createdAt),
       updatedAt: readString(data, "updatedAt"),
     });
     s.branches.splice(0, s.branches.length);
-    const branches = readRecordArray(data, "branches");
-    if (branches.length === 0) branches.push({ branchId: "main", label: "Main" });
-    for (const bd of branches) s.branches.push(Branch.fromJSON(bd));
-    const turns = readRecordArray(data, "turns");
-    for (const td of turns) s.turns.push(Turn.fromJSON(td));
+    if (branchRecords.length === 0) branchRecords.push({ branchId: "main", label: "Main" });
+    for (const bd of branchRecords) s.branches.push(Branch.fromJSON(bd));
+    const turnRecords = readRecordArray(data, "turns");
+    const hasTurnLineage = turnRecords.some(
+      (turn) => readString(turn, "parentTurnId") !== "" || readString(turn, "branchId") !== "",
+    );
+    const shouldSynthesizeMainLineage = branchRecords.length === 1
+      && activeBranchId === "main"
+      && activeTurnId === ""
+      && !hasTurnLineage;
+    let previousMainTurnId = "";
+    for (const td of turnRecords) {
+      const turn = Turn.fromJSON(td, shouldSynthesizeMainLineage
+        ? { parentTurnId: previousMainTurnId, branchId: "main" }
+        : {});
+      s.turns.push(turn);
+      if (shouldSynthesizeMainLineage) previousMainTurnId = turn.turnId;
+    }
     if (s.activeTurnId === "") {
       s.activeTurnId = s.branchLeafTurnId(s.activeBranchId);
     }
