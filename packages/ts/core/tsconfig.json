@@ -32,6 +32,8 @@
 		"../../../ts/src/production-traces/sdk/build-trace.ts",
 		"../../../ts/src/production-traces/sdk/write-jsonl.ts",
 		"../../../ts/src/production-traces/sdk/trace-batch.ts",
+		"../../../ts/src/production-traces/sdk/hashing-core.ts",
+		"../../../ts/src/production-traces/redaction/hash-primitives.ts",
 		"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 		"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
 		"../../../ts/src/production-traces/taxonomy/index.ts"

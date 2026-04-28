@@ -26,6 +26,10 @@
     "./production-traces/trace-batch": {
       "import": "./dist/ts/src/production-traces/sdk/trace-batch.js",
       "types": "./dist/ts/src/production-traces/sdk/trace-batch.d.ts"
+    },
+    "./production-traces/hashing": {
+      "import": "./dist/ts/src/production-traces/sdk/hashing-core.js",
+      "types": "./dist/ts/src/production-traces/sdk/hashing-core.d.ts"
     }
   },
   "files": [

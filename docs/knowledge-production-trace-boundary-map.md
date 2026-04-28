@@ -175,6 +175,13 @@ The trace-batch slice adds exactly
 `@autocontext/core/production-traces/trace-batch`. It is a customer-side
 in-memory accumulator over the already claimed JSONL writer; it does not claim
 the broader SDK barrel or hashing/install-salt lifecycle.
+The pure hashing slice adds exactly
+`ts/src/production-traces/sdk/hashing-core.ts` plus
+`ts/src/production-traces/redaction/hash-primitives.ts` and exposes the public
+helper subpath through `@autocontext/core/production-traces/hashing`. This
+claims `hashUserId` and `hashSessionId` as deterministic privacy primitives
+while leaving install-salt file lifecycle and rotation surfaces on the
+umbrella/control side until they receive an explicit ownership decision.
 
 The next independent source-ownership slice claims the current exact taxonomy
 files, `ts/src/production-traces/taxonomy/anthropic-error-reasons.ts`,
@@ -188,9 +195,9 @@ explicit manifest/test update before core owns them.
 | Surface                               | Current path                                                                                            | Proposed owner                 | Boundary rule                                                                                          |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Production trace contract             | Manifest-listed contract files: `index.ts`, generated/types/ID/helper/validator/canonical JSON files, plus schema assets | Core/open SDK                  | Public wire format, branded IDs, validators, deterministic serialization, generated types, and the composition-only contract barrel. |
-| Customer emit SDK                     | Currently exact files `ts/src/production-traces/sdk/{validate.ts,build-trace.ts,write-jsonl.ts,trace-batch.ts}`; other SDK files are pending exact-file claims | Core/open SDK                  | Preserve customer validation/build/write/batch ergonomics; keep broader SDK helpers tree-shakable and management-free. |
+| Customer emit SDK                     | Currently exact files `ts/src/production-traces/sdk/{validate.ts,build-trace.ts,write-jsonl.ts,trace-batch.ts,hashing-core.ts}`; other SDK files are pending exact-file claims | Core/open SDK                  | Preserve customer validation/build/write/batch/hash ergonomics; keep broader SDK helpers tree-shakable and management-free. |
 | Taxonomy                              | `ts/src/production-traces/taxonomy/{anthropic-error-reasons.ts,openai-error-reasons.ts,index.ts}`        | Core/open SDK                  | Exact shared provider error/outcome vocabulary files; future taxonomy additions require manifest tests. |
-| Redaction primitives                  | `ts/src/production-traces/redaction/types.ts`, `policy.ts`, `hash-primitives.ts`, `apply.ts`, `mark.ts` | Open SDK if pure               | Keep pure local privacy helpers open; CLI policy management stays control-plane.                       |
+| Redaction primitives                  | Currently exact file `ts/src/production-traces/redaction/hash-primitives.ts`; other redaction files are pending exact-file claims | Open SDK if pure               | Keep pure local privacy helpers open; CLI policy management and install-salt lifecycle stay outside core until explicitly claimed. |
 | Ingestion                             | `ts/src/production-traces/ingest/**`                                                                    | Control-plane                  | Scans incoming traces, locks, dedupes, validates receipts.                                             |
 | Retention                             | `ts/src/production-traces/retention/**`                                                                 | Control-plane                  | Project/fleet policy enforcement and GC logs.                                                          |
 | Dataset generation                    | `ts/src/production-traces/dataset/**`                                                                   | Control-plane                  | Selection, clustering, splitting, manifests, and provenance workflows.                                 |
