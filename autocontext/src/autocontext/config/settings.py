@@ -33,6 +33,13 @@ class HarnessMode(StrEnum):
     POLICY = "policy"  # Pure code strategy (alias for CODE_STRATEGIES_ENABLED)
 
 
+class HarnessProfile(StrEnum):
+    """High-level runtime profile for context/tool budget policy."""
+
+    STANDARD = "standard"
+    LEAN = "lean"
+
+
 class AppSettings(BaseModel):
     db_path: Path = Field(default=Path("runs/autocontext.sqlite3"))
     runs_root: Path = Field(default=Path("runs"))
@@ -330,6 +337,24 @@ class AppSettings(BaseModel):
     constraint_prompts_enabled: bool = Field(default=True, description="Append constraint suffixes to role prompts")
     # Context budget
     context_budget_tokens: int = Field(default=100_000, ge=0, description="Max estimated tokens for prompt context")
+    harness_profile: HarnessProfile = Field(
+        default=HarnessProfile.STANDARD,
+        description="Runtime profile for context/tool budget policy: standard or lean",
+    )
+    lean_context_budget_tokens: int = Field(
+        default=32_000,
+        ge=1,
+        description="Context token cap used by the lean/Pi-shaped harness profile",
+    )
+    lean_hidden_context_budget_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Hidden/implicit context budget for the lean harness profile",
+    )
+    lean_tool_allowlist: str = Field(
+        default="read,bash,edit,write",
+        description="Comma-separated tools exposed by the lean/Pi-shaped harness profile",
+    )
     semantic_compaction_benchmark_enabled: bool = Field(
         default=False,
         description="Capture a semantic compaction benchmark report during prompt assembly",

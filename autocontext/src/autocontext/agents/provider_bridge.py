@@ -339,6 +339,7 @@ def create_role_client(
             pi_command=settings.pi_command,
             model=settings.pi_model,
             timeout=settings.pi_timeout,
+            workspace=settings.pi_workspace,
             session_persistence=settings.pi_rpc_session_persistence,
             no_context_files=settings.pi_no_context_files,
         )

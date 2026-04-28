@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.architect import parse_dag_changes
+from autocontext.config.harness_profile import resolve_harness_runtime_profile
 from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.failure_report import FailureReport
 from autocontext.harness.evaluation.runner import EvaluationRunner
@@ -392,6 +393,7 @@ def stage_knowledge_setup(
             evidence_cache_hits = int(bool(getattr(evidence_workspace, "cache_hit", False)))
         except Exception:
             logger.warning("failed to materialize evidence workspace for %s", ctx.scenario_name, exc_info=True)
+    runtime_profile = resolve_harness_runtime_profile(ctx.settings)
     prompts, semantic_benchmark_payload = prepare_generation_prompts(
         ctx,
         artifacts=artifacts,
@@ -420,7 +422,7 @@ def stage_knowledge_setup(
         session_reports=session_reports,
         architect_tool_usage_report=tool_usage_report,
         constraint_mode=ctx.settings.constraint_prompts_enabled,
-        context_budget_tokens=ctx.settings.context_budget_tokens,
+        context_budget_tokens=runtime_profile.context_budget_tokens,
         notebook_contexts=notebook_contexts,
         environment_snapshot="" if ablation else ctx.environment_snapshot,
         evidence_manifest=evidence_manifest,
