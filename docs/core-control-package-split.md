@@ -1,32 +1,38 @@
 # Core/Control Package Split
 
-This document is the PR0 source of truth for the AutoContext package and
-licensing split. It turns the Linear strategy in AC-642, AC-643, AC-644,
-AC-648, AC-649, and AC-650 into a concrete implementation guardrail before
-moving behavior or changing license metadata.
+This document is the source of truth for the AutoContext core/control package
+boundary. It turns the Linear strategy in AC-642, AC-643, AC-644, AC-648,
+AC-649, and AC-650 into a concrete implementation guardrail before moving
+behavior or changing public install paths.
 
 ## Strategy
 
-AutoContext is moving toward a three-tier open-core model:
+AutoContext is keeping the existing public repository and already-written code
+Apache-2.0. The boundary work continues as architecture and package hygiene, not
+as a historical relicensing project.
 
-1. Apache 2.0 core: foundational runtime, SDK, scenario contracts, providers,
+The package split should make these domains clear:
+
+1. Apache-2.0 core: foundational runtime, SDK, scenario contracts, providers,
    execution primitives, local state, and extension points.
-2. Separately licensed control plane: operator workflows, management UX,
-   orchestration, advanced trace management, knowledge packaging/export, and
-   other monetizable control surfaces.
-3. Proprietary Cloud and Box: hosted infrastructure, enterprise deployment, and
-   service-only features.
+2. Apache-2.0 control plane: operator workflows, management UX, orchestration,
+   advanced trace management, knowledge packaging/export, and other higher-level
+   control surfaces that still live in this repo.
+3. Future proprietary products: hosted infrastructure, enterprise deployment,
+   service-only features, and other net-new proprietary work in a separate repo
+   under its own license.
 
-The goal is not a repo-wide source-available license flip. The code and package
-layout must make the licensing model true before the repo advertises it.
+The goal is not a repo-wide source-available license flip. The goal is a clean
+Apache public foundation with stable contracts that a future proprietary repo can
+depend on without copying or relicensing historical code.
 
 ## Hard Guardrails
 
-- Do not change the repo-wide license before package boundaries are real.
-- Do not add per-package license files, license metadata, or a root
-  `LICENSING.md` until AC-645.
-- Do not relicense any code into a non-Apache tier until AC-646 confirms the
-  required contributor rights.
+- Keep the existing public repository and already-written code Apache-2.0.
+- Do not add dual-license metadata, per-package non-Apache license files, or a
+  root `LICENSING.md` for the existing repo.
+- Treat AC-645 as superseded unless it is re-scoped to Apache metadata hygiene.
+- Treat AC-646 as provenance context, not as a blocker for boundary wrap-up.
 - Preserve `pip install autocontext`, `npm install autoctx`, and the `autoctx`
   CLI as the default compatibility path while the split is in progress.
 - Keep `autocontext/` and `ts/` as umbrella compatibility packages until the
@@ -36,11 +42,11 @@ layout must make the licensing model true before the repo advertises it.
 - Prefer compatibility shims and re-exports over breaking old import paths
   during the first migration phases.
 
-The boundary-enforcement contract also encodes the deferred licensing
-publication rule: no root `LICENSING.md`, no per-package `LICENSE` files, and no
-new core/control package license metadata until AC-645. Any non-Apache
-relicensing remains blocked by the AC-646 rights audit. The current engineering
-audit lives in [`contributor-rights-audit.md`](./contributor-rights-audit.md).
+The boundary-enforcement contract also encodes the Apache-only publication rule:
+no root `LICENSING.md`, no per-package non-Apache `LICENSE` files, and no
+dual-license metadata for the existing repo. The AC-646 engineering audit is
+preserved as historical provenance context in
+[`contributor-rights-audit.md`](./contributor-rights-audit.md).
 
 ## Package Topology
 
@@ -57,8 +63,8 @@ checked in CI.
 | Pi         | `pi-autocontext` initially depends on `autoctx` | Deferred             | Deferred                     |
 
 The umbrella packages preserve the default install and CLI experience. The new
-core/control artifacts make the future license boundary real at the artifact
-level.
+core/control artifacts make the dependency boundary explicit at the artifact
+level while remaining Apache-2.0 in this repo.
 
 ## Path Map
 
@@ -218,8 +224,8 @@ Move to the control plane:
 6. Split `knowledge` deliberately.
 7. Split production trace contracts/SDK from management workflows.
 8. Rewire umbrella packages and CLI ownership.
-9. Apply AC-645 licensing metadata only after boundaries are real and AC-646 is
-   complete.
+9. Remove or reword any user-facing dual-license migration language before
+   publishing the package split.
 10. Revisit Pi dependency ownership after the TypeScript split stabilizes.
 
 ## Review Checks
@@ -235,5 +241,6 @@ Move to the control plane:
   exact includes until ownership is settled.
 - Any PR that changes existing protocol or payload semantics should say so
   explicitly instead of presenting itself as facade-only work.
-- Public docs should not advertise the licensing split until package metadata
-  and rights review are complete.
+- Public docs should not advertise a dual-license migration for the existing
+  repo. They should describe Apache package boundaries and any future
+  proprietary work as separate-repo work.

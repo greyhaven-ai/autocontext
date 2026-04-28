@@ -94,9 +94,13 @@ type TsControlBoundary = {
 
 type LicensingGuardrails = {
 	status: string;
+	decisionDate: string;
+	existingCodeLicense: string;
+	historicalRelicensing: string;
+	futureProprietaryWork: string;
 	licenseMetadataIssue: string;
 	rightsAuditIssue: string;
-	forbiddenPathsUntilAC645: string[];
+	forbiddenDualLicenseMetadataPaths: string[];
 	rightsAudit: {
 		status: string;
 		auditDoc: string;
@@ -232,33 +236,37 @@ describe("package boundaries", () => {
 		expect(existsSync(boundariesPath)).toBe(true);
 	});
 
-	it("keeps license metadata publication deferred to the blocking Linear issues", () => {
+	it("records the Apache-only strategy decision for existing code", () => {
 		const licensing = loadBoundaries().licensing;
 
-		expect(licensing.status).toBe("deferred");
+		expect(licensing.status).toBe("apache-only");
+		expect(licensing.decisionDate).toBe("2026-04-28");
+		expect(licensing.existingCodeLicense).toBe("Apache-2.0");
+		expect(licensing.historicalRelicensing).toBe("out-of-scope");
+		expect(licensing.futureProprietaryWork).toBe("separate-repository");
 		expect(licensing.licenseMetadataIssue).toBe("AC-645");
 		expect(licensing.rightsAuditIssue).toBe("AC-646");
 	});
 
-	it("keeps deferred license publication files absent", () => {
+	it("keeps dual-license publication files absent from the Apache repo", () => {
 		const licensing = loadBoundaries().licensing;
 
-		expect(licensing.forbiddenPathsUntilAC645).toEqual([
+		expect(licensing.forbiddenDualLicenseMetadataPaths).toEqual([
 			"LICENSING.md",
 			"packages/python/core/LICENSE",
 			"packages/python/control/LICENSE",
 			"packages/ts/core/LICENSE",
 			"packages/ts/control-plane/LICENSE",
 		]);
-		for (const relativePath of licensing.forbiddenPathsUntilAC645) {
+		for (const relativePath of licensing.forbiddenDualLicenseMetadataPaths) {
 			expect(existsSync(join(repoRoot, relativePath))).toBe(false);
 		}
 	});
 
-	it("records controlled contributor identity while preserving final signoff blockers", () => {
+	it("keeps the rights audit as provenance context, not a relicensing blocker", () => {
 		const rightsAudit = loadBoundaries().licensing.rightsAudit;
 
-		expect(rightsAudit.status).toBe("in-progress");
+		expect(rightsAudit.status).toBe("historical-context");
 		expect(rightsAudit.auditDoc).toBe("docs/contributor-rights-audit.md");
 		expect(existsSync(join(repoRoot, rightsAudit.auditDoc))).toBe(true);
 		expect(rightsAudit.confirmedControlledContributorIdentities).toEqual([
@@ -270,13 +278,10 @@ describe("package boundaries", () => {
 			},
 		]);
 		expect(rightsAudit.blockedRelicensingPathsUntilConfirmed).toEqual([]);
-		expect(rightsAudit.requiredFinalSignoffs).toEqual([
-			"grey-haven-authority-for-controlled-contributor-identities",
-			"grey-haven-legal-business-approval",
-		]);
+		expect(rightsAudit.requiredFinalSignoffs).toEqual([]);
 	});
 
-	it("keeps TypeScript package license metadata deferred for new package artifacts", () => {
+	it("keeps private TypeScript package skeletons free of separate license metadata", () => {
 		const metadata = loadBoundaries().licensing.typescriptPackageMetadata;
 
 		expect(metadata.forbiddenPackageKeys).toEqual(["license"]);

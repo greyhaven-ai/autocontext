@@ -16,6 +16,8 @@ type TsPackageEntry = PackageEntry & {
 };
 
 type Topology = {
+  status: string;
+  guardrails: Record<string, string>;
   typescript: {
     umbrella: PackageEntry & { bin: string };
     core: TsPackageEntry;
@@ -84,6 +86,19 @@ describe("package topology", () => {
       expect(existsSync(join(repoRoot, entry.path, "tsconfig.json"))).toBe(true);
       expect(existsSync(join(repoRoot, entry.path, entry.source))).toBe(true);
     }
+  });
+
+  it("declares Apache boundary wrap-up guardrails", () => {
+    const topology = loadTopology();
+
+    expect(topology.status).toBe("apache-boundary-wrap-up");
+    expect(topology.guardrails).toMatchObject({
+      repoWideLicenseFlip: "out-of-scope-existing-code-remains-apache-2.0",
+      dualLicenseMetadata: "do-not-publish-for-existing-repo",
+      historicalRelicensing: "out-of-scope",
+      futureProprietaryWork: "separate-repository",
+      defaultInstallCompatibility: "preserve-autocontext-autoctx-and-autoctx-cli",
+    });
   });
 
   it("matches TypeScript package names to the topology", () => {

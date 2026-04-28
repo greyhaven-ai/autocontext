@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "planning-guardrail",
+  "status": "apache-boundary-wrap-up",
   "linearIssues": {
     "strategy": "AC-642",
     "pathMap": "AC-643",
@@ -13,15 +13,16 @@
     "implementationSequence": "AC-650"
   },
   "guardrails": {
-    "repoWideLicenseFlip": "blocked-until-package-boundaries-are-real",
-    "licenseMetadata": "deferred-to-AC-645",
-    "nonApacheRelicensing": "blocked-by-AC-646",
+    "repoWideLicenseFlip": "out-of-scope-existing-code-remains-apache-2.0",
+    "dualLicenseMetadata": "do-not-publish-for-existing-repo",
+    "historicalRelicensing": "out-of-scope",
+    "futureProprietaryWork": "separate-repository",
     "defaultInstallCompatibility": "preserve-autocontext-autoctx-and-autoctx-cli"
   },
   "terms": {
     "umbrellaPackage": "User-facing compatibility distribution that preserves the current install and CLI experience while delegating behavior to core and control-plane artifacts.",
     "corePackage": "Apache 2.0 foundational runtime package that carries the reusable execution substrate.",
-    "controlPackage": "Higher-level operator and management package that will carry the separately licensed control-plane surfaces.",
+    "controlPackage": "Apache 2.0 operator and management package boundary for higher-level control-plane workflows.",
     "compatibilityShell": "Thin package layer that re-exports or dispatches into the new internal artifacts while the migration is in progress.",
     "packageTopology": "The path and artifact map that defines which package owns each ecosystem role during the migration."
   },

@@ -2,7 +2,7 @@
   "name": "@autocontext/control-plane",
   "version": "0.0.0",
   "private": true,
-  "description": "Internal package skeleton for the future control-plane artifact.",
+  "description": "Internal Apache-2.0 package skeleton for the TypeScript control-plane boundary.",
   "type": "module",
   "main": "dist/packages/ts/control-plane/src/index.js",
   "types": "dist/packages/ts/control-plane/src/index.d.ts",

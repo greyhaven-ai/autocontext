@@ -80,17 +80,21 @@ def test_package_boundaries_manifest_exists() -> None:
     assert BOUNDARIES_PATH.exists()
 
 
-def test_license_metadata_publication_is_deferred_to_linear_guardrails() -> None:
+def test_existing_code_strategy_is_apache_only() -> None:
     licensing = _licensing_guardrails()
 
-    assert licensing["status"] == "deferred"
+    assert licensing["status"] == "apache-only"
+    assert licensing["decisionDate"] == "2026-04-28"
+    assert licensing["existingCodeLicense"] == "Apache-2.0"
+    assert licensing["historicalRelicensing"] == "out-of-scope"
+    assert licensing["futureProprietaryWork"] == "separate-repository"
     assert licensing["licenseMetadataIssue"] == "AC-645"
     assert licensing["rightsAuditIssue"] == "AC-646"
 
 
-def test_deferred_license_publication_files_are_absent() -> None:
+def test_dual_license_publication_files_are_absent() -> None:
     licensing = _licensing_guardrails()
-    forbidden_paths = licensing["forbiddenPathsUntilAC645"]
+    forbidden_paths = licensing["forbiddenDualLicenseMetadataPaths"]
     assert isinstance(forbidden_paths, list)
     assert forbidden_paths == [
         "LICENSING.md",
@@ -105,12 +109,12 @@ def test_deferred_license_publication_files_are_absent() -> None:
         assert not (REPO_ROOT / relative_path).exists()
 
 
-def test_rights_audit_records_controlled_identity_and_final_signoff_blocker() -> None:
+def test_rights_audit_is_preserved_as_historical_context() -> None:
     licensing = _licensing_guardrails()
     rights_audit = licensing["rightsAudit"]
     assert isinstance(rights_audit, dict)
 
-    assert rights_audit["status"] == "in-progress"
+    assert rights_audit["status"] == "historical-context"
     assert rights_audit["auditDoc"] == "docs/contributor-rights-audit.md"
     assert (REPO_ROOT / str(rights_audit["auditDoc"])).exists()
     assert rights_audit["confirmedControlledContributorIdentities"] == [
@@ -122,13 +126,10 @@ def test_rights_audit_records_controlled_identity_and_final_signoff_blocker() ->
         }
     ]
     assert rights_audit["blockedRelicensingPathsUntilConfirmed"] == []
-    assert rights_audit["requiredFinalSignoffs"] == [
-        "grey-haven-authority-for-controlled-contributor-identities",
-        "grey-haven-legal-business-approval",
-    ]
+    assert rights_audit["requiredFinalSignoffs"] == []
 
 
-def test_python_license_metadata_stays_deferred_for_new_package_artifacts() -> None:
+def test_private_python_package_skeletons_have_no_separate_license_metadata() -> None:
     licensing = _licensing_guardrails()
     python_metadata = licensing["pythonProjectMetadata"]
     assert isinstance(python_metadata, dict)
