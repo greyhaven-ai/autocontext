@@ -23,6 +23,7 @@
 		"../../../ts/src/production-traces/contract/generated-types.ts",
 		"../../../ts/src/production-traces/contract/branded-ids.ts",
 		"../../../ts/src/production-traces/contract/types.ts",
+		"../../../ts/src/production-traces/contract/canonical-json.ts",
 		"../../../ts/src/production-traces/contract/content-address.ts",
 		"../../../ts/src/production-traces/contract/factories.ts",
 		"../../../ts/src/production-traces/contract/invariants.ts",

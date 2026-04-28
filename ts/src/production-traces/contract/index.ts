@@ -65,6 +65,9 @@ export {
   validateRetentionPolicy,
 } from "./validators.js";
 
+export { canonicalJsonStringify } from "./canonical-json.js";
+export type { JsonValue } from "./canonical-json.js";
+
 export { createProductionTrace } from "./factories.js";
 export type { CreateProductionTraceInputs } from "./factories.js";
 

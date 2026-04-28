@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ulid } from "ulid";
 import type { ProductionTrace } from "../contract/types.js";
-import { canonicalJsonStringify } from "../../control-plane/contract/canonical-json.js";
+import { canonicalJsonStringify } from "../contract/canonical-json.js";
 
 /**
  * Customer-facing filesystem emit helper.

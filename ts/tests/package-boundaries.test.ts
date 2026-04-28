@@ -19,6 +19,7 @@ const productionTraceOpenContractSourcePaths = [
 	"ts/src/production-traces/contract/generated-types.ts",
 	"ts/src/production-traces/contract/branded-ids.ts",
 	"ts/src/production-traces/contract/types.ts",
+	"ts/src/production-traces/contract/canonical-json.ts",
 	"ts/src/production-traces/contract/content-address.ts",
 	"ts/src/production-traces/contract/factories.ts",
 	"ts/src/production-traces/contract/invariants.ts",
@@ -481,6 +482,7 @@ describe("package boundaries", () => {
 			"ts/src/production-traces/contract/branded-ids.ts",
 			"ts/src/production-traces/contract/types.ts",
 			"ts/src/production-traces/contract/validators.ts",
+			"ts/src/production-traces/contract/canonical-json.ts",
 			"ts/src/production-traces/contract/factories.ts",
 			"ts/src/production-traces/contract/invariants.ts",
 			"ts/src/production-traces/contract/content-address.ts",
@@ -488,6 +490,37 @@ describe("package boundaries", () => {
 		for (const importedPath of importedPaths) {
 			expect(productionTraceOpenContractSourcePaths).toContain(importedPath);
 		}
+	});
+
+	it("keeps production trace SDK JSONL serialization pointed at core-owned canonical JSON", () => {
+		const productionTraces =
+			loadBoundaries().mixedDomains.productionTraces.typescriptOpenContract;
+		const writeJsonlSource = readFileSync(
+			join(repoRoot, "ts", "src", "production-traces", "sdk", "write-jsonl.ts"),
+			"utf-8",
+		);
+		const imports = importSpecifiers(writeJsonlSource);
+
+		expect(productionTraces.coreOwnedSourceIncludes).toContain(
+			"../../../ts/src/production-traces/contract/canonical-json.ts",
+		);
+		expect(imports).toContain("../contract/canonical-json.js");
+		expect(imports).not.toContain(
+			"../../control-plane/contract/canonical-json.js",
+		);
+	});
+
+	it("preserves the control-plane canonical JSON path as a compatibility re-export", () => {
+		const compatibilitySource = readFileSync(
+			join(repoRoot, "ts", "src", "control-plane", "contract", "canonical-json.ts"),
+			"utf-8",
+		);
+		const imports = importSpecifiers(compatibilitySource);
+
+		expect(imports).toEqual([
+			"../../production-traces/contract/canonical-json.js",
+			"../../production-traces/contract/canonical-json.js",
+		]);
 	});
 
 	it("keeps production trace SDK helpers independent of control-plane workflows", () => {
