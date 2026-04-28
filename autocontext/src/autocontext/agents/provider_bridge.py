@@ -333,7 +333,7 @@ def create_role_client(
         return RuntimeBridgeClient(PiCLIRuntime(pi_config))
 
     if provider_type == "pi-rpc":
-        from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
+        from autocontext.runtimes.pi_rpc import PiRPCConfig, build_pi_rpc_runtime
 
         rpc_config = PiRPCConfig(
             pi_command=settings.pi_command,
@@ -343,7 +343,7 @@ def create_role_client(
             session_persistence=settings.pi_rpc_session_persistence,
             no_context_files=settings.pi_no_context_files,
         )
-        return RuntimeBridgeClient(PiRPCRuntime(rpc_config))
+        return RuntimeBridgeClient(build_pi_rpc_runtime(rpc_config, persistent=settings.pi_rpc_persistent))
 
     if provider_type == "hermes":
         from autocontext.runtimes.hermes_cli import HermesCLIConfig, HermesCLIRuntime

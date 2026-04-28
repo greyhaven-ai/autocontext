@@ -204,16 +204,16 @@ def get_provider(settings: AppSettings) -> LLMProvider:
 
     if provider_type == "pi-rpc":
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
-        from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
+        from autocontext.runtimes.pi_rpc import PiRPCConfig, build_pi_rpc_runtime
 
-        pi_rpc_runtime = PiRPCRuntime(PiRPCConfig(
+        pi_rpc_runtime = build_pi_rpc_runtime(PiRPCConfig(
             pi_command=settings.pi_command,
             model=settings.pi_model or settings.judge_model,
             timeout=settings.pi_timeout,
             workspace=settings.pi_workspace,
             session_persistence=settings.pi_rpc_session_persistence,
             no_context_files=settings.pi_no_context_files,
-        ))
+        ), persistent=settings.pi_rpc_persistent)
         return RuntimeBridgeProvider(
             pi_rpc_runtime,
             default_model_name=settings.pi_model or settings.judge_model or "pi-rpc-default",
