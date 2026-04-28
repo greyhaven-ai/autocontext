@@ -137,6 +137,12 @@
 			"blockedPackageDependencies": [
 				"@autocontext/control-plane",
 				"autoctx"
+			],
+			"requiredPackageDependencies": [
+				"zod",
+				"ulid",
+				"ajv",
+				"ajv-formats"
 			]
 		},
 		"control": {

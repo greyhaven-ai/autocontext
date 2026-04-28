@@ -49,6 +49,7 @@ type TsCoreBoundary = {
 	exactIncludes: string[];
 	blockedProgramPathSubstrings: string[];
 	blockedPackageDependencies: string[];
+	requiredPackageDependencies: string[];
 };
 
 type TsControlBoundary = {
@@ -371,6 +372,25 @@ describe("package boundaries", () => {
 			for (const dependencies of dependencySections) {
 				expect(Object.keys(dependencies ?? {})).not.toContain(blockedPackage);
 			}
+		}
+	});
+
+	it("declares runtime dependencies needed by the TypeScript core package root", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const packageJson = loadJson<TsPackageJson>(
+			join(repoRoot, core.packagePath, "package.json"),
+		);
+		const dependencies = packageJson.dependencies ?? {};
+
+		expect(core.requiredPackageDependencies).toEqual([
+			"zod",
+			"ulid",
+			"ajv",
+			"ajv-formats",
+		]);
+		for (const dependency of core.requiredPackageDependencies) {
+			expect(Object.keys(dependencies)).toContain(dependency);
 		}
 	});
 
