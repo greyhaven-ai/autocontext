@@ -141,6 +141,13 @@ describe("detectConflicts — insert-anchor-inside-edit", () => {
     expect(report.kind).toBe("ok");
   });
 
+  test("insert-statement whose anchor exactly matches an edit range is not conflict", () => {
+    const wrap = wrapEdit({ range: rangeOf(0, 20) });
+    const ins = insertEdit({ anchorRange: rangeOf(0, 20) });
+    const report = detectConflicts([wrap, ins]);
+    expect(report.kind).toBe("ok");
+  });
+
   test("two insert-statements at the SAME anchor range do NOT conflict", () => {
     const ins1 = insertEdit({ anchorRange: rangeOf(10, 15), statementSource: "a()" });
     const ins2 = insertEdit({ anchorRange: rangeOf(10, 15), statementSource: "b()" });

@@ -35,6 +35,31 @@ describe("SessionStore", () => {
     expect(loaded!.turns).toHaveLength(1);
   });
 
+  it("round-trips branch lineage", () => {
+    const session = Session.create({ goal: "explore" });
+    const root = session.submitTurn({ prompt: "root", role: "competitor" });
+    session.completeTurn(root.turnId, { response: "root response", tokensUsed: 10 });
+    session.forkFromTurn(root.turnId, {
+      branchId: "alt",
+      label: "alternate path",
+      summary: "early alternate",
+    });
+    const alt = session.submitTurn({ prompt: "alt", role: "analyst" });
+    session.completeTurn(alt.turnId, { response: "alt response", tokensUsed: 20 });
+    session.summarizeBranch("alt", "promising alternate");
+    store.save(session);
+
+    const loaded = store.load(session.sessionId);
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.activeBranchId).toBe("alt");
+    expect(loaded!.activeTurnId).toBe(alt.turnId);
+    expect(loaded!.branches.map((branch) => branch.branchId)).toEqual(["main", "alt"]);
+    expect(loaded!.branches[1].parentTurnId).toBe(root.turnId);
+    expect(loaded!.branches[1].summary).toBe("promising alternate");
+    expect(loaded!.branchPath("alt").map((turn) => turn.turnId)).toEqual([root.turnId, alt.turnId]);
+  });
+
   it("list sessions", () => {
     store.save(Session.create({ goal: "a" }));
     store.save(Session.create({ goal: "b" }));

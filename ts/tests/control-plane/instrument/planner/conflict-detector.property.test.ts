@@ -2,7 +2,7 @@
  * A2-I Layer 5 — P-conflict-safety (spec §4.4 I6, §11.2).
  *
  * Invariant: detectConflicts never returns kind:"ok" with deduplicatedEdits
- * that contain a pair of overlapping byte-ranges.
+ * that contain a pair of non-composable overlapping byte-ranges.
  */
 import { describe, test } from "vitest";
 import fc from "fast-check";
@@ -81,8 +81,22 @@ function overlaps(a: SourceRange, b: SourceRange): boolean {
   return a.startByte < b.endByte && b.startByte < a.endByte;
 }
 
+function rangesEqual(a: SourceRange, b: SourceRange): boolean {
+  return a.startByte === b.startByte && a.endByte === b.endByte;
+}
+
+function isComposableCoextensiveInsertPair(a: EditDescriptor, b: EditDescriptor): boolean {
+  if (a.kind === "insert-statement" && b.kind !== "insert-statement") {
+    return rangesEqual(a.anchor.range, getRanges(b)[0]!);
+  }
+  if (b.kind === "insert-statement" && a.kind !== "insert-statement") {
+    return rangesEqual(b.anchor.range, getRanges(a)[0]!);
+  }
+  return false;
+}
+
 describe("P-conflict-safety — I6", () => {
-  test("deduplicatedEdits never contain overlapping range pairs (100 runs)", () => {
+  test("deduplicatedEdits never contain non-composable overlapping range pairs (100 runs)", () => {
     fc.assert(
       fc.property(fc.array(editArb, { minLength: 0, maxLength: 12 }), (edits) => {
         const report = detectConflicts(edits);
@@ -95,10 +109,11 @@ describe("P-conflict-safety — I6", () => {
               for (const rb of getRanges(eb)) {
                 // InsertStatementEdit anchor ranges are allowed to coincide with
                 // OTHER insert anchors (two insertions at the same anchor), per
-                // the unit tests. Only edits that modify content (wrap/replace)
-                // must be non-overlapping.
+                // the unit tests. Coextensive insert anchors are also composable
+                // with content edits because the insertion occurs before/after
+                // the matched range, not inside the edit's rewritten content.
                 const bothAreInsert = ea.kind === "insert-statement" && eb.kind === "insert-statement";
-                if (bothAreInsert) continue;
+                if (bothAreInsert || isComposableCoextensiveInsertPair(ea, eb)) continue;
                 if (overlaps(ra, rb)) {
                   throw new Error(
                     `overlapping ranges in deduplicatedEdits: [${ra.startByte},${ra.endByte}) vs [${rb.startByte},${rb.endByte})`,
