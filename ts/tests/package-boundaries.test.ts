@@ -117,6 +117,11 @@ type Topology = {
 	};
 };
 
+type TsPackageExport = {
+	import: string;
+	types: string;
+};
+
 type TsPackageJson = {
 	main: string;
 	types: string;
@@ -124,12 +129,7 @@ type TsPackageJson = {
 	devDependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
 	optionalDependencies?: Record<string, string>;
-	exports: {
-		".": {
-			import: string;
-			types: string;
-		};
-	};
+	exports: Record<string, TsPackageExport>;
 };
 
 function loadBoundaries(): PackageBoundaries {
@@ -318,6 +318,19 @@ describe("package boundaries", () => {
 		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
 			expect(core.exactIncludes).toContain(sourceInclude);
 		}
+	});
+
+	it("exposes production trace SDK validation through a stable TypeScript core subpath", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const packageJson = loadJson<TsPackageJson>(
+			join(repoRoot, core.packagePath, "package.json"),
+		);
+
+		expect(packageJson.exports["./production-traces/validate"]).toEqual({
+			import: "./dist/ts/src/production-traces/sdk/validate.js",
+			types: "./dist/ts/src/production-traces/sdk/validate.d.ts",
+		});
 	});
 
 	it("keeps TypeScript production trace core ownership limited to explicit open claims", () => {
@@ -540,12 +553,10 @@ describe("package boundaries", () => {
 			);
 			expect(existsSync(join(packageDir, packageJson.main))).toBe(true);
 			expect(existsSync(join(packageDir, packageJson.types))).toBe(true);
-			expect(
-				existsSync(join(packageDir, packageJson.exports["."].import)),
-			).toBe(true);
-			expect(existsSync(join(packageDir, packageJson.exports["."].types))).toBe(
-				true,
-			);
+			for (const packageExport of Object.values(packageJson.exports)) {
+				expect(existsSync(join(packageDir, packageExport.import))).toBe(true);
+				expect(existsSync(join(packageDir, packageExport.types))).toBe(true);
+			}
 
 			if (packageDir.endsWith(join("packages", "ts", "core"))) {
 				const productionTraces =

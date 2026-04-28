@@ -153,9 +153,10 @@ already claimed contract files; adding a new re-export requires an explicit
 manifest/test update before core owns that file.
 The first emit-SDK slice claims only
 `ts/src/production-traces/sdk/validate.ts`. It is a customer-facing validation
-helper that delegates to the already claimed contract validator. The broader SDK
-barrel stays mixed until build, hashing, trace-batch, and JSONL writing helpers
-are each checked for workflow and dependency ownership.
+helper exposed through `@autocontext/core/production-traces/validate` and
+delegates to the already claimed contract validator. The broader SDK barrel
+stays mixed until build, hashing, trace-batch, and JSONL writing helpers are
+each checked for workflow and dependency ownership.
 
 The next independent source-ownership slice claims the current exact taxonomy
 files, `ts/src/production-traces/taxonomy/anthropic-error-reasons.ts`,
