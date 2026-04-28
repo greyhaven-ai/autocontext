@@ -192,7 +192,7 @@ def prepare_generation_prompts(
         scenario_name=ctx.scenario_name,
         run_id=ctx.run_id,
         generation=ctx.generation,
-        context_budget_tokens=ctx.settings.context_budget_tokens,
+        context_budget_tokens=context_budget_tokens,
         raw_components=_benchmarkable_prompt_components(
             current_playbook=current_playbook,
             score_trajectory=score_trajectory,

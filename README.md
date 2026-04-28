@@ -257,9 +257,11 @@ All 11 families execute in both Python and TypeScript. TypeScript uses V8 isolat
 
 **LLM providers**: Anthropic (with `instrument_client` capture), OpenAI-compatible (vLLM, Ollama, Hermes), Gemini, Mistral, Groq, OpenRouter, Azure OpenAI, MLX (Apple Silicon), CUDA (Linux GPUs), Pi (CLI and RPC).
 
-**Agent runtimes**: Claude CLI, Codex CLI, Hermes CLI, Direct API, Pi variants.
+**Agent runtimes**: Claude CLI, Codex CLI, Hermes CLI, Direct API, Pi variants, plus branch-aware session and persistent Pi RPC scaffolding for local agent loops.
 
 **Executors**: Local subprocess, SSH remote, Monty (`pydantic-monty` sandbox), PrimeIntellect remote sandbox.
+
+**Harness profiles**: The Python control plane supports a Pi-shaped lean profile that caps prompt context during generation and exports a minimal tool-affordance allowlist for agent surfaces that enforce tool gating.
 
 A deterministic offline provider exists for the test suite. Configuration matrix: [`.env.example`](.env.example) and [docs/concept-model.md](docs/concept-model.md).
 

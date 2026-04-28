@@ -15,7 +15,7 @@ from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.agents.skeptic import SkepticReview
 from autocontext.agents.types import AgentOutputs
-from autocontext.config.settings import AppSettings
+from autocontext.config.settings import AppSettings, HarnessProfile
 from autocontext.execution.supervisor import ExecutionSupervisor
 from autocontext.harness.core.types import ModelResponse, RoleExecution, RoleUsage
 from autocontext.harness.evaluation.types import EvaluationResult, EvaluationSummary
@@ -218,6 +218,48 @@ class TestStageKnowledgeSetup:
         ctx = _make_ctx()
         result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
         assert result.strategy_interface == '{"aggression": float}'
+
+    def test_lean_harness_profile_caps_prompt_budget(self) -> None:
+        artifacts = MagicMock()
+        artifacts.read_playbook.return_value = ""
+        artifacts.read_tool_context.return_value = ""
+        artifacts.read_skills.return_value = ""
+        artifacts.read_mutation_replay.return_value = ""
+        artifacts.read_latest_weakness_reports_markdown.return_value = ""
+        artifacts.read_latest_progress_reports_markdown.return_value = ""
+        artifacts.read_latest_advance_analysis.return_value = ""
+        artifacts.read_progress.return_value = None
+        trajectory = MagicMock()
+        trajectory.build_trajectory.return_value = ""
+        trajectory.build_strategy_registry.return_value = ""
+        trajectory.build_experiment_log.return_value = ""
+        settings = AppSettings(
+            agent_provider="deterministic",
+            harness_profile=HarnessProfile.LEAN,
+            context_budget_tokens=100_000,
+            lean_context_budget_tokens=16_000,
+            evidence_freshness_enabled=False,
+            evidence_workspace_enabled=False,
+            progress_json_enabled=False,
+            session_reports_enabled=False,
+        )
+        ctx = _make_ctx(settings=settings)
+        captured: dict[str, object] = {}
+
+        from autocontext.prompts.templates import PromptBundle
+
+        def fake_prepare_generation_prompts(*args: object, **kwargs: object) -> tuple[PromptBundle, None]:
+            captured["context_budget_tokens"] = kwargs["context_budget_tokens"]
+            return PromptBundle(competitor="c", analyst="a", coach="co", architect="ar"), None
+
+        with patch(
+            "autocontext.loop.stages.prepare_generation_prompts",
+            side_effect=fake_prepare_generation_prompts,
+        ):
+            result = stage_knowledge_setup(ctx, artifacts=artifacts, trajectory_builder=trajectory)
+
+        assert result.prompts is not None
+        assert captured["context_budget_tokens"] == 16_000
 
     def test_ablation_skips_knowledge(self) -> None:
         settings = AppSettings(agent_provider="deterministic", ablation_no_feedback=True)

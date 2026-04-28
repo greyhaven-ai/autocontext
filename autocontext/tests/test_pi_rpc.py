@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from autocontext.agents.provider_bridge import RuntimeBridgeClient, create_role_client
 from autocontext.config.settings import AppSettings
-from autocontext.runtimes.pi_rpc import PiRPCConfig, PiRPCRuntime
+from autocontext.runtimes.pi_rpc import PiPersistentRPCRuntime, PiRPCConfig, PiRPCRuntime
 
 
 class _FakeStdin:
@@ -67,6 +67,7 @@ def test_config_defaults() -> None:
     c = PiRPCConfig()
     assert c.pi_command == "pi"
     assert c.timeout == 120.0
+    assert c.workspace == ""
     assert c.session_persistence is True
     assert c.no_context_files is False
     assert c.branch_on_retry is True
@@ -212,6 +213,86 @@ def test_revise_success() -> None:
     with patch("subprocess.Popen", return_value=process):
         output = runtime.revise("original", "prev output", "feedback")
     assert output.text == "Revised output."
+
+
+# ---------------------------------------------------------------------------
+# PiPersistentRPCRuntime — process reuse and queue/state commands
+# ---------------------------------------------------------------------------
+
+
+def _event_line(event: dict[str, object]) -> str:
+    return json.dumps(event) + "\n"
+
+
+def test_persistent_runtime_reuses_process_for_multiple_prompts() -> None:
+    """Persistent RPC keeps one Pi process alive across prompts."""
+    stdout = "".join(
+        [
+            _event_line({"type": "response", "command": "prompt", "success": True}),
+            _event_line({"type": "agent_end", "messages": [{"role": "assistant", "content": "first"}]}),
+            _event_line({"type": "response", "command": "prompt", "success": True}),
+            _event_line({"type": "agent_end", "messages": [{"role": "assistant", "content": "second"}]}),
+        ]
+    )
+    process = _FakePopen(stdout, never_exits=True)
+    runtime = PiPersistentRPCRuntime(PiRPCConfig(timeout=0.5))
+    with patch("subprocess.Popen", return_value=process) as popen:
+        first = runtime.generate("one")
+        second = runtime.generate("two")
+        runtime.close()
+
+    sent_lines = [json.loads(line) for line in process.stdin.value.strip().split("\n")]
+    assert popen.call_count == 1
+    assert [line["message"] for line in sent_lines] == ["one", "two"]
+    assert first.text == "first"
+    assert second.text == "second"
+    assert process.stdin.closed is True
+
+
+def test_persistent_runtime_supports_steer_follow_up_and_state_commands() -> None:
+    """Persistent RPC exposes Pi queue and state commands instead of only prompt()."""
+    stdout = "".join(
+        [
+            _event_line({"type": "response", "command": "steer", "success": True}),
+            _event_line({"type": "response", "command": "follow_up", "success": True}),
+            _event_line(
+                {
+                    "type": "response",
+                    "command": "get_state",
+                    "success": True,
+                    "data": {"isStreaming": True, "pendingMessageCount": 2},
+                }
+            ),
+        ]
+    )
+    process = _FakePopen(stdout, never_exits=True)
+    runtime = PiPersistentRPCRuntime(PiRPCConfig(timeout=0.5))
+    with patch("subprocess.Popen", return_value=process):
+        assert runtime.steer("change course")["success"] is True
+        assert runtime.follow_up("also check docs")["success"] is True
+        state = runtime.get_state()
+        runtime.close()
+
+    sent_lines = [json.loads(line) for line in process.stdin.value.strip().split("\n")]
+    assert [line["type"] for line in sent_lines] == ["steer", "follow_up", "get_state"]
+    assert sent_lines[0]["message"] == "change course"
+    assert sent_lines[1]["message"] == "also check docs"
+    assert state["isStreaming"] is True
+    assert state["pendingMessageCount"] == 2
+
+
+def test_persistent_runtime_workspace_is_subprocess_cwd() -> None:
+    """Pi RPC uses cwd for workspace, matching Pi CLI protocol alignment."""
+    process = _FakePopen(
+        _event_line({"type": "response", "command": "get_state", "success": True, "data": {}}),
+        never_exits=True,
+    )
+    runtime = PiPersistentRPCRuntime(PiRPCConfig(workspace="/tmp/pi-ws", timeout=0.5))
+    with patch("subprocess.Popen", return_value=process) as popen:
+        runtime.get_state()
+        runtime.close()
+
+    assert popen.call_args.kwargs["cwd"] == "/tmp/pi-ws"
 
 
 # ---------------------------------------------------------------------------
