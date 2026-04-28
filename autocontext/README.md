@@ -105,7 +105,7 @@ uv run autoctx solve --description "improve customer-support replies for billing
 
 `autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER`, other role-routing overrides, and per-call `--provider <name>` overrides all apply to live simulation generation.
 
-`autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too.
+`autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too. When browser exploration is enabled, `--browser-url <url>` captures a policy-checked snapshot and folds that evidence into the investigation prompts and report artifacts.
 
 Run with Pi RPC (local Pi subprocess using `pi --mode rpc` JSONL):
 
@@ -153,7 +153,9 @@ uv run autoctx solve --description "improve customer-support replies for billing
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
 uv run autoctx simulate --description "simulate deploying a web service with rollback" --provider claude-cli
 uv run autoctx investigate --description "why did conversion drop after Tuesday's release"
+uv run autoctx investigate --description "checkout is failing in prod" --browser-url https://status.example.com
 uv run autoctx queue add --task-prompt "Write a 1-line fact about primes" --rubric "correct" --threshold 0.8 --rounds 2
+uv run autoctx queue --spec support_triage --browser-url https://status.example.com
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
@@ -230,6 +232,14 @@ Common settings:
 - `AUTOCONTEXT_RLM_ENABLED`
 - `AUTOCONTEXT_HARNESS_PREFLIGHT_ENABLED`
 - `AUTOCONTEXT_STAGED_VALIDATION_ENABLED`
+- `AUTOCONTEXT_BROWSER_ENABLED`
+- `AUTOCONTEXT_BROWSER_ALLOWED_DOMAINS`
+- `AUTOCONTEXT_BROWSER_PROFILE_MODE`
+- `AUTOCONTEXT_BROWSER_ALLOW_AUTH`
+- `AUTOCONTEXT_BROWSER_ALLOW_DOWNLOADS` and `AUTOCONTEXT_BROWSER_DOWNLOADS_ROOT`
+
+Browser exploration defaults to a secure disabled posture and uses the shared contract described in [../docs/browser-exploration-contract.md](../docs/browser-exploration-contract.md).
+The Python package includes a thin Chrome CDP backend that attaches to an existing debugger endpoint, enforces the browser allowlist, and stores browser evidence under run-local roots.
 
 See the repo-level [.env.example](../.env.example) for a working starting point.
 

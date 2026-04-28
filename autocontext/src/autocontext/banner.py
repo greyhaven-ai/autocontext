@@ -14,11 +14,15 @@ from html import escape as html_escape
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-TAGLINE = "turn repeated agent work into validated, reusable execution"
+TAGLINE = (
+    "a recursive self-improving harness designed to help your agents "
+    "(and future iterations of those agents) succeed on any task"
+)
 SYNC_BLOCK_START = "<!-- autocontext-readme-hero:start -->"
 SYNC_BLOCK_END = "<!-- autocontext-readme-hero:end -->"
 WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
 WHATS_NEW_BLOCK_END = "<!-- autocontext-whats-new:end -->"
+README_WHATS_NEW_HEADING = "What's New in 0.4.7"
 README_BADGES = (
     (
         "https://github.com/greyhaven-ai/autocontext/blob/main/LICENSE",
@@ -184,7 +188,7 @@ def render_readme_whats_new_block() -> str:
     whats_new = "\n".join(f"- {item}" for item in load_whats_new())
     return (
         f"{WHATS_NEW_BLOCK_START}\n"
-        "## What's New\n\n"
+        f"## {README_WHATS_NEW_HEADING}\n\n"
         f"{whats_new}\n"
         f"{WHATS_NEW_BLOCK_END}"
     )

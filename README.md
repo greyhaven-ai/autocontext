@@ -56,7 +56,7 @@ See [`.env.example`](.env.example) for every provider's variables. Prefer to clo
 
 If you already work inside a coding agent (Claude Code, Pi, Cursor, or anything MCP-aware), you don't need to learn the CLI. Wire autocontext in once and your agent gets a natural-language entry point.
 
-**Pi** ships an autocontext skill out of the box. Install the autocontext Pi extension and Pi loads `autocontext_solve`, `autocontext_judge`, `autocontext_improve`, `autocontext_status`, and `autocontext_scenarios` as native tools. Then you just ask:
+**Pi** ships an autocontext skill out of the box. Install the autocontext Pi extension and Pi loads natural-language wrappers over live tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, and `autocontext_list_scenarios`. Then you just ask:
 
 > "Solve: improve customer-support replies for billing disputes."
 >
@@ -76,7 +76,7 @@ If you already work inside a coding agent (Claude Code, Pi, Cursor, or anything 
 }
 ```
 
-After that, the harness exposes `autocontext_solve_scenario`, `autocontext_judge`, `autocontext_improve`, `autocontext_run_*`, `autocontext_export_skill`, and `autocontext_search_strategies`. The MCP server runs on stdio. The TypeScript package exposes the same tools via `bunx autoctx mcp-serve`.
+After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, `autocontext_list_scenarios`, `autocontext_export_skill`, and `autocontext_search_strategies`. The MCP server runs on stdio. The TypeScript package exposes the same capabilities with its documented tool names via `bunx autoctx mcp-serve`.
 
 Full integration guide: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md).
 
@@ -191,7 +191,6 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
-
 ## What's New in 0.4.7
 
 - **Anthropic SDK instrumentation** in Python and TypeScript: wrap any existing Anthropic client with `instrument_client` / `instrumentClient` to capture streaming and non-streaming production traces.
