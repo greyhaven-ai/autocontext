@@ -18,6 +18,10 @@
     "./production-traces/build-trace": {
       "import": "./dist/ts/src/production-traces/sdk/build-trace.js",
       "types": "./dist/ts/src/production-traces/sdk/build-trace.d.ts"
+    },
+    "./production-traces/write-jsonl": {
+      "import": "./dist/ts/src/production-traces/sdk/write-jsonl.js",
+      "types": "./dist/ts/src/production-traces/sdk/write-jsonl.d.ts"
     }
   },
   "files": [
