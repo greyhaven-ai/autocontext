@@ -45,6 +45,7 @@ const productionTraceOpenContractProgramPathSubstrings = [
 ].map((entry) => `/${entry}`);
 const productionTraceOpenSdkSourcePaths = [
 	"ts/src/production-traces/sdk/validate.ts",
+	"ts/src/production-traces/sdk/build-trace.ts",
 ];
 const productionTraceOpenSdkSourceIncludes =
 	productionTraceOpenSdkSourcePaths.map((entry) => `../../../${entry}`);
@@ -302,7 +303,7 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("claims production trace SDK validation as an explicit TypeScript core-owned open SDK helper", () => {
+	it("claims production trace SDK helpers as explicit TypeScript core-owned open SDK helpers", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
 		const productionTraces =
@@ -320,7 +321,7 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("exposes production trace SDK validation through a stable TypeScript core subpath", () => {
+	it("exposes production trace SDK helpers through stable TypeScript core subpaths", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
 		const packageJson = loadJson<TsPackageJson>(
@@ -330,6 +331,10 @@ describe("package boundaries", () => {
 		expect(packageJson.exports["./production-traces/validate"]).toEqual({
 			import: "./dist/ts/src/production-traces/sdk/validate.js",
 			types: "./dist/ts/src/production-traces/sdk/validate.d.ts",
+		});
+		expect(packageJson.exports["./production-traces/build-trace"]).toEqual({
+			import: "./dist/ts/src/production-traces/sdk/build-trace.js",
+			types: "./dist/ts/src/production-traces/sdk/build-trace.d.ts",
 		});
 	});
 
@@ -402,7 +407,7 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("keeps production trace SDK validation independent of control-plane workflows", () => {
+	it("keeps production trace SDK helpers independent of control-plane workflows", () => {
 		const productionTraces =
 			loadBoundaries().mixedDomains.productionTraces.typescriptOpenSdk;
 
@@ -425,6 +430,22 @@ describe("package boundaries", () => {
 					false,
 				);
 			}
+		}
+	});
+
+	it("declares runtime dependencies needed by production trace open SDK sources", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const productionTraces =
+			boundaries.mixedDomains.productionTraces.typescriptOpenSdk;
+		const packageJson = loadJson<TsPackageJson>(
+			join(repoRoot, core.packagePath, "package.json"),
+		);
+		const dependencies = packageJson.dependencies ?? {};
+
+		expect(productionTraces.requiredPackageDependencies).toEqual(["ulid"]);
+		for (const dependency of productionTraces.requiredPackageDependencies) {
+			expect(Object.keys(dependencies)).toContain(dependency);
 		}
 	});
 

@@ -117,6 +117,7 @@
 				"../../../ts/src/production-traces/contract/invariants.ts",
 				"../../../ts/src/production-traces/contract/validators.ts",
 				"../../../ts/src/production-traces/sdk/validate.ts",
+				"../../../ts/src/production-traces/sdk/build-trace.ts",
 				"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
 				"../../../ts/src/production-traces/taxonomy/index.ts"
@@ -240,11 +241,13 @@
 			},
 			"typescriptOpenSdk": {
 				"coreOwnedSourceIncludes": [
-					"../../../ts/src/production-traces/sdk/validate.ts"
+					"../../../ts/src/production-traces/sdk/validate.ts",
+					"../../../ts/src/production-traces/sdk/build-trace.ts"
 				],
 				"coreOwnedSchemaAssetIncludes": [],
 				"coreOwnedProgramPathSubstrings": [
-					"/ts/src/production-traces/sdk/validate.ts"
+					"/ts/src/production-traces/sdk/validate.ts",
+					"/ts/src/production-traces/sdk/build-trace.ts"
 				],
 				"forbiddenImportPathSubstrings": [
 					"control-plane/",
@@ -254,7 +257,9 @@
 					"../retention/",
 					"../../traces/"
 				],
-				"requiredPackageDependencies": []
+				"requiredPackageDependencies": [
+					"ulid"
+				]
 			},
 			"typescriptOpenTaxonomy": {
 				"coreOwnedSourceIncludes": [
