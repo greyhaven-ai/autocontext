@@ -28,6 +28,7 @@
 		"../../../ts/src/production-traces/contract/invariants.ts",
 		"../../../ts/src/production-traces/contract/validators.ts",
 		"../../../ts/src/production-traces/sdk/validate.ts",
+		"../../../ts/src/production-traces/sdk/build-trace.ts",
 		"../../../ts/src/production-traces/taxonomy/anthropic-error-reasons.ts",
 		"../../../ts/src/production-traces/taxonomy/openai-error-reasons.ts",
 		"../../../ts/src/production-traces/taxonomy/index.ts"

@@ -14,6 +14,10 @@
     "./production-traces/validate": {
       "import": "./dist/ts/src/production-traces/sdk/validate.js",
       "types": "./dist/ts/src/production-traces/sdk/validate.d.ts"
+    },
+    "./production-traces/build-trace": {
+      "import": "./dist/ts/src/production-traces/sdk/build-trace.js",
+      "types": "./dist/ts/src/production-traces/sdk/build-trace.d.ts"
     }
   },
   "files": [

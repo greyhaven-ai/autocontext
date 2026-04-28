@@ -1,6 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
@@ -45,6 +54,7 @@ const productionTraceOpenContractProgramPathSubstrings = [
 ].map((entry) => `/${entry}`);
 const productionTraceOpenSdkSourcePaths = [
 	"ts/src/production-traces/sdk/validate.ts",
+	"ts/src/production-traces/sdk/build-trace.ts",
 ];
 const productionTraceOpenSdkSourceIncludes =
 	productionTraceOpenSdkSourcePaths.map((entry) => `../../../${entry}`);
@@ -302,7 +312,7 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("claims production trace SDK validation as an explicit TypeScript core-owned open SDK helper", () => {
+	it("claims production trace SDK helpers as explicit TypeScript core-owned open SDK helpers", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
 		const productionTraces =
@@ -320,7 +330,7 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("exposes production trace SDK validation through a stable TypeScript core subpath", () => {
+	it("exposes production trace SDK helpers through stable TypeScript core subpaths", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
 		const packageJson = loadJson<TsPackageJson>(
@@ -331,6 +341,84 @@ describe("package boundaries", () => {
 			import: "./dist/ts/src/production-traces/sdk/validate.js",
 			types: "./dist/ts/src/production-traces/sdk/validate.d.ts",
 		});
+		expect(packageJson.exports["./production-traces/build-trace"]).toEqual({
+			import: "./dist/ts/src/production-traces/sdk/build-trace.js",
+			types: "./dist/ts/src/production-traces/sdk/build-trace.d.ts",
+		});
+	});
+
+	it("resolves build-trace SDK version from the emitted TypeScript core package", async () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const packageDir = join(repoRoot, core.packagePath);
+		const tempRoot = mkdtempSync(join(repoRoot, "ts", ".tmp-core-version-"));
+
+		try {
+			rmSync(join(packageDir, "dist"), { force: true, recursive: true });
+			execFileSync("npm", ["run", "build"], {
+				cwd: packageDir,
+				encoding: "utf-8",
+			});
+
+			const installedCore = join(
+				tempRoot,
+				"node_modules",
+				"@autocontext",
+				"core",
+			);
+			mkdirSync(installedCore, { recursive: true });
+			cpSync(join(packageDir, "dist"), join(installedCore, "dist"), {
+				recursive: true,
+			});
+			writeFileSync(
+				join(installedCore, "package.json"),
+				JSON.stringify({
+					name: "@autocontext/core",
+					version: "9.8.7",
+					type: "module",
+				}),
+			);
+
+			const buildTraceModule = (await import(
+				pathToFileURL(
+					join(
+						installedCore,
+						"dist",
+						"ts",
+						"src",
+						"production-traces",
+						"sdk",
+						"build-trace.js",
+					),
+				).href
+			)) as typeof import("../src/production-traces/sdk/build-trace.js");
+			const trace = buildTraceModule.buildTrace({
+				provider: "openai",
+				model: "gpt-4o-mini",
+				messages: [
+					{
+						role: "user",
+						content: "hi",
+						timestamp: "2026-04-17T12:00:00.000Z",
+					},
+				],
+				timing: {
+					startedAt: "2026-04-17T12:00:00.000Z",
+					endedAt: "2026-04-17T12:00:01.000Z",
+					latencyMs: 1000,
+				},
+				usage: { tokensIn: 10, tokensOut: 5 },
+				env: {
+					environmentTag: "production",
+					appId: "core-version-test",
+				},
+				traceId: "01HZ6X2K7M9A3B4C5D6E7F8G9H",
+			} as Parameters<typeof buildTraceModule.buildTrace>[0]);
+
+			expect(trace.source.sdk.version).toBe("9.8.7");
+		} finally {
+			rmSync(tempRoot, { force: true, recursive: true });
+		}
 	});
 
 	it("keeps TypeScript production trace core ownership limited to explicit open claims", () => {
@@ -402,7 +490,7 @@ describe("package boundaries", () => {
 		}
 	});
 
-	it("keeps production trace SDK validation independent of control-plane workflows", () => {
+	it("keeps production trace SDK helpers independent of control-plane workflows", () => {
 		const productionTraces =
 			loadBoundaries().mixedDomains.productionTraces.typescriptOpenSdk;
 
@@ -425,6 +513,22 @@ describe("package boundaries", () => {
 					false,
 				);
 			}
+		}
+	});
+
+	it("declares runtime dependencies needed by production trace open SDK sources", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const productionTraces =
+			boundaries.mixedDomains.productionTraces.typescriptOpenSdk;
+		const packageJson = loadJson<TsPackageJson>(
+			join(repoRoot, core.packagePath, "package.json"),
+		);
+		const dependencies = packageJson.dependencies ?? {};
+
+		expect(productionTraces.requiredPackageDependencies).toEqual(["ulid"]);
+		for (const dependency of productionTraces.requiredPackageDependencies) {
+			expect(Object.keys(dependencies)).toContain(dependency);
 		}
 	});
 
