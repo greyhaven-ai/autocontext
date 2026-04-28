@@ -38,6 +38,9 @@ export const SessionEventType = {
   TURN_COMPLETED: "turn_completed",
   TURN_INTERRUPTED: "turn_interrupted",
   TURN_FAILED: "turn_failed",
+  BRANCH_CREATED: "branch_created",
+  BRANCH_SWITCHED: "branch_switched",
+  BRANCH_SUMMARIZED: "branch_summarized",
 } as const;
 export type SessionEventType = (typeof SessionEventType)[keyof typeof SessionEventType];
 
@@ -68,6 +71,104 @@ function createEvent(
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readRecord(data: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = data[key];
+  return isRecord(value) ? value : undefined;
+}
+
+function readRecordArray(data: Record<string, unknown>, key: string): Record<string, unknown>[] {
+  const value = data[key];
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function readString(data: Record<string, unknown>, key: string, fallback = ""): string {
+  const value = data[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function readNumber(data: Record<string, unknown>, key: string, fallback = 0): number {
+  const value = data[key];
+  return typeof value === "number" ? value : fallback;
+}
+
+function readTurnOutcome(data: Record<string, unknown>, key: string): TurnOutcome {
+  switch (data[key]) {
+    case TurnOutcome.COMPLETED:
+      return TurnOutcome.COMPLETED;
+    case TurnOutcome.INTERRUPTED:
+      return TurnOutcome.INTERRUPTED;
+    case TurnOutcome.FAILED:
+      return TurnOutcome.FAILED;
+    case TurnOutcome.BUDGET_EXHAUSTED:
+      return TurnOutcome.BUDGET_EXHAUSTED;
+    case TurnOutcome.PENDING:
+    default:
+      return TurnOutcome.PENDING;
+  }
+}
+
+function readSessionStatus(data: Record<string, unknown>, key: string): SessionStatus {
+  switch (data[key]) {
+    case SessionStatus.PAUSED:
+      return SessionStatus.PAUSED;
+    case SessionStatus.COMPLETED:
+      return SessionStatus.COMPLETED;
+    case SessionStatus.FAILED:
+      return SessionStatus.FAILED;
+    case SessionStatus.CANCELED:
+      return SessionStatus.CANCELED;
+    case SessionStatus.ACTIVE:
+    default:
+      return SessionStatus.ACTIVE;
+  }
+}
+
+function readSessionEventType(data: Record<string, unknown>, key: string): SessionEventType | undefined {
+  switch (data[key]) {
+    case SessionEventType.SESSION_CREATED:
+      return SessionEventType.SESSION_CREATED;
+    case SessionEventType.SESSION_PAUSED:
+      return SessionEventType.SESSION_PAUSED;
+    case SessionEventType.SESSION_RESUMED:
+      return SessionEventType.SESSION_RESUMED;
+    case SessionEventType.SESSION_COMPLETED:
+      return SessionEventType.SESSION_COMPLETED;
+    case SessionEventType.SESSION_FAILED:
+      return SessionEventType.SESSION_FAILED;
+    case SessionEventType.SESSION_CANCELED:
+      return SessionEventType.SESSION_CANCELED;
+    case SessionEventType.TURN_SUBMITTED:
+      return SessionEventType.TURN_SUBMITTED;
+    case SessionEventType.TURN_COMPLETED:
+      return SessionEventType.TURN_COMPLETED;
+    case SessionEventType.TURN_INTERRUPTED:
+      return SessionEventType.TURN_INTERRUPTED;
+    case SessionEventType.TURN_FAILED:
+      return SessionEventType.TURN_FAILED;
+    case SessionEventType.BRANCH_CREATED:
+      return SessionEventType.BRANCH_CREATED;
+    case SessionEventType.BRANCH_SWITCHED:
+      return SessionEventType.BRANCH_SWITCHED;
+    case SessionEventType.BRANCH_SUMMARIZED:
+      return SessionEventType.BRANCH_SUMMARIZED;
+    default:
+      return undefined;
+  }
+}
+
+function readSessionEvent(data: Record<string, unknown>): SessionEvent | undefined {
+  const eventId = readString(data, "eventId");
+  const eventType = readSessionEventType(data, "eventType");
+  const timestamp = readString(data, "timestamp");
+  const payload = readRecord(data, "payload");
+  if (!eventId || !eventType || !timestamp || !payload) return undefined;
+  return { eventId, eventType, timestamp, payload };
+}
+
 // ---- Turn Entity ----
 
 export class Turn {
@@ -75,6 +176,8 @@ export class Turn {
   readonly turnIndex: number;
   readonly prompt: string;
   readonly role: string;
+  readonly parentTurnId: string;
+  readonly branchId: string;
   response: string = "";
   outcome: TurnOutcome = TurnOutcome.PENDING;
   error: string = "";
@@ -82,11 +185,19 @@ export class Turn {
   readonly startedAt: string;
   completedAt: string = "";
 
-  constructor(opts: { turnIndex: number; prompt: string; role: string }) {
+  constructor(opts: {
+    turnIndex: number;
+    prompt: string;
+    role: string;
+    parentTurnId?: string;
+    branchId?: string;
+  }) {
     this.turnId = randomUUID().slice(0, 12);
     this.turnIndex = opts.turnIndex;
     this.prompt = opts.prompt;
     this.role = opts.role;
+    this.parentTurnId = opts.parentTurnId ?? "";
+    this.branchId = opts.branchId ?? "main";
     this.startedAt = new Date().toISOString();
   }
 
@@ -97,16 +208,75 @@ export class Turn {
   toJSON(): Record<string, unknown> {
     return {
       turnId: this.turnId, turnIndex: this.turnIndex, prompt: this.prompt,
-      role: this.role, response: this.response, outcome: this.outcome,
+      role: this.role, parentTurnId: this.parentTurnId, branchId: this.branchId,
+      response: this.response, outcome: this.outcome,
       error: this.error, tokensUsed: this.tokensUsed,
       startedAt: this.startedAt, completedAt: this.completedAt,
     };
   }
 
   static fromJSON(data: Record<string, unknown>): Turn {
-    const t = new Turn({ turnIndex: data.turnIndex as number, prompt: data.prompt as string, role: data.role as string });
-    Object.assign(t, { turnId: data.turnId, response: data.response ?? "", outcome: data.outcome ?? TurnOutcome.PENDING, error: data.error ?? "", tokensUsed: data.tokensUsed ?? 0, startedAt: data.startedAt, completedAt: data.completedAt ?? "" });
+    const t = new Turn({
+      turnIndex: readNumber(data, "turnIndex"),
+      prompt: readString(data, "prompt"),
+      role: readString(data, "role"),
+      parentTurnId: readString(data, "parentTurnId"),
+      branchId: readString(data, "branchId", "main"),
+    });
+    Object.assign(t, {
+      turnId: readString(data, "turnId", t.turnId),
+      response: readString(data, "response"),
+      outcome: readTurnOutcome(data, "outcome"),
+      error: readString(data, "error"),
+      tokensUsed: readNumber(data, "tokensUsed"),
+      startedAt: readString(data, "startedAt", t.startedAt),
+      completedAt: readString(data, "completedAt"),
+    });
     return t;
+  }
+}
+
+// ---- Branch Entity ----
+
+export class Branch {
+  readonly branchId: string;
+  readonly parentTurnId: string;
+  readonly label: string;
+  summary: string;
+  readonly createdAt: string;
+
+  constructor(opts: {
+    branchId: string;
+    parentTurnId?: string;
+    label?: string;
+    summary?: string;
+    createdAt?: string;
+  }) {
+    this.branchId = opts.branchId;
+    this.parentTurnId = opts.parentTurnId ?? "";
+    this.label = opts.label ?? "";
+    this.summary = opts.summary ?? "";
+    this.createdAt = opts.createdAt ?? new Date().toISOString();
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      branchId: this.branchId,
+      parentTurnId: this.parentTurnId,
+      label: this.label,
+      summary: this.summary,
+      createdAt: this.createdAt,
+    };
+  }
+
+  static fromJSON(data: Record<string, unknown>): Branch {
+    return new Branch({
+      branchId: readString(data, "branchId"),
+      parentTurnId: readString(data, "parentTurnId"),
+      label: readString(data, "label"),
+      summary: readString(data, "summary"),
+      createdAt: readString(data, "createdAt", new Date().toISOString()),
+    });
   }
 }
 
@@ -118,6 +288,9 @@ export class Session {
   status: SessionStatus = SessionStatus.ACTIVE;
   summary: string = "";
   readonly metadata: Record<string, unknown>;
+  activeBranchId: string = "main";
+  activeTurnId: string = "";
+  readonly branches: Branch[] = [new Branch({ branchId: "main", label: "Main" })];
   readonly turns: Turn[] = [];
   readonly events: SessionEvent[] = [];
   readonly createdAt: string;
@@ -142,9 +315,21 @@ export class Session {
     if (this.status !== SessionStatus.ACTIVE) {
       throw new Error(`Cannot submit turn: session is not active (status=${this.status})`);
     }
-    const turn = new Turn({ turnIndex: this.turns.length, ...opts });
+    const turn = new Turn({
+      turnIndex: this.turns.length,
+      ...opts,
+      parentTurnId: this.activeTurnId,
+      branchId: this.activeBranchId,
+    });
     this.turns.push(turn);
-    this.emit(SessionEventType.TURN_SUBMITTED, { turnId: turn.turnId, role: opts.role });
+    this.activeTurnId = turn.turnId;
+    this.touch();
+    this.emit(SessionEventType.TURN_SUBMITTED, {
+      turnId: turn.turnId,
+      role: opts.role,
+      branchId: turn.branchId,
+      parentTurnId: turn.parentTurnId,
+    });
     return turn;
   }
 
@@ -214,6 +399,50 @@ export class Session {
     this.emit(SessionEventType.SESSION_CANCELED, {});
   }
 
+  // -- Branch management --
+
+  forkFromTurn(turnId: string, opts: { branchId?: string; label?: string; summary?: string } = {}): Branch {
+    const parent = this.getTurn(turnId);
+    const branchId = opts.branchId ?? randomUUID().slice(0, 8);
+    if (this.branches.some((branch) => branch.branchId === branchId)) {
+      throw new Error(`Branch ${branchId} already exists`);
+    }
+
+    const branch = new Branch({
+      branchId,
+      parentTurnId: parent.turnId,
+      label: opts.label ?? "",
+      summary: opts.summary ?? "",
+    });
+    this.branches.push(branch);
+    this.touch();
+    this.emit(SessionEventType.BRANCH_CREATED, {
+      branchId: branch.branchId,
+      parentTurnId: branch.parentTurnId,
+      label: branch.label,
+    });
+    this.switchBranch(branch.branchId);
+    return branch;
+  }
+
+  switchBranch(branchId: string): void {
+    const branch = this.getBranch(branchId);
+    this.activeBranchId = branch.branchId;
+    this.activeTurnId = this.branchLeafTurnId(branch.branchId);
+    this.touch();
+    this.emit(SessionEventType.BRANCH_SWITCHED, {
+      branchId: branch.branchId,
+      activeTurnId: this.activeTurnId,
+    });
+  }
+
+  summarizeBranch(branchId: string, summary: string): void {
+    const branch = this.getBranch(branchId);
+    branch.summary = summary;
+    this.touch();
+    this.emit(SessionEventType.BRANCH_SUMMARIZED, { branchId, summary });
+  }
+
   // -- Queries --
 
   get totalTokens(): number {
@@ -224,12 +453,43 @@ export class Session {
     return this.turns.length;
   }
 
+  branchPath(branchId?: string): Turn[] {
+    const resolvedBranchId = branchId ?? this.activeBranchId;
+    this.getBranch(resolvedBranchId);
+    const byId = new Map(this.turns.map((turn) => [turn.turnId, turn]));
+    const path: Turn[] = [];
+    let currentId = this.branchLeafTurnId(resolvedBranchId);
+
+    while (currentId) {
+      const turn = byId.get(currentId);
+      if (!turn) break;
+      path.push(turn);
+      currentId = turn.parentTurnId;
+    }
+
+    return path.reverse();
+  }
+
   // -- Internal --
 
   private getTurn(turnId: string): Turn {
     const turn = this.turns.find((t) => t.turnId === turnId);
     if (!turn) throw new Error(`Turn ${turnId} not found in session ${this.sessionId}`);
     return turn;
+  }
+
+  private getBranch(branchId: string): Branch {
+    const branch = this.branches.find((b) => b.branchId === branchId);
+    if (!branch) throw new Error(`Branch ${branchId} not found in session ${this.sessionId}`);
+    return branch;
+  }
+
+  private branchLeafTurnId(branchId: string): string {
+    const branch = this.getBranch(branchId);
+    for (let i = this.turns.length - 1; i >= 0; i -= 1) {
+      if (this.turns[i].branchId === branchId) return this.turns[i].turnId;
+    }
+    return branch.parentTurnId;
   }
 
   private requireStatus(expected: SessionStatus, action: string): void {
@@ -256,6 +516,9 @@ export class Session {
     return {
       sessionId: this.sessionId, goal: this.goal, status: this.status,
       summary: this.summary, metadata: this.metadata,
+      activeBranchId: this.activeBranchId,
+      activeTurnId: this.activeTurnId,
+      branches: this.branches.map((branch) => branch.toJSON()),
       turns: this.turns.map((t) => t.toJSON()),
       events: this.events,
       createdAt: this.createdAt, updatedAt: this.updatedAt,
@@ -263,15 +526,29 @@ export class Session {
   }
 
   static fromJSON(data: Record<string, unknown>): Session {
-    const s = new Session({ goal: data.goal as string, metadata: (data.metadata as Record<string, unknown>) ?? {} });
+    const s = new Session({ goal: readString(data, "goal"), metadata: readRecord(data, "metadata") ?? {} });
     Object.assign(s, {
-      sessionId: data.sessionId, status: data.status ?? SessionStatus.ACTIVE,
-      summary: data.summary ?? "", createdAt: data.createdAt, updatedAt: data.updatedAt ?? "",
+      sessionId: readString(data, "sessionId", s.sessionId),
+      status: readSessionStatus(data, "status"),
+      summary: readString(data, "summary"),
+      activeBranchId: readString(data, "activeBranchId", "main"),
+      activeTurnId: readString(data, "activeTurnId"),
+      createdAt: readString(data, "createdAt", s.createdAt),
+      updatedAt: readString(data, "updatedAt"),
     });
-    const turns = (data.turns as Record<string, unknown>[]) ?? [];
+    s.branches.splice(0, s.branches.length);
+    const branches = readRecordArray(data, "branches");
+    if (branches.length === 0) branches.push({ branchId: "main", label: "Main" });
+    for (const bd of branches) s.branches.push(Branch.fromJSON(bd));
+    const turns = readRecordArray(data, "turns");
     for (const td of turns) s.turns.push(Turn.fromJSON(td));
-    const events = (data.events as SessionEvent[]) ?? [];
-    for (const e of events) s.events.push(e);
+    if (s.activeTurnId === "") {
+      s.activeTurnId = s.branchLeafTurnId(s.activeBranchId);
+    }
+    for (const eventData of readRecordArray(data, "events")) {
+      const event = readSessionEvent(eventData);
+      if (event) s.events.push(event);
+    }
     return s;
   }
 }
