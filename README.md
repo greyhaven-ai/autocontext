@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/greyhaven-ai-autocontext-badge.png)](https://mseep.ai/app/greyhaven-ai-autocontext)
+
 <!-- autocontext-readme-hero:start -->
 <p align="center">
   <img src="autocontext/assets/banner.svg" alt="autocontext ASCII banner" style="max-width: 100%; height: auto;" />
