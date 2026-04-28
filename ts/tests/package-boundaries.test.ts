@@ -58,11 +58,19 @@ const productionTraceOpenSdkSourcePaths = [
 	"ts/src/production-traces/sdk/build-trace.ts",
 	"ts/src/production-traces/sdk/write-jsonl.ts",
 	"ts/src/production-traces/sdk/trace-batch.ts",
+	"ts/src/production-traces/sdk/hashing-core.ts",
 ];
 const productionTraceOpenSdkSourceIncludes =
 	productionTraceOpenSdkSourcePaths.map((entry) => `../../../${entry}`);
 const productionTraceOpenSdkProgramPathSubstrings =
 	productionTraceOpenSdkSourcePaths.map((entry) => `/${entry}`);
+const productionTraceOpenRedactionSourcePaths = [
+	"ts/src/production-traces/redaction/hash-primitives.ts",
+];
+const productionTraceOpenRedactionSourceIncludes =
+	productionTraceOpenRedactionSourcePaths.map((entry) => `../../../${entry}`);
+const productionTraceOpenRedactionProgramPathSubstrings =
+	productionTraceOpenRedactionSourcePaths.map((entry) => `/${entry}`);
 
 type TsCoreBoundary = {
 	packagePath: string;
@@ -105,6 +113,7 @@ type ProductionTraceOpenContractClaim = ProductionTraceSourceClaim & {
 type ProductionTraceBoundary = {
 	typescriptOpenContract: ProductionTraceOpenContractClaim;
 	typescriptOpenSdk: ProductionTraceOpenContractClaim;
+	typescriptOpenRedaction: ProductionTraceSourceClaim;
 	typescriptOpenTaxonomy: ProductionTraceSourceClaim;
 };
 
@@ -178,6 +187,7 @@ function listProductionTraceCoreClaims(
 	return [
 		productionTraces.typescriptOpenContract,
 		productionTraces.typescriptOpenSdk,
+		productionTraces.typescriptOpenRedaction,
 		productionTraces.typescriptOpenTaxonomy,
 	];
 }
@@ -333,6 +343,23 @@ describe("package boundaries", () => {
 		}
 	});
 
+	it("claims production trace redaction primitives as explicit TypeScript core-owned open privacy helpers", () => {
+		const boundaries = loadBoundaries();
+		const core = boundaries.typescript.core;
+		const productionTraces =
+			boundaries.mixedDomains.productionTraces.typescriptOpenRedaction;
+
+		expect(productionTraces.coreOwnedSourceIncludes).toEqual(
+			productionTraceOpenRedactionSourceIncludes,
+		);
+		expect(productionTraces.coreOwnedProgramPathSubstrings).toEqual(
+			productionTraceOpenRedactionProgramPathSubstrings,
+		);
+		for (const sourceInclude of productionTraces.coreOwnedSourceIncludes) {
+			expect(core.exactIncludes).toContain(sourceInclude);
+		}
+	});
+
 	it("exposes production trace SDK helpers through stable TypeScript core subpaths", () => {
 		const boundaries = loadBoundaries();
 		const core = boundaries.typescript.core;
@@ -355,6 +382,10 @@ describe("package boundaries", () => {
 		expect(packageJson.exports["./production-traces/trace-batch"]).toEqual({
 			import: "./dist/ts/src/production-traces/sdk/trace-batch.js",
 			types: "./dist/ts/src/production-traces/sdk/trace-batch.d.ts",
+		});
+		expect(packageJson.exports["./production-traces/hashing"]).toEqual({
+			import: "./dist/ts/src/production-traces/sdk/hashing-core.js",
+			types: "./dist/ts/src/production-traces/sdk/hashing-core.d.ts",
 		});
 	});
 
