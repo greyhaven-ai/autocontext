@@ -12,6 +12,16 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+import {
+  collectRuntimeSnapshot,
+  isRecord,
+  parseRuntimeSnapshotRequest,
+  readString,
+  renderRuntimeSnapshot,
+  resolveSettings,
+  resolveStore,
+  runIdOf,
+} from "./runtime-snapshot.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,8 +39,7 @@ async function loadAutoctx(): Promise<AutoctxModule> {
 }
 
 function resolveProvider(ac: AutoctxModule) {
-  const settings =
-    typeof ac.loadSettings === "function" ? ac.loadSettings() : {};
+  const settings = resolveSettings(ac);
   const config =
     typeof ac.resolveProviderConfig === "function"
       ? ac.resolveProviderConfig()
@@ -51,22 +60,6 @@ function resolveProvider(ac: AutoctxModule) {
     piRpcApiKey: settings.piRpcApiKey,
     piRpcSessionPersistence: settings.piRpcSessionPersistence,
   });
-}
-
-function resolveStore(ac: AutoctxModule) {
-  try {
-    const settings =
-      typeof ac.loadSettings === "function" ? ac.loadSettings() : {};
-    const dbPath =
-      process.env.AUTOCONTEXT_DB_PATH ??
-      settings.dbPath ??
-      "runs/autocontext.sqlite3";
-    return new ac.SQLiteStore(dbPath) as {
-      listRuns: () => Array<{ id: string; status: string }>;
-    };
-  } catch {
-    return null;
-  }
 }
 
 function renderScore(score: number): string {
@@ -256,19 +249,18 @@ export default function autocontextExtension(pi: ExtensionAPI): void {
           "No autocontext database found. Run `autoctx init` first.",
         );
       }
+      if (typeof store.listRuns !== "function") {
+        throw new Error("Installed autoctx SQLiteStore does not support listRuns.");
+      }
       const runs = store.listRuns();
-      if (params.run_id) {
-        const run = runs.find(
-          (r: { id: string }) => r.id === params.run_id,
-        );
-        if (!run) throw new Error(`Run ${params.run_id} not found.`);
-        return ok(
-          JSON.stringify(run, null, 2),
-          run as Record<string, unknown>,
-        );
+      const requestedRunId = typeof params.run_id === "string" ? params.run_id : "";
+      if (requestedRunId) {
+        const run = runs.find((candidate) => runIdOf(candidate) === requestedRunId);
+        if (!run) throw new Error(`Run ${requestedRunId} not found.`);
+        return ok(JSON.stringify(run, null, 2), run);
       }
       return ok(
-        `${runs.length} run(s) found.\n${runs.map((r: { id: string; status: string }) => `- ${r.id}: ${r.status}`).join("\n")}`,
+        `${runs.length} run(s) found.\n${runs.map((run) => `- ${runIdOf(run)}: ${readString(run, "status")}`).join("\n")}`,
         { count: runs.length },
       );
     },
@@ -379,6 +371,80 @@ export default function autocontextExtension(pi: ExtensionAPI): void {
       const label = theme.fg("toolTitle", theme.bold("autocontext queue "));
       const spec = theme.fg("accent", args.spec_name as string);
       return new Text(`${label}${spec}`, 0, 0);
+    },
+  });
+
+  // -----------------------------------------------------------------------
+  // Tool: autocontext_runtime_snapshot
+  // -----------------------------------------------------------------------
+
+  pi.registerTool({
+    name: "autocontext_runtime_snapshot",
+    label: "autocontext Runtime",
+    description:
+      "Inspect autocontext runtime state for Pi: run artifacts, package records, session branch lineage, and recent event-stream entries.",
+    promptSnippet:
+      "Inspect autocontext runs, packages, sessions, and event stream state",
+    promptGuidelines: [
+      "Use when you need run artifacts, package provenance, or session branch context before continuing work.",
+      "Pass run_id for a specific run, session_id for branch lineage, or scenario to filter recent state.",
+      "Set include_outputs only when output previews are needed; previews are truncated.",
+    ],
+    parameters: Type.Object({
+      run_id: Type.Optional(
+        Type.String({ description: "Specific autocontext run ID to inspect" }),
+      ),
+      session_id: Type.Optional(
+        Type.String({ description: "Specific branchable session ID to inspect" }),
+      ),
+      scenario: Type.Optional(
+        Type.String({ description: "Scenario name to filter recent runs and package records" }),
+      ),
+      limit: Type.Optional(
+        Type.Number({ description: "Maximum rows/events to return, 1-50 (default 10)" }),
+      ),
+      generation_index: Type.Optional(
+        Type.Number({ description: "Generation index for output previews; defaults to latest generation" }),
+      ),
+      include_outputs: Type.Optional(
+        Type.Boolean({ description: "Include truncated agent output previews for the selected generation" }),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, onUpdate, _ctx) {
+      onUpdate?.({ content: [{ type: "text", text: "Collecting autocontext runtime snapshot..." }], details: {} });
+      const request = parseRuntimeSnapshotRequest(params);
+      const ac = await loadAutoctx();
+      const settings = resolveSettings(ac);
+      const store = resolveStore(ac);
+      if (!store) {
+        throw new Error(
+          "No autocontext database found. Run `autoctx init` first.",
+        );
+      }
+      try {
+        const snapshot = collectRuntimeSnapshot(ac, store, settings, request);
+        return ok(renderRuntimeSnapshot(snapshot), snapshot);
+      } finally {
+        store.close?.();
+      }
+    },
+    renderCall(args, theme) {
+      const label = theme.fg("toolTitle", theme.bold("autocontext runtime "));
+      const target = args.run_id
+        ? theme.fg("accent", args.run_id as string)
+        : args.session_id
+          ? theme.fg("accent", args.session_id as string)
+          : args.scenario
+            ? theme.fg("accent", args.scenario as string)
+            : theme.fg("dim", "(recent)");
+      return new Text(`${label}${target}`, 0, 0);
+    },
+    renderResult(result, _options, theme) {
+      const details = result.details as Record<string, unknown> | undefined;
+      const run = details && isRecord(details.run) ? runIdOf(details.run) : "";
+      const session = details && isRecord(details.session) ? readString(details.session, "sessionId") : "";
+      const label = run || session || "snapshot";
+      return new Text(theme.fg("accent", `runtime ${label}`), 0, 0);
     },
   });
 

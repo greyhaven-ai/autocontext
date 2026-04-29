@@ -180,6 +180,18 @@ export { DirectAPIRuntime } from "./runtimes/index.js";
 export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
 export type { ClaudeCLIConfig } from "./runtimes/index.js";
 
+// Sessions
+export {
+  Session,
+  Branch,
+  Turn,
+  SessionStatus,
+  SessionEventType,
+  TurnOutcome,
+} from "./session/types.js";
+export type { SessionEvent } from "./session/types.js";
+export { SessionStore } from "./session/store.js";
+
 // Scenarios
 export type {
   AgentTaskSpec,
