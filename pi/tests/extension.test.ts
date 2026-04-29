@@ -670,6 +670,7 @@ describe("Tool execution", () => {
     expect(result.details.agentOutputs).toEqual([
       expect.objectContaining({ role: "competitor", preview: "candidate strategy body" }),
     ]);
+    expect((result.details.agentOutputs as Array<Record<string, unknown>>)[0].content).toBeUndefined();
     expect(result.details.packages).toEqual([
       expect.objectContaining({ package_id: "pkg-1", source_run_id: "run-1" }),
     ]);

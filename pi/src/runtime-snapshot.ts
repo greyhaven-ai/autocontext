@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AutoctxModule = any;
@@ -35,6 +35,8 @@ type SessionStoreLike = {
   list?: (status?: string, limit?: number) => unknown[];
   close?: () => void;
 };
+
+const EVENT_STREAM_TAIL_BYTES = 64 * 1024;
 
 export type RuntimeSnapshotRequest = {
   runId: string;
@@ -104,8 +106,10 @@ function selectedGenerationIndex(
 
 function compactOutput(output: Record<string, unknown>): Record<string, unknown> {
   const content = readString(output, "content");
+  const metadata = { ...output };
+  delete metadata.content;
   return {
-    ...output,
+    ...metadata,
     contentLength: content.length,
     preview: content.slice(0, 500),
   };
@@ -143,13 +147,33 @@ function eventMatchesRun(event: Record<string, unknown>, runId: string): boolean
   return readString(payload, "run_id", readString(payload, "runId", readString(event, "run_id"))) === runId;
 }
 
+function readTailText(path: string, maxBytes: number): string {
+  const { size } = statSync(path);
+  if (size <= 0) return "";
+  const bytesToRead = Math.min(size, maxBytes);
+  const start = size - bytesToRead;
+  const buffer = Buffer.allocUnsafe(bytesToRead);
+  const fd = openSync(path, "r");
+  try {
+    let offset = 0;
+    while (offset < bytesToRead) {
+      const bytesRead = readSync(fd, buffer, offset, bytesToRead - offset, start + offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    return buffer.subarray(0, offset).toString("utf-8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
 function readRecentEvents(settings: SettingsLike, request: RuntimeSnapshotRequest): Record<string, unknown>[] {
   const eventStreamPath =
     process.env.AUTOCONTEXT_EVENT_STREAM_PATH ??
     settings.eventStreamPath ??
     "runs/events.ndjson";
   if (!existsSync(eventStreamPath)) return [];
-  const lines = readFileSync(eventStreamPath, "utf-8")
+  const lines = readTailText(eventStreamPath, EVENT_STREAM_TAIL_BYTES)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
