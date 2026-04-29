@@ -1,4 +1,5 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AutoctxModule = any;
@@ -37,6 +38,7 @@ type SessionStoreLike = {
 };
 
 const EVENT_STREAM_TAIL_BYTES = 64 * 1024;
+const COMPACTION_LEDGER_TAIL_BYTES = 64 * 1024;
 
 export type RuntimeSnapshotRequest = {
   runId: string;
@@ -80,6 +82,20 @@ export function resolveSettings(ac: AutoctxModule): SettingsLike {
 
 function resolveDbPath(settings: SettingsLike): string {
   return process.env.AUTOCONTEXT_DB_PATH ?? settings.dbPath ?? "runs/autocontext.sqlite3";
+}
+
+function resolveRunsRoot(settings: SettingsLike): string {
+  return process.env.AUTOCONTEXT_RUNS_ROOT ?? settings.runsRoot ?? "runs";
+}
+
+function resolveContainedPath(root: string, ...segments: string[]): string | null {
+  const resolvedRoot = resolve(root);
+  const candidate = resolve(resolvedRoot, ...segments);
+  const relativePath = relative(resolvedRoot, candidate);
+  if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    return null;
+  }
+  return candidate;
 }
 
 export function resolveStore(ac: AutoctxModule): StoreLike | null {
@@ -192,6 +208,30 @@ function readRecentEvents(settings: SettingsLike, request: RuntimeSnapshotReques
   return events.slice(-request.limit);
 }
 
+function readCompactionLedger(settings: SettingsLike, request: RuntimeSnapshotRequest): Record<string, unknown>[] {
+  if (!request.runId) return [];
+  const ledgerPath = resolveContainedPath(resolveRunsRoot(settings), request.runId, "compactions.jsonl");
+  if (ledgerPath === null) return [];
+  if (!existsSync(ledgerPath)) return [];
+  const lines = readTailText(ledgerPath, COMPACTION_LEDGER_TAIL_BYTES)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-request.limit * 5);
+  const entries: Record<string, unknown>[] = [];
+  for (const line of lines) {
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (isRecord(parsed) && readString(parsed, "type") === "compaction") {
+        entries.push(parsed);
+      }
+    } catch {
+      // Ignore partial ledger lines.
+    }
+  }
+  return entries.slice(-request.limit);
+}
+
 function buildSessionSummary(sessionValue: unknown): Record<string, unknown> | null {
   if (!isRecord(sessionValue)) return null;
   const branchPath = typeof sessionValue.branchPath === "function"
@@ -282,6 +322,7 @@ export function collectRuntimeSnapshot(
         () => store.getAgentOutputs!(request.runId, generationIndex),
       ).map(compactOutput);
     }
+    details.compactions = readCompactionLedger(settings, request);
   } else if (store.listRuns) {
     details.runs = store.listRuns(request.limit, request.scenario || undefined);
   }
@@ -342,6 +383,7 @@ export function renderRuntimeSnapshot(snapshot: Record<string, unknown>): string
     const score = bestScore === null ? "" : ` best=${bestScore.toFixed(3)}`;
     lines.push(`Run ${runIdOf(run)}: ${readString(run, "status", "unknown")}${score}`);
     lines.push(`Generations: ${recordArray(snapshot.generations).length}`);
+    lines.push(`Compactions: ${recordArray(snapshot.compactions).length}`);
   } else {
     lines.push(`Runs: ${recordArray(snapshot.runs).length}`);
   }

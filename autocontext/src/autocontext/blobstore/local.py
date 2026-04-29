@@ -71,7 +71,14 @@ class LocalBlobStore(BlobStore):
         dest = resolve_blob_path(self.root, key)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(path), str(dest))
-        return _sha256(dest.read_bytes())
+        return _sha256_file(dest)
+
+    def append(self, key: str, data: bytes) -> str:
+        path = resolve_blob_path(self.root, key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("ab") as handle:
+            handle.write(data)
+        return _sha256_file(path)
 
     def get_file(self, key: str, dest: Path) -> bool:
         src = resolve_blob_path(self.root, key)
@@ -84,6 +91,14 @@ class LocalBlobStore(BlobStore):
 
 def _sha256(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return "sha256:" + hasher.hexdigest()
 
 
 def _guess_content_type(key: str) -> str:

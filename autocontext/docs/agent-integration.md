@@ -367,6 +367,11 @@ Set `AUTOCONTEXT_HARNESS_PROFILE=lean` when an external agent should use autocon
 
 Set `AUTOCONTEXT_EXTENSIONS` to load Pi-shaped Python hooks around run lifecycle, prompt context transforms, provider requests/responses, judge calls, and artifact writes. See [extensions.md](extensions.md) for event names and payloads.
 
+When semantic prompt compaction trims long context, autocontext appends
+Pi-shaped compaction entries to `runs/<run_id>/compactions.jsonl`. Each entry
+records `summary`, `firstKeptEntryId`, `tokensBefore`, and component-level
+details so Pi snapshots and external agents can see what was compressed.
+
 #### Hermes via OpenAI-Compatible Gateway
 
 Hermes exposes an OpenAI-compatible API server, so the fastest way to connect autocontext to Hermes is through the existing `openai-compatible` provider.

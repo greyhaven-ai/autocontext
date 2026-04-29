@@ -87,6 +87,18 @@ class TestLocalBlobStore:
             expected = "sha256:" + hashlib.sha256(data).hexdigest()
             assert digest == expected
 
+    def test_append_extends_existing_key(self) -> None:
+        from autocontext.blobstore.local import LocalBlobStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = LocalBlobStore(root=Path(tmp))
+            store.put("runs/run_001/compactions.jsonl", b"first\n")
+            digest = store.append("runs/run_001/compactions.jsonl", b"second\n")
+
+            expected = b"first\nsecond\n"
+            assert store.get("runs/run_001/compactions.jsonl") == expected
+            assert digest == "sha256:" + hashlib.sha256(expected).hexdigest()
+
     def test_get_returns_none_for_missing(self) -> None:
         from autocontext.blobstore.local import LocalBlobStore
 

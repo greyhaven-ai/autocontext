@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -398,6 +398,76 @@ describe("GenerationRunner", () => {
     );
     expect(existsSync(replayPath)).toBe(true);
     expect(JSON.parse(readFileSync(replayPath, "utf-8")).timeline).toBeDefined();
+
+    store.close();
+  });
+
+  it("records semantic compaction ledger entries during standalone TypeScript prompt assembly", async () => {
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    const dbPath = join(dir, "semantic-compaction.db");
+    const runsRoot = join(dir, "runs");
+    const knowledgeRoot = join(dir, "knowledge");
+    const reportDir = join(knowledgeRoot, "grid_ctf", "session_reports");
+    mkdirSync(reportDir, { recursive: true });
+    writeFileSync(
+      join(reportDir, "prior.md"),
+      "# Session Report: prior\n"
+      + "filler paragraph\n".repeat(220)
+      + "\n## Findings\n"
+      + "- Preserve the rollback guard after failed harness mutations.\n"
+      + "- Prefer notebook freshness filtering before prompt injection.\n",
+      "utf-8",
+    );
+
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+    const runner = new GenerationRunner({
+      provider: new DeterministicProvider(),
+      scenario: new GridCtfScenario(),
+      store,
+      runsRoot,
+      knowledgeRoot,
+      matchesPerGeneration: 2,
+      maxRetries: 0,
+      minDelta: 0.0,
+    });
+
+    await runner.run("semantic-run", 1);
+
+    const ledgerPath = join(runsRoot, "semantic-run", "compactions.jsonl");
+    expect(existsSync(ledgerPath)).toBe(true);
+    const entries = readFileSync(ledgerPath, "utf-8")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const sessionReportEntry = entries.find((entry) =>
+      entry.details?.component === "session_reports",
+    );
+    expect(sessionReportEntry).toMatchObject({
+      type: "compaction",
+      firstKeptEntryId: "component:session_reports:kept",
+      details: {
+        component: "session_reports",
+        source: "prompt_components",
+        scenario: "grid_ctf",
+        run_id: "semantic-run",
+        generation: 1,
+      },
+    });
+    expect(readFileSync(join(runsRoot, "semantic-run", "compactions.latest"), "utf-8").trim())
+      .toBe(sessionReportEntry.id);
+
+    const prompt = readFileSync(
+      join(runsRoot, "semantic-run", "generations", "gen_1", "competitor_prompt.md"),
+      "utf-8",
+    );
+    expect(prompt).toContain("rollback guard");
+    expect(prompt).toContain("freshness filtering");
+    expect(prompt).not.toContain("filler paragraph\nfiller paragraph\nfiller paragraph");
 
     store.close();
   });

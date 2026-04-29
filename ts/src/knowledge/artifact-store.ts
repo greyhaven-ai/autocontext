@@ -15,6 +15,8 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { PlaybookManager, EMPTY_PLAYBOOK_SENTINEL } from "./playbook.js";
+import { CompactionLedgerStore } from "./compaction-ledger.js";
+import type { CompactionEntry } from "./compaction-ledger.js";
 
 export interface ArtifactStoreOpts {
   runsRoot: string;
@@ -26,6 +28,7 @@ export class ArtifactStore {
   readonly runsRoot: string;
   readonly knowledgeRoot: string;
   private playbookManager: PlaybookManager;
+  private compactionLedger: CompactionLedgerStore;
 
   constructor(opts: ArtifactStoreOpts) {
     this.runsRoot = opts.runsRoot;
@@ -34,10 +37,31 @@ export class ArtifactStore {
       opts.knowledgeRoot,
       opts.maxPlaybookVersions ?? 5,
     );
+    this.compactionLedger = new CompactionLedgerStore(this.runsRoot);
   }
 
   generationDir(runId: string, generationIndex: number): string {
     return join(this.runsRoot, runId, "generations", `gen_${generationIndex}`);
+  }
+
+  compactionLedgerPath(runId: string): string {
+    return this.compactionLedger.ledgerPath(runId);
+  }
+
+  compactionLatestEntryPath(runId: string): string {
+    return this.compactionLedger.latestEntryPath(runId);
+  }
+
+  appendCompactionEntries(runId: string, entries: CompactionEntry[]): void {
+    this.compactionLedger.appendEntries(runId, entries);
+  }
+
+  readCompactionEntries(runId: string, opts: { limit?: number } = {}): CompactionEntry[] {
+    return this.compactionLedger.readEntries(runId, opts);
+  }
+
+  latestCompactionEntryId(runId: string): string {
+    return this.compactionLedger.latestEntryId(runId);
   }
 
   writeJson(path: string, payload: Record<string, unknown>): void {

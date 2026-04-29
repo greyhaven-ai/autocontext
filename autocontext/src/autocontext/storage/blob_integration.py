@@ -38,6 +38,20 @@ class BlobAwareWriter:
             remote_uri=key,
         )
 
+    def mirror_append(self, key: str, data: bytes, kind: str) -> BlobRef | None:
+        """Mirror an append-only byte chunk to a blob store key."""
+        if self._store is None:
+            return None
+        if len(data) < self._min_size:
+            return None
+        digest = self._store.append(key, data)
+        return BlobRef(
+            kind=kind,
+            digest=digest,
+            size_bytes=len(data),
+            remote_uri=key,
+        )
+
     def mirror_file(self, key: str, path: Path, kind: str) -> BlobRef | None:
         """Mirror a file to blob store. Returns BlobRef or None."""
         if self._store is None:
@@ -124,6 +138,33 @@ def mirror_path_bytes(
     if key is None:
         return None
     return writer.mirror_write(
+        key=key,
+        data=data,
+        kind=classify_artifact_kind(path),
+    )
+
+
+def mirror_path_append_bytes(
+    writer: BlobAwareWriter,
+    path: Path,
+    data: bytes,
+    *,
+    runs_root: Path,
+    knowledge_root: Path,
+    skills_root: Path,
+    claude_skills_path: Path,
+) -> BlobRef | None:
+    """Mirror an append-only file payload when it lives under a known artifact root."""
+    key = blob_key_for_path(
+        path,
+        runs_root=runs_root,
+        knowledge_root=knowledge_root,
+        skills_root=skills_root,
+        claude_skills_path=claude_skills_path,
+    )
+    if key is None:
+        return None
+    return writer.mirror_append(
         key=key,
         data=data,
         kind=classify_artifact_kind(path),

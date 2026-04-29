@@ -15,6 +15,16 @@ export {
 export type { GuardResult } from "./playbook.js";
 export { ArtifactStore } from "./artifact-store.js";
 export type { ArtifactStoreOpts } from "./artifact-store.js";
+export { CompactionLedgerStore } from "./compaction-ledger.js";
+export type { CompactionEntry } from "./compaction-ledger.js";
+export {
+  compactPromptComponent,
+  compactPromptComponents,
+  compactPromptComponentsWithEntries,
+  compactionEntriesForComponents,
+  extractPromotableLines,
+} from "./semantic-compaction.js";
+export type { PromptCompactionOptions, PromptCompactionResult } from "./semantic-compaction.js";
 export { ScoreTrajectoryBuilder } from "./trajectory.js";
 export type { TrajectoryRow } from "./trajectory.js";
 export { exportStrategyPackage, importStrategyPackage } from "./package.js";

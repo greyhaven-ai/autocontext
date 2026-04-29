@@ -9,7 +9,11 @@ history while dropping repetitive filler.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
+import secrets
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 from autocontext.prompts.context_budget import estimate_tokens
 
@@ -59,12 +63,182 @@ _IMPORTANT_KEYWORDS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class CompactionEntry:
+    """Pi-shaped ledger entry describing one semantic compaction boundary."""
+
+    entry_id: str
+    parent_id: str
+    timestamp: str
+    summary: str
+    first_kept_entry_id: str
+    tokens_before: int
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "compaction",
+            "id": self.entry_id,
+            "parentId": self.parent_id,
+            "timestamp": self.timestamp,
+            "summary": self.summary,
+            "firstKeptEntryId": self.first_kept_entry_id,
+            "tokensBefore": self.tokens_before,
+            "details": dict(self.details),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> CompactionEntry:
+        details = data.get("details")
+        return cls(
+            entry_id=str(data.get("id", "")),
+            parent_id=str(data.get("parentId", "")),
+            timestamp=str(data.get("timestamp", "")),
+            summary=str(data.get("summary", "")),
+            first_kept_entry_id=str(data.get("firstKeptEntryId", "")),
+            tokens_before=_coerce_int(data.get("tokensBefore")),
+            details=dict(details) if isinstance(details, Mapping) else {},
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PromptCompactionResult:
+    components: dict[str, str]
+    entries: list[CompactionEntry]
+
+
 def compact_prompt_components(components: Mapping[str, str]) -> dict[str, str]:
     """Return a compacted copy of prompt-facing context components."""
+    return _compact_prompt_components(components)
+
+
+def compact_prompt_components_with_entries(
+    components: Mapping[str, str],
+    *,
+    context: Mapping[str, Any] | None = None,
+    parent_id: str = "",
+    id_factory: Callable[[], str] | None = None,
+    timestamp_factory: Callable[[], str] | None = None,
+) -> PromptCompactionResult:
+    """Return compacted components plus Pi-shaped ledger entries for changed components."""
+    result = _compact_prompt_components(components)
+    entries = compaction_entries_for_components(
+        components,
+        result,
+        context=context,
+        parent_id=parent_id,
+        id_factory=id_factory,
+        timestamp_factory=timestamp_factory,
+    )
+    return PromptCompactionResult(components=result, entries=entries)
+
+
+def _compact_prompt_components(components: Mapping[str, str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for key, value in components.items():
         result[key] = compact_prompt_component(key, value)
     return result
+
+
+def compaction_entries_for_components(
+    original_components: Mapping[str, str],
+    compacted_components: Mapping[str, str],
+    *,
+    context: Mapping[str, Any] | None = None,
+    parent_id: str = "",
+    id_factory: Callable[[], str] | None = None,
+    timestamp_factory: Callable[[], str] | None = None,
+) -> list[CompactionEntry]:
+    """Build ledger entries by comparing original and final compacted components."""
+    entries: list[CompactionEntry] = []
+    current_parent_id = parent_id
+    next_id = id_factory or _new_entry_id
+    next_timestamp = timestamp_factory or _utc_timestamp
+    for key, value in original_components.items():
+        compacted = compacted_components.get(key, value)
+        if not value or compacted == value:
+            continue
+        entry_id = next_id()
+        entry = _build_compaction_entry(
+            key=key,
+            original=value,
+            compacted=compacted,
+            entry_id=entry_id,
+            parent_id=current_parent_id,
+            timestamp=next_timestamp(),
+            context=context or {},
+        )
+        entries.append(entry)
+        current_parent_id = entry_id
+    return entries
+
+
+def _build_compaction_entry(
+    *,
+    key: str,
+    original: str,
+    compacted: str,
+    entry_id: str,
+    parent_id: str,
+    timestamp: str,
+    context: Mapping[str, Any],
+) -> CompactionEntry:
+    tokens_before = estimate_tokens(original)
+    tokens_after = estimate_tokens(compacted)
+    details: dict[str, Any] = {
+        "component": key,
+        "source": "prompt_components",
+        "tokensAfter": tokens_after,
+        "contentLengthBefore": len(original),
+        "contentLengthAfter": len(compacted),
+    }
+    details.update(dict(context))
+    summary = _structured_compaction_summary(key, tokens_before, tokens_after, compacted)
+    return CompactionEntry(
+        entry_id=entry_id,
+        parent_id=parent_id,
+        timestamp=timestamp,
+        summary=summary,
+        first_kept_entry_id=f"component:{key}:kept",
+        tokens_before=tokens_before,
+        details=details,
+    )
+
+
+def _structured_compaction_summary(key: str, tokens_before: int, tokens_after: int, compacted: str) -> str:
+    context = _truncate_text(compacted, max_tokens=650).strip()
+    return (
+        "## Goal\n"
+        f"Keep prompt component `{key}` resumable after semantic compaction.\n\n"
+        "## Progress\n"
+        "### Done\n"
+        f"- Compacted `{key}` from {tokens_before} to {tokens_after} estimated tokens.\n\n"
+        "## Critical Context\n"
+        f"{context}"
+    ).strip()
+
+
+def _new_entry_id() -> str:
+    return secrets.token_hex(4)
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _coerce_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
 
 
 def compact_prompt_component(key: str, value: str) -> str:

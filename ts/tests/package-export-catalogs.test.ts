@@ -17,6 +17,8 @@ describe("package root exports", () => {
     expect(pkg.SessionStore).toBeDefined();
     expect(pkg.Session).toBeDefined();
     expect(pkg.PiPersistentRPCRuntime).toBeDefined();
+    expect(pkg.compactPromptComponents).toBeDefined();
+    expect(pkg.compactPromptComponentsWithEntries).toBeDefined();
     expect(pkg.chooseModel).toBeDefined();
     expect(pkg.resolveBrowserSessionConfig).toBeDefined();
     expect(pkg.evaluateBrowserActionPolicy).toBeDefined();

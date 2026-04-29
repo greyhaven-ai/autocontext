@@ -21,13 +21,14 @@ from autocontext.extensions import HookBus
 from autocontext.harness.mutations.spec import HarnessMutation
 from autocontext.harness.mutations.store import MutationStore
 from autocontext.harness.storage.versioned_store import VersionedFileStore
-from autocontext.knowledge.compaction import compact_prompt_components
+from autocontext.knowledge.compaction import CompactionEntry, compact_prompt_components
 from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
 from autocontext.storage.artifact_write_methods import ArtifactWriteMethods
-from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_bytes
+from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_append_bytes, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
+from autocontext.storage.compaction_ledger import CompactionLedgerStore
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
@@ -70,12 +71,28 @@ class ArtifactStore(ArtifactWriteMethods):
         )
         self._writer: BufferedWriter | None = None
         self._hook_bus = hook_bus
+        self._compaction_ledger = CompactionLedgerStore(
+            runs_root=self.runs_root,
+            mirror_bytes=self._mirror_bytes,
+            mirror_append_bytes=self._mirror_append_bytes,
+        )
         if enable_buffered_writes:
             self._writer = BufferedWriter()
             self._writer.start()
 
     def _mirror_bytes(self, path: Path, data: bytes) -> None:
         mirror_path_bytes(
+            self._blob_writer,
+            path,
+            data,
+            runs_root=self.runs_root,
+            knowledge_root=self.knowledge_root,
+            skills_root=self.skills_root,
+            claude_skills_path=self.claude_skills_path,
+        )
+
+    def _mirror_append_bytes(self, path: Path, data: bytes) -> None:
+        mirror_path_append_bytes(
             self._blob_writer,
             path,
             data,
@@ -123,6 +140,21 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def generation_dir(self, run_id: str, generation_index: int) -> Path:
         return self.runs_root / run_id / "generations" / f"gen_{generation_index}"
+
+    def compaction_ledger_path(self, run_id: str) -> Path:
+        return self._compaction_ledger.ledger_path(run_id)
+
+    def compaction_latest_entry_path(self, run_id: str) -> Path:
+        return self._compaction_ledger.latest_entry_path(run_id)
+
+    def append_compaction_entries(self, run_id: str, entries: list[CompactionEntry]) -> None:
+        self._compaction_ledger.append_entries(run_id, entries)
+
+    def read_compaction_entries(self, run_id: str, *, limit: int = 20) -> list[CompactionEntry]:
+        return self._compaction_ledger.read_entries(run_id, limit=limit)
+
+    def latest_compaction_entry_id(self, run_id: str) -> str:
+        return self._compaction_ledger.latest_entry_id(run_id)
 
     def _append_mutation(
         self,
