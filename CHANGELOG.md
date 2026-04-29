@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-04-29
+
 ### Added
 
 - Python `autoctx export` now accepts `--format pi-package` to write a Pi-local package directory with `package.json`, `SKILL.md`, prompt markdown, and the original autocontext strategy payload.
@@ -22,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 - Restructured the top-level `README.md`: leads with the Pi runtime quick start, adds an MCP-driven natural-language entry path ("Or Just Talk To Your Agent"), shows a structured artifact tree with concrete `playbook.md` and `trace.jsonl` excerpts, surfaces production-trace capture as its own section, merges the surfaces table with command examples, and adds a short FAQ. Removes redundant "How People Use It" / "Choose An Entry Point" / "Repository Layout" sections (the last is already covered in `AGENTS.md`).
 - Bumped subpackage README references from `0.4.4` to `0.4.7` (`autocontext/README.md`, `ts/README.md`) to track the next release line.
+- Python `autocontext`, TypeScript `autoctx`, and Pi `pi-autocontext` package metadata are bumped for the release.
 
 ## [0.4.6] - 2026-04-23
 
@@ -288,7 +291,8 @@ All notable changes to this project will be documented in this file.
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.6...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.7...HEAD
+[0.4.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.6...py-v0.4.7
 [0.4.6]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.5...py-v0.4.6
 [0.4.5]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.4...py-v0.4.5
 [0.4.4]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.3...py-v0.4.4
