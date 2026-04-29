@@ -3,9 +3,10 @@ name: autocontext
 description: >
   Iterative strategy generation and evaluation system. Use when the user wants
   to evaluate agent output quality, run improvement loops, queue tasks for
-  background evaluation, check run status, or discover available scenarios.
-  Provides LLM-based judging with rubric-driven scoring.
-allowed-tools: autocontext_judge autocontext_improve autocontext_status autocontext_scenarios autocontext_queue
+  background evaluation, check run status, inspect runtime artifacts and
+  session branch lineage, or discover available scenarios. Provides LLM-based
+  judging with rubric-driven scoring.
+allowed-tools: autocontext_judge autocontext_improve autocontext_status autocontext_scenarios autocontext_queue autocontext_runtime_snapshot
 ---
 
 # autocontext
@@ -25,6 +26,8 @@ LLM-based judging to score and improve agent outputs.
 - **autocontext_status** — Check the status of runs and queued tasks.
 - **autocontext_scenarios** — List available evaluation scenarios and their
   families.
+- **autocontext_runtime_snapshot** — Inspect run artifacts, package provenance,
+  branchable session lineage, and recent event-stream entries.
 
 ## Quick Start
 
@@ -65,6 +68,13 @@ autocontext_queue(spec_name="my_scenario")
 ```
 
 Check results later with `autocontext_status`.
+
+For deeper context, use `autocontext_runtime_snapshot` with the run ID. Add
+`session_id` when you need the active branch path before continuing work:
+
+```
+autocontext_runtime_snapshot(run_id="run_123", session_id="sess_123")
+```
 
 ### 4. Discover scenarios
 

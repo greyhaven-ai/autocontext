@@ -27,6 +27,7 @@ Or add to your project's `.pi/settings.json`:
 | `autocontext_status` | Check status of autocontext runs and tasks |
 | `autocontext_scenarios` | List available evaluation scenarios and families |
 | `autocontext_queue` | Enqueue a task for background evaluation |
+| `autocontext_runtime_snapshot` | Inspect run artifacts, package provenance, session branch lineage, and recent events |
 
 ### Skills
 
@@ -44,6 +45,7 @@ Once installed, the tools are available to the LLM automatically. You can also i
 > Evaluate the quality of this code against our coding standards rubric
 > Run an improvement loop on this draft with max 5 rounds
 > Show me the status of recent autocontext runs
+> Inspect the runtime snapshot for run-123 and session sess-123
 > List available evaluation scenarios
 ```
 
@@ -65,6 +67,7 @@ The extension auto-discovers your autocontext configuration:
 
 - **Provider**: Uses Pi's configured LLM provider
 - **Database**: Looks for `runs/autocontext.sqlite3` or `AUTOCONTEXT_DB_PATH` env var
+- **Events**: Reads `runs/events.ndjson` or `AUTOCONTEXT_EVENT_STREAM_PATH` for recent runtime events
 - **Scenarios**: Discovers registered scenarios from the `autoctx` package
 
 ## Links

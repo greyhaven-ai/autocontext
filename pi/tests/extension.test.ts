@@ -9,7 +9,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -57,10 +58,30 @@ function createMockPiAPI() {
 
 type MockState = {
   providerConfig: { providerType: string; apiKey?: string; model?: string; baseUrl?: string };
-  settings: { dbPath: string };
-  runs: Array<{ id: string; status: string }>;
+  settings: { dbPath: string; runsRoot: string; knowledgeRoot: string; eventStreamPath: string };
+  runs: Array<{ id?: string; run_id?: string; scenario?: string; status: string }>;
+  generations: Array<{ run_id: string; generation_index: number; best_score: number; mean_score: number }>;
+  trajectory: Array<{ generation_index: number; best_score: number; delta: number }>;
+  agentOutputs: Array<{ run_id: string; generation_index: number; role: string; content: string }>;
+  matches: Array<{ run_id: string; generation_index: number; seed: number; score: number }>;
+  hubPackages: Array<{ package_id: string; scenario_name: string; source_run_id: string; metadata: Record<string, unknown> }>;
+  hubResults: Array<{ result_id: string; run_id: string; package_id: string | null }>;
+  hubPromotions: Array<{ event_id: string; package_id: string; source_run_id: string; action: string }>;
+  sessions: Array<{
+    sessionId: string;
+    goal: string;
+    status: string;
+    activeBranchId: string;
+    turnCount: number;
+    totalTokens: number;
+    branches: Array<{ branchId: string; label: string; parentTurnId: string; summary: string }>;
+    turns: Array<{ turnId: string; branchId: string; parentTurnId: string; role: string }>;
+    events: Array<{ eventId: string; eventType: string }>;
+    branchPath: (branchId?: string) => Array<{ turnId: string }>;
+  }>;
   providerOpts: Record<string, unknown> | null;
   storeDbPath: string | null;
+  sessionStoreDbPath: string | null;
   simpleTaskArgs: unknown[] | null;
   loopOpts: Record<string, unknown> | null;
   loopInput: Record<string, unknown> | null;
@@ -79,10 +100,57 @@ function resetMockState(): void {
     },
     settings: {
       dbPath: "runs/autocontext.sqlite3",
+      runsRoot: "runs",
+      knowledgeRoot: "knowledge",
+      eventStreamPath: "runs/events.ndjson",
     },
-    runs: [{ id: "run-1", status: "completed" }],
+    runs: [{ id: "run-1", run_id: "run-1", scenario: "grid_ctf", status: "completed" }],
+    generations: [
+      { run_id: "run-1", generation_index: 0, best_score: 0.72, mean_score: 0.61 },
+      { run_id: "run-1", generation_index: 1, best_score: 0.88, mean_score: 0.74 },
+    ],
+    trajectory: [
+      { generation_index: 0, best_score: 0.72, delta: 0 },
+      { generation_index: 1, best_score: 0.88, delta: 0.16 },
+    ],
+    agentOutputs: [
+      { run_id: "run-1", generation_index: 1, role: "competitor", content: "candidate strategy body" },
+    ],
+    matches: [
+      { run_id: "run-1", generation_index: 1, seed: 42, score: 0.88 },
+    ],
+    hubPackages: [
+      { package_id: "pkg-1", scenario_name: "grid_ctf", source_run_id: "run-1", metadata: { promotion: "candidate" } },
+    ],
+    hubResults: [
+      { result_id: "result-1", run_id: "run-1", package_id: "pkg-1" },
+    ],
+    hubPromotions: [
+      { event_id: "promo-1", package_id: "pkg-1", source_run_id: "run-1", action: "promote" },
+    ],
+    sessions: [
+      {
+        sessionId: "sess-1",
+        goal: "Explore strategy branches",
+        status: "active",
+        activeBranchId: "alt",
+        turnCount: 2,
+        totalTokens: 33,
+        branches: [
+          { branchId: "main", label: "Main", parentTurnId: "", summary: "" },
+          { branchId: "alt", label: "Alternate", parentTurnId: "t1", summary: "try alternate route" },
+        ],
+        turns: [
+          { turnId: "t1", branchId: "main", parentTurnId: "", role: "competitor" },
+          { turnId: "t2", branchId: "alt", parentTurnId: "t1", role: "analyst" },
+        ],
+        events: [{ eventId: "e1", eventType: "branch_created" }],
+        branchPath: (branchId?: string) => (branchId === "alt" ? [{ turnId: "t1" }, { turnId: "t2" }] : [{ turnId: "t1" }]),
+      },
+    ],
     providerOpts: null,
     storeDbPath: null,
+    sessionStoreDbPath: null,
     simpleTaskArgs: null,
     loopOpts: null,
     loopInput: null,
@@ -99,6 +167,60 @@ function installAutoctxMock(): void {
 
       listRuns() {
         return mockState.runs;
+      }
+
+      getRun(runId: string) {
+        return mockState.runs.find((run) => run.id === runId || run.run_id === runId) ?? null;
+      }
+
+      getGenerations(runId: string) {
+        return mockState.generations.filter((generation) => generation.run_id === runId);
+      }
+
+      getScoreTrajectory(runId: string) {
+        return mockState.trajectory.filter((entry) => mockState.runs.some((run) => (run.run_id ?? run.id) === runId));
+      }
+
+      getAgentOutputs(runId: string, generationIndex: number) {
+        return mockState.agentOutputs.filter((output) => output.run_id === runId && output.generation_index === generationIndex);
+      }
+
+      getMatchesForRun(runId: string) {
+        return mockState.matches.filter((match) => match.run_id === runId);
+      }
+
+      listHubPackageRecords() {
+        return mockState.hubPackages;
+      }
+
+      listHubResultRecords() {
+        return mockState.hubResults;
+      }
+
+      listHubPromotionRecords() {
+        return mockState.hubPromotions;
+      }
+
+      close() {
+        // no-op in tests
+      }
+    }
+
+    class SessionStore {
+      constructor(dbPath: string) {
+        mockState.sessionStoreDbPath = dbPath;
+      }
+
+      load(sessionId: string) {
+        return mockState.sessions.find((session) => session.sessionId === sessionId) ?? null;
+      }
+
+      list(_status?: string, limit = 50) {
+        return mockState.sessions.slice(0, limit);
+      }
+
+      close() {
+        // no-op in tests
       }
     }
 
@@ -147,6 +269,7 @@ function installAutoctxMock(): void {
       SimpleAgentTask,
       ImprovementLoop,
       SQLiteStore,
+      SessionStore,
       enqueueTask: (
         _store: unknown,
         specName: string,
@@ -242,6 +365,7 @@ describe("SKILL.md", () => {
     expect(content).toContain("autocontext_judge");
     expect(content).toContain("autocontext_improve");
     expect(content).toContain("autocontext_status");
+    expect(content).toContain("autocontext_runtime_snapshot");
   });
 });
 
@@ -322,6 +446,12 @@ describe("Extension entry point", () => {
     expect(queue).toBeDefined();
   });
 
+  it("registers autocontext_runtime_snapshot tool", async () => {
+    const api = await loadExtension();
+    const runtime = api.tools.find((t) => t.name === "autocontext_runtime_snapshot");
+    expect(runtime).toBeDefined();
+  });
+
   it("registers /autocontext slash command", async () => {
     const api = await loadExtension();
     const cmd = api.commands.find((c) => c.name === "autocontext");
@@ -399,6 +529,17 @@ describe("Tool parameter schemas", () => {
     const props = (schema as { properties?: Record<string, unknown> }).properties;
     expect(props).toBeDefined();
     expect(props!.spec_name).toBeDefined();
+  });
+
+  it("autocontext_runtime_snapshot has run and session selectors", async () => {
+    const api = await loadExtension();
+    const runtime = api.tools.find((t) => t.name === "autocontext_runtime_snapshot")!;
+    const schema = runtime.parameters as Record<string, unknown>;
+    const props = (schema as { properties?: Record<string, unknown> }).properties;
+    expect(props).toBeDefined();
+    expect(props!.run_id).toBeDefined();
+    expect(props!.session_id).toBeDefined();
+    expect(props!.include_outputs).toBeDefined();
   });
 });
 
@@ -490,5 +631,60 @@ describe("Tool execution", () => {
         priority: 5,
       },
     });
+  });
+
+  it("autocontext_runtime_snapshot returns run artifacts, package records, session lineage, and recent events", async () => {
+    const eventDir = mkdtempSync(join(tmpdir(), "autoctx-pi-events-"));
+    mockState.settings.dbPath = "/workspace/runs/autocontext.sqlite3";
+    mockState.settings.eventStreamPath = join(eventDir, "events.ndjson");
+    writeFileSync(
+      mockState.settings.eventStreamPath,
+      [
+        JSON.stringify({ event: "run_started", payload: { run_id: "run-1" } }),
+        JSON.stringify({ event: "generation_completed", payload: { run_id: "run-1", generation_index: 1 } }),
+        JSON.stringify({ event: "run_started", payload: { run_id: "other" } }),
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+    const api = await loadExtension();
+    const runtime = api.tools.find((t) => t.name === "autocontext_runtime_snapshot");
+    expect(runtime).toBeDefined();
+
+    const result = await runtime!.execute("call-4", {
+      run_id: "run-1",
+      session_id: "sess-1",
+      include_outputs: true,
+      generation_index: 1,
+      limit: 5,
+    }) as {
+      content: Array<{ type: "text"; text: string }>;
+      details: Record<string, unknown>;
+    };
+
+    expect(mockState.storeDbPath).toBe("/workspace/runs/autocontext.sqlite3");
+    expect(mockState.sessionStoreDbPath).toBe("/workspace/runs/autocontext.sqlite3");
+    expect(result.content[0].text).toContain("run-1");
+    expect(result.content[0].text).toContain("sess-1");
+    expect(result.details.run).toEqual(expect.objectContaining({ run_id: "run-1" }));
+    expect(result.details.generations).toHaveLength(2);
+    expect(result.details.agentOutputs).toEqual([
+      expect.objectContaining({ role: "competitor", preview: "candidate strategy body" }),
+    ]);
+    expect((result.details.agentOutputs as Array<Record<string, unknown>>)[0].content).toBeUndefined();
+    expect(result.details.packages).toEqual([
+      expect.objectContaining({ package_id: "pkg-1", source_run_id: "run-1" }),
+    ]);
+    expect(result.details.session).toEqual(expect.objectContaining({
+      sessionId: "sess-1",
+      activeBranchId: "alt",
+      branches: [
+        expect.objectContaining({ branchId: "main", pathTurnIds: ["t1"] }),
+        expect.objectContaining({ branchId: "alt", pathTurnIds: ["t1", "t2"] }),
+      ],
+    }));
+    expect(result.details.events).toEqual([
+      expect.objectContaining({ event: "run_started" }),
+      expect.objectContaining({ event: "generation_completed" }),
+    ]);
   });
 });
