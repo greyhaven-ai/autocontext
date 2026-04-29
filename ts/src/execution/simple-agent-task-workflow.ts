@@ -1,5 +1,6 @@
 import { LLMJudge } from "../judge/llm-judge.js";
 import type { AgentTaskResult, LLMProvider } from "../types/index.js";
+import { completeWithProviderHooks, type HookBus } from "../extensions/index.js";
 import type { JudgeInterface } from "../judge/delegated.js";
 import type { RlmSessionRecord, RlmTaskConfig } from "../rlm/types.js";
 import { runAgentTaskRlmSession } from "../rlm/agent-task.js";
@@ -11,6 +12,7 @@ export interface EvaluateSimpleAgentTaskOpts {
   model: string;
   output: string;
   judgeOverride?: JudgeInterface;
+  hookBus?: HookBus | null;
   referenceContext?: string;
   requiredConcepts?: string[];
   calibrationExamples?: Array<Record<string, unknown>>;
@@ -24,6 +26,7 @@ export async function evaluateSimpleAgentTaskOutput(
     provider: opts.provider,
     model: opts.model,
     rubric: opts.rubric,
+    hookBus: opts.hookBus ?? null,
   });
   const result = await judge.evaluate({
     taskPrompt: opts.taskPrompt,
@@ -83,6 +86,7 @@ export async function generateSimpleAgentTaskOutput(opts: {
   rubric: string;
   rlmConfig: RlmTaskConfig | null;
   rlmSessions: RlmSessionRecord[];
+  hookBus?: HookBus | null;
   referenceContext?: string;
   requiredConcepts?: string[];
 }): Promise<string> {
@@ -101,7 +105,10 @@ export async function generateSimpleAgentTaskOutput(opts: {
     return rlmOutput;
   }
 
-  const result = await opts.provider.complete({
+  const result = await completeWithProviderHooks({
+    hookBus: opts.hookBus ?? null,
+    provider: opts.provider,
+    role: "agent_task_generate",
     systemPrompt: "You are a skilled writer and analyst. Complete the task precisely.",
     userPrompt: buildSimpleAgentTaskUserPrompt({
       taskPrompt: opts.taskPrompt,
@@ -159,6 +166,7 @@ export async function reviseSimpleAgentTaskOutput(opts: {
   judgeResult: AgentTaskResult;
   rlmConfig: RlmTaskConfig | null;
   rlmSessions: RlmSessionRecord[];
+  hookBus?: HookBus | null;
   referenceContext?: string;
   requiredConcepts?: string[];
 }): Promise<string> {
@@ -180,7 +188,10 @@ export async function reviseSimpleAgentTaskOutput(opts: {
     return rlmOutput;
   }
 
-  const result = await opts.provider.complete({
+  const result = await completeWithProviderHooks({
+    hookBus: opts.hookBus ?? null,
+    provider: opts.provider,
+    role: "agent_task_revise",
     systemPrompt:
       "You are revising content based on expert feedback. Improve the output. " +
       "IMPORTANT: Return ONLY the revised content. Do NOT include analysis, " +

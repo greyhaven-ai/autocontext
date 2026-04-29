@@ -28,6 +28,25 @@ then record Pi-shaped entries via the `ArtifactStore` ledger contract:
 `latestCompactionEntryId()` persist/read `runs/<run_id>/compactions.jsonl` plus
 the `compactions.latest` sidecar for cheap latest-entry lookups.
 
+The TypeScript runtime also mirrors the Python extension hook bus for
+standalone npm runs. Set `AUTOCONTEXT_EXTENSIONS` to a comma-separated list of
+JavaScript/ESM modules or `module:callable` targets, and set
+`AUTOCONTEXT_EXTENSION_FAIL_FAST=true` when hook errors should stop the run.
+Extensions receive ordered Pi-shaped events for run lifecycle, context
+assembly, semantic compaction, provider calls, judge calls, and artifact
+writes:
+
+```js
+export function register(api) {
+  api.on("context", (event) => ({
+    roles: {
+      ...event.payload.roles,
+      competitor: `${event.payload.roles.competitor}\nPrefer concise, testable strategies.`,
+    },
+  }));
+}
+```
+
 ## Install
 
 ```bash

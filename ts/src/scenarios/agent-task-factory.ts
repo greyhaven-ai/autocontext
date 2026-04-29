@@ -5,6 +5,7 @@
 import type { AgentTaskInterface, AgentTaskResult } from "../types/index.js";
 import { LLMJudge } from "../judge/llm-judge.js";
 import type { LLMProvider } from "../types/index.js";
+import { completeWithProviderHooks, type HookBus } from "../extensions/index.js";
 import type { AgentTaskSpec } from "./agent-task-spec.js";
 import { assertFamilyContract } from "./family-interfaces.js";
 
@@ -12,6 +13,7 @@ export interface AgentTaskFactoryOpts {
   spec: AgentTaskSpec;
   name: string;
   provider?: LLMProvider;
+  hookBus?: HookBus | null;
 }
 
 /**
@@ -21,7 +23,7 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
   readonly name: string;
   readonly spec: AgentTaskSpec;
 } {
-  const { spec, name, provider } = opts;
+  const { spec, name, provider, hookBus } = opts;
 
   const task = {
     name,
@@ -67,6 +69,7 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
         provider,
         model: spec.judgeModel || provider.defaultModel(),
         rubric: spec.judgeRubric,
+        hookBus: hookBus ?? null,
       });
       const result = await judge.evaluate({
         taskPrompt: spec.taskPrompt,
@@ -119,7 +122,10 @@ export function createAgentTask(opts: AgentTaskFactoryOpts): AgentTaskInterface 
         `\nRevision instructions: ${revisionInstructions}`,
         `\nProvide the revised output:`,
       ].join("\n");
-      const result = await provider.complete({
+      const result = await completeWithProviderHooks({
+        hookBus: hookBus ?? null,
+        provider,
+        role: "agent_task_revise",
         systemPrompt: "You are a helpful assistant revising your previous output.",
         userPrompt: prompt,
         model: spec.judgeModel || undefined,

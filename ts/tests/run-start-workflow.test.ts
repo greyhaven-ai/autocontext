@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { AppSettings } from "../src/config/index.js";
 import type { CustomScenarioEntry } from "../src/scenarios/custom-loader.js";
 import type { ScenarioFamilyName } from "../src/scenarios/families.js";
 import type { RoleProviderBundle } from "../src/providers/index.js";
+import { HookBus } from "../src/extensions/index.js";
 import {
   executeAgentTaskCustomStartRun,
   executeBuiltInGameStartRun,
@@ -253,6 +257,7 @@ describe("run start workflow", () => {
       },
       generations: 2,
       provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+      settings: makeSettings(),
       controller: { waitIfPaused: async () => {} } as never,
       events: events as never,
       deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
@@ -265,6 +270,7 @@ describe("run start workflow", () => {
         spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
       },
       generations: 2,
+      hookBus: expect.any(HookBus),
     });
     expect(emitted[0]?.event).toBe("run_started");
     expect(emitted.filter((entry) => entry.event === "generation_started")).toEqual([
@@ -280,4 +286,151 @@ describe("run start workflow", () => {
     expect(completed?.payload.session_report_path).toBeNull();
     expect(completed?.payload.dead_ends_found).toBe(0);
   });
+
+  it("emits extension lifecycle hooks for saved agent-task runs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-agent-task-hooks-"));
+    vi.stubGlobal("__autoctxLifecycleEvents", []);
+    try {
+      const extensionPath = join(root, "lifecycle.mjs");
+      writeFileSync(
+        extensionPath,
+        `
+          export function register(api) {
+            api.on("*", (event) => {
+              globalThis.__autoctxLifecycleEvents.push({
+                name: event.name,
+                status: event.payload.status ?? "",
+                generation: event.payload.generation ?? 0
+              });
+            });
+          }
+        `,
+        "utf-8",
+      );
+      const executeAgentTaskSolve = vi.fn(async () => ({
+        progress: 1,
+        result: { best_score: 0.82, scenario_name: "saved_task" },
+      }));
+
+      await executeAgentTaskCustomStartRun({
+        runId: "run_task_hooks",
+        scenarioName: "saved_task",
+        entry: {
+          name: "saved_task",
+          type: "agent_task",
+          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+          path: "/tmp/saved_task",
+          hasGeneratedSource: false,
+        },
+        generations: 1,
+        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+        settings: {
+          ...makeSettings(),
+          extensions: extensionPath,
+          extensionFailFast: true,
+        },
+        controller: { waitIfPaused: async () => {} } as never,
+        events: { emit: vi.fn() } as never,
+        deps: { executeAgentTaskSolve: executeAgentTaskSolve as never },
+      });
+
+      expect(readLifecycleEventNames()).toEqual([
+        "run_start",
+        "generation_start",
+        "generation_end",
+        "run_end",
+      ]);
+      expect(readLifecycleStatuses()).toEqual(["", "", "completed", "completed"]);
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits failure lifecycle hooks for saved agent-task runs", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-agent-task-hooks-"));
+    vi.stubGlobal("__autoctxLifecycleEvents", []);
+    try {
+      const extensionPath = join(root, "lifecycle-failure.mjs");
+      writeFileSync(
+        extensionPath,
+        `
+          export function register(api) {
+            api.on("*", (event) => {
+              globalThis.__autoctxLifecycleEvents.push({
+                name: event.name,
+                status: event.payload.status ?? "",
+                generation: event.payload.generation ?? 0
+              });
+            });
+          }
+        `,
+        "utf-8",
+      );
+
+      await expect(executeAgentTaskCustomStartRun({
+        runId: "run_task_hooks_failed",
+        scenarioName: "saved_task",
+        entry: {
+          name: "saved_task",
+          type: "agent_task",
+          spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
+          path: "/tmp/saved_task",
+          hasGeneratedSource: false,
+        },
+        generations: 1,
+        provider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
+        settings: {
+          ...makeSettings(),
+          extensions: extensionPath,
+          extensionFailFast: true,
+        },
+        controller: { waitIfPaused: async () => {} } as never,
+        events: { emit: vi.fn() } as never,
+        deps: {
+          executeAgentTaskSolve: vi.fn(async () => {
+            throw new Error("agent task failed");
+          }) as never,
+        },
+      })).rejects.toThrow("agent task failed");
+
+      expect(readLifecycleEventNames()).toEqual([
+        "run_start",
+        "generation_start",
+        "generation_end",
+        "run_end",
+      ]);
+      expect(readLifecycleStatuses()).toEqual(["", "", "failed", "failed"]);
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
+
+function readLifecycleEventNames(): string[] {
+  return readLifecycleEvents().map((event) => event.name);
+}
+
+function readLifecycleStatuses(): string[] {
+  return readLifecycleEvents().map((event) => event.status);
+}
+
+function readLifecycleEvents(): Array<{ name: string; status: string }> {
+  const raw = Reflect.get(globalThis, "__autoctxLifecycleEvents");
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.flatMap((entry) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+    const name = typeof entry.name === "string" ? entry.name : "";
+    const status = typeof entry.status === "string" ? entry.status : "";
+    return name ? [{ name, status }] : [];
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

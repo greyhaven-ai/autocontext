@@ -432,6 +432,7 @@ async function cmdRun(dbPath: string): Promise<void> {
     await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
+  const { initializeHookBus } = await import("../extensions/index.js");
   const { resolveRunnableScenarioClass } = await import("./runnable-scenario-resolution.js");
 
   const settings = loadSettings();
@@ -452,6 +453,10 @@ async function cmdRun(dbPath: string): Promise<void> {
     process.exit(1);
   }
 
+  const { hookBus, loadedExtensions } = await initializeHookBus({
+    extensions: settings.extensions,
+    failFast: settings.extensionFailFast,
+  });
   const providerBundle = buildRoleProviderBundle(
     settings,
     plan.providerType ? { providerType: plan.providerType } : {},
@@ -471,6 +476,7 @@ async function cmdRun(dbPath: string): Promise<void> {
         providerBundle,
         spec: savedAgentTask.spec,
         executeAgentTaskSolve: executeAgentTaskSolve as never,
+        hookBus,
         dbPath,
         migrationsDir: getMigrationsDir(),
         createStore: (runDbPath) => new SQLiteStore(runDbPath),
@@ -509,7 +515,11 @@ async function cmdRun(dbPath: string): Promise<void> {
     createStore: (runDbPath) => new SQLiteStore(runDbPath),
     createRunner: (runnerOpts) =>
       new GenerationRunner(
-        runnerOpts as import("../loop/generation-runner.js").GenerationRunnerOpts,
+        {
+          ...(runnerOpts as import("../loop/generation-runner.js").GenerationRunnerOpts),
+          hookBus,
+          loadedExtensions,
+        },
       ),
   });
 
@@ -719,6 +729,13 @@ async function cmdJudge(_dbPath: string): Promise<void> {
     }
   }
 
+  const { loadSettings } = await import("../config/index.js");
+  const { initializeHookBus } = await import("../extensions/index.js");
+  const settings = loadSettings();
+  const { hookBus } = await initializeHookBus({
+    extensions: settings.extensions,
+    failFast: settings.extensionFailFast,
+  });
   const { provider, model } = await getProvider();
   try {
     const { LLMJudge } = await import("../judge/index.js");
@@ -741,6 +758,7 @@ async function cmdJudge(_dbPath: string): Promise<void> {
           provider,
           model: judgeOpts.model ?? provider.defaultModel(),
           rubric: judgeOpts.rubric,
+          hookBus,
         });
       },
     });
@@ -1204,6 +1222,7 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     await import("../scenarios/family-interfaces.js");
   const { loadSettings } = await import("../config/index.js");
   const { buildRoleProviderBundle } = await import("../providers/index.js");
+  const { initializeHookBus } = await import("../extensions/index.js");
   const { resolveRunnableScenarioClass } = await import("./runnable-scenario-resolution.js");
 
   const plan = await planBenchmarkCommand(values, resolveScenarioOption);
@@ -1220,6 +1239,10 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     console.error(errorMessage(error));
     process.exit(1);
   }
+  const { hookBus, loadedExtensions } = await initializeHookBus({
+    extensions: settings.extensions,
+    failFast: settings.extensionFailFast,
+  });
   const providerBundle = buildRoleProviderBundle(
     settings,
     plan.providerType ? { providerType: plan.providerType } : {},
@@ -1234,7 +1257,11 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
     ScenarioClass,
     assertFamilyContract,
     createStore: (benchmarkDbPath) => new SQLiteStore(benchmarkDbPath),
-    createRunner: (runnerOpts) => new GenerationRunner(runnerOpts),
+    createRunner: (runnerOpts) => new GenerationRunner({
+      ...runnerOpts,
+      hookBus,
+      loadedExtensions,
+    }),
   });
   const rendered = renderBenchmarkResult(result, plan.json);
   if (rendered.stderr) {

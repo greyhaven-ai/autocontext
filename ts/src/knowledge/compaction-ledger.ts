@@ -43,8 +43,7 @@ export class CompactionLedgerStore {
     if (entries.length === 0) return;
     const path = this.ledgerPath(runId);
     mkdirSync(dirname(path), { recursive: true });
-    const lines = entries.map((entry) => JSON.stringify(normalizeEntry(entry))).join("\n") + "\n";
-    appendFileSync(path, lines, "utf-8");
+    appendFileSync(path, serializeCompactionEntries(entries), "utf-8");
     writeFileSync(this.latestEntryPath(runId), `${entries.at(-1)!.id}\n`, "utf-8");
   }
 
@@ -96,7 +95,11 @@ export class CompactionLedgerStore {
   }
 }
 
-function normalizeEntry(entry: CompactionEntry): Required<CompactionEntry> {
+export function serializeCompactionEntries(entries: CompactionEntry[]): string {
+  return entries.map((entry) => JSON.stringify(normalizeCompactionEntry(entry))).join("\n") + "\n";
+}
+
+export function normalizeCompactionEntry(entry: CompactionEntry): Required<CompactionEntry> {
   return {
     type: "compaction",
     id: entry.id,

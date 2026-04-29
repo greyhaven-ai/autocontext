@@ -288,6 +288,7 @@ export class RunManager {
               entry: plan.entry,
               generations,
               provider: providerBundle.defaultProvider,
+              settings,
               controller: this.#controller,
               events: this.#events,
             });

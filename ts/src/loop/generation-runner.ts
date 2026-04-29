@@ -10,7 +10,7 @@
  *   5. Persist to SQLite + artifacts
  */
 
-import type { LLMProvider } from "../types/index.js";
+import type { CompletionResult, LLMProvider } from "../types/index.js";
 import type { ScenarioInterface } from "../scenarios/game-interface.js";
 import type { SQLiteStore } from "../storage/index.js";
 import { TournamentRunner } from "../execution/tournament.js";
@@ -19,7 +19,11 @@ import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "../knowledge/artifact-st
 import { PlaybookGuard, PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
 import { generateSessionReport } from "../knowledge/session-report.js";
-import { compactPromptComponentsWithEntries } from "../knowledge/semantic-compaction.js";
+import {
+  compactPromptComponents,
+  compactionEntriesForComponents,
+} from "../knowledge/semantic-compaction.js";
+import { completeWithProviderHooks, HookEvents, HookBus } from "../extensions/index.js";
 import { ContextBudget } from "../prompts/context-budget.js";
 import { parseCuratorLessonResult, parseCuratorPlaybookDecision } from "../agents/curator-parser.js";
 import {
@@ -94,6 +98,8 @@ export interface GenerationRunnerOpts {
   controller?: LoopController;
   events?: EventStreamEmitter;
   generationTimeBudgetSeconds?: number | null;
+  hookBus?: HookBus | null;
+  loadedExtensions?: string[];
 }
 
 export interface RunResult {
@@ -132,6 +138,8 @@ export class GenerationRunner {
   #controller: LoopController | null;
   #events: EventStreamEmitter | null;
   #generationTimeBudgetSeconds: number | null;
+  #hookBus: HookBus;
+  #loadedExtensions: string[];
   #runState: GenerationRunState | null = null;
 
   constructor(opts: GenerationRunnerOpts) {
@@ -144,6 +152,7 @@ export class GenerationRunner {
       runsRoot: opts.runsRoot,
       knowledgeRoot: opts.knowledgeRoot,
       maxPlaybookVersions: opts.playbookMaxVersions,
+      hookBus: opts.hookBus ?? null,
     });
     this.#journal = new GenerationJournal({
       store: this.#store,
@@ -185,9 +194,17 @@ export class GenerationRunner {
     this.#controller = opts.controller ?? null;
     this.#events = opts.events ?? null;
     this.#generationTimeBudgetSeconds = opts.generationTimeBudgetSeconds ?? null;
+    this.#hookBus = opts.hookBus ?? new HookBus();
+    this.#loadedExtensions = opts.loadedExtensions ?? this.#hookBus.loadedExtensions;
   }
 
   async run(runId: string, generations: number): Promise<RunResult> {
+    this.emitHook(HookEvents.RUN_START, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      target_generations: generations,
+      loaded_extensions: this.#loadedExtensions,
+    });
     // Create run record
     this.#store.createRun(runId, this.#scenario.name, generations, "local");
     let orchestration = createGenerationLoopOrchestration({
@@ -207,48 +224,66 @@ export class GenerationRunner {
           budgetSeconds: this.#generationTimeBudgetSeconds,
         });
         generationBudget.check("generation start");
-        let lifecycle = await runGenerationLifecycleWorkflow(
-          createGenerationLifecycleWorkflow({
-            orchestration,
-            curatorEnabled: this.#curatorEnabled,
-            maxRetries: this.#maxRetries,
-            runAttempt: async ({ attemptOrchestration, generation }) => {
-              await this.#controller?.waitIfPaused();
-              const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
-              return runGenerationAttemptWorkflow(
-                createGenerationAttemptWorkflow({
-                  attemptOrchestration,
-                  runId,
-                  generation,
-                  competitorPrompt,
-                  seedBase: this.#seedBase,
-                  matchesPerGeneration: this.#matchesPerGeneration,
-                  currentElo: this.#runState!.currentElo,
-                  executeCompetitor: () => this.completeRole("competitor", competitorPrompt),
-                  beforeTournament: async () => {
-                    await this.#controller?.waitIfPaused();
-                  },
-                  executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
-                    new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
-                  decideGate: ({ attemptOrchestration: currentAttemptOrchestration, tournamentResult }) => {
-                    const decision = this.#gate.evaluate(
-                      currentAttemptOrchestration.orchestration.cycleState.previousBestOverall,
-                      tournamentResult.bestScore,
-                      currentAttemptOrchestration.phaseState.attemptState.retryCount,
-                      this.#maxRetries,
-                    );
-                    const gateDecision = this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
-                    return {
-                      gateDecision,
-                      delta: decision.delta,
-                      threshold: decision.threshold,
-                    };
-                  },
-                }),
-              );
-            },
-          }),
-        );
+        const activeGeneration = orchestration.cycleState.completedGenerations + 1;
+        this.emitHook(HookEvents.GENERATION_START, {
+          run_id: runId,
+          scenario: this.#scenario.name,
+          generation: activeGeneration,
+        });
+        let lifecycle: Awaited<ReturnType<typeof runGenerationLifecycleWorkflow>>;
+        try {
+          lifecycle = await runGenerationLifecycleWorkflow(
+            createGenerationLifecycleWorkflow({
+              orchestration,
+              curatorEnabled: this.#curatorEnabled,
+              maxRetries: this.#maxRetries,
+              runAttempt: async ({ attemptOrchestration, generation }) => {
+                await this.#controller?.waitIfPaused();
+                const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
+                return runGenerationAttemptWorkflow(
+                  createGenerationAttemptWorkflow({
+                    attemptOrchestration,
+                    runId,
+                    generation,
+                    competitorPrompt,
+                    seedBase: this.#seedBase,
+                    matchesPerGeneration: this.#matchesPerGeneration,
+                    currentElo: this.#runState!.currentElo,
+                    executeCompetitor: () => this.completeRole("competitor", competitorPrompt),
+                    beforeTournament: async () => {
+                      await this.#controller?.waitIfPaused();
+                    },
+                    executeTournament: ({ strategy: nextStrategy, tournamentOptions }) =>
+                      new TournamentRunner(this.#scenario, tournamentOptions).run(nextStrategy),
+                    decideGate: ({ attemptOrchestration: currentAttemptOrchestration, tournamentResult }) => {
+                      const decision = this.#gate.evaluate(
+                        currentAttemptOrchestration.orchestration.cycleState.previousBestOverall,
+                        tournamentResult.bestScore,
+                        currentAttemptOrchestration.phaseState.attemptState.retryCount,
+                        this.#maxRetries,
+                      );
+                      const gateDecision = this.#controller?.takeGateOverride() as GenerationAttempt["gateDecision"] | null ?? decision.decision;
+                      return {
+                        gateDecision,
+                        delta: decision.delta,
+                        threshold: decision.threshold,
+                      };
+                    },
+                  }),
+                );
+              },
+            }),
+          );
+        } catch (error) {
+          this.emitHook(HookEvents.GENERATION_END, {
+            run_id: runId,
+            scenario: this.#scenario.name,
+            generation: activeGeneration,
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
         generationBudget.check("generation lifecycle");
         orchestration = lifecycle.orchestration;
         this.#runState = orchestration.runState;
@@ -271,6 +306,16 @@ export class GenerationRunner {
         lifecycle = completeGenerationLifecycleWorkflow(lifecycle);
         orchestration = lifecycle.orchestration;
         this.emit("generation_completed", orchestration.events.generationCompleted!);
+        this.emitHook(HookEvents.GENERATION_END, {
+          run_id: runId,
+          scenario: this.#scenario.name,
+          generation: lifecycle.generation,
+          status: "completed",
+          mean_score: lifecycle.finalizedAttempt.tournamentResult.meanScore,
+          best_score: lifecycle.finalizedAttempt.tournamentResult.bestScore,
+          elo: lifecycle.finalizedAttempt.tournamentResult.elo,
+          gate_decision: lifecycle.finalizedAttempt.gateDecision,
+        });
       }
 
       this.#store.updateRunStatus(runId, "completed");
@@ -285,6 +330,16 @@ export class GenerationRunner {
       });
       this.#runState = orchestration.runState;
       this.emit("run_completed", orchestration.events.runCompleted!);
+      this.emitHook(HookEvents.RUN_END, {
+        run_id: runId,
+        scenario: this.#scenario.name,
+        status: "completed",
+        completed_generations: orchestration.cycleState.completedGenerations,
+        best_score: this.#runState.bestScore,
+        elo: this.#runState.currentElo,
+        session_report_path: sessionReportPath,
+        dead_ends_found: this.#journal.countDeadEnds(),
+      });
       await this.notify("completion", runId, this.#runState.bestScore, {
         roundCount: orchestration.cycleState.completedGenerations,
         metadata: { session_report_path: sessionReportPath },
@@ -304,6 +359,15 @@ export class GenerationRunner {
       this.#runState = orchestration.runState;
       this.#store.updateRunStatus(runId, "failed");
       this.emit("run_failed", orchestration.events.runFailed!);
+      this.emitHook(HookEvents.RUN_END, {
+        run_id: runId,
+        scenario: this.#scenario.name,
+        status: "failed",
+        completed_generations: this.#store.getScoreTrajectory(runId).length,
+        best_score: this.#runState.bestScore,
+        elo: this.#runState.currentElo,
+        error: error instanceof Error ? error.message : String(error),
+      });
       await this.notify("failure", runId, this.#runState.bestScore, {
         roundCount: this.#store.getScoreTrajectory(runId).length,
         error: error instanceof Error ? error.message : String(error),
@@ -316,18 +380,19 @@ export class GenerationRunner {
     const consumedHint = consumeFreshStartHint(this.#runState!);
     this.#runState = consumedHint.state;
     const freshStartHint = consumedHint.hint;
-    const compacted = this.compactPromptComponentsForRun(runId, generation, {
+    const contextComponents = this.applyContextComponentsHook(runId, generation, "competitor", {
       playbook: this.#artifactStore.readPlaybook(this.#scenario.name),
       trajectory: new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build(),
       session_reports: this.#artifactStore.readSessionReports(this.#scenario.name),
     });
+    const compacted = this.compactPromptComponentsForRun(runId, generation, contextComponents);
     const trimmed = this.#contextBudget.apply({
       ...compacted,
       dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
     });
     const injectedHint = this.#controller?.takeHint();
 
-    return buildCompetitorPrompt({
+    const competitor = buildCompetitorPrompt({
       scenarioName: this.#scenario.name,
       scenarioRules: this.#scenario.describeRules(),
       strategyInterface: this.#scenario.describeStrategyInterface(),
@@ -339,6 +404,23 @@ export class GenerationRunner {
       freshStartHint,
       operatorHint: injectedHint,
     });
+    return this.applyContextHook(runId, generation, { competitor }).competitor ?? competitor;
+  }
+
+  private applyContextComponentsHook(
+    runId: string,
+    generation: number,
+    role: string,
+    components: Record<string, string>,
+  ): Record<string, string> {
+    const event = this.emitHook(HookEvents.CONTEXT_COMPONENTS, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      generation,
+      role,
+      components,
+    });
+    return readStringRecord(event.payload.components) ?? components;
   }
 
   private compactPromptComponentsForRun(
@@ -346,7 +428,25 @@ export class GenerationRunner {
     generation: number,
     components: Record<string, string>,
   ): Record<string, string> {
-    const result = compactPromptComponentsWithEntries(components, {
+    const before = this.emitHook(HookEvents.BEFORE_COMPACTION, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      generation,
+      components,
+      semantic_compaction: true,
+    });
+    const inputComponents = readStringRecord(before.payload.components) ?? components;
+    const compacted = compactPromptComponents(inputComponents);
+    const after = this.emitHook(HookEvents.AFTER_COMPACTION, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      generation,
+      input_components: inputComponents,
+      components: compacted,
+      semantic_compaction: true,
+    });
+    const finalComponents = readStringRecord(after.payload.components) ?? compacted;
+    const entries = compactionEntriesForComponents(inputComponents, finalComponents, {
       context: {
         scenario: this.#scenario.name,
         run_id: runId,
@@ -354,15 +454,16 @@ export class GenerationRunner {
       },
       parentId: this.#artifactStore.latestCompactionEntryId(runId),
     });
-    if (result.entries.length > 0) {
-      this.#artifactStore.appendCompactionEntries(runId, result.entries);
+    if (entries.length > 0) {
+      this.#artifactStore.appendCompactionEntries(runId, entries);
     }
-    return result.components;
+    return finalComponents;
   }
 
   private buildSupportPrompt(
     role: "analyst" | "coach",
     runId: string,
+    generation: number,
     attempt: GenerationAttempt,
   ): string {
     const trimmed = this.#contextBudget.apply({
@@ -376,7 +477,7 @@ export class GenerationRunner {
       dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
     });
 
-    return buildSupportPrompt({
+    const prompt = buildSupportPrompt({
       role,
       scenarioName: this.#scenario.name,
       scenarioRules: this.#scenario.describeRules(),
@@ -387,6 +488,7 @@ export class GenerationRunner {
       trajectory: trimmed.trajectory,
       deadEnds: trimmed.dead_ends,
     });
+    return this.applyContextHook(runId, generation, { [role]: prompt })[role] ?? prompt;
   }
 
   private buildCuratorPrompt(
@@ -421,11 +523,14 @@ export class GenerationRunner {
     return this.#roleModels[role];
   }
 
-  private completeRole(role: GenerationRole, userPrompt: string, systemPrompt = "") {
-    return this.providerForRole(role).complete({
+  private async completeRole(role: GenerationRole, userPrompt: string, systemPrompt = ""): Promise<CompletionResult> {
+    return completeWithProviderHooks({
+      hookBus: this.#hookBus,
+      provider: this.providerForRole(role),
+      role,
+      model: this.modelForRole(role),
       systemPrompt,
       userPrompt,
-      model: this.modelForRole(role),
     });
   }
 
@@ -438,8 +543,8 @@ export class GenerationRunner {
     const analystStartedAt = Date.now();
     const coachStartedAt = Date.now();
     const [analystResult, coachResult] = await Promise.all([
-      this.completeRole("analyst", this.buildSupportPrompt("analyst", runId, attempt)),
-      this.completeRole("coach", this.buildSupportPrompt("coach", runId, attempt)),
+      this.completeRole("analyst", this.buildSupportPrompt("analyst", runId, gen, attempt)),
+      this.completeRole("coach", this.buildSupportPrompt("coach", runId, gen, attempt)),
     ]);
     this.emitRoleCompleted(runId, gen, "analyst", analystStartedAt, analystResult.usage);
     this.emitRoleCompleted(runId, gen, "coach", coachStartedAt, coachResult.usage);
@@ -626,6 +731,26 @@ export class GenerationRunner {
     }
   }
 
+  private applyContextHook(
+    runId: string,
+    generation: number,
+    roles: Record<string, string>,
+  ): Record<string, string> {
+    const event = this.emitHook(HookEvents.CONTEXT, {
+      run_id: runId,
+      scenario: this.#scenario.name,
+      generation,
+      roles,
+    });
+    return readStringRecord(event.payload.roles) ?? roles;
+  }
+
+  private emitHook(name: HookEvents, payload: Record<string, unknown>): ReturnType<HookBus["emit"]> {
+    const event = this.#hookBus.emit(name, payload);
+    event.raiseIfBlocked();
+    return event;
+  }
+
   private emit(event: string, payload: Record<string, unknown>): void {
     this.#events?.emit(event, payload);
   }
@@ -695,4 +820,25 @@ function replaceMarkedSection(
     "\n",
     content.slice(end),
   ].join("");
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function readStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const result: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw === "string") {
+      result[key] = raw;
+    }
+  }
+  return result;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

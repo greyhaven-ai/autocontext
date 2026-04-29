@@ -64,6 +64,23 @@ describe("settings resolution workflow", () => {
     });
   });
 
+  it("resolves TypeScript extension hook settings from env", () => {
+    const defaults = {
+      extensions: "",
+      extensionFailFast: false,
+    } satisfies Partial<AppSettings>;
+
+    const overrides = resolveEnvSettingsOverrides(defaults, {
+      AUTOCONTEXT_EXTENSIONS: "./hooks.mjs,autoctx-policy",
+      AUTOCONTEXT_EXTENSION_FAIL_FAST: "true",
+    });
+
+    expect(overrides).toMatchObject({
+      extensions: "./hooks.mjs,autoctx-policy",
+      extensionFailFast: true,
+    });
+  });
+
   it("builds project-config overrides for provider, model, and artifact roots", () => {
     const overrides = buildProjectConfigSettingsOverrides({
       provider: "ollama",

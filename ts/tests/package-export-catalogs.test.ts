@@ -19,6 +19,10 @@ describe("package root exports", () => {
     expect(pkg.PiPersistentRPCRuntime).toBeDefined();
     expect(pkg.compactPromptComponents).toBeDefined();
     expect(pkg.compactPromptComponentsWithEntries).toBeDefined();
+    expect(pkg.HookBus).toBeDefined();
+    expect(pkg.HookEvents).toBeDefined();
+    expect(pkg.loadExtensions).toBeDefined();
+    expect(pkg.completeWithProviderHooks).toBeDefined();
     expect(pkg.chooseModel).toBeDefined();
     expect(pkg.resolveBrowserSessionConfig).toBeDefined();
     expect(pkg.evaluateBrowserActionPolicy).toBeDefined();

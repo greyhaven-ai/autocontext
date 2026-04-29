@@ -1,4 +1,5 @@
 import type { LLMProvider, JudgeResult } from "../types/index.js";
+import { HookEvents, type HookBus } from "../extensions/index.js";
 import { parseJudgeResponse } from "./parse.js";
 import type { ParseMethod } from "./parse.js";
 import { checkRubricCoherence } from "./rubric-coherence.js";
@@ -12,6 +13,7 @@ export interface LLMJudgeOpts {
   samples?: number;
   temperature?: number;
   checkCoherence?: boolean;
+  hookBus?: HookBus | null;
 }
 
 export function detectGeneratedDimensions(
@@ -39,6 +41,7 @@ export class LLMJudge {
   #samples: number;
   #temperature: number;
   #rubricWarnings: string[];
+  #hookBus: HookBus | null;
 
   constructor(opts: LLMJudgeOpts) {
     this.#provider = opts.provider;
@@ -46,6 +49,7 @@ export class LLMJudge {
     this.rubric = opts.rubric;
     this.#samples = Math.max(1, opts.samples ?? 1);
     this.#temperature = opts.temperature ?? 0;
+    this.#hookBus = opts.hookBus ?? null;
 
     if (opts.checkCoherence) {
       const result = checkRubricCoherence(opts.rubric);
@@ -102,15 +106,56 @@ export class LLMJudge {
       let sampleParseMethod: ParseMethod = "none";
 
       for (let attempt = 0; attempt < 2; attempt++) {
-        const result = await this.#provider.complete({
+        const before = this.emitHook(HookEvents.BEFORE_JUDGE, {
+          provider: this.#provider.name,
+          model: this.model,
+          rubric: this.rubric,
+          samples: this.#samples,
+          sample: s + 1,
+          attempt: attempt + 1,
+          temperature: this.#temperature,
           systemPrompt,
           userPrompt,
-          model: this.model,
-          temperature: this.#temperature,
+          task_prompt: opts.taskPrompt,
+          agent_output: opts.agentOutput,
+          reference_context: opts.referenceContext,
+          required_concepts: opts.requiredConcepts,
+          calibration_examples: opts.calibrationExamples,
+          pinned_dimensions: opts.pinnedDimensions,
         });
-        rawResponses.push(result.text);
+        const finalSystemPrompt = readString(before.payload.systemPrompt) ?? systemPrompt;
+        const finalUserPrompt = readString(before.payload.userPrompt) ?? userPrompt;
+        const finalModel = readString(before.payload.model) ?? this.model;
+        const finalTemperature = readNumber(before.payload.temperature) ?? this.#temperature;
+        const result = await this.#provider.complete({
+          systemPrompt: finalSystemPrompt,
+          userPrompt: finalUserPrompt,
+          model: finalModel,
+          temperature: finalTemperature,
+        });
+        const after = this.emitHook(HookEvents.AFTER_JUDGE, {
+          provider: this.#provider.name,
+          model: finalModel,
+          rubric: this.rubric,
+          samples: this.#samples,
+          sample: s + 1,
+          attempt: attempt + 1,
+          request: {
+            systemPrompt: finalSystemPrompt,
+            userPrompt: finalUserPrompt,
+            model: finalModel,
+            temperature: finalTemperature,
+          },
+          response_text: result.text,
+          text: result.text,
+          usage: result.usage,
+          costUsd: result.costUsd,
+        });
+        const responseText =
+          readString(after.payload.response_text) ?? readString(after.payload.text) ?? result.text;
+        rawResponses.push(responseText);
 
-        const parsed = parseJudgeResponse(result.text);
+        const parsed = parseJudgeResponse(responseText);
         score = parsed.score;
         reasoning = parsed.reasoning;
         dims = parsed.dimensionScores;
@@ -225,4 +270,24 @@ export class LLMJudge {
 
     return parts.join("\n");
   }
+
+  private emitHook(
+    name: HookEvents,
+    payload: Record<string, unknown>,
+  ): { payload: Record<string, unknown> } {
+    if (!this.#hookBus?.hasHandlers(name)) {
+      return { payload };
+    }
+    const event = this.#hookBus.emit(name, payload);
+    event.raiseIfBlocked();
+    return event;
+  }
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

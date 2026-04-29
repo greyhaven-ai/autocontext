@@ -9,6 +9,7 @@ import {
   createTaskRunnerFromSettings,
   enqueueTask,
 } from "../src/execution/task-runner.js";
+import { HookBus, HookEvents } from "../src/extensions/index.js";
 import type { LLMProvider, CompletionResult } from "../src/types/index.js";
 
 const MIGRATIONS_DIR = join(import.meta.dirname, "..", "migrations");
@@ -519,5 +520,52 @@ describe("SimpleAgentTask", () => {
     expect(calls.at(-1)?.userPrompt).toContain("## Required Concepts");
     expect(calls.at(-1)?.userPrompt).toContain("- safety");
     expect(calls.at(-1)?.userPrompt).toContain("- latency");
+  });
+
+  it("wraps generation and revision provider calls with provider hooks", async () => {
+    const provider: LLMProvider = {
+      name: "hook-provider",
+      defaultModel: () => "hook-model",
+      complete: vi.fn(async () => ({
+        text: "provider output",
+        model: "hook-model",
+        usage: {},
+      })),
+    };
+    const bus = new HookBus();
+    const seen: string[] = [];
+    bus.on(HookEvents.BEFORE_PROVIDER_REQUEST, (event) => {
+      seen.push(`before:${event.payload.role}`);
+      return undefined;
+    });
+    bus.on(HookEvents.AFTER_PROVIDER_RESPONSE, (event) => {
+      seen.push(`after:${event.payload.role}`);
+      return { text: `${event.payload.role} hooked output` };
+    });
+    const task = new SimpleAgentTask(
+      "Do work",
+      "Score work",
+      provider,
+      "hook-model",
+      undefined,
+      null,
+      undefined,
+      bus,
+    );
+
+    await expect(task.generateOutput()).resolves.toBe("agent_task_generate hooked output");
+    await expect(
+      task.reviseOutput(
+        "old output",
+        { score: 0.2, reasoning: "revise", dimensionScores: {}, internalRetries: 0 },
+        {},
+      ),
+    ).resolves.toBe("agent_task_revise hooked output");
+    expect(seen).toEqual([
+      "before:agent_task_generate",
+      "after:agent_task_generate",
+      "before:agent_task_revise",
+      "after:agent_task_revise",
+    ]);
   });
 });

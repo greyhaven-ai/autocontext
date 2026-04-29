@@ -262,7 +262,7 @@ All 11 families execute in both Python and TypeScript. TypeScript uses V8 isolat
 
 **Executors**: Local subprocess, SSH remote, Monty (`pydantic-monty` sandbox), PrimeIntellect remote sandbox.
 
-**Harness profiles and hooks**: The Python control plane supports a Pi-shaped lean profile that caps prompt context during generation and exports a minimal tool-affordance allowlist for agent surfaces that enforce tool gating. Semantic prompt compactions are recorded as Pi-shaped JSONL entries under each run; the TypeScript package now includes a mirrored deterministic prompt compactor plus `ArtifactStore` ledger read/write/latest APIs for standalone npm runs. Python extensions can register hooks around context assembly, provider calls, judge calls, artifact writes, and run lifecycle events with `AUTOCONTEXT_EXTENSIONS`.
+**Harness profiles and hooks**: The Python control plane supports a Pi-shaped lean profile that caps prompt context during generation and exports a minimal tool-affordance allowlist for agent surfaces that enforce tool gating. Semantic prompt compactions are recorded as Pi-shaped JSONL entries under each run; the TypeScript package now includes a mirrored deterministic prompt compactor plus `ArtifactStore` ledger read/write/latest APIs for standalone npm runs. Python and TypeScript runs can load `AUTOCONTEXT_EXTENSIONS`; Python extensions are Python modules, while TypeScript extensions are JavaScript/ESM modules that register hooks around context assembly, semantic compaction, provider calls, judge calls, artifact writes, and run lifecycle events.
 
 A deterministic offline provider exists for the test suite. Configuration matrix: [`.env.example`](.env.example) and [docs/concept-model.md](docs/concept-model.md).
 
