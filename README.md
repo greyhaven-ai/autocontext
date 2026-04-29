@@ -56,7 +56,13 @@ See [`.env.example`](.env.example) for every provider's variables. Prefer to clo
 
 If you already work inside a coding agent (Claude Code, Pi, Cursor, or anything MCP-aware), you don't need to learn the CLI. Wire autocontext in once and your agent gets a natural-language entry point.
 
-**Pi** ships an autocontext skill out of the box. Install the autocontext Pi extension and Pi loads natural-language wrappers over live tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, and `autocontext_list_scenarios`. Then you just ask:
+**Pi** ships an autocontext skill out of the box. Install the published Pi package and Pi loads natural-language wrappers over live tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, and `autocontext_list_scenarios`.
+
+```bash
+pi install npm:pi-autocontext
+```
+
+Then you just ask:
 
 > "Solve: improve customer-support replies for billing disputes."
 >
@@ -207,6 +213,7 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Run the full multi-generation control plane (Python)            | [autocontext/README.md](autocontext/README.md)                                 |
 | Run from Node, or operate missions, simulations, investigations | [ts/README.md](ts/README.md)                                                   |
+| Install the Pi extension package                                | [pi/README.md](pi/README.md)                                                   |
 | Wire an external coding agent into autocontext over MCP         | [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md) |
 | Grab copy-paste integration snippets                            | [examples/README.md](examples/README.md)                                       |
 
@@ -217,9 +224,12 @@ uv tool install autocontext==0.4.7
 
 # TypeScript
 bun add -g autoctx@0.4.7
+
+# Pi extension
+pi install npm:pi-autocontext
 ```
 
-> The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm package is `autoctx` (note: an unrelated package on npm uses the name `autocontext`; that is not this project).
+> The PyPI package is `autocontext`. The CLI entrypoint is `autoctx`. The npm packages are `autoctx` and `pi-autocontext` (note: an unrelated package on npm uses the name `autocontext`; that is not this project).
 
 ## Surfaces
 
