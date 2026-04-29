@@ -42,6 +42,7 @@ export interface RoleProviderSettings {
   piRpcEndpoint?: string;
   piRpcApiKey?: string;
   piRpcSessionPersistence?: boolean;
+  piRpcPersistent?: boolean;
 }
 
 export interface RoleProviderBundle {
@@ -76,6 +77,7 @@ export function withRuntimeSettings(
     piRpcEndpoint: settings.piRpcEndpoint,
     piRpcApiKey: settings.piRpcApiKey,
     piRpcSessionPersistence: settings.piRpcSessionPersistence,
+    piRpcPersistent: settings.piRpcPersistent,
   };
 }
 

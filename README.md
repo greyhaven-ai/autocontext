@@ -258,7 +258,7 @@ All 11 families execute in both Python and TypeScript. TypeScript uses V8 isolat
 
 **LLM providers**: Anthropic (with `instrument_client` capture), OpenAI-compatible (vLLM, Ollama, Hermes), Gemini, Mistral, Groq, OpenRouter, Azure OpenAI, MLX (Apple Silicon), CUDA (Linux GPUs), Pi (CLI and RPC).
 
-**Agent runtimes**: Claude CLI, Codex CLI, Hermes CLI, Direct API, Pi variants, plus branch-aware session and persistent Pi RPC scaffolding for local agent loops.
+**Agent runtimes**: Claude CLI, Codex CLI, Hermes CLI, Direct API, Pi variants, plus branch-aware session and persistent Pi RPC for local agent loops.
 
 **Executors**: Local subprocess, SSH remote, Monty (`pydantic-monty` sandbox), PrimeIntellect remote sandbox.
 

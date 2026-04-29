@@ -179,6 +179,14 @@ export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
 export { DirectAPIRuntime } from "./runtimes/index.js";
 export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
 export type { ClaudeCLIConfig } from "./runtimes/index.js";
+export {
+  PiCLIRuntime,
+  PiCLIConfig,
+  PiPersistentRPCRuntime,
+  PiRPCRuntime,
+  PiRPCConfig,
+} from "./runtimes/index.js";
+export type { PiCLIConfigOpts, PiRPCConfigOpts } from "./runtimes/index.js";
 
 // Sessions
 export {

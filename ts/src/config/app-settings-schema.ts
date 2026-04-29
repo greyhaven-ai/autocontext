@@ -120,6 +120,7 @@ export const AppSettingsSchema = z.object({
   piRpcEndpoint: z.string().default(""),
   piRpcApiKey: z.string().default(""),
   piRpcSessionPersistence: z.boolean().default(true),
+  piRpcPersistent: z.boolean().default(false),
 
   // Browser exploration
   browserEnabled: z.boolean().default(false),

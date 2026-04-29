@@ -11,6 +11,7 @@ export interface PiRPCConfigOpts {
   piCommand?: string;
   model?: string;
   timeout?: number;
+  workspace?: string;
   sessionPersistence?: boolean;
   noContextFiles?: boolean;
   extraArgs?: string[];
@@ -20,6 +21,7 @@ export class PiRPCConfig {
   readonly piCommand: string;
   readonly model: string;
   readonly timeout: number;
+  readonly workspace: string;
   readonly sessionPersistence: boolean;
   readonly noContextFiles: boolean;
   readonly extraArgs: string[];
@@ -28,6 +30,7 @@ export class PiRPCConfig {
     this.piCommand = opts.piCommand ?? "pi";
     this.model = opts.model ?? "";
     this.timeout = opts.timeout ?? 120.0;
+    this.workspace = opts.workspace ?? "";
     this.sessionPersistence = opts.sessionPersistence ?? true;
     this.noContextFiles = opts.noContextFiles ?? false;
     this.extraArgs = [...(opts.extraArgs ?? [])];
@@ -36,8 +39,8 @@ export class PiRPCConfig {
 
 export class PiRPCRuntime {
   readonly name = "pi-rpc";
-  private config: PiRPCConfig;
-  private _currentSessionId: string | null = null;
+  protected config: PiRPCConfig;
+  protected _currentSessionId: string | null = null;
 
   constructor(config?: PiRPCConfig) {
     this.config = config ?? new PiRPCConfig();
@@ -71,7 +74,7 @@ export class PiRPCRuntime {
     });
   }
 
-  private buildArgs(): string[] {
+  protected buildArgs(): string[] {
     const args = ["--mode", "rpc"];
     if (this.config.model) {
       args.push("--model", this.config.model);
@@ -86,7 +89,7 @@ export class PiRPCRuntime {
     return args;
   }
 
-  private buildPromptCommand(prompt: string): { type: string; id: string; message: string } {
+  protected buildPromptCommand(prompt: string): { type: string; id: string; message: string } {
     return {
       type: "prompt",
       id: randomUUID().slice(0, 8),
@@ -98,6 +101,7 @@ export class PiRPCRuntime {
     return new Promise((resolve) => {
       const child = spawn(this.config.piCommand, args, {
         stdio: ["pipe", "pipe", "pipe"],
+        cwd: this.config.workspace || undefined,
       });
       let stdout = "";
       let stderr = "";
@@ -171,7 +175,7 @@ export class PiRPCRuntime {
     });
   }
 
-  private isTerminalRpcEvent(record: string): boolean {
+  protected isTerminalRpcEvent(record: string): boolean {
     try {
       const event = JSON.parse(record) as {
         type?: string;
@@ -184,7 +188,7 @@ export class PiRPCRuntime {
     }
   }
 
-  private parseOutput(raw: string, exitCode: number, stderr: string): AgentOutput {
+  protected parseOutput(raw: string, exitCode: number, stderr: string): AgentOutput {
     const trimmed = raw.trim();
     if (!trimmed) {
       return exitCode === 0
@@ -309,7 +313,7 @@ export class PiRPCRuntime {
         };
   }
 
-  private extractTextContent(content: unknown): string {
+  protected extractTextContent(content: unknown): string {
     if (typeof content === "string") {
       return content;
     }
@@ -328,7 +332,7 @@ export class PiRPCRuntime {
       .join("");
   }
 
-  private updateSessionId(event: {
+  protected updateSessionId(event: {
     data?: { session_id?: unknown; sessionId?: unknown };
     session_id?: unknown;
     sessionId?: unknown;
@@ -340,7 +344,7 @@ export class PiRPCRuntime {
     }
   }
 
-  private normalizeOutput(value: string | Buffer | undefined): string {
+  protected normalizeOutput(value: string | Buffer | undefined): string {
     if (typeof value === "string") {
       return value;
     }
@@ -348,5 +352,253 @@ export class PiRPCRuntime {
       return value.toString("utf-8");
     }
     return "";
+  }
+}
+
+type PiRpcCommand = Record<string, unknown> & { type: string; id?: string };
+type PiRpcEvent = Record<string, unknown> & { type?: string };
+
+export class PiPersistentRPCRuntime extends PiRPCRuntime {
+  private process: ReturnType<typeof spawn> | null = null;
+  private stdoutBuffer = "";
+  private stdoutLines: string[] = [];
+  private stderr = "";
+  private waiters: Array<() => void> = [];
+  private processError: Error | null = null;
+
+  close(): void {
+    const child = this.process;
+    if (!child) return;
+    if (child.stdin && child.stdin.writable && !child.stdin.destroyed) {
+      child.stdin.end();
+    }
+    if (!child.killed && child.exitCode === null) {
+      child.kill();
+    }
+    this.process = null;
+    this.notifyWaiters();
+  }
+
+  override async generate(opts: {
+    prompt: string;
+    system?: string;
+    schema?: Record<string, unknown>;
+  }): Promise<AgentOutput> {
+    void opts.schema;
+    const fullPrompt = opts.system ? `${opts.system}\n\n${opts.prompt}` : opts.prompt;
+    const command = this.withId(this.buildPromptCommand(fullPrompt));
+    try {
+      const lines = await this.collectUntil(command, (line) => this.isTerminalRpcEvent(line));
+      return this.parseOutput(lines.join(""), 0, this.stderr);
+    } catch (error) {
+      if (error instanceof Error && error.message === "timeout") {
+        this.close();
+        return { text: "", metadata: { error: "timeout" } };
+      }
+      this.close();
+      return { text: "", metadata: { error: error instanceof Error ? error.message : String(error) } };
+    }
+  }
+
+  async steer(message: string): Promise<Record<string, unknown>> {
+    return this.collectResponse({ type: "steer", message });
+  }
+
+  async followUp(message: string): Promise<Record<string, unknown>> {
+    return this.collectResponse({ type: "follow_up", message });
+  }
+
+  async abort(): Promise<Record<string, unknown>> {
+    return this.collectResponse({ type: "abort" });
+  }
+
+  async getState(): Promise<Record<string, unknown>> {
+    const response = await this.collectResponse({ type: "get_state" });
+    const { success: _success, ...state } = response;
+    return state;
+  }
+
+  async getMessages(): Promise<Array<Record<string, unknown>>> {
+    const response = await this.collectResponse({ type: "get_messages" });
+    return Array.isArray(response.messages)
+      ? response.messages.filter((message): message is Record<string, unknown> =>
+          Boolean(message) && typeof message === "object" && !Array.isArray(message),
+        )
+      : [];
+  }
+
+  private ensureProcess(): ReturnType<typeof spawn> {
+    if (this.process && this.process.exitCode === null && !this.process.killed) {
+      return this.process;
+    }
+    this.stdoutBuffer = "";
+    this.stdoutLines = [];
+    this.stderr = "";
+    this.processError = null;
+
+    const child = spawn(this.config.piCommand, this.buildArgs(), {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: this.config.workspace || undefined,
+    });
+    child.stdout.setEncoding("utf-8");
+    child.stderr.setEncoding("utf-8");
+    child.stdout.on("data", (chunk: string | Buffer) => {
+      this.pushStdout(chunk);
+    });
+    child.stderr.on("data", (chunk: string | Buffer) => {
+      this.stderr += this.normalizeOutput(chunk);
+    });
+    child.on("error", (error) => {
+      this.processError = error instanceof Error ? error : new Error(String(error));
+      this.notifyWaiters();
+    });
+    child.on("close", () => {
+      if (this.stdoutBuffer) {
+        this.stdoutLines.push(this.stdoutBuffer);
+        this.stdoutBuffer = "";
+      }
+      this.notifyWaiters();
+    });
+    this.process = child;
+    return child;
+  }
+
+  private pushStdout(chunk: string | Buffer): void {
+    this.stdoutBuffer += this.normalizeOutput(chunk);
+    let newlineIndex = this.stdoutBuffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = this.stdoutBuffer.slice(0, newlineIndex);
+      this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
+      this.stdoutLines.push(`${line}\n`);
+      newlineIndex = this.stdoutBuffer.indexOf("\n");
+    }
+    this.notifyWaiters();
+  }
+
+  private writeCommand(command: PiRpcCommand): void {
+    const child = this.ensureProcess();
+    const stdin = child.stdin;
+    if (!stdin || !stdin.writable || stdin.destroyed) {
+      throw new Error("pi RPC stdin unavailable");
+    }
+    stdin.write(`${JSON.stringify(command)}\n`);
+  }
+
+  private async collectUntil(command: PiRpcCommand, terminal: (line: string) => boolean): Promise<string[]> {
+    this.writeCommand(command);
+    const deadline = Date.now() + this.config.timeout * 1000;
+    const lines: string[] = [];
+    while (true) {
+      const line = await this.nextLine(deadline);
+      if (line === null) break;
+      lines.push(line);
+      if (terminal(line)) break;
+    }
+    return lines;
+  }
+
+  private async collectResponse(command: PiRpcCommand): Promise<Record<string, unknown>> {
+    const resolved = this.withId(command);
+    const lines = await this.collectUntil(resolved, (line) => {
+      const event = this.loadEvent(line);
+      return Boolean(event && this.isResponseFor(event, resolved));
+    });
+
+    for (const line of [...lines].reverse()) {
+      const event = this.loadEvent(line);
+      if (!event || !this.isResponseFor(event, resolved)) continue;
+      if (event.success === false) {
+        return {
+          success: false,
+          error: event.error ?? "",
+          command: event.command ?? resolved.type,
+        };
+      }
+      const data = event.data;
+      return this.isRecord(data)
+        ? { success: true, ...data }
+        : { success: true, data };
+    }
+
+    return { success: false, error: "missing_rpc_response", command: resolved.type };
+  }
+
+  private async nextLine(deadline: number): Promise<string | null> {
+    if (this.stdoutLines.length > 0) {
+      return this.stdoutLines.shift() ?? null;
+    }
+    if (this.processError) {
+      throw this.processError;
+    }
+    if (this.process && this.process.exitCode !== null) {
+      return null;
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new Error("timeout");
+    }
+    await this.waitForOutput(remaining);
+    if (this.stdoutLines.length > 0) {
+      return this.stdoutLines.shift() ?? null;
+    }
+    if (this.processError) {
+      throw this.processError;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error("timeout");
+    }
+    return null;
+  }
+
+  private waitForOutput(timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        this.waiters = this.waiters.filter((waiter) => waiter !== notify);
+        resolve();
+      }, timeoutMs);
+      const notify = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      this.waiters.push(notify);
+    });
+  }
+
+  private notifyWaiters(): void {
+    const waiters = this.waiters.splice(0);
+    for (const waiter of waiters) {
+      waiter();
+    }
+  }
+
+  private withId<T extends PiRpcCommand>(command: T): T {
+    return command.id ? command : { ...command, id: randomUUID().slice(0, 8) };
+  }
+
+  private loadEvent(line: string): PiRpcEvent | null {
+    try {
+      const event: unknown = JSON.parse(line);
+      return this.isRecord(event) ? event : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isRecord(value: unknown): value is PiRpcEvent {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+
+  private isResponseFor(event: PiRpcEvent, command: PiRpcCommand): boolean {
+    if (event.type !== "response") return false;
+    if (typeof event.id === "string" && command.id) {
+      return event.id === command.id;
+    }
+    return event.command === command.type;
   }
 }

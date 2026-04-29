@@ -1399,6 +1399,15 @@
       ]
     },
     {
+      "python": "pi_rpc_persistent",
+      "typescript": "piRpcPersistent",
+      "type": "boolean",
+      "default": false,
+      "env": [
+        "AUTOCONTEXT_PI_RPC_PERSISTENT"
+      ]
+    },
+    {
       "python": "pi_timeout",
       "typescript": "piTimeout",
       "type": "number",
