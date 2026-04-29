@@ -32,6 +32,12 @@ uv run autoctx export \
   --scenario grid_ctf \
   --output "exports/${RUN_ID}.json" \
   --json | jq .
+
+uv run autoctx export \
+  --scenario grid_ctf \
+  --format pi-package \
+  --output "exports/${RUN_ID}-pi-package" \
+  --json | jq .
 ```
 
 ## Claude Code MCP Config

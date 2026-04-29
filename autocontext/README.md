@@ -257,6 +257,14 @@ The Python package includes a thin Chrome CDP backend that attaches to an existi
 
 `AUTOCONTEXT_HARNESS_PROFILE=lean` resolves a Pi-shaped runtime profile: prompt context is capped by `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`, hidden/implicit context defaults to zero, and generated tool context is replaced by the lean allowlist before agent execution. `AUTOCONTEXT_PI_RPC_PERSISTENT=true` opts Pi RPC into a long-lived subprocess; one-shot Pi RPC remains the default.
 
+Solved strategy packages can also be exported as Pi-local package directories:
+
+```bash
+uv run autoctx export --scenario grid_ctf --format pi-package --output grid-ctf-pi-package
+```
+
+The directory contains `package.json`, a Pi skill, a prompt file, and the original `autocontext.package.json` strategy payload for re-import.
+
 See the repo-level [.env.example](../.env.example) for a working starting point.
 
 ## Repository Structure

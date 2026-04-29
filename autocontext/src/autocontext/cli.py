@@ -997,7 +997,15 @@ def new_scenario(
 @app.command("export")
 def export_cmd(
     scenario: str = typer.Option(..., "--scenario", help="Scenario to export"),
-    output: str = typer.Option("", "--output", help="Output JSON file path (default: <scenario>_package.json)"),
+    output: str = typer.Option(
+        "",
+        "--output",
+        help=(
+            "Output path: strategy JSON file (default: <scenario>_package.json) "
+            "or pi-package directory (default: <scenario>-pi-package)"
+        ),
+    ),
+    export_format: str = typer.Option("strategy", "--format", help="Export format: strategy or pi-package"),
     db_path: str | None = typer.Option(None, "--db-path", help="Override database path"),
     runs_root: str | None = typer.Option(None, "--runs-root", help="Override runs root"),
     knowledge_root: str | None = typer.Option(None, "--knowledge-root", help="Override knowledge root"),
@@ -1044,6 +1052,39 @@ def export_cmd(
             console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
+    normalized_format = export_format.strip().lower()
+    if normalized_format not in {"strategy", "pi-package"}:
+        message = "--format must be one of strategy, pi-package"
+        if json_output:
+            _write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+
+    if normalized_format == "pi-package":
+        from autocontext.knowledge.pi_package import (
+            build_pi_package,
+            default_pi_package_output_dir,
+            write_pi_package,
+        )
+
+        output_path = Path(output) if output else default_pi_package_output_dir(scenario)
+        written = write_pi_package(build_pi_package(pkg), output_path)
+        if json_output:
+            _write_json_stdout(
+                {
+                    "scenario": scenario,
+                    "format": normalized_format,
+                    "output_path": str(output_path),
+                    "file_count": len(written.files),
+                    "files": [str(path.relative_to(output_path)) for path in written.files],
+                }
+            )
+        else:
+            console.print(f"[green]Exported {scenario} Pi package to {output_path}[/green]")
+            console.print(f"[dim]files={len(written.files)} best_score={pkg.best_score:.4f}[/dim]")
+        return
+
     output_path = Path(output) if output else Path(f"{scenario}_package.json")
     pkg.to_file(output_path)
 
@@ -1051,6 +1092,7 @@ def export_cmd(
         _write_json_stdout(
             {
                 "scenario": scenario,
+                "format": normalized_format,
                 "output_path": str(output_path),
                 "best_score": pkg.best_score,
                 "lessons_count": len(pkg.lessons),

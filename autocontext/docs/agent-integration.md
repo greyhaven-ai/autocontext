@@ -172,6 +172,18 @@ JSON output shape:
 }
 ```
 
+For Pi-local package installation, export the same strategy knowledge as a
+package directory with a `package.json`, one `SKILL.md`, one prompt file, and
+the original autocontext strategy payload:
+
+```bash
+autoctx export \
+  --scenario grid_ctf \
+  --format pi-package \
+  --output grid-ctf-pi-package \
+  --json
+```
+
 #### `autoctx train` — Run a training loop
 
 ```bash
@@ -510,6 +522,16 @@ jq . "logs/${RUN_ID}.json"
 autoctx export \
   --scenario grid_ctf \
   --output "hermes_knowledge.json" \
+  --json | jq .
+```
+
+For Pi, use `--format pi-package` to produce a local package directory:
+
+```bash
+autoctx export \
+  --scenario grid_ctf \
+  --format pi-package \
+  --output "grid-ctf-pi-package" \
   --json | jq .
 ```
 
