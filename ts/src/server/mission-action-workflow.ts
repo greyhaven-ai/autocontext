@@ -81,16 +81,20 @@ export async function executeMissionActionRequest(opts: {
       mission,
       buildMissionProvider: () => opts.runManager.buildMissionProvider(),
     });
-    return {
-      status: 200,
-      body: await deps.runMissionLoop(
-        opts.missionManager as never,
-        opts.missionId,
-        opts.runManager.getRunsRoot(),
-        opts.runManager.getKnowledgeRoot(),
-        runRequest,
-      ),
-    };
+    try {
+      return {
+        status: 200,
+        body: await deps.runMissionLoop(
+          opts.missionManager as never,
+          opts.missionId,
+          opts.runManager.getRunsRoot(),
+          opts.runManager.getKnowledgeRoot(),
+          runRequest,
+        ),
+      };
+    } finally {
+      runRequest.provider?.close?.();
+    }
   }
 
   if (opts.action === "pause") {

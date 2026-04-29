@@ -24,6 +24,10 @@ export class RuntimeBridgeProvider implements LLMProvider {
     return this.#model;
   }
 
+  close(): void {
+    this.#runtime.close?.();
+  }
+
   async complete(opts: {
     systemPrompt: string;
     userPrompt: string;
@@ -70,6 +74,10 @@ export class RetryProvider implements LLMProvider {
 
   defaultModel(): string {
     return this.#inner.defaultModel();
+  }
+
+  close(): void {
+    this.#inner.close?.();
   }
 
   async complete(opts: {

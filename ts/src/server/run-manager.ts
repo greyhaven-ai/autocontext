@@ -219,7 +219,6 @@ export class RunManager {
       message,
       state: this.getState(),
       resolveProviderBundle: () => this.#resolveProviderBundle(),
-      buildProvider: (chatRole) => this.buildProvider(chatRole),
     });
   }
 
@@ -281,15 +280,21 @@ export class RunManager {
       const providerBundle = this.#resolveProviderBundle(settings);
       this.#runPromise = createManagedRunExecution({
         runId: id,
-        execute: () => executeAgentTaskCustomStartRun({
-          runId: id,
-          scenarioName: plan.scenarioName,
-          entry: plan.entry,
-          generations,
-          provider: providerBundle.defaultProvider,
-          controller: this.#controller,
-          events: this.#events,
-        }),
+        execute: async () => {
+          try {
+            await executeAgentTaskCustomStartRun({
+              runId: id,
+              scenarioName: plan.scenarioName,
+              entry: plan.entry,
+              generations,
+              provider: providerBundle.defaultProvider,
+              controller: this.#controller,
+              events: this.#events,
+            });
+          } finally {
+            providerBundle.close?.();
+          }
+        },
         events: this.#events,
         getPaused: () => this.#controller.isPaused(),
         setActive: (active) => {
@@ -328,17 +333,27 @@ export class RunManager {
   }
 
   async createScenario(description: string): Promise<ScenarioPreviewInfo> {
-    return this.#scenarioSession.createScenario({
-      description,
-      provider: this.buildProvider(),
-    });
+    const providerBundle = this.#resolveProviderBundle();
+    try {
+      return await this.#scenarioSession.createScenario({
+        description,
+        provider: providerBundle.defaultProvider,
+      });
+    } finally {
+      providerBundle.close?.();
+    }
   }
 
   async reviseScenario(feedback: string): Promise<ScenarioPreviewInfo> {
-    return this.#scenarioSession.reviseScenario({
-      feedback,
-      provider: this.buildProvider(),
-    });
+    const providerBundle = this.#resolveProviderBundle();
+    try {
+      return await this.#scenarioSession.reviseScenario({
+        feedback,
+        provider: providerBundle.defaultProvider,
+      });
+    } finally {
+      providerBundle.close?.();
+    }
   }
 
   cancelScenario(): void {

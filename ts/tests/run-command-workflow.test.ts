@@ -90,6 +90,7 @@ describe("run command workflow", () => {
     class FakeScenario {}
     const migrate = vi.fn();
     const close = vi.fn();
+    const closeProviderBundle = vi.fn();
     const store = { migrate, close };
     const run = vi.fn().mockResolvedValue({
       runId: "run-custom",
@@ -137,6 +138,7 @@ describe("run command workflow", () => {
         roleProviders: { judge: { name: "judge" } },
         roleModels: { judge: "claude" },
         defaultConfig: { providerType: "deterministic" },
+        close: closeProviderBundle,
       },
       ScenarioClass: FakeScenario,
       assertFamilyContract,
@@ -179,6 +181,7 @@ describe("run command workflow", () => {
     });
     expect(run).toHaveBeenCalledWith("run-custom", 3);
     expect(close).toHaveBeenCalled();
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
     expect(result).toEqual({
       runId: "run-custom",
       generationsCompleted: 3,
@@ -247,6 +250,7 @@ describe("run command workflow", () => {
   });
 
   it("persists saved agent-task runs and completed generations", async () => {
+    const closeProviderBundle = vi.fn();
     const store = {
       migrate: vi.fn(),
       createRun: vi.fn(),
@@ -267,6 +271,7 @@ describe("run command workflow", () => {
       providerBundle: {
         defaultProvider: { name: "provider" },
         defaultConfig: { providerType: "deterministic" },
+        close: closeProviderBundle,
       },
       spec: { taskPrompt: "Do work", judgeRubric: "Do it well" },
       executeAgentTaskSolve: vi.fn(async () => ({
@@ -299,6 +304,70 @@ describe("run command workflow", () => {
     });
     expect(store.updateRunStatus).toHaveBeenCalledWith("run-task", "completed");
     expect(store.close).toHaveBeenCalledOnce();
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
+  });
+
+  it("closes provider bundles when run execution fails", async () => {
+    class FakeScenario {}
+    const closeProviderBundle = vi.fn();
+    const store = {
+      migrate: vi.fn(),
+      close: vi.fn(),
+    };
+    const runError = new Error("runner failed");
+    const createRunner = vi.fn(() => ({
+      run: vi.fn().mockRejectedValue(runError),
+    }));
+
+    await expect(
+      executeRunCommandWorkflow({
+        dbPath: "/tmp/autocontext.db",
+        migrationsDir: "/tmp/migrations",
+        runsRoot: "/tmp/runs",
+        knowledgeRoot: "/tmp/knowledge",
+        settings: {
+          maxRetries: 2,
+          backpressureMinDelta: 0.1,
+          playbookMaxVersions: 5,
+          contextBudgetTokens: 1024,
+          curatorEnabled: true,
+          curatorConsolidateEveryNGens: 2,
+          skillMaxLessons: 6,
+          deadEndTrackingEnabled: true,
+          deadEndMaxEntries: 10,
+          stagnationResetEnabled: true,
+          stagnationRollbackThreshold: 0.05,
+          stagnationPlateauWindow: 4,
+          stagnationPlateauEpsilon: 0.01,
+          stagnationDistillTopLessons: 3,
+          explorationMode: "balanced",
+          notifyWebhookUrl: "",
+          notifyOn: [],
+        },
+        plan: {
+          scenarioName: "grid_ctf",
+          gens: 3,
+          runId: "run-failed",
+          providerType: "deterministic",
+          matches: 4,
+          json: false,
+        },
+        providerBundle: {
+          defaultProvider: { name: "provider" },
+          roleProviders: {},
+          roleModels: {},
+          defaultConfig: { providerType: "deterministic" },
+          close: closeProviderBundle,
+        },
+        ScenarioClass: FakeScenario,
+        assertFamilyContract: vi.fn(),
+        createStore: vi.fn(() => store),
+        createRunner,
+      }),
+    ).rejects.toThrow(runError);
+
+    expect(store.close).toHaveBeenCalledOnce();
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
   });
 
   it("renders json and human-readable run results", () => {

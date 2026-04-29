@@ -185,6 +185,7 @@ export async function executeBuiltInGameStartRun(opts: {
     await runner.run(opts.runId, opts.generations);
   } finally {
     store.close();
+    opts.providerBundle.close?.();
   }
 }
 

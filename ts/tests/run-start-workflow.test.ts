@@ -134,11 +134,13 @@ describe("run start workflow", () => {
     const store = { migrate, close };
     const run = vi.fn(async () => ({ generationsCompleted: 2 }));
     const createRunner = vi.fn(() => ({ run }));
+    const closeProviderBundle = vi.fn();
     const bundle: RoleProviderBundle = {
       defaultProvider: { name: "test", defaultModel: () => "test", complete: vi.fn() },
       defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "test" },
       roleProviders: {},
       roleModels: {},
+      close: closeProviderBundle,
     };
 
     const result = await executeBuiltInGameStartRun({
@@ -165,6 +167,7 @@ describe("run start workflow", () => {
     expect(migrate).toHaveBeenCalledWith("/tmp/migrations");
     expect(run).toHaveBeenCalledWith("run_1", 2);
     expect(close).toHaveBeenCalledOnce();
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
     expect(result).toBeUndefined();
   });
 

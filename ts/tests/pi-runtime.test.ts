@@ -39,6 +39,29 @@ class FakeStream extends EventEmitter {
   }
 }
 
+class InteractiveFakeStream extends EventEmitter {
+  writable = true;
+  destroyed = false;
+  readonly chunks: string[] = [];
+
+  constructor(private readonly onWrite: (chunk: string) => void) {
+    super();
+  }
+
+  setEncoding(_encoding: string): void {}
+
+  write(chunk: string): boolean {
+    this.chunks.push(chunk);
+    this.onWrite(chunk);
+    return true;
+  }
+
+  end(): void {
+    this.writable = false;
+    this.emit("finish");
+  }
+}
+
 function createFakeSpawnProcess(stdoutLines: string[], closeCode = 0): {
   child: EventEmitter & {
     stdin: FakeStream;
@@ -85,6 +108,94 @@ function createFakeSpawnProcess(stdoutLines: string[], closeCode = 0): {
   return { child, stdin };
 }
 
+function createInteractiveFakeSpawnProcess(): {
+  child: EventEmitter & {
+    stdin: InteractiveFakeStream;
+    stdout: FakeStream;
+    stderr: FakeStream;
+    killed: boolean;
+    exitCode: number | null;
+    kill: () => void;
+  };
+  stdin: InteractiveFakeStream;
+} {
+  const child = new EventEmitter() as EventEmitter & {
+    stdin: InteractiveFakeStream;
+    stdout: FakeStream;
+    stderr: FakeStream;
+    killed: boolean;
+    exitCode: number | null;
+    kill: () => void;
+  };
+  let buffer = "";
+  const emitRecord = (record: Record<string, unknown>): void => {
+    queueMicrotask(() => {
+      child.stdout.emit("data", `${JSON.stringify(record)}\n`);
+    });
+  };
+  const handleCommand = (command: Record<string, unknown>): void => {
+    const id = command.id as string | undefined;
+    if (command.type === "prompt") {
+      emitRecord({ type: "response", command: "prompt", id, success: true });
+      emitRecord({
+        type: "agent_end",
+        messages: [{ role: "assistant", content: `answer:${String(command.message)}` }],
+        session_id: "sess-1",
+      });
+      return;
+    }
+    if (command.type === "steer") {
+      emitRecord({ type: "response", command: "steer", id, success: true, data: { accepted: true } });
+      return;
+    }
+    if (command.type === "follow_up") {
+      emitRecord({ type: "response", command: "follow_up", id, success: true, data: { queued: true } });
+      return;
+    }
+    if (command.type === "get_state") {
+      emitRecord({ type: "response", command: "get_state", id, success: true, data: { status: "idle", sessionId: "sess-1" } });
+      return;
+    }
+    if (command.type === "get_messages") {
+      emitRecord({
+        type: "response",
+        command: "get_messages",
+        id,
+        success: true,
+        data: { messages: [{ role: "assistant", content: "answer" }] },
+      });
+      return;
+    }
+    if (command.type === "abort") {
+      emitRecord({ type: "response", command: "abort", id, success: true, data: { aborted: true } });
+    }
+  };
+  const stdin = new InteractiveFakeStream((chunk) => {
+    buffer += chunk;
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line) {
+        handleCommand(JSON.parse(line) as Record<string, unknown>);
+      }
+      newlineIndex = buffer.indexOf("\n");
+    }
+  });
+  child.stdin = stdin;
+  child.stdout = new FakeStream();
+  child.stderr = new FakeStream();
+  child.killed = false;
+  child.exitCode = null;
+  child.kill = vi.fn(() => {
+    child.killed = true;
+    child.exitCode = -9;
+    child.emit("close", -9);
+  });
+
+  return { child, stdin };
+}
+
 // ---------------------------------------------------------------------------
 // Pi config in AppSettingsSchema
 // ---------------------------------------------------------------------------
@@ -106,6 +217,7 @@ describe("Pi config in AppSettingsSchema", () => {
     expect(settings.piRpcEndpoint).toBe("");
     expect(settings.piRpcApiKey).toBe("");
     expect(settings.piRpcSessionPersistence).toBe(true);
+    expect(settings.piRpcPersistent).toBe(false);
   });
 });
 
@@ -303,6 +415,11 @@ describe("PiRPCRuntime", () => {
     expect(PiRPCRuntime).toBeDefined();
   });
 
+  it("exports persistent Pi RPC runtime", async () => {
+    const { PiPersistentRPCRuntime } = await import("../src/runtimes/pi-rpc.js");
+    expect(PiPersistentRPCRuntime).toBeDefined();
+  });
+
   it("has correct defaults", async () => {
     const { PiRPCConfig } = await import("../src/runtimes/pi-rpc.js");
     const config = new PiRPCConfig();
@@ -422,6 +539,95 @@ describe("PiRPCRuntime", () => {
       ["--mode", "rpc", "--model", "manual-pi-model"],
       expect.any(Object),
     );
+  });
+
+  it("persistent pi-rpc reuses one subprocess for prompts and live control commands", async () => {
+    vi.resetModules();
+    const fakeProcess = createInteractiveFakeSpawnProcess();
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { PiPersistentRPCRuntime, PiRPCConfig } = await import("../src/runtimes/pi-rpc.js");
+    const runtime = new PiPersistentRPCRuntime(new PiRPCConfig({ piCommand: "pi-rpc-local" }));
+
+    const first = await runtime.generate({ prompt: "first prompt" });
+    const steer = await runtime.steer("prefer shorter answers");
+    const followUp = await runtime.followUp("next prompt");
+    const state = await runtime.getState();
+    const messages = await runtime.getMessages();
+    const abort = await runtime.abort();
+    const second = await runtime.generate({ prompt: "second prompt" });
+    runtime.close();
+
+    expect(first.text).toBe("answer:first prompt");
+    expect(first.metadata?.sessionId).toBe("sess-1");
+    expect(steer).toEqual(expect.objectContaining({ success: true, accepted: true }));
+    expect(followUp).toEqual(expect.objectContaining({ success: true, queued: true }));
+    expect(state).toEqual({ status: "idle", sessionId: "sess-1" });
+    expect(messages).toEqual([{ role: "assistant", content: "answer" }]);
+    expect(abort).toEqual(expect.objectContaining({ success: true, aborted: true }));
+    expect(second.text).toBe("answer:second prompt");
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(fakeProcess.child.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("persistent pi-rpc reports early child exit as a nonzero error", async () => {
+    vi.resetModules();
+    const fakeProcess = createFakeSpawnProcess([], 1);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { PiPersistentRPCRuntime, PiRPCConfig } = await import("../src/runtimes/pi-rpc.js");
+    const runtime = new PiPersistentRPCRuntime(new PiRPCConfig({ piCommand: "pi-rpc-local" }));
+    const result = await runtime.generate({ prompt: "first prompt" });
+
+    expect(result.text).toBe("");
+    expect(result.metadata).toEqual(expect.objectContaining({
+      error: "nonzero_exit",
+      exitCode: 1,
+    }));
+  });
+
+  it("createConfiguredProvider uses persistent pi-rpc when configured", async () => {
+    vi.resetModules();
+    const fakeProcess = createInteractiveFakeSpawnProcess();
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { createConfiguredProvider } = await import("../src/providers/index.js");
+    const { provider } = createConfiguredProvider(
+      { providerType: "pi-rpc" },
+      {
+        agentProvider: "pi-rpc",
+        piCommand: "pi-rpc-local",
+        piRpcPersistent: true,
+      },
+    );
+
+    const first = await provider.complete({ systemPrompt: "", userPrompt: "first prompt" });
+    const second = await provider.complete({ systemPrompt: "", userPrompt: "second prompt" });
+
+    expect(first.text).toBe("answer:first prompt");
+    expect(second.text).toBe("answer:second prompt");
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("persistent pi-rpc provider exposes close to stop the child process", async () => {
+    vi.resetModules();
+    const fakeProcess = createInteractiveFakeSpawnProcess();
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { createConfiguredProvider } = await import("../src/providers/index.js");
+    const { provider } = createConfiguredProvider(
+      { providerType: "pi-rpc" },
+      {
+        agentProvider: "pi-rpc",
+        piCommand: "pi-rpc-local",
+        piRpcPersistent: true,
+      },
+    );
+
+    await provider.complete({ systemPrompt: "", userPrompt: "first prompt" });
+    provider.close?.();
+
+    expect(fakeProcess.child.kill).toHaveBeenCalledTimes(1);
   });
 });
 

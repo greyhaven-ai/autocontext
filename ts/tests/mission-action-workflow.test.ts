@@ -54,6 +54,7 @@ describe("mission action workflow", () => {
 
   it("runs mission loops with normalized options", async () => {
     const runMissionLoop = vi.fn(async () => ({ finalStatus: "completed", checkpointPath: "/tmp/checkpoint.json" }));
+    const closeProvider = vi.fn();
 
     await expect(executeMissionActionRequest({
       action: "run",
@@ -68,7 +69,7 @@ describe("mission action workflow", () => {
       runManager: {
         getRunsRoot: () => "/tmp/runs",
         getKnowledgeRoot: () => "/tmp/knowledge",
-        buildMissionProvider: () => ({ complete: vi.fn() }),
+        buildMissionProvider: () => ({ complete: vi.fn(), close: closeProvider }),
       },
       deps: {
         runMissionLoop,
@@ -87,6 +88,7 @@ describe("mission action workflow", () => {
       maxIterations: 2,
       stepDescription: "Advance once",
     });
+    expect(closeProvider).toHaveBeenCalledOnce();
   });
 
   it("applies pause/resume/cancel mission controls and returns checkpointed status", async () => {

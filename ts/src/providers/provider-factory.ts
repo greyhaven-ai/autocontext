@@ -4,7 +4,7 @@ import { DeterministicProvider } from "./deterministic.js";
 import { ClaudeCLIRuntime } from "../runtimes/claude-cli.js";
 import { CodexCLIRuntime, CodexCLIConfig } from "../runtimes/codex-cli.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
-import { PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
+import { PiPersistentRPCRuntime, PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
 import { RuntimeBridgeProvider } from "../agents/provider-bridge.js";
 import { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
 
@@ -174,6 +174,7 @@ export interface CreateProviderOpts {
   piRpcEndpoint?: string;
   piRpcApiKey?: string;
   piRpcSessionPersistence?: boolean;
+  piRpcPersistent?: boolean;
 }
 
 export function createProvider(opts: CreateProviderOpts): LLMProvider {
@@ -262,11 +263,13 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
 
   if (type === "pi-rpc") {
     const resolvedModel = opts.model ?? opts.piModel;
-    const runtime = new PiRPCRuntime(
+    const Runtime = opts.piRpcPersistent ? PiPersistentRPCRuntime : PiRPCRuntime;
+    const runtime = new Runtime(
       new PiRPCConfig({
         piCommand: opts.piCommand,
         model: resolvedModel,
         timeout: opts.piTimeout,
+        workspace: opts.piWorkspace,
         sessionPersistence: opts.piRpcSessionPersistence,
         noContextFiles: opts.piNoContextFiles,
       }),

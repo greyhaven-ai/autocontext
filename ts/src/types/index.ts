@@ -35,6 +35,8 @@ export interface LLMProvider {
 
   defaultModel(): string;
 
+  close?(): void;
+
   readonly name: string;
 }
 

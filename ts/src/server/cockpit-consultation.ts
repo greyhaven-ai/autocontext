@@ -168,6 +168,7 @@ function createConsultationProvider(
         piNoContextFiles: settings.piNoContextFiles,
         piRpcApiKey: settings.piRpcApiKey,
         piRpcEndpoint: settings.piRpcEndpoint,
+        piRpcPersistent: settings.piRpcPersistent,
         piRpcSessionPersistence: settings.piRpcSessionPersistence,
         piTimeout: settings.piTimeout,
         piWorkspace: settings.piWorkspace,
@@ -239,6 +240,8 @@ async function completeConsultation(
         body: { detail: `Consultation call failed: ${errorMessage(error)}` },
       },
     };
+  } finally {
+    provider.close?.();
   }
 }
 

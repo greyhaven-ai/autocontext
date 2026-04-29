@@ -227,6 +227,11 @@ autoctx run --scenario support_triage --json
 # Pi CLI
 AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario support_triage --json
 
+# Pi RPC with one long-lived subprocess
+AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
+AUTOCONTEXT_PI_RPC_PERSISTENT=true \
+autoctx run --scenario support_triage --json
+
 # Deterministic (CI/testing)
 AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario support_triage --json
 ```
@@ -251,6 +256,7 @@ Key environment variables:
 | `AUTOCONTEXT_ARCHITECT_API_KEY` / `AUTOCONTEXT_ARCHITECT_BASE_URL`   | Optional architect-specific credential/endpoint override    |
 | `AUTOCONTEXT_CLAUDE_MODEL`                                           | Claude CLI model alias override                             |
 | `AUTOCONTEXT_CODEX_MODEL`                                            | Codex CLI model override                                    |
+| `AUTOCONTEXT_PI_RPC_PERSISTENT`                                      | Reuse one Pi RPC subprocess across provider calls           |
 | `AUTOCONTEXT_CONFIG_DIR`                                             | Override where `login` / `whoami` read saved credentials    |
 | `AUTOCONTEXT_DB_PATH`                                                | SQLite database path                                        |
 

@@ -21,6 +21,7 @@ export {
 
 export {
   buildRoleProviderBundle,
+  closeProviderBundle,
   createConfiguredProvider,
   withRuntimeSettings,
   type GenerationRole,

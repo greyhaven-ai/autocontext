@@ -26,5 +26,7 @@ export interface AgentRuntime {
     system?: string;
   }): Promise<AgentOutput>;
 
+  close?(): void;
+
   readonly name: string;
 }

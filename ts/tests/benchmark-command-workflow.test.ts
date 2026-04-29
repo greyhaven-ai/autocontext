@@ -39,6 +39,7 @@ describe("benchmark command workflow", () => {
   it("executes benchmark runs with migrated stores and runner inputs", async () => {
     const migrate = vi.fn();
     const close = vi.fn();
+    const closeProviderBundle = vi.fn();
     const run = vi
       .fn()
       .mockResolvedValueOnce({ bestScore: 0.75 })
@@ -65,6 +66,7 @@ describe("benchmark command workflow", () => {
         roleProviders: { judge: { name: "judge" } },
         roleModels: { judge: "claude" },
         defaultConfig: { providerType: "anthropic" },
+        close: closeProviderBundle,
       },
       ScenarioClass: FakeScenario,
       assertFamilyContract,
@@ -89,6 +91,7 @@ describe("benchmark command workflow", () => {
     expect(run).toHaveBeenNthCalledWith(1, "bench_12345_0", 3);
     expect(run).toHaveBeenNthCalledWith(2, "bench_12345_1", 3);
     expect(close).toHaveBeenCalledTimes(2);
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
     expect(result).toEqual({
       scenario: "grid_ctf",
       runs: 2,
@@ -97,6 +100,45 @@ describe("benchmark command workflow", () => {
       meanBestScore: 0.8,
       provider: "anthropic",
     });
+  });
+
+  it("closes provider bundles when benchmark execution fails", async () => {
+    const closeProviderBundle = vi.fn();
+    const runError = new Error("benchmark failed");
+    const store = { migrate: vi.fn(), close: vi.fn() };
+    class FakeScenario {}
+
+    await expect(
+      executeBenchmarkCommandWorkflow({
+        dbPath: "/tmp/autocontext.db",
+        migrationsDir: "/tmp/migrations",
+        runsRoot: "/tmp/runs",
+        knowledgeRoot: "/tmp/knowledge",
+        plan: {
+          scenarioName: "grid_ctf",
+          numRuns: 1,
+          numGens: 3,
+          providerType: "anthropic",
+          json: false,
+        },
+        providerBundle: {
+          defaultProvider: { name: "provider" },
+          roleProviders: {},
+          roleModels: {},
+          defaultConfig: { providerType: "anthropic" },
+          close: closeProviderBundle,
+        },
+        ScenarioClass: FakeScenario,
+        assertFamilyContract: vi.fn(),
+        createStore: vi.fn(() => store),
+        createRunner: vi.fn(() => ({
+          run: vi.fn().mockRejectedValue(runError),
+        })),
+      }),
+    ).rejects.toThrow(runError);
+
+    expect(store.close).toHaveBeenCalledOnce();
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
   });
 
   it("renders benchmark results as json", () => {

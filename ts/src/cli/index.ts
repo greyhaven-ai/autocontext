@@ -24,6 +24,7 @@ import {
 } from "./command-registry.js";
 import { emitEngineResult } from "./emit-engine-result.js";
 import type { CampaignStatus } from "../mission/campaign.js";
+import type { LLMProvider } from "../types/index.js";
 
 function getMigrationsDir(): string {
   const thisDir = dirname(fileURLToPath(import.meta.url));
@@ -563,8 +564,9 @@ async function cmdSolve(dbPath: string): Promise<void> {
   const store = new SQLiteStore(dbPath);
   store.migrate(getMigrationsDir());
 
+  let provider: LLMProvider | undefined;
   try {
-    const { provider } = await getProvider();
+    provider = (await getProvider()).provider;
     const summary = await executeSolveCommandWorkflow({
       manager: new SolveManager({
         provider,
@@ -581,8 +583,10 @@ async function cmdSolve(dbPath: string): Promise<void> {
     console.log(renderSolveCommandSummary(summary, plan.json));
   } catch (error) {
     console.error(errorMessage(error));
+    provider?.close?.();
     process.exit(1);
   } finally {
+    provider?.close?.();
     store.close();
   }
 }
@@ -716,38 +720,39 @@ async function cmdJudge(_dbPath: string): Promise<void> {
   }
 
   const { provider, model } = await getProvider();
-  const { LLMJudge } = await import("../judge/index.js");
-  const savedScenario = values.scenario
-    ? await loadSavedAgentTaskScenario(values.scenario)
-    : null;
-  if (values.scenario && !savedScenario) {
-    console.error(`Unknown saved custom scenario: ${values.scenario}`);
-    process.exit(1);
-  }
-
-  let plan;
   try {
-    plan = planJudgeCommand(values, savedScenario);
+    const { LLMJudge } = await import("../judge/index.js");
+    const savedScenario = values.scenario
+      ? await loadSavedAgentTaskScenario(values.scenario)
+      : null;
+    if (values.scenario && !savedScenario) {
+      throw new Error(`Unknown saved custom scenario: ${values.scenario}`);
+    }
+
+    const plan = planJudgeCommand(values, savedScenario);
+
+    const result = await executeJudgeCommandWorkflow({
+      plan,
+      provider,
+      model: model ?? undefined,
+      createJudge: (judgeOpts) => {
+        const provider = judgeOpts.provider as import("../types/index.js").LLMProvider;
+        return new LLMJudge({
+          provider,
+          model: judgeOpts.model ?? provider.defaultModel(),
+          rubric: judgeOpts.rubric,
+        });
+      },
+    });
+
+    console.log(renderJudgeResult(result));
   } catch (error) {
     console.error(errorMessage(error));
+    provider.close?.();
     process.exit(1);
+  } finally {
+    provider.close?.();
   }
-
-  const result = await executeJudgeCommandWorkflow({
-    plan,
-    provider,
-    model: model ?? undefined,
-    createJudge: (judgeOpts) => {
-      const provider = judgeOpts.provider as import("../types/index.js").LLMProvider;
-      return new LLMJudge({
-        provider,
-        model: judgeOpts.model ?? provider.defaultModel(),
-        rubric: judgeOpts.rubric,
-      });
-    },
-  });
-
-  console.log(renderJudgeResult(result));
 }
 
 async function cmdImprove(_dbPath: string): Promise<void> {
@@ -789,50 +794,51 @@ async function cmdImprove(_dbPath: string): Promise<void> {
   }
 
   const { provider, model } = await getProvider();
-  const { SimpleAgentTask } = await import("../execution/task-runner.js");
-  const { ImprovementLoop } = await import("../execution/improvement-loop.js");
-  const savedScenario = values.scenario
-    ? await loadSavedAgentTaskScenario(values.scenario)
-    : null;
-  if (values.scenario && !savedScenario) {
-    console.error(`Unknown saved custom scenario: ${values.scenario}`);
-    process.exit(1);
-  }
-
-  let plan;
   try {
-    plan = planImproveCommand(values, savedScenario, parsePositiveInteger);
+    const { SimpleAgentTask } = await import("../execution/task-runner.js");
+    const { ImprovementLoop } = await import("../execution/improvement-loop.js");
+    const savedScenario = values.scenario
+      ? await loadSavedAgentTaskScenario(values.scenario)
+      : null;
+    if (values.scenario && !savedScenario) {
+      throw new Error(`Unknown saved custom scenario: ${values.scenario}`);
+    }
+
+    const plan = planImproveCommand(values, savedScenario, parsePositiveInteger);
+
+    const result = await executeImproveCommandWorkflow({
+      plan,
+      provider,
+      model,
+      savedScenario,
+      createTask: (taskPrompt, rubric, taskProvider, taskModel, revisionPrompt, rlmConfig) =>
+        new SimpleAgentTask(
+          taskPrompt,
+          rubric,
+          taskProvider as import("../types/index.js").LLMProvider,
+          taskModel ?? undefined,
+          revisionPrompt ?? undefined,
+          rlmConfig,
+        ),
+      createLoop: (loopOpts) =>
+        new ImprovementLoop(
+          loopOpts as import("../execution/improvement-loop.js").ImprovementLoopOpts,
+        ),
+      now: () => performance.now(),
+    });
+
+    const rendered = renderImproveResult(result, plan.verbose);
+    for (const line of rendered.stderrLines) {
+      console.error(line);
+    }
+    console.log(rendered.stdout);
   } catch (error) {
     console.error(errorMessage(error));
+    provider.close?.();
     process.exit(1);
+  } finally {
+    provider.close?.();
   }
-
-  const result = await executeImproveCommandWorkflow({
-    plan,
-    provider,
-    model,
-    savedScenario,
-    createTask: (taskPrompt, rubric, taskProvider, taskModel, revisionPrompt, rlmConfig) =>
-      new SimpleAgentTask(
-        taskPrompt,
-        rubric,
-        taskProvider as import("../types/index.js").LLMProvider,
-        taskModel ?? undefined,
-        revisionPrompt ?? undefined,
-        rlmConfig,
-      ),
-    createLoop: (loopOpts) =>
-      new ImprovementLoop(
-        loopOpts as import("../execution/improvement-loop.js").ImprovementLoopOpts,
-      ),
-    now: () => performance.now(),
-  });
-
-  const rendered = renderImproveResult(result, plan.verbose);
-  for (const line of rendered.stderrLines) {
-    console.error(line);
-  }
-  console.log(rendered.stdout);
 }
 
 async function cmdRepl(_dbPath: string): Promise<void> {
@@ -870,31 +876,32 @@ async function cmdRepl(_dbPath: string): Promise<void> {
   }
 
   const { provider, model } = await getProvider();
-  const { runAgentTaskRlmSession } = await import("../rlm/agent-task.js");
-  const savedScenario = values.scenario
-    ? await loadSavedAgentTaskScenario(values.scenario)
-    : null;
-  if (values.scenario && !savedScenario) {
-    console.error(`Unknown saved custom scenario: ${values.scenario}`);
-    process.exit(1);
-  }
-  let plan;
   try {
-    plan = planReplCommand(values, savedScenario);
+    const { runAgentTaskRlmSession } = await import("../rlm/agent-task.js");
+    const savedScenario = values.scenario
+      ? await loadSavedAgentTaskScenario(values.scenario)
+      : null;
+    if (values.scenario && !savedScenario) {
+      throw new Error(`Unknown saved custom scenario: ${values.scenario}`);
+    }
+    const plan = planReplCommand(values, savedScenario);
+
+    const result = await runAgentTaskRlmSession(
+      buildReplSessionRequest({
+        provider,
+        model,
+        plan,
+      }),
+    );
+
+    console.log(JSON.stringify(result, null, 2));
   } catch (error) {
     console.error(errorMessage(error));
+    provider.close?.();
     process.exit(1);
+  } finally {
+    provider.close?.();
   }
-
-  const result = await runAgentTaskRlmSession(
-    buildReplSessionRequest({
-      provider,
-      model,
-      plan,
-    }),
-  );
-
-  console.log(JSON.stringify(result, null, 2));
 }
 
 async function cmdQueue(dbPath: string): Promise<void> {
@@ -1056,16 +1063,20 @@ async function cmdMcpServe(dbPath: string): Promise<void> {
   const { provider, model } = await getProvider();
   const settings = loadSettings();
 
-  await startServer(
-    buildMcpServeRequest({
-      store,
-      provider,
-      model,
-      dbPath,
-      runsRoot: resolve(settings.runsRoot),
-      knowledgeRoot: resolve(settings.knowledgeRoot),
-    }),
-  );
+  try {
+    await startServer(
+      buildMcpServeRequest({
+        store,
+        provider,
+        model,
+        dbPath,
+        runsRoot: resolve(settings.runsRoot),
+        knowledgeRoot: resolve(settings.knowledgeRoot),
+      }),
+    );
+  } finally {
+    provider.close?.();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1582,7 +1593,7 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
     process.exit(1);
   }
 
-  let provider;
+  let provider: LLMProvider;
   try {
     const result = await getProvider();
     provider = result.provider;
@@ -1592,12 +1603,12 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
     provider = new DeterministicProvider();
   }
 
-  const result = await createScenarioFromDescription(description, provider);
-
-  // Materialize the created scenario to disk (AC-433)
-  const { materializeScenario } = await import("../scenarios/materialize.js");
-  const settings = loadSettings();
   try {
+    const result = await createScenarioFromDescription(description, provider);
+
+    // Materialize the created scenario to disk (AC-433)
+    const { materializeScenario } = await import("../scenarios/materialize.js");
+    const settings = loadSettings();
     console.log(
       await executeCreatedScenarioMaterialization({
         created: result,
@@ -1608,7 +1619,10 @@ async function cmdNewScenario(_dbPath: string): Promise<void> {
     );
   } catch (error) {
     console.error(errorMessage(error));
+    provider.close?.();
     process.exit(1);
+  } finally {
+    provider.close?.();
   }
 }
 
@@ -2560,26 +2574,30 @@ async function cmdSimulate(): Promise<void> {
 
   const { provider } = await getProvider();
 
-  const result = await executeSimulateRunWorkflow({
-    description: plan.description!,
-    provider,
-    knowledgeRoot: resolve(settings.knowledgeRoot),
-    variables,
-    sweep,
-    runs: values.runs,
-    maxSteps: values["max-steps"],
-    saveAs: values["save-as"],
-    createEngine: (runProvider, knowledgeRoot) =>
-      new SimulationEngine(runProvider, knowledgeRoot),
-  });
+  try {
+    const result = await executeSimulateRunWorkflow({
+      description: plan.description!,
+      provider,
+      knowledgeRoot: resolve(settings.knowledgeRoot),
+      variables,
+      sweep,
+      runs: values.runs,
+      maxSteps: values["max-steps"],
+      saveAs: values["save-as"],
+      createEngine: (runProvider, knowledgeRoot) =>
+        new SimulationEngine(runProvider, knowledgeRoot),
+    });
 
-  emitEngineResult(result, {
-    json: !!values.json,
-    label: "Simulation",
-    renderSuccess: (r) => {
-      console.log(renderSimulationSuccess(r));
-    },
-  });
+    emitEngineResult(result, {
+      json: !!values.json,
+      label: "Simulation",
+      renderSuccess: (r) => {
+        console.log(renderSimulationSuccess(r));
+      },
+    });
+  } finally {
+    provider.close?.();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2632,16 +2650,21 @@ async function cmdInvestigate(): Promise<void> {
     result = await executeInvestigateCommandWorkflow({ values, request, engine });
   } catch (error) {
     console.error(errorMessage(error));
+    provider.close?.();
     process.exit(1);
   }
 
-  emitEngineResult(result, {
-    json: !!values.json,
-    label: "Investigation",
-    renderSuccess: (r) => {
-      console.log(renderInvestigationSuccess(r));
-    },
-  });
+  try {
+    emitEngineResult(result, {
+      json: !!values.json,
+      label: "Investigation",
+      renderSuccess: (r) => {
+        console.log(renderInvestigationSuccess(r));
+      },
+    });
+  } finally {
+    provider.close?.();
+  }
 }
 
 // ---------------------------------------------------------------------------

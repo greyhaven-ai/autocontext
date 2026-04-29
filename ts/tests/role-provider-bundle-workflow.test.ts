@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { saveProviderCredentials } from "../src/config/index.js";
-import { buildRoleProviderBundle } from "../src/providers/role-provider-bundle.js";
+import {
+  buildRoleProviderBundle,
+  closeProviderBundle,
+} from "../src/providers/role-provider-bundle.js";
 
 const savedEnv: Record<string, string | undefined> = {};
 
@@ -75,5 +78,31 @@ describe("role provider bundle workflow", () => {
     } finally {
       rmSync(configDir, { recursive: true, force: true });
     }
+  });
+
+  it("closes each unique provider in a role bundle once", () => {
+    const sharedProvider = {
+      name: "shared",
+      defaultModel: () => "shared-model",
+      complete: vi.fn(),
+      close: vi.fn(),
+    };
+    const roleProvider = {
+      name: "role",
+      defaultModel: () => "role-model",
+      complete: vi.fn(),
+      close: vi.fn(),
+    };
+
+    closeProviderBundle({
+      defaultProvider: sharedProvider,
+      roleProviders: {
+        competitor: sharedProvider,
+        analyst: roleProvider,
+      },
+    });
+
+    expect(sharedProvider.close).toHaveBeenCalledOnce();
+    expect(roleProvider.close).toHaveBeenCalledOnce();
   });
 });
