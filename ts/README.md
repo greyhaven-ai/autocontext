@@ -20,6 +20,14 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 - **Training hook surface**: dataset validation and executor-backed `train` entry point
 - **Production-traces emit SDK** at `autoctx/production-traces` — customer-facing emit APIs mirroring the Python SDK (A2-II-a)
 
+The TypeScript package includes mirrored deterministic semantic prompt
+compaction for long-lived playbooks, trajectories, and session reports.
+Standalone npm runs compact prompt context before the coarse budget fallback,
+then record Pi-shaped entries via the `ArtifactStore` ledger contract:
+`appendCompactionEntries()`, `readCompactionEntries()`, and
+`latestCompactionEntryId()` persist/read `runs/<run_id>/compactions.jsonl` plus
+the `compactions.latest` sidecar for cheap latest-entry lookups.
+
 ## Install
 
 ```bash

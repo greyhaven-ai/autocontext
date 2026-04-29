@@ -3,6 +3,8 @@
  * Mirrors Python's autocontext/prompts/templates.py.
  */
 
+import { compactPromptComponents } from "../knowledge/semantic-compaction.js";
+
 export interface PromptContext {
   scenarioRules: string;
   strategyInterface: string;
@@ -23,6 +25,12 @@ export interface PromptBundle {
 }
 
 export function buildPromptBundle(ctx: PromptContext): PromptBundle {
+  const compacted = compactPromptComponents({
+    playbook: ctx.playbook,
+    trajectory: ctx.trajectory,
+    lessons: ctx.lessons,
+    analysis: ctx.analysis,
+  });
   const scenarioBlock = [
     "## Scenario Rules",
     ctx.scenarioRules,
@@ -35,12 +43,12 @@ export function buildPromptBundle(ctx: PromptContext): PromptBundle {
   ].join("\n");
 
   const knowledgeBlock = [
-    ctx.trajectory ? `\n${ctx.trajectory}\n` : "",
-    ctx.playbook ? `## Current Playbook\n\n${ctx.playbook}\n` : "",
-    ctx.lessons ? `## Operational Lessons\n\n${ctx.lessons}\n` : "",
+    compacted.trajectory ? `\n${compacted.trajectory}\n` : "",
+    compacted.playbook ? `## Current Playbook\n\n${compacted.playbook}\n` : "",
+    compacted.lessons ? `## Operational Lessons\n\n${compacted.lessons}\n` : "",
     ctx.tools ? `## Available Tools\n\n${ctx.tools}\n` : "",
     ctx.hints ? `## Competitor Hints\n\n${ctx.hints}\n` : "",
-    ctx.analysis ? `## Previous Analysis\n\n${ctx.analysis}\n` : "",
+    compacted.analysis ? `## Previous Analysis\n\n${compacted.analysis}\n` : "",
   ]
     .filter(Boolean)
     .join("\n");

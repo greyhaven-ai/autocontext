@@ -27,7 +27,7 @@ Or add to your project's `.pi/settings.json`:
 | `autocontext_status` | Check status of autocontext runs and tasks |
 | `autocontext_scenarios` | List available evaluation scenarios and families |
 | `autocontext_queue` | Enqueue a task for background evaluation |
-| `autocontext_runtime_snapshot` | Inspect run artifacts, package provenance, session branch lineage, and recent events |
+| `autocontext_runtime_snapshot` | Inspect run artifacts, package provenance, compaction ledger entries, session branch lineage, and recent events |
 
 ### Skills
 

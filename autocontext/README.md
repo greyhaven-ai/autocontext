@@ -261,6 +261,10 @@ The Python package includes a thin Chrome CDP backend that attaches to an existi
 
 `AUTOCONTEXT_EXTENSIONS` loads comma-separated Python modules or `.py` files that register Pi-shaped runtime hooks for context transforms, provider requests/responses, judge calls, artifact writes, and run/generation lifecycle events. See [docs/extensions.md](docs/extensions.md).
 
+Semantic prompt compactions are also persisted as Pi-shaped JSONL entries at
+`runs/<run_id>/compactions.jsonl`, including `summary`, `firstKeptEntryId`,
+`tokensBefore`, and component details for runtime snapshots and resumption.
+
 Solved strategy packages can also be exported as Pi-local package directories:
 
 ```bash

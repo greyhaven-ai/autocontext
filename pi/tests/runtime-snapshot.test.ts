@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 afterEach(() => {
   vi.doUnmock("node:fs");
@@ -82,5 +85,67 @@ describe("runtime snapshot", () => {
       expect.objectContaining({ event: "run_started" }),
       expect.objectContaining({ event: "generation_completed" }),
     ]);
+  });
+
+  it("includes recent compaction ledger entries for selected runs", async () => {
+    const { collectRuntimeSnapshot, parseRuntimeSnapshotRequest, renderRuntimeSnapshot } = await import("../src/runtime-snapshot.js");
+    const root = mkdtempSync(join(tmpdir(), "autoctx-compactions-"));
+    try {
+      mkdirSync(join(root, "run-1"), { recursive: true });
+      writeFileSync(
+        join(root, "run-1", "compactions.jsonl"),
+        [
+          JSON.stringify({ type: "compaction", id: "a", summary: "old", firstKeptEntryId: "component:playbook:kept", tokensBefore: 100 }),
+          JSON.stringify({ type: "compaction", id: "b", summary: "new", firstKeptEntryId: "component:experiment_log:kept", tokensBefore: 200 }),
+        ].join("\n") + "\n",
+        "utf-8",
+      );
+
+      const snapshot = collectRuntimeSnapshot(
+        {},
+        {
+          getRun: () => ({ run_id: "run-1", status: "completed" }),
+          getGenerations: () => [],
+        },
+        { runsRoot: root, eventStreamPath: "/missing/events.ndjson" },
+        parseRuntimeSnapshotRequest({ run_id: "run-1", limit: 1 }),
+      );
+
+      expect(snapshot.compactions).toEqual([
+        expect.objectContaining({ id: "b", firstKeptEntryId: "component:experiment_log:kept" }),
+      ]);
+      expect(renderRuntimeSnapshot(snapshot)).toContain("Compactions: 1");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps compaction ledger reads contained under runsRoot", async () => {
+    const { collectRuntimeSnapshot, parseRuntimeSnapshotRequest } = await import("../src/runtime-snapshot.js");
+    const base = mkdtempSync(join(tmpdir(), "autoctx-compaction-containment-"));
+    const root = join(base, "runs");
+    const outside = join(base, "outside");
+    try {
+      mkdirSync(outside, { recursive: true });
+      writeFileSync(
+        join(outside, "compactions.jsonl"),
+        JSON.stringify({ type: "compaction", id: "escape", summary: "outside" }) + "\n",
+        "utf-8",
+      );
+
+      const snapshot = collectRuntimeSnapshot(
+        {},
+        {
+          getRun: () => ({ run_id: "../outside", status: "completed" }),
+          getGenerations: () => [],
+        },
+        { runsRoot: root, eventStreamPath: "/missing/events.ndjson" },
+        parseRuntimeSnapshotRequest({ run_id: "../outside", limit: 1 }),
+      );
+
+      expect(snapshot.compactions).toEqual([]);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });

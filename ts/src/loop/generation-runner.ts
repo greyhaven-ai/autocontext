@@ -19,6 +19,7 @@ import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "../knowledge/artifact-st
 import { PlaybookGuard, PLAYBOOK_MARKERS } from "../knowledge/playbook.js";
 import { ScoreTrajectoryBuilder } from "../knowledge/trajectory.js";
 import { generateSessionReport } from "../knowledge/session-report.js";
+import { compactPromptComponentsWithEntries } from "../knowledge/semantic-compaction.js";
 import { ContextBudget } from "../prompts/context-budget.js";
 import { parseCuratorLessonResult, parseCuratorPlaybookDecision } from "../agents/curator-parser.js";
 import {
@@ -213,7 +214,7 @@ export class GenerationRunner {
             maxRetries: this.#maxRetries,
             runAttempt: async ({ attemptOrchestration, generation }) => {
               await this.#controller?.waitIfPaused();
-              const competitorPrompt = this.buildCompetitorPrompt(runId);
+              const competitorPrompt = this.buildCompetitorPrompt(runId, generation);
               return runGenerationAttemptWorkflow(
                 createGenerationAttemptWorkflow({
                   attemptOrchestration,
@@ -311,15 +312,18 @@ export class GenerationRunner {
     }
   }
 
-  private buildCompetitorPrompt(runId: string): string {
+  private buildCompetitorPrompt(runId: string, generation: number): string {
     const consumedHint = consumeFreshStartHint(this.#runState!);
     this.#runState = consumedHint.state;
     const freshStartHint = consumedHint.hint;
-    const trimmed = this.#contextBudget.apply({
+    const compacted = this.compactPromptComponentsForRun(runId, generation, {
       playbook: this.#artifactStore.readPlaybook(this.#scenario.name),
       trajectory: new ScoreTrajectoryBuilder(this.#store.getScoreTrajectory(runId)).build(),
-      dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
       session_reports: this.#artifactStore.readSessionReports(this.#scenario.name),
+    });
+    const trimmed = this.#contextBudget.apply({
+      ...compacted,
+      dead_ends: this.#artifactStore.readDeadEnds(this.#scenario.name),
     });
     const injectedHint = this.#controller?.takeHint();
 
@@ -335,6 +339,25 @@ export class GenerationRunner {
       freshStartHint,
       operatorHint: injectedHint,
     });
+  }
+
+  private compactPromptComponentsForRun(
+    runId: string,
+    generation: number,
+    components: Record<string, string>,
+  ): Record<string, string> {
+    const result = compactPromptComponentsWithEntries(components, {
+      context: {
+        scenario: this.#scenario.name,
+        run_id: runId,
+        generation,
+      },
+      parentId: this.#artifactStore.latestCompactionEntryId(runId),
+    });
+    if (result.entries.length > 0) {
+      this.#artifactStore.appendCompactionEntries(runId, result.entries);
+    }
+    return result.components;
   }
 
   private buildSupportPrompt(

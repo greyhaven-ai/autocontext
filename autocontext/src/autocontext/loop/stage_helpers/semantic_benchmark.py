@@ -4,6 +4,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from autocontext.extensions import HookEvents
+from autocontext.knowledge.compaction import CompactionEntry
 from autocontext.knowledge.semantic_compaction_benchmark import (
     build_semantic_compaction_benchmark_report,
 )
@@ -14,6 +15,24 @@ if TYPE_CHECKING:
     from autocontext.loop.stage_types import GenerationContext
     from autocontext.scenarios.base import Observation
     from autocontext.storage import ArtifactStore
+
+
+def _latest_compaction_parent_id(artifacts: ArtifactStore, run_id: str) -> str:
+    latest = getattr(artifacts, "latest_compaction_entry_id", None)
+    if not callable(latest):
+        return ""
+    try:
+        value = latest(run_id)
+    except Exception:
+        return ""
+    return value if isinstance(value, str) else ""
+
+
+def _append_compaction_entries(artifacts: ArtifactStore, run_id: str, entries: list[CompactionEntry]) -> None:
+    append = getattr(artifacts, "append_compaction_entries", None)
+    if not callable(append):
+        return
+    append(run_id, entries)
 
 
 def _evidence_source_run_ids(ctx: GenerationContext, *, artifacts: ArtifactStore) -> list[str]:
@@ -196,6 +215,13 @@ def prepare_generation_prompts(
         if isinstance(maybe_components, dict):
             prompt_kwargs.update(maybe_components)
         prompt_kwargs["hook_bus"] = hook_bus
+    prompt_kwargs["compaction_entry_context"] = {
+        "scenario": ctx.scenario_name,
+        "run_id": ctx.run_id,
+        "generation": ctx.generation,
+    }
+    prompt_kwargs["compaction_entry_parent_id"] = _latest_compaction_parent_id(artifacts, ctx.run_id)
+    prompt_kwargs["compaction_entry_sink"] = lambda entries: _append_compaction_entries(artifacts, ctx.run_id, entries)
     build_start = time.perf_counter()
     prompts = build_prompt_bundle(**prompt_kwargs)
     semantic_build_latency_ms = (time.perf_counter() - build_start) * 1000.0

@@ -190,6 +190,150 @@ def test_generation_dir_layout(tmp_path: Path) -> None:
     assert (gen_dir / "pi_output.txt").exists()
 
 
+def test_compaction_ledger_round_trips_pi_shaped_entries(tmp_path: Path) -> None:
+    from autocontext.knowledge.compaction import CompactionEntry
+
+    store = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+    )
+    first = CompactionEntry(
+        entry_id="aaaa1111",
+        parent_id="",
+        timestamp="2026-04-29T17:30:00Z",
+        summary="first",
+        first_kept_entry_id="component:playbook:kept",
+        tokens_before=120,
+        details={"component": "playbook", "tokensAfter": 60},
+    )
+    second = CompactionEntry(
+        entry_id="bbbb2222",
+        parent_id="aaaa1111",
+        timestamp="2026-04-29T17:31:00Z",
+        summary="second",
+        first_kept_entry_id="component:experiment_log:kept",
+        tokens_before=300,
+        details={"component": "experiment_log", "tokensAfter": 80},
+    )
+
+    store.append_compaction_entries("run-1", [first, second])
+
+    assert store.latest_compaction_entry_id("run-1") == "bbbb2222"
+    assert [entry.entry_id for entry in store.read_compaction_entries("run-1", limit=1)] == ["bbbb2222"]
+    raw_lines = (tmp_path / "runs" / "run-1" / "compactions.jsonl").read_text(encoding="utf-8").splitlines()
+    assert '"type": "compaction"' in raw_lines[0]
+
+
+def test_compaction_ledger_mirrors_appended_jsonl_to_blob_store(tmp_path: Path) -> None:
+    from autocontext.blobstore.local import LocalBlobStore
+    from autocontext.knowledge.compaction import CompactionEntry
+
+    blob_store = LocalBlobStore(root=tmp_path / "blobs")
+    store = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+        blob_store=blob_store,
+        blob_store_min_size_bytes=0,
+    )
+    first = CompactionEntry(
+        entry_id="aaaa1111",
+        parent_id="",
+        timestamp="2026-04-29T17:30:00Z",
+        summary="first",
+        first_kept_entry_id="component:playbook:kept",
+        tokens_before=120,
+    )
+    second = CompactionEntry(
+        entry_id="bbbb2222",
+        parent_id="aaaa1111",
+        timestamp="2026-04-29T17:31:00Z",
+        summary="second",
+        first_kept_entry_id="component:experiment_log:kept",
+        tokens_before=300,
+    )
+
+    store.append_compaction_entries("run-1", [first])
+    store.append_compaction_entries("run-1", [second])
+
+    ledger_bytes = (tmp_path / "runs" / "run-1" / "compactions.jsonl").read_bytes()
+    assert blob_store.get("runs/run-1/compactions.jsonl") == ledger_bytes
+    assert blob_store.get("runs/run-1/compactions.latest") == b"bbbb2222\n"
+    assert b"aaaa1111" in ledger_bytes
+    assert b"bbbb2222" in ledger_bytes
+
+
+def test_latest_compaction_entry_id_uses_sidecar_without_scanning_ledger(tmp_path: Path) -> None:
+    from autocontext.knowledge.compaction import CompactionEntry
+
+    store = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+    )
+    store.append_compaction_entries(
+        "run-1",
+        [
+            CompactionEntry(
+                entry_id="aaaa1111",
+                parent_id="",
+                timestamp="2026-04-29T17:30:00Z",
+                summary="first",
+                first_kept_entry_id="component:playbook:kept",
+                tokens_before=120,
+            ),
+            CompactionEntry(
+                entry_id="bbbb2222",
+                parent_id="aaaa1111",
+                timestamp="2026-04-29T17:31:00Z",
+                summary="second",
+                first_kept_entry_id="component:experiment_log:kept",
+                tokens_before=300,
+            ),
+        ],
+    )
+
+    def fail_scan(*args: object, **kwargs: object) -> list[CompactionEntry]:
+        raise AssertionError("latest lookup must not scan compaction entries")
+
+    store.read_compaction_entries = fail_scan  # type: ignore[method-assign]
+
+    assert store.latest_compaction_entry_id("run-1") == "bbbb2222"
+
+
+def test_latest_compaction_entry_id_tails_legacy_ledger_without_reading_entries(tmp_path: Path) -> None:
+    store = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+    )
+    ledger = store.compaction_ledger_path("legacy-run")
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "compaction", "id": f"old-{index}"})
+                for index in range(50)
+            ]
+            + [json.dumps({"type": "compaction", "id": "legacy-last"})]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def fail_scan(*args: object, **kwargs: object) -> list[object]:
+        raise AssertionError("legacy latest lookup must tail the ledger directly")
+
+    store.read_compaction_entries = fail_scan  # type: ignore[method-assign]
+
+    assert store.latest_compaction_entry_id("legacy-run") == "legacy-last"
+
+
 def test_persist_pi_session_per_role_does_not_overwrite(tmp_path: Path) -> None:
     store = ArtifactStore(
         runs_root=tmp_path / "runs",

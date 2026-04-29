@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from autocontext.scenarios.base import Observation
 
 
@@ -54,3 +56,72 @@ def test_build_prompt_bundle_compacts_history_before_budget_fallback() -> None:
     assert "Generation 7" in bundle.competitor
     assert "rollback guard" in bundle.competitor
     assert "condensed" in bundle.competitor.lower()
+
+
+def test_build_prompt_bundle_records_compaction_entries() -> None:
+    from autocontext.knowledge.compaction import CompactionEntry
+    from autocontext.prompts.templates import build_prompt_bundle
+
+    entries: list[CompactionEntry] = []
+    build_prompt_bundle(
+        scenario_rules="rules",
+        strategy_interface="interface",
+        evaluation_criteria="criteria",
+        previous_summary="summary",
+        observation=Observation(narrative="test", state={}, constraints=[]),
+        current_playbook="playbook",
+        available_tools="tools",
+        experiment_log=(
+            "## Experiment Log\n\n"
+            "### Generation 1\n"
+            + ("noise line\n" * 120)
+            + "\n### Generation 9\n"
+            + "- Root cause: stale hints amplified retries.\n"
+        ),
+        compaction_entry_context={"run_id": "run-1", "generation": 2},
+        compaction_entry_parent_id="parent1",
+        compaction_entry_sink=entries.extend,
+    )
+
+    assert len(entries) == 1
+    assert entries[0].parent_id == "parent1"
+    assert entries[0].details["run_id"] == "run-1"
+    assert entries[0].details["generation"] == 2
+
+
+def test_compaction_entry_uses_final_hook_mutated_summary() -> None:
+    from autocontext.extensions import HookBus, HookEvents, HookResult
+    from autocontext.knowledge.compaction import CompactionEntry
+    from autocontext.prompts.templates import build_prompt_bundle
+
+    bus = HookBus()
+    entries: list[CompactionEntry] = []
+
+    def after_compaction(event: Any) -> HookResult:
+        components = dict(event.payload["components"])
+        components["experiment_log"] = "HOOK FINAL COMPACTED: keep redirected summary"
+        return HookResult(payload={"components": components})
+
+    bus.on(HookEvents.AFTER_COMPACTION, after_compaction)
+
+    build_prompt_bundle(
+        scenario_rules="rules",
+        strategy_interface="interface",
+        evaluation_criteria="criteria",
+        previous_summary="summary",
+        observation=Observation(narrative="test", state={}, constraints=[]),
+        current_playbook="playbook",
+        available_tools="tools",
+        experiment_log=(
+            "## Experiment Log\n\n"
+            "### Generation 1\n"
+            + ("noise line\n" * 120)
+            + "\n### Generation 9\n"
+            + "- Root cause: stale hints amplified retries.\n"
+        ),
+        hook_bus=bus,
+        compaction_entry_sink=entries.extend,
+    )
+
+    assert len(entries) == 1
+    assert "HOOK FINAL COMPACTED" in entries[0].summary

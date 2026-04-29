@@ -35,6 +35,11 @@ class BlobStore(ABC):
     def delete(self, key: str) -> bool:
         """Delete a key. Returns True if deleted, False if not found."""
 
+    def append(self, key: str, data: bytes) -> str:
+        """Append bytes at key. Default backends rebuild from existing remote bytes."""
+        existing = self.get(key) or b""
+        return self.put(key, existing + data)
+
     def put_file(self, key: str, path: Path) -> str:
         """Store a file at key. Default: read and delegate to put()."""
         return self.put(key, path.read_bytes())

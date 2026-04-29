@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from autocontext.extensions import HookBus, HookEvents
-from autocontext.knowledge.compaction import compact_prompt_components
+from autocontext.knowledge.compaction import (
+    CompactionEntry,
+    compact_prompt_components,
+    compaction_entries_for_components,
+)
 from autocontext.prompts.context_budget import ContextBudget
 from autocontext.scenarios.base import Observation
 from autocontext.strategy_interface import is_action_plan_interface
@@ -104,6 +109,9 @@ def build_prompt_bundle(
     evidence_manifests: dict[str, str] | None = None,
     semantic_compaction: bool = True,
     hook_bus: HookBus | None = None,
+    compaction_entry_context: Mapping[str, Any] | None = None,
+    compaction_entry_parent_id: str = "",
+    compaction_entry_sink: Callable[[list[CompactionEntry]], None] | None = None,
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
@@ -145,6 +153,15 @@ def build_prompt_bundle(
             maybe_compacted = after_compaction.payload.get("components")
             if isinstance(maybe_compacted, dict):
                 compacted.update({str(key): str(value) for key, value in maybe_compacted.items()})
+        if compaction_entry_sink is not None:
+            entries = compaction_entries_for_components(
+                compaction_components,
+                compacted,
+                context=compaction_entry_context,
+                parent_id=compaction_entry_parent_id,
+            )
+            if entries:
+                compaction_entry_sink(entries)
         current_playbook = compacted["playbook"]
         score_trajectory = compacted["trajectory"]
         operational_lessons = compacted["lessons"]

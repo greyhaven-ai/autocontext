@@ -93,3 +93,49 @@ def test_compact_prompt_components_preserves_trailing_dimension_section() -> Non
     assert compacted["trajectory"].index("## Dimension Trajectory (Best Match)") > compacted["trajectory"].index(
         "| Gen | Mean | Best | Elo | Gate | Delta |"
     )
+
+
+def test_compact_prompt_components_with_entries_emits_pi_shaped_ledger() -> None:
+    from autocontext.knowledge.compaction import compact_prompt_components_with_entries
+
+    result = compact_prompt_components_with_entries(
+        {
+            "experiment_log": (
+                "## RLM Experiment Log\n\n"
+                "### Generation 1\n"
+                + ("noise line\n" * 120)
+                + "\n### Generation 9\n"
+                + "- Root cause: stale hints amplified retries.\n"
+            ),
+        },
+        context={"run_id": "run-1", "scenario": "grid_ctf", "generation": 3},
+        parent_id="prev1234",
+        id_factory=lambda: "abcd1234",
+        timestamp_factory=lambda: "2026-04-29T17:30:00Z",
+    )
+
+    assert result.components["experiment_log"] != ""
+    assert len(result.entries) == 1
+    entry = result.entries[0]
+    assert entry.to_dict() == {
+        "type": "compaction",
+        "id": "abcd1234",
+        "parentId": "prev1234",
+        "timestamp": "2026-04-29T17:30:00Z",
+        "summary": entry.summary,
+        "firstKeptEntryId": "component:experiment_log:kept",
+        "tokensBefore": entry.tokens_before,
+        "details": {
+            "component": "experiment_log",
+            "source": "prompt_components",
+            "tokensAfter": entry.details["tokensAfter"],
+            "contentLengthBefore": entry.details["contentLengthBefore"],
+            "contentLengthAfter": entry.details["contentLengthAfter"],
+            "run_id": "run-1",
+            "scenario": "grid_ctf",
+            "generation": 3,
+        },
+    }
+    assert entry.tokens_before > entry.details["tokensAfter"]
+    assert "## Critical Context" in entry.summary
+    assert "stale hints amplified retries" in entry.summary
