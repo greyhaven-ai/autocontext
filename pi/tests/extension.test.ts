@@ -323,7 +323,7 @@ describe("Package manifest", () => {
 
   it("depends on the current autoctx toolkit line", () => {
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-    expect(pkg.dependencies.autoctx).toBe("^0.4.6");
+    expect(pkg.dependencies.autoctx).toBe("^0.4.7");
   });
 });
 
