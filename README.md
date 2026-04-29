@@ -262,7 +262,7 @@ All 11 families execute in both Python and TypeScript. TypeScript uses V8 isolat
 
 **Executors**: Local subprocess, SSH remote, Monty (`pydantic-monty` sandbox), PrimeIntellect remote sandbox.
 
-**Harness profiles**: The Python control plane supports a Pi-shaped lean profile that caps prompt context during generation and exports a minimal tool-affordance allowlist for agent surfaces that enforce tool gating.
+**Harness profiles and hooks**: The Python control plane supports a Pi-shaped lean profile that caps prompt context during generation and exports a minimal tool-affordance allowlist for agent surfaces that enforce tool gating. Python extensions can register Pi-shaped hooks around context assembly, provider calls, judge calls, artifact writes, and run lifecycle events with `AUTOCONTEXT_EXTENSIONS`.
 
 A deterministic offline provider exists for the test suite. Configuration matrix: [`.env.example`](.env.example) and [docs/concept-model.md](docs/concept-model.md).
 

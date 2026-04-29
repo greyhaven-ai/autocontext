@@ -129,7 +129,7 @@ def _run_holdout_verification(
     if not policy.enabled:
         return None
 
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
+    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
 
     def _evaluate(candidate: dict[str, Any], seed: int) -> float:
         return evaluator.evaluate(candidate, seed, limits).score

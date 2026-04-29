@@ -30,7 +30,9 @@ from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
 from autocontext.execution.improvement_loop import ImprovementLoop
+from autocontext.extensions import active_hook_bus
 from autocontext.loop.generation_runner import GenerationRunner
+from autocontext.loop.runner_hooks import initialize_hook_bus
 from autocontext.providers.base import ProviderError
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface
@@ -231,6 +233,7 @@ def _run_agent_task(
 ) -> AgentTaskRunSummary:
     """Execute an agent-task scenario through ImprovementLoop."""
     sqlite = _sqlite_from_settings(settings)
+    hook_bus, _loaded_extensions = initialize_hook_bus(settings)
     cls = SCENARIO_REGISTRY[scenario_name]
     instance = cls()
     # Runtime-validated: _is_agent_task() already confirmed this
@@ -272,7 +275,8 @@ def _run_agent_task(
     sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
 
     try:
-        result = loop.run(initial_output=initial_output, state=state)
+        with active_hook_bus(hook_bus):
+            result = loop.run(initial_output=initial_output, state=state)
     except Exception:
         logger.debug("cli: caught Exception", exc_info=True)
         sqlite.upsert_generation(

@@ -243,6 +243,8 @@ Common settings:
 - `AUTOCONTEXT_LEAN_HIDDEN_CONTEXT_BUDGET_TOKENS`
 - `AUTOCONTEXT_LEAN_TOOL_ALLOWLIST`
 - `AUTOCONTEXT_PI_RPC_PERSISTENT`
+- `AUTOCONTEXT_EXTENSIONS`
+- `AUTOCONTEXT_EXTENSION_FAIL_FAST`
 - `AUTOCONTEXT_RLM_ENABLED`
 - `AUTOCONTEXT_HARNESS_PREFLIGHT_ENABLED`
 - `AUTOCONTEXT_STAGED_VALIDATION_ENABLED`
@@ -256,6 +258,8 @@ Browser exploration defaults to a secure disabled posture and uses the shared co
 The Python package includes a thin Chrome CDP backend that attaches to an existing debugger endpoint, enforces the browser allowlist, and stores browser evidence under run-local roots.
 
 `AUTOCONTEXT_HARNESS_PROFILE=lean` resolves a Pi-shaped runtime profile: prompt context is capped by `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`, hidden/implicit context defaults to zero, and generated tool context is replaced by the lean allowlist before agent execution. `AUTOCONTEXT_PI_RPC_PERSISTENT=true` opts Pi RPC into a long-lived subprocess; one-shot Pi RPC remains the default.
+
+`AUTOCONTEXT_EXTENSIONS` loads comma-separated Python modules or `.py` files that register Pi-shaped runtime hooks for context transforms, provider requests/responses, judge calls, artifact writes, and run/generation lifecycle events. See [docs/extensions.md](docs/extensions.md).
 
 Solved strategy packages can also be exported as Pi-local package directories:
 

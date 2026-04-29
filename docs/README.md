@@ -18,6 +18,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 ## Integrating External Agents
 
 - [External agent integration guide](../autocontext/docs/agent-integration.md)
+- [Python extension hooks](../autocontext/docs/extensions.md)
 - [Sandbox and executor notes](../autocontext/docs/sandbox.md)
 - [MLX host training notes](../autocontext/docs/mlx-training.md)
 

@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from autocontext.agents.types import AgentOutputs
     from autocontext.config.settings import AppSettings
     from autocontext.execution.policy_refinement import PolicyRefinementResult
+    from autocontext.extensions import HookBus
     from autocontext.harness.evaluation.types import EvaluationSummary
     from autocontext.harness.pipeline.holdout import HoldoutResult
     from autocontext.knowledge.tuning import TuningConfig
@@ -57,6 +58,7 @@ class GenerationContext:
     exploration_metadata: dict[str, Any] = field(default_factory=dict)
     cost_control_metadata: dict[str, Any] = field(default_factory=dict)
     semantic_compaction_benchmark: dict[str, Any] | None = None
+    hook_bus: HookBus | None = None
 
     # Pipeline wiring: tuning proposal from architect (AR-6)
     tuning_proposal: TuningConfig | None = None

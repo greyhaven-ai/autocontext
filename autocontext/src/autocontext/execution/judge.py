@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from autocontext.agents.types import LlmFn
 from autocontext.execution.rubric_coherence import check_rubric_coherence
+from autocontext.extensions import HookBus, HookEvents, get_current_hook_bus
 from autocontext.providers.base import LLMProvider
 from autocontext.providers.callable_wrapper import CallableProvider
 
@@ -54,6 +55,13 @@ _RESULT_END = "<!-- JUDGE_RESULT_END -->"
 
 DEFAULT_FACTUAL_CONFIDENCE = 0.5
 _CONTRADICTION_SCORE_CAP = 0.25
+
+
+def _coerce_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _detect_generated_dimensions(dimension_keys: list[str], rubric: str) -> bool:
@@ -157,6 +165,7 @@ class LLMJudge:
         temperature: float = 0.0,
         check_coherence: bool = False,
         disagreement_threshold: float = 0.15,
+        hook_bus: HookBus | None = None,
     ) -> None:
         if provider is not None:
             self.provider = provider
@@ -169,6 +178,7 @@ class LLMJudge:
         self.rubric = rubric
         self.samples = max(1, samples)
         self.temperature = temperature
+        self.hook_bus = hook_bus
 
         # Backward-compatible property
         self.llm_fn = llm_fn
@@ -229,20 +239,52 @@ class LLMJudge:
         raw_responses: list[str] = []
         total_internal_retries = 0
         last_parse_method: ParseMethod = "none"
+        hook_bus = self.hook_bus or get_current_hook_bus()
 
-        for _ in range(self.samples):
+        for sample_index in range(self.samples):
             dims: dict[str, float] = {}
             score, reasoning = 0.0, ""
             sample_parse_method: ParseMethod = "none"
             # Retry up to 2 times on parse failure
             for attempt in range(2):
+                request: dict[str, Any] = {
+                    "task_prompt": task_prompt,
+                    "agent_output": agent_output,
+                    "reference_context": reference_context,
+                    "required_concepts": list(required_concepts or ()),
+                    "calibration_examples": list(calibration_examples or ()),
+                    "pinned_dimensions": list(pinned_dimensions or ()),
+                    "system_prompt": system_prompt,
+                    "user_prompt": user_prompt,
+                    "model": self.model,
+                    "temperature": self.temperature,
+                    "sample_index": sample_index,
+                    "attempt": attempt,
+                }
+                if hook_bus is not None:
+                    before_judge = hook_bus.emit(HookEvents.BEFORE_JUDGE, request)
+                    before_judge.raise_if_blocked()
+                    request = before_judge.payload
                 result = self.provider.complete(
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    model=self.model,
-                    temperature=self.temperature,
+                    system_prompt=str(request.get("system_prompt", system_prompt)),
+                    user_prompt=str(request.get("user_prompt", user_prompt)),
+                    model=str(request.get("model", self.model)),
+                    temperature=_coerce_float(request.get("temperature"), self.temperature),
                 )
                 response = result.text
+                if hook_bus is not None:
+                    after_judge = hook_bus.emit(
+                        HookEvents.AFTER_JUDGE,
+                        {
+                            "request": dict(request),
+                            "response_text": response,
+                            "model": result.model or request.get("model", self.model),
+                            "sample_index": sample_index,
+                            "attempt": attempt,
+                        },
+                    )
+                    after_judge.raise_if_blocked()
+                    response = str(after_judge.payload.get("response_text", response))
                 raw_responses.append(response)
                 score, reasoning, dims, sample_parse_method = self._parse_judge_response(response)
                 if score > 0.0 or "Failed to parse" not in reasoning:

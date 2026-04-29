@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from autocontext.config.settings import AppSettings
+from autocontext.extensions import HookBus
 from autocontext.storage.artifacts import ArtifactStore
 
 
@@ -14,6 +15,7 @@ def artifact_store_from_settings(
     skills_root: Path | None = None,
     claude_skills_path: Path | None = None,
     enable_buffered_writes: bool = False,
+    hook_bus: HookBus | None = None,
 ) -> ArtifactStore:
     """Build an ArtifactStore from app settings, including blob-store wiring."""
     blob_store = None
@@ -35,4 +37,5 @@ def artifact_store_from_settings(
         enable_buffered_writes=enable_buffered_writes,
         blob_store=blob_store,
         blob_store_min_size_bytes=settings.blob_store_min_size_bytes,
+        hook_bus=hook_bus,
     )

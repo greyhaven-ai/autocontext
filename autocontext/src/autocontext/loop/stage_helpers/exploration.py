@@ -280,7 +280,7 @@ def _select_exploration_strategy(
         return outputs.strategy, {}
 
     _self_play_pool, opponent_pool, planned_self_play_matches = _build_live_opponent_pool(ctx, sqlite=sqlite)
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
+    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
     runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
     selection_results: list[dict[str, Any]] = []
 

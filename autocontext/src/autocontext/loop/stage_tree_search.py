@@ -91,6 +91,7 @@ def stage_tree_search(
             challenger_elo=ctx.challenger_elo,
             challenger_uncertainty=ctx.challenger_uncertainty,
             scoring_backend=settings.scoring_backend,
+            hook_bus=ctx.hook_bus,
         )
         tree.update(node.id, [r.score for r in tournament.results], tournament.elo_after)
 
@@ -156,6 +157,7 @@ def stage_tree_search(
             challenger_elo=ctx.challenger_elo,
             challenger_uncertainty=ctx.challenger_uncertainty,
             scoring_backend=settings.scoring_backend,
+            hook_bus=ctx.hook_bus,
         )
         tree.update(refined_node.id, [r.score for r in tournament.results], tournament.elo_after)
 
@@ -171,7 +173,7 @@ def stage_tree_search(
     best_node = tree.best()
     best_strategy = best_node.strategy
 
-    evaluator = ScenarioEvaluator(scenario, supervisor)
+    evaluator = ScenarioEvaluator(scenario, supervisor, hook_bus=ctx.hook_bus)
     runner = EvaluationRunner(evaluator, scoring_backend=settings.scoring_backend)
 
     def _on_match(match_index: int, result: Any) -> None:
@@ -403,9 +405,10 @@ def _run_mini_tournament(
     challenger_elo: float,
     challenger_uncertainty: float | None,
     scoring_backend: str,
+    hook_bus: Any | None = None,
 ) -> Any:
     """Run a small tournament for a single hypothesis."""
-    evaluator = ScenarioEvaluator(scenario, supervisor)
+    evaluator = ScenarioEvaluator(scenario, supervisor, hook_bus=hook_bus)
     runner = EvaluationRunner(evaluator, scoring_backend=scoring_backend)
     return runner.run(
         candidate=strategy,

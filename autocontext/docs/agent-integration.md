@@ -342,6 +342,8 @@ Key environment variables:
 | `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`                             | Prompt context cap used when `AUTOCONTEXT_HARNESS_PROFILE=lean`                                     |
 | `AUTOCONTEXT_LEAN_HIDDEN_CONTEXT_BUDGET_TOKENS`                      | Hidden/implicit context budget exported in the lean profile metadata (default: `0`)                 |
 | `AUTOCONTEXT_LEAN_TOOL_ALLOWLIST`                                    | Comma-separated tool-affordance allowlist exported in the lean profile metadata                     |
+| `AUTOCONTEXT_EXTENSIONS`                                             | Comma-separated Python modules or `.py` files that register runtime hooks                           |
+| `AUTOCONTEXT_EXTENSION_FAIL_FAST`                                     | Stop the run when an extension hook raises instead of recording a non-fatal hook error              |
 
 #### Pi CLI vs Pi RPC
 
@@ -362,6 +364,8 @@ Both support **scenario-aware model handoff** when scenario context is available
 Set `AUTOCONTEXT_PI_NO_CONTEXT_FILES=true` when you need Pi runs to ignore repository context files such as `AGENTS.md` and `CLAUDE.md`, which is especially useful for reproducible evaluations and other contamination-sensitive workflows.
 
 Set `AUTOCONTEXT_HARNESS_PROFILE=lean` when an external agent should use autocontext more like Pi: the resolved runtime profile caps prompt assembly to `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`, keeps hidden context at zero by default, and replaces generated tool context with a small comma-separated tool allowlist. Set `AUTOCONTEXT_PI_RPC_PERSISTENT=true` only when the caller should keep one `pi --mode rpc` process alive across provider calls.
+
+Set `AUTOCONTEXT_EXTENSIONS` to load Pi-shaped Python hooks around run lifecycle, prompt context transforms, provider requests/responses, judge calls, and artifact writes. See [extensions.md](extensions.md) for event names and payloads.
 
 #### Hermes via OpenAI-Compatible Gateway
 
