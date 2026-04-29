@@ -92,6 +92,10 @@ Publishing is split by package and uses GitHub OIDC trusted publishing rather th
   - tag trigger: `ts-v<version>`
   - manual trigger: `workflow_dispatch` from `main`
   - environment: `publish-ts`
+- Pi extension publishes through `.github/workflows/publish-pi-autocontext.yml`
+  - tag trigger: `pi-v<version>`
+  - manual trigger: `workflow_dispatch` from `main`
+  - environment: `publish-pi-autocontext`
 
 Release notes:
 
