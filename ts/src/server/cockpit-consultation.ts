@@ -240,6 +240,8 @@ async function completeConsultation(
         body: { detail: `Consultation call failed: ${errorMessage(error)}` },
       },
     };
+  } finally {
+    provider.close?.();
   }
 }
 

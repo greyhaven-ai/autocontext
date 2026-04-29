@@ -365,6 +365,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
   private stderr = "";
   private waiters: Array<() => void> = [];
   private processError: Error | null = null;
+  private processExitCode: number | null = null;
 
   close(): void {
     const child = this.process;
@@ -389,7 +390,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
     const command = this.withId(this.buildPromptCommand(fullPrompt));
     try {
       const lines = await this.collectUntil(command, (line) => this.isTerminalRpcEvent(line));
-      return this.parseOutput(lines.join(""), 0, this.stderr);
+      return this.parseOutput(lines.join(""), this.processExitCode ?? 0, this.stderr);
     } catch (error) {
       if (error instanceof Error && error.message === "timeout") {
         this.close();
@@ -435,6 +436,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
     this.stdoutLines = [];
     this.stderr = "";
     this.processError = null;
+    this.processExitCode = null;
 
     const child = spawn(this.config.piCommand, this.buildArgs(), {
       stdio: ["pipe", "pipe", "pipe"],
@@ -452,11 +454,12 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
       this.processError = error instanceof Error ? error : new Error(String(error));
       this.notifyWaiters();
     });
-    child.on("close", () => {
+    child.on("close", (code, signal) => {
       if (this.stdoutBuffer) {
         this.stdoutLines.push(this.stdoutBuffer);
         this.stdoutBuffer = "";
       }
+      this.processExitCode = code ?? (signal ? 1 : 0);
       this.notifyWaiters();
     });
     this.process = child;
@@ -530,7 +533,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
     if (this.processError) {
       throw this.processError;
     }
-    if (this.process && this.process.exitCode !== null) {
+    if (this.processExitCode !== null) {
       return null;
     }
 

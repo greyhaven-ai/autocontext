@@ -109,6 +109,7 @@ export interface AgentTaskRunStore {
 export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends {
   defaultProvider: unknown;
   defaultConfig: { providerType: string };
+  close?: () => void;
 }>(opts: {
   plan: RunCommandPlan;
   providerBundle: TProviderBundle;
@@ -169,6 +170,7 @@ export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends
     throw error;
   } finally {
     store?.close();
+    opts.providerBundle.close?.();
   }
 }
 
@@ -219,6 +221,7 @@ export async function executeRunCommandWorkflow<
     roleProviders: unknown;
     roleModels: unknown;
     defaultConfig: { providerType: string };
+    close?: () => void;
   },
   TStore extends { migrate(path: string): void; close(): void },
   TRunner extends { run(runId: string, gens: number): Promise<{
@@ -309,6 +312,7 @@ export async function executeRunCommandWorkflow<
     };
   } finally {
     store.close();
+    opts.providerBundle.close?.();
   }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { GenerationRole, RoleProviderBundle } from "../src/providers/index.js";
+import type { RoleProviderBundle } from "../src/providers/index.js";
 import {
   buildChatAgentUserPrompt,
   executeChatAgentInteraction,
@@ -42,6 +42,7 @@ describe("chat agent workflow", () => {
       model: "analyst-model",
       usage: {},
     }));
+    const closeProviderBundle = vi.fn();
     const bundle: RoleProviderBundle = {
       defaultProvider: { name: "default", defaultModel: () => "default-model", complete: vi.fn() },
       defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "default-model" },
@@ -51,6 +52,7 @@ describe("chat agent workflow", () => {
       roleModels: {
         analyst: "analyst-model",
       },
+      close: closeProviderBundle,
     };
 
     const text = await executeChatAgentInteraction({
@@ -65,7 +67,6 @@ describe("chat agent workflow", () => {
         phase: null,
       },
       resolveProviderBundle: () => bundle,
-      buildProvider: (role?: GenerationRole) => role ? (bundle.roleProviders[role] ?? bundle.defaultProvider) : bundle.defaultProvider,
     });
 
     expect(text).toContain("## Findings");
@@ -73,6 +74,7 @@ describe("chat agent workflow", () => {
       model: "analyst-model",
       systemPrompt: "",
     }));
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
   });
 
   it("falls back to the default model for unknown roles", async () => {
@@ -81,11 +83,13 @@ describe("chat agent workflow", () => {
       model: "default-model",
       usage: {},
     }));
+    const closeProviderBundle = vi.fn();
     const bundle: RoleProviderBundle = {
       defaultProvider: { name: "default", defaultModel: () => "default-model", complete },
       defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "default-model" },
       roleProviders: {},
       roleModels: {},
+      close: closeProviderBundle,
     };
 
     await executeChatAgentInteraction({
@@ -100,11 +104,11 @@ describe("chat agent workflow", () => {
         phase: null,
       },
       resolveProviderBundle: () => bundle,
-      buildProvider: () => bundle.defaultProvider,
     });
 
     expect(complete).toHaveBeenCalledWith(expect.objectContaining({
       model: "default-model",
     }));
+    expect(closeProviderBundle).toHaveBeenCalledOnce();
   });
 });

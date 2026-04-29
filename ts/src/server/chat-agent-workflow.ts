@@ -1,5 +1,4 @@
 import type { GenerationRole, RoleProviderBundle } from "../providers/index.js";
-import type { LLMProvider } from "../types/index.js";
 import type { RunManagerState } from "./run-manager.js";
 
 export function normalizeChatAgentRole(role: string): GenerationRole | undefined {
@@ -33,19 +32,24 @@ export async function executeChatAgentInteraction(opts: {
   message: string;
   state: RunManagerState;
   resolveProviderBundle: () => RoleProviderBundle;
-  buildProvider: (role?: GenerationRole) => LLMProvider;
 }): Promise<string> {
   const normalizedRole = normalizeChatAgentRole(opts.role);
   const bundle = opts.resolveProviderBundle();
-  const provider = opts.buildProvider(normalizedRole);
-  const response = await provider.complete({
-    systemPrompt: "",
-    model: normalizedRole ? bundle.roleModels[normalizedRole] : bundle.defaultConfig.model,
-    userPrompt: buildChatAgentUserPrompt({
-      role: opts.role,
-      message: opts.message,
-      state: opts.state,
-    }),
-  });
-  return response.text;
+  const provider = normalizedRole
+    ? bundle.roleProviders[normalizedRole] ?? bundle.defaultProvider
+    : bundle.defaultProvider;
+  try {
+    const response = await provider.complete({
+      systemPrompt: "",
+      model: normalizedRole ? bundle.roleModels[normalizedRole] : bundle.defaultConfig.model,
+      userPrompt: buildChatAgentUserPrompt({
+        role: opts.role,
+        message: opts.message,
+        state: opts.state,
+      }),
+    });
+    return response.text;
+  } finally {
+    bundle.close?.();
+  }
 }

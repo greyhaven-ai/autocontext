@@ -50,6 +50,22 @@ export interface RoleProviderBundle {
   defaultConfig: ProviderConfig;
   roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
   roleModels: Partial<Record<GenerationRole, string>>;
+  close?: () => void;
+}
+
+export function closeProviderBundle(
+  bundle: Pick<RoleProviderBundle, "defaultProvider" | "roleProviders">,
+): void {
+  const closed = new Set<LLMProvider>();
+  const closeProvider = (provider: LLMProvider | undefined): void => {
+    if (!provider || closed.has(provider)) return;
+    closed.add(provider);
+    provider.close?.();
+  };
+  closeProvider(bundle.defaultProvider);
+  for (const provider of Object.values(bundle.roleProviders)) {
+    closeProvider(provider);
+  }
 }
 
 export function withRuntimeSettings(
@@ -173,16 +189,17 @@ export function buildRoleProviderBundle(
     }),
   };
 
-  return {
+  const roleProviders: Partial<Record<GenerationRole, LLMProvider>> = {
+    competitor: createProvider(withRuntimeSettings(roleConfigs.competitor, settings)),
+    analyst: createProvider(withRuntimeSettings(roleConfigs.analyst, settings)),
+    coach: createProvider(withRuntimeSettings(roleConfigs.coach, settings)),
+    architect: createProvider(withRuntimeSettings(roleConfigs.architect, settings)),
+    curator: createProvider(withRuntimeSettings(roleConfigs.curator, settings)),
+  };
+  const bundle: RoleProviderBundle = {
     defaultProvider,
     defaultConfig,
-    roleProviders: {
-      competitor: createProvider(withRuntimeSettings(roleConfigs.competitor, settings)),
-      analyst: createProvider(withRuntimeSettings(roleConfigs.analyst, settings)),
-      coach: createProvider(withRuntimeSettings(roleConfigs.coach, settings)),
-      architect: createProvider(withRuntimeSettings(roleConfigs.architect, settings)),
-      curator: createProvider(withRuntimeSettings(roleConfigs.curator, settings)),
-    },
+    roleProviders,
     roleModels: {
       competitor: roleConfigs.competitor.model,
       analyst: roleConfigs.analyst.model,
@@ -190,5 +207,9 @@ export function buildRoleProviderBundle(
       architect: roleConfigs.architect.model,
       curator: roleConfigs.curator.model,
     },
+  };
+  return {
+    ...bundle,
+    close: () => closeProviderBundle(bundle),
   };
 }

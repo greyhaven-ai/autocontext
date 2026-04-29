@@ -50,6 +50,7 @@ import { loadSettings, type AppSettings } from "../config/index.js";
 import { SQLiteStore } from "../storage/index.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
+import type { LLMProvider } from "../types/index.js";
 
 export interface InteractiveServerOpts {
   runManager: RunManager;
@@ -79,6 +80,7 @@ export class InteractiveServer {
   readonly #requestedPort: number;
   #solveManager: SolveManager | null = null;
   #solveStore: SQLiteStore | null = null;
+  #solveProvider: LLMProvider | null = null;
   #monitorEngine: MonitorEngine | null = null;
   #monitorStore: SQLiteStore | null = null;
   // Dashboard removed (AC-467) — server is API-only
@@ -1083,8 +1085,9 @@ export class InteractiveServer {
   #getSolveManager(): SolveManager {
     if (!this.#solveManager) {
       this.#solveStore = this.#openStore();
+      this.#solveProvider = this.#runManager.buildProvider();
       this.#solveManager = new SolveManager({
-        provider: this.#runManager.buildProvider(),
+        provider: this.#solveProvider,
         store: this.#solveStore,
         runsRoot: this.#runManager.getRunsRoot(),
         knowledgeRoot: this.#runManager.getKnowledgeRoot(),
@@ -1166,6 +1169,8 @@ export class InteractiveServer {
     this.#monitorStore = null;
     this.#solveStore?.close();
     this.#solveStore = null;
+    this.#solveProvider?.close?.();
+    this.#solveProvider = null;
     this.#solveManager = null;
   }
 

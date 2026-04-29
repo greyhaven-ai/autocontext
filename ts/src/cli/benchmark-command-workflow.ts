@@ -60,6 +60,7 @@ export async function executeBenchmarkCommandWorkflow<
     roleProviders: unknown;
     roleModels: unknown;
     defaultConfig: { providerType: string };
+    close?: () => void;
   },
   TStore extends { migrate(path: string): void; close(): void },
   TRunner extends { run(runId: string, numGens: number): Promise<{ bestScore: number }> },
@@ -88,40 +89,44 @@ export async function executeBenchmarkCommandWorkflow<
   const scores: number[] = [];
   const now = opts.now ?? Date.now;
 
-  for (let i = 0; i < opts.plan.numRuns; i++) {
-    const store = opts.createStore(opts.dbPath);
-    try {
-      store.migrate(opts.migrationsDir);
-      const scenario = new opts.ScenarioClass();
-      opts.assertFamilyContract(scenario, "game", `scenario '${opts.plan.scenarioName}'`);
-      const runner = opts.createRunner({
-        provider: opts.providerBundle.defaultProvider,
-        roleProviders: opts.providerBundle.roleProviders,
-        roleModels: opts.providerBundle.roleModels,
-        scenario,
-        store,
-        runsRoot: opts.runsRoot,
-        knowledgeRoot: opts.knowledgeRoot,
-      });
-      const result = await runner.run(`bench_${now()}_${i}`, opts.plan.numGens);
-      scores.push(result.bestScore);
-    } finally {
-      store.close();
+  try {
+    for (let i = 0; i < opts.plan.numRuns; i++) {
+      const store = opts.createStore(opts.dbPath);
+      try {
+        store.migrate(opts.migrationsDir);
+        const scenario = new opts.ScenarioClass();
+        opts.assertFamilyContract(scenario, "game", `scenario '${opts.plan.scenarioName}'`);
+        const runner = opts.createRunner({
+          provider: opts.providerBundle.defaultProvider,
+          roleProviders: opts.providerBundle.roleProviders,
+          roleModels: opts.providerBundle.roleModels,
+          scenario,
+          store,
+          runsRoot: opts.runsRoot,
+          knowledgeRoot: opts.knowledgeRoot,
+        });
+        const result = await runner.run(`bench_${now()}_${i}`, opts.plan.numGens);
+        scores.push(result.bestScore);
+      } finally {
+        store.close();
+      }
     }
+
+    const provider = opts.providerBundle.defaultConfig.providerType;
+    const synthetic = provider === "deterministic" ? true : undefined;
+
+    return {
+      scenario: opts.plan.scenarioName,
+      runs: opts.plan.numRuns,
+      generations: opts.plan.numGens,
+      scores,
+      meanBestScore: scores.reduce((sum, score) => sum + score, 0) / scores.length,
+      provider,
+      ...(synthetic ? { synthetic } : {}),
+    };
+  } finally {
+    opts.providerBundle.close?.();
   }
-
-  const provider = opts.providerBundle.defaultConfig.providerType;
-  const synthetic = provider === "deterministic" ? true : undefined;
-
-  return {
-    scenario: opts.plan.scenarioName,
-    runs: opts.plan.numRuns,
-    generations: opts.plan.numGens,
-    scores,
-    meanBestScore: scores.reduce((sum, score) => sum + score, 0) / scores.length,
-    provider,
-    ...(synthetic ? { synthetic } : {}),
-  };
 }
 
 export function renderBenchmarkResult(

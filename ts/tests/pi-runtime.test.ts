@@ -570,6 +570,22 @@ describe("PiRPCRuntime", () => {
     expect(fakeProcess.child.kill).toHaveBeenCalledTimes(1);
   });
 
+  it("persistent pi-rpc reports early child exit as a nonzero error", async () => {
+    vi.resetModules();
+    const fakeProcess = createFakeSpawnProcess([], 1);
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { PiPersistentRPCRuntime, PiRPCConfig } = await import("../src/runtimes/pi-rpc.js");
+    const runtime = new PiPersistentRPCRuntime(new PiRPCConfig({ piCommand: "pi-rpc-local" }));
+    const result = await runtime.generate({ prompt: "first prompt" });
+
+    expect(result.text).toBe("");
+    expect(result.metadata).toEqual(expect.objectContaining({
+      error: "nonzero_exit",
+      exitCode: 1,
+    }));
+  });
+
   it("createConfiguredProvider uses persistent pi-rpc when configured", async () => {
     vi.resetModules();
     const fakeProcess = createInteractiveFakeSpawnProcess();
@@ -591,6 +607,27 @@ describe("PiRPCRuntime", () => {
     expect(first.text).toBe("answer:first prompt");
     expect(second.text).toBe("answer:second prompt");
     expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("persistent pi-rpc provider exposes close to stop the child process", async () => {
+    vi.resetModules();
+    const fakeProcess = createInteractiveFakeSpawnProcess();
+    spawnMock.mockReturnValue(fakeProcess.child as never);
+
+    const { createConfiguredProvider } = await import("../src/providers/index.js");
+    const { provider } = createConfiguredProvider(
+      { providerType: "pi-rpc" },
+      {
+        agentProvider: "pi-rpc",
+        piCommand: "pi-rpc-local",
+        piRpcPersistent: true,
+      },
+    );
+
+    await provider.complete({ systemPrompt: "", userPrompt: "first prompt" });
+    provider.close?.();
+
+    expect(fakeProcess.child.kill).toHaveBeenCalledTimes(1);
   });
 });
 
