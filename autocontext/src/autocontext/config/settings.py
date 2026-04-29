@@ -359,6 +359,14 @@ class AppSettings(BaseModel):
         default=False,
         description="Capture a semantic compaction benchmark report during prompt assembly",
     )
+    extensions: str = Field(
+        default="",
+        description="Comma-separated extension modules or .py files that register runtime hooks",
+    )
+    extension_fail_fast: bool = Field(
+        default=False,
+        description="Fail the run when an extension hook raises instead of recording a non-fatal hook error",
+    )
     # Knowledge coherence
     coherence_check_enabled: bool = Field(default=True, description="Run knowledge coherence check after persistence")
     # Strategy pre-validation

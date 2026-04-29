@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from autocontext.extensions import HookEvents
 from autocontext.knowledge.semantic_compaction_benchmark import (
     build_semantic_compaction_benchmark_report,
 )
@@ -179,6 +180,22 @@ def prepare_generation_prompts(
         "evidence_manifest": evidence_manifest,
         "evidence_manifests": evidence_manifests,
     }
+    hook_bus = ctx.hook_bus
+    if hook_bus is not None:
+        context_components = hook_bus.emit(
+            HookEvents.CONTEXT_COMPONENTS,
+            {
+                "components": dict(prompt_kwargs),
+                "scenario_name": ctx.scenario_name,
+                "run_id": ctx.run_id,
+                "generation": ctx.generation,
+            },
+        )
+        context_components.raise_if_blocked()
+        maybe_components = context_components.payload.get("components")
+        if isinstance(maybe_components, dict):
+            prompt_kwargs.update(maybe_components)
+        prompt_kwargs["hook_bus"] = hook_bus
     build_start = time.perf_counter()
     prompts = build_prompt_bundle(**prompt_kwargs)
     semantic_build_latency_ms = (time.perf_counter() - build_start) * 1000.0

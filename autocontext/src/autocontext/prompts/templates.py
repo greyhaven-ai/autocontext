@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from autocontext.extensions import HookBus, HookEvents
 from autocontext.knowledge.compaction import compact_prompt_components
 from autocontext.prompts.context_budget import ContextBudget
 from autocontext.scenarios.base import Observation
@@ -14,6 +16,24 @@ class PromptBundle:
     analyst: str
     coach: str
     architect: str
+
+
+def _prompt_bundle_roles(bundle: PromptBundle) -> dict[str, str]:
+    return {
+        "competitor": bundle.competitor,
+        "analyst": bundle.analyst,
+        "coach": bundle.coach,
+        "architect": bundle.architect,
+    }
+
+
+def _prompt_bundle_from_roles(roles: dict[str, Any], fallback: PromptBundle) -> PromptBundle:
+    return PromptBundle(
+        competitor=str(roles.get("competitor", fallback.competitor)),
+        analyst=str(roles.get("analyst", fallback.analyst)),
+        coach=str(roles.get("coach", fallback.coach)),
+        architect=str(roles.get("architect", fallback.architect)),
+    )
 
 
 # Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
@@ -83,23 +103,48 @@ def build_prompt_bundle(
     evidence_manifest: str = "",
     evidence_manifests: dict[str, str] | None = None,
     semantic_compaction: bool = True,
+    hook_bus: HookBus | None = None,
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
     analyst_evidence_manifest = _evidence.get("analyst", evidence_manifest)
     architect_evidence_manifest = _evidence.get("architect", evidence_manifest)
     if semantic_compaction:
-        compacted = compact_prompt_components(
-            {
-                "playbook": current_playbook,
-                "trajectory": score_trajectory,
-                "lessons": operational_lessons,
-                "analysis": recent_analysis,
-                "experiment_log": experiment_log,
-                "research_protocol": research_protocol,
-                "session_reports": session_reports,
-            }
-        )
+        compaction_components = {
+            "playbook": current_playbook,
+            "trajectory": score_trajectory,
+            "lessons": operational_lessons,
+            "analysis": recent_analysis,
+            "experiment_log": experiment_log,
+            "research_protocol": research_protocol,
+            "session_reports": session_reports,
+        }
+        if hook_bus is not None:
+            before_compaction = hook_bus.emit(
+                HookEvents.BEFORE_COMPACTION,
+                {
+                    "components": dict(compaction_components),
+                    "semantic_compaction": True,
+                },
+            )
+            before_compaction.raise_if_blocked()
+            maybe_components = before_compaction.payload.get("components")
+            if isinstance(maybe_components, dict):
+                compaction_components.update({str(key): str(value) for key, value in maybe_components.items()})
+        compacted = compact_prompt_components(compaction_components)
+        if hook_bus is not None:
+            after_compaction = hook_bus.emit(
+                HookEvents.AFTER_COMPACTION,
+                {
+                    "input_components": dict(compaction_components),
+                    "components": dict(compacted),
+                    "semantic_compaction": True,
+                },
+            )
+            after_compaction.raise_if_blocked()
+            maybe_compacted = after_compaction.payload.get("components")
+            if isinstance(maybe_compacted, dict):
+                compacted.update({str(key): str(value) for key, value in maybe_compacted.items()})
         current_playbook = compacted["playbook"]
         score_trajectory = compacted["trajectory"]
         operational_lessons = compacted["lessons"]
@@ -219,7 +264,7 @@ def build_prompt_bundle(
         else "Describe your strategy reasoning and recommend specific parameter values."
     )
 
-    return PromptBundle(
+    bundle = PromptBundle(
         competitor=base_context + hints_block + competitor_nb + competitor_constraint + competitor_task,
         analyst=base_context
         + analyst_evidence_block
@@ -287,6 +332,20 @@ def build_prompt_bundle(
             "If no harness mutations, omit the MUTATIONS markers entirely."
         ),
     )
+    if hook_bus is None:
+        return bundle
+    context_event = hook_bus.emit(
+        HookEvents.CONTEXT,
+        {
+            "roles": _prompt_bundle_roles(bundle),
+            "stage": "after_prompt_bundle",
+        },
+    )
+    context_event.raise_if_blocked()
+    maybe_roles = context_event.payload.get("roles")
+    if not isinstance(maybe_roles, dict):
+        return bundle
+    return _prompt_bundle_from_roles(maybe_roles, bundle)
 
 
 def code_strategy_competitor_suffix(strategy_interface: str) -> str:

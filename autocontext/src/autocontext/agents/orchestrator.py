@@ -24,6 +24,7 @@ from autocontext.agents.translator import StrategyTranslator
 from autocontext.agents.types import AgentOutputs, RoleExecution
 from autocontext.config.settings import AppSettings
 from autocontext.execution.harness_coverage import HarnessCoverage
+from autocontext.extensions import HookBus, wrap_language_model_client
 from autocontext.harness.orchestration.dag import RoleDAG
 from autocontext.harness.orchestration.types import RoleSpec
 from autocontext.prompts.templates import PromptBundle
@@ -167,6 +168,7 @@ def _apply_role_overrides(orch: AgentOrchestrator, settings: AppSettings) -> Non
         client = create_role_client(provider_type, settings, role=role)
         if client is None:
             continue
+        client = orch._wrap_client(client, provider_name=f"{provider_type}:{role}")
         orch._role_clients[role] = client
         runtime = SubagentRuntime(client=client)
         runner = getattr(orch, runner_name)
@@ -183,13 +185,15 @@ class AgentOrchestrator:
         settings: AppSettings,
         artifacts: Any | None = None,
         sqlite: Any | None = None,
+        hook_bus: HookBus | None = None,
     ) -> None:
-        self.client = client
+        self.hook_bus = hook_bus
+        self.client = wrap_language_model_client(client, hook_bus)
         self.settings = settings
         self._artifacts = artifacts
         self._harness_coverage_cache: dict[str, HarnessCoverage | None] = {}
         self._routed_clients: dict[tuple[str, str | None, str | None, str | None], LanguageModelClient] = {}
-        runtime = SubagentRuntime(client=client)
+        runtime = SubagentRuntime(client=self.client)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor)
         self.translator = StrategyTranslator(runtime, settings.model_translator)
         self.analyst = AnalystRunner(runtime, settings.model_analyst)
@@ -224,16 +228,20 @@ class AgentOrchestrator:
 
             self._rlm_loader = ContextLoader(artifacts, sqlite)
 
+    def _wrap_client(self, client: LanguageModelClient, *, provider_name: str = "") -> LanguageModelClient:
+        return wrap_language_model_client(client, self.hook_bus, provider_name=provider_name)
+
     @classmethod
     def from_settings(
         cls,
         settings: AppSettings,
         artifacts: Any | None = None,
         sqlite: Any | None = None,
+        hook_bus: HookBus | None = None,
     ) -> AgentOrchestrator:
         client: LanguageModelClient = build_client_from_settings(settings)
 
-        orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite)
+        orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite, hook_bus=hook_bus)
 
         # Apply per-role provider overrides (AC-184)
         _apply_role_overrides(orch, settings)
@@ -303,6 +311,7 @@ class AgentOrchestrator:
             role=role,
         )
         if client is not None:
+            client = self._wrap_client(client, provider_name=f"{provider_type}:{role}")
             self._routed_clients[key] = client
         return client
 
@@ -407,6 +416,7 @@ class AgentOrchestrator:
         )
         if client is None:
             return self._client_for_role(role)
+        client = self._wrap_client(client, provider_name=f"{config.provider_type}:{role}")
         self._routed_clients[key] = client
         return client
 

@@ -14,6 +14,7 @@ from autocontext.execution.phased_execution import (
     PhaseResult,
     split_budget,
 )
+from autocontext.extensions import HookEvents
 from autocontext.knowledge.coherence import check_coherence
 from autocontext.loop.cost_control import CostBudget, CostPolicy, CostTracker, throttle_state
 from autocontext.loop.stage_preflight import stage_preflight
@@ -291,6 +292,16 @@ class GenerationPipeline:
     def run_generation(self, ctx: GenerationContext) -> GenerationContext:
         """Execute all stages for a single generation."""
         ctx.generation_start_time = time.monotonic()
+        if ctx.hook_bus is not None:
+            generation_start = ctx.hook_bus.emit(
+                HookEvents.GENERATION_START,
+                {
+                    "run_id": ctx.run_id,
+                    "scenario": ctx.scenario_name,
+                    "generation": ctx.generation,
+                },
+            )
+            generation_start.raise_if_blocked()
         phase_plan = _build_phase_plan(ctx)
         phase_results: list[PhaseResult] = []
         if phase_plan is not None:
@@ -723,4 +734,20 @@ class GenerationPipeline:
             "over_budget": _over_budget(ctx),
             "phased_execution": ctx.phased_execution,
         })
+        if ctx.hook_bus is not None:
+            generation_end = ctx.hook_bus.emit(
+                HookEvents.GENERATION_END,
+                {
+                    "run_id": ctx.run_id,
+                    "scenario": ctx.scenario_name,
+                    "generation": ctx.generation,
+                    "status": "completed",
+                    "elapsed_seconds": ctx.generation_elapsed_seconds,
+                    "gate_decision": ctx.gate_decision,
+                    "best_score": ctx.previous_best,
+                    "elo": ctx.challenger_elo,
+                    "phased_execution": ctx.phased_execution,
+                },
+            )
+            generation_end.raise_if_blocked()
         return ctx

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Python `autoctx export` now accepts `--format pi-package` to write a Pi-local package directory with `package.json`, `SKILL.md`, prompt markdown, and the original autocontext strategy payload.
+- Python autocontext now exposes a Pi-shaped extension hook bus via `AUTOCONTEXT_EXTENSIONS`, covering run/generation lifecycle, context transforms, provider requests/responses, judge calls, and artifact writes.
 - Pi `pi-autocontext` now exposes `autocontext_runtime_snapshot` for run artifacts, package provenance, session branch lineage, and recent event-stream context.
 - TypeScript Pi RPC now supports an opt-in persistent runtime via `AUTOCONTEXT_PI_RPC_PERSISTENT=true`, reusing one `pi --mode rpc` subprocess for prompt and live-control calls.
 - TypeScript CLI now exposes `autoctx solve` as a DB-backed solve-on-demand entrypoint with `--description`, `--gens`, `--timeout`, and `--json` support (AC-619).

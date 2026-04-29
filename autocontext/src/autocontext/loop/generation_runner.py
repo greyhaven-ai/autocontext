@@ -54,6 +54,13 @@ from autocontext.knowledge.trajectory import ScoreTrajectoryBuilder
 from autocontext.knowledge.weakness import WeaknessAnalyzer
 from autocontext.loop.controller import LoopController
 from autocontext.loop.events import EventStreamEmitter
+from autocontext.loop.runner_hooks import (
+    emit_generation_failed,
+    emit_run_completed,
+    emit_run_failed,
+    emit_run_start,
+    initialize_hook_bus,
+)
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.families import detect_family
@@ -61,14 +68,11 @@ from autocontext.storage import SQLiteStore, artifact_store_from_settings
 
 logger = logging.getLogger(__name__)
 
-
 def _current_release_version() -> str:
-    """Return the installed package version used for aggregate release correlation."""
     try:
         return package_version("autoctx")
     except PackageNotFoundError:
         return package_fallback_version
-
 
 @dataclass(slots=True)
 class RunSummary:
@@ -82,14 +86,12 @@ class RunSummary:
 class GenerationRunner:
     def __init__(self, settings: AppSettings) -> None:
         self.settings = settings
+        self.hook_bus, self.loaded_extensions = initialize_hook_bus(settings)
         self.sqlite = SQLiteStore(settings.db_path)
         self.trajectory_builder = ScoreTrajectoryBuilder(self.sqlite)
-        self.artifacts = artifact_store_from_settings(
-            settings,
-            enable_buffered_writes=True,
-        )
+        self.artifacts = artifact_store_from_settings(settings, enable_buffered_writes=True, hook_bus=self.hook_bus)
         self.agents = AgentOrchestrator.from_settings(
-            settings, artifacts=self.artifacts, sqlite=self.sqlite,
+            settings, artifacts=self.artifacts, sqlite=self.sqlite, hook_bus=self.hook_bus
         )
         if settings.backpressure_mode == "trend":
             self.gate: BackpressureGate | TrendAwareGate = TrendAwareGate(
@@ -1089,6 +1091,7 @@ class GenerationRunner:
             "run_started",
             {"run_id": active_run_id, "scenario": scenario_name, "target_generations": target_generations},
         )
+        emit_run_start(self, run_id=active_run_id, scenario=scenario_name, target_generations=target_generations)
 
         # Seed scenario-specific tools before first generation
         if not self.artifacts.tools_dir(scenario_name).exists():
@@ -1206,6 +1209,7 @@ class GenerationRunner:
                         scenario=scenario,
                         generation=generation,
                         settings=self.settings,
+                        hook_bus=self.hook_bus,
                         previous_best=previous_best,
                         challenger_elo=challenger_elo,
                         challenger_uncertainty=challenger_uncertainty,
@@ -1269,6 +1273,12 @@ class GenerationRunner:
                         "generation_failed",
                         {"run_id": active_run_id, "generation": generation, "error": str(exc)},
                     )
+                    try:
+                        emit_generation_failed(
+                            self, run_id=active_run_id, scenario=scenario_name, generation=generation, error=str(exc)
+                        )
+                    except Exception:
+                        logger.debug("GENERATION_END hook failed after generation failure", exc_info=True)
                     raise
                 finally:
                     # Post-unwind safety net: if the pipeline exited without
@@ -1296,13 +1306,25 @@ class GenerationRunner:
                     run_id=active_run_id,
                 )
             self.artifacts.flush_writes()
-        except BaseException:
+        except BaseException as exc:
             try:
                 run_row = self.sqlite.get_run(active_run_id)
                 if run_row is not None and str(run_row.get("status") or "") == "running":
                     self._recover_stale_run_state(active_run_id)
             except Exception:
                 logger.warning("failed to recover stale run state for %s", active_run_id, exc_info=True)
+            try:
+                emit_run_failed(
+                    self,
+                    run_id=active_run_id,
+                    scenario=scenario_name,
+                    completed_generations=completed,
+                    best_score=previous_best,
+                    elo=challenger_elo,
+                    error=str(exc),
+                )
+            except Exception:
+                logger.debug("RUN_END hook failed after run failure", exc_info=True)
             raise
         finally:
             self.artifacts.shutdown_writer()
@@ -1365,10 +1387,14 @@ class GenerationRunner:
                 "dead_ends_found": dead_ends_found,
             },
         )
-        return RunSummary(
+        emit_run_completed(
+            self,
             run_id=active_run_id,
             scenario=scenario_name,
-            generations_executed=completed,
+            completed_generations=completed,
             best_score=previous_best,
-            current_elo=challenger_elo,
+            elo=challenger_elo,
+            session_report_path=session_report_path,
+            dead_ends_found=dead_ends_found,
         )
+        return RunSummary(active_run_id, scenario_name, completed, previous_best, challenger_elo)

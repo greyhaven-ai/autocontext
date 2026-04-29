@@ -17,6 +17,7 @@ from autocontext.agents.feedback_loops import (
 )
 from autocontext.agents.hint_feedback import HintFeedback
 from autocontext.analytics.credit_assignment import CreditAssignmentRecord
+from autocontext.extensions import HookBus
 from autocontext.harness.mutations.spec import HarnessMutation
 from autocontext.harness.mutations.store import MutationStore
 from autocontext.harness.storage.versioned_store import VersionedFileStore
@@ -24,6 +25,7 @@ from autocontext.knowledge.compaction import compact_prompt_components
 from autocontext.knowledge.hint_volume import HintManager, HintVolumePolicy
 from autocontext.knowledge.lessons import LessonStore
 from autocontext.knowledge.mutation_log import MutationEntry, MutationLog
+from autocontext.storage.artifact_write_methods import ArtifactWriteMethods
 from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.util.json_io import read_json, write_json
@@ -43,7 +45,7 @@ class DictSerializable(Protocol):
 EMPTY_PLAYBOOK_SENTINEL = "No playbook yet. Start from scenario rules and observation."
 
 
-class ArtifactStore:
+class ArtifactStore(ArtifactWriteMethods):
     def __init__(
         self,
         runs_root: Path,
@@ -54,6 +56,7 @@ class ArtifactStore:
         enable_buffered_writes: bool = False,
         blob_store: BlobStore | None = None,
         blob_store_min_size_bytes: int = 1024,
+        hook_bus: HookBus | None = None,
     ) -> None:
         self.runs_root = runs_root
         self.knowledge_root = knowledge_root
@@ -66,6 +69,7 @@ class ArtifactStore:
             min_size_bytes=blob_store_min_size_bytes,
         )
         self._writer: BufferedWriter | None = None
+        self._hook_bus = hook_bus
         if enable_buffered_writes:
             self._writer = BufferedWriter()
             self._writer.start()
@@ -140,67 +144,6 @@ class ArtifactStore:
                 description=description,
             ),
         )
-
-    def write_json(self, path: Path, payload: dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        content = json.dumps(payload, indent=2, sort_keys=True)
-        path.write_text(content, encoding="utf-8")
-        self._mirror_bytes(path, content.encode("utf-8"))
-
-    def write_markdown(self, path: Path, content: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        rendered = content.strip() + "\n"
-        path.write_text(rendered, encoding="utf-8")
-        self._mirror_bytes(path, rendered.encode("utf-8"))
-
-    def append_markdown(self, path: Path, content: str, heading: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        chunk = f"\n## {heading}\n\n{content.strip()}\n"
-        if path.exists():
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(chunk)
-            return
-        path.write_text(chunk.lstrip("\n"), encoding="utf-8")
-
-    def flush_writes(self) -> None:
-        """Block until all buffered writes are flushed."""
-        if self._writer is not None:
-            self._writer.flush()
-
-    def shutdown_writer(self) -> None:
-        """Flush and stop the background writer thread."""
-        if self._writer is not None:
-            self._writer.shutdown()
-            self._writer = None
-
-    def buffered_write_json(self, path: Path, payload: dict[str, Any]) -> None:
-        """Write JSON via buffer if available, otherwise synchronous."""
-        content = json.dumps(payload, indent=2, sort_keys=True)
-        if self._writer is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            self._writer.write_text(path, content)
-            self._mirror_bytes(path, content.encode("utf-8"))
-        else:
-            self.write_json(path, payload)
-
-    def buffered_write_markdown(self, path: Path, content: str) -> None:
-        """Write markdown via buffer if available, otherwise synchronous."""
-        rendered = content.strip() + "\n"
-        if self._writer is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            self._writer.write_text(path, rendered)
-            self._mirror_bytes(path, rendered.encode("utf-8"))
-        else:
-            self.write_markdown(path, content)
-
-    def buffered_append_markdown(self, path: Path, content: str, heading: str) -> None:
-        """Append markdown via buffer if available, otherwise synchronous."""
-        if self._writer is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            chunk = f"\n## {heading}\n\n{content.strip()}\n"
-            self._writer.append_text(path, chunk)
-        else:
-            self.append_markdown(path, content, heading)
 
     def read_playbook(self, scenario_name: str) -> str:
         content = self._playbook_store(scenario_name).read("playbook.md")
