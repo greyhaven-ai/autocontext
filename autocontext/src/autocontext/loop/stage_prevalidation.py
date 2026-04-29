@@ -241,7 +241,7 @@ def _validate_against_regression_fixtures(
     fixtures: list[RegressionFixture],
     supervisor: ExecutionSupervisor,
 ) -> ValidationResult:
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
+    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
     limits = EvaluationLimits(timeout_seconds=ctx.settings.harness_timeout_seconds)
     errors: list[str] = []
 

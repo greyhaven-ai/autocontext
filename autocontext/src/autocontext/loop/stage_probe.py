@@ -41,7 +41,7 @@ def stage_probe(
     })
 
     # Run probe matches
-    evaluator = ScenarioEvaluator(ctx.scenario, supervisor)
+    evaluator = ScenarioEvaluator(ctx.scenario, supervisor, hook_bus=ctx.hook_bus)
     runner = EvaluationRunner(evaluator, scoring_backend=ctx.settings.scoring_backend)
     probe_result = runner.run(
         candidate=ctx.current_strategy,

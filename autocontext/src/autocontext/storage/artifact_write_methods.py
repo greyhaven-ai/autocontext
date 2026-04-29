@@ -10,6 +10,10 @@ from autocontext.storage.buffered_writer import BufferedWriter
 
 
 class _ArtifactWriteHost(Protocol):
+    runs_root: Path
+    knowledge_root: Path
+    skills_root: Path
+    claude_skills_path: Path
     _hook_bus: HookBus | None
     _writer: BufferedWriter | None
 
@@ -27,7 +31,7 @@ class ArtifactWriteMethods:
 
     def write_json(self: _ArtifactWriteHost, path: Path, payload: dict[str, Any]) -> None:
         path, content_override, hook_payload, _ = emit_artifact_write(
-            self._hook_bus, path=path, format="json", payload=payload
+            self._hook_bus, path=path, format="json", payload=payload, managed_roots=_managed_roots(self)
         )
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = hook_payload if hook_payload is not None else payload
@@ -37,7 +41,7 @@ class ArtifactWriteMethods:
 
     def write_markdown(self: _ArtifactWriteHost, path: Path, content: str) -> None:
         path, hook_content, _, _ = emit_artifact_write(
-            self._hook_bus, path=path, format="markdown", content=content
+            self._hook_bus, path=path, format="markdown", content=content, managed_roots=_managed_roots(self)
         )
         content = hook_content or ""
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,7 +51,13 @@ class ArtifactWriteMethods:
 
     def append_markdown(self: _ArtifactWriteHost, path: Path, content: str, heading: str) -> None:
         path, hook_content, _, heading = emit_artifact_write(
-            self._hook_bus, path=path, format="markdown", content=content, append=True, heading=heading
+            self._hook_bus,
+            path=path,
+            format="markdown",
+            content=content,
+            append=True,
+            heading=heading,
+            managed_roots=_managed_roots(self),
         )
         content = hook_content or ""
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +79,12 @@ class ArtifactWriteMethods:
 
     def buffered_write_json(self: _ArtifactWriteHost, path: Path, payload: dict[str, Any]) -> None:
         path, content_override, hook_payload, _ = emit_artifact_write(
-            self._hook_bus, path=path, format="json", payload=payload, buffered=self._writer is not None
+            self._hook_bus,
+            path=path,
+            format="json",
+            payload=payload,
+            buffered=self._writer is not None,
+            managed_roots=_managed_roots(self),
         )
         payload = hook_payload if hook_payload is not None else payload
         content = content_override if content_override is not None else json.dumps(payload, indent=2, sort_keys=True)
@@ -84,7 +99,12 @@ class ArtifactWriteMethods:
 
     def buffered_write_markdown(self: _ArtifactWriteHost, path: Path, content: str) -> None:
         path, hook_content, _, _ = emit_artifact_write(
-            self._hook_bus, path=path, format="markdown", content=content, buffered=self._writer is not None
+            self._hook_bus,
+            path=path,
+            format="markdown",
+            content=content,
+            buffered=self._writer is not None,
+            managed_roots=_managed_roots(self),
         )
         content = hook_content or ""
         if self._writer is None:
@@ -107,6 +127,7 @@ class ArtifactWriteMethods:
             append=True,
             heading=heading,
             buffered=self._writer is not None,
+            managed_roots=_managed_roots(self),
         )
         content = hook_content or ""
         if self._writer is None:
@@ -121,3 +142,12 @@ class ArtifactWriteMethods:
         path.parent.mkdir(parents=True, exist_ok=True)
         chunk = f"\n## {heading}\n\n{content.strip()}\n"
         self._writer.append_text(path, chunk)
+
+
+def _managed_roots(host: _ArtifactWriteHost) -> tuple[Path, ...]:
+    return (
+        host.runs_root,
+        host.knowledge_root,
+        host.skills_root,
+        host.claude_skills_path,
+    )

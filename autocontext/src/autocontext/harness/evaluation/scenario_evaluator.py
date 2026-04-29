@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from autocontext.extensions import HookBus, active_hook_bus
 from autocontext.harness.evaluation.dimensional import (
     extract_dimension_scores,
     normalize_dimension_specs,
@@ -18,9 +19,10 @@ class ScenarioEvaluator:
     This avoids importing autocontext-domain types into the harness layer at module level.
     """
 
-    def __init__(self, scenario: Any, supervisor: Any) -> None:
+    def __init__(self, scenario: Any, supervisor: Any, hook_bus: HookBus | None = None) -> None:
         self._scenario = scenario
         self._supervisor = supervisor
+        self._hook_bus = hook_bus
 
     def evaluate(
         self,
@@ -37,7 +39,8 @@ class ScenarioEvaluator:
             network_access=limits.network_access,
         )
         payload = ExecutionInput(strategy=candidate, seed=seed, limits=mts_limits)
-        output = self._supervisor.run(self._scenario, payload)
+        with active_hook_bus(self._hook_bus):
+            output = self._supervisor.run(self._scenario, payload)
         metrics = dict(output.result.metrics) if hasattr(output.result, "metrics") else {}
         raw_dimension_specs = (
             self._scenario.scoring_dimensions()

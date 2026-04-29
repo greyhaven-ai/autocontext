@@ -10,8 +10,10 @@ import pytest
 from autocontext.execution.judge import LLMJudge
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
+from autocontext.harness.evaluation.scenario_evaluator import ScenarioEvaluator
+from autocontext.harness.evaluation.types import EvaluationLimits
 from autocontext.providers.base import CompletionResult, LLMProvider
-from autocontext.scenarios.base import Observation
+from autocontext.scenarios.base import Observation, ReplayEnvelope, Result
 from autocontext.storage.artifacts import ArtifactStore
 
 
@@ -258,6 +260,70 @@ def test_judge_hooks_transform_prompt_and_response() -> None:
     assert result.reasoning == "overridden"
 
 
+def test_judge_uses_active_hook_bus_when_not_passed_directly() -> None:
+    from autocontext.extensions import HookBus, HookEvents, HookResult, active_hook_bus
+
+    bus = HookBus()
+    provider = _Provider(_judge_response(score=0.2, reasoning="original"))
+
+    def before(event: Any) -> HookResult:
+        return HookResult(payload={"user_prompt": event.payload["user_prompt"] + "\nACTIVE BUS"})
+
+    def after(event: Any) -> HookResult:
+        return HookResult(payload={"response_text": _judge_response(score=0.91, reasoning="active")})
+
+    bus.on(HookEvents.BEFORE_JUDGE, before)
+    bus.on(HookEvents.AFTER_JUDGE, after)
+
+    judge = LLMJudge(model="judge", rubric="rubric", provider=provider)
+    with active_hook_bus(bus):
+        result = judge.evaluate("task", "output")
+
+    assert "ACTIVE BUS" in provider.calls[0]["user_prompt"]
+    assert result.score == 0.91
+    assert result.reasoning == "active"
+
+
+def test_scenario_evaluator_sets_active_hook_bus_for_internal_judges() -> None:
+    from autocontext.execution.supervisor import ExecutionOutput
+    from autocontext.extensions import HookBus, HookEvents, HookResult
+
+    bus = HookBus()
+    provider = _Provider(_judge_response(score=0.1, reasoning="original"))
+
+    def before(event: Any) -> HookResult:
+        return HookResult(payload={"user_prompt": event.payload["user_prompt"] + "\nSCENARIO BUS"})
+
+    def after(event: Any) -> HookResult:
+        return HookResult(payload={"response_text": _judge_response(score=0.83, reasoning="scenario")})
+
+    bus.on(HookEvents.BEFORE_JUDGE, before)
+    bus.on(HookEvents.AFTER_JUDGE, after)
+
+    class Scenario:
+        def scoring_dimensions(self) -> None:
+            return None
+
+    class Supervisor:
+        def run(self, scenario: Any, payload: Any) -> ExecutionOutput:
+            judge_result = LLMJudge(model="judge", rubric="rubric", provider=provider).evaluate("task", "output")
+            return ExecutionOutput(
+                result=Result(
+                    score=judge_result.score,
+                    summary=judge_result.reasoning,
+                    metrics={"quality": judge_result.score},
+                ),
+                replay=ReplayEnvelope(scenario="fake", seed=payload.seed, narrative="", timeline=[]),
+            )
+
+    evaluator = ScenarioEvaluator(Scenario(), Supervisor(), hook_bus=bus)
+    result = evaluator.evaluate({}, seed=7, limits=EvaluationLimits())
+
+    assert "SCENARIO BUS" in provider.calls[0]["user_prompt"]
+    assert result.score == 0.83
+    assert result.metadata["metrics"]["quality"] == 0.83
+
+
 def test_artifact_write_hooks_can_modify_and_block_writes(tmp_path: Path) -> None:
     from autocontext.extensions import HookBus, HookEvents, HookResult
 
@@ -280,3 +346,21 @@ def test_artifact_write_hooks_can_modify_and_block_writes(tmp_path: Path) -> Non
 
     with pytest.raises(RuntimeError, match="blocked by extension"):
         store.write_json(tmp_path / "knowledge" / "grid_ctf" / "blocked.json", {"ok": True})
+
+
+def test_artifact_write_hooks_cannot_redirect_outside_managed_root(tmp_path: Path) -> None:
+    from autocontext.extensions import HookBus, HookEvents, HookResult
+
+    outside_path = tmp_path / "outside.md"
+    bus = HookBus()
+
+    def redirect(event: Any) -> HookResult:
+        return HookResult(payload={"path": str(outside_path)})
+
+    bus.on(HookEvents.ARTIFACT_WRITE, redirect)
+    store = _artifact_store(tmp_path, hook_bus=bus)
+
+    with pytest.raises(RuntimeError, match="outside managed root"):
+        store.write_markdown(tmp_path / "knowledge" / "notes.md", "hello")
+
+    assert not outside_path.exists()

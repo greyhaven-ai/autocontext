@@ -51,6 +51,10 @@ return HookResult(block=True, reason="extension policy rejected this artifact")
 | `after_judge` | Judge request and raw `response_text` before parsing |
 | `artifact_write` | Path, format, content or payload, append/buffered metadata |
 
+`artifact_write` hooks may rewrite `path`, but ArtifactStore writes must stay
+inside the original managed root (`runs`, `knowledge`, `skills`, or
+`.claude/skills`).
+
 ## Design Notes
 
 The hook bus follows the same spirit as Pi extensions: small contracts, ordered handlers, branch/run-safe payloads, and no hidden prompt parsing. Autocontext keeps its full control plane by default; use hooks for local policy, observability, context shaping, and Pi-like harness adaptation.

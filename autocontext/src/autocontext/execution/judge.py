@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from autocontext.agents.types import LlmFn
 from autocontext.execution.rubric_coherence import check_rubric_coherence
-from autocontext.extensions import HookBus, HookEvents
+from autocontext.extensions import HookBus, HookEvents, get_current_hook_bus
 from autocontext.providers.base import LLMProvider
 from autocontext.providers.callable_wrapper import CallableProvider
 
@@ -239,6 +239,7 @@ class LLMJudge:
         raw_responses: list[str] = []
         total_internal_retries = 0
         last_parse_method: ParseMethod = "none"
+        hook_bus = self.hook_bus or get_current_hook_bus()
 
         for sample_index in range(self.samples):
             dims: dict[str, float] = {}
@@ -260,8 +261,8 @@ class LLMJudge:
                     "sample_index": sample_index,
                     "attempt": attempt,
                 }
-                if self.hook_bus is not None:
-                    before_judge = self.hook_bus.emit(HookEvents.BEFORE_JUDGE, request)
+                if hook_bus is not None:
+                    before_judge = hook_bus.emit(HookEvents.BEFORE_JUDGE, request)
                     before_judge.raise_if_blocked()
                     request = before_judge.payload
                 result = self.provider.complete(
@@ -271,8 +272,8 @@ class LLMJudge:
                     temperature=_coerce_float(request.get("temperature"), self.temperature),
                 )
                 response = result.text
-                if self.hook_bus is not None:
-                    after_judge = self.hook_bus.emit(
+                if hook_bus is not None:
+                    after_judge = hook_bus.emit(
                         HookEvents.AFTER_JUDGE,
                         {
                             "request": dict(request),

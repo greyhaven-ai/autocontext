@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -154,6 +156,25 @@ class HookBus:
                 event.block_reason = result.reason
             return
         event.payload.update(dict(result))
+
+
+_CURRENT_HOOK_BUS: ContextVar[HookBus | None] = ContextVar("autocontext_current_hook_bus", default=None)
+
+
+def get_current_hook_bus() -> HookBus | None:
+    return _CURRENT_HOOK_BUS.get()
+
+
+@contextmanager
+def active_hook_bus(hook_bus: HookBus | None) -> Iterator[None]:
+    if hook_bus is None:
+        yield
+        return
+    token = _CURRENT_HOOK_BUS.set(hook_bus)
+    try:
+        yield
+    finally:
+        _CURRENT_HOOK_BUS.reset(token)
 
 
 class ExtensionAPI:

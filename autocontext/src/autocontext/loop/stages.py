@@ -672,7 +672,7 @@ def stage_tournament(
             })
 
         try:
-            evaluator = ScenarioEvaluator(scenario, supervisor)
+            evaluator = ScenarioEvaluator(scenario, supervisor, hook_bus=ctx.hook_bus)
             harness_limits = HarnessLimits()
 
             def _on_result(idx: int, result: EvaluationResult) -> None:
