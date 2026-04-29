@@ -19,6 +19,8 @@ export const AppSettingsSchema = z.object({
   executorMode: z.string().default("local"),
   agentProvider: z.string().default("anthropic"),
   anthropicApiKey: z.string().nullable().default(null),
+  extensions: z.string().default(""),
+  extensionFailFast: z.boolean().default(false),
 
   // Models
   modelCompetitor: z.string().default("claude-sonnet-4-5-20250929"),

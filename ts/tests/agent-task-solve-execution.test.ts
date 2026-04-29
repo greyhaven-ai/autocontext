@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentTaskInterface, ImprovementResult, LLMProvider } from "../src/types/index.js";
+import { HookBus, HookEvents } from "../src/extensions/index.js";
 import {
   buildAgentTaskSolveSpec,
   executeAgentTaskSolve,
@@ -242,5 +243,71 @@ describe("agent-task solve execution", () => {
         },
       }),
     ).rejects.toThrow("agent_task context preparation failed: missing required context key: 'timeline'");
+  });
+
+  it("threads provider hooks through saved agent-task initial generation", async () => {
+    const providerPrompts: string[] = [];
+    const provider: LLMProvider = {
+      name: "test-provider",
+      defaultModel: () => "test-model",
+      complete: vi.fn(async (opts) => {
+        providerPrompts.push(opts.userPrompt);
+        if (opts.userPrompt.includes("## Agent Output")) {
+          return {
+            text:
+              "<!-- JUDGE_RESULT_START -->\n" +
+              JSON.stringify({
+                score: 0.8,
+                reasoning: "Good",
+                dimensions: { clarity: 0.8 },
+              }) +
+              "\n<!-- JUDGE_RESULT_END -->",
+            model: "test-model",
+            usage: {},
+          };
+        }
+        return {
+          text: "Initial provider answer",
+          model: "test-model",
+          usage: {},
+        };
+      }),
+    };
+    const bus = new HookBus();
+    const seen: string[] = [];
+    bus.on(HookEvents.BEFORE_PROVIDER_REQUEST, (event) => {
+      if (event.payload.role === "agent_task_initial") {
+        seen.push("before_initial");
+        return { userPrompt: `${event.payload.userPrompt}\nhook provider request` };
+      }
+      return undefined;
+    });
+    bus.on(HookEvents.AFTER_PROVIDER_RESPONSE, (event) => {
+      if (event.payload.role === "agent_task_initial") {
+        seen.push("after_initial");
+        return { text: "Initial answer rewritten by provider hook" };
+      }
+      return undefined;
+    });
+
+    const result = await executeAgentTaskSolve({
+      provider,
+      hookBus: bus,
+      created: {
+        name: "hooked_task",
+        spec: {
+          taskPrompt: "Write a concise answer.",
+          judgeRubric: "Score clarity.",
+          outputFormat: "free_text",
+        },
+      },
+      generations: 1,
+    });
+
+    expect(seen).toEqual(["before_initial", "after_initial"]);
+    expect(providerPrompts[0]).toContain("hook provider request");
+    expect(result.result.skill_markdown).toContain(
+      "Initial answer rewritten by provider hook",
+    );
   });
 });

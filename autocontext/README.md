@@ -259,7 +259,7 @@ The Python package includes a thin Chrome CDP backend that attaches to an existi
 
 `AUTOCONTEXT_HARNESS_PROFILE=lean` resolves a Pi-shaped runtime profile: prompt context is capped by `AUTOCONTEXT_LEAN_CONTEXT_BUDGET_TOKENS`, hidden/implicit context defaults to zero, and generated tool context is replaced by the lean allowlist before agent execution. `AUTOCONTEXT_PI_RPC_PERSISTENT=true` opts Pi RPC into a long-lived subprocess; one-shot Pi RPC remains the default.
 
-`AUTOCONTEXT_EXTENSIONS` loads comma-separated Python modules or `.py` files that register Pi-shaped runtime hooks for context transforms, provider requests/responses, judge calls, artifact writes, and run/generation lifecycle events. See [docs/extensions.md](docs/extensions.md).
+`AUTOCONTEXT_EXTENSIONS` loads comma-separated extension modules that register Pi-shaped runtime hooks for context transforms, provider requests/responses, judge calls, artifact writes, and run/generation lifecycle events. Python runs load Python modules or `.py` files; TypeScript runs load JavaScript/ESM modules. See [docs/extensions.md](docs/extensions.md).
 
 Semantic prompt compactions are also persisted as Pi-shaped JSONL entries at
 `runs/<run_id>/compactions.jsonl`, including `summary`, `firstKeptEntryId`,

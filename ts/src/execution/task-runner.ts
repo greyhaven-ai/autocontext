@@ -8,6 +8,7 @@ import type {
   AgentTaskInterface,
   AgentTaskResult,
 } from "../types/index.js";
+import type { HookBus } from "../extensions/index.js";
 import type { AppSettings } from "../config/index.js";
 import { type DelegatedResult, type JudgeInterface } from "../judge/delegated.js";
 import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
@@ -53,6 +54,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
   #lastReferenceContext?: string;
   #lastRequiredConcepts?: string[];
   readonly #judgeOverride?: JudgeInterface;
+  readonly #hookBus: HookBus | null;
 
   constructor(
     taskPrompt: string,
@@ -62,6 +64,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
     revisionPrompt?: string,
     rlmConfig?: Partial<RlmTaskConfig> | null,
     judgeOverride?: JudgeInterface,
+    hookBus?: HookBus | null,
   ) {
     this.#taskPrompt = taskPrompt;
     this.#rubric = rubric;
@@ -70,6 +73,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
     this.#revisionPrompt = revisionPrompt;
     this.#rlmConfig = resolveRlmConfig(rlmConfig);
     this.#judgeOverride = judgeOverride;
+    this.#hookBus = hookBus ?? null;
     assertFamilyContract(this, "agent_task", "SimpleAgentTask");
   }
 
@@ -108,6 +112,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
       model: this.#model,
       output,
       judgeOverride: this.#judgeOverride,
+      hookBus: this.#hookBus,
       referenceContext: opts?.referenceContext,
       requiredConcepts: opts?.requiredConcepts,
       calibrationExamples: opts?.calibrationExamples,
@@ -130,6 +135,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
       rubric: this.#rubric,
       rlmConfig: this.#rlmConfig,
       rlmSessions: this.#rlmSessions,
+      hookBus: this.#hookBus,
       referenceContext: context?.referenceContext,
       requiredConcepts: context?.requiredConcepts,
     });
@@ -150,6 +156,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
       judgeResult,
       rlmConfig: this.#rlmConfig,
       rlmSessions: this.#rlmSessions,
+      hookBus: this.#hookBus,
       referenceContext: this.#lastReferenceContext,
       requiredConcepts: this.#lastRequiredConcepts,
     });
@@ -165,6 +172,7 @@ export interface TaskRunnerOpts {
   pollInterval?: number;
   maxConsecutiveEmpty?: number;
   concurrency?: number;
+  hookBus?: HookBus | null;
 }
 
 export interface TaskRunnerFromSettingsOpts
@@ -184,6 +192,7 @@ export class TaskRunner {
   #pollInterval: number;
   #maxConsecutiveEmpty: number;
   #concurrency: number;
+  #hookBus: HookBus | null;
   #shutdown = false;
   #tasksProcessed = 0;
 
@@ -196,6 +205,7 @@ export class TaskRunner {
     this.#pollInterval = opts.pollInterval ?? 60;
     this.#maxConsecutiveEmpty = opts.maxConsecutiveEmpty ?? 0;
     this.#concurrency = Math.max(1, opts.concurrency ?? 1);
+    this.#hookBus = opts.hookBus ?? null;
   }
 
   get tasksProcessed(): number {
@@ -249,6 +259,7 @@ export class TaskRunner {
           revisionPrompt,
           rlm,
           delegatedJudge,
+          this.#hookBus,
         ),
       },
     });
@@ -280,5 +291,6 @@ export function createTaskRunnerFromSettings(opts: TaskRunnerFromSettingsOpts): 
     pollInterval: opts.pollInterval,
     maxConsecutiveEmpty: opts.maxConsecutiveEmpty,
     concurrency: opts.concurrency,
+    hookBus: opts.hookBus,
   });
 }

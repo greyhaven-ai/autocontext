@@ -1,3 +1,5 @@
+import type { HookBus } from "../extensions/index.js";
+
 export const RUN_HELP_TEXT = `autoctx run — Run the generation loop for a scenario
 
 Usage: autoctx run [options]
@@ -76,6 +78,7 @@ type AgentTaskSolveExecutor = (opts: {
   provider: unknown;
   created: { name: string; spec: Record<string, unknown> };
   generations: number;
+  hookBus?: HookBus | null;
 }) => Promise<{ progress: number; result: Record<string, unknown> }>;
 
 export interface AgentTaskRunStore {
@@ -115,6 +118,7 @@ export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends
   providerBundle: TProviderBundle;
   spec: Record<string, unknown>;
   executeAgentTaskSolve: AgentTaskSolveExecutor;
+  hookBus?: HookBus | null;
   dbPath?: string;
   migrationsDir?: string;
   createStore?: (dbPath: string) => AgentTaskRunStore;
@@ -138,6 +142,7 @@ export async function executeAgentTaskRunCommandWorkflow<TProviderBundle extends
         spec: opts.spec,
       },
       generations: opts.plan.gens,
+      ...(opts.hookBus ? { hookBus: opts.hookBus } : {}),
     });
     const bestScore = typeof result.result.best_score === "number" ? result.result.best_score : 0;
     const generationsCompleted = normalizeCompletedGenerations(result.progress);

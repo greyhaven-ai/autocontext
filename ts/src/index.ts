@@ -109,6 +109,26 @@ export type {
   ValidationResult as ApiKeyValidationResult,
 } from "./config/credentials.js";
 
+// Extensions
+export {
+  ExtensionAPI,
+  HookBus,
+  HookEvent,
+  HookEvents,
+  HookResult,
+  completeWithProviderHooks,
+  eventBlockError,
+  eventName,
+  initializeHookBus,
+  loadExtensions,
+} from "./extensions/index.js";
+export type {
+  HookedProviderCompletionOpts,
+  HookError,
+  HookHandler,
+  HookResultOptions,
+} from "./extensions/index.js";
+
 // Browser exploration
 export type {
   BrowserAction,

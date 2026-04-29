@@ -10,6 +10,7 @@ import type { ScenarioInterface } from "../scenarios/game-interface.js";
 import type { CustomScenarioEntry } from "../scenarios/custom-loader.js";
 import { executeGeneratedScenarioEntry } from "../scenarios/codegen/executor.js";
 import { executeAgentTaskSolve } from "../knowledge/agent-task-solve-execution.js";
+import { HookEvents, initializeHookBus, type HookBus } from "../extensions/index.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
 import { SCENARIO_REGISTRY } from "../scenarios/registry.js";
 import { SQLiteStore } from "../storage/index.js";
@@ -122,6 +123,10 @@ export async function executeBuiltInGameStartRun(opts: {
 
   const store = opts.deps?.createStore?.(opts.opts.dbPath) ?? new SQLiteStore(opts.opts.dbPath);
   store.migrate(opts.opts.migrationsDir);
+  const { hookBus, loadedExtensions } = await initializeHookBus({
+    extensions: opts.settings.extensions,
+    failFast: opts.settings.extensionFailFast,
+  });
 
   try {
     const runner = opts.deps?.createRunner?.({
@@ -152,6 +157,8 @@ export async function executeBuiltInGameStartRun(opts: {
       notifyOn: opts.settings.notifyOn,
       controller: opts.controller,
       events: opts.events,
+      hookBus,
+      loadedExtensions,
     }) ?? new GenerationRunner({
       provider: opts.providerBundle.defaultProvider,
       roleProviders: opts.providerBundle.roleProviders,
@@ -180,6 +187,8 @@ export async function executeBuiltInGameStartRun(opts: {
       notifyOn: opts.settings.notifyOn,
       controller: opts.controller,
       events: opts.events,
+      hookBus,
+      loadedExtensions,
     });
 
     await runner.run(opts.runId, opts.generations);
@@ -208,11 +217,27 @@ export async function executeAgentTaskCustomStartRun(opts: {
   entry: CustomScenarioEntry;
   generations: number;
   provider: import("../types/index.js").LLMProvider;
+  settings?: AppSettings;
   controller: LoopController;
   events: EventStreamEmitter;
   deps?: AgentTaskCustomStartRunDeps;
 }): Promise<void> {
   const executeTask = opts.deps?.executeAgentTaskSolve ?? executeAgentTaskSolve;
+  const { hookBus, loadedExtensions } = opts.settings
+    ? await initializeHookBus({
+      extensions: opts.settings.extensions,
+      failFast: opts.settings.extensionFailFast,
+    })
+    : { hookBus: null, loadedExtensions: [] };
+
+  emitHook(hookBus, HookEvents.RUN_START, {
+    run_id: opts.runId,
+    scenario: opts.scenarioName,
+    target_generations: opts.generations,
+    family: "agent_task",
+    saved_custom: true,
+    loaded_extensions: loadedExtensions,
+  });
 
   opts.events.emit("run_started", {
     run_id: opts.runId,
@@ -222,21 +247,62 @@ export async function executeAgentTaskCustomStartRun(opts: {
     saved_custom: true,
   });
   await opts.controller.waitIfPaused();
+  emitHook(hookBus, HookEvents.GENERATION_START, {
+    run_id: opts.runId,
+    scenario: opts.scenarioName,
+    generation: 1,
+    family: "agent_task",
+    saved_custom: true,
+  });
   opts.events.emit("generation_started", { run_id: opts.runId, generation: 1 });
 
-  const result = await executeTask({
-    provider: opts.provider,
-    created: {
-      name: opts.scenarioName,
-      spec: opts.entry.spec,
-    },
-    generations: opts.generations,
-  });
+  let result;
+  try {
+    result = await executeTask({
+      provider: opts.provider,
+      created: {
+        name: opts.scenarioName,
+        spec: opts.entry.spec,
+      },
+      generations: opts.generations,
+      ...(hookBus ? { hookBus } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    emitHook(hookBus, HookEvents.GENERATION_END, {
+      run_id: opts.runId,
+      scenario: opts.scenarioName,
+      generation: 1,
+      status: "failed",
+      family: "agent_task",
+      saved_custom: true,
+      error: message,
+    });
+    emitHook(hookBus, HookEvents.RUN_END, {
+      run_id: opts.runId,
+      scenario: opts.scenarioName,
+      status: "failed",
+      completed_generations: 0,
+      best_score: 0,
+      elo: 1000,
+      family: "agent_task",
+      saved_custom: true,
+      error: message,
+    });
+    throw error;
+  }
   const bestScore = readBestScore(result.result);
   const completedGenerations = normalizeCompletedGenerations(result.progress);
 
   for (let generation = 1; generation <= completedGenerations; generation++) {
     if (generation > 1) {
+      emitHook(hookBus, HookEvents.GENERATION_START, {
+        run_id: opts.runId,
+        scenario: opts.scenarioName,
+        generation,
+        family: "agent_task",
+        saved_custom: true,
+      });
       opts.events.emit("generation_started", { run_id: opts.runId, generation });
     }
     opts.events.emit("generation_completed", {
@@ -249,9 +315,34 @@ export async function executeAgentTaskCustomStartRun(opts: {
       family: "agent_task",
       rounds_completed: completedGenerations,
     });
+    emitHook(hookBus, HookEvents.GENERATION_END, {
+      run_id: opts.runId,
+      scenario: opts.scenarioName,
+      generation,
+      status: "completed",
+      mean_score: bestScore,
+      best_score: bestScore,
+      elo: 1000,
+      gate_decision: "advance",
+      family: "agent_task",
+      saved_custom: true,
+      rounds_completed: completedGenerations,
+    });
   }
   opts.events.emit("run_completed", {
     run_id: opts.runId,
+    completed_generations: completedGenerations,
+    best_score: bestScore,
+    elo: 1000,
+    session_report_path: null,
+    dead_ends_found: 0,
+    family: "agent_task",
+    saved_custom: true,
+  });
+  emitHook(hookBus, HookEvents.RUN_END, {
+    run_id: opts.runId,
+    scenario: opts.scenarioName,
+    status: "completed",
     completed_generations: completedGenerations,
     best_score: bestScore,
     elo: 1000,
@@ -340,4 +431,16 @@ export async function executeGeneratedCustomStartRun(opts: {
     family: opts.family,
     generated_custom: true,
   });
+}
+
+function emitHook(
+  hookBus: HookBus | null,
+  name: HookEvents,
+  payload: Record<string, unknown>,
+): void {
+  if (!hookBus?.hasHandlers(name)) {
+    return;
+  }
+  const event = hookBus.emit(name, payload);
+  event.raiseIfBlocked();
 }

@@ -7,6 +7,7 @@ import type {
   ImprovementResult,
   LLMProvider,
 } from "../types/index.js";
+import { completeWithProviderHooks, type HookBus } from "../extensions/index.js";
 import type { SerializedSkillPackageDict } from "./package.js";
 import { buildAgentTaskSolvePackage } from "./solve-workflow.js";
 
@@ -107,6 +108,7 @@ export interface AgentTaskSolveExecutionDeps {
     spec: AgentTaskSpec;
     name: string;
     provider: LLMProvider;
+    hookBus?: HookBus | null;
   }) => AgentTaskSolveTask;
   createLoop?: (opts: {
     task: AgentTaskSolveTask;
@@ -140,6 +142,7 @@ export async function executeAgentTaskSolve(opts: {
   created: { name: string; spec: Record<string, unknown> };
   generations: number;
   generationTimeBudgetSeconds?: number | null;
+  hookBus?: HookBus | null;
   deps?: AgentTaskSolveExecutionDeps;
 }): Promise<AgentTaskSolveExecutionResult> {
   const spec = buildAgentTaskSolveSpec(
@@ -154,6 +157,7 @@ export async function executeAgentTaskSolve(opts: {
     spec,
     name: opts.created.name,
     provider: opts.provider,
+    hookBus: opts.hookBus ?? null,
   });
   const timeBudget = new SolveGenerationBudget({
     scenarioName: opts.created.name,
@@ -180,7 +184,10 @@ export async function executeAgentTaskSolve(opts: {
   }
 
   timeBudget.check("initial generation");
-  const initialOutput = await opts.provider.complete({
+  const initialOutput = await completeWithProviderHooks({
+    hookBus: opts.hookBus ?? null,
+    provider: opts.provider,
+    role: "agent_task_initial",
     systemPrompt: "You are a helpful assistant.",
     userPrompt: task.getTaskPrompt(initialState),
   });

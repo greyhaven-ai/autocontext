@@ -1,12 +1,20 @@
 # Extension Hooks
 
-Autocontext exposes a small Python extension hook bus for Pi-shaped runtime customization. It is intentionally narrow: extensions receive structured events at stable runtime boundaries and may mutate the event payload, block the operation, or record side metadata.
+Autocontext exposes small Python and TypeScript extension hook buses for Pi-shaped runtime customization. They are intentionally narrow: extensions receive structured events at stable runtime boundaries and may mutate the event payload, block the operation, or record side metadata.
 
 Load extensions with `AUTOCONTEXT_EXTENSIONS`:
 
 ```bash
 AUTOCONTEXT_EXTENSIONS=my_project.autoctx_hooks,./local_hooks.py \
 uv run autoctx run --scenario grid_ctf --gens 3
+```
+
+For the TypeScript package, point `AUTOCONTEXT_EXTENSIONS` at JavaScript/ESM
+modules or `module:callable` targets:
+
+```bash
+AUTOCONTEXT_EXTENSIONS=./local-hooks.mjs \
+bunx autoctx run --scenario grid_ctf --gens 3
 ```
 
 Set `AUTOCONTEXT_EXTENSION_FAIL_FAST=true` when hook failures should stop the run. By default, hook handler exceptions are recorded on the event and the run continues.
