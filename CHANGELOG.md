@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Python `autoctx export` now accepts `--format pi-package` to write a Pi-local package directory with `package.json`, `SKILL.md`, prompt markdown, and the original autocontext strategy payload.
 - TypeScript CLI now exposes `autoctx solve` as a DB-backed solve-on-demand entrypoint with `--description`, `--gens`, `--timeout`, and `--json` support (AC-619).
 - TypeScript solve now preserves Python-shaped controls for structured family overrides, per-generation runtime-budget enforcement, output file writing, and classifier fallback status metadata (AC-620).
 

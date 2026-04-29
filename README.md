@@ -232,6 +232,7 @@ bun add -g autoctx@0.4.7
 | `analyze`     | `autoctx analyze --id <id> --type <kind>`          | Inspect or compare runs, simulations, investigations, or missions after the fact       |
 | `mission`     | `autoctx mission create --name "..." --goal "..."` | Verifier-driven goal advanced step by step until done                                  |
 | `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
+| `export`      | `uv run autoctx export --scenario <name> --format pi-package` (Python) | Share solved knowledge as JSON, skills, or Pi-local package directories                |
 | `train`       | `autoctx train --scenario <name> --data <jsonl>`   | Distill stable exported data into a cheaper local runtime                              |
 | `replay`      | `autoctx replay <run_id> --generation N`           | Inspect what happened before deciding what knowledge should persist                    |
 
