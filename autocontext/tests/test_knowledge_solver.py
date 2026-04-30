@@ -254,6 +254,29 @@ class TestSolveScenarioBuilder:
 
         assert family.name == "schema_evolution"
 
+    def test_resolves_ac277_portfolio_regime_change_prompt_to_schema_evolution(self) -> None:
+        from autocontext.knowledge.solver import _resolve_requested_scenario_family
+
+        family = _resolve_requested_scenario_family(
+            "Harness Stress Test: portfolio construction under regime change — "
+            "quantitative adaptation with schema evolution\n\n"
+            "## Objective\n\n"
+            "Build and run a financial portfolio construction scenario where the agent must "
+            "build and manage portfolios across macroeconomic regime changes, accumulating "
+            "quantitative investment heuristics.\n\n"
+            "## Scenario Design\n\n"
+            "Use SimulationInterface + WorldState to simulate market regimes. "
+            "The agent receives market regime inputs, portfolio constraints, and performance "
+            "feedback. Mid-run, the market schema changes: rate regime, volatility regime, "
+            "correlation structure, and risk model assumptions mutate. The agent must update "
+            "allocation heuristics, migrate knowledge, and avoid stale assumptions.\n\n"
+            "## Evaluation Dimensions\n\n"
+            "Stale-assumption detection. Knowledge migration completeness. Drawdown control. "
+            "Adaptation speed. Regime-aware allocation quality."
+        )
+
+        assert family.name == "schema_evolution"
+
     def test_passes_supported_family_hint_into_creator(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from autocontext.knowledge.solver import SolveScenarioBuilder
 

@@ -12,8 +12,8 @@ everything is already available as variables.
 
 ## How to use the REPL
 
-Write Python code inside <code> tags. The code will be executed and you will see the output
-(stdout and any errors). Variables persist between code blocks.
+Write Python code inside <code> tags or a ```python fenced block. The code will be executed
+and you will see the output (stdout and any errors). Variables persist between code blocks.
 
 Example:
 <code>
@@ -63,7 +63,8 @@ You do NOT need to read files or make API calls -- everything is already availab
 
 ## How to use the REPL
 
-Write Python code inside <code> tags. The code will be executed and you will see the output.
+Write Python code inside <code> tags or a ```python fenced block. The code will be executed
+and you will see the output.
 
 Example:
 <code>

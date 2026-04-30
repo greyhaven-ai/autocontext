@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+import pytest
+
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleExecution, RoleUsage
 from autocontext.harness.repl.session import RlmSession, make_llm_batch
@@ -37,6 +41,56 @@ def test_session_runs_single_turn() -> None:
     assert result.content == "done"
 
 
+@pytest.mark.parametrize(
+    ("response", "expected_code"),
+    [
+        (
+            '<code>\nanswer["content"] = "tagged"\nanswer["ready"] = True\n</code>',
+            'answer["content"] = "tagged"\nanswer["ready"] = True',
+        ),
+        (
+            '```python\nanswer["content"] = "python fence"\nanswer["ready"] = True\n```',
+            'answer["content"] = "python fence"\nanswer["ready"] = True',
+        ),
+        (
+            '```\nanswer["content"] = "plain fence"\nanswer["ready"] = True\n```',
+            'answer["content"] = "plain fence"\nanswer["ready"] = True',
+        ),
+    ],
+)
+def test_session_accepts_supported_code_block_shapes(response: str, expected_code: str) -> None:
+    client = FakeClient([response])
+    worker = ReplWorker()
+    session = RlmSession(client=client, worker=worker, role="analyst", model="m", system_prompt="test")
+    result = session.run()
+    assert result.status == "completed"
+    assert session.execution_history[0].code == expected_code
+
+
+def test_session_prefers_code_tags_when_mixed_with_markdown_fence() -> None:
+    client = FakeClient([
+        '<code>\nanswer["content"] = "from tag"\nanswer["ready"] = True\n</code>\n'
+        '```python\nanswer["content"] = "from fence"\nanswer["ready"] = True\n```'
+    ])
+    worker = ReplWorker()
+    session = RlmSession(client=client, worker=worker, role="analyst", model="m", system_prompt="test")
+    result = session.run()
+    assert result.content == "from tag"
+    assert "from fence" not in session.execution_history[0].code
+
+
+def test_session_accepts_mixed_code_block_styles_across_turns() -> None:
+    client = FakeClient([
+        "```python\nx = 1\nprint(x)\n```",
+        '<code>\nanswer["content"] = f"final {x}"\nanswer["ready"] = True\n</code>',
+    ])
+    worker = ReplWorker()
+    session = RlmSession(client=client, worker=worker, role="analyst", model="m", system_prompt="test")
+    result = session.run()
+    assert result.content == "final 1"
+    assert len(session.execution_history) == 2
+
+
 def test_session_stops_when_ready() -> None:
     client = FakeClient([
         '<code>\nx = 1\n</code>',
@@ -56,6 +110,16 @@ def test_session_respects_max_turns() -> None:
     result = session.run()
     assert result.status == "truncated"
     assert len(session.execution_history) == 3
+
+
+def test_session_logs_truncation_when_max_turns_exhausted(caplog: pytest.LogCaptureFixture) -> None:
+    client = FakeClient(['<code>\nx = 1\n</code>'] * 20)
+    worker = ReplWorker()
+    session = RlmSession(client=client, worker=worker, role="analyst", model="m", system_prompt="test", max_turns=2)
+    with caplog.at_level(logging.WARNING, logger="autocontext.harness.repl.session"):
+        result = session.run()
+    assert result.status == "truncated"
+    assert "hit max_turns=2 without finalizing" in caplog.text
 
 
 def test_session_feeds_stdout_back() -> None:
@@ -128,7 +192,7 @@ def test_session_nudges_no_code_response() -> None:
     assert len(messages_seen) >= 2
     second_msgs = messages_seen[1]
     user_msgs = [m for m in second_msgs if m["role"] == "user"]
-    assert any("code" in m["content"].lower() for m in user_msgs)
+    assert any("```python" in m["content"] for m in user_msgs)
 
 
 def test_session_returns_role_execution() -> None:
