@@ -63,7 +63,7 @@ Run a deterministic local scenario:
 
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=deterministic \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 Run with Anthropic:
@@ -71,7 +71,7 @@ Run with Anthropic:
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
 ANTHROPIC_API_KEY=... \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
@@ -82,7 +82,7 @@ Run with Claude CLI (`claude -p` via a local authenticated Claude Code runtime):
 AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
 AUTOCONTEXT_CLAUDE_MODEL=sonnet \
 AUTOCONTEXT_CLAUDE_TIMEOUT=300 \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 For longer live prompts, `autoctx solve`, `autoctx judge`, and `autoctx improve` all accept `--timeout <seconds>`. `autoctx solve` also accepts `--generation-time-budget <seconds>` to cap per-generation solve runtime. You can still use provider env vars such as `AUTOCONTEXT_CLAUDE_TIMEOUT`, `AUTOCONTEXT_CLAUDE_MAX_RETRIES`, `AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS`, or `AUTOCONTEXT_PI_TIMEOUT`.
@@ -92,7 +92,7 @@ Run with Codex CLI (`codex exec` via a local authenticated Codex runtime):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=codex \
 AUTOCONTEXT_CODEX_MODEL=o4-mini \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 Run with Pi CLI (local Pi agent runtime):
@@ -100,7 +100,7 @@ Run with Pi CLI (local Pi agent runtime):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 `autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER`, other role-routing overrides, and per-call `--provider <name>` overrides all apply to live simulation generation.
@@ -112,7 +112,7 @@ Run with Pi RPC (local Pi subprocess using `pi --mode rpc` JSONL):
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
 AUTOCONTEXT_PI_COMMAND=pi \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 For deterministic evals where Pi should ignore repo-local `AGENTS.md` / `CLAUDE.md`, add:
@@ -137,7 +137,7 @@ AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_AGENT_API_KEY=no-key \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 Start the API server:
@@ -158,7 +158,7 @@ uv run autoctx mcp-serve
 ## Main CLI Commands
 
 ```bash
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
 uv run autoctx simulate --description "simulate deploying a web service with rollback" --provider claude-cli
 uv run autoctx investigate --description "why did conversion drop after Tuesday's release"
@@ -170,7 +170,7 @@ uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
 uv run autoctx replay <run_id> --generation 1
-uv run autoctx run --scenario support_triage --gens 3
+uv run autoctx run support_triage --iterations 3
 uv run autoctx benchmark --scenario support_triage --runs 5
 uv run autoctx new-scenario --template prompt-optimization --name support_triage
 uv run autoctx export-training-data --scenario support_triage --all-runs --output training/support_triage.jsonl
@@ -186,17 +186,17 @@ Useful variants:
 
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic ANTHROPIC_API_KEY=... \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
 ANTHROPIC_API_KEY=sk-ant-primary \
 AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
 AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
 AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 
 AUTOCONTEXT_AGENT_PROVIDER=deterministic AUTOCONTEXT_RLM_ENABLED=true \
-uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+uv run autoctx solve "improve customer-support replies for billing disputes" --iterations 3
 ```
 
 ## Training Workflow
@@ -269,7 +269,7 @@ Semantic prompt compactions are also persisted as Pi-shaped JSONL entries at
 Solved strategy packages can also be exported as Pi-local package directories:
 
 ```bash
-uv run autoctx export --scenario grid_ctf --format pi-package --output grid-ctf-pi-package
+uv run autoctx export <run_id> --format pi-package --output grid-ctf-pi-package
 ```
 
 The directory contains `package.json`, a Pi skill, a prompt file, and the original `autocontext.package.json` strategy payload for re-import.

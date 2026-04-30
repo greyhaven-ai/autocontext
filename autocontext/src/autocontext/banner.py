@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from html import escape as html_escape
+from importlib import resources
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
@@ -23,6 +24,7 @@ SYNC_BLOCK_END = "<!-- autocontext-readme-hero:end -->"
 WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
 WHATS_NEW_BLOCK_END = "<!-- autocontext-whats-new:end -->"
 README_WHATS_NEW_HEADING = "What's New in 0.4.9"
+FALLBACK_BANNER_ART = "autocontext"
 README_BADGES = (
     (
         "https://github.com/greyhaven-ai/autocontext/blob/main/LICENSE",
@@ -71,18 +73,41 @@ def get_banner_svg_path() -> Path:
     return _assets_dir() / "banner.svg"
 
 
+def _read_packaged_asset(name: str) -> str | None:
+    try:
+        return (
+            resources.files("autocontext")
+            .joinpath("assets")
+            .joinpath(name)
+            .read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, ModuleNotFoundError, OSError):
+        return None
+
+
+def _read_source_asset(name: str) -> str | None:
+    try:
+        return (_assets_dir() / name).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 @lru_cache(maxsize=1)
 def load_banner_art() -> str:
     """Load the canonical ASCII banner art."""
-    return get_banner_path().read_text(encoding="utf-8").strip("\n")
+    content = _read_packaged_asset("banner.txt") or _read_source_asset("banner.txt")
+    return (content or FALLBACK_BANNER_ART).strip("\n")
 
 
 @lru_cache(maxsize=1)
 def load_whats_new() -> tuple[str, ...]:
     """Load the canonical What's New entries."""
+    content = _read_packaged_asset("whats_new.txt") or _read_source_asset("whats_new.txt")
+    if content is None:
+        return ()
     return tuple(
         line.strip()
-        for line in get_whats_new_path().read_text(encoding="utf-8").splitlines()
+        for line in content.splitlines()
         if line.strip()
     )
 

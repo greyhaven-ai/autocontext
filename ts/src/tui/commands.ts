@@ -54,9 +54,48 @@ function applyProviderSelection(
   return selection;
 }
 
+function unquotePlainGoal(raw: string): string {
+  const trimmed = raw.trim();
+  const quoted = trimmed.match(/^"(.+)"$/);
+  return (quoted?.[1] ?? trimmed).trim();
+}
+
+function resolveTuiRunId(raw: string, manager: RunManager): string | null {
+  const [, runId] = raw.split(/\s+/, 2);
+  return runId?.trim() || manager.getState().runId || null;
+}
+
+async function loadTuiRunInspection(
+  manager: RunManager,
+  runId: string,
+): Promise<{
+  run: import("../cli/run-inspection-command-workflow.js").RunInspectionRun;
+  generations: import("../cli/run-inspection-command-workflow.js").RunInspectionGeneration[];
+}> {
+  const { SQLiteStore } = await import("../storage/index.js");
+  const store = new SQLiteStore(manager.getDbPath());
+  store.migrate(manager.getMigrationsDir());
+  try {
+    const run = store.getRun(runId);
+    if (!run) {
+      throw new Error(`run '${runId}' not found`);
+    }
+    return {
+      run,
+      generations: store.getGenerations(runId),
+    };
+  } finally {
+    store.close();
+  }
+}
+
 export function formatCommandHelp(): string[] {
   return [
-    "/run <scenario> [gens]",
+    '/solve "plain-language goal"',
+    "/run <scenario> [iterations]",
+    "/status <run-id>",
+    "/show <run-id> --best",
+    "/watch <run-id>",
     "/pause or /resume",
     "/hint <text>",
     "/gate <advance|retry|rollback>",
@@ -134,12 +173,84 @@ export async function handleInteractiveTuiCommand(args: {
     };
   }
 
+  if (value.startsWith("/solve ")) {
+    const description = unquotePlainGoal(value.slice("/solve ".length));
+    if (!description) {
+      return { logLines: ['usage: /solve "plain-language goal"'], pendingLogin: null };
+    }
+    try {
+      const preview = await manager.createScenario(description);
+      const ready = await manager.confirmScenario();
+      const runId = await manager.startRun(ready.name, 5);
+      return {
+        logLines: [
+          `created scenario ${preview.name}`,
+          `accepted run ${runId}`,
+        ],
+        pendingLogin: null,
+      };
+    } catch (err) {
+      return { logLines: [err instanceof Error ? err.message : String(err)], pendingLogin: null };
+    }
+  }
+
   if (value.startsWith("/run ")) {
     const [, scenario = "grid_ctf", gensText = "5"] = value.split(/\s+/, 3);
     const generations = Number.parseInt(gensText, 10);
     try {
       const runId = await manager.startRun(scenario, Number.isFinite(generations) ? generations : 5);
       return { logLines: [`accepted run ${runId}`], pendingLogin: null };
+    } catch (err) {
+      return { logLines: [err instanceof Error ? err.message : String(err)], pendingLogin: null };
+    }
+  }
+
+  if (value === "/status" || value.startsWith("/status ")) {
+    const runId = resolveTuiRunId(value, manager);
+    if (!runId) {
+      return { logLines: ["usage: /status <run-id>"], pendingLogin: null };
+    }
+    try {
+      const { renderRunStatus } = await import("../cli/run-inspection-command-workflow.js");
+      const { run, generations } = await loadTuiRunInspection(manager, runId);
+      return { logLines: renderRunStatus(run, generations, false).split("\n"), pendingLogin: null };
+    } catch (err) {
+      return { logLines: [err instanceof Error ? err.message : String(err)], pendingLogin: null };
+    }
+  }
+
+  if (value === "/show" || value.startsWith("/show ")) {
+    const runId = resolveTuiRunId(value, manager);
+    if (!runId) {
+      return { logLines: ["usage: /show <run-id> [--best]"], pendingLogin: null };
+    }
+    try {
+      const { renderRunShow } = await import("../cli/run-inspection-command-workflow.js");
+      const { run, generations } = await loadTuiRunInspection(manager, runId);
+      return {
+        logLines: renderRunShow(run, generations, { best: value.includes("--best") }).split("\n"),
+        pendingLogin: null,
+      };
+    } catch (err) {
+      return { logLines: [err instanceof Error ? err.message : String(err)], pendingLogin: null };
+    }
+  }
+
+  if (value === "/watch" || value.startsWith("/watch ")) {
+    const runId = resolveTuiRunId(value, manager);
+    if (!runId) {
+      return { logLines: ["usage: /watch <run-id>"], pendingLogin: null };
+    }
+    try {
+      const { renderRunStatus } = await import("../cli/run-inspection-command-workflow.js");
+      const { run, generations } = await loadTuiRunInspection(manager, runId);
+      return {
+        logLines: [
+          `watching ${runId}`,
+          ...renderRunStatus(run, generations, false).split("\n"),
+        ],
+        pendingLogin: null,
+      };
     } catch (err) {
       return { logLines: [err instanceof Error ? err.message : String(err)], pendingLogin: null };
     }

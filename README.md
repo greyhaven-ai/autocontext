@@ -27,8 +27,8 @@ uv tool install autocontext==0.4.9
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
 uv run autoctx solve \
-  --description "improve customer-support replies for billing disputes" \
-  --gens 3
+  "improve customer-support replies for billing disputes" \
+  --iterations 3
 ```
 
 Pi runs locally as a subprocess and emits live traces back into the harness. For a hosted Pi, set `AUTOCONTEXT_AGENT_PROVIDER=pi-rpc` and `AUTOCONTEXT_PI_RPC_ENDPOINT` instead.
@@ -38,8 +38,8 @@ Prefer TypeScript? Same surface, same command:
 ```bash
 bun add -g autoctx@0.4.9
 AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
-  --description "improve customer-support replies for billing disputes" \
-  --gens 5 --json
+  "improve customer-support replies for billing disputes" \
+  --iterations 5 --json
 ```
 
 Already on Anthropic, OpenAI, Gemini, Mistral, Groq, OpenRouter, Azure, Claude CLI, Codex CLI, or MLX? Set `AUTOCONTEXT_AGENT_PROVIDER` and the matching credential env var:
@@ -47,7 +47,7 @@ Already on Anthropic, OpenAI, Gemini, Mistral, Groq, OpenRouter, Azure, Claude C
 ```bash
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
 ANTHROPIC_API_KEY=sk-ant-... \
-uv run autoctx solve --description "..." --gens 3
+uv run autoctx solve "..." --iterations 3
 ```
 
 See [`.env.example`](.env.example) for every provider's variables. Prefer to clone and run a starter? [`examples/README.md`](examples/README.md) has copy-paste recipes for Python CLI, Claude Code MCP, Python SDK, and TypeScript library usage.
@@ -235,14 +235,14 @@ pi install npm:pi-autocontext
 
 | Surface       | Command                                            | When to use it                                                                         |
 | ------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `solve`       | `autoctx solve --description "..." --gens 3`       | Hand the harness a goal in plain language; it generates the scenario and runs the loop |
-| `run`         | `autoctx run --scenario <name> --gens 3`           | Improve behavior inside a saved scenario across generations                            |
+| `solve`       | `autoctx solve "..." --iterations 3`               | Hand the harness a goal in plain language; it generates the scenario and runs the loop |
+| `run`         | `autoctx run <scenario> --iterations 3`            | Improve behavior inside a saved scenario across generations                            |
 | `simulate`    | `autoctx simulate -d "..."`                        | Model a system, sweep parameters, replay, compare                                      |
 | `investigate` | `autoctx investigate -d "..."`                     | Evidence-driven diagnosis, either synthetic harness or live iterative LLM session      |
 | `analyze`     | `autoctx analyze --id <id> --type <kind>`          | Inspect or compare runs, simulations, investigations, or missions after the fact       |
 | `mission`     | `autoctx mission create --name "..." --goal "..."` | Verifier-driven goal advanced step by step until done                                  |
 | `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
-| `export`      | `uv run autoctx export --scenario <name> --format pi-package` (Python) | Share solved knowledge as JSON, skills, or Pi-local package directories                |
+| `export`      | `autoctx export <run-id>`                          | Share solved knowledge as JSON, skills, or Pi-local package directories                |
 | `train`       | `autoctx train --scenario <name> --data <jsonl>`   | Distill stable exported data into a cheaper local runtime                              |
 | `replay`      | `autoctx replay <run_id> --generation N`           | Inspect what happened before deciding what knowledge should persist                    |
 

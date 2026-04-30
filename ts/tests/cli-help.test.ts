@@ -29,6 +29,14 @@ describe("Top-level --help", () => {
     expect(out).toContain("list");
     expect(out).toContain("replay");
   });
+
+  it("leads with plain-language paved-road examples", () => {
+    const out = runHelp("");
+    expect(out).toContain('autoctx solve "build an orbital transfer optimizer"');
+    expect(out).toContain("autoctx show <run-id> --best");
+    expect(out).toContain("autoctx watch <run-id>");
+    expect(out).toContain("autoctx export <run-id>");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -137,6 +145,7 @@ describe("export --help", () => {
   const out = runHelp("export");
 
   it("includes flag descriptions", () => {
+    expect(out).toContain("autoctx export <run-id>");
     expect(out).toContain("--scenario");
     expect(out).toContain("--output");
   });

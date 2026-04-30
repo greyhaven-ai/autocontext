@@ -3,10 +3,12 @@ import type { HookBus } from "../extensions/index.js";
 export const RUN_HELP_TEXT = `autoctx run — Run the generation loop for a scenario
 
 Usage: autoctx run [options]
+Usage: autoctx run <scenario> [options]
 
 Options:
   --scenario <name>    Scenario to run (built-in or saved custom agent_task)
   --gens N             Number of generations to run (default: from config or 1)
+  --iterations N       Plain-language alias for --gens
   --run-id <id>        Custom run identifier (default: auto-generated)
   --provider <type>    LLM provider: anthropic, openai, ollama, deterministic, etc.
   --matches N          Matches per generation (default: 3)
@@ -15,15 +17,17 @@ Options:
 If project config (.autoctx.json) exists, --scenario and --gens default from it.
 
 Examples:
+  autoctx run grid_ctf --iterations 3
   autoctx run --scenario grid_ctf --provider deterministic --gens 3
-  autoctx run --scenario grid_ctf --gens 5 --matches 5
   autoctx run                          # uses defaults from .autoctx.json
 
 See also: list, replay, export, benchmark`;
 
 export interface RunCommandValues {
   scenario?: string;
+  positionals?: string[];
   gens?: string;
+  iterations?: string;
   "run-id"?: string;
   provider?: string;
   matches?: string;
@@ -186,17 +190,20 @@ export async function planRunCommand(
   now: () => number,
   parsePositiveInteger: (raw: string, label: string) => number,
 ): Promise<RunCommandPlan> {
-  const scenarioName = await resolveScenarioOption(values.scenario);
+  const scenarioInput = values.scenario?.trim() || values.positionals?.[0]?.trim();
+  const scenarioName = await resolveScenarioOption(scenarioInput);
   if (!scenarioName) {
     throw new Error(
-      "Error: no scenario configured. Run `autoctx init` or pass --scenario <name>.",
+      "Error: no scenario configured. Run `autoctx init` or pass <scenario> / --scenario <name>.",
     );
   }
+  const generationRaw = values.gens ?? values.iterations;
+  const generationLabel = values.gens ? "--gens" : "--iterations";
 
   return {
     scenarioName,
-    gens: values.gens
-      ? parsePositiveInteger(values.gens, "--gens")
+    gens: generationRaw
+      ? parsePositiveInteger(generationRaw, generationLabel)
       : settings.defaultGenerations,
     runId: values["run-id"] ?? `run-${now()}`,
     providerType: values.provider,

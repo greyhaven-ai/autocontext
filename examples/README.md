@@ -20,8 +20,8 @@ export AUTOCONTEXT_AGENT_PROVIDER=deterministic
 RUN_ID="example_$(date +%s)"
 
 uv run autoctx run \
-  --scenario grid_ctf \
-  --gens 3 \
+  grid_ctf \
+  --iterations 3 \
   --run-id "$RUN_ID" \
   --json | jq .
 
@@ -29,12 +29,12 @@ uv run autoctx status "$RUN_ID" --json | jq .
 
 mkdir -p exports
 uv run autoctx export \
-  --scenario grid_ctf \
+  "$RUN_ID" \
   --output "exports/${RUN_ID}.json" \
   --json | jq .
 
 uv run autoctx export \
-  --scenario grid_ctf \
+  "$RUN_ID" \
   --format pi-package \
   --output "exports/${RUN_ID}-pi-package" \
   --json | jq .
@@ -151,7 +151,7 @@ export AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b
 # Run → status → export loop
 RUN_ID="hermes_$(date +%s)"
 mkdir -p logs
-uv run autoctx run --scenario grid_ctf --gens 3 --run-id "$RUN_ID" --json >"logs/${RUN_ID}.json" 2>"logs/${RUN_ID}.err" &
+uv run autoctx run grid_ctf --iterations 3 --run-id "$RUN_ID" --json >"logs/${RUN_ID}.json" 2>"logs/${RUN_ID}.err" &
 RUN_PID=$!
 while kill -0 "$RUN_PID" 2>/dev/null; do
   uv run autoctx status "$RUN_ID" --json | jq '.generations[-1]'
@@ -159,8 +159,8 @@ while kill -0 "$RUN_PID" 2>/dev/null; do
 done
 wait "$RUN_PID"
 cat "logs/${RUN_ID}.json" | jq .
-uv run autoctx export --scenario grid_ctf --output "exports/${RUN_ID}.json" --json | jq .
-uv run autoctx solve --description "Design a safe, adaptive grid capture-the-flag strategy." --gens 2 --json | jq .
+uv run autoctx export "$RUN_ID" --output "exports/${RUN_ID}.json" --json | jq .
+uv run autoctx solve "Design a safe, adaptive grid capture-the-flag strategy." --iterations 2 --json | jq .
 ```
 
 For the full walkthrough including polling, timeouts, and integration path comparison, see [autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md#hermes-cli-first-starter-workflow).

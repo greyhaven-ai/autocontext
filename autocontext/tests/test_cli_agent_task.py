@@ -112,6 +112,21 @@ class TestAgentTaskDetection:
         assert result.exit_code == 0, result.output
         mock_runner.assert_not_called()
 
+    def test_run_accepts_positional_scenario_and_iterations_alias(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path)
+        with (
+            patch("autocontext.cli.SCENARIO_REGISTRY", {"mock_task": _MockAgentTask}),
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._resolve_agent_task_runtime", return_value=(_FakeProvider(), "test-model")),
+            patch("autocontext.cli.ImprovementLoop") as mock_loop,
+            patch("autocontext.cli._runner") as mock_runner,
+        ):
+            mock_loop.return_value.run.return_value = _FakeLoopResult()
+            result = runner.invoke(app, ["run", "mock_task", "--iterations", "3"])
+
+        assert result.exit_code == 0, result.output
+        mock_runner.assert_not_called()
+
 
 class TestAgentTaskPersistence:
     def test_run_persists_agent_task_as_canonical_run_state(self, tmp_path: Path) -> None:

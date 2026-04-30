@@ -41,6 +41,7 @@ class PackageMetadata(BaseModel):
 
     mts_version: str = Field(default="", description="autocontext version that created this package")
     source_run_id: str | None = Field(default=None, description="Run that produced the best strategy")
+    source_generation: int | None = Field(default=None, description="Generation that produced the best strategy")
     created_at: str = Field(
         default_factory=lambda: datetime.now(UTC).isoformat(),
         description="ISO-8601 creation timestamp",
@@ -94,7 +95,10 @@ class StrategyPackage(BaseModel):
 
     @classmethod
     def from_skill_package(
-        cls, pkg: SkillPackage, source_run_id: str | None = None,
+        cls,
+        pkg: SkillPackage,
+        source_run_id: str | None = None,
+        source_generation: int | None = None,
     ) -> StrategyPackage:
         """Build a StrategyPackage from an existing SkillPackage."""
         from autocontext import __version__
@@ -123,6 +127,7 @@ class StrategyPackage(BaseModel):
             metadata=PackageMetadata(
                 mts_version=__version__,
                 source_run_id=source_run_id,
+                source_generation=source_generation,
                 completed_runs=raw_meta.get("completed_runs", 0) if isinstance(raw_meta, dict) else 0,
                 has_snapshot=raw_meta.get("has_snapshot", False) if isinstance(raw_meta, dict) else False,
             ),

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from autocontext.knowledge.package import StrategyPackage
+    from autocontext.storage.row_types import GenerationMetricsRow
 
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
@@ -20,6 +21,59 @@ logger = logging.getLogger(__name__)
 _ROLLBACK_RE = re.compile(r"^-\s*Generation\s+\d+\s+ROLLBACK\b", re.IGNORECASE)
 _RAW_JSON_RE = re.compile(r'\{"[a-z_]+"\s*:\s*[\d.]+')
 _SCORE_PARENS_RE = re.compile(r"\(score=[0-9.]+,\s*delta=[0-9.+-]+,\s*threshold=[0-9.]+\)")
+
+
+def _parse_strategy_json(raw: str | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _best_generation_for_run(ctx: MtsToolContext, run_id: str) -> GenerationMetricsRow | None:
+    generations = ctx.sqlite.get_generation_metrics(run_id)
+    if not generations:
+        return None
+    return max(
+        generations,
+        key=lambda generation: (
+            float(generation.get("best_score", 0.0)),
+            int(generation.get("generation_index", 0)),
+        ),
+    )
+
+
+def _best_run_strategy(ctx: MtsToolContext, run_id: str, generation_index: int) -> dict[str, Any] | None:
+    matches = [
+        match
+        for match in ctx.sqlite.get_matches_for_run(run_id)
+        if int(match.get("generation_index", 0)) == generation_index
+    ]
+    if matches:
+        best_match = max(
+            matches,
+            key=lambda match: (
+                float(match.get("score", 0.0)),
+                int(match.get("id", 0)),
+            ),
+        )
+        parsed = _parse_strategy_json(best_match.get("strategy_json"))
+        if parsed is not None:
+            return parsed
+
+    competitor_outputs = [
+        output
+        for output in ctx.sqlite.get_agent_outputs_by_role(run_id, "competitor")
+        if int(output.get("generation_index", 0)) == generation_index
+    ]
+    if competitor_outputs:
+        parsed = _parse_strategy_json(competitor_outputs[-1].get("content"))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 @dataclass(slots=True)
@@ -173,30 +227,43 @@ class SkillPackage:
         return "".join(parts)
 
 
-def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackage:
+def export_skill_package(ctx: MtsToolContext, scenario_name: str, source_run_id: str | None = None) -> SkillPackage:
     """Assemble a portable skill package from accumulated scenario knowledge."""
     if scenario_name not in SCENARIO_REGISTRY:
         supported = ", ".join(sorted(SCENARIO_REGISTRY.keys()))
         raise ValueError(f"Unknown scenario '{scenario_name}'. Available: {supported}")
 
     scenario = SCENARIO_REGISTRY[scenario_name]()
+    source_generation: int | None = None
+    has_snapshot = False
 
     playbook = ctx.artifacts.read_playbook(scenario_name)
     raw_lessons = ctx.artifacts.read_skill_lessons_raw(scenario_name)
     lessons = _clean_lessons(raw_lessons)
     hints = ctx.artifacts.read_hints(scenario_name)
 
-    snapshot = ctx.sqlite.get_best_knowledge_snapshot(scenario_name)
-    best_score = snapshot["best_score"] if snapshot else 0.0
-    best_elo = snapshot["best_elo"] if snapshot else 1500.0
-
-    best_strategy_raw = ctx.sqlite.get_best_competitor_output(scenario_name)
-    best_strategy: dict[str, Any] | None = None
-    if best_strategy_raw:
-        try:
-            best_strategy = json.loads(best_strategy_raw)
-        except (json.JSONDecodeError, TypeError):
-            best_strategy = None
+    if source_run_id is not None:
+        run = ctx.sqlite.get_run(source_run_id)
+        if run is None:
+            raise ValueError(f"Unknown run '{source_run_id}'")
+        if run.get("scenario") != scenario_name:
+            raise ValueError(
+                f"Run '{source_run_id}' belongs to scenario '{run.get('scenario')}', not '{scenario_name}'"
+            )
+        best_generation = _best_generation_for_run(ctx, source_run_id)
+        if best_generation is None:
+            raise ValueError(f"No generation metrics found for run {source_run_id}")
+        source_generation = int(best_generation["generation_index"])
+        best_score = float(best_generation["best_score"])
+        best_elo = float(best_generation.get("elo") or 1500.0)
+        best_strategy = _best_run_strategy(ctx, source_run_id, source_generation)
+        has_snapshot = True
+    else:
+        snapshot = ctx.sqlite.get_best_knowledge_snapshot(scenario_name)
+        best_score = snapshot["best_score"] if snapshot else 0.0
+        best_elo = snapshot["best_elo"] if snapshot else 1500.0
+        best_strategy = _parse_strategy_json(ctx.sqlite.get_best_competitor_output(scenario_name))
+        has_snapshot = snapshot is not None
 
     completed_runs = ctx.sqlite.count_completed_runs(scenario_name)
 
@@ -245,7 +312,9 @@ def export_skill_package(ctx: MtsToolContext, scenario_name: str) -> SkillPackag
         harness=harness,
         metadata={
             "completed_runs": completed_runs,
-            "has_snapshot": snapshot is not None,
+            "has_snapshot": has_snapshot,
+            "source_run_id": source_run_id,
+            "source_generation": source_generation,
         },
         task_prompt=task_prompt,
         judge_rubric=judge_rubric,
@@ -338,7 +407,11 @@ def _clean_lessons(raw_bullets: list[str]) -> list[str]:
     return cleaned
 
 
-def export_strategy_package(ctx: MtsToolContext, scenario_name: str) -> StrategyPackage:
+def export_strategy_package(
+    ctx: MtsToolContext,
+    scenario_name: str,
+    source_run_id: str | None = None,
+) -> StrategyPackage:
     """Export a versioned, portable StrategyPackage for a scenario.
 
     Wraps the existing export_skill_package() with format versioning and
@@ -346,18 +419,25 @@ def export_strategy_package(ctx: MtsToolContext, scenario_name: str) -> Strategy
     """
     from autocontext.knowledge.package import StrategyPackage, read_package_metadata
 
-    skill_pkg = export_skill_package(ctx, scenario_name)
+    skill_pkg = export_skill_package(ctx, scenario_name, source_run_id=source_run_id)
     imported_meta = read_package_metadata(ctx.artifacts, scenario_name)
 
     # Determine source_run_id from the best knowledge snapshot
-    source_run_id: str | None = None
-    snapshot = ctx.sqlite.get_best_knowledge_snapshot(scenario_name)
-    if snapshot:
-        source_run_id = snapshot.get("run_id")
-    elif isinstance(imported_meta.get("metadata"), dict):
-        source_run_id = imported_meta["metadata"].get("source_run_id")
+    resolved_source_run_id = source_run_id
+    source_generation = skill_pkg.metadata.get("source_generation")
+    if resolved_source_run_id is None:
+        snapshot = ctx.sqlite.get_best_knowledge_snapshot(scenario_name)
+        if snapshot:
+            resolved_source_run_id = snapshot.get("run_id")
+        elif isinstance(imported_meta.get("metadata"), dict):
+            resolved_source_run_id = imported_meta["metadata"].get("source_run_id")
+            source_generation = imported_meta["metadata"].get("source_generation")
 
-    pkg = StrategyPackage.from_skill_package(skill_pkg, source_run_id=source_run_id)
+    pkg = StrategyPackage.from_skill_package(
+        skill_pkg,
+        source_run_id=resolved_source_run_id,
+        source_generation=source_generation if isinstance(source_generation, int) else None,
+    )
     imported_meta_payload = imported_meta.get("metadata")
     if isinstance(imported_meta_payload, dict):
         pkg.metadata.completed_runs = max(
