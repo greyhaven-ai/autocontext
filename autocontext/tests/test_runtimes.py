@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from unittest.mock import patch
 
@@ -98,6 +99,11 @@ class TestClaudeCLIConfig:
         cfg = ClaudeCLIConfig(model="opus", tools="Bash,Read", timeout=60.0)
         assert cfg.model == "opus"
         assert cfg.tools == "Bash,Read"
+
+    def test_retry_defaults_bound_total_runtime(self):
+        cfg = ClaudeCLIConfig()
+        assert cfg.max_retries <= 3
+        assert cfg.max_total_seconds < 30 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +245,80 @@ class TestClaudeCLIRuntime:
         result = runtime.generate("slow task")
         assert result.text == ""
         assert result.metadata.get("error") == "timeout"
+
+    @patch("autocontext.runtimes.claude_cli.time.sleep")
+    @patch("subprocess.run")
+    def test_timeout_retries_are_bounded_and_observable(
+        self,
+        mock_run,
+        mock_sleep,
+        caplog,
+    ):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=5)
+        cfg = ClaudeCLIConfig(
+            timeout=5.0,
+            max_retries=2,
+            retry_backoff_seconds=0.25,
+            retry_backoff_multiplier=2.0,
+            max_total_seconds=30.0,
+        )
+        runtime = ClaudeCLIRuntime(cfg)
+        runtime._claude_path = "/usr/bin/claude"
+
+        with caplog.at_level(logging.WARNING, logger="autocontext.runtimes.claude_cli"):
+            result = runtime.generate("slow task")
+
+        assert result.text == ""
+        assert result.metadata.get("error") == "timeout"
+        assert result.metadata.get("attempts") == 3
+        assert result.metadata.get("retry_exhausted") is True
+        assert mock_run.call_count == 3
+        assert [call.args[0] for call in mock_sleep.call_args_list] == [0.25, 0.5]
+        messages = "\n".join(record.getMessage() for record in caplog.records)
+        assert "claude-cli retry attempt=1/2 reason=timeout" in messages
+        assert "claude-cli retry attempt=2/2 reason=timeout" in messages
+        assert "claude CLI timed out after 3 attempt(s)" in messages
+
+    @patch("autocontext.runtimes.claude_cli.time.sleep")
+    @patch("subprocess.run")
+    def test_timeout_retry_can_recover(self, mock_run, mock_sleep):
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=5),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=_mock_claude_json("recovered"), stderr="",
+            ),
+        ]
+        cfg = ClaudeCLIConfig(timeout=5.0, max_retries=2, retry_backoff_seconds=0.0)
+        runtime = ClaudeCLIRuntime(cfg)
+        runtime._claude_path = "/usr/bin/claude"
+
+        result = runtime.generate("slow task")
+
+        assert result.text == "recovered"
+        assert result.metadata.get("attempts") == 2
+        assert result.metadata.get("retry_count") == 1
+        assert mock_run.call_count == 2
+        mock_sleep.assert_called_once_with(0.0)
+
+    @patch("autocontext.runtimes.claude_cli.time.sleep")
+    @patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=1))
+    def test_timeout_retry_skips_sleep_that_would_exhaust_total_cap(self, mock_run, mock_sleep):
+        cfg = ClaudeCLIConfig(
+            timeout=1.0,
+            max_retries=2,
+            retry_backoff_seconds=60.0,
+            max_total_seconds=10.0,
+        )
+        runtime = ClaudeCLIRuntime(cfg)
+        runtime._claude_path = "/usr/bin/claude"
+
+        result = runtime.generate("slow task")
+
+        assert result.metadata.get("error") == "timeout"
+        assert result.metadata.get("attempts") == 1
+        assert result.metadata.get("retry_exhausted") is True
+        assert mock_run.call_count == 1
+        mock_sleep.assert_not_called()
 
     @patch("subprocess.run", side_effect=FileNotFoundError)
     def test_missing_cli(self, mock_run):

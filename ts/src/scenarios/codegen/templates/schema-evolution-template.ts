@@ -2,6 +2,22 @@ export const SCHEMA_EVOLUTION_SCENARIO_TEMPLATE = String.raw`// Generated schema
 const ACTIONS = __ACTIONS__;
 const MUTATIONS = __MUTATIONS__;
 
+function recordMutation(state, mutation) {
+  return {
+    ...state,
+    schemaVersion: (state.schemaVersion || 0) + 1,
+    mutationLog: [...(state.mutationLog || []), mutation],
+    staleDetections: (state.staleDetections || 0) + 1,
+  };
+}
+
+function applyPendingMutation(state) {
+  const currentVersion = state.schemaVersion || 0;
+  const mutation = MUTATIONS[currentVersion];
+  if (!mutation) return state;
+  return recordMutation(state, mutation);
+}
+
 const scenario = {
   name: __SCENARIO_NAME__,
 
@@ -35,6 +51,9 @@ const scenario = {
   },
 
   getAvailableActions(state) {
+    if ((state.schemaVersion || 0) < MUTATIONS.length) {
+      return ACTIONS;
+    }
     const completed = new Set(state.completedActions || []);
     return ACTIONS.filter((action) => !completed.has(action.name));
   },
@@ -57,9 +76,10 @@ const scenario = {
     }
     nextState.completedActions.push(action.name);
     nextState.timeline.push({ action: action.name, parameters: action.parameters || {} });
+    const evolvedState = applyPendingMutation(nextState);
     return {
       result: { success: true, output: "executed " + action.name, stateChanges: {} },
-      state: nextState,
+      state: evolvedState,
     };
   },
 
@@ -69,13 +89,16 @@ const scenario = {
 
   getResult(state, trace) {
     const versionsHandled = state.schemaVersion || 0;
-    const coverage = MUTATIONS.length > 0 ? versionsHandled / MUTATIONS.length : 1;
+    const hasMutations = MUTATIONS.length > 0;
+    const coverage = hasMutations ? versionsHandled / MUTATIONS.length : 0;
     const detections = state.staleDetections || 0;
-    const detectionRate = MUTATIONS.length > 0 ? Math.min(1, detections / MUTATIONS.length) : 1;
+    const detectionRate = hasMutations ? Math.min(1, detections / MUTATIONS.length) : 0;
     const score = Math.round((coverage * 0.5 + detectionRate * 0.5) * 10000) / 10000;
+    const reasoning = versionsHandled + "/" + MUTATIONS.length + " versions handled"
+      + (hasMutations ? "" : " (no schema mutations defined)");
     return {
       score,
-      reasoning: versionsHandled + "/" + MUTATIONS.length + " versions handled",
+      reasoning,
       dimensionScores: {
         schemaCoverage: Math.round(coverage * 10000) / 10000,
         staleDetection: Math.round(detectionRate * 10000) / 10000,
@@ -96,12 +119,7 @@ const scenario = {
   },
 
   applyMutation(state, mutation) {
-    return {
-      ...state,
-      schemaVersion: (state.schemaVersion || 0) + 1,
-      mutationLog: [...(state.mutationLog || []), mutation],
-      staleDetections: (state.staleDetections || 0) + 1,
-    };
+    return recordMutation(state, mutation);
   },
 
   getRubric() {

@@ -199,6 +199,10 @@ def _create_claude_cli_bridge(
         permission_mode=settings.claude_permission_mode,
         session_persistence=settings.claude_session_persistence,
         timeout=settings.claude_timeout,
+        max_retries=settings.claude_max_retries,
+        retry_backoff_seconds=settings.claude_retry_backoff_seconds,
+        retry_backoff_multiplier=settings.claude_retry_backoff_multiplier,
+        max_total_seconds=settings.claude_max_total_seconds,
     )
     return RuntimeBridgeClient(ClaudeCLIRuntime(config))
 

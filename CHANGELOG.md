@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- TypeScript generated `schema_evolution` scenarios no longer score empty mutation plans as perfect, and generated actions now record mutation lineage before schema-coverage scoring (AC-666).
+- Python Claude CLI runtime calls now use bounded timeout retries with exponential backoff, total wall-clock caps, retry metadata, and warning/error logs for long-running live-agent calls (AC-684).
+
 ## [0.4.7] - 2026-04-29
 
 ### Added

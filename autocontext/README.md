@@ -85,7 +85,7 @@ AUTOCONTEXT_CLAUDE_TIMEOUT=300 \
 uv run autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
 ```
 
-For longer live prompts, `autoctx solve`, `autoctx judge`, and `autoctx improve` all accept `--timeout <seconds>`. `autoctx solve` also accepts `--generation-time-budget <seconds>` to cap per-generation solve runtime. You can still use provider env vars such as `AUTOCONTEXT_CLAUDE_TIMEOUT` or `AUTOCONTEXT_PI_TIMEOUT`.
+For longer live prompts, `autoctx solve`, `autoctx judge`, and `autoctx improve` all accept `--timeout <seconds>`. `autoctx solve` also accepts `--generation-time-budget <seconds>` to cap per-generation solve runtime. You can still use provider env vars such as `AUTOCONTEXT_CLAUDE_TIMEOUT`, `AUTOCONTEXT_CLAUDE_MAX_RETRIES`, `AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS`, or `AUTOCONTEXT_PI_TIMEOUT`.
 
 Run with Codex CLI (`codex exec` via a local authenticated Codex runtime):
 
