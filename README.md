@@ -22,7 +22,7 @@ Autocontext is a harness. You point it at a goal in plain language. It iterates 
 The fastest path uses our **Pi runtime**, a local coding agent that handles its own auth. No API key plumbing, no provider config: install Pi, install autocontext, point one at the other.
 
 ```bash
-uv tool install autocontext==0.4.7
+uv tool install autocontext==0.4.8
 
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
@@ -36,7 +36,7 @@ Pi runs locally as a subprocess and emits live traces back into the harness. For
 Prefer TypeScript? Same surface, same command:
 
 ```bash
-bun add -g autoctx@0.4.7
+bun add -g autoctx@0.4.8
 AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
   --description "improve customer-support replies for billing disputes" \
   --gens 5 --json
@@ -197,7 +197,7 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.4.7
+## What's New in 0.4.8
 
 - **Anthropic SDK instrumentation** in Python and TypeScript: wrap any existing Anthropic client with `instrument_client` / `instrumentClient` to capture streaming and non-streaming production traces.
 - **TypeScript `autoctx solve` CLI** brings one-command scenario generation and execution to full parity with Python.
@@ -219,11 +219,11 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 
 ```bash
 # Python: library or CLI tool
-uv pip install autocontext==0.4.7
-uv tool install autocontext==0.4.7
+uv pip install autocontext==0.4.8
+uv tool install autocontext==0.4.8
 
 # TypeScript
-bun add -g autoctx@0.4.7
+bun add -g autoctx@0.4.8
 
 # Pi extension
 pi install npm:pi-autocontext
