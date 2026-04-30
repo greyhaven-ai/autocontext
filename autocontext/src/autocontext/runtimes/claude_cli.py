@@ -30,6 +30,11 @@ class ClaudeCLIConfig:
     session_persistence: bool = False
     session_id: str | None = None  # Set to maintain context across rounds
     timeout: float = 600.0  # AC-588: per-call default (was 300, AC-570 raised from 120)
+    max_retries: int = 2
+    retry_backoff_seconds: float = 0.25
+    retry_backoff_multiplier: float = 2.0
+    max_total_seconds: float = 25 * 60.0
+    timeout_warning_fraction: float = 0.8
     system_prompt: str | None = None
     append_system_prompt: str | None = None
     extra_args: list[str] = field(default_factory=list)
@@ -136,45 +141,147 @@ class ClaudeCLIRuntime(AgentRuntime):
 
     def _invoke(self, prompt: str, args: list[str]) -> AgentOutput:
         """Execute claude -p and parse the JSON result."""
-        logger.info(
-            "claude-cli invoke: model=%s timeout=%ds",
-            self._config.model,
-            int(self._config.timeout),
-        )
+        total_start = time.monotonic()
+        max_retries = max(0, int(self._config.max_retries))
+        total_attempts = max_retries + 1
 
-        start = time.monotonic()
-        try:
-            result = subprocess.run(
-                args,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=self._config.timeout,
-            )
-        except subprocess.TimeoutExpired:
-            logger.error("claude CLI timed out after %.0fs", self._config.timeout)
-            return AgentOutput(text="", metadata={"error": "timeout"})
-        except FileNotFoundError:
-            logger.error("claude CLI not found. Install Claude Code first.")
-            return AgentOutput(text="", metadata={"error": "claude_not_found"})
-
-        elapsed = time.monotonic() - start
-        logger.debug(
-            "claude-cli completed in %.1fs (budget %ds)",
-            elapsed,
-            int(self._config.timeout),
-        )
-
-        if result.returncode != 0:
-            logger.warning("claude CLI exited with code %d: %s", result.returncode, result.stderr[:200])
-            # Try to use stdout anyway — sometimes there's partial output
-            if not result.stdout.strip():
-                return AgentOutput(
-                    text="",
-                    metadata={"error": "nonzero_exit", "stderr": result.stderr[:500]},
+        for attempt_index in range(total_attempts):
+            attempt = attempt_index + 1
+            timeout = self._attempt_timeout(total_start)
+            if timeout <= 0:
+                return self._timeout_output(
+                    attempts=attempt_index,
+                    total_elapsed=time.monotonic() - total_start,
+                    retry_exhausted=True,
                 )
 
-        return self._parse_output(result.stdout)
+            logger.info(
+                "claude-cli invoke: model=%s timeout=%ds attempt=%d/%d",
+                self._config.model,
+                int(timeout),
+                attempt,
+                total_attempts,
+            )
+
+            start = time.monotonic()
+            try:
+                result = subprocess.run(
+                    args,
+                    input=prompt,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                elapsed = time.monotonic() - start
+                if attempt_index < max_retries and self._has_retry_budget(total_start):
+                    delay = self._retry_delay(attempt_index)
+                    logger.warning(
+                        "claude-cli retry attempt=%d/%d reason=timeout delay=%.2fs elapsed=%.1fs",
+                        attempt,
+                        max_retries,
+                        delay,
+                        elapsed,
+                    )
+                    time.sleep(delay)
+                    continue
+                return self._timeout_output(
+                    attempts=attempt,
+                    total_elapsed=time.monotonic() - total_start,
+                    retry_exhausted=True,
+                )
+            except FileNotFoundError:
+                logger.error("claude CLI not found. Install Claude Code first.")
+                return AgentOutput(text="", metadata={"error": "claude_not_found", "attempts": attempt})
+
+            elapsed = time.monotonic() - start
+            logger.debug(
+                "claude-cli completed in %.1fs (budget %ds)",
+                elapsed,
+                int(timeout),
+            )
+            self._warn_if_slow_attempt(elapsed, timeout, attempt)
+
+            if result.returncode != 0:
+                logger.warning("claude CLI exited with code %d: %s", result.returncode, result.stderr[:200])
+                # Try to use stdout anyway — sometimes there's partial output
+                if not result.stdout.strip():
+                    return AgentOutput(
+                        text="",
+                        metadata={
+                            "error": "nonzero_exit",
+                            "stderr": result.stderr[:500],
+                            "attempts": attempt,
+                            "retry_count": attempt_index,
+                        },
+                    )
+
+            output = self._parse_output(result.stdout)
+            output.metadata = {
+                **output.metadata,
+                "attempts": attempt,
+                "retry_count": attempt_index,
+            }
+            return output
+
+        return self._timeout_output(
+            attempts=total_attempts,
+            total_elapsed=time.monotonic() - total_start,
+            retry_exhausted=True,
+        )
+
+    def _attempt_timeout(self, total_start: float) -> float:
+        max_total = float(self._config.max_total_seconds)
+        if max_total <= 0:
+            return float(self._config.timeout)
+        remaining = max_total - (time.monotonic() - total_start)
+        return min(float(self._config.timeout), remaining)
+
+    def _has_retry_budget(self, total_start: float) -> bool:
+        max_total = float(self._config.max_total_seconds)
+        return max_total <= 0 or (time.monotonic() - total_start) < max_total
+
+    def _retry_delay(self, retry_index: int) -> float:
+        base = max(0.0, float(self._config.retry_backoff_seconds))
+        multiplier = max(1.0, float(self._config.retry_backoff_multiplier))
+        return base * (multiplier ** retry_index)
+
+    def _warn_if_slow_attempt(self, elapsed: float, timeout: float, attempt: int) -> None:
+        fraction = float(self._config.timeout_warning_fraction)
+        if fraction <= 0:
+            return
+        threshold = timeout * fraction
+        if elapsed >= threshold:
+            logger.warning(
+                "claude-cli slow invoke: attempt=%d elapsed=%.1fs timeout=%.0fs",
+                attempt,
+                elapsed,
+                timeout,
+            )
+
+    def _timeout_output(
+        self,
+        *,
+        attempts: int,
+        total_elapsed: float,
+        retry_exhausted: bool,
+    ) -> AgentOutput:
+        logger.error(
+            "claude CLI timed out after %d attempt(s) (timeout=%.0fs total_elapsed=%.1fs)",
+            attempts,
+            self._config.timeout,
+            total_elapsed,
+        )
+        return AgentOutput(
+            text="",
+            metadata={
+                "error": "timeout",
+                "attempts": attempts,
+                "retry_count": max(0, attempts - 1),
+                "retry_exhausted": retry_exhausted,
+                "total_elapsed_seconds": total_elapsed,
+            },
+        )
 
     def _parse_output(self, raw: str) -> AgentOutput:
         """Parse JSON output from claude -p --output-format json."""

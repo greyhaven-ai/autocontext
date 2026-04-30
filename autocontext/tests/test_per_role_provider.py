@@ -271,6 +271,10 @@ class TestCreateClientForProvider:
         settings = AppSettings(
             claude_model="opus",
             claude_timeout=45.0,
+            claude_max_retries=1,
+            claude_retry_backoff_seconds=0.1,
+            claude_retry_backoff_multiplier=3.0,
+            claude_max_total_seconds=900.0,
             claude_tools="Bash,Read",
             claude_permission_mode="acceptEdits",
             claude_session_persistence=True,
@@ -281,6 +285,10 @@ class TestCreateClientForProvider:
         assert isinstance(client, RuntimeBridgeClient)
         assert client._runtime._config.model == "opus"  # type: ignore[attr-defined]
         assert client._runtime._config.timeout == 45.0  # type: ignore[attr-defined]
+        assert client._runtime._config.max_retries == 1  # type: ignore[attr-defined]
+        assert client._runtime._config.retry_backoff_seconds == 0.1  # type: ignore[attr-defined]
+        assert client._runtime._config.retry_backoff_multiplier == 3.0  # type: ignore[attr-defined]
+        assert client._runtime._config.max_total_seconds == 900.0  # type: ignore[attr-defined]
         assert client._runtime._config.tools == "Bash,Read"  # type: ignore[attr-defined]
         assert client._runtime._config.permission_mode == "acceptEdits"  # type: ignore[attr-defined]
         assert client._runtime._config.session_persistence is True  # type: ignore[attr-defined]

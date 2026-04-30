@@ -625,6 +625,26 @@ class AppSettings(BaseModel):
             "(AC-588: 300→600 after 0.4.5 sweep)"
         ),
     )
+    claude_max_retries: int = Field(
+        default=2,
+        ge=0,
+        description="Claude CLI timeout retry budget per provider invocation",
+    )
+    claude_retry_backoff_seconds: float = Field(
+        default=0.25,
+        ge=0.0,
+        description="Initial Claude CLI timeout retry backoff in seconds",
+    )
+    claude_retry_backoff_multiplier: float = Field(
+        default=2.0,
+        ge=1.0,
+        description="Multiplier for Claude CLI timeout retry backoff",
+    )
+    claude_max_total_seconds: float = Field(
+        default=25 * 60.0,
+        ge=1.0,
+        description="Total wall-clock cap across Claude CLI timeout retries",
+    )
     claude_tools: str | None = Field(default=None, description="Claude CLI tools override")
     claude_permission_mode: str = Field(default="bypassPermissions", description="Claude CLI permission mode")
     claude_session_persistence: bool = Field(default=False, description="Persist Claude CLI sessions across turns")

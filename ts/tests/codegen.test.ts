@@ -18,6 +18,35 @@ import { generateSchemaEvolutionSource } from "../src/scenarios/codegen/schema-e
 import { generateToolFragilitySource } from "../src/scenarios/codegen/tool-fragility-codegen.js";
 import { generateCoordinationSource } from "../src/scenarios/codegen/coordination-codegen.js";
 
+interface GeneratedScenarioForTest {
+  initialState(seed?: number): Record<string, unknown>;
+  getAvailableActions(state: Record<string, unknown>): Array<{
+    name: string;
+    parameters?: Record<string, unknown>;
+  }>;
+  executeAction(
+    state: Record<string, unknown>,
+    action: { name: string; parameters?: Record<string, unknown> },
+  ): { result: Record<string, unknown>; state: Record<string, unknown> };
+  getResult(
+    state: Record<string, unknown>,
+    trace: Record<string, unknown>,
+  ): {
+    score: number;
+    reasoning: string;
+    dimensionScores: Record<string, number>;
+  };
+}
+
+function loadGeneratedScenarioForTest(source: string): GeneratedScenarioForTest {
+  const module: { exports: { scenario?: GeneratedScenarioForTest } } = { exports: {} };
+  new Function("module", "exports", source)(module, module.exports);
+  if (!module.exports.scenario) {
+    throw new Error("generated source did not export scenario");
+  }
+  return module.exports.scenario;
+}
+
 // ---------------------------------------------------------------------------
 // Registry routing
 // ---------------------------------------------------------------------------
@@ -197,6 +226,51 @@ describe("schema-evolution codegen", () => {
     expect(source).toContain("getMutations");
     expect(source).toContain("applyMutation");
     new Function(source);
+  });
+
+  it("does not score zero-mutation schema evolution as perfect", () => {
+    const source = generateSchemaEvolutionSource({
+      description: "Schema migration with no discovered mutations",
+      mutations: [],
+      actions: [
+        { name: "inspect", description: "Inspect schema", parameters: {}, preconditions: [], effects: [] },
+      ],
+    }, "empty_schema_migration");
+    const scenario = loadGeneratedScenarioForTest(source);
+
+    const result = scenario.getResult(scenario.initialState(7), { records: [] });
+
+    expect(result.score).toBe(0);
+    expect(result.reasoning).toContain("0/0 versions handled");
+    expect(result.reasoning).toMatch(/no schema mutations/i);
+    expect(result.dimensionScores.schemaCoverage).toBe(0);
+    expect(result.dimensionScores.staleDetection).toBe(0);
+  });
+
+  it("records mutation lineage when schema-evolution actions execute", () => {
+    const source = generateSchemaEvolutionSource({
+      description: "Schema migration",
+      mutations: [
+        { version: 2, description: "Add priority", changes: { added: ["priority"] } },
+        { version: 3, description: "Rename status", changes: { renamed: ["status"] } },
+      ],
+      actions: [
+        { name: "inspect", description: "Inspect schema", parameters: {}, preconditions: [], effects: [] },
+      ],
+    }, "lineage_schema_migration");
+    const scenario = loadGeneratedScenarioForTest(source);
+    const state = scenario.initialState(3);
+    const [action] = scenario.getAvailableActions(state);
+
+    const { state: nextState } = scenario.executeAction(state, action);
+    const result = scenario.getResult(nextState, { records: [{ action }] });
+
+    expect(nextState.schemaVersion).toBe(1);
+    expect(nextState.mutationLog).toEqual([
+      { version: 2, description: "Add priority", changes: { added: ["priority"] } },
+    ]);
+    expect(result.score).toBe(0.5);
+    expect(result.reasoning).toBe("1/2 versions handled");
   });
 });
 

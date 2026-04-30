@@ -327,6 +327,10 @@ Key environment variables:
 | `AUTOCONTEXT_JUDGE_MODEL`                                            | Override judge model name                                                                           |
 | `AUTOCONTEXT_CLAUDE_MODEL`                                           | Claude CLI model alias (default: `sonnet`)                                                          |
 | `AUTOCONTEXT_CLAUDE_TIMEOUT`                                         | Claude CLI execution timeout in seconds (default: 600)                                              |
+| `AUTOCONTEXT_CLAUDE_MAX_RETRIES`                                     | Claude CLI timeout retry budget per provider invocation (default: 2)                                |
+| `AUTOCONTEXT_CLAUDE_RETRY_BACKOFF_SECONDS`                           | Initial Claude CLI timeout retry backoff in seconds (default: 0.25)                                 |
+| `AUTOCONTEXT_CLAUDE_RETRY_BACKOFF_MULTIPLIER`                        | Claude CLI timeout retry backoff multiplier (default: 2.0)                                          |
+| `AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS`                               | Total wall-clock cap across Claude CLI timeout retries (default: 1500)                              |
 | `AUTOCONTEXT_MODEL_COMPETITOR`                                       | Override competitor agent model                                                                     |
 | `AUTOCONTEXT_DB_PATH`                                                | SQLite database path                                                                                |
 | `AUTOCONTEXT_PI_COMMAND`                                             | Path to Pi CLI binary (default: `pi`)                                                               |
