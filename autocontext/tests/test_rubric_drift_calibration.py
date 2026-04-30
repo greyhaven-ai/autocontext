@@ -438,6 +438,65 @@ class TestRubricDriftMonitor:
 
         assert len(warnings) == 0
 
+    def test_detect_dimension_level_drift_from_generation_summaries(self) -> None:
+        from autocontext.analytics.rubric_drift import (
+            DriftThresholds,
+            RubricDriftMonitor,
+        )
+
+        trajectory = [
+            {
+                "generation_index": 1,
+                "dimension_summary": {
+                    "dimension_means": {
+                        "factuality": 0.90,
+                        "evidence": 0.88,
+                        "style": 0.50,
+                    }
+                },
+            },
+            {
+                "generation_index": 2,
+                "dimension_summary": {
+                    "dimension_means": {
+                        "factuality": 0.80,
+                        "evidence": 0.78,
+                        "style": 0.50,
+                    }
+                },
+            },
+            {
+                "generation_index": 3,
+                "dimension_summary": {
+                    "dimension_means": {
+                        "factuality": 0.70,
+                        "evidence": 0.68,
+                        "style": 0.50,
+                    }
+                },
+            },
+        ]
+        monitor = RubricDriftMonitor(
+            thresholds=DriftThresholds(
+                min_dimension_observations=3,
+                min_dimension_stddev=0.001,
+                max_dimension_decline=0.15,
+                max_dimension_correlation=0.99,
+            )
+        )
+
+        snapshot = monitor.compute_dimension_snapshot("run-dim", trajectory)
+        warnings = monitor.detect_dimension_drift(snapshot)
+        warning_types = {warning.warning_type for warning in warnings}
+
+        assert snapshot.run_id == "run-dim"
+        assert snapshot.generation_count == 3
+        assert snapshot.dimension_count == 3
+        assert "dimension_score_decline" in warning_types
+        assert "dimension_score_compression" in warning_types
+        assert "dimension_correlation_high" in warning_types
+        assert any(warning.metadata.get("dimension") == "factuality" for warning in warnings)
+
     def test_analyze_combines_snapshot_and_warnings(self) -> None:
         from autocontext.analytics.rubric_drift import (
             DriftThresholds,

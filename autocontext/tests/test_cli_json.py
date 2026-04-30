@@ -421,6 +421,7 @@ class TestSolveJson:
             job_id="solve_1234",
             description="Design a strategy",
             scenario_name="grid_ctf",
+            family_name="game",
             status="completed",
             generations=2,
             progress=2,
@@ -438,6 +439,7 @@ class TestSolveJson:
         assert data["job_id"] == "solve_1234"
         assert data["status"] == "completed"
         assert data["scenario_name"] == "grid_ctf"
+        assert data["family_name"] == "game"
         assert data["generations"] == 2
         assert data["progress"] == 2
         assert data["result"]["scenario_name"] == "grid_ctf"
@@ -463,6 +465,7 @@ class TestSolveJson:
             job_id="solve_5678",
             description="Design a strategy",
             scenario_name="grid_ctf",
+            family_name="game",
             status="completed",
             generations=3,
             progress=3,

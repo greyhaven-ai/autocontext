@@ -25,6 +25,7 @@ def run_investigate_command(
     hypotheses: int,
     save_as: str,
     browser_url: str,
+    mode: str,
     json_output: bool,
     console: Console,
     load_settings_fn: Callable[[], AppSettings],
@@ -38,9 +39,19 @@ def run_investigate_command(
         InvestigationRequest,
         derive_investigation_name,
     )
+    from autocontext.loop.events import EventStreamEmitter
+    from autocontext.storage import artifact_store_from_settings
 
     if not description:
         message = "--description is required. Run 'autoctx investigate --help' for usage."
+        if json_output:
+            write_json_stderr(message)
+        else:
+            console.print(f"[red]{message}[/red]")
+        raise typer.Exit(code=1)
+    normalized_mode = mode.strip().lower() if mode else "synthetic"
+    if normalized_mode not in {"synthetic", "iterative"}:
+        message = "--mode must be one of: synthetic, iterative"
         if json_output:
             write_json_stderr(message)
         else:
@@ -65,10 +76,14 @@ def run_investigate_command(
                 console.print(f"[red]{message}[/red]")
             raise typer.Exit(code=1) from exc
 
-    spec_provider, spec_model = resolve_investigation_runtime(settings, role="architect")
     analysis_provider, analysis_model = resolve_investigation_runtime(settings, role="analyst")
+    spec_runtime: tuple[LLMProvider, str] | None = None
 
     def _spec_llm_fn(system: str, user: str) -> str:
+        nonlocal spec_runtime
+        if spec_runtime is None:
+            spec_runtime = resolve_investigation_runtime(settings, role="architect")
+        spec_provider, spec_model = spec_runtime
         result = spec_provider.complete(system, user, model=spec_model)
         return result.text
 
@@ -80,6 +95,9 @@ def run_investigate_command(
         spec_llm_fn=_spec_llm_fn,
         analysis_llm_fn=_analysis_llm_fn,
         knowledge_root=settings.knowledge_root,
+        artifacts=artifact_store_from_settings(settings),
+        events=EventStreamEmitter(settings.event_stream_path),
+        context_budget_tokens=settings.context_budget_tokens,
     )
     result = engine.run(
         InvestigationRequest(
@@ -88,6 +106,7 @@ def run_investigate_command(
             max_hypotheses=hypotheses,
             save_as=save_as or None,
             browser_context=browser_context,
+            mode=normalized_mode,
         )
     )
     payload = result.to_dict()

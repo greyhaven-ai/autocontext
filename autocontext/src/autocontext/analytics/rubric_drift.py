@@ -8,9 +8,11 @@ jumps, and emits structured warnings when thresholds are crossed.
 
 from __future__ import annotations
 
+import json
 import statistics
 import uuid
 from datetime import UTC, datetime
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +56,26 @@ class RubricSnapshot(BaseModel):
         return cls.model_validate(data)
 
 
+class DimensionDriftSnapshot(BaseModel):
+    """Point-in-time dimension-level score trajectories for one run."""
+
+    snapshot_id: str
+    created_at: str
+    run_id: str
+    generation_count: int
+    dimension_count: int
+    dimension_series: dict[str, list[float]]
+    best_dimension_series: dict[str, list[float]] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump()
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DimensionDriftSnapshot:
+        return cls.model_validate(data)
+
+
 class DriftThresholds(BaseModel):
     """Configurable thresholds for drift detection."""
 
@@ -63,6 +85,10 @@ class DriftThresholds(BaseModel):
     min_stddev: float = 0.05
     max_retry_rate: float = 0.5
     max_rollback_rate: float = 0.3
+    min_dimension_observations: int = 3
+    min_dimension_stddev: float = 0.01
+    max_dimension_decline: float = 0.15
+    max_dimension_correlation: float = 0.98
 
 
 class DriftWarning(BaseModel):
@@ -189,6 +215,38 @@ class RubricDriftMonitor:
             metadata={"scenarios": scenarios},
         )
 
+    def compute_dimension_snapshot(
+        self,
+        run_id: str,
+        generation_trajectory: list[dict[str, Any]],
+    ) -> DimensionDriftSnapshot:
+        """Build dimension score series from generation trajectory rows."""
+        now = datetime.now(UTC).isoformat()
+        dimension_series: dict[str, list[float]] = {}
+        best_dimension_series: dict[str, list[float]] = {}
+        generation_indexes: list[int] = []
+
+        for row in generation_trajectory:
+            summary = _dimension_summary_from_row(row)
+            if not summary:
+                continue
+            generation = row.get("generation_index")
+            if isinstance(generation, int):
+                generation_indexes.append(generation)
+            _append_dimension_values(dimension_series, summary.get("dimension_means"))
+            _append_dimension_values(best_dimension_series, summary.get("best_dimensions"))
+
+        return DimensionDriftSnapshot(
+            snapshot_id=f"dim-snap-{uuid.uuid4().hex[:8]}",
+            created_at=now,
+            run_id=run_id,
+            generation_count=len(generation_indexes) if generation_indexes else len(generation_trajectory),
+            dimension_count=len(dimension_series),
+            dimension_series=dimension_series,
+            best_dimension_series=best_dimension_series,
+            metadata={"generation_indexes": generation_indexes},
+        )
+
     def detect_drift(
         self,
         current: RubricSnapshot,
@@ -298,6 +356,95 @@ class RubricDriftMonitor:
 
         return warnings
 
+    def detect_dimension_drift(
+        self,
+        current: DimensionDriftSnapshot,
+        *,
+        scenario: str = "",
+        release: str = "",
+        agent_provider: str = "",
+    ) -> list[DriftWarning]:
+        """Detect dimension-level scoring drift within a run trajectory."""
+        if current.generation_count == 0 or current.dimension_count == 0:
+            return []
+
+        thresholds = self._thresholds
+        now = datetime.now(UTC).isoformat()
+        warnings: list[DriftWarning] = []
+        scenarios = [scenario] if scenario else []
+        providers = [agent_provider] if agent_provider else []
+        releases = [release] if release else []
+
+        for dimension, series in sorted(current.dimension_series.items()):
+            if len(series) < thresholds.min_dimension_observations:
+                continue
+            stddev = statistics.pstdev(series) if len(series) > 1 else 0.0
+            if stddev <= thresholds.min_dimension_stddev:
+                warnings.append(self._make_warning(
+                    now,
+                    "dimension_score_compression",
+                    "medium",
+                    f"Dimension '{dimension}' score stddev {stddev:.4f} is at or below "
+                    f"{thresholds.min_dimension_stddev:.4f}",
+                    current.snapshot_id,
+                    f"dimension.{dimension}.stddev",
+                    stddev,
+                    thresholds.min_dimension_stddev,
+                    scenarios,
+                    providers,
+                    releases,
+                    metadata={"run_id": current.run_id, "dimension": dimension, "series": series},
+                ))
+
+            decline = series[0] - series[-1]
+            if decline >= thresholds.max_dimension_decline and _is_monotonic_decline(series):
+                warnings.append(self._make_warning(
+                    now,
+                    "dimension_score_decline",
+                    "high",
+                    f"Dimension '{dimension}' declined by {decline:.2f} across the run",
+                    current.snapshot_id,
+                    f"dimension.{dimension}.decline",
+                    decline,
+                    thresholds.max_dimension_decline,
+                    scenarios,
+                    providers,
+                    releases,
+                    metadata={"run_id": current.run_id, "dimension": dimension, "series": series},
+                ))
+
+        for left, right in combinations(sorted(current.dimension_series), 2):
+            left_series = current.dimension_series[left]
+            right_series = current.dimension_series[right]
+            if (
+                len(left_series) < thresholds.min_dimension_observations
+                or len(right_series) < thresholds.min_dimension_observations
+            ):
+                continue
+            correlation = _pearson(left_series, right_series)
+            if correlation is None or abs(correlation) < thresholds.max_dimension_correlation:
+                continue
+            warnings.append(self._make_warning(
+                now,
+                "dimension_correlation_high",
+                "medium",
+                f"Dimensions '{left}' and '{right}' move together with correlation {correlation:.2f}",
+                current.snapshot_id,
+                f"dimension_correlation.{left}.{right}",
+                abs(correlation),
+                thresholds.max_dimension_correlation,
+                scenarios,
+                providers,
+                releases,
+                metadata={
+                    "run_id": current.run_id,
+                    "dimensions": [left, right],
+                    "correlation": round(correlation, 4),
+                },
+            ))
+
+        return warnings
+
     def analyze(
         self,
         facets: list[RunFacet],
@@ -327,6 +474,7 @@ class RubricDriftMonitor:
         scenarios: list[str],
         providers: list[str],
         releases: list[str],
+        metadata: dict[str, Any] | None = None,
     ) -> DriftWarning:
         return DriftWarning(
             warning_id=f"warn-{uuid.uuid4().hex[:8]}",
@@ -341,7 +489,51 @@ class RubricDriftMonitor:
             affected_scenarios=scenarios,
             affected_providers=providers,
             affected_releases=releases,
+            metadata=metadata or {},
         )
+
+
+def _dimension_summary_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    summary = row.get("dimension_summary")
+    if isinstance(summary, dict):
+        return summary
+    raw_summary = row.get("dimension_summary_json")
+    if isinstance(raw_summary, str) and raw_summary:
+        try:
+            parsed = json.loads(raw_summary)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _append_dimension_values(target: dict[str, list[float]], raw_values: Any) -> None:
+    if not isinstance(raw_values, dict):
+        return
+    for raw_dimension, raw_score in raw_values.items():
+        if not isinstance(raw_dimension, str) or not isinstance(raw_score, (int, float)):
+            continue
+        target.setdefault(raw_dimension, []).append(round(float(raw_score), 6))
+
+
+def _is_monotonic_decline(series: list[float]) -> bool:
+    return all(right <= left for left, right in zip(series, series[1:], strict=False))
+
+
+def _pearson(left: list[float], right: list[float]) -> float | None:
+    length = min(len(left), len(right))
+    if length < 2:
+        return None
+    left_values = left[:length]
+    right_values = right[:length]
+    left_mean = statistics.mean(left_values)
+    right_mean = statistics.mean(right_values)
+    numerator = sum((a - left_mean) * (b - right_mean) for a, b in zip(left_values, right_values, strict=False))
+    left_var = sum((a - left_mean) ** 2 for a in left_values)
+    right_var = sum((b - right_mean) ** 2 for b in right_values)
+    if left_var == 0.0 or right_var == 0.0:
+        return None
+    return float(numerator / ((left_var * right_var) ** 0.5))
 
 
 class DriftStore:

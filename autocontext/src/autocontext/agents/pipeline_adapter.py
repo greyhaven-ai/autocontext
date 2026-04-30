@@ -35,6 +35,7 @@ def build_role_handler(
     scenario_name: str = "",
     tool_context: str = "",
     strategy_interface: str = "",
+    generation_deadline: float | None = None,
 ) -> RoleHandler:
     """Build a RoleHandler callable that delegates to the orchestrator's role runners."""
 
@@ -45,6 +46,7 @@ def build_role_handler(
                 orch.competitor,
                 generation=generation,
                 scenario_name=scenario_name,
+                generation_deadline=generation_deadline,
             ):
                 _raw_text, exec_result = orch.competitor.run(prompt, tool_context=tool_context)
                 return exec_result
@@ -56,6 +58,7 @@ def build_role_handler(
                 orch.translator,
                 generation=generation,
                 scenario_name=scenario_name,
+                generation_deadline=generation_deadline,
             ):
                 _strategy, exec_result = orch.translator.translate(raw_text, strategy_interface)
                 return exec_result
@@ -65,6 +68,7 @@ def build_role_handler(
                 orch.analyst,
                 generation=generation,
                 scenario_name=scenario_name,
+                generation_deadline=generation_deadline,
             ):
                 return orch.analyst.run(prompt)
         elif name == "architect":
@@ -73,6 +77,7 @@ def build_role_handler(
                 orch.architect,
                 generation=generation,
                 scenario_name=scenario_name,
+                generation_deadline=generation_deadline,
             ):
                 return orch.architect.run(prompt)
         elif name == "coach":
@@ -85,6 +90,7 @@ def build_role_handler(
                 orch.coach,
                 generation=generation,
                 scenario_name=scenario_name,
+                generation_deadline=generation_deadline,
             ):
                 return orch.coach.run(enriched)
         else:

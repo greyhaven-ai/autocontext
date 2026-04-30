@@ -13,7 +13,7 @@ import pytest
 
 from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.harness.core.llm_client import LanguageModelClient
-from autocontext.harness.core.types import ModelResponse
+from autocontext.harness.core.types import ModelResponse, RoleUsage
 from autocontext.providers.base import CompletionResult, LLMProvider
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -41,6 +41,29 @@ class _StubProvider(LLMProvider):
 
     def default_model(self) -> str:
         return "stub-model"
+
+
+class _ClosableClient(LanguageModelClient):
+    def __init__(self) -> None:
+        self.closed = False
+
+    def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        del prompt, max_tokens, temperature, role
+        return ModelResponse(
+            text="ok",
+            usage=RoleUsage(input_tokens=1, output_tokens=1, latency_ms=1, model=model),
+        )
+
+    def close(self) -> None:
+        self.closed = True
 
 
 # ── Config field tests ──────────────────────────────────────────────────
@@ -475,6 +498,116 @@ class TestOrchestratorPerRoleWiring:
         assert mock_create.call_args_list[0].kwargs == {"scenario_name": "grid_ctf", "role": "competitor"}
         assert mock_create.call_args_list[1].args == ("pi-rpc", settings)
         assert mock_create.call_args_list[1].kwargs == {"scenario_name": "grid_ctf", "role": "analyst"}
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_pi_role_runtime_timeout_is_bounded_by_generation_deadline(self, mock_create: MagicMock) -> None:
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        shared_client = MagicMock(spec=LanguageModelClient)
+        role_client = MagicMock(spec=LanguageModelClient)
+        mock_create.return_value = role_client
+        settings = AppSettings(
+            agent_provider="pi",
+            pi_timeout=900.0,
+            generation_time_budget_seconds=420,
+        )
+        orch = AgentOrchestrator(shared_client, settings)
+
+        with patch("autocontext.agents.role_runtime_overrides.time.monotonic", return_value=100.0):
+            with orch._use_role_runtime(
+                "analyst",
+                orch.analyst,
+                generation=1,
+                scenario_name="portfolio_schema",
+                generation_deadline=520.0,
+            ):
+                pass
+
+        bounded_settings = mock_create.call_args.args[1]
+        assert bounded_settings.pi_timeout == 420.0
+        assert mock_create.call_args.kwargs == {"scenario_name": "portfolio_schema", "role": "analyst"}
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_per_role_pi_runtime_timeout_is_bounded_by_generation_deadline(self, mock_create: MagicMock) -> None:
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        shared_client = MagicMock(spec=LanguageModelClient)
+        role_client = MagicMock(spec=LanguageModelClient)
+        mock_create.return_value = role_client
+        settings = AppSettings(
+            agent_provider="deterministic",
+            competitor_provider="pi-rpc",
+            pi_timeout=900.0,
+            pi_rpc_persistent=True,
+            generation_time_budget_seconds=420,
+        )
+        orch = AgentOrchestrator(shared_client, settings)
+
+        with patch("autocontext.agents.role_runtime_overrides.time.monotonic", return_value=100.0):
+            orch.resolve_role_execution(
+                "competitor",
+                generation=1,
+                scenario_name="portfolio_schema",
+                generation_deadline=520.0,
+            )
+
+        bounded_settings = mock_create.call_args.args[1]
+        assert bounded_settings.pi_timeout == 420.0
+        assert bounded_settings.pi_rpc_persistent is False
+        assert mock_create.call_args.kwargs == {"scenario_name": "portfolio_schema", "role": "competitor"}
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_budgeted_role_runtime_client_is_closed_after_use(self, mock_create: MagicMock) -> None:
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        shared_client = MagicMock(spec=LanguageModelClient)
+        role_client = _ClosableClient()
+        mock_create.return_value = role_client
+        settings = AppSettings(agent_provider="pi-rpc", pi_timeout=900.0, pi_rpc_persistent=True)
+        orch = AgentOrchestrator(shared_client, settings)
+
+        with patch("autocontext.agents.role_runtime_overrides.time.monotonic", return_value=100.0):
+            with orch._use_role_runtime(
+                "analyst",
+                orch.analyst,
+                generation=1,
+                scenario_name="portfolio_schema",
+                generation_deadline=520.0,
+            ):
+                assert orch.analyst.runtime.client is role_client
+                assert role_client.closed is False
+
+        bounded_settings = mock_create.call_args.args[1]
+        assert bounded_settings.pi_rpc_persistent is False
+        assert role_client.closed is True
+
+    @patch("autocontext.agents.provider_bridge.create_role_client")
+    def test_pi_role_runtime_fails_before_call_when_generation_deadline_is_exhausted(
+        self,
+        mock_create: MagicMock,
+    ) -> None:
+        from autocontext.agents.orchestrator import AgentOrchestrator
+        from autocontext.config.settings import AppSettings
+
+        shared_client = MagicMock(spec=LanguageModelClient)
+        settings = AppSettings(agent_provider="pi", pi_timeout=900.0)
+        orch = AgentOrchestrator(shared_client, settings)
+
+        with patch("autocontext.agents.role_runtime_overrides.time.monotonic", return_value=519.6):
+            with pytest.raises(TimeoutError, match="generation time budget exhausted"):
+                with orch._use_role_runtime(
+                    "analyst",
+                    orch.analyst,
+                    generation=1,
+                    scenario_name="portfolio_schema",
+                    generation_deadline=520.0,
+                ):
+                    pass
+
+        mock_create.assert_not_called()
 
     @patch("autocontext.agents.provider_bridge.create_role_client")
     def test_override_does_not_affect_unset_roles(self, mock_create: MagicMock) -> None:

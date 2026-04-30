@@ -41,6 +41,7 @@ class _CapturingSolveManager:
             job_id="solve_1234",
             description="Design a strategy",
             scenario_name="grid_ctf",
+            family_name="game",
             status="completed",
             generations=1,
             progress=1,
@@ -95,6 +96,7 @@ class _FallbackSolveManager:
             job_id="solve_fallback",
             description="Fallback solve",
             scenario_name="fallback_case",
+            family_name="simulation",
             status="completed",
             generations=1,
             progress=1,
@@ -220,3 +222,4 @@ class TestSolveRuntimeOverrides:
         payload = json.loads(result.stdout)
         assert payload["llm_classifier_fallback_used"] is True
         assert payload["scenario_name"] == "fallback_case"
+        assert payload["family_name"] == "simulation"

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 from autocontext.agents.types import LlmFn
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.config.settings import AppSettings
-from autocontext.execution.improvement_loop import ImprovementLoop
+from autocontext.extensions import HookBus, active_hook_bus, wrap_language_model_client
 from autocontext.knowledge.export import SkillPackage, export_skill_package
 from autocontext.knowledge.solve_agent_task_design import (
     _SOLVE_AGENT_TASK_DESIGN_MAX_CHARS,  # noqa: F401 - re-exported for existing tests/imports
@@ -25,6 +25,8 @@ from autocontext.knowledge.solve_agent_task_design import (
     _build_solve_description_brief,
     _solve_task_spec_needs_compact_retry,
 )
+from autocontext.knowledge.solve_task_execution import SolveExecutionSummary, run_task_like_scenario
+from autocontext.loop.runner_hooks import initialize_hook_bus
 from autocontext.mcp.tools import MtsToolContext
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
@@ -33,8 +35,6 @@ from autocontext.scenarios.custom.classifier_cache import (
     ClassifierCache,
     default_classifier_cache_path,
 )
-from autocontext.storage import artifact_store_from_settings
-from autocontext.storage.sqlite_store import SQLiteStore
 
 if TYPE_CHECKING:
     from autocontext.scenarios.families import ScenarioFamily
@@ -66,6 +66,7 @@ class SolveJob:
     job_id: str
     description: str
     scenario_name: str | None = None
+    family_name: str | None = None
     status: str = "pending"
     generations: int = 5
     progress: int = 0
@@ -87,13 +88,6 @@ class SolveScenarioBuildResult:
 class _ResolvedSolveFamily:
     family: ScenarioFamily
     llm_classifier_fallback_used: bool = False
-
-
-@dataclass(slots=True)
-class SolveExecutionSummary:
-    run_id: str
-    generations_executed: int
-    best_score: float
 
 
 class ArtifactEditingTaskAdapter(AgentTaskInterface):
@@ -196,110 +190,6 @@ class ArtifactEditingTaskAdapter(AgentTaskInterface):
         return list(edited_by_path.values())
 
 
-@dataclass(slots=True)
-class _SolveGenerationBudget:
-    scenario_name: str
-    budget_seconds: int
-    started_at: float = field(default_factory=lambda: time.monotonic())
-
-    def elapsed_seconds(self) -> float:
-        return max(0.0, time.monotonic() - self.started_at)
-
-    def check(self, phase: str) -> None:
-        if self.budget_seconds <= 0:
-            return
-        elapsed = self.elapsed_seconds()
-        if elapsed >= self.budget_seconds:
-            raise TimeoutError(
-                f"Solve generation time budget exceeded during {phase} "
-                f"after {elapsed:.2f}s for scenario '{self.scenario_name}' "
-                f"(budget {self.budget_seconds}s)"
-            )
-
-
-class _BudgetedAgentTask(AgentTaskInterface):
-    """Add solve generation budget checks around an AgentTaskInterface."""
-
-    def __init__(self, task: AgentTaskInterface, budget: _SolveGenerationBudget) -> None:
-        self._task = task
-        self._budget = budget
-        self.name = getattr(task, "name", task.__class__.__name__)
-
-    def get_task_prompt(self, state: dict) -> str:
-        self._budget.check("task prompt")
-        prompt = self._task.get_task_prompt(state)
-        self._budget.check("task prompt")
-        return prompt
-
-    def evaluate_output(
-        self,
-        output: str,
-        state: dict,
-        reference_context: str | None = None,
-        required_concepts: list[str] | None = None,
-        calibration_examples: list[dict] | None = None,
-        pinned_dimensions: list[str] | None = None,
-    ) -> AgentTaskResult:
-        self._budget.check("evaluation")
-        result = self._task.evaluate_output(
-            output,
-            state,
-            reference_context=reference_context,
-            required_concepts=required_concepts,
-            calibration_examples=calibration_examples,
-            pinned_dimensions=pinned_dimensions,
-        )
-        self._budget.check("evaluation")
-        return result
-
-    def get_rubric(self) -> str:
-        self._budget.check("rubric")
-        rubric = self._task.get_rubric()
-        self._budget.check("rubric")
-        return rubric
-
-    def initial_state(self, seed: int | None = None) -> dict:
-        self._budget.check("initial state")
-        state = self._task.initial_state(seed)
-        self._budget.check("initial state")
-        return state
-
-    def describe_task(self) -> str:
-        self._budget.check("task description")
-        description = self._task.describe_task()
-        self._budget.check("task description")
-        return description
-
-    def prepare_context(self, state: dict) -> dict:
-        self._budget.check("context preparation")
-        prepared = self._task.prepare_context(state)
-        self._budget.check("context preparation")
-        return prepared
-
-    def validate_context(self, state: dict) -> list[str]:
-        self._budget.check("context validation")
-        errors = self._task.validate_context(state)
-        self._budget.check("context validation")
-        return errors
-
-    def revise_output(
-        self,
-        output: str,
-        judge_result: AgentTaskResult,
-        state: dict,
-    ) -> str:
-        self._budget.check("revision")
-        revised = self._task.revise_output(output, judge_result, state)
-        self._budget.check("revision")
-        return revised
-
-    def verify_facts(self, output: str, state: dict) -> dict | None:
-        self._budget.check("fact verification")
-        result = self._task.verify_facts(output, state)
-        self._budget.check("fact verification")
-        return result
-
-
 def _normalize_family_hint_token(token: str) -> str:
     normalized = re.sub(r"[^a-z0-9_\-\s]", " ", token.lower()).strip()
     return normalized.replace("-", "_").replace(" ", "_")
@@ -378,9 +268,21 @@ def _resolve_requested_scenario_family_with_metadata(
 class SolveScenarioExecutor:
     """Execute created solve scenarios through the correct family-aware runtime surface."""
 
-    def __init__(self, settings: AppSettings, *, migrations_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        *,
+        migrations_dir: Path | None = None,
+        hook_bus: HookBus | None = None,
+        loaded_extensions: list[str] | None = None,
+    ) -> None:
         self._settings = settings
         self._migrations_dir = migrations_dir or Path(__file__).resolve().parents[2] / "migrations"
+        if hook_bus is None:
+            self._hook_bus, self._loaded_extensions = initialize_hook_bus(settings)
+        else:
+            self._hook_bus = hook_bus
+            self._loaded_extensions = list(loaded_extensions or [])
 
     def execute(
         self,
@@ -412,7 +314,11 @@ class SolveScenarioExecutor:
 
         from autocontext.loop.generation_runner import GenerationRunner
 
-        runner = GenerationRunner(_settings_for_solve_runtime(self._settings))
+        runner = GenerationRunner(
+            _settings_for_solve_runtime(self._settings, respect_generation_budget=True),
+            hook_bus=self._hook_bus,
+            loaded_extensions=self._loaded_extensions,
+        )
         runner.migrate(self._migrations_dir)
         run_id = f"solve_{scenario_name}_{uuid.uuid4().hex[:8]}"
         summary = runner.run(scenario_name, generations, run_id)
@@ -444,104 +350,17 @@ class SolveScenarioExecutor:
         task: AgentTaskInterface,
         max_rounds: int,
     ) -> SolveExecutionSummary:
-        sqlite = SQLiteStore(self._settings.db_path)
-        sqlite.migrate(self._migrations_dir)
-        active_run_id = f"solve_{scenario_name}_{uuid.uuid4().hex[:8]}"
-        sqlite.create_run(
-            active_run_id,
-            scenario_name,
-            1,
-            scenario_type,
-            agent_provider=self._settings.agent_provider,
-        )
-        sqlite.upsert_generation(
-            active_run_id,
-            1,
-            mean_score=0.0,
-            best_score=0.0,
-            elo=0.0,
-            wins=0,
-            losses=0,
-            gate_decision="running",
-            status="running",
-        )
-        budget = _SolveGenerationBudget(
+        return run_task_like_scenario(
+            settings=self._settings,
+            runtime_settings=_settings_for_solve_runtime(self._settings, respect_generation_budget=True),
+            migrations_dir=self._migrations_dir,
             scenario_name=scenario_name,
-            budget_seconds=self._settings.generation_time_budget_seconds,
-        )
-
-        try:
-            provider, provider_model = resolve_role_runtime(
-                _settings_for_solve_runtime(self._settings),
-                role="competitor",
-                scenario_name=scenario_name,
-                sqlite=sqlite,
-            )
-            budget.check("runtime resolution")
-            budgeted_task = _BudgetedAgentTask(task, budget)
-            state = budgeted_task.prepare_context(budgeted_task.initial_state())
-            context_errors = budgeted_task.validate_context(state)
-            if context_errors:
-                raise ValueError(f"Context validation failed: {'; '.join(context_errors)}")
-            prompt = budgeted_task.get_task_prompt(state)
-            initial_output = provider.complete(
-                system_prompt="Complete the task precisely.",
-                user_prompt=prompt,
-                model=provider_model,
-            ).text
-            budget.check("initial generation")
-            sqlite.append_agent_output(active_run_id, 1, "competitor_initial", initial_output)
-
-            loop = ImprovementLoop(task=budgeted_task, max_rounds=max_rounds)
-            result = loop.run(initial_output=initial_output, state=state)
-            budget.check("improvement loop")
-        except Exception:
-            sqlite.upsert_generation(
-                active_run_id,
-                1,
-                mean_score=0.0,
-                best_score=0.0,
-                elo=0.0,
-                wins=0,
-                losses=0,
-                gate_decision="failed",
-                status="failed",
-                duration_seconds=budget.elapsed_seconds(),
-            )
-            sqlite.mark_run_failed(active_run_id)
-            raise
-
-        sqlite.append_agent_output(active_run_id, 1, "competitor", result.best_output)
-        sqlite.upsert_generation(
-            active_run_id,
-            1,
-            mean_score=result.best_score,
-            best_score=result.best_score,
-            elo=0.0,
-            wins=0,
-            losses=0,
-            gate_decision=result.termination_reason,
-            status="completed",
-            duration_seconds=(result.duration_ms / 1000.0) if result.duration_ms is not None else None,
-        )
-        sqlite.mark_run_completed(active_run_id)
-        if self._settings.cross_run_inheritance and not self._settings.ablation_no_feedback:
-            artifacts = artifact_store_from_settings(self._settings)
-            playbook_hash = artifacts.snapshot_knowledge(scenario_name, active_run_id)
-            sqlite.save_knowledge_snapshot(
-                scenario=scenario_name,
-                run_id=active_run_id,
-                best_score=result.best_score,
-                best_elo=1500.0,
-                playbook_hash=playbook_hash,
-                agent_provider=self._settings.agent_provider,
-                rlm_enabled=self._settings.rlm_enabled,
-                scoring_backend=self._settings.scoring_backend,
-            )
-        return SolveExecutionSummary(
-            run_id=active_run_id,
-            generations_executed=result.total_rounds,
-            best_score=result.best_score,
+            scenario_type=scenario_type,
+            task=task,
+            max_rounds=max_rounds,
+            hook_bus=self._hook_bus,
+            loaded_extensions=self._loaded_extensions,
+            role_runtime_resolver=resolve_role_runtime,
         )
 
 
@@ -638,10 +457,21 @@ def _llm_fn_from_client(client: Any, model: str) -> LlmFn:
 class SolveManager:
     """Manage solve-on-demand jobs: create scenario -> run generations -> export skill."""
 
-    def __init__(self, settings: AppSettings) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        *,
+        hook_bus: HookBus | None = None,
+        loaded_extensions: list[str] | None = None,
+    ) -> None:
         self._jobs: dict[str, SolveJob] = {}
         self._settings = settings
         self._migrations_dir = Path(__file__).resolve().parents[2] / "migrations"
+        if hook_bus is None:
+            self.hook_bus, self.loaded_extensions = initialize_hook_bus(settings)
+        else:
+            self.hook_bus = hook_bus
+            self.loaded_extensions = list(loaded_extensions or [])
 
     def submit(self, description: str, generations: int = 5) -> str:
         """Create a solve job and run it in a background thread. Returns job_id."""
@@ -681,32 +511,39 @@ class SolveManager:
     def _run_job(self, job: SolveJob) -> None:
         """Background: create scenario -> run generations -> export skill package."""
         try:
-            # 1. Create scenario
-            job.status = "creating_scenario"
-            builder = self._build_creator()
-            if builder is None:
-                job.status = "failed"
-                job.error = "Scenario creation pipeline unavailable (no API key or unsupported provider)"
-                return
+            with active_hook_bus(self.hook_bus):
+                # 1. Create scenario
+                job.status = "creating_scenario"
+                builder = self._build_creator()
+                if builder is None:
+                    job.status = "failed"
+                    job.error = "Scenario creation pipeline unavailable (no API key or unsupported provider)"
+                    return
 
-            created = builder.build(job.description, family_override=job.family_override)
-            job.scenario_name = created.scenario_name
-            job.llm_classifier_fallback_used = created.llm_classifier_fallback_used
+                created = builder.build(job.description, family_override=job.family_override)
+                job.scenario_name = created.scenario_name
+                job.family_name = created.family_name
+                job.llm_classifier_fallback_used = created.llm_classifier_fallback_used
 
-            # 2. Run generations
-            job.status = "running"
-            executor = SolveScenarioExecutor(self._settings, migrations_dir=self._migrations_dir)
-            summary = executor.execute(
-                scenario_name=created.scenario_name,
-                family_name=created.family_name,
-                generations=job.generations,
-            )
-            job.progress = summary.generations_executed
+                # 2. Run generations
+                job.status = "running"
+                executor = SolveScenarioExecutor(
+                    self._settings,
+                    migrations_dir=self._migrations_dir,
+                    hook_bus=self.hook_bus,
+                    loaded_extensions=self.loaded_extensions,
+                )
+                summary = executor.execute(
+                    scenario_name=created.scenario_name,
+                    family_name=created.family_name,
+                    generations=job.generations,
+                )
+                job.progress = summary.generations_executed
 
-            # 3. Export skill package
-            ctx = MtsToolContext(self._settings)
-            job.result = export_skill_package(ctx, created.scenario_name)
-            job.status = "completed"
+                # 3. Export skill package
+                ctx = MtsToolContext(self._settings)
+                job.result = export_skill_package(ctx, created.scenario_name)
+                job.status = "completed"
 
         except Exception as exc:
             logger.exception("Solve job %s failed", job.job_id)
@@ -720,7 +557,11 @@ class SolveManager:
             from autocontext.agents.subagent_runtime import SubagentRuntime
 
             creator_settings = _settings_for_solve_runtime(self._settings)
-            client = build_client_from_settings(creator_settings)
+            client = wrap_language_model_client(
+                build_client_from_settings(creator_settings),
+                self.hook_bus,
+                provider_name="solve:scenario_designer",
+            )
             runtime = SubagentRuntime(client)
             designer_model = self._settings.model_translator or self._settings.model_architect
             llm_fn = _llm_fn_from_client(client, designer_model)
@@ -744,6 +585,7 @@ class SolveManager:
             "status": job.status,
             "description": job.description,
             "scenario_name": job.scenario_name,
+            "family_name": job.family_name,
             "generations": job.generations,
             "progress": job.progress,
             "error": job.error,
@@ -759,9 +601,18 @@ class SolveManager:
         return job.result
 
 
-def _settings_for_solve_runtime(settings: AppSettings) -> AppSettings:
+def _settings_for_solve_runtime(
+    settings: AppSettings,
+    *,
+    respect_generation_budget: bool = False,
+) -> AppSettings:
     if settings.agent_provider not in {"pi", "pi-rpc"}:
         return settings
+    if respect_generation_budget and settings.generation_time_budget_seconds > 0:
+        bounded_timeout = min(float(settings.pi_timeout), float(settings.generation_time_budget_seconds))
+        if bounded_timeout == float(settings.pi_timeout):
+            return settings
+        return settings.model_copy(update={"pi_timeout": bounded_timeout})
     if float(settings.pi_timeout) >= _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS:
         return settings
     return settings.model_copy(update={"pi_timeout": _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS})

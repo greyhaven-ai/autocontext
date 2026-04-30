@@ -49,6 +49,7 @@ class SolveRunSummary:
     status: str
     description: str
     scenario_name: str | None
+    family_name: str | None
     generations: int
     progress: int
     output_path: str | None
@@ -129,6 +130,7 @@ def run_solve_command(
         status=job.status,
         description=job.description,
         scenario_name=job.scenario_name,
+        family_name=job.family_name,
         generations=job.generations,
         progress=job.progress,
         output_path=output_path,

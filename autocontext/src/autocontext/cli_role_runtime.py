@@ -9,6 +9,7 @@ from autocontext.storage import SQLiteStore, artifact_store_from_settings
 
 if TYPE_CHECKING:
     from autocontext.agents.llm_client import LanguageModelClient
+    from autocontext.extensions import HookBus
     from autocontext.providers.base import LLMProvider
 
 
@@ -58,6 +59,8 @@ def resolve_role_runtime(
     scenario_name: str = "",
     sqlite: Any | None = None,
     artifacts: Any | None = None,
+    hook_bus: HookBus | None = None,
+    generation_deadline: float | None = None,
     orchestrator_cls: Any = AgentOrchestrator,
 ) -> tuple[LLMProvider, str]:
     resolved_sqlite = sqlite if sqlite is not None else _sqlite_from_settings(settings)
@@ -69,11 +72,18 @@ def resolve_role_runtime(
             enable_buffered_writes=True,
         )
     )
-    orchestrator = orchestrator_cls.from_settings(settings, artifacts=resolved_artifacts, sqlite=resolved_sqlite)
-    client, model = orchestrator.resolve_role_execution(
-        role,
-        generation=1,
-        scenario_name=scenario_name,
+    orchestrator = orchestrator_cls.from_settings(
+        settings,
+        artifacts=resolved_artifacts,
+        sqlite=resolved_sqlite,
+        hook_bus=hook_bus,
     )
+    resolve_kwargs: dict[str, Any] = {
+        "generation": 1,
+        "scenario_name": scenario_name,
+    }
+    if generation_deadline is not None:
+        resolve_kwargs["generation_deadline"] = generation_deadline
+    client, model = orchestrator.resolve_role_execution(role, **resolve_kwargs)
     resolved_model = model or _role_default_model(settings, role)
     return _wrap_role_client_as_provider(client, resolved_model, role=role)
