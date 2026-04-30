@@ -18,9 +18,11 @@ from autocontext.agents.llm_client import LanguageModelClient, build_client_from
 from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
+from autocontext.agents.role_runtime_overrides import apply_role_overrides, settings_for_budgeted_role_call
 from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.agents.translator import StrategyTranslator
+from autocontext.agents.trial_summary import build_trial_summary as _build_trial_summary
 from autocontext.agents.types import AgentOutputs, RoleExecution
 from autocontext.config.settings import AppSettings
 from autocontext.execution.harness_coverage import HarnessCoverage
@@ -35,30 +37,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ARCHITECT_CADENCE_SKIP = "\n\nArchitect cadence note: no major intervention; return minimal status + empty tools array."
-
-
-def _build_trial_summary(
-    generation: int,
-    history: list[Any],
-    role_exec: RoleExecution,
-) -> str:
-    """Build a concise markdown summary of an RLM competitor session."""
-    total_turns = len(history)
-    code_runs = sum(1 for r in history if r.code)
-    errors = sum(1 for r in history if r.error)
-    lines = [
-        f"### Generation {generation} — RLM competitor trial",
-        f"- Turns: {total_turns}, code executions: {code_runs}, errors: {errors}",
-        f"- Status: {role_exec.status}",
-        f"- Latency: {role_exec.usage.latency_ms}ms",
-    ]
-    # Include a brief log of each turn
-    for rec in history:
-        err_flag = " [ERROR]" if rec.error else ""
-        ready_flag = " [READY]" if rec.answer_ready else ""
-        code_preview = rec.code[:80].replace("\n", " ")
-        lines.append(f"  - Turn {rec.turn}: `{code_preview}`{err_flag}{ready_flag}")
-    return "\n".join(lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,32 +128,6 @@ def apply_dag_changes(dag: RoleDAG, changes: Sequence[dict[str, Any]]) -> tuple[
     return applied, skipped
 
 
-def _apply_role_overrides(orch: AgentOrchestrator, settings: AppSettings) -> None:
-    """Apply per-role provider and credential overrides to an orchestrator."""
-    from autocontext.agents.provider_bridge import configured_role_provider, create_role_client, has_role_client_override
-
-    runner_map = {
-        "competitor": "competitor",
-        "analyst": "analyst",
-        "coach": "coach",
-        "architect": "architect",
-    }
-
-    for role, runner_name in runner_map.items():
-        if not has_role_client_override(role, settings):
-            continue
-        provider_type = configured_role_provider(role, settings) or settings.agent_provider
-        client = create_role_client(provider_type, settings, role=role)
-        if client is None:
-            continue
-        client = orch._wrap_client(client, provider_name=f"{provider_type}:{role}")
-        orch._role_clients[role] = client
-        runtime = SubagentRuntime(client=client)
-        runner = getattr(orch, runner_name)
-        runner.runtime = runtime
-        logger.info("role '%s' using dedicated provider config: %s", role, provider_type)
-
-
 class AgentOrchestrator:
     """Runs competitor/analyst/coach/architect role sequence."""
 
@@ -193,6 +145,7 @@ class AgentOrchestrator:
         self._artifacts = artifacts
         self._harness_coverage_cache: dict[str, HarnessCoverage | None] = {}
         self._routed_clients: dict[tuple[str, str | None, str | None, str | None], LanguageModelClient] = {}
+        self._disposable_client_ids: set[int] = set()
         runtime = SubagentRuntime(client=self.client)
         self.competitor = CompetitorRunner(runtime, settings.model_competitor)
         self.translator = StrategyTranslator(runtime, settings.model_translator)
@@ -206,6 +159,7 @@ class AgentOrchestrator:
         if settings.skeptic_enabled:
             self.skeptic = SkepticAgent(runtime, settings.model_skeptic)
         self._role_clients: dict[str, LanguageModelClient] = {}
+        self._active_generation_deadline: float | None = None
         self._role_router = RoleRouter(settings)
 
         self._model_router = ModelRouter(
@@ -231,6 +185,22 @@ class AgentOrchestrator:
     def _wrap_client(self, client: LanguageModelClient, *, provider_name: str = "") -> LanguageModelClient:
         return wrap_language_model_client(client, self.hook_bus, provider_name=provider_name)
 
+    def _mark_disposable_client(self, client: LanguageModelClient) -> LanguageModelClient:
+        self._disposable_client_ids.add(id(client))
+        return client
+
+    def _close_disposable_client(self, client: LanguageModelClient) -> None:
+        if id(client) not in self._disposable_client_ids:
+            return
+        self._disposable_client_ids.discard(id(client))
+        close = getattr(client, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception:
+            logger.debug("failed to close disposable role runtime client", exc_info=True)
+
     @classmethod
     def from_settings(
         cls,
@@ -244,7 +214,7 @@ class AgentOrchestrator:
         orch = cls(client=client, settings=settings, artifacts=artifacts, sqlite=sqlite, hook_bus=hook_bus)
 
         # Apply per-role provider overrides (AC-184)
-        _apply_role_overrides(orch, settings)
+        apply_role_overrides(orch, settings)
 
         return orch
 
@@ -299,20 +269,30 @@ class AgentOrchestrator:
 
         from autocontext.agents.provider_bridge import create_role_client
 
+        call_settings, is_budgeted = settings_for_budgeted_role_call(
+            self.settings,
+            provider_type,
+            role,
+            self._active_generation_deadline,
+        )
         key = (provider_type.lower(), None, scenario_name, role)
-        cached = self._routed_clients.get(key)
-        if cached is not None:
-            return cached
+        if not is_budgeted:
+            cached = self._routed_clients.get(key)
+            if cached is not None:
+                return cached
 
         client = create_role_client(
             provider_type,
-            self.settings,
+            call_settings,
             scenario_name=scenario_name,
             role=role,
         )
         if client is not None:
             client = self._wrap_client(client, provider_name=f"{provider_type}:{role}")
-            self._routed_clients[key] = client
+            if is_budgeted:
+                self._mark_disposable_client(client)
+            else:
+                self._routed_clients[key] = client
         return client
 
     def _scenario_bound_override_client(
@@ -403,13 +383,20 @@ class AgentOrchestrator:
 
         from autocontext.agents.provider_bridge import create_role_client
 
+        call_settings, is_budgeted = settings_for_budgeted_role_call(
+            self.settings,
+            config.provider_type,
+            role,
+            self._active_generation_deadline,
+        )
         key = (config.provider_type.lower(), config.model, scenario_name or None, role)
-        cached = self._routed_clients.get(key)
-        if cached is not None:
-            return cached
+        if not is_budgeted:
+            cached = self._routed_clients.get(key)
+            if cached is not None:
+                return cached
         client = create_role_client(
             config.provider_type,
-            self.settings,
+            call_settings,
             model_override=config.model,
             scenario_name=scenario_name,
             role=role,
@@ -417,7 +404,10 @@ class AgentOrchestrator:
         if client is None:
             return self._client_for_role(role)
         client = self._wrap_client(client, provider_name=f"{config.provider_type}:{role}")
-        self._routed_clients[key] = client
+        if is_budgeted:
+            self._mark_disposable_client(client)
+        else:
+            self._routed_clients[key] = client
         return client
 
     def _resolve_role_execution(
@@ -463,19 +453,25 @@ class AgentOrchestrator:
         retry_count: int = 0,
         is_plateau: bool = False,
         scenario_name: str = "",
+        generation_deadline: float | None = None,
     ) -> tuple[LanguageModelClient, str | None]:
         """Resolve the effective client and model for a role execution.
 
         This is the stable public wrapper for non-runner pipeline stages that need
         to respect per-role overrides and automatic routing decisions.
         """
-        return self._resolve_role_execution(
-            role,
-            generation=generation,
-            retry_count=retry_count,
-            is_plateau=is_plateau,
-            scenario_name=scenario_name,
-        )
+        previous_deadline = self._active_generation_deadline
+        self._active_generation_deadline = generation_deadline
+        try:
+            return self._resolve_role_execution(
+                role,
+                generation=generation,
+                retry_count=retry_count,
+                is_plateau=is_plateau,
+                scenario_name=scenario_name,
+            )
+        finally:
+            self._active_generation_deadline = previous_deadline
 
     @contextmanager
     def _use_role_runtime(
@@ -487,16 +483,23 @@ class AgentOrchestrator:
         retry_count: int = 0,
         is_plateau: bool = False,
         scenario_name: str = "",
+        generation_deadline: float | None = None,
     ) -> Any:
         original_client = runner.runtime.client
         original_model = runner.model
-        client, model = self._resolve_role_execution(
-            role,
-            generation=generation,
-            retry_count=retry_count,
-            is_plateau=is_plateau,
-            scenario_name=scenario_name,
-        )
+        previous_deadline = self._active_generation_deadline
+        self._active_generation_deadline = generation_deadline
+        client: LanguageModelClient | None = None
+        try:
+            client, model = self._resolve_role_execution(
+                role,
+                generation=generation,
+                retry_count=retry_count,
+                is_plateau=is_plateau,
+                scenario_name=scenario_name,
+            )
+        finally:
+            self._active_generation_deadline = previous_deadline
         runner.runtime.client = client
         if model is not None:
             runner.model = model
@@ -505,6 +508,8 @@ class AgentOrchestrator:
         finally:
             runner.runtime.client = original_client
             runner.model = original_model
+            if client is not None:
+                self._close_disposable_client(client)
 
     def run_generation(
         self,
@@ -517,6 +522,7 @@ class AgentOrchestrator:
         on_role_event: Callable[[str, str], None] | None = None,
         scenario_rules: str = "",
         current_strategy: dict[str, Any] | None = None,
+        generation_deadline: float | None = None,
     ) -> AgentOutputs:
         # Feature-gated pipeline codepath (skips RLM path when active)
         if self.settings.use_pipeline_engine and not (self.settings.rlm_enabled and self._rlm_loader is not None):
@@ -527,6 +533,7 @@ class AgentOrchestrator:
                 tool_context,
                 strategy_interface,
                 on_role_event,
+                generation_deadline,
             )
 
         def _notify(role: str, status: str) -> None:
@@ -573,6 +580,7 @@ class AgentOrchestrator:
                 self.competitor,
                 generation=generation_index,
                 scenario_name=scenario_name,
+                generation_deadline=generation_deadline,
             ):
                 raw_text, competitor_exec = self.competitor.run(competitor_prompt, tool_context=tool_context)
             _notify("competitor", "completed")
@@ -583,6 +591,7 @@ class AgentOrchestrator:
             self.translator,
             generation=generation_index,
             scenario_name=scenario_name,
+            generation_deadline=generation_deadline,
         ):
             if self.settings.code_strategies_enabled:
                 strategy, translator_exec = self.translator.translate_code(raw_text)
@@ -614,6 +623,7 @@ class AgentOrchestrator:
                     self.coach,
                     generation=generation_index,
                     scenario_name=scenario_name,
+                    generation_deadline=generation_deadline,
                 ):
                     coach_future = pool.submit(self.coach.run, enriched_coach_prompt)
                     coach_exec = coach_future.result()
@@ -626,6 +636,7 @@ class AgentOrchestrator:
                 self.analyst,
                 generation=generation_index,
                 scenario_name=scenario_name,
+                generation_deadline=generation_deadline,
             ):
                 analyst_exec = self.analyst.run(prompts.analyst)
             _notify("analyst", "completed")
@@ -638,12 +649,14 @@ class AgentOrchestrator:
                     self.coach,
                     generation=generation_index,
                     scenario_name=scenario_name,
+                    generation_deadline=generation_deadline,
                 ),
                 self._use_role_runtime(
                     "architect",
                     self.architect,
                     generation=generation_index,
                     scenario_name=scenario_name,
+                    generation_deadline=generation_deadline,
                 ),
             ):
                 with ThreadPoolExecutor(max_workers=2) as pool:
@@ -693,6 +706,7 @@ class AgentOrchestrator:
         tool_context: str,
         strategy_interface: str,
         on_role_event: Callable[[str, str], None] | None,
+        generation_deadline: float | None = None,
     ) -> AgentOutputs:
         """Execute the 5-role generation via PipelineEngine."""
         from autocontext.agents.pipeline_adapter import build_mts_dag, build_role_handler
@@ -718,6 +732,7 @@ class AgentOrchestrator:
             scenario_name=scenario_name,
             tool_context=tool_context,
             strategy_interface=strategy_interface,
+            generation_deadline=generation_deadline,
         )
         engine = PipelineEngine(dag, handler, max_workers=2)
         results = engine.execute(prompt_map, on_role_event=on_role_event)

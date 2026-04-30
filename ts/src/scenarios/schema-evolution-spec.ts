@@ -27,8 +27,8 @@ export type SchemaEvolutionSpec = z.infer<typeof SchemaEvolutionSpecSchema>;
 export function parseRawSchemaEvolutionSpec(data: Record<string, unknown>): SchemaEvolutionSpec {
   return SchemaEvolutionSpecSchema.parse({
     description: data.description,
-    environmentDescription: data.environment_description,
-    initialStateDescription: data.initial_state_description,
+    environmentDescription: data.environment_description ?? data.environmentDescription,
+    initialStateDescription: data.initial_state_description ?? data.initialStateDescription,
     mutations: Array.isArray(data.mutations)
       ? data.mutations.map((mutation) => {
           const raw = mutation as Record<string, unknown>;
@@ -36,15 +36,15 @@ export function parseRawSchemaEvolutionSpec(data: Record<string, unknown>): Sche
             version: raw.version,
             description: raw.description,
             breaking: raw.breaking,
-            fieldsAdded: raw.fields_added ?? [],
-            fieldsRemoved: raw.fields_removed ?? [],
-            fieldsModified: raw.fields_modified ?? {},
+            fieldsAdded: raw.fields_added ?? raw.fieldsAdded ?? [],
+            fieldsRemoved: raw.fields_removed ?? raw.fieldsRemoved ?? [],
+            fieldsModified: raw.fields_modified ?? raw.fieldsModified ?? {},
           };
         })
       : data.mutations,
-    successCriteria: data.success_criteria,
-    failureModes: data.failure_modes ?? [],
+    successCriteria: data.success_criteria ?? data.successCriteria,
+    failureModes: data.failure_modes ?? data.failureModes ?? [],
     actions: data.actions,
-    maxSteps: data.max_steps ?? 10,
+    maxSteps: data.max_steps ?? data.maxSteps ?? 10,
   });
 }

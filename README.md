@@ -238,7 +238,7 @@ pi install npm:pi-autocontext
 | `solve`       | `autoctx solve --description "..." --gens 3`       | Hand the harness a goal in plain language; it generates the scenario and runs the loop |
 | `run`         | `autoctx run --scenario <name> --gens 3`           | Improve behavior inside a saved scenario across generations                            |
 | `simulate`    | `autoctx simulate -d "..."`                        | Model a system, sweep parameters, replay, compare                                      |
-| `investigate` | `autoctx investigate -d "..."`                     | Evidence-driven diagnosis with hypotheses and confidence scoring                       |
+| `investigate` | `autoctx investigate -d "..."`                     | Evidence-driven diagnosis, either synthetic harness or live iterative LLM session      |
 | `analyze`     | `autoctx analyze --id <id> --type <kind>`          | Inspect or compare runs, simulations, investigations, or missions after the fact       |
 | `mission`     | `autoctx mission create --name "..." --goal "..."` | Verifier-driven goal advanced step by step until done                                  |
 | `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |

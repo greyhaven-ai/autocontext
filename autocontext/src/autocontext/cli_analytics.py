@@ -8,10 +8,12 @@ from typing import TYPE_CHECKING, Annotated, Any
 import typer
 
 from autocontext.analytics.events_to_trace import collect_run_ids, events_to_trace
+from autocontext.analytics.rubric_drift import DriftStore, RubricDriftMonitor
 from autocontext.analytics.run_trace import TraceStore
 from autocontext.config.settings import AppSettings
 from autocontext.storage import artifact_store_from_settings
 from autocontext.storage.run_paths import resolve_run_root
+from autocontext.storage.sqlite_store import SQLiteStore
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -91,6 +93,54 @@ def run_rebuild_traces_command(
         )
 
 
+def run_drift_command(
+    *,
+    run_id: str,
+    json_output: bool,
+    console: Console,
+    load_settings_fn: Callable[[], AppSettings],
+    write_json_stdout: Callable[[object], None],
+) -> None:
+    """Analyze dimension-level rubric drift for a completed run."""
+    settings = load_settings_fn()
+    sqlite = SQLiteStore(settings.db_path)
+    sqlite.migrate(Path(__file__).resolve().parents[2] / "migrations")
+    trajectory = sqlite.get_generation_trajectory(run_id)
+    if not trajectory:
+        result: dict[str, Any] = {"status": "failed", "error": f"No completed generations found for {run_id!r}"}
+        if json_output:
+            write_json_stdout(result)
+        else:
+            console.print(f"[red]{result['error']}[/red]")
+        raise typer.Exit(code=1)
+
+    monitor = RubricDriftMonitor()
+    snapshot = monitor.compute_dimension_snapshot(run_id, trajectory)
+    warnings = monitor.detect_dimension_drift(snapshot)
+    store = DriftStore(settings.knowledge_root / "analytics")
+    warning_paths = [str(store.persist_warning(warning)) for warning in warnings]
+    result = {
+        "status": "completed",
+        "run_id": run_id,
+        "snapshot": snapshot.to_dict(),
+        "warnings": [warning.to_dict() for warning in warnings],
+        "warning_paths": warning_paths,
+    }
+    if json_output:
+        write_json_stdout(result)
+        return
+
+    console.print(
+        f"[green]Analyzed[/green] {snapshot.dimension_count} dimension(s) "
+        f"across {snapshot.generation_count} generation(s)."
+    )
+    if not warnings:
+        console.print("[dim]No dimension-level drift warnings.[/dim]")
+        return
+    for warning in warnings:
+        console.print(f"[yellow]{warning.warning_type}[/yellow] {warning.description}")
+
+
 def register_analytics_command(
     app: typer.Typer,
     *,
@@ -111,6 +161,19 @@ def register_analytics_command(
         run_rebuild_traces_command(
             run_id=run_id,
             events_path=events_path,
+            json_output=json_output,
+            console=console,
+            load_settings_fn=_cli_attr(dependency_module, "load_settings"),
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
+        )
+
+    @analytics_app.command("drift")
+    def drift(
+        run_id: Annotated[str, typer.Option("--run-id", help="Run id to analyze")],
+        json_output: Annotated[bool, typer.Option("--json", help="Output as JSON")] = False,
+    ) -> None:
+        run_drift_command(
+            run_id=run_id,
             json_output=json_output,
             console=console,
             load_settings_fn=_cli_attr(dependency_module, "load_settings"),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -73,8 +74,15 @@ class _StubProvider:
     def __init__(self, text: str) -> None:
         self._text = text
 
-    def complete(self, system_prompt: str, user_prompt: str, model: str = "") -> _StubProviderResponse:
-        del system_prompt, user_prompt, model
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = "",
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+    ) -> _StubProviderResponse:
+        del system_prompt, user_prompt, model, temperature, max_tokens
         return _StubProviderResponse(self._text)
 
     def default_model(self) -> str:
@@ -106,6 +114,37 @@ class _SolveAgentTask(AgentTaskInterface):
 
     def describe_task(self) -> str:
         return "Return the expected draft text."
+
+
+class _RevisingSolveAgentTask(AgentTaskInterface):
+    name = "solve_revising_agent_task_fixture"
+
+    def get_task_prompt(self, state: dict) -> str:
+        del state
+        return "Return the final answer."
+
+    def evaluate_output(self, output: str, state: dict, **kwargs: object) -> AgentTaskResult:
+        del state, kwargs
+        score = 1.0 if output.strip() == "final answer" else 0.2
+        return AgentTaskResult(
+            score=score,
+            reasoning="final answer found" if score == 1.0 else "needs revision",
+            dimension_scores={"quality": score},
+        )
+
+    def get_rubric(self) -> str:
+        return "Score exact_match 0-1."
+
+    def initial_state(self, seed: int | None = None) -> dict:
+        del seed
+        return {}
+
+    def describe_task(self) -> str:
+        return "Revise toward the final answer."
+
+    def revise_output(self, output: str, judge_result: AgentTaskResult, state: dict) -> str:
+        del output, judge_result, state
+        return "final answer"
 
 
 class _SolveArtifactEditing(ArtifactEditingInterface):
@@ -871,6 +910,101 @@ class TestSolveLLMFn:
         assert summary.best_score == 1.0
         assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
 
+    def test_task_like_executor_bounds_pi_timeout_by_generation_budget(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            agent_provider="pi",
+            pi_timeout=900.0,
+            generation_time_budget_seconds=420,
+        )
+        scenario_name = "solve_runtime_generation_budget"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        SCENARIO_REGISTRY[scenario_name] = _SolveAgentTask
+        provider = _StubProvider("improved draft")
+        captured: dict[str, float] = {}
+
+        def _fake_resolve_role_runtime(settings: AppSettings, **kwargs: object) -> tuple[_StubProvider, str]:
+            del kwargs
+            captured["pi_timeout"] = float(settings.pi_timeout)
+            return provider, "test-model"
+
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            _fake_resolve_role_runtime,
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=1,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
+        assert captured["pi_timeout"] <= 420.0
+
+    def test_task_like_executor_bounds_per_role_pi_override_by_generation_budget(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            agent_provider="deterministic",
+            competitor_provider="pi-rpc",
+            pi_timeout=900.0,
+            pi_rpc_persistent=True,
+            generation_time_budget_seconds=420,
+        )
+        scenario_name = "solve_runtime_role_override_budget"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        SCENARIO_REGISTRY[scenario_name] = _SolveAgentTask
+        provider = _StubProvider("improved draft")
+        captured: dict[str, object] = {}
+
+        def _fake_resolve_role_runtime(settings: AppSettings, **kwargs: object) -> tuple[_StubProvider, str]:
+            captured["pi_timeout"] = float(settings.pi_timeout)
+            captured["pi_rpc_persistent"] = settings.pi_rpc_persistent
+            captured["generation_deadline"] = kwargs.get("generation_deadline")
+            return provider, "test-model"
+
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            _fake_resolve_role_runtime,
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=1,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
+        assert captured["pi_timeout"] <= 420.0
+        assert captured["pi_rpc_persistent"] is False
+        assert isinstance(captured["generation_deadline"], float)
+
     def test_generation_runner_executor_raises_pi_timeout_floor_for_solve_runtime(
         self,
         tmp_path: Path,
@@ -895,7 +1029,8 @@ class TestSolveLLMFn:
             name = scenario_name
 
         class _FakeGenerationRunner:
-            def __init__(self, settings: AppSettings) -> None:
+            def __init__(self, settings: AppSettings, **kwargs: object) -> None:
+                del kwargs
                 captured["pi_timeout"] = float(settings.pi_timeout)
 
             def migrate(self, migrations_dir: Path) -> None:
@@ -930,6 +1065,64 @@ class TestSolveLLMFn:
         assert summary.best_score == 0.73
         assert summary.generations_executed == 2
         assert captured["pi_timeout"] == _SOLVE_CREATOR_PI_TIMEOUT_FLOOR_SECONDS
+
+    def test_generation_runner_executor_bounds_pi_timeout_by_generation_budget(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            agent_provider="pi",
+            pi_timeout=900.0,
+            generation_time_budget_seconds=420,
+        )
+        scenario_name = "solve_generation_runner_budget"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        captured: dict[str, float] = {}
+
+        class _Scenario:
+            name = scenario_name
+
+        class _FakeGenerationRunner:
+            def __init__(self, settings: AppSettings, **kwargs: object) -> None:
+                del kwargs
+                captured["pi_timeout"] = float(settings.pi_timeout)
+
+            def migrate(self, migrations_dir: Path) -> None:
+                del migrations_dir
+
+            def run(self, scenario_name: str, generations: int, run_id: str) -> SimpleNamespace:
+                return SimpleNamespace(
+                    run_id=run_id,
+                    generations_executed=generations,
+                    best_score=0.73,
+                    scenario_name=scenario_name,
+                )
+
+        SCENARIO_REGISTRY[scenario_name] = _Scenario
+        monkeypatch.setattr(
+            "autocontext.loop.generation_runner.GenerationRunner",
+            _FakeGenerationRunner,
+        )
+
+        try:
+            summary = SolveScenarioExecutor(settings).execute(
+                scenario_name=scenario_name,
+                family_name="schema_evolution",
+                generations=2,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 0.73
+        assert captured["pi_timeout"] == 420.0
 
 
 class TestSolveScenarioExecutor:
@@ -970,6 +1163,47 @@ class TestSolveScenarioExecutor:
         assert package.best_score == 1.0
         assert package.metadata["has_snapshot"] is True
         assert sqlite.count_completed_runs(scenario_name) == 1
+
+    def test_task_like_run_end_reports_generation_count_not_improvement_rounds(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.extensions import HookBus, HookEvents
+        from autocontext.knowledge.solver import SolveScenarioExecutor
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+        )
+        scenario_name = "solve_agent_task_run_end_rounds"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        SCENARIO_REGISTRY[scenario_name] = _RevisingSolveAgentTask
+        hook_bus = HookBus()
+        run_end_payloads: list[dict[str, object]] = []
+        hook_bus.on(HookEvents.RUN_END, lambda event: run_end_payloads.append(dict(event.payload)))
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            lambda settings, **kwargs: (_StubProvider("draft"), "test-model"),
+        )
+
+        try:
+            executor = SolveScenarioExecutor(settings, hook_bus=hook_bus)
+            summary = executor.execute(
+                scenario_name=scenario_name,
+                family_name="agent_task",
+                generations=3,
+            )
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        assert summary.best_score == 1.0
+        assert run_end_payloads
+        assert run_end_payloads[-1]["completed_generations"] == 1
+        assert run_end_payloads[-1]["improvement_rounds"] == 2
 
     def test_artifact_editing_adapter_preserves_omitted_artifact_deletions(self) -> None:
         from autocontext.knowledge.solver import ArtifactEditingTaskAdapter
@@ -1090,6 +1324,122 @@ class TestSolveScenarioExecutor:
 
 
 class TestSolveManager:
+    def test_solve_sync_loads_extensions_and_emits_task_lifecycle_hooks(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from autocontext.extensions import wrap_llm_provider
+        from autocontext.knowledge.export import SkillPackage
+        from autocontext.knowledge.solver import (
+            SolveManager,
+            SolveScenarioBuildResult,
+        )
+
+        events_path = tmp_path / "solve-hooks.jsonl"
+        extension_path = tmp_path / "solve_extension.py"
+        extension_path.write_text(
+            """
+import json
+import os
+
+
+def _record(name, payload=None):
+    with open(os.environ["SOLVE_HOOK_EVENTS"], "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"name": name, "payload": payload or {}}) + "\\n")
+
+
+def register(api):
+    _record("registered")
+
+    @api.on("*")
+    def record_event(event):
+        _record(event.name, event.payload)
+""".lstrip(),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("SOLVE_HOOK_EVENTS", str(events_path))
+
+        settings = AppSettings(
+            knowledge_root=tmp_path / "knowledge",
+            db_path=tmp_path / "runs.sqlite3",
+            extensions=str(extension_path),
+            extension_fail_fast=True,
+        )
+        scenario_name = "solve_hooked_agent_task"
+        previous = SCENARIO_REGISTRY.get(scenario_name)
+        SCENARIO_REGISTRY[scenario_name] = _SolveAgentTask
+
+        manager = SolveManager(settings)
+
+        class _FakeBuilder:
+            def build(
+                self,
+                description: str,
+                *,
+                family_override: str | None = None,
+            ) -> SolveScenarioBuildResult:
+                del description, family_override
+                return SolveScenarioBuildResult(
+                    scenario_name=scenario_name,
+                    family_name="agent_task",
+                )
+
+        fake_package = SkillPackage(
+            scenario_name=scenario_name,
+            display_name="Solve Hooked Agent Task",
+            description="fixture",
+            playbook="",
+            lessons=[],
+            best_strategy=None,
+            best_score=1.0,
+            best_elo=1500.0,
+            hints="",
+            harness={},
+        )
+
+        def _fake_resolve_role_runtime(settings: AppSettings, **kwargs: object) -> tuple[Any, str]:
+            del settings
+            hook_bus = kwargs.get("hook_bus")
+            assert hook_bus is not None
+            return wrap_llm_provider(
+                _StubProvider("improved draft"),
+                hook_bus,  # type: ignore[arg-type]
+                provider_name="test:competitor",
+                role="competitor",
+            ), "test-model"
+
+        monkeypatch.setattr(manager, "_build_creator", lambda: _FakeBuilder())
+        monkeypatch.setattr(
+            "autocontext.knowledge.solver.resolve_role_runtime",
+            _fake_resolve_role_runtime,
+        )
+        monkeypatch.setattr("autocontext.knowledge.solver.export_skill_package", lambda ctx, name: fake_package)
+
+        try:
+            job = manager.solve_sync(description="fixture", generations=1)
+        finally:
+            if previous is None:
+                SCENARIO_REGISTRY.pop(scenario_name, None)
+            else:
+                SCENARIO_REGISTRY[scenario_name] = previous
+
+        event_names = [
+            json.loads(line)["name"]
+            for line in events_path.read_text(encoding="utf-8").splitlines()
+        ]
+
+        assert job.status == "completed"
+        assert job.family_name == "agent_task"
+        assert manager.get_status(job.job_id)["family_name"] == "agent_task"
+        assert "registered" in event_names
+        assert "run_start" in event_names
+        assert "generation_start" in event_names
+        assert "before_provider_request" in event_names
+        assert "after_provider_response" in event_names
+        assert "generation_end" in event_names
+        assert "run_end" in event_names
+
     def test_run_job_uses_family_aware_executor(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from autocontext.knowledge.export import SkillPackage
         from autocontext.knowledge.solver import (
@@ -1147,5 +1497,6 @@ class TestSolveManager:
         manager._run_job(job)
 
         assert job.status == "completed"
+        assert job.family_name == "agent_task"
         assert job.progress == 3
         assert job.result == fake_package

@@ -41,6 +41,7 @@ from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
 from autocontext.config import AppSettings
 from autocontext.execution import ExecutionSupervisor
 from autocontext.execution.executors import LocalExecutor, PrimeIntellectExecutor
+from autocontext.extensions import HookBus
 from autocontext.harness.meta_optimizer import MetaOptimizer
 from autocontext.harness.pipeline.gate import BackpressureGate
 from autocontext.harness.pipeline.trend_gate import TrendAwareGate
@@ -85,9 +86,19 @@ class RunSummary:
 
 
 class GenerationRunner:
-    def __init__(self, settings: AppSettings) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        *,
+        hook_bus: HookBus | None = None,
+        loaded_extensions: list[str] | None = None,
+    ) -> None:
         self.settings = settings
-        self.hook_bus, self.loaded_extensions = initialize_hook_bus(settings)
+        if hook_bus is None:
+            self.hook_bus, self.loaded_extensions = initialize_hook_bus(settings)
+        else:
+            self.hook_bus = hook_bus
+            self.loaded_extensions = list(loaded_extensions or [])
         self.sqlite = SQLiteStore(settings.db_path)
         self.trajectory_builder = ScoreTrajectoryBuilder(self.sqlite)
         self.artifacts = artifact_store_from_settings(settings, enable_buffered_writes=True, hook_bus=self.hook_bus)

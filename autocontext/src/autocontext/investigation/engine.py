@@ -8,7 +8,7 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from autocontext.agents.types import LlmFn
 from autocontext.investigation.browser_context import (
@@ -34,6 +34,7 @@ class InvestigationRequest:
     max_hypotheses: int | None = None
     save_as: str | None = None
     browser_context: InvestigationBrowserContext | None = None
+    mode: str = "synthetic"
 
 
 @dataclass(slots=True)
@@ -671,14 +672,45 @@ class InvestigationEngine:
         spec_llm_fn: LlmFn,
         knowledge_root: Path,
         analysis_llm_fn: LlmFn | None = None,
+        artifacts: Any | None = None,
+        events: Any | None = None,
+        context_budget_tokens: int = 0,
     ) -> None:
         self._spec_llm_fn = spec_llm_fn
         self._analysis_llm_fn = analysis_llm_fn or spec_llm_fn
         self._knowledge_root = knowledge_root
+        self._artifacts = artifacts
+        self._events = events
+        self._context_budget_tokens = context_budget_tokens
 
     def run(self, request: InvestigationRequest) -> InvestigationResult:
         investigation_id = generate_investigation_id()
         name = request.save_as or derive_investigation_name(request.description)
+        mode = (request.mode or "synthetic").strip().lower()
+        if mode not in {"synthetic", "iterative"}:
+            return _build_failed_result(
+                investigation_id=investigation_id,
+                name=name,
+                request=request,
+                errors=[f"unsupported investigation mode: {request.mode}"],
+            )
+        if mode == "iterative":
+            from autocontext.investigation.iterative import run_iterative_investigation
+
+            return cast(
+                InvestigationResult,
+                run_iterative_investigation(
+                    request=request,
+                    investigation_id=investigation_id,
+                    name=name,
+                    analysis_llm_fn=self._analysis_llm_fn,
+                    knowledge_root=self._knowledge_root,
+                    artifacts=self._artifacts,
+                    events=self._events,
+                    context_budget_tokens=self._context_budget_tokens,
+                    failed_result_fn=_build_failed_result,
+                ),
+            )
 
         try:
             spec_system, spec_user = _build_investigation_spec_prompt(

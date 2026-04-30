@@ -109,6 +109,11 @@ class RuntimeBridgeClient(LanguageModelClient):
             metadata=dict(output.metadata),
         )
 
+    def close(self) -> None:
+        close = getattr(self._runtime, "close", None)
+        if callable(close):
+            close()
+
 
 def _role_setting(settings: AppSettings, role: str, suffix: str) -> str:
     if not role:

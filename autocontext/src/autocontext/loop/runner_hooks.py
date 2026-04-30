@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from autocontext.config import AppSettings
 from autocontext.extensions import HookBus, HookEvents, load_extensions
 
+logger = logging.getLogger(__name__)
+
 
 def initialize_hook_bus(settings: AppSettings) -> tuple[HookBus, list[str]]:
     hook_bus = HookBus(fail_fast=settings.extension_fail_fast)
     loaded_extensions = load_extensions(settings.extensions, hook_bus) if settings.extensions else []
+    if loaded_extensions:
+        logger.info("loaded autocontext extension(s): %s", ", ".join(loaded_extensions))
     return hook_bus, loaded_extensions
 
 
@@ -98,17 +103,21 @@ def emit_run_completed(
     elo: float,
     session_report_path: str | None,
     dead_ends_found: int,
+    extra: dict[str, Any] | None = None,
 ) -> None:
+    payload = {
+        "run_id": run_id,
+        "scenario": scenario,
+        "status": "completed",
+        "completed_generations": completed_generations,
+        "best_score": best_score,
+        "elo": elo,
+        "session_report_path": session_report_path,
+        "dead_ends_found": dead_ends_found,
+    }
+    if extra:
+        payload.update(extra)
     emit_run_end(
         runner,
-        {
-            "run_id": run_id,
-            "scenario": scenario,
-            "status": "completed",
-            "completed_generations": completed_generations,
-            "best_score": best_score,
-            "elo": elo,
-            "session_report_path": session_report_path,
-            "dead_ends_found": dead_ends_found,
-        },
+        payload,
     )

@@ -38,7 +38,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 ## Execution Surfaces (0.3.0)
 
 - **`simulate`** — modeled-world exploration with sweeps, replay, compare, export
-- **`investigate`** — evidence-driven diagnosis with hypotheses and confidence
+- **`investigate`** — evidence-driven diagnosis in synthetic harness or iterative LLM modes
 - **`analyze`** — interpret and compare outputs from all surfaces
 - **`mission`** — real-world goal execution with adaptive planning and campaigns
 - **`train`** — distill curated datasets into scenario-local models

@@ -468,6 +468,12 @@ def stage_agent_generation(
             "run_id": ctx.run_id, "generation": ctx.generation, "roles": roles,
         })
 
+    generation_started_at = ctx.generation_start_time or time.monotonic()
+    generation_deadline = (
+        generation_started_at + ctx.settings.generation_time_budget_seconds
+        if ctx.settings.generation_time_budget_seconds > 0
+        else None
+    )
     outputs = orchestrator.run_generation(
         ctx.prompts,
         generation_index=ctx.generation,
@@ -478,6 +484,7 @@ def stage_agent_generation(
         on_role_event=on_role_event,
         scenario_rules=ctx.scenario.describe_rules(),
         current_strategy=ctx.current_strategy or None,
+        generation_deadline=generation_deadline,
     )
 
     selected_strategy = outputs.strategy

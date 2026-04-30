@@ -112,6 +112,7 @@ class TestInvestigateCli:
         assert "--description" in help_text
         assert "--hypotheses" in help_text
         assert "--browser-url" in help_text
+        assert "--mode" in help_text
 
     def test_json_success(self, tmp_path: Path) -> None:
         settings = _make_settings(tmp_path)
@@ -183,3 +184,47 @@ class TestInvestigateCli:
         assert result.exit_code == 0, result.output
         assert _CapturingInvestigationEngine.captured_request is not None
         assert _CapturingInvestigationEngine.captured_request.browser_context == browser_context
+
+    def test_mode_is_forwarded_to_investigation_request(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _CapturingInvestigationEngine.captured_request = None
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._resolve_investigation_runtime", return_value=(object(), "mock-model")),
+            patch("autocontext.investigation.engine.InvestigationEngine", _CapturingInvestigationEngine),
+        ):
+            result = runner.invoke(
+                app,
+                ["investigate", "-d", "why did checkout fail", "--mode", "iterative", "--json"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _CapturingInvestigationEngine.captured_request is not None
+        assert _CapturingInvestigationEngine.captured_request.mode == "iterative"
+
+    def test_iterative_mode_does_not_resolve_architect_runtime(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        resolved_roles: list[str] = []
+        _CapturingInvestigationEngine.captured_request = None
+
+        def _resolve_runtime(_settings, *, role: str):  # noqa: ANN001, ANN202
+            resolved_roles.append(role)
+            if role == "architect":
+                raise AssertionError("iterative mode should not resolve the architect runtime")
+            return object(), "mock-model"
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._resolve_investigation_runtime", side_effect=_resolve_runtime),
+            patch("autocontext.investigation.engine.InvestigationEngine", _CapturingInvestigationEngine),
+        ):
+            result = runner.invoke(
+                app,
+                ["investigate", "-d", "why did checkout fail", "--mode", "iterative", "--json"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert resolved_roles == ["analyst"]
+        assert _CapturingInvestigationEngine.captured_request is not None
+        assert _CapturingInvestigationEngine.captured_request.mode == "iterative"

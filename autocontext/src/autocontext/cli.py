@@ -20,6 +20,7 @@ from rich.table import Table
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_investigate import run_investigate_command
+from autocontext.cli_new_scenario import register_new_scenario_command
 from autocontext.cli_queue import register_queue_command
 from autocontext.cli_role_runtime import resolve_role_runtime
 from autocontext.cli_runtime_overrides import (
@@ -43,6 +44,7 @@ from autocontext.util.json_io import read_json
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from autocontext.extensions import HookBus
     from autocontext.providers.base import LLMProvider
     from autocontext.training.runner import TrainingConfig, TrainingResult
 
@@ -142,11 +144,6 @@ def _resolve_export_artifact_roots(
     )
 
 
-def _get_custom_scenarios_dir() -> Path:
-    """Return the default directory for scaffolded custom scenarios."""
-    return Path("knowledge") / "_custom_scenarios"
-
-
 def _write_json_stdout(payload: object) -> None:
     sys.stdout.write(json.dumps(payload) + "\n")
 
@@ -202,6 +199,7 @@ def _resolve_role_runtime(
     *,
     role: str,
     scenario_name: str = "",
+    hook_bus: HookBus | None = None,
 ) -> tuple[LLMProvider, str]:
     return resolve_role_runtime(
         settings,
@@ -209,6 +207,7 @@ def _resolve_role_runtime(
         scenario_name=scenario_name,
         sqlite=_sqlite_from_settings(settings),
         artifacts=_artifacts_from_settings(settings),
+        hook_bus=hook_bus,
         orchestrator_cls=AgentOrchestrator,
     )
 
@@ -221,9 +220,14 @@ def _resolve_investigation_runtime(
     return _resolve_role_runtime(settings, role=role)
 
 
-def _resolve_agent_task_runtime(settings: AppSettings, scenario_name: str) -> tuple[LLMProvider, str]:
+def _resolve_agent_task_runtime(
+    settings: AppSettings,
+    scenario_name: str,
+    *,
+    hook_bus: HookBus | None = None,
+) -> tuple[LLMProvider, str]:
     """Resolve the effective competitor runtime for direct agent-task execution."""
-    return _resolve_role_runtime(settings, role="competitor", scenario_name=scenario_name)
+    return _resolve_role_runtime(settings, role="competitor", scenario_name=scenario_name, hook_bus=hook_bus)
 
 
 def _run_agent_task(
@@ -240,18 +244,22 @@ def _run_agent_task(
     # Runtime-validated: _is_agent_task() already confirmed this
     task: AgentTaskInterface = instance
 
-    provider, provider_model = _resolve_agent_task_runtime(settings, scenario_name)
+    if settings.extensions:
+        provider, provider_model = _resolve_agent_task_runtime(settings, scenario_name, hook_bus=hook_bus)
+    else:
+        provider, provider_model = _resolve_agent_task_runtime(settings, scenario_name)
     state = task.prepare_context(task.initial_state())
     context_errors = task.validate_context(state)
     if context_errors:
         raise ValueError(f"Context validation failed: {'; '.join(context_errors)}")
     prompt = task.get_task_prompt(state)
 
-    initial_output = provider.complete(
-        system_prompt="Complete the task precisely.",
-        user_prompt=prompt,
-        model=provider_model,
-    ).text
+    with active_hook_bus(hook_bus):
+        initial_output = provider.complete(
+            system_prompt="Complete the task precisely.",
+            user_prompt=prompt,
+            model=provider_model,
+        ).text
 
     loop = ImprovementLoop(task=task, max_rounds=max_rounds)
     active_run_id = run_id or f"task_{uuid.uuid4().hex[:12]}"
@@ -932,73 +940,6 @@ def export_training_data_cmd(
     console.print(f"[green]Exported {count} record(s) to {output_path}[/green]")
 
 
-@app.command("new-scenario")
-def new_scenario(
-    list_templates: bool = typer.Option(False, "--list", help="List available templates"),
-    template: str | None = typer.Option(None, "--template", help="Template to scaffold from"),
-    name: str | None = typer.Option(None, "--name", help="Name for the new scenario"),
-    judge_model: str | None = typer.Option(None, "--judge-model", help="Override judge model"),
-    non_interactive: bool = typer.Option(False, "--non-interactive", help="Use defaults, skip prompts"),
-) -> None:
-    """Scaffold a new scenario from the template library."""
-    from autocontext.scenarios.templates import TemplateLoader
-
-    loader = TemplateLoader()
-
-    if list_templates:
-        templates = loader.list_templates()
-        table = Table(title="Available Scenario Templates")
-        table.add_column("Name", style="bold")
-        table.add_column("Description")
-        table.add_column("Output Format")
-        table.add_column("Max Rounds", justify="right")
-        for t in templates:
-            table.add_row(t.name, t.description, t.output_format, str(t.max_rounds))
-        console.print(table)
-        return
-
-    # Scaffolding mode requires both --template and --name
-    if template is None:
-        console.print("[red]--template is required when not using --list[/red]")
-        raise typer.Exit(code=1)
-    if name is None:
-        console.print("[red]--name is required when scaffolding a scenario[/red]")
-        raise typer.Exit(code=1)
-
-    # Validate template exists
-    try:
-        loader.get_template(template)
-    except KeyError:
-        console.print(f"[red]Template '{template}' not found. Use --list to see available templates.[/red]")
-        raise typer.Exit(code=1) from None
-
-    # Build overrides
-    overrides: dict[str, Any] = {}
-    if judge_model is not None:
-        overrides["judge_model"] = judge_model
-
-    # Scaffold to target directory
-    target_dir = _get_custom_scenarios_dir() / name
-    try:
-        loader.scaffold(template_name=template, target_dir=target_dir, overrides=overrides or None)
-    except Exception as e:
-        logger.debug("cli: caught Exception", exc_info=True)
-        console.print(f"[red]Failed to scaffold scenario: {e}[/red]")
-        raise typer.Exit(code=1) from None
-
-    from autocontext.scenarios import SCENARIO_REGISTRY
-    from autocontext.scenarios.custom.registry import load_all_custom_scenarios
-
-    loaded = load_all_custom_scenarios(target_dir.parent.parent)
-    registered = loaded.get(name)
-    if registered is not None:
-        SCENARIO_REGISTRY[name] = registered
-
-    console.print(f"[green]Scenario '{name}' created from template '{template}'[/green]")
-    console.print(f"[dim]Files scaffolded to: {target_dir}[/dim]")
-    console.print("[dim]Available to agent-task tooling after scaffold/load via the custom scenario registry.[/dim]")
-
-
 @app.command("export")
 def export_cmd(
     scenario: str = typer.Option(..., "--scenario", help="Scenario to export"),
@@ -1268,6 +1209,7 @@ def investigate(
     hypotheses: int = typer.Option(5, "--hypotheses", min=1, help="Maximum hypotheses to generate"),
     save_as: str = typer.Option("", "--save-as", help="Name for the saved investigation"),
     browser_url: str = typer.Option("", "--browser-url", help="Optional browser URL to capture before investigation"),
+    mode: str = typer.Option("synthetic", "--mode", help="Investigation mode: synthetic or iterative"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     """Run a plain-language investigation with evidence and hypotheses."""
@@ -1277,6 +1219,7 @@ def investigate(
         hypotheses=hypotheses,
         save_as=save_as,
         browser_url=browser_url,
+        mode=mode,
         json_output=json_output,
         console=console,
         load_settings_fn=load_settings,
@@ -1562,6 +1505,7 @@ def improve(
 
 
 register_analytics_command(app, console=console)
+register_new_scenario_command(app, console=console)
 register_solve_command(app, console=console)
 register_queue_command(app, console=console)
 

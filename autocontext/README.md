@@ -105,7 +105,7 @@ uv run autoctx solve --description "improve customer-support replies for billing
 
 `autoctx simulate` now follows the effective architect-role runtime surface, so `AUTOCONTEXT_ARCHITECT_PROVIDER`, other role-routing overrides, and per-call `--provider <name>` overrides all apply to live simulation generation.
 
-`autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too. When browser exploration is enabled, `--browser-url <url>` captures a policy-checked snapshot and folds that evidence into the investigation prompts and report artifacts.
+`autoctx investigate` now ships as a first-class Python CLI surface as well. It uses the architect runtime for investigation-spec synthesis and the analyst runtime for hypothesis generation, so role-routing overrides apply there too. The default `--mode synthetic` creates and executes a compact investigation harness. `--mode iterative` runs a live multi-step LLM investigation, emits `events.ndjson` rows, and writes Pi-shaped compaction ledger entries under `runs/<investigation_id>/` when context budget pressure triggers compaction. When browser exploration is enabled, `--browser-url <url>` captures a policy-checked snapshot and folds that evidence into the investigation prompts and report artifacts.
 
 Run with Pi RPC (local Pi subprocess using `pi --mode rpc` JSONL):
 
@@ -162,6 +162,7 @@ uv run autoctx solve --description "improve customer-support replies for billing
 uv run autoctx simulate --description "simulate deploying a web service with rollback"
 uv run autoctx simulate --description "simulate deploying a web service with rollback" --provider claude-cli
 uv run autoctx investigate --description "why did conversion drop after Tuesday's release"
+uv run autoctx investigate --description "debug the outage timeline" --mode iterative
 uv run autoctx investigate --description "checkout is failing in prod" --browser-url https://status.example.com
 uv run autoctx queue add --task-prompt "Write a 1-line fact about primes" --rubric "correct" --threshold 0.8 --rounds 2
 uv run autoctx queue --spec support_triage --browser-url https://status.example.com
