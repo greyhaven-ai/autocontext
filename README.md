@@ -22,7 +22,7 @@ Autocontext is a harness. You point it at a goal in plain language. It iterates 
 The fastest path uses our **Pi runtime**, a local coding agent that handles its own auth. No API key plumbing, no provider config: install Pi, install autocontext, point one at the other.
 
 ```bash
-uv tool install autocontext==0.4.8
+uv tool install autocontext==0.4.9
 
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
@@ -36,7 +36,7 @@ Pi runs locally as a subprocess and emits live traces back into the harness. For
 Prefer TypeScript? Same surface, same command:
 
 ```bash
-bun add -g autoctx@0.4.8
+bun add -g autoctx@0.4.9
 AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
   --description "improve customer-support replies for billing disputes" \
   --gens 5 --json
@@ -197,14 +197,14 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.4.8
+## What's New in 0.4.9
 
-- **Anthropic SDK instrumentation** in Python and TypeScript: wrap any existing Anthropic client with `instrument_client` / `instrumentClient` to capture streaming and non-streaming production traces.
-- **TypeScript `autoctx solve` CLI** brings one-command scenario generation and execution to full parity with Python.
-- **`autoctx build-dataset` filters** (`--provider`, `--app`, `--env`, `--outcome`) turn captured production traces into scoped training datasets.
-- **CUDA training backend** alongside MLX, so distillation is no longer Apple Silicon only.
-- **Semantic prompt compaction** with tail-preserving reducers for longer sessions.
-- **Hierarchical investigation evidence** with artifact drill-down for richer diagnosis traces.
+- **Pi-shaped scenario hardening** keeps schema-evolution simulations from persisting empty mutation plans and improves recovery from Pi-style JSON wrappers.
+- **Budgeted Pi/Pi-RPC role calls** now report effective bounded timeouts and clean up one-shot persistent clients after use.
+- **RLM convergence guards** capture explicit final-answer tags, cautious closure cues, and repeated silent no-progress cases without stealing normal inspection turns.
+- **Rubric drift monitoring** now catches within-generation mean-versus-best compression and slower dimension decline.
+- **Task-like solve lifecycle metadata** separates persisted generations from improvement rounds for hook consumers.
+- **Pi extension release alignment** keeps `pi-autocontext` one package behind `autoctx` while publishing the next extension patch.
 <!-- autocontext-whats-new:end -->
 
 ## Choose Your Package
@@ -219,11 +219,11 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 
 ```bash
 # Python: library or CLI tool
-uv pip install autocontext==0.4.8
-uv tool install autocontext==0.4.8
+uv pip install autocontext==0.4.9
+uv tool install autocontext==0.4.9
 
 # TypeScript
-bun add -g autoctx@0.4.8
+bun add -g autoctx@0.4.9
 
 # Pi extension
 pi install npm:pi-autocontext

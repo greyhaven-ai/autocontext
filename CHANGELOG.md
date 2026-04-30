@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-04-30
+
+### Fixed
+
+- TypeScript `simulate` now uses the schema-evolution scenario designer for schema-evolution prompts and rejects zero-mutation generated specs before persistence (AC-694).
+- Python Pi/Pi-RPC budget errors now report the effective bounded role timeout instead of the original unbounded Pi timeout (AC-695).
+- RLM sessions can soft-finalize from explicit final-answer tags, cautious natural-language closure cues, and repeated silent no-progress turns, while preserving real inspection progress (AC-696).
+- Rubric drift monitoring now flags within-generation mean-versus-best compression and catches slower dimension decline patterns (AC-686).
+
+### Changed
+
+- Python `autocontext` and TypeScript `autoctx` package metadata are bumped to `0.4.9`.
+- Pi `pi-autocontext` package metadata is bumped to `0.2.3` while intentionally keeping its `autoctx` dependency one package behind at `^0.4.8`.
+
 ## [0.4.8] - 2026-04-30
 
 ### Fixed
@@ -308,7 +322,8 @@ All notable changes to this project will be documented in this file.
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.8...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.9...HEAD
+[0.4.9]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.8...py-v0.4.9
 [0.4.8]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.7...py-v0.4.8
 [0.4.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.6...py-v0.4.7
 [0.4.6]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.5...py-v0.4.6

@@ -53,7 +53,7 @@ export function register(api) {
 npm install autoctx
 ```
 
-The current npm release line is `autoctx@0.4.8`.
+The current npm release line is `autoctx@0.4.9`.
 Important: use `autoctx`, not `autocontext`.
 `autocontext` on npm is a different package and not this project.
 
