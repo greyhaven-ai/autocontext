@@ -116,7 +116,10 @@ class PiCLIRuntime(AgentRuntime):
             )
         except subprocess.TimeoutExpired:
             logger.error("pi CLI timed out after %.0fs", self._config.timeout)
-            return AgentOutput(text="", metadata={"error": "timeout"})
+            return AgentOutput(
+                text="",
+                metadata={"error": "timeout", "timeout_seconds": self._config.timeout},
+            )
         except FileNotFoundError:
             logger.error("pi CLI not found at %r", self._config.pi_command)
             return AgentOutput(text="", metadata={"error": "pi_not_found"})

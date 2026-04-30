@@ -155,6 +155,7 @@ def test_generate_timeout() -> None:
         output = runtime.generate("test")
     assert output.text == ""
     assert output.metadata.get("error") == "timeout"
+    assert output.metadata.get("timeout_seconds") == 0.01
     assert process.killed is True
 
 

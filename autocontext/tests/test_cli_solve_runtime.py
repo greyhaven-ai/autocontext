@@ -70,6 +70,27 @@ class _FailingSolveManager:
         )
 
 
+class _BudgetedFailingSolveManager:
+    def __init__(self, settings: AppSettings) -> None:
+        self._settings = settings
+
+    def solve_sync(
+        self,
+        description: str,
+        generations: int = 5,
+        family_override: str | None = None,
+    ) -> SolveJob:
+        del description, generations, family_override
+        return SolveJob(
+            job_id="solve_budget_fail",
+            description="Budgeted solve",
+            status="failed",
+            generations=1,
+            progress=0,
+            error="PiCLIRuntime failed: timeout (timed out after 60s)",
+        )
+
+
 class _FallbackSolveManager:
     def __init__(self, settings: AppSettings) -> None:
         self._settings = settings
@@ -198,6 +219,38 @@ class TestSolveRuntimeOverrides:
         assert "timed out" in payload["error"].lower()
         assert "--timeout" in payload["error"]
         assert "AUTOCONTEXT_PI_TIMEOUT" in payload["error"]
+
+    def test_solve_json_timeout_error_reports_effective_budgeted_role_timeout(self, tmp_path: Path) -> None:
+        settings = _settings(
+            tmp_path,
+            agent_provider="deterministic",
+            competitor_provider="pi-rpc",
+            pi_timeout=900.0,
+            generation_time_budget_seconds=60,
+        )
+
+        from unittest.mock import patch
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager", _BudgetedFailingSolveManager),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "solve",
+                    "--description",
+                    "Budgeted solve",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stderr)
+        assert "timed out after 60s" in payload["error"]
+        assert "timed out after 900s" not in payload["error"]
+        assert "configured AUTOCONTEXT_PI_TIMEOUT=900s" in payload["error"]
+        assert "--generation-time-budget" in payload["error"]
 
     def test_solve_json_output_surfaces_classifier_fallback_flag(self, tmp_path: Path) -> None:
         settings = _settings(tmp_path)

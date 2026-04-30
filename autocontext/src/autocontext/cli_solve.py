@@ -106,7 +106,8 @@ def run_solve_command(
 
     if job.status != "completed" or job.result is None:
         message = job.error or "solve did not complete successfully"
-        if "timeout" in message.lower():
+        message_lower = message.lower()
+        if "timeout" in message_lower or "time budget" in message_lower:
             message = format_runtime_provider_error(
                 ProviderError(message),
                 provider_name=solve_primary_runtime_provider(settings),

@@ -38,6 +38,8 @@ for s in summaries:
 
 The variable `answer` is pre-initialized as {{"content": "", "ready": False}}.
 Build your answer incrementally. When done, set answer["ready"] = True.
+If the REPL state is already sufficient and you cannot safely set the ready flag,
+you may instead wrap your final response in <final_answer>...</final_answer>.
 
 <code>
 answer["content"] = "## Findings\\n\\n- Key finding here..."
@@ -119,6 +121,8 @@ Returns a list of response strings.
 
 The variable `answer` is pre-initialized as {{"content": "", "ready": False}}.
 Build your answer incrementally. When done, set answer["ready"] = True.
+If the REPL state is already sufficient and you cannot safely set the ready flag,
+you may instead wrap your final response in <final_answer>...</final_answer>.
 
 <code>
 answer["content"] = "## Findings\\n\\n- Key finding here..."

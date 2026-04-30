@@ -87,8 +87,9 @@ class DriftThresholds(BaseModel):
     max_rollback_rate: float = 0.3
     min_dimension_observations: int = 3
     min_dimension_stddev: float = 0.01
-    max_dimension_decline: float = 0.15
+    max_dimension_decline: float = 0.04
     max_dimension_correlation: float = 0.98
+    min_within_gen_variance_zero_streak: int = 3
 
 
 class DriftWarning(BaseModel):
@@ -396,6 +397,34 @@ class RubricDriftMonitor:
                     metadata={"run_id": current.run_id, "dimension": dimension, "series": series},
                 ))
 
+            best_series = current.best_dimension_series.get(dimension, [])
+            zero_variance_streak = _max_equal_streak(
+                series,
+                best_series,
+                limit=thresholds.min_within_gen_variance_zero_streak,
+            )
+            if zero_variance_streak >= thresholds.min_within_gen_variance_zero_streak:
+                warnings.append(self._make_warning(
+                    now,
+                    "dimension_within_gen_variance_zero",
+                    "medium",
+                    f"Dimension '{dimension}' has mean==best for {zero_variance_streak} consecutive generations",
+                    current.snapshot_id,
+                    f"dimension.{dimension}.within_generation_equal_streak",
+                    float(zero_variance_streak),
+                    float(thresholds.min_within_gen_variance_zero_streak),
+                    scenarios,
+                    providers,
+                    releases,
+                    metadata={
+                        "run_id": current.run_id,
+                        "dimension": dimension,
+                        "streak": zero_variance_streak,
+                        "series": series,
+                        "best_series": best_series,
+                    },
+                ))
+
             decline = series[0] - series[-1]
             if decline >= thresholds.max_dimension_decline and _is_monotonic_decline(series):
                 warnings.append(self._make_warning(
@@ -518,6 +547,20 @@ def _append_dimension_values(target: dict[str, list[float]], raw_values: Any) ->
 
 def _is_monotonic_decline(series: list[float]) -> bool:
     return all(right <= left for left, right in zip(series, series[1:], strict=False))
+
+
+def _max_equal_streak(left: list[float], right: list[float], *, limit: int) -> int:
+    max_streak = 0
+    current_streak = 0
+    for left_value, right_value in zip(left, right, strict=False):
+        if abs(left_value - right_value) <= 1e-9:
+            current_streak += 1
+            max_streak = max(max_streak, current_streak)
+            if max_streak >= limit:
+                return max_streak
+        else:
+            current_streak = 0
+    return max_streak
 
 
 def _pearson(left: list[float], right: list[float]) -> float | None:

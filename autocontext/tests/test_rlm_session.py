@@ -26,7 +26,7 @@ class TestRlmSession:
 
     def test_respects_max_turns(self) -> None:
         """When the model never sets ready=True, session should truncate."""
-        client = _NeverReadyClient()
+        client = _ChangingNeverReadyClient()
         worker = ReplWorker()
         session = RlmSession(
             client=client,
@@ -38,6 +38,80 @@ class TestRlmSession:
         )
         result = session.run()
         assert result.status == "truncated"
+
+    def test_soft_finalizes_explicit_final_answer_marker(self) -> None:
+        client = _StaticMultiturnClient("<final_answer>Y</final_answer>")
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="test-model",
+            system_prompt="You are a test agent.",
+            max_turns=5,
+        )
+
+        result = session.run()
+
+        assert result.status == "soft_finalized"
+        assert result.content == "Y"
+        assert result.metadata["finalize_reason"] == "final_answer_marker"
+        assert len(session.execution_history) == 0
+
+    def test_soft_finalizes_natural_language_closure_without_ready_mutation(self) -> None:
+        client = _StaticMultiturnClient("I'm confident the answer is X")
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="test-model",
+            system_prompt="You are a test agent.",
+            max_turns=5,
+        )
+
+        result = session.run()
+
+        assert result.status == "soft_finalized"
+        assert "X" in result.content
+        assert result.metadata["finalize_reason"] == "natural_language_closure"
+
+    def test_soft_finalizes_after_repeated_no_progress_turns(self) -> None:
+        client = _SilentNoProgressClient()
+        worker = ReplWorker()
+        session = RlmSession(
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="test-model",
+            system_prompt="You are a test agent.",
+            max_turns=25,
+        )
+
+        result = session.run()
+
+        assert result.status == "soft_finalized"
+        assert result.metadata["finalize_reason"] == "no_progress"
+        assert len(session.execution_history) == 3
+        assert result.content
+
+    def test_distinct_read_only_inspection_turns_are_not_no_progress(self) -> None:
+        client = _DistinctInspectionClient()
+        worker = ReplWorker(namespace={"values": [1, 2, 3]})
+        session = RlmSession(
+            client=client,
+            worker=worker,
+            role="analyst",
+            model="test-model",
+            system_prompt="You are a test agent.",
+            max_turns=5,
+        )
+
+        result = session.run()
+
+        assert result.status == "truncated"
+        assert result.metadata.get("finalize_reason") != "no_progress"
+        assert len(session.execution_history) == 5
 
     def test_usage_aggregated_across_turns(self) -> None:
         client = DeterministicDevClient()
@@ -192,5 +266,69 @@ class _NeverReadyClient(LanguageModelClient):
     ) -> ModelResponse:
         return ModelResponse(
             text='<code>\nprint("still working")\n</code>',
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
+        )
+
+
+class _ChangingNeverReadyClient(LanguageModelClient):
+    """Returns code that mutates state but never sets answer['ready']."""
+
+    def __init__(self) -> None:
+        self._turn = 0
+
+    def generate_multiturn(
+        self, *, model: str, system: str, messages: list[dict[str, str]],
+        max_tokens: int, temperature: float, role: str = "",
+    ) -> ModelResponse:
+        del system, messages, max_tokens, temperature, role
+        self._turn += 1
+        return ModelResponse(
+            text=f'<code>\nstate_{self._turn} = {self._turn}\nprint("turn {self._turn}")\n</code>',
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
+        )
+
+
+class _SilentNoProgressClient(LanguageModelClient):
+    """Always returns identical silent no-op code."""
+
+    def generate_multiturn(
+        self, *, model: str, system: str, messages: list[dict[str, str]],
+        max_tokens: int, temperature: float, role: str = "",
+    ) -> ModelResponse:
+        return ModelResponse(
+            text="<code>\npass\n</code>",
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
+        )
+
+
+class _DistinctInspectionClient(LanguageModelClient):
+    """Returns read-only inspection code that makes observable progress."""
+
+    def __init__(self) -> None:
+        self._turn = 0
+
+    def generate_multiturn(
+        self, *, model: str, system: str, messages: list[dict[str, str]],
+        max_tokens: int, temperature: float, role: str = "",
+    ) -> ModelResponse:
+        del system, messages, max_tokens, temperature, role
+        self._turn += 1
+        return ModelResponse(
+            text=f'<code>\nprint("inspection {self._turn}", values[{(self._turn - 1) % 3}])\n</code>',
+            usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
+        )
+
+
+class _StaticMultiturnClient(LanguageModelClient):
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def generate_multiturn(
+        self, *, model: str, system: str, messages: list[dict[str, str]],
+        max_tokens: int, temperature: float, role: str = "",
+    ) -> ModelResponse:
+        del system, messages, max_tokens, temperature, role
+        return ModelResponse(
+            text=self._text,
             usage=RoleUsage(input_tokens=10, output_tokens=10, latency_ms=1, model=model),
         )

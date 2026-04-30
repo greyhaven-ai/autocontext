@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, cast
 
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
+from autocontext.runtimes.errors import format_runtime_failure
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +96,7 @@ class RuntimeBridgeClient(LanguageModelClient):
         output = self._runtime.generate(prompt)
         error = output.metadata.get("error")
         if error:
-            detail = output.metadata.get("detail") or output.metadata.get("stderr") or ""
-            raise RuntimeError(f"{self._runtime.name} failed: {error}{f' ({detail})' if detail else ''}")
+            raise RuntimeError(format_runtime_failure(self._runtime.name, output.metadata))
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         return ModelResponse(
             text=output.text,

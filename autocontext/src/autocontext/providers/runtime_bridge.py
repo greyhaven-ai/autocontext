@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from autocontext.providers.base import CompletionResult, LLMProvider, ProviderError
 from autocontext.runtimes.base import AgentRuntime
+from autocontext.runtimes.errors import format_runtime_failure
 
 
 class RuntimeBridgeProvider(LLMProvider):
@@ -35,10 +36,7 @@ class RuntimeBridgeProvider(LLMProvider):
         )
         error = output.metadata.get("error") if output.metadata else None
         if error:
-            detail = ""
-            if output.metadata:
-                detail = str(output.metadata.get("detail") or output.metadata.get("stderr") or "")
-            raise ProviderError(f"{self._runtime.name} failed: {error}{f' ({detail})' if detail else ''}")
+            raise ProviderError(format_runtime_failure(self._runtime.name, output.metadata or {}))
         return CompletionResult(
             text=output.text,
             model=output.model or model or self._default_model_name,
