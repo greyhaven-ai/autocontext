@@ -214,7 +214,10 @@ class PiRPCRuntime(AgentRuntime):
             if process is not None:
                 process.kill()
                 process.wait(timeout=1.0)
-            return AgentOutput(text="", metadata={"error": "timeout"})
+            return AgentOutput(
+                text="",
+                metadata={"error": "timeout", "timeout_seconds": self._config.timeout},
+            )
         except FileNotFoundError:
             logger.error("pi CLI not found at %r", self._config.pi_command)
             return AgentOutput(text="", metadata={"error": "pi_not_found"})
@@ -483,7 +486,10 @@ class PiPersistentRPCRuntime(PiRPCRuntime):
         except subprocess.TimeoutExpired:
             logger.error("persistent pi RPC timed out after %.0fs", self._config.timeout)
             self.close()
-            return AgentOutput(text="", metadata={"error": "timeout"})
+            return AgentOutput(
+                text="",
+                metadata={"error": "timeout", "timeout_seconds": self._config.timeout},
+            )
         return self._parse_rpc_output(
             "".join(lines),
             exit_code=0,

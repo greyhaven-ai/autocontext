@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from autocontext.config.settings import AppSettings
@@ -11,6 +12,23 @@ _SOLVE_RUNTIME_PROVIDER_FIELDS = (
     "analyst_provider",
     "competitor_provider",
 )
+_TIMED_OUT_AFTER_RE = re.compile(r"\btimed out after (?P<seconds>\d+(?:\.\d+)?)s\b", re.IGNORECASE)
+
+
+def _format_timeout_seconds(seconds: float) -> str:
+    if float(seconds).is_integer():
+        return f"{seconds:.0f}s"
+    return f"{seconds:.2f}s"
+
+
+def _reported_timeout_seconds(message: str) -> float | None:
+    matches = list(_TIMED_OUT_AFTER_RE.finditer(message))
+    if not matches:
+        return None
+    try:
+        return float(matches[-1].group("seconds"))
+    except ValueError:
+        return None
 
 
 def runtime_timeout_field_for_provider(provider_name: str) -> str | None:
@@ -109,8 +127,15 @@ def format_runtime_provider_error(
     settings: AppSettings,
 ) -> str:
     message = str(exc)
-    if "timeout" not in message.lower():
+    message_lower = message.lower()
+    if "timeout" not in message_lower and "time budget" not in message_lower:
         return message
+
+    if "generation time budget" in message_lower or "time budget exhausted" in message_lower:
+        return (
+            f"{message}. Retry with --generation-time-budget <seconds> to allow a longer "
+            "per-generation solve budget."
+        )
 
     provider = provider_name.strip().lower()
     timeout_help = {
@@ -124,7 +149,21 @@ def format_runtime_provider_error(
         return message
 
     label, configured_timeout, env_var = help_details
+    reported_timeout = _reported_timeout_seconds(message)
+    effective_timeout = reported_timeout if reported_timeout is not None else configured_timeout
+    effective = _format_timeout_seconds(float(effective_timeout))
+    configured = _format_timeout_seconds(float(configured_timeout))
+    budget_bounded = reported_timeout is not None and reported_timeout < float(configured_timeout)
+    if budget_bounded:
+        return (
+            f"{label} timed out after {effective} "
+            f"(bounded by --generation-time-budget; configured {env_var}={configured}). "
+            "Retry with --generation-time-budget <seconds> to allow longer role calls, "
+            f"or retry with --timeout <seconds> / set {env_var} to raise the provider timeout ceiling. "
+            f"Original error: {message}"
+        )
+
     return (
-        f"{label} timed out after {configured_timeout:.0f}s. "
+        f"{label} timed out after {effective}. "
         f"Retry with --timeout <seconds> or set {env_var}. Original error: {message}"
     )

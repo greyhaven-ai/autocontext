@@ -497,6 +497,68 @@ class TestRubricDriftMonitor:
         assert "dimension_correlation_high" in warning_types
         assert any(warning.metadata.get("dimension") == "factuality" for warning in warnings)
 
+    def test_detects_within_generation_dimension_variance_zero_streak(self) -> None:
+        from autocontext.analytics.rubric_drift import RubricDriftMonitor
+
+        trajectory = [
+            {
+                "generation_index": 1,
+                "dimension_summary": {
+                    "dimension_means": {"defender_survival": 1.0},
+                    "best_dimensions": {"defender_survival": 1.0},
+                },
+            },
+            {
+                "generation_index": 2,
+                "dimension_summary": {
+                    "dimension_means": {"defender_survival": 0.985},
+                    "best_dimensions": {"defender_survival": 0.985},
+                },
+            },
+            {
+                "generation_index": 3,
+                "dimension_summary": {
+                    "dimension_means": {"defender_survival": 0.971},
+                    "best_dimensions": {"defender_survival": 0.971},
+                },
+            },
+        ]
+
+        snapshot = RubricDriftMonitor().compute_dimension_snapshot("run-within", trajectory)
+        warnings = RubricDriftMonitor().detect_dimension_drift(snapshot)
+        within_gen_warnings = [
+            warning for warning in warnings
+            if warning.warning_type == "dimension_within_gen_variance_zero"
+        ]
+
+        assert within_gen_warnings
+        assert within_gen_warnings[0].metadata["dimension"] == "defender_survival"
+        assert within_gen_warnings[0].metadata["streak"] == 3
+
+    def test_default_dimension_decline_threshold_catches_slow_ac268_sized_drift(self) -> None:
+        from autocontext.analytics.rubric_drift import DriftThresholds, RubricDriftMonitor
+
+        trajectory = [
+            {
+                "generation_index": 1,
+                "dimension_summary": {"dimension_means": {"defender_survival": 1.0}},
+            },
+            {
+                "generation_index": 2,
+                "dimension_summary": {"dimension_means": {"defender_survival": 0.974}},
+            },
+            {
+                "generation_index": 3,
+                "dimension_summary": {"dimension_means": {"defender_survival": 0.948}},
+            },
+        ]
+
+        assert DriftThresholds().max_dimension_decline == 0.04
+        snapshot = RubricDriftMonitor().compute_dimension_snapshot("run-slow-decline", trajectory)
+        warnings = RubricDriftMonitor().detect_dimension_drift(snapshot)
+
+        assert any(warning.warning_type == "dimension_score_decline" for warning in warnings)
+
     def test_analyze_combines_snapshot_and_warnings(self) -> None:
         from autocontext.analytics.rubric_drift import (
             DriftThresholds,

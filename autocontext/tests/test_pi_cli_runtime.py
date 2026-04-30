@@ -129,6 +129,7 @@ def test_generate_timeout() -> None:
             output = runtime.generate("test prompt")
     assert output.text == ""
     assert output.metadata.get("error") == "timeout"
+    assert output.metadata.get("timeout_seconds") == 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -247,10 +248,13 @@ def test_runtime_bridge_client_delegates() -> None:
 def test_runtime_bridge_client_raises_on_runtime_error() -> None:
     mock_runtime = MagicMock()
     mock_runtime.name = "PiCLIRuntime"
-    mock_runtime.generate.return_value = AgentOutput(text="", metadata={"error": "timeout"})
+    mock_runtime.generate.return_value = AgentOutput(
+        text="",
+        metadata={"error": "timeout", "timeout_seconds": 60.0},
+    )
 
     client = RuntimeBridgeClient(mock_runtime)
-    with pytest.raises(RuntimeError, match="PiCLIRuntime failed: timeout"):
+    with pytest.raises(RuntimeError, match="PiCLIRuntime failed: timeout .*60s"):
         client.generate(model="ignored", prompt="test", max_tokens=100, temperature=0.5)
 
 

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateScenarioSource } from "../scenarios/codegen/registry.js";
 import { validateGeneratedScenario } from "../scenarios/codegen/execution-validator.js";
+import { designSchemaEvolution } from "../scenarios/schema-evolution-designer.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
 import { healSpec } from "../scenarios/spec-auto-heal.js";
 import type { LLMProvider } from "../types/index.js";
@@ -63,6 +64,19 @@ export async function buildSimulationSpec(opts: {
     opts.variables && Object.keys(opts.variables).length > 0
       ? JSON.stringify(opts.variables, null, 2)
       : "";
+  if (opts.family === "schema_evolution") {
+    const description = serializedVariables
+      ? `${opts.description}\n\nRequested simulation parameters:\n${serializedVariables}`
+      : opts.description;
+    return designSchemaEvolution(description, async (systemPrompt, userPrompt) => {
+      const result = await opts.provider.complete({
+        systemPrompt,
+        userPrompt,
+      });
+      return result.text;
+    }) as unknown as Record<string, unknown>;
+  }
+
   const systemPrompt = `You are a simulation designer. Given a plain-language description, produce a ${opts.family} spec as a JSON object.
 
 Required fields:
