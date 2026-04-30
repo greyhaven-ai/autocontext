@@ -18,6 +18,7 @@ from rich.console import Console
 from rich.table import Table
 
 from autocontext.agents.orchestrator import AgentOrchestrator
+from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_investigate import run_investigate_command
 from autocontext.cli_queue import register_queue_command
 from autocontext.cli_role_runtime import resolve_role_runtime
@@ -1560,6 +1561,7 @@ def improve(
         console.print(f"[bold]Met threshold:[/bold] {result.met_threshold}")
 
 
+register_analytics_command(app, console=console)
 register_solve_command(app, console=console)
 register_queue_command(app, console=console)
 

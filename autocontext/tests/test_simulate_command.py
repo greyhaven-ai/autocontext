@@ -130,6 +130,28 @@ class TestSimulationEngine:
         assert result["summary"]["best_case"] is not None
         assert result["summary"]["worst_case"] is not None
 
+    def test_schema_evolution_prompt_preserves_family_metadata(self, tmp_knowledge: Path) -> None:
+        from autocontext.scenarios.families import get_family_marker
+        from autocontext.simulation.engine import SimulationEngine
+
+        description = (
+            "Harness Stress Test: portfolio construction under regime change — "
+            "quantitative adaptation with schema evolution\n\n"
+            "Use SimulationInterface + WorldState to simulate market regimes. Mid-run, "
+            "the market schema changes: rate regime, volatility regime, correlation "
+            "structure, and risk model assumptions mutate. The agent must migrate "
+            "knowledge and avoid stale assumptions."
+        )
+
+        engine = SimulationEngine(llm_fn=_mock_llm_fn(), knowledge_root=tmp_knowledge)
+        result = engine.run(description=description, save_as="portfolio_regime_schema")
+
+        scenario_dir = Path(result["artifacts"]["scenario_dir"])
+        persisted = json.loads((scenario_dir / "spec.json").read_text())
+        assert result["family"] == "schema_evolution"
+        assert persisted["family"] == "schema_evolution"
+        assert (scenario_dir / "scenario_type.txt").read_text(encoding="utf-8") == get_family_marker("schema_evolution")
+
     def test_sweep_cells_change_execution_when_variables_change_runtime(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine
 

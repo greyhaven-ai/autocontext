@@ -68,7 +68,9 @@ def infer_family(description: str) -> str:
         family = route_to_family(classify_scenario_family(description), 0.15).name
         if family == "operator_loop" and _STATECRAFT_SIMULATION_CONTEXT.search(text_lower):
             return "simulation"
-        return "operator_loop" if family == "operator_loop" else "simulation"
+        if family in {"operator_loop", "schema_evolution"}:
+            return family
+        return "simulation"
     except Exception:
         return "simulation"
 

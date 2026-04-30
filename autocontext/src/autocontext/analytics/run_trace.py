@@ -15,6 +15,7 @@ Key types:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -145,13 +146,18 @@ class RunTrace(BaseModel):
 class TraceStore:
     """Persists and queries RunTrace artifacts as JSON files."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, writer: Callable[[Path, dict[str, Any]], None] | None = None) -> None:
         self._dir = root / "traces"
+        self._writer = writer
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def persist(self, trace: RunTrace) -> Path:
         path = self._dir / f"{trace.trace_id}.json"
-        write_json(path, trace.to_dict())
+        payload = trace.to_dict()
+        if self._writer is not None:
+            self._writer(path, payload)
+        else:
+            write_json(path, payload)
         return path
 
     def load(self, trace_id: str) -> RunTrace | None:

@@ -22,6 +22,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_DIRECT_FAMILY_HINTS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "schema_evolution",
+        re.compile(
+            r"\bschema[-_ ]evolution\b|\bschemaevolutioninterface\b|\bschemamutation\b|"
+            r"\bschema\b.*\b(?:mutat|migrat|drift|version|breaking|stale assumption|regime change)\b|"
+            r"\b(?:mutat|migrat|drift|version|breaking|stale assumption|regime change)\b.*\bschema\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+)
+
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
@@ -461,6 +473,14 @@ def _build_rationale(matched: list[str], family_name: str) -> str:
     return f"Matched {family_name} signals: {', '.join(top)}"
 
 
+def resolve_direct_family_hint(description: str) -> str | None:
+    """Return a high-confidence family when the description names a domain contract."""
+    for family_name, pattern in _DIRECT_FAMILY_HINTS:
+        if pattern.search(description):
+            return family_name
+    return None
+
+
 # ---------------------------------------------------------------------------
 # LLM fallback (AC-580)
 # ---------------------------------------------------------------------------
@@ -595,6 +615,24 @@ def classify_scenario_family(
     registered_families = [family.name for family in list_families()]
     if not registered_families:
         raise ValueError("no scenario families are registered")
+
+    direct_family = resolve_direct_family_hint(description)
+    if direct_family in registered_families:
+        alternatives = [
+            FamilyCandidate(
+                family_name=family_name,
+                confidence=0.0,
+                rationale=f"Direct hint selected {direct_family}",
+            )
+            for family_name in registered_families
+            if family_name != direct_family
+        ]
+        return FamilyClassification(
+            family_name=direct_family,
+            confidence=0.95,
+            rationale=f"Direct family hint matched {direct_family}",
+            alternatives=alternatives,
+        )
 
     from autocontext.config.settings import AppSettings  # local import avoids circular dep
     threshold = AppSettings().classifier_fast_path_threshold

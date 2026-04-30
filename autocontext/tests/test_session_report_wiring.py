@@ -38,6 +38,7 @@ def _make_runner_with_mocks(settings: AppSettings) -> tuple[Any, dict[str, Any]]
     sqlite, artifacts, agents, executor, events, gate, trajectory_builder, scenario.
     """
     from autocontext.loop.generation_runner import GenerationRunner
+    from autocontext.util.json_io import write_json
 
     with patch.object(GenerationRunner, "__init__", lambda self, s: None):
         runner = GenerationRunner.__new__(GenerationRunner)
@@ -45,6 +46,7 @@ def _make_runner_with_mocks(settings: AppSettings) -> tuple[Any, dict[str, Any]]
     runner.settings = settings
     runner.sqlite = MagicMock()
     runner.artifacts = MagicMock()
+    runner.artifacts.write_json.side_effect = write_json
     runner.agents = MagicMock()
     runner.executor = MagicMock()
     runner.events = MagicMock()
@@ -540,11 +542,14 @@ class TestRunTraceWiring:
         _run_with_pipeline_mock(runner, mocks, "grid_ctf", 2, "test_trace")
 
         trace_path = tmp_path / "knowledge" / "analytics" / "traces" / "trace-test_trace.json"
+        run_trace_path = tmp_path / "runs" / "test_trace" / "traces" / "trace-test_trace.json"
         inspection_path = tmp_path / "knowledge" / "analytics" / "inspections" / "trace-test_trace.json"
         assert trace_path.exists()
+        assert run_trace_path.exists()
         assert inspection_path.exists()
 
         trace_payload = json.loads(trace_path.read_text(encoding="utf-8"))
+        assert json.loads(run_trace_path.read_text(encoding="utf-8")) == trace_payload
         event_types = {event["event_type"] for event in trace_payload["events"]}
         categories = {event["category"] for event in trace_payload["events"]}
         assert "generation_summary" in event_types

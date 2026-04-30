@@ -37,7 +37,6 @@ from autocontext.analytics.run_trace import (
 )
 from autocontext.analytics.store import FacetStore
 from autocontext.analytics.taxonomy import FacetTaxonomy
-from autocontext.analytics.timeline_inspector import StateInspector, TimelineBuilder
 from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
 from autocontext.config import AppSettings
 from autocontext.execution import ExecutionSupervisor
@@ -61,10 +60,12 @@ from autocontext.loop.runner_hooks import (
     emit_run_start,
     initialize_hook_bus,
 )
+from autocontext.loop.trace_artifacts import persist_run_inspection
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.base import ScenarioInterface
 from autocontext.scenarios.families import detect_family
 from autocontext.storage import SQLiteStore, artifact_store_from_settings
+from autocontext.storage.run_paths import resolve_run_root
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,14 @@ class GenerationRunner:
         else:
             self.executor = ExecutionSupervisor(executor=LocalExecutor())
         self.events = EventStreamEmitter(settings.event_stream_path)
+        if settings.rlm_enabled:
+            logger.info(
+                "RLM enabled: agent_provider=%s backend=%s sub_model=%s max_turns=%d",
+                settings.agent_provider,
+                settings.rlm_backend,
+                settings.rlm_sub_model,
+                settings.rlm_max_turns,
+            )
         self.controller: LoopController | None = None
         self._meta_optimizer = MetaOptimizer.from_settings(settings)
 
@@ -533,8 +542,20 @@ class GenerationRunner:
         )
         analytics_root = self.settings.knowledge_root / "analytics"
         analytics_root.mkdir(parents=True, exist_ok=True)
-        trace_path = TraceStore(analytics_root).persist(trace)
-        self._persist_run_inspection(trace, analytics_root, trace_path)
+        trace_path = TraceStore(analytics_root, writer=self.artifacts.write_json).persist(trace)
+        TraceStore(resolve_run_root(self.settings.runs_root, run_id), writer=self.artifacts.write_json).persist(trace)
+        persist_run_inspection(trace, analytics_root, trace_path)
+
+    def _safe_generate_run_trace_artifacts(
+        self,
+        run_id: str,
+        scenario_name: str,
+        scenario: ScenarioInterface,
+    ) -> None:
+        try:
+            self._generate_run_trace_artifacts(run_id, scenario_name, scenario)
+        except Exception:
+            logger.warning("failed to generate run trace artifacts for run %s", run_id, exc_info=True)
 
     def _build_run_trace(
         self,
@@ -880,45 +901,6 @@ class GenerationRunner:
             },
         )
 
-    def _persist_run_inspection(
-        self,
-        trace: RunTrace,
-        analytics_root: Path,
-        trace_path: Path,
-    ) -> None:
-        """Persist operator-facing inspection artifacts derived from a run trace."""
-        inspection_dir = analytics_root / "inspections"
-        inspection_dir.mkdir(parents=True, exist_ok=True)
-        inspector = StateInspector()
-        builder = TimelineBuilder()
-        generation_indices = sorted({
-            event.generation_index for event in trace.events if event.generation_index is not None
-        })
-        payload = {
-            "trace_id": trace.trace_id,
-            "run_id": trace.run_id,
-            "trace_path": str(trace_path),
-            "created_at": trace.created_at,
-            "run_inspection": inspector.inspect_run(trace).model_dump(),
-            "generation_inspections": [
-                inspector.inspect_generation(trace, generation_index).model_dump()
-                for generation_index in generation_indices
-            ],
-            "timeline_summary": [entry.to_dict() for entry in builder.build_summary(trace)],
-            "failure_paths": [
-                [event.event_id for event in path]
-                for path in inspector.find_failure_paths(trace)
-            ],
-            "recovery_paths": [
-                [event.event_id for event in path]
-                for path in inspector.find_recovery_paths(trace)
-            ],
-        }
-        (inspection_dir / f"{trace.trace_id}.json").write_text(
-            json.dumps(payload, indent=2),
-            encoding="utf-8",
-        )
-
     def _role_stage(self, role: str) -> str:
         return {
             "competitor": "compete",
@@ -1244,6 +1226,7 @@ class GenerationRunner:
                     replay_narrative = ctx.replay_narrative
                     coach_competitor_hints = ctx.coach_competitor_hints
                     completed += 1
+                    self._safe_generate_run_trace_artifacts(active_run_id, scenario_name, scenario)
                 except Exception as exc:
                     logger.debug("loop.generation_runner: caught Exception", exc_info=True)
                     self.artifacts.mutation_log.append(
@@ -1325,6 +1308,7 @@ class GenerationRunner:
                 )
             except Exception:
                 logger.debug("RUN_END hook failed after run failure", exc_info=True)
+            self._safe_generate_run_trace_artifacts(active_run_id, scenario_name, scenario)
             raise
         finally:
             self.artifacts.shutdown_writer()
@@ -1352,10 +1336,7 @@ class GenerationRunner:
             self._generate_aggregate_analytics(active_run_id, scenario_name, scenario)
         except Exception:
             logger.warning("failed to generate aggregate analytics for run %s", active_run_id, exc_info=True)
-        try:
-            self._generate_run_trace_artifacts(active_run_id, scenario_name, scenario)
-        except Exception:
-            logger.warning("failed to generate run trace artifacts for run %s", active_run_id, exc_info=True)
+        self._safe_generate_run_trace_artifacts(active_run_id, scenario_name, scenario)
         try:
             self._generate_trace_grounded_reports(active_run_id, scenario_name)
         except Exception:

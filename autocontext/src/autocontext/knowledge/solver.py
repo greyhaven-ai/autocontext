@@ -322,6 +322,7 @@ def _resolve_family_hint(description: str) -> ScenarioFamily | None:
 
 
 def _resolve_solve_family_alias(description: str) -> ScenarioFamily | None:
+    from autocontext.scenarios.custom.family_classifier import resolve_direct_family_hint
     from autocontext.scenarios.families import get_family
 
     match = _FAMILY_HEADER_RE.search(description)
@@ -332,6 +333,9 @@ def _resolve_solve_family_alias(description: str) -> ScenarioFamily | None:
             if aliased is not None:
                 return get_family(aliased)
 
+    direct_family = resolve_direct_family_hint(description)
+    if direct_family is not None:
+        return get_family(direct_family)
     if _SIMULATION_INTERFACE_HINT_RE.search(description):
         return get_family("simulation")
     if _AGENT_TASK_INTERFACE_HINT_RE.search(description):

@@ -16,7 +16,20 @@ from autocontext.harness.repl.types import ExecutionRecord, ReplCommand, ReplWor
 
 logger = logging.getLogger(__name__)
 
-_CODE_PATTERN = re.compile(r"<code>(.*?)</code>", re.DOTALL)
+_CODE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"<code>(.*?)</code>", re.DOTALL | re.IGNORECASE),
+    re.compile(r"```[ \t]*(?:python|py)[^\n`]*\r?\n(.*?)```", re.DOTALL | re.IGNORECASE),
+    re.compile(r"```[ \t]*\r?\n(.*?)```", re.DOTALL),
+)
+
+
+def _extract_code_block(text: str) -> str | None:
+    """Extract the first supported REPL code block, preserving legacy priority."""
+    for pattern in _CODE_PATTERNS:
+        match = pattern.search(text)
+        if match is not None:
+            return match.group(1).strip()
+    return None
 
 
 def make_llm_batch(
@@ -118,9 +131,8 @@ class RlmSession:
             assistant_text = response.text
             messages.append({"role": "assistant", "content": assistant_text})
 
-            code_match = _CODE_PATTERN.search(assistant_text)
-            if code_match:
-                code = code_match.group(1).strip()
+            code = _extract_code_block(assistant_text)
+            if code is not None:
                 result = self._worker.run_code(ReplCommand(code))
 
                 self.execution_history.append(ExecutionRecord(
@@ -153,8 +165,8 @@ class RlmSession:
                 # Model didn't emit code — nudge it
                 messages.append({
                     "role": "user",
-                    "content": "Please write code inside <code> tags to continue your analysis, "
-                    'or set answer["ready"] = True to finalize.',
+                    "content": "Please write code inside <code> tags or a ```python fenced block "
+                    'to continue your analysis, or set answer["ready"] = True to finalize.',
                 })
         else:
             status = "truncated"
