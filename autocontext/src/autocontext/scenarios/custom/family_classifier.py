@@ -24,11 +24,24 @@ logger = logging.getLogger(__name__)
 
 _DIRECT_FAMILY_HINTS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
+        "tool_fragility",
+        re.compile(
+            r"\btool[-_ ]fragility\b|\btoolfragilityinterface\b|"
+            r"\b(?:tool|tools|api|endpoint)\b.*\b(?:contract drift|api contract|response schema|response format|"
+            r"tool drift|tool version|endpoint deprecat|api deprecat|tool failure)\b|"
+            r"\b(?:contract drift|api contract|response schema|response format|tool drift|tool version|"
+            r"endpoint deprecat|api deprecat|tool failure)\b.*\b(?:tool|tools|api|endpoint)\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ),
+    (
         "schema_evolution",
         re.compile(
             r"\bschema[-_ ]evolution\b|\bschemaevolutioninterface\b|\bschemamutation\b|"
-            r"\bschema\b.*\b(?:mutat|migrat|drift|version|breaking|stale assumption|regime change)\b|"
-            r"\b(?:mutat|migrat|drift|version|breaking|stale assumption|regime change)\b.*\bschema\b",
+            r"\b(?:domain|data|database|market|portfolio|world state|state|context|knowledge) schema\b"
+            r".*\b(?:changes?|mutat|migrat|version|breaking|stale assumption|regime change)\b|"
+            r"\b(?:changes?|mutat|migrat|version|breaking|stale assumption|regime change)\b.*"
+            r"\b(?:domain|data|database|market|portfolio|world state|state|context|knowledge) schema\b",
             re.IGNORECASE | re.DOTALL,
         ),
     ),

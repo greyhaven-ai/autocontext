@@ -5,7 +5,9 @@ builds simulation specs, executes trajectories/sweeps, and returns
 structured findings with assumptions and warnings.
 """
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -131,8 +133,9 @@ class TestSimulationEngine:
         assert result["summary"]["worst_case"] is not None
 
     def test_schema_evolution_prompt_preserves_family_metadata(self, tmp_knowledge: Path) -> None:
-        from autocontext.scenarios.families import get_family_marker
-        from autocontext.simulation.engine import SimulationEngine
+        from autocontext.scenarios.families import detect_family, get_family_marker
+        from autocontext.scenarios.schema_evolution import SchemaEvolutionInterface
+        from autocontext.simulation.engine import SimulationEngine, _find_scenario_class
 
         description = (
             "Harness Stress Test: portfolio construction under regime change — "
@@ -151,6 +154,19 @@ class TestSimulationEngine:
         assert result["family"] == "schema_evolution"
         assert persisted["family"] == "schema_evolution"
         assert (scenario_dir / "scenario_type.txt").read_text(encoding="utf-8") == get_family_marker("schema_evolution")
+
+        source_path = scenario_dir / "scenario.py"
+        module_name = "autocontext.tests.generated_schema_evolution_simulate"
+        spec = importlib.util.spec_from_file_location(module_name, source_path)
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        scenario_cls = _find_scenario_class(module)
+        assert scenario_cls is not None
+        assert issubclass(scenario_cls, SchemaEvolutionInterface)
+        assert detect_family(scenario_cls()).name == "schema_evolution"
 
     def test_sweep_cells_change_execution_when_variables_change_runtime(self, tmp_knowledge: Path) -> None:
         from autocontext.simulation.engine import SimulationEngine

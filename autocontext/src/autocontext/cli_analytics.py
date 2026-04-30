@@ -33,16 +33,30 @@ def run_rebuild_traces_command(
     """Rebuild RunTrace artifacts from an events.ndjson stream."""
     settings = load_settings_fn()
     source_path = events_path or settings.event_stream_path
-    run_ids = [run_id] if run_id else collect_run_ids(source_path)
-    if not run_ids:
-        failed_result: dict[str, Any] = {"status": "failed", "error": f"No run ids found in {source_path}"}
+    available_run_ids = collect_run_ids(source_path)
+    if run_id and run_id not in available_run_ids:
+        missing_result: dict[str, Any] = {
+            "status": "failed",
+            "error": f"No events found for run id {run_id!r} in {source_path}",
+            "run_id": run_id,
+        }
         if json_output:
-            write_json_stdout(failed_result)
+            write_json_stdout(missing_result)
         else:
-            console.print(f"[red]{failed_result['error']}[/red]")
+            console.print(f"[red]{missing_result['error']}[/red]")
+        raise typer.Exit(code=1)
+
+    run_ids = [run_id] if run_id else available_run_ids
+    if not run_ids:
+        empty_result: dict[str, Any] = {"status": "failed", "error": f"No run ids found in {source_path}"}
+        if json_output:
+            write_json_stdout(empty_result)
+        else:
+            console.print(f"[red]{empty_result['error']}[/red]")
         raise typer.Exit(code=1)
 
     artifacts = artifact_store_from_settings(settings)
+    analytics_store = TraceStore(settings.knowledge_root / "analytics", writer=artifacts.write_json)
     rebuilt: list[dict[str, Any]] = []
     for current_run_id in run_ids:
         try:
@@ -56,12 +70,14 @@ def run_rebuild_traces_command(
             raise typer.Exit(code=1) from exc
 
         trace = events_to_trace(source_path, current_run_id)
+        analytics_path = analytics_store.persist(trace)
         path = TraceStore(run_root, writer=artifacts.write_json).persist(trace)
         rebuilt.append({
             "run_id": current_run_id,
             "trace_id": trace.trace_id,
             "event_count": len(trace.events),
             "path": str(path),
+            "analytics_path": str(analytics_path),
         })
 
     result: dict[str, Any] = {"status": "completed", "events_path": str(source_path), "rebuilt": rebuilt}

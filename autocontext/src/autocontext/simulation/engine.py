@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.types import LlmFn
+from autocontext.simulation import schema_evolution as schema_evolution_sim
 from autocontext.simulation.helpers import (
     aggregate_contract_signal_counts,
     apply_behavioral_contract,
@@ -31,8 +32,6 @@ if TYPE_CHECKING:
     from autocontext.scenarios.operator_loop import OperatorLoopInterface
 
 
-# Backward-compatible alias for existing tests and callers that still import
-# the abstract-class filter helper from this module.
 _find_scenario_class = find_scenario_class
 
 
@@ -72,7 +71,7 @@ class SimulationEngine:
 
         try:
             family = infer_family(description)
-            spec = self._normalize_spec(self._apply_variables(self._build_spec(description, family), resolved_variables))
+            spec = self._normalize_spec(self._apply_variables(self._build_spec(description, family), resolved_variables), family)
 
             source = self._generate_source(spec, name, family)
             scenario_dir = self._persist(name, family, spec, source)
@@ -300,13 +299,15 @@ class SimulationEngine:
     # ------------------------------------------------------------------
 
     def _build_spec(self, description: str, family: str) -> dict[str, Any]:
+        if family == "schema_evolution" and (designed := schema_evolution_sim.design_spec(description, self.llm_fn)):
+            return designed
         if family == "operator_loop":
             from autocontext.scenarios.custom.generic_creator import spec_to_plain_data
             from autocontext.scenarios.custom.operator_loop_designer import design_operator_loop
 
             try:
-                designed = design_operator_loop(description, self.llm_fn)
-                plain = spec_to_plain_data(designed)
+                operator_spec = design_operator_loop(description, self.llm_fn)
+                plain = spec_to_plain_data(operator_spec)
                 if isinstance(plain, dict):
                     return plain
             except Exception:
@@ -339,7 +340,9 @@ class SimulationEngine:
             "actions": [{"name": "act", "description": "Take action", "parameters": {}, "preconditions": [], "effects": []}],
         }
 
-    def _normalize_spec(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_spec(self, spec: dict[str, Any], family: str = "simulation") -> dict[str, Any]:
+        if family == "schema_evolution":
+            return schema_evolution_sim.normalize_spec(spec)
         from autocontext.scenarios.custom.simulation_spec import normalize_simulation_spec_dict
 
         return normalize_simulation_spec_dict(spec)
@@ -361,6 +364,8 @@ class SimulationEngine:
                 max_steps=spec.get("max_steps", 10),
             )
             return generate_operator_loop_class(ol_spec, name)
+        elif family == "schema_evolution":
+            return schema_evolution_sim.generate_source(spec, name)
         else:
             from autocontext.scenarios.custom.simulation_codegen import generate_simulation_class
             from autocontext.scenarios.custom.simulation_spec import SimulationSpec, parse_simulation_actions
@@ -574,7 +579,7 @@ class SimulationEngine:
         for i, variables in enumerate(combos):
             merged_variables = {**base_variables, **variables}
             variant_name = f"{name}__sweep_{i + 1}"
-            variant_spec = self._normalize_spec(self._apply_variables(base_spec, merged_variables))
+            variant_spec = self._normalize_spec(self._apply_variables(base_spec, merged_variables), family)
             source = self._generate_source(variant_spec, variant_name, family)
             variant_dir = scenario_dir / "sweep" / str(i + 1)
             self._persist(variant_name, family, variant_spec, source, variant_dir)
@@ -684,7 +689,7 @@ class SimulationEngine:
         if not variables and source_path.exists():
             return source_path.read_text(encoding="utf-8")
 
-        updated_spec = self._normalize_spec(self._apply_variables(spec, variables))
+        updated_spec = self._normalize_spec(self._apply_variables(spec, variables), family)
         return self._generate_source(updated_spec, name, family)
 
     def _apply_variables(self, spec: dict[str, Any], variables: dict[str, Any] | None) -> dict[str, Any]:
@@ -743,7 +748,7 @@ class SimulationEngine:
         for i, cell in enumerate(original_results):
             cell_variables = {**(cell.get("variables") or {}), **overrides}
             variant_name = f"{base_name}__sweep_{i + 1}"
-            variant_spec = self._normalize_spec(self._apply_variables(base_spec, cell_variables))
+            variant_spec = self._normalize_spec(self._apply_variables(base_spec, cell_variables), family)
             source = self._generate_source(variant_spec, variant_name, family)
             variant_dir = scenario_dir / "sweep" / str(i + 1)
             self._persist(variant_name, family, variant_spec, source, variant_dir)

@@ -101,9 +101,30 @@ def test_analytics_rebuild_traces_cli_writes_run_local_trace(tmp_path: Path) -> 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
     trace_path = tmp_path / "runs" / "run-1" / "traces" / "trace-run-1.json"
+    analytics_trace_path = tmp_path / "knowledge" / "analytics" / "traces" / "trace-run-1.json"
     assert payload["status"] == "completed"
     assert payload["rebuilt"][0]["path"] == str(trace_path)
     assert json.loads(trace_path.read_text(encoding="utf-8"))["run_id"] == "run-1"
+    assert json.loads(analytics_trace_path.read_text(encoding="utf-8"))["run_id"] == "run-1"
+
+
+def test_analytics_rebuild_traces_cli_rejects_missing_run_id(tmp_path: Path) -> None:
+    events_path = tmp_path / "runs" / "events.ndjson"
+    _write_events(events_path, [_event(1, "run_started", {"scenario": "grid_ctf"})])
+    settings = _settings(tmp_path, events_path)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "rebuild-traces", "--events", str(events_path), "--run-id", "run-missing", "--json"],
+        )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "failed"
+    assert "No events found for run id" in payload["error"]
+    assert not (tmp_path / "runs" / "run-missing" / "traces" / "trace-run-missing.json").exists()
 
 
 def test_analytics_rebuild_traces_cli_rejects_run_id_escape(tmp_path: Path) -> None:
