@@ -160,6 +160,17 @@ def run_solve_command(
     console.print(table)
 
 
+def _resolve_solve_description(
+    option_description: str,
+    positional_description: str | None,
+) -> str:
+    return option_description.strip() or (positional_description or "").strip()
+
+
+def _resolve_solve_generations(gens: int | None, iterations: int | None) -> int:
+    return gens if gens is not None else iterations if iterations is not None else 5
+
+
 def register_solve_command(
     app: typer.Typer,
     *,
@@ -168,8 +179,10 @@ def register_solve_command(
 ) -> None:
     @app.command()
     def solve(
-        description: str = typer.Option(..., "--description", help="Natural-language scenario/problem description"),
-        gens: int = typer.Option(5, "--gens", min=1, max=50, help="Generations to run for the solve"),
+        description_text: str | None = typer.Argument(None, help="Plain-language scenario/problem description"),
+        description: str = typer.Option("", "--description", "-d", help="Same description as a named option"),
+        gens: int | None = typer.Option(None, "--gens", min=1, max=50, help="Generations to run for the solve"),
+        iterations: int | None = typer.Option(None, "--iterations", min=1, max=50, help="Plain-language alias for --gens"),
         timeout: float | None = typer.Option(
             None,
             "--timeout",
@@ -191,9 +204,18 @@ def register_solve_command(
         ),
     ) -> None:
         _validate_family_override(family)
+        resolved_description = _resolve_solve_description(description, description_text)
+        write_json_stderr = _cli_attr(dependency_module, "_write_json_stderr")
+        if not resolved_description:
+            message = '--description is required. You can also run: autoctx solve "plain-language goal".'
+            if json_output:
+                write_json_stderr(message)
+            else:
+                typer.echo(message, err=True)
+            raise typer.Exit(code=1)
         run_solve_command(
-            description=description,
-            gens=gens,
+            description=resolved_description,
+            gens=_resolve_solve_generations(gens, iterations),
             timeout=timeout,
             generation_time_budget=generation_time_budget,
             output=output,
@@ -201,6 +223,6 @@ def register_solve_command(
             console=console,
             load_settings_fn=_cli_attr(dependency_module, "load_settings"),
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
-            write_json_stderr=_cli_attr(dependency_module, "_write_json_stderr"),
+            write_json_stderr=write_json_stderr,
             family_override=family or None,
         )

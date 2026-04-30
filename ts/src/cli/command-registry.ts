@@ -31,6 +31,8 @@ export type DbCommandName =
   | "run"
   | "list"
   | "replay"
+  | "show"
+  | "watch"
   | "benchmark"
   | "export"
   | "export-training-data"
@@ -65,6 +67,8 @@ const COMMANDS: readonly CommandDescriptor[] = [
   { name: "run", description: "Run generation loop for a scenario", group: "primary", route: { kind: "db", command: "run" } },
   { name: "list", description: "List recent runs", group: "primary", route: { kind: "db", command: "list" } },
   { name: "replay", description: "Print replay JSON for a generation", group: "primary", route: { kind: "db", command: "replay" } },
+  { name: "show", description: "Show the best or latest generation for a run", group: "primary", route: { kind: "db", command: "show" } },
+  { name: "watch", description: "Follow a run until it finishes", group: "primary", route: { kind: "db", command: "watch" } },
   { name: "benchmark", description: "Run benchmark (multiple runs, aggregate stats)", group: "primary", route: { kind: "db", command: "benchmark" } },
   { name: "export", description: "Export strategy package for a scenario", group: "primary", route: { kind: "db", command: "export" } },
   { name: "export-training-data", description: "Export training data as JSONL", group: "primary", route: { kind: "db", command: "export-training-data" } },
@@ -116,6 +120,14 @@ export function resolveCliCommand(command: string): CliCommandRoute {
 export function buildCliHelp(): string {
   return `
 autoctx — always-on agent evaluation harness
+
+Plain-language first:
+  autoctx solve "build an orbital transfer optimizer" --iterations 3
+  autoctx run grid_ctf --iterations 3
+  autoctx status <run-id>
+  autoctx watch <run-id>
+  autoctx show <run-id> --best
+  autoctx export <run-id>
 
 Commands:
 ${formatCommandList("primary")}

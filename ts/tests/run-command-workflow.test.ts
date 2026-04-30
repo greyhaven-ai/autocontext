@@ -14,6 +14,7 @@ describe("run command workflow", () => {
     expect(RUN_HELP_TEXT).toContain("autoctx run");
     expect(RUN_HELP_TEXT).toContain("--scenario");
     expect(RUN_HELP_TEXT).toContain("--gens");
+    expect(RUN_HELP_TEXT).toContain("--iterations");
     expect(RUN_HELP_TEXT).toContain("--matches");
   });
 
@@ -37,7 +38,7 @@ describe("run command workflow", () => {
         vi.fn((raw: string) => Number.parseInt(raw, 10)),
       ),
     ).rejects.toThrow(
-      "Error: no scenario configured. Run `autoctx init` or pass --scenario <name>.",
+      "Error: no scenario configured. Run `autoctx init` or pass <scenario> / --scenario <name>.",
     );
   });
 
@@ -73,6 +74,57 @@ describe("run command workflow", () => {
 
     expect(parsePositiveInteger).toHaveBeenNthCalledWith(1, "5", "--gens");
     expect(parsePositiveInteger).toHaveBeenNthCalledWith(2, "7", "--matches");
+  });
+
+  it("accepts a positional scenario and iterations alias", async () => {
+    const parsePositiveInteger = vi.fn((raw: string) => Number.parseInt(raw, 10));
+
+    await expect(
+      planRunCommand(
+        {
+          positionals: ["grid_ctf"],
+          iterations: "4",
+          matches: "2",
+        },
+        async (value: string | undefined) => value,
+        {
+          defaultGenerations: 1,
+          matchesPerGeneration: 3,
+        },
+        () => 12345,
+        parsePositiveInteger,
+      ),
+    ).resolves.toMatchObject({
+      scenarioName: "grid_ctf",
+      gens: 4,
+      matches: 2,
+    });
+
+    expect(parsePositiveInteger).toHaveBeenNthCalledWith(1, "4", "--iterations");
+    expect(parsePositiveInteger).toHaveBeenNthCalledWith(2, "2", "--matches");
+  });
+
+  it("prefers precise --scenario and --gens flags over positional aliases", async () => {
+    await expect(
+      planRunCommand(
+        {
+          scenario: "support_triage",
+          positionals: ["grid_ctf"],
+          gens: "5",
+          iterations: "4",
+        },
+        async (value: string | undefined) => value,
+        {
+          defaultGenerations: 1,
+          matchesPerGeneration: 3,
+        },
+        () => 12345,
+        (raw: string) => Number.parseInt(raw, 10),
+      ),
+    ).resolves.toMatchObject({
+      scenarioName: "support_triage",
+      gens: 5,
+    });
   });
 
   it("resolves known run scenarios and rejects unknown ones with available names", () => {

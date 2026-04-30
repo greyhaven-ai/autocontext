@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SQLiteStore } from "../storage/index.js";
+import type { GenerationRow, MatchRow } from "../storage/storage-contracts.js";
 import { ArtifactStore, EMPTY_PLAYBOOK_SENTINEL } from "./artifact-store.js";
 import { HarnessStore } from "./harness-store.js";
 import {
@@ -34,12 +35,26 @@ export type { ConflictPolicy, ImportStrategyPackageResult, StrategyPackageData }
 
 export function exportStrategyPackage(opts: {
   scenarioName: string;
+  sourceRunId?: string;
   artifacts: ArtifactStore;
   store: SQLiteStore;
 }): Record<string, unknown> {
+  const sourceRun = opts.sourceRunId ? opts.store.getRun(opts.sourceRunId) : null;
+  if (opts.sourceRunId && !sourceRun) {
+    throw new Error(`Unknown run: ${opts.sourceRunId}`);
+  }
+  if (sourceRun && sourceRun.scenario !== opts.scenarioName) {
+    throw new Error(`Run '${opts.sourceRunId}' belongs to scenario '${sourceRun.scenario}', not '${opts.scenarioName}'`);
+  }
+
   const persisted = readPackageMetadata(opts.artifacts.knowledgeRoot, opts.scenarioName);
   const playbook = opts.artifacts.readPlaybook(opts.scenarioName);
-  const bestGeneration = opts.store.getBestGenerationForScenario(opts.scenarioName);
+  const bestGeneration = opts.sourceRunId
+    ? bestGenerationForRun(opts.store.getGenerations(opts.sourceRunId), opts.sourceRunId)
+    : opts.store.getBestGenerationForScenario(opts.scenarioName);
+  if (opts.sourceRunId && !bestGeneration) {
+    throw new Error(`No generation metrics found for run ${opts.sourceRunId}`);
+  }
   const completedRuns = opts.store.countCompletedRuns(opts.scenarioName);
   const persistedMeta =
     persisted.metadata && typeof persisted.metadata === "object" && !Array.isArray(persisted.metadata)
@@ -52,7 +67,9 @@ export function exportStrategyPackage(opts: {
     description: descriptionForScenario(opts.scenarioName),
     playbook,
     lessons: lessonsFromPlaybook(playbook),
-    bestStrategy: bestStrategyForScenario(opts.store, opts.scenarioName, persisted),
+    bestStrategy: opts.sourceRunId && bestGeneration
+      ? bestStrategyForRun(opts.store, opts.sourceRunId, bestGeneration.generation_index, persisted)
+      : bestStrategyForScenario(opts.store, opts.scenarioName, persisted),
     bestScore: bestGeneration?.best_score ?? persisted.best_score ?? 0,
     bestElo: bestGeneration?.elo ?? persisted.best_elo ?? 1500,
     hints: hintsFromPlaybook(playbook),
@@ -73,10 +90,79 @@ export function exportStrategyPackage(opts: {
       source_run_id:
         bestGeneration?.run_id
         ?? (typeof persistedMeta.source_run_id === "string" ? persistedMeta.source_run_id : null),
+      source_generation:
+        bestGeneration?.generation_index
+        ?? (typeof persistedMeta.source_generation === "number" ? persistedMeta.source_generation : null),
     },
   });
 
   return serializeSkillPackage(pkg, PACKAGE_FORMAT_VERSION);
+}
+
+function bestGenerationForRun(
+  generations: GenerationRow[],
+  runId: string,
+): (GenerationRow & { run_id: string }) | null {
+  const best = generations.reduce<GenerationRow | null>((currentBest, generation) => {
+    if (!currentBest) return generation;
+    if (generation.best_score > currentBest.best_score) return generation;
+    if (
+      generation.best_score === currentBest.best_score
+      && generation.generation_index > currentBest.generation_index
+    ) {
+      return generation;
+    }
+    return currentBest;
+  }, null);
+  return best ? { ...best, run_id: runId } : null;
+}
+
+function bestStrategyForRun(
+  store: SQLiteStore,
+  runId: string,
+  generationIndex: number,
+  persisted: PersistedPackageMetadata,
+): Record<string, unknown> | null {
+  const match = bestMatchForRunGeneration(store.getMatchesForRun(runId), generationIndex);
+  const parsedMatch = parseStrategyJson(match?.strategy_json);
+  if (parsedMatch) {
+    return parsedMatch;
+  }
+
+  const competitor = store
+    .getAgentOutputs(runId, generationIndex)
+    .filter((output) => output.role === "competitor")
+    .at(-1);
+  const parsedCompetitor = parseStrategyJson(competitor?.content);
+  return parsedCompetitor ?? persisted.best_strategy ?? null;
+}
+
+function bestMatchForRunGeneration(
+  matches: MatchRow[],
+  generationIndex: number,
+): MatchRow | null {
+  return matches
+    .filter((match) => match.generation_index === generationIndex)
+    .reduce<MatchRow | null>((best, match) => {
+      if (!best) return match;
+      if (match.score > best.score) return match;
+      if (match.score === best.score && match.id > best.id) return match;
+      return best;
+    }, null);
+}
+
+function parseStrategyJson(raw: string | undefined): Record<string, unknown> | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface SerializedSkillPackageDict extends SkillPackageDict {

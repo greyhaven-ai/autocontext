@@ -15,6 +15,9 @@ runner = CliRunner()
 
 class _CapturingSolveManager:
     last_settings: AppSettings | None = None
+    last_description: str | None = None
+    last_generations: int | None = None
+    last_family_override: str | None = None
 
     def __init__(self, settings: AppSettings) -> None:
         type(self).last_settings = settings
@@ -25,7 +28,9 @@ class _CapturingSolveManager:
         generations: int = 5,
         family_override: str | None = None,
     ) -> SolveJob:
-        del description, generations, family_override
+        type(self).last_description = description
+        type(self).last_generations = generations
+        type(self).last_family_override = family_override
         pkg = SkillPackage(
             scenario_name="grid_ctf",
             display_name="Grid Ctf",
@@ -143,6 +148,76 @@ def _settings(tmp_path: Path, **overrides: object) -> AppSettings:
 
 
 class TestSolveRuntimeOverrides:
+    def test_solve_accepts_plain_language_positional_description(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path)
+
+        from unittest.mock import patch
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager", _CapturingSolveManager),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "solve",
+                    "Design a strategy",
+                    "--gens",
+                    "2",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _CapturingSolveManager.last_description == "Design a strategy"
+        assert _CapturingSolveManager.last_generations == 2
+
+    def test_solve_accepts_iterations_alias(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path)
+
+        from unittest.mock import patch
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager", _CapturingSolveManager),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "solve",
+                    "Design a strategy",
+                    "--iterations",
+                    "4",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _CapturingSolveManager.last_generations == 4
+
+    def test_solve_prefers_description_option_over_positional_description(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path)
+
+        from unittest.mock import patch
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.knowledge.solver.SolveManager", _CapturingSolveManager),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "solve",
+                    "Positional strategy",
+                    "--description",
+                    "Named strategy",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert _CapturingSolveManager.last_description == "Named strategy"
+
     def test_solve_timeout_override_updates_runtime_settings(self, tmp_path: Path) -> None:
         settings = _settings(tmp_path)
 

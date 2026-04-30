@@ -69,6 +69,9 @@ exclude = [".claude", ".claude/**"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/autocontext"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"assets" = "autocontext/assets"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers --disable-warnings"

@@ -9,6 +9,7 @@ import {
 describe("export command workflow", () => {
   it("exposes stable help text", () => {
     expect(EXPORT_HELP_TEXT).toContain("autoctx export");
+    expect(EXPORT_HELP_TEXT).toContain("autoctx export <run-id>");
     expect(EXPORT_HELP_TEXT).toContain("--scenario");
     expect(EXPORT_HELP_TEXT).toContain("import-package");
   });
@@ -18,8 +19,9 @@ describe("export command workflow", () => {
       planExportCommand(
         { scenario: undefined, output: undefined, json: false },
         async () => undefined,
+        async () => undefined,
       ),
-    ).rejects.toThrow("Error: --scenario is required");
+    ).rejects.toThrow("Error: --scenario or <run-id> is required");
   });
 
   it("plans export with resolved scenario and output options", async () => {
@@ -27,11 +29,54 @@ describe("export command workflow", () => {
       planExportCommand(
         { scenario: "grid_ctf", output: "/tmp/pkg.json", json: true },
         async (value: string | undefined) => `${value}_resolved`,
+        async () => undefined,
       ),
     ).resolves.toEqual({
       scenarioName: "grid_ctf_resolved",
+      runId: undefined,
       output: "/tmp/pkg.json",
       json: true,
+    });
+  });
+
+  it("plans export from a positional run id", async () => {
+    await expect(
+      planExportCommand(
+        { positionals: ["run-123"], json: true },
+        async () => undefined,
+        async (runId: string) => (runId === "run-123" ? "grid_ctf" : undefined),
+      ),
+    ).resolves.toEqual({
+      scenarioName: "grid_ctf",
+      runId: "run-123",
+      output: undefined,
+      json: true,
+    });
+  });
+
+  it("prefers precise scenario flags over positional run ids", async () => {
+    await expect(
+      planExportCommand(
+        { scenario: "support_triage", positionals: ["run-123"] },
+        async (scenario: string | undefined) => `${scenario}_resolved`,
+        async () => "grid_ctf",
+      ),
+    ).resolves.toMatchObject({
+      scenarioName: "support_triage_resolved",
+      runId: undefined,
+    });
+  });
+
+  it("keeps a named run id when paired with an explicit scenario", async () => {
+    await expect(
+      planExportCommand(
+        { scenario: "grid_ctf", "run-id": "run-123" },
+        async (scenario: string | undefined) => scenario,
+        async (runId: string) => (runId === "run-123" ? "grid_ctf" : undefined),
+      ),
+    ).resolves.toMatchObject({
+      scenarioName: "grid_ctf",
+      runId: "run-123",
     });
   });
 
@@ -40,6 +85,7 @@ describe("export command workflow", () => {
 
     const rendered = executeExportCommandWorkflow({
       scenarioName: "grid_ctf",
+      runId: "run-123",
       exportStrategyPackage,
       artifacts: { kind: "artifacts" },
       store: { kind: "store" },
@@ -47,6 +93,7 @@ describe("export command workflow", () => {
 
     expect(exportStrategyPackage).toHaveBeenCalledWith({
       scenarioName: "grid_ctf",
+      sourceRunId: "run-123",
       artifacts: { kind: "artifacts" },
       store: { kind: "store" },
     });

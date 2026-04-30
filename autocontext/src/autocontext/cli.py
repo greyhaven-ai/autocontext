@@ -328,8 +328,10 @@ def _run_agent_task(
 
 @app.command()
 def run(
-    scenario: str = typer.Option("grid_ctf", "--scenario"),
-    gens: int = typer.Option(1, "--gens", min=1),
+    scenario_text: str | None = typer.Argument(None, help="Scenario to run"),
+    scenario: str = typer.Option("", "--scenario"),
+    gens: int | None = typer.Option(None, "--gens", min=1),
+    iterations: int | None = typer.Option(None, "--iterations", min=1, help="Plain-language alias for --gens"),
     run_id: str | None = typer.Option(None, "--run-id"),
     serve: bool = typer.Option(False, "--serve", help="Start interactive server alongside generation loop"),
     port: int = typer.Option(8000, "--port", help="Server port (only used with --serve)"),
@@ -337,6 +339,8 @@ def run(
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Run generation loop."""
+    scenario = scenario.strip() or (scenario_text or "").strip() or "grid_ctf"
+    gens = gens if gens is not None else iterations if iterations is not None else 1
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -942,12 +946,14 @@ def export_training_data_cmd(
 
 @app.command("export")
 def export_cmd(
-    scenario: str = typer.Option(..., "--scenario", help="Scenario to export"),
+    run_id_text: str | None = typer.Argument(None, help="Run id to export"),
+    scenario: str = typer.Option("", "--scenario", help="Scenario to export"),
+    run_id: str | None = typer.Option(None, "--run-id", help="Run id to export"),
     output: str = typer.Option(
         "",
         "--output",
         help=(
-            "Output path: strategy JSON file (default: <scenario>_package.json) "
+            "Output path: strategy JSON file (default: <scenario-or-run-id>_package.json) "
             "or pi-package directory (default: <scenario>-pi-package)"
         ),
     ),
@@ -989,8 +995,29 @@ def export_cmd(
     ctx.sqlite = sqlite
     ctx.artifacts = artifacts
 
+    source_run_id = run_id.strip() if run_id else None
+    scenario_name = scenario.strip()
+    if not scenario_name:
+        source_run_id = source_run_id or ((run_id_text or "").strip() or None)
+        if source_run_id is None:
+            message = "--scenario or <run-id> is required"
+            if json_output:
+                _write_json_stderr(message)
+            else:
+                console.print(f"[red]{message}[/red]")
+            raise typer.Exit(code=1)
+        run_row = sqlite.get_run(source_run_id)
+        if run_row is None:
+            message = f"run '{source_run_id}' not found"
+            if json_output:
+                _write_json_stderr(message)
+            else:
+                console.print(f"[red]{message}[/red]")
+            raise typer.Exit(code=1)
+        scenario_name = str(run_row["scenario"])
+
     try:
-        pkg = export_strategy_package(ctx, scenario)
+        pkg = export_strategy_package(ctx, scenario_name, source_run_id=source_run_id)
     except ValueError as exc:
         if json_output:
             _write_json_stderr(str(exc))
@@ -1014,12 +1041,12 @@ def export_cmd(
             write_pi_package,
         )
 
-        output_path = Path(output) if output else default_pi_package_output_dir(scenario)
+        output_path = Path(output) if output else default_pi_package_output_dir(scenario_name)
         written = write_pi_package(build_pi_package(pkg), output_path)
         if json_output:
             _write_json_stdout(
                 {
-                    "scenario": scenario,
+                    "scenario": scenario_name,
                     "format": normalized_format,
                     "output_path": str(output_path),
                     "file_count": len(written.files),
@@ -1027,17 +1054,18 @@ def export_cmd(
                 }
             )
         else:
-            console.print(f"[green]Exported {scenario} Pi package to {output_path}[/green]")
+            console.print(f"[green]Exported {scenario_name} Pi package to {output_path}[/green]")
             console.print(f"[dim]files={len(written.files)} best_score={pkg.best_score:.4f}[/dim]")
         return
 
-    output_path = Path(output) if output else Path(f"{scenario}_package.json")
+    output_stem = source_run_id or scenario_name
+    output_path = Path(output) if output else Path(f"{output_stem}_package.json")
     pkg.to_file(output_path)
 
     if json_output:
         _write_json_stdout(
             {
-                "scenario": scenario,
+                "scenario": scenario_name,
                 "format": normalized_format,
                 "output_path": str(output_path),
                 "best_score": pkg.best_score,
@@ -1046,7 +1074,7 @@ def export_cmd(
             }
         )
     else:
-        console.print(f"[green]Exported {scenario} package to {output_path}[/green]")
+        console.print(f"[green]Exported {scenario_name} package to {output_path}[/green]")
         console.print(f"[dim]best_score={pkg.best_score:.4f} lessons={len(pkg.lessons)} harness={len(pkg.harness)}[/dim]")
 
 

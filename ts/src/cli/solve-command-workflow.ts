@@ -4,11 +4,14 @@ import { dirname } from "node:path";
 export const SOLVE_HELP_TEXT = `autoctx solve — create and solve a scenario from a plain-language description
 
 Usage:
+  autoctx solve "..." [--iterations N] [--family name] [--json]
   autoctx solve --description "..." [--gens N] [--family name] [--json]
 
 Options:
-  -d, --description <text>   Natural-language scenario/problem description
+  <text>                     Plain-language scenario/problem description
+  -d, --description <text>   Same description as a named option
   -g, --gens <N>             Generations to run (default: 5)
+  --iterations <N>           Plain-language alias for --gens
   --family <name>            Force a scenario family before creation/routing
   --timeout <seconds>        Maximum time to wait for solve completion (default: 300)
   --generation-time-budget <seconds>
@@ -18,12 +21,14 @@ Options:
   -h, --help                 Show this help
 
 Examples:
-  autoctx solve --description "improve customer-support replies for billing disputes" --gens 3
+  autoctx solve "improve customer-support replies for billing disputes" --iterations 3
   autoctx solve -d "investigate a production outage from logs" --family investigation --gens 2 --json`;
 
 export interface SolveCommandValues {
   description?: string;
+  positionals?: string[];
   gens?: string;
+  iterations?: string;
   timeout?: string;
   "generation-time-budget"?: string;
   family?: string;
@@ -75,9 +80,12 @@ export function planSolveCommand(
   values: SolveCommandValues,
   parsePositiveInteger: (raw: string | undefined, label: string) => number,
 ): SolveCommandPlan {
-  const description = values.description?.trim();
+  const positionalDescription = values.positionals?.join(" ").trim();
+  const description = values.description?.trim() || positionalDescription;
   if (!description) {
-    throw new Error("Error: --description is required. Run 'autoctx solve --help' for usage.");
+    throw new Error(
+      "Error: --description is required. You can also run 'autoctx solve \"plain-language goal\"'. Run 'autoctx solve --help' for usage.",
+    );
   }
 
   const timeoutMs = values.timeout
@@ -87,9 +95,12 @@ export function planSolveCommand(
     ? null
     : parseNonNegativeInteger(values["generation-time-budget"], "--generation-time-budget");
 
+  const generationsRaw = values.gens ?? values.iterations;
+  const generationsLabel = values.gens ? "--gens" : "--iterations";
+
   return {
     description,
-    generations: values.gens ? parsePositiveInteger(values.gens, "--gens") : 5,
+    generations: generationsRaw ? parsePositiveInteger(generationsRaw, generationsLabel) : 5,
     timeoutMs,
     generationTimeBudgetSeconds,
     familyOverride: values.family?.trim() ? values.family.trim() : null,

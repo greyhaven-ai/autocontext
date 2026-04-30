@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Python and TypeScript `autoctx solve` now accept the plain-language goal as a positional argument while keeping `--description` as a named option.
+- Python and TypeScript `solve`/`run` commands now accept `--iterations` as the plain-language alias for `--gens`.
+- Python and TypeScript `autoctx run <scenario>` now accept a positional scenario while keeping `--scenario` for scripts.
+- Python and TypeScript `autoctx export <run-id>` now export knowledge from a specific run while keeping scenario-level export support.
+- TypeScript CLI/TUI help now uses the same plain-language run vocabulary, including `status <run-id>`, `show <run-id> --best`, and `watch <run-id>`.
+
+### Fixed
+
+- Python installed `autoctx` no longer crashes on no-args startup when packaged banner assets are missing.
+
 ## [0.4.9] - 2026-04-30
 
 ### Fixed

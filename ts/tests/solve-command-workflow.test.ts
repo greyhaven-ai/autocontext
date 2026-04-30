@@ -40,6 +40,63 @@ describe("solve command workflow", () => {
     expect(parsePositiveInteger).toHaveBeenCalledWith("12", "--timeout");
   });
 
+  it("accepts a plain-language positional description", () => {
+    expect(
+      planSolveCommand(
+        {
+          positionals: ["build an orbital transfer optimizer"],
+          gens: "2",
+        },
+        (raw: string | undefined) => Number(raw),
+      ),
+    ).toMatchObject({
+      description: "build an orbital transfer optimizer",
+      generations: 2,
+    });
+  });
+
+  it("accepts iterations as a plain-language alias for generations", () => {
+    const parsePositiveInteger = vi.fn((raw: string | undefined) => Number(raw));
+
+    expect(
+      planSolveCommand(
+        {
+          positionals: ["build an orbital transfer optimizer"],
+          iterations: "4",
+        },
+        parsePositiveInteger,
+      ),
+    ).toMatchObject({
+      generations: 4,
+    });
+    expect(parsePositiveInteger).toHaveBeenCalledWith("4", "--iterations");
+  });
+
+  it("prefers precise gens over iterations when both are present", () => {
+    expect(
+      planSolveCommand(
+        {
+          description: "explicit task",
+          gens: "3",
+          iterations: "4",
+        },
+        (raw: string | undefined) => Number(raw),
+      ).generations,
+    ).toBe(3);
+  });
+
+  it("prefers explicit descriptions over positional shorthand", () => {
+    expect(
+      planSolveCommand(
+        {
+          description: "  explicit task  ",
+          positionals: ["positional task"],
+        },
+        () => 1,
+      ).description,
+    ).toBe("explicit task");
+  });
+
   it("rejects missing descriptions", () => {
     expect(() =>
       planSolveCommand({}, () => 1),

@@ -57,6 +57,8 @@ const DB_COMMAND_HANDLERS: Record<DbCommandName, (dbPath: string) => Promise<voi
   run: cmdRun,
   list: cmdList,
   replay: cmdReplay,
+  show: cmdShow,
+  watch: cmdWatch,
   benchmark: cmdBenchmark,
   export: cmdExport,
   "export-training-data": cmdExportTrainingData,
@@ -399,11 +401,13 @@ async function getProvider(
 }
 
 async function cmdRun(dbPath: string): Promise<void> {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
+    allowPositionals: true,
     options: {
       scenario: { type: "string", short: "s" },
       gens: { type: "string", short: "g" },
+      iterations: { type: "string" },
       "run-id": { type: "string" },
       provider: { type: "string" },
       matches: { type: "string", default: "3" },
@@ -439,7 +443,7 @@ async function cmdRun(dbPath: string): Promise<void> {
   let plan;
   try {
     plan = await planRunCommand(
-      values,
+      { ...values, positionals },
       resolveScenarioOption,
       {
         defaultGenerations: settings.defaultGenerations,
@@ -531,11 +535,13 @@ async function cmdRun(dbPath: string): Promise<void> {
 }
 
 async function cmdSolve(dbPath: string): Promise<void> {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
+    allowPositionals: true,
     options: {
       description: { type: "string", short: "d" },
       gens: { type: "string", short: "g" },
+      iterations: { type: "string" },
       timeout: { type: "string" },
       "generation-time-budget": { type: "string" },
       family: { type: "string" },
@@ -560,7 +566,7 @@ async function cmdSolve(dbPath: string): Promise<void> {
 
   let plan;
   try {
-    plan = planSolveCommand(values, parsePositiveInteger);
+    plan = planSolveCommand({ ...values, positionals }, parsePositiveInteger);
   } catch (error) {
     console.error(errorMessage(error));
     process.exit(1);
@@ -972,10 +978,41 @@ async function cmdQueue(dbPath: string): Promise<void> {
 }
 
 async function cmdStatus(dbPath: string): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    allowPositionals: true,
+    options: {
+      "run-id": { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  const runId = values["run-id"]?.trim() || positionals[0]?.trim();
+  if (values.help) {
+    const { RUN_STATUS_HELP_TEXT } = await import("./run-inspection-command-workflow.js");
+    console.log(RUN_STATUS_HELP_TEXT);
+    process.exit(0);
+  }
+
   const { executeStatusCommandWorkflow, renderStatusResult } =
     await import("./queue-status-command-workflow.js");
   const { SQLiteStore } = await import("../storage/index.js");
   const store = new SQLiteStore(dbPath);
+
+  if (runId) {
+    const { renderRunStatus } = await import("./run-inspection-command-workflow.js");
+    store.migrate(getMigrationsDir());
+    const run = store.getRun(runId);
+    if (!run) {
+      console.error(`Error: run '${runId}' not found`);
+      store.close();
+      process.exit(1);
+    }
+    console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json));
+    store.close();
+    return;
+  }
 
   console.log(
     renderStatusResult(
@@ -985,6 +1022,7 @@ async function cmdStatus(dbPath: string): Promise<void> {
       }),
     ),
   );
+  store.close();
 }
 
 async function cmdServeHttp(dbPath: string): Promise<void> {
@@ -1190,6 +1228,112 @@ async function cmdReplay(_dbPath: string): Promise<void> {
   }
 }
 
+async function cmdShow(dbPath: string): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    allowPositionals: true,
+    options: {
+      "run-id": { type: "string" },
+      generation: { type: "string" },
+      best: { type: "boolean" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  const {
+    renderRunShow,
+    resolveRunId,
+    SHOW_HELP_TEXT,
+  } = await import("./run-inspection-command-workflow.js");
+
+  if (values.help) {
+    console.log(SHOW_HELP_TEXT);
+    process.exit(0);
+  }
+
+  let runId;
+  try {
+    runId = resolveRunId(values, positionals, "show");
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+  try {
+    const run = store.getRun(runId);
+    if (!run) {
+      throw new Error(`Error: run '${runId}' not found`);
+    }
+    console.log(renderRunShow(run, store.getGenerations(runId), values));
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  } finally {
+    store.close();
+  }
+}
+
+async function cmdWatch(dbPath: string): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    allowPositionals: true,
+    options: {
+      "run-id": { type: "string" },
+      interval: { type: "string" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  const {
+    parseWatchIntervalSeconds,
+    renderRunStatus,
+    resolveRunId,
+    WATCH_HELP_TEXT,
+  } = await import("./run-inspection-command-workflow.js");
+
+  if (values.help) {
+    console.log(WATCH_HELP_TEXT);
+    process.exit(0);
+  }
+
+  let runId;
+  let intervalSeconds;
+  try {
+    runId = resolveRunId(values, positionals, "watch");
+    intervalSeconds = parseWatchIntervalSeconds(values.interval);
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  }
+
+  const { SQLiteStore } = await import("../storage/index.js");
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+  try {
+    while (true) {
+      const run = store.getRun(runId);
+      if (!run) {
+        throw new Error(`Error: run '${runId}' not found`);
+      }
+      console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json));
+      if (run.status !== "running") {
+        return;
+      }
+      await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalSeconds * 1000));
+    }
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exit(1);
+  } finally {
+    store.close();
+  }
+}
+
 async function cmdBenchmark(dbPath: string): Promise<void> {
   const { values } = parseArgs({
     args: process.argv.slice(3),
@@ -1271,10 +1415,12 @@ async function cmdBenchmark(dbPath: string): Promise<void> {
 }
 
 async function cmdExport(dbPath: string): Promise<void> {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: process.argv.slice(3),
+    allowPositionals: true,
     options: {
       scenario: { type: "string", short: "s" },
+      "run-id": { type: "string" },
       output: { type: "string", short: "o" },
       json: { type: "boolean" },
       help: { type: "boolean", short: "h" },
@@ -1292,14 +1438,6 @@ async function cmdExport(dbPath: string): Promise<void> {
     process.exit(0);
   }
 
-  let plan;
-  try {
-    plan = await planExportCommand(values, resolveScenarioOption);
-  } catch (error) {
-    console.error(errorMessage(error));
-    process.exit(1);
-  }
-
   const { loadSettings } = await import("../config/index.js");
   const { ArtifactStore } = await import("../knowledge/artifact-store.js");
   const { exportStrategyPackage } = await import("../knowledge/package.js");
@@ -1308,6 +1446,20 @@ async function cmdExport(dbPath: string): Promise<void> {
   const settings = loadSettings();
   const store = new SQLiteStore(dbPath);
   store.migrate(getMigrationsDir());
+
+  let plan;
+  try {
+    plan = await planExportCommand(
+      { ...values, positionals },
+      resolveScenarioOption,
+      async (runId) => store.getRun(runId)?.scenario,
+    );
+  } catch (error) {
+    console.error(errorMessage(error));
+    store.close();
+    process.exit(1);
+  }
+
   const artifacts = new ArtifactStore({
     runsRoot: resolve(settings.runsRoot),
     knowledgeRoot: resolve(settings.knowledgeRoot),
@@ -1317,6 +1469,7 @@ async function cmdExport(dbPath: string): Promise<void> {
     console.log(
       executeExportCommandWorkflow({
         scenarioName: plan.scenarioName,
+        runId: plan.runId,
         output: plan.output,
         json: plan.json,
         exportStrategyPackage,

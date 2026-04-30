@@ -497,6 +497,40 @@ class TestExportStrategyPackage:
             pkg = export_strategy_package(tool_ctx, "grid_ctf")
         assert pkg.metadata.source_run_id == "run_123"
 
+    def test_export_can_target_specific_run(self, tool_ctx: MagicMock) -> None:
+        tool_ctx.sqlite.get_run.return_value = {"run_id": "run_low", "scenario": "grid_ctf"}
+        tool_ctx.sqlite.get_generation_metrics.return_value = [
+            {"run_id": "run_low", "generation_index": 1, "best_score": 0.4, "elo": 1040.0},
+        ]
+        tool_ctx.sqlite.get_matches_for_run.return_value = [
+            {
+                "id": 1,
+                "generation_index": 1,
+                "score": 0.4,
+                "strategy_json": '{"aggression": 0.4}',
+            },
+        ]
+
+        with patch("autocontext.knowledge.export.SCENARIO_REGISTRY", self._mock_registry()):
+            from autocontext.knowledge.export import export_strategy_package
+            pkg = export_strategy_package(tool_ctx, "grid_ctf", source_run_id="run_low")
+
+        assert pkg.best_score == pytest.approx(0.4)
+        assert pkg.best_elo == pytest.approx(1040.0)
+        assert pkg.best_strategy == {"aggression": 0.4}
+        assert pkg.metadata.source_run_id == "run_low"
+        assert pkg.metadata.source_generation == 1
+
+    def test_export_rejects_run_without_generation_metrics(self, tool_ctx: MagicMock) -> None:
+        tool_ctx.sqlite.get_run.return_value = {"run_id": "run_empty", "scenario": "grid_ctf"}
+        tool_ctx.sqlite.get_generation_metrics.return_value = []
+
+        with patch("autocontext.knowledge.export.SCENARIO_REGISTRY", self._mock_registry()):
+            from autocontext.knowledge.export import export_strategy_package
+
+            with pytest.raises(ValueError, match="No generation metrics found for run run_empty"):
+                export_strategy_package(tool_ctx, "grid_ctf", source_run_id="run_empty")
+
 
 # ── Full roundtrip tests ────────────────────────────────────────────────
 

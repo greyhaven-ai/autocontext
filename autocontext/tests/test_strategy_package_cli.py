@@ -37,6 +37,26 @@ def _seed_scenario(db: SQLiteStore, artifacts: ArtifactStore, scenario: str = "g
     artifacts.write_hints(scenario, "Scout the borders.")
     artifacts.write_harness(scenario, "bounds_check", "def validate(s): return True\n")
     db.create_run("test_run_001", scenario=scenario, generations=3, executor_mode="local")
+    db.upsert_generation(
+        "test_run_001",
+        1,
+        mean_score=0.5,
+        best_score=0.65,
+        elo=1065.0,
+        wins=1,
+        losses=0,
+        gate_decision="advance",
+        status="completed",
+    )
+    db.insert_match(
+        "test_run_001",
+        1,
+        seed=1,
+        score=0.65,
+        passed_validation=True,
+        validation_errors="",
+        strategy_json='{"aggression": 0.65}',
+    )
     db.mark_run_completed("test_run_001")
 
 
@@ -91,6 +111,30 @@ class TestExportCommand:
             "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
         ])
         assert result.exit_code != 0
+
+    def test_export_accepts_positional_run_id(self, tmp_path: Path) -> None:
+        db, artifacts, db_path = _setup_db_and_artifacts(tmp_path)
+        _seed_scenario(db, artifacts)
+        output = tmp_path / "run-export.json"
+
+        result = runner.invoke(app, [
+            "export",
+            "test_run_001",
+            "--output", str(output),
+            "--db-path", str(db_path),
+            "--knowledge-root", str(tmp_path / "knowledge"),
+            "--skills-root", str(tmp_path / "skills"),
+            "--claude-skills-path", str(tmp_path / ".claude" / "skills"),
+        ])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(output.read_text(encoding="utf-8"))
+        assert data["scenario_name"] == "grid_ctf"
+        assert data["best_score"] == pytest.approx(0.65)
+        assert data["best_elo"] == pytest.approx(1065.0)
+        assert data["best_strategy"] == {"aggression": 0.65}
+        assert data["metadata"]["source_run_id"] == "test_run_001"
+        assert data["metadata"]["source_generation"] == 1
 
 
 class TestImportCommand:

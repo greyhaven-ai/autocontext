@@ -26,8 +26,8 @@ Most `autoctx` commands accept a `--json` flag that switches output to structure
 # Structured JSON to stdout
 autoctx list --json
 autoctx status <run_id> --json
-autoctx run --scenario grid_ctf --gens 3 --json
-autoctx export --scenario grid_ctf --json
+autoctx run grid_ctf --iterations 3 --json
+autoctx export <run_id> --json
 autoctx train --scenario grid_ctf --data data.jsonl --json
 ```
 
@@ -44,10 +44,10 @@ autoctx train --scenario grid_ctf --data data.jsonl --json
 
 ```bash
 # Game scenario (tournament-based)
-autoctx run --scenario grid_ctf --gens 5 --run-id my_run --json
+autoctx run grid_ctf --iterations 5 --run-id my_run --json
 
 # Agent task scenario (judge-based evaluation)
-autoctx run --scenario my_agent_task --gens 3 --json
+autoctx run my_agent_task --iterations 3 --json
 ```
 
 JSON output shape:
@@ -157,7 +157,7 @@ JSON output shape on timeout:
 #### `autoctx export` — Export a strategy package
 
 ```bash
-autoctx export --scenario grid_ctf --output pkg.json --json
+autoctx export <run_id> --output pkg.json --json
 ```
 
 JSON output shape:
@@ -247,26 +247,26 @@ Configure which LLM provider autocontext uses via environment variables:
 # Anthropic (default)
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
 ANTHROPIC_API_KEY=sk-ant-... \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 
 # OpenAI-compatible
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_JUDGE_PROVIDER=openai-compatible \
 AUTOCONTEXT_JUDGE_API_KEY=sk-... \
 AUTOCONTEXT_JUDGE_BASE_URL=https://api.openai.com/v1 \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 
 # Ollama (local, no API key needed)
 AUTOCONTEXT_AGENT_PROVIDER=ollama \
 AUTOCONTEXT_JUDGE_PROVIDER=ollama \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 
 # Hermes (via OpenAI-compatible gateway)
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_AGENT_API_KEY=hermes-key \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 
 # Hermes for both agent and judge
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
@@ -277,18 +277,18 @@ AUTOCONTEXT_JUDGE_PROVIDER=openai-compatible \
 AUTOCONTEXT_JUDGE_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_JUDGE_API_KEY=hermes-key \
 AUTOCONTEXT_JUDGE_MODEL=hermes-3-llama-3.1-70b \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 
 # Pi CLI (local Pi agent runtime)
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
 AUTOCONTEXT_PI_TIMEOUT=120 \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 
 # Pi RPC (Pi subprocess via `pi --mode rpc` JSONL)
 AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
 AUTOCONTEXT_PI_COMMAND=pi \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 
 # Optional: keep Pi deterministic by ignoring AGENTS.md / CLAUDE.md context files
 AUTOCONTEXT_PI_NO_CONTEXT_FILES=true
@@ -305,7 +305,7 @@ ANTHROPIC_API_KEY=sk-ant-primary \
 AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
 AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
 AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
-autoctx run --scenario my_task --json
+autoctx run my_task --json
 ```
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
@@ -436,8 +436,8 @@ RUN_ID="agent_run_$(date +%s)"
 
 # 1. Start a run and capture structured output
 result=$(autoctx run \
-  --scenario "$SCENARIO" \
-  --gens 3 \
+  "$SCENARIO" \
+  --iterations 3 \
   --run-id "$RUN_ID" \
   --json 2>/dev/null)
 
@@ -448,7 +448,7 @@ echo "Run completed. Best score: $best_score" >&2
 autoctx status "$RUN_ID" --json | jq '.generations[-1]'
 
 # 3. Export the strategy package
-autoctx export --scenario "$SCENARIO" --output "${SCENARIO}_pkg.json" --json
+autoctx export "$RUN_ID" --output "${SCENARIO}_pkg.json" --json
 
 # 4. Training loop (if training data available)
 if [ -f "training/${SCENARIO}.jsonl" ]; then
@@ -497,8 +497,8 @@ RUN_ID="hermes_$(date +%s)"
 mkdir -p logs
 
 autoctx run \
-  --scenario grid_ctf \
-  --gens 5 \
+  grid_ctf \
+  --iterations 5 \
   --run-id "$RUN_ID" \
   --json \
   >"logs/${RUN_ID}.json" \
@@ -533,7 +533,7 @@ jq . "logs/${RUN_ID}.json"
 
 ```bash
 autoctx export \
-  --scenario grid_ctf \
+  "$RUN_ID" \
   --output "hermes_knowledge.json" \
   --json | jq .
 ```
@@ -542,7 +542,7 @@ For Pi, use `--format pi-package` to produce a local package directory:
 
 ```bash
 autoctx export \
-  --scenario grid_ctf \
+  "$RUN_ID" \
   --format pi-package \
   --output "grid-ctf-pi-package" \
   --json | jq .
@@ -552,8 +552,8 @@ autoctx export \
 
 ```bash
 autoctx solve \
-  --description "Design a grid capture-the-flag strategy that prioritizes safe flag captures, defends home base when behind, and adapts pathing when lanes are contested." \
-  --gens 3 \
+  "Design a grid capture-the-flag strategy that prioritizes safe flag captures, defends home base when behind, and adapts pathing when lanes are contested." \
+  --iterations 3 \
   --output "logs/${RUN_ID}_solve_package.json" \
   --json | jq .
 ```

@@ -163,13 +163,17 @@ autoctx providers
 autoctx models
 
 # Scenario execution
-autoctx run --scenario support_triage --gens 3 --json
+autoctx solve "improve customer-support replies for billing disputes" --iterations 3 --json
+autoctx run support_triage --iterations 3 --json
 autoctx list --json
+autoctx status <run-id>
+autoctx show <run-id> --best
+autoctx watch <run-id>
 autoctx replay --run-id <id> --generation 1
 autoctx benchmark --scenario support_triage --runs 5
 
 # Package management
-autoctx export --scenario support_triage --output pkg.json
+autoctx export <run-id> --output pkg.json
 autoctx export-training-data --run-id <id> --output data.jsonl
 autoctx import-package --file pkg.json
 autoctx new-scenario --description "Test summarization quality"
@@ -211,13 +215,13 @@ Configure the agent provider via environment variables:
 
 ```bash
 # Anthropic (default)
-ANTHROPIC_API_KEY=sk-ant-... autoctx run --scenario support_triage --json
+ANTHROPIC_API_KEY=sk-ant-... autoctx run support_triage --json
 
 # OpenAI-compatible
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_API_KEY=sk-... \
 AUTOCONTEXT_AGENT_BASE_URL=https://api.openai.com/v1 \
-autoctx run --scenario support_triage --json
+autoctx run support_triage --json
 
 # Role-scoped override: competitor uses a separate gateway/key
 AUTOCONTEXT_AGENT_PROVIDER=anthropic \
@@ -225,42 +229,42 @@ ANTHROPIC_API_KEY=sk-ant-primary \
 AUTOCONTEXT_COMPETITOR_PROVIDER=openai-compatible \
 AUTOCONTEXT_COMPETITOR_API_KEY=sk-role \
 AUTOCONTEXT_COMPETITOR_BASE_URL=http://localhost:8000/v1 \
-autoctx run --scenario support_triage --json
+autoctx run support_triage --json
 
 # Ollama (local)
-AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run --scenario support_triage --json
+AUTOCONTEXT_AGENT_PROVIDER=ollama autoctx run support_triage --json
 
 # Hermes (via OpenAI-compatible gateway)
 AUTOCONTEXT_AGENT_PROVIDER=openai-compatible \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
 AUTOCONTEXT_AGENT_DEFAULT_MODEL=hermes-3-llama-3.1-8b \
-autoctx run --scenario support_triage --json
+autoctx run support_triage --json
 
 # Hermes shortcut provider (same gateway path, Hermes defaults)
 AUTOCONTEXT_AGENT_PROVIDER=hermes \
 AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1 \
-autoctx run --scenario support_triage --json
+autoctx run support_triage --json
 
 # Claude CLI (local authenticated Claude Code runtime)
 AUTOCONTEXT_AGENT_PROVIDER=claude-cli \
 AUTOCONTEXT_CLAUDE_MODEL=sonnet \
-autoctx run --scenario support_triage --json
+autoctx run support_triage --json
 
 # Codex CLI (local authenticated Codex runtime)
 AUTOCONTEXT_AGENT_PROVIDER=codex \
 AUTOCONTEXT_CODEX_MODEL=o4-mini \
-autoctx run --scenario support_triage --json
+autoctx run support_triage --json
 
 # Pi CLI
-AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run --scenario support_triage --json
+AUTOCONTEXT_AGENT_PROVIDER=pi autoctx run support_triage --json
 
 # Pi RPC with one long-lived subprocess
 AUTOCONTEXT_AGENT_PROVIDER=pi-rpc \
 AUTOCONTEXT_PI_RPC_PERSISTENT=true \
-autoctx run --scenario support_triage --json
+autoctx run support_triage --json
 
 # Deterministic (CI/testing)
-AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run --scenario support_triage --json
+AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run support_triage --json
 ```
 
 `ANTHROPIC_API_KEY` is the preferred Anthropic credential env var. `AUTOCONTEXT_ANTHROPIC_API_KEY` remains supported as a compatibility alias.
