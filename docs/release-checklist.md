@@ -1,6 +1,6 @@
 # Release Checklist
 
-Use this checklist when preparing a tagged release such as `py-v0.4.8`, `ts-v0.4.8`, or `pi-v0.2.2`.
+Use this checklist when preparing a tagged release such as `py-v0.4.9`, `ts-v0.4.9`, or `pi-v0.2.3`.
 
 ## 1. Decide Scope
 

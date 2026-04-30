@@ -1,6 +1,6 @@
-**Anthropic SDK instrumentation** in Python and TypeScript: wrap any existing Anthropic client with `instrument_client` / `instrumentClient` to capture streaming and non-streaming production traces.
-**TypeScript `autoctx solve` CLI** brings one-command scenario generation and execution to full parity with Python.
-**`autoctx build-dataset` filters** (`--provider`, `--app`, `--env`, `--outcome`) turn captured production traces into scoped training datasets.
-**CUDA training backend** alongside MLX, so distillation is no longer Apple Silicon only.
-**Semantic prompt compaction** with tail-preserving reducers for longer sessions.
-**Hierarchical investigation evidence** with artifact drill-down for richer diagnosis traces.
+**Pi-shaped scenario hardening** keeps schema-evolution simulations from persisting empty mutation plans and improves recovery from Pi-style JSON wrappers.
+**Budgeted Pi/Pi-RPC role calls** now report effective bounded timeouts and clean up one-shot persistent clients after use.
+**RLM convergence guards** capture explicit final-answer tags, cautious closure cues, and repeated silent no-progress cases without stealing normal inspection turns.
+**Rubric drift monitoring** now catches within-generation mean-versus-best compression and slower dimension decline.
+**Task-like solve lifecycle metadata** separates persisted generations from improvement rounds for hook consumers.
+**Pi extension release alignment** keeps `pi-autocontext` one package behind `autoctx` while publishing the next extension patch.
