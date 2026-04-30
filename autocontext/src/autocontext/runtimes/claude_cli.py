@@ -176,6 +176,20 @@ class ClaudeCLIRuntime(AgentRuntime):
                 elapsed = time.monotonic() - start
                 if attempt_index < max_retries and self._has_retry_budget(total_start):
                     delay = self._retry_delay(attempt_index)
+                    remaining = self._remaining_total_budget(total_start)
+                    if remaining is not None and delay >= remaining:
+                        logger.warning(
+                            "claude-cli retry skipped reason=timeout_budget_exhausted "
+                            "delay=%.2fs remaining=%.2fs elapsed=%.1fs",
+                            delay,
+                            remaining,
+                            elapsed,
+                        )
+                        return self._timeout_output(
+                            attempts=attempt,
+                            total_elapsed=time.monotonic() - total_start,
+                            retry_exhausted=True,
+                        )
                     logger.warning(
                         "claude-cli retry attempt=%d/%d reason=timeout delay=%.2fs elapsed=%.1fs",
                         attempt,
@@ -230,16 +244,21 @@ class ClaudeCLIRuntime(AgentRuntime):
             retry_exhausted=True,
         )
 
-    def _attempt_timeout(self, total_start: float) -> float:
+    def _remaining_total_budget(self, total_start: float) -> float | None:
         max_total = float(self._config.max_total_seconds)
         if max_total <= 0:
+            return None
+        return max(0.0, max_total - (time.monotonic() - total_start))
+
+    def _attempt_timeout(self, total_start: float) -> float:
+        remaining = self._remaining_total_budget(total_start)
+        if remaining is None:
             return float(self._config.timeout)
-        remaining = max_total - (time.monotonic() - total_start)
         return min(float(self._config.timeout), remaining)
 
     def _has_retry_budget(self, total_start: float) -> bool:
-        max_total = float(self._config.max_total_seconds)
-        return max_total <= 0 or (time.monotonic() - total_start) < max_total
+        remaining = self._remaining_total_budget(total_start)
+        return remaining is None or remaining > 0
 
     def _retry_delay(self, retry_index: int) -> float:
         base = max(0.0, float(self._config.retry_backoff_seconds))

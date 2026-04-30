@@ -272,6 +272,38 @@ describe("schema-evolution codegen", () => {
     expect(result.score).toBe(0.5);
     expect(result.reasoning).toBe("1/2 versions handled");
   });
+
+  it("allows sparse schema-evolution action sets to handle every mutation", () => {
+    const source = generateSchemaEvolutionSource({
+      description: "Schema migration with fewer actions than mutations",
+      mutations: [
+        { version: 2, description: "Add priority", changes: { added: ["priority"] } },
+        { version: 3, description: "Rename status", changes: { renamed: ["status"] } },
+      ],
+      actions: [
+        { name: "inspect", description: "Inspect schema", parameters: {}, preconditions: [], effects: [] },
+      ],
+    }, "sparse_schema_migration");
+    const scenario = loadGeneratedScenarioForTest(source);
+    const state = scenario.initialState(3);
+    const [firstAction] = scenario.getAvailableActions(state);
+    const first = scenario.executeAction(state, firstAction);
+
+    const availableAfterFirst = scenario.getAvailableActions(first.state);
+    expect(availableAfterFirst.map((action) => action.name)).toEqual(["inspect"]);
+
+    const [secondAction] = availableAfterFirst;
+    const second = scenario.executeAction(first.state, secondAction);
+    const result = scenario.getResult(second.state, { records: [{ action: firstAction }] });
+
+    expect(second.state.schemaVersion).toBe(2);
+    expect(second.state.mutationLog).toEqual([
+      { version: 2, description: "Add priority", changes: { added: ["priority"] } },
+      { version: 3, description: "Rename status", changes: { renamed: ["status"] } },
+    ]);
+    expect(result.score).toBe(1);
+    expect(result.reasoning).toBe("2/2 versions handled");
+  });
 });
 
 describe("tool-fragility codegen", () => {

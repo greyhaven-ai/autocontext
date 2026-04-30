@@ -300,6 +300,26 @@ class TestClaudeCLIRuntime:
         assert mock_run.call_count == 2
         mock_sleep.assert_called_once_with(0.0)
 
+    @patch("autocontext.runtimes.claude_cli.time.sleep")
+    @patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=1))
+    def test_timeout_retry_skips_sleep_that_would_exhaust_total_cap(self, mock_run, mock_sleep):
+        cfg = ClaudeCLIConfig(
+            timeout=1.0,
+            max_retries=2,
+            retry_backoff_seconds=60.0,
+            max_total_seconds=10.0,
+        )
+        runtime = ClaudeCLIRuntime(cfg)
+        runtime._claude_path = "/usr/bin/claude"
+
+        result = runtime.generate("slow task")
+
+        assert result.metadata.get("error") == "timeout"
+        assert result.metadata.get("attempts") == 1
+        assert result.metadata.get("retry_exhausted") is True
+        assert mock_run.call_count == 1
+        mock_sleep.assert_not_called()
+
     @patch("subprocess.run", side_effect=FileNotFoundError)
     def test_missing_cli(self, mock_run):
         runtime = ClaudeCLIRuntime()

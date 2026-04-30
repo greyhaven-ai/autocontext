@@ -51,6 +51,9 @@ const scenario = {
   },
 
   getAvailableActions(state) {
+    if ((state.schemaVersion || 0) < MUTATIONS.length) {
+      return ACTIONS;
+    }
     const completed = new Set(state.completedActions || []);
     return ACTIONS.filter((action) => !completed.has(action.name));
   },
