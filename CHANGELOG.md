@@ -4,10 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-04-30
+
 ### Fixed
 
 - TypeScript generated `schema_evolution` scenarios no longer score empty mutation plans as perfect, and generated actions now record mutation lineage before schema-coverage scoring (AC-666).
 - Python Claude CLI runtime calls now use bounded timeout retries with exponential backoff, total wall-clock caps, retry metadata, and warning/error logs for long-running live-agent calls (AC-684).
+- Python solve now enforces generation budgets across Pi/Pi-RPC role calls, including per-role overrides, and closes one-shot budgeted persistent Pi RPC clients after use (AC-691).
+- TypeScript schema-evolution creation now recovers from Pi-style invalid JSON responses with markdown fences, prose wrappers, comments, trailing commas, and camelCase fields (AC-692).
+- Python solve JSON/status output now includes resolved scenario-family metadata for stress harnesses and user workflows (AC-693).
+- Iterative investigation no longer requires resolving the architect runtime before the first analyst step.
+- Task-like solve lifecycle hooks now report persisted generation counts separately from improvement rounds.
+
+### Changed
+
+- Python `autocontext` and TypeScript `autoctx` package metadata are bumped to `0.4.8`.
+- Pi `pi-autocontext` package metadata is bumped to `0.2.2` while intentionally keeping its `autoctx` dependency one package behind at `^0.4.7`.
 
 ## [0.4.7] - 2026-04-29
 
@@ -296,7 +308,8 @@ All notable changes to this project will be documented in this file.
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.7...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.8...HEAD
+[0.4.8]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.7...py-v0.4.8
 [0.4.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.6...py-v0.4.7
 [0.4.6]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.5...py-v0.4.6
 [0.4.5]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.4...py-v0.4.5
