@@ -25,6 +25,9 @@ Usage:
   autoctx watch <run-id> [--interval seconds] [--json]
   autoctx watch --run-id <run-id> [--interval seconds] [--json]
 
+Options:
+  --json               Emit compact newline-delimited JSON snapshots
+
 Examples:
   autoctx watch run-123
   autoctx watch --run-id run-123 --interval 2`;
@@ -87,11 +90,11 @@ export function renderRunStatus(
   generations: RunInspectionGeneration[],
   json: boolean,
 ): string {
-  const latest = latestGeneration(generations);
   if (json) {
-    return JSON.stringify({ run, latest_generation: latest }, null, 2);
+    return JSON.stringify(runStatusPayload(run, generations), null, 2);
   }
 
+  const latest = latestGeneration(generations);
   return [
     `Run ${run.run_id}`,
     `  Status: ${run.status}`,
@@ -100,6 +103,13 @@ export function renderRunStatus(
     latest ? `  Latest best score: ${formatScore(latest.best_score)} (generation ${latest.generation_index})` : null,
     latest ? `  Latest gate: ${latest.gate_decision}` : null,
   ].filter((line): line is string => line !== null).join("\n");
+}
+
+export function renderRunStatusJsonLine(
+  run: RunInspectionRun,
+  generations: RunInspectionGeneration[],
+): string {
+  return JSON.stringify(runStatusPayload(run, generations));
 }
 
 export function renderRunShow(
@@ -149,6 +159,19 @@ function latestGeneration(generations: RunInspectionGeneration[]): RunInspection
       !latest || generation.generation_index > latest.generation_index ? generation : latest,
     null,
   );
+}
+
+function runStatusPayload(
+  run: RunInspectionRun,
+  generations: RunInspectionGeneration[],
+): {
+  run: RunInspectionRun;
+  latest_generation: RunInspectionGeneration | null;
+} {
+  return {
+    run,
+    latest_generation: latestGeneration(generations),
+  };
 }
 
 function bestGeneration(generations: RunInspectionGeneration[]): RunInspectionGeneration | null {

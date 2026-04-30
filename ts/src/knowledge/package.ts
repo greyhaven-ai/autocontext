@@ -68,7 +68,7 @@ export function exportStrategyPackage(opts: {
     playbook,
     lessons: lessonsFromPlaybook(playbook),
     bestStrategy: opts.sourceRunId && bestGeneration
-      ? bestStrategyForRun(opts.store, opts.sourceRunId, bestGeneration.generation_index, persisted)
+      ? bestStrategyForRun(opts.store, opts.sourceRunId, bestGeneration.generation_index)
       : bestStrategyForScenario(opts.store, opts.scenarioName, persisted),
     bestScore: bestGeneration?.best_score ?? persisted.best_score ?? 0,
     bestElo: bestGeneration?.elo ?? persisted.best_elo ?? 1500,
@@ -121,7 +121,6 @@ function bestStrategyForRun(
   store: SQLiteStore,
   runId: string,
   generationIndex: number,
-  persisted: PersistedPackageMetadata,
 ): Record<string, unknown> | null {
   const match = bestMatchForRunGeneration(store.getMatchesForRun(runId), generationIndex);
   const parsedMatch = parseStrategyJson(match?.strategy_json);
@@ -134,7 +133,7 @@ function bestStrategyForRun(
     .filter((output) => output.role === "competitor")
     .at(-1);
   const parsedCompetitor = parseStrategyJson(competitor?.content);
-  return parsedCompetitor ?? persisted.best_strategy ?? null;
+  return parsedCompetitor ?? null;
 }
 
 function bestMatchForRunGeneration(

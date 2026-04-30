@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseWatchIntervalSeconds,
+  renderRunStatusJsonLine,
   renderRunShow,
   renderRunStatus,
   resolveRunId,
@@ -55,6 +56,16 @@ describe("run inspection command workflow", () => {
     expect(text).toContain("Run run-123");
     expect(text).toContain("Generations: 2/3");
     expect(text).toContain("Latest best score: 0.900");
+  });
+
+  it("renders watch json snapshots as compact parseable lines", () => {
+    const line = renderRunStatusJsonLine(run, generations);
+
+    expect(line).not.toContain("\n");
+    expect(JSON.parse(line)).toMatchObject({
+      run: { run_id: "run-123" },
+      latest_generation: { generation_index: 2 },
+    });
   });
 
   it("shows the best generation when requested", () => {

@@ -1292,6 +1292,7 @@ async function cmdWatch(dbPath: string): Promise<void> {
   const {
     parseWatchIntervalSeconds,
     renderRunStatus,
+    renderRunStatusJsonLine,
     resolveRunId,
     WATCH_HELP_TEXT,
   } = await import("./run-inspection-command-workflow.js");
@@ -1320,7 +1321,12 @@ async function cmdWatch(dbPath: string): Promise<void> {
       if (!run) {
         throw new Error(`Error: run '${runId}' not found`);
       }
-      console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json));
+      const generations = store.getGenerations(runId);
+      console.log(
+        values.json
+          ? renderRunStatusJsonLine(run, generations)
+          : renderRunStatus(run, generations, false),
+      );
       if (run.status !== "running") {
         return;
       }

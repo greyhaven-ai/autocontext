@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 
 import { ArtifactStore } from "../src/knowledge/artifact-store.js";
 import { exportStrategyPackage } from "../src/knowledge/package.js";
+import { writePackageMetadata } from "../src/knowledge/package-metadata.js";
 import { SQLiteStore } from "../src/storage/index.js";
 
 describe("strategy package run export", () => {
@@ -94,5 +95,42 @@ describe("strategy package run export", () => {
         store,
       }),
     ).toThrow("No generation metrics found for run run-empty");
+  });
+
+  it("does not mix persisted scenario strategy into a run-specific export", () => {
+    writePackageMetadata(artifacts.knowledgeRoot, "grid_ctf", {
+      best_strategy: { aggression: 0.99 },
+      best_score: 0.99,
+      best_elo: 1900,
+      metadata: {
+        source_run_id: "another-run",
+        source_generation: 7,
+      },
+    });
+    store.createRun("run-no-strategy", "grid_ctf", 1, "local");
+    store.upsertGeneration("run-no-strategy", 1, {
+      meanScore: 0.3,
+      bestScore: 0.4,
+      elo: 1040,
+      wins: 1,
+      losses: 0,
+      gateDecision: "advance",
+      status: "completed",
+    });
+
+    const pkg = exportStrategyPackage({
+      scenarioName: "grid_ctf",
+      sourceRunId: "run-no-strategy",
+      artifacts,
+      store,
+    });
+
+    expect(pkg.best_score).toBe(0.4);
+    expect(pkg.best_elo).toBe(1040);
+    expect(pkg.best_strategy).toBeNull();
+    expect(pkg.metadata).toMatchObject({
+      source_run_id: "run-no-strategy",
+      source_generation: 1,
+    });
   });
 });
