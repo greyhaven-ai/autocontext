@@ -217,16 +217,8 @@ describe("RunManager scenario revision flow", () => {
   it("revises the pending spec instead of recreating from the description", async () => {
     const { RunManager } = await import("../src/server/run-manager.js");
     const dir = makeTempDir();
-    const mgr = new RunManager({
-      dbPath: join(dir, "test.db"),
-      migrationsDir: join(__dirname, "..", "migrations"),
-      runsRoot: join(dir, "runs"),
-      knowledgeRoot: join(dir, "knowledge"),
-      providerType: "deterministic",
-    }) as any;
-
     let sawRevisionPrompt = false;
-    mgr.buildProvider = () => ({
+    const provider = {
       complete: async (opts: { systemPrompt: string; userPrompt: string }) => {
         if (opts.systemPrompt.includes("Revise the agent_task spec")) {
           sawRevisionPrompt = opts.userPrompt.includes("\"taskPrompt\": \"Summarize incident reports with a triage focus.\"");
@@ -250,6 +242,22 @@ describe("RunManager scenario revision flow", () => {
       },
       defaultModel: () => "test-model",
       name: "mock-provider",
+    };
+    const mgr = new RunManager({
+      dbPath: join(dir, "test.db"),
+      migrationsDir: join(__dirname, "..", "migrations"),
+      runsRoot: join(dir, "runs"),
+      knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
+      deps: {
+        resolveProviderBundle: () => ({
+          defaultProvider: provider as never,
+          defaultConfig: { providerType: "mock-provider" },
+          roleProviders: {},
+          roleModels: {},
+          close: () => {},
+        }),
+      },
     });
 
     await mgr.createScenario("Create a scenario about incident report triage.");

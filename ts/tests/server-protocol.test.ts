@@ -241,10 +241,28 @@ describe("RunManager", () => {
       migrationsDir: join(__dirname, "..", "migrations"),
       runsRoot: join(dir, "runs"),
       knowledgeRoot: join(dir, "knowledge"),
+      providerType: "deterministic",
     });
     const info = mgr.getEnvironmentInfo();
     expect(info.scenarios.some((scenario) => scenario.name === "saved_task")).toBe(true);
-    await expect(mgr.startRun("saved_task", 1)).rejects.toThrow(/only built-in game scenarios/i);
+    const savedTask = info.scenarios.find((scenario) => scenario.name === "saved_task");
+    expect(savedTask?.description).toContain("runnable via /run");
+
+    const seenEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+    mgr.subscribeEvents((event, payload) => {
+      seenEvents.push({ event, payload });
+    });
+
+    const runId = await mgr.startRun("saved_task", 1);
+    await waitForCondition(() => seenEvents.some((entry) => (
+      entry.event === "run_completed" || entry.event === "run_failed"
+    )));
+
+    const failed = seenEvents.find((entry) => entry.event === "run_failed");
+    const completed = seenEvents.find((entry) => entry.event === "run_completed");
+    expect(failed).toBeUndefined();
+    expect(completed?.payload.run_id).toBe(runId);
+    expect(completed?.payload.family).toBe("agent_task");
   });
 
   it("startRun executes saved generated custom scenarios after discovery", async () => {

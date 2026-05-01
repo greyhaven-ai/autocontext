@@ -5,8 +5,8 @@ import {
   hashSessionId,
 } from "../../../src/production-traces/sdk/hashing.js";
 import {
-  callPythonHashUserId,
-  callPythonHashSessionId,
+  callPythonHashUserIdAsync,
+  callPythonHashSessionIdAsync,
   isPythonParityAvailable,
 } from "../../_helpers/python-runner.js";
 
@@ -34,22 +34,22 @@ const saltArb = fc.string({ minLength: 1, maxLength: 64 }).filter((s) => s.lengt
 const idArb = fc.string({ minLength: 1, maxLength: 64 }).filter((s) => s.length > 0 && !s.includes("\u0000"));
 
 maybeSuite("P-hashing-parity (property, 100 runs)", () => {
-  test("hashUserId matches Python hash_user_id byte-for-byte", () => {
-    fc.assert(
-      fc.property(idArb, saltArb, (userId, salt) => {
+  test("hashUserId matches Python hash_user_id byte-for-byte", async () => {
+    await fc.assert(
+      fc.asyncProperty(idArb, saltArb, async (userId, salt) => {
         const ts = hashUserId(userId, salt);
-        const py = callPythonHashUserId(userId, salt);
+        const py = await callPythonHashUserIdAsync(userId, salt);
         return ts === py;
       }),
       { numRuns: 100 },
     );
   }, 120_000);
 
-  test("hashSessionId matches Python hash_session_id byte-for-byte", () => {
-    fc.assert(
-      fc.property(idArb, saltArb, (sessionId, salt) => {
+  test("hashSessionId matches Python hash_session_id byte-for-byte", async () => {
+    await fc.assert(
+      fc.asyncProperty(idArb, saltArb, async (sessionId, salt) => {
         const ts = hashSessionId(sessionId, salt);
-        const py = callPythonHashSessionId(sessionId, salt);
+        const py = await callPythonHashSessionIdAsync(sessionId, salt);
         return ts === py;
       }),
       { numRuns: 100 },

@@ -165,6 +165,7 @@ autoctx models
 # Scenario execution
 autoctx solve "improve customer-support replies for billing disputes" --iterations 3 --json
 autoctx run support_triage --iterations 3 --json
+autoctx run --scenario support_triage --iterations 3 --json
 autoctx list --json
 autoctx status <run-id>
 autoctx show <run-id> --best

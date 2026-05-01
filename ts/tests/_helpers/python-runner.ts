@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
@@ -57,6 +57,41 @@ export function callPythonHelper(scriptName: string, payload: unknown): PythonRu
   };
 }
 
+export function callPythonHelperAsync(scriptName: string, payload: unknown): Promise<PythonRunResult> {
+  const script = join(HELPER_DIR, scriptName);
+  if (!existsSync(script)) {
+    return Promise.reject(new Error(`python helper missing: ${script}`));
+  }
+
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(resolveParityPython(), [script], {
+      env: { ...process.env, PYTHONPATH: join(PYTHON_PKG, "src") },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf-8");
+    child.stderr.setEncoding("utf-8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (status) => {
+      resolvePromise({
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        status: status ?? -1,
+      });
+    });
+
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
+
 /**
  * Invoke Python ``build_trace(**snake_case_inputs)`` via the helper at
  * ``build_trace_canonical.py``. Returns the canonical JSON string that
@@ -73,6 +108,14 @@ export function callPythonBuildTrace(inputs: unknown): string {
   return r.stdout;
 }
 
+export async function callPythonBuildTraceAsync(inputs: unknown): Promise<string> {
+  const r = await callPythonHelperAsync("build_trace_canonical.py", inputs);
+  if (r.status !== 0) {
+    throw new Error(`python build_trace failed (status ${r.status}):\nstderr:\n${r.stderr}`);
+  }
+  return r.stdout;
+}
+
 export function callPythonHashUserId(userId: string, salt: string): string {
   const r = callPythonHelper("hash_user_id.py", { mode: "user", value: userId, salt });
   if (r.status !== 0) {
@@ -81,8 +124,24 @@ export function callPythonHashUserId(userId: string, salt: string): string {
   return r.stdout;
 }
 
+export async function callPythonHashUserIdAsync(userId: string, salt: string): Promise<string> {
+  const r = await callPythonHelperAsync("hash_user_id.py", { mode: "user", value: userId, salt });
+  if (r.status !== 0) {
+    throw new Error(`python hash_user_id failed (status ${r.status}):\nstderr:\n${r.stderr}`);
+  }
+  return r.stdout;
+}
+
 export function callPythonHashSessionId(sessionId: string, salt: string): string {
   const r = callPythonHelper("hash_user_id.py", { mode: "session", value: sessionId, salt });
+  if (r.status !== 0) {
+    throw new Error(`python hash_session_id failed (status ${r.status}):\nstderr:\n${r.stderr}`);
+  }
+  return r.stdout;
+}
+
+export async function callPythonHashSessionIdAsync(sessionId: string, salt: string): Promise<string> {
+  const r = await callPythonHelperAsync("hash_user_id.py", { mode: "session", value: sessionId, salt });
   if (r.status !== 0) {
     throw new Error(`python hash_session_id failed (status ${r.status}):\nstderr:\n${r.stderr}`);
   }

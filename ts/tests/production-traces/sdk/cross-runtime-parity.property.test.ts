@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { buildTrace, type BuildTraceInputs } from "../../../src/production-traces/sdk/build-trace.js";
 import { canonicalJsonStringify } from "../../../src/control-plane/contract/canonical-json.js";
 import {
-  callPythonBuildTrace,
+  callPythonBuildTraceAsync,
   isPythonParityAvailable,
 } from "../../_helpers/python-runner.js";
 import type {
@@ -93,11 +93,11 @@ const validBuildTraceInputsArb: fc.Arbitrary<BuildTraceInputs> = fc.record({
 });
 
 maybeSuite("P-cross-runtime-emit-parity (property, 50 runs)", () => {
-  test("TS buildTrace and Python build_trace produce byte-identical canonical JSON", () => {
-    fc.assert(
-      fc.property(validBuildTraceInputsArb, (inputs) => {
+  test("TS buildTrace and Python build_trace produce byte-identical canonical JSON", async () => {
+    await fc.assert(
+      fc.asyncProperty(validBuildTraceInputsArb, async (inputs) => {
         const tsCanonical = canonicalJsonStringify(buildTrace(inputs));
-        const pyCanonical = callPythonBuildTrace(inputs);
+        const pyCanonical = await callPythonBuildTraceAsync(inputs);
         return tsCanonical === pyCanonical;
       }),
       { numRuns: 50 },

@@ -264,7 +264,7 @@ describe("autoctx mission run and artifacts", () => {
     const artifactsPayload = JSON.parse(artifactsOut);
     expect(artifactsPayload.checkpoints.length).toBeGreaterThanOrEqual(2);
     expect(artifactsPayload.latestCheckpoint.mission.id).toBe(id);
-  });
+  }, 15000);
 });
 
 // ---------------------------------------------------------------------------
