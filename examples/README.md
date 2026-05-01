@@ -5,6 +5,7 @@ These are copy-paste starting points for people evaluating the repo, integrating
 ## Which Example To Start With
 
 - Want the full control plane from a source checkout? Use the Python CLI example.
+- Want Hermes Agent to understand autocontext? Use the Hermes CLI-first workflow.
 - Want to wire Claude Code or another MCP client? Use the MCP config snippet.
 - Want a typed Python integration? Use the Python SDK example.
 - Want a Node/TypeScript integration? Use the TypeScript library example.
@@ -66,6 +67,22 @@ Add this to your project-level `.claude/settings.json` and replace `/ABSOLUTE/PA
 ```
 
 For a fuller comparison of CLI, MCP, and SDK integrations, see [autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md).
+
+## Hermes Agent Skill And Curator Inspection
+
+Hermes agents can use autocontext through the CLI without MCP. Export the Hermes skill into a Hermes profile, then inspect Hermes v0.12 skill usage and Curator reports read-only.
+
+```bash
+cd autocontext
+
+uv run autoctx hermes export-skill \
+  --output ~/.hermes/skills/autocontext/SKILL.md \
+  --json | jq .
+
+uv run autoctx hermes inspect --json | jq .
+```
+
+For a fuller walkthrough, see [autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md#hermes-cli-first-starter-workflow).
 
 ## Python SDK
 

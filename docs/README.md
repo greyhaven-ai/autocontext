@@ -42,6 +42,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - **`analyze`** — interpret and compare outputs from all surfaces
 - **`mission`** — real-world goal execution with adaptive planning and campaigns
 - **`train`** — distill curated datasets into scenario-local models
+- **`hermes`** — read-only Hermes v0.12 skill/Curator inspection plus Hermes skill export
 
 ## Trace Pipeline (0.3.0)
 

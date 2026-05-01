@@ -4,10 +4,11 @@
  */
 
 import { dirname, join } from "node:path";
+import type { AppSettings } from "../config/index.js";
 import { LoopController } from "../loop/controller.js";
 import { EventStreamEmitter } from "../loop/events.js";
 import type { EventCallback } from "../loop/events.js";
-import type { GenerationRole } from "../providers/index.js";
+import type { GenerationRole, RoleProviderBundle } from "../providers/index.js";
 import type { ScenarioPreviewInfo } from "../scenarios/draft-workflow.js";
 import {
   InteractiveScenarioSession,
@@ -47,6 +48,11 @@ export interface RunManagerOpts {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  deps?: RunManagerDeps;
+}
+
+export interface RunManagerDeps {
+  resolveProviderBundle?: (settings?: AppSettings) => RoleProviderBundle;
 }
 
 export interface EnvironmentInfo {
@@ -368,6 +374,9 @@ export class RunManager {
   }
 
   #resolveProviderBundle(settings = loadSettings()) {
+    if (this.#opts.deps?.resolveProviderBundle) {
+      return this.#opts.deps.resolveProviderBundle(settings);
+    }
     return this.#providerSession.resolveProviderBundle(settings);
   }
 

@@ -22,7 +22,7 @@ Autocontext is a harness. You point it at a goal in plain language. It iterates 
 The fastest path uses our **Pi runtime**, a local coding agent that handles its own auth. No API key plumbing, no provider config: install Pi, install autocontext, point one at the other.
 
 ```bash
-uv tool install autocontext==0.4.9
+uv tool install autocontext==0.5.0
 
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
@@ -36,7 +36,7 @@ Pi runs locally as a subprocess and emits live traces back into the harness. For
 Prefer TypeScript? Same surface, same command:
 
 ```bash
-bun add -g autoctx@0.4.9
+bun add -g autoctx@0.5.0
 AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
   "improve customer-support replies for billing disputes" \
   --iterations 5 --json
@@ -54,7 +54,7 @@ See [`.env.example`](.env.example) for every provider's variables. Prefer to clo
 
 ## Or Just Talk To Your Agent
 
-If you already work inside a coding agent (Claude Code, Pi, Cursor, or anything MCP-aware), you don't need to learn the CLI. Wire autocontext in once and your agent gets a natural-language entry point.
+If you already work inside a coding agent, you can wire autocontext in once and give the agent a natural-language entry point. Hermes and other terminal-capable agents should start with the CLI-backed skill; MCP remains available for clients that want a tool-catalog protocol.
 
 **Pi** ships an autocontext skill out of the box. Install the published Pi package and Pi loads natural-language wrappers over live tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, and `autocontext_list_scenarios`.
 
@@ -83,6 +83,14 @@ Then you just ask:
 ```
 
 After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, `autocontext_list_scenarios`, `autocontext_export_skill`, and `autocontext_search_strategies`. The MCP server runs on stdio. The TypeScript package exposes the same capabilities with its documented tool names via `bunx autoctx mcp-serve`.
+
+**Hermes Agent** can load a CLI-first skill and inspect Hermes Curator state without MCP:
+
+```bash
+cd autocontext
+uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+uv run autoctx hermes inspect --json
+```
 
 Full integration guide: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md).
 
@@ -197,14 +205,12 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.4.9
+## What's New in 0.5.0
 
-- **Pi-shaped scenario hardening** keeps schema-evolution simulations from persisting empty mutation plans and improves recovery from Pi-style JSON wrappers.
-- **Budgeted Pi/Pi-RPC role calls** now report effective bounded timeouts and clean up one-shot persistent clients after use.
-- **RLM convergence guards** capture explicit final-answer tags, cautious closure cues, and repeated silent no-progress cases without stealing normal inspection turns.
-- **Rubric drift monitoring** now catches within-generation mean-versus-best compression and slower dimension decline.
-- **Task-like solve lifecycle metadata** separates persisted generations from improvement rounds for hook consumers.
-- **Pi extension release alignment** keeps `pi-autocontext` one package behind `autoctx` while publishing the next extension patch.
+- **Plain-language CLI continuity** lets Python and TypeScript callers use positional goals/scenarios, `--iterations`, and run-scoped exports while preserving the existing flag forms.
+- **Hermes Agent integration** adds read-only Hermes v0.12 inspection plus an exportable CLI-first `autocontext` skill for Hermes agents.
+- **Packaged CLI startup** no longer crashes when installed without banner assets.
+- **Release alignment** bumps Python `autocontext` and npm `autoctx` to `0.5.0`, with `pi-autocontext` moving to `0.2.4` on its own lower-numbered line.
 <!-- autocontext-whats-new:end -->
 
 ## Choose Your Package
@@ -219,11 +225,11 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 
 ```bash
 # Python: library or CLI tool
-uv pip install autocontext==0.4.9
-uv tool install autocontext==0.4.9
+uv pip install autocontext==0.5.0
+uv tool install autocontext==0.5.0
 
 # TypeScript
-bun add -g autoctx@0.4.9
+bun add -g autoctx@0.5.0
 
 # Pi extension
 pi install npm:pi-autocontext
@@ -244,6 +250,7 @@ pi install npm:pi-autocontext
 | `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
 | `export`      | `autoctx export <run-id>`                          | Share solved knowledge as JSON, skills, or Pi-local package directories                |
 | `train`       | `autoctx train --scenario <name> --data <jsonl>`   | Distill stable exported data into a cheaper local runtime                              |
+| `hermes`      | `uv run autoctx hermes inspect --json` (Python)    | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill       |
 | `replay`      | `autoctx replay <run_id> --generation N`           | Inspect what happened before deciding what knowledge should persist                    |
 
 ## Scenario Families

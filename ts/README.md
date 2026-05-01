@@ -53,7 +53,7 @@ export function register(api) {
 npm install autoctx
 ```
 
-The current npm release line is `autoctx@0.4.9`.
+The current npm release line is `autoctx@0.5.0`.
 Important: use `autoctx`, not `autocontext`.
 `autocontext` on npm is a different package and not this project.
 
@@ -165,6 +165,7 @@ autoctx models
 # Scenario execution
 autoctx solve "improve customer-support replies for billing disputes" --iterations 3 --json
 autoctx run support_triage --iterations 3 --json
+autoctx run --scenario support_triage --iterations 3 --json
 autoctx list --json
 autoctx status <run-id>
 autoctx show <run-id> --best
@@ -410,6 +411,7 @@ These workflows require infrastructure not available in the npm package:
 - `ecosystem` — Multi-provider cycling
 - `ab-test` — Requires ecosystem runner
 - `resume` / `wait` — Run recovery infrastructure
+- `hermes inspect` / `hermes export-skill` — Hermes v0.12 Curator inspection and Hermes skill export
 - `trigger-distillation` — Training pipeline
 - Monitor conditions — Monitoring engine
 

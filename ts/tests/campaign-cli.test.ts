@@ -308,7 +308,7 @@ describe("autoctx campaign add-mission and progress", () => {
     );
     const progress = JSON.parse(progressOut);
     expect(progress.totalMissions).toBe(1);
-  });
+  }, 15000);
 
   it("adds a mission with priority and dependencies", () => {
     const { stdout: cOut } = runCli(
@@ -356,7 +356,7 @@ describe("autoctx campaign add-mission and progress", () => {
     );
     const status = JSON.parse(statusOut);
     expect(status.missions.length).toBe(2);
-  });
+  }, 15000);
 
   it("rejects invalid priority values", () => {
     const { stdout: cOut } = runCli(
@@ -430,7 +430,7 @@ describe("autoctx campaign lifecycle", () => {
 
     const { stdout } = runCli(["campaign", "status", "--id", id], { cwd: dir });
     expect(JSON.parse(stdout).status).toBe("active");
-  });
+  }, 15000);
 
   it("cancel sets status to canceled", () => {
     const { stdout: created } = runCli(

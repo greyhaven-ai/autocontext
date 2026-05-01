@@ -135,7 +135,9 @@ describe("TypeScript type assertion budget", () => {
     // lookups in the detector's produce() function. Budget grows linearly with
     // each new integration library — A2-III Anthropic integration added ~50 casts
     // (proxy + trace-builder analogues). LangChain etc. will require similar bumps.
-    expect(total).toBeLessThanOrEqual(950);
+    // Bumped to 970 when CLI-continuity support kept legacy flag forms alongside
+    // positional `solve` / `run` forms across the TS command surface.
+    expect(total).toBeLessThanOrEqual(970);
   });
 
   it("mission/store.ts should use row types instead of inline casts", () => {

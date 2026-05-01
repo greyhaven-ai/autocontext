@@ -10,7 +10,7 @@ The intended use is to hand the harness a real task in plain language, let it so
 pip install autocontext
 ```
 
-The current PyPI release line is `autocontext==0.4.9`.
+The current PyPI release line is `autocontext==0.5.0`.
 The PyPI package name is now `autocontext`. The CLI entrypoint remains `autoctx`.
 
 ## Working Directory
@@ -35,6 +35,7 @@ The Python package is the full control-plane surface in this repo. It currently 
 - plain-language investigation via `autoctx investigate`
 - local training workflows via `autoctx export-training-data` and `autoctx train`
 - scenario creation and materialization via `autoctx new-scenario`
+- Hermes Agent integration helpers via `autoctx hermes inspect` and `autoctx hermes export-skill`
 - HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`
 
 Some newer operator-facing surfaces are currently TypeScript-first:
@@ -175,6 +176,8 @@ uv run autoctx benchmark --scenario support_triage --runs 5
 uv run autoctx new-scenario --template prompt-optimization --name support_triage
 uv run autoctx export-training-data --scenario support_triage --all-runs --output training/support_triage.jsonl
 uv run autoctx train --scenario support_triage --data training/support_triage.jsonl --time-budget 300
+uv run autoctx hermes inspect --json
+uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
 uv run autoctx serve --host 127.0.0.1 --port 8000
 uv run autoctx mcp-serve
 uv run autoctx wait <condition_id> --json

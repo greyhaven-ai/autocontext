@@ -23,7 +23,7 @@ SYNC_BLOCK_START = "<!-- autocontext-readme-hero:start -->"
 SYNC_BLOCK_END = "<!-- autocontext-readme-hero:end -->"
 WHATS_NEW_BLOCK_START = "<!-- autocontext-whats-new:start -->"
 WHATS_NEW_BLOCK_END = "<!-- autocontext-whats-new:end -->"
-README_WHATS_NEW_HEADING = "What's New in 0.4.9"
+README_WHATS_NEW_HEADING = "What's New in 0.5.0"
 FALLBACK_BANNER_ART = "autocontext"
 README_BADGES = (
     (

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-01
+
 ### Added
 
 - Python and TypeScript `autoctx solve` now accept the plain-language goal as a positional argument while keeping `--description` as a named option.
@@ -11,10 +13,16 @@ All notable changes to this project will be documented in this file.
 - Python and TypeScript `autoctx run <scenario>` now accept a positional scenario while keeping `--scenario` for scripts.
 - Python and TypeScript `autoctx export <run-id>` now export knowledge from a specific run while keeping scenario-level export support.
 - TypeScript CLI/TUI help now uses the same plain-language run vocabulary, including `status <run-id>`, `show <run-id> --best`, and `watch <run-id>`.
+- Python `autoctx hermes inspect` now reads Hermes v0.12 skill usage telemetry and Curator reports without mutating `~/.hermes`, and `autoctx hermes export-skill` emits a first-class Hermes `autocontext` skill that teaches CLI-first workflows with MCP as optional.
 
 ### Fixed
 
 - Python installed `autoctx` no longer crashes on no-args startup when packaged banner assets are missing.
+
+### Changed
+
+- Python `autocontext` and TypeScript `autoctx` package metadata are bumped to `0.5.0`.
+- Pi `pi-autocontext` package metadata is bumped to `0.2.4`, and its `autoctx` dependency range accepts both the current `0.4.9` package and the upcoming `0.5.0` npm line.
 
 ## [0.4.9] - 2026-04-30
 
@@ -334,7 +342,8 @@ All notable changes to this project will be documented in this file.
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.9...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.5.0...HEAD
+[0.5.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.9...py-v0.5.0
 [0.4.9]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.8...py-v0.4.9
 [0.4.8]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.7...py-v0.4.8
 [0.4.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.6...py-v0.4.7

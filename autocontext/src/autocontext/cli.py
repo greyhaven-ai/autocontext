@@ -19,6 +19,7 @@ from rich.table import Table
 
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_analytics import register_analytics_command
+from autocontext.cli_hermes import register_hermes_command
 from autocontext.cli_investigate import run_investigate_command
 from autocontext.cli_new_scenario import register_new_scenario_command
 from autocontext.cli_queue import register_queue_command
@@ -1533,6 +1534,7 @@ def improve(
 
 
 register_analytics_command(app, console=console)
+register_hermes_command(app, console=console)
 register_new_scenario_command(app, console=console)
 register_solve_command(app, console=console)
 register_queue_command(app, console=console)

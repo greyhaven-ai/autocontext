@@ -15,7 +15,7 @@ export function describeCustomScenarioEntry(entry: CustomScenarioEntry): string 
     const taskPrompt = typeof entry.spec.taskPrompt === "string"
       ? entry.spec.taskPrompt
       : entry.name;
-    return `Custom agent task: ${taskPrompt} (saved for custom-scenario tooling; not runnable via /run yet)`;
+    return `Custom agent task: ${taskPrompt} (saved custom scenario; runnable via /run)`;
   }
   const description = typeof entry.spec.description === "string"
     ? entry.spec.description

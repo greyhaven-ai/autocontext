@@ -62,7 +62,7 @@ describe("run environment catalog", () => {
       hasGeneratedSource: true,
     };
 
-    expect(describeCustomScenarioEntry(agentTask)).toContain("not runnable via /run yet");
+    expect(describeCustomScenarioEntry(agentTask)).toContain("runnable via /run");
     expect(describeCustomScenarioEntry(generated)).toContain("runnable via /run");
   });
 
