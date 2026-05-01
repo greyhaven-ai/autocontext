@@ -83,21 +83,21 @@ export class ModelRouter {
       tier = opts.generation <= this.#config.competitorHaikuMaxGen ? "haiku" : "sonnet";
 
       if (opts.retryCount >= this.#config.competitorRetryEscalation) {
-        tier = this.maxTier(tier, "sonnet");
+        tier = this.#maxTier(tier, "sonnet");
       }
       if (opts.isPlateau) {
         tier = "opus";
       }
     } else if (role === "analyst" || role === "coach") {
       if (opts.isPlateau) {
-        tier = this.maxTier(tier, "opus");
+        tier = this.#maxTier(tier, "opus");
       }
     }
 
     return this.#tierMap[tier] ?? null;
   }
 
-  private maxTier(a: string, b: string): string {
+  #maxTier(a: string, b: string): string {
     const ai = TIER_ORDER.indexOf(a as (typeof TIER_ORDER)[number]);
     const bi = TIER_ORDER.indexOf(b as (typeof TIER_ORDER)[number]);
     return ai >= bi ? a : b;

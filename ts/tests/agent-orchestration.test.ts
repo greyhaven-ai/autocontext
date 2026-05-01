@@ -310,6 +310,21 @@ describe("ModelRouter", () => {
     const model = router.select("coach", { generation: 1, retryCount: 0, isPlateau: true });
     expect(model).toContain("opus");
   });
+
+  it("uses real #private fields and helpers for routing internals", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "agents", "model-router.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("#config");
+    expect(source).toContain("#tierMap");
+    expect(source).toContain("#maxTier");
+    expect(source).not.toContain("private maxTier");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -9,11 +9,12 @@
 
 import type { AgentOsRuntimePort } from "./types.js";
 
-const SANDBOX_KEYWORDS = [
+export const SANDBOX_KEYWORDS = [
   "browser", "playwright", "puppeteer", "selenium",
   "dev server", "port 3000", "port 8080", "localhost",
   "gui", "native build", "docker", "container",
 ] as const;
+export type SandboxKeyword = (typeof SANDBOX_KEYWORDS)[number];
 
 export class AgentOsLifecycle {
   #runtime: AgentOsRuntimePort;
