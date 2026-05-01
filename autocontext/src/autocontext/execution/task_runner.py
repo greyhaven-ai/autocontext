@@ -41,6 +41,7 @@ from autocontext.execution.simple_agent_task_workflow import (
     generate_simple_agent_task_output,
     revise_simple_agent_task_output,
 )
+from autocontext.execution.task_queue_store import TaskQueueEnqueueStore, TaskQueueStore
 from autocontext.execution.verification_dataset import enrich_objective_payload
 from autocontext.harness.pipeline.objective_guardrail import (
     evaluate_objective_guardrail,
@@ -48,7 +49,6 @@ from autocontext.harness.pipeline.objective_guardrail import (
 )
 from autocontext.providers.base import LLMProvider
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
-from autocontext.storage.sqlite_store import SQLiteStore
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ def _build_evaluator_guardrail_payload(
 
 def _build_rubric_calibration_payload(
     *,
-    store: SQLiteStore,
+    store: TaskQueueStore,
     spec_name: str,
     task_prompt: str,
     rubric: str,
@@ -461,7 +461,7 @@ class TaskRunner:
 
     def __init__(
         self,
-        store: SQLiteStore,
+        store: TaskQueueStore,
         provider: LLMProvider,
         model: str = "",
         poll_interval: float = 60.0,
@@ -909,7 +909,7 @@ class TaskRunner:
 def create_task_runner_from_settings(
     settings: AppSettings,
     *,
-    store: SQLiteStore,
+    store: TaskQueueStore,
     provider: LLMProvider,
     model: str = "",
     poll_interval: float = 60.0,
@@ -936,7 +936,7 @@ def create_task_runner_from_settings(
 
 
 def enqueue_task(
-    store: SQLiteStore,
+    store: TaskQueueEnqueueStore,
     spec_name: str,
     task_prompt: str | None = None,
     rubric: str | None = None,

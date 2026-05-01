@@ -889,13 +889,14 @@ package = ac.export_package("grid_ctf")
 
 ## TypeScript CLI
 
-The TypeScript package also publishes a narrower `autoctx` CLI for Node.js environments. It focuses on judge-based evaluation, improvement loops, task queueing, and MCP serving rather than the full multi-generation control plane:
+The TypeScript package also publishes a narrower `autoctx` CLI for Node.js environments. It focuses on judge-based evaluation, improvement loops, task queueing, worker execution, and MCP serving rather than the full multi-generation control plane:
 
 ```bash
 npx autoctx judge -p "Write a haiku" -o "output text" -r "evaluate quality"
 npx autoctx improve -p "Write a haiku" -o "draft" -r "evaluate quality" -n 3
 npx autoctx status
-npx autoctx serve  # MCP server on stdio
+npx autoctx worker --once --json
+npx autoctx mcp-serve  # MCP server on stdio
 ```
 
 Key entrypoints live in:

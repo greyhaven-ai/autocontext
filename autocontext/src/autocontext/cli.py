@@ -29,6 +29,7 @@ from autocontext.cli_runtime_overrides import (
     format_runtime_provider_error,
 )
 from autocontext.cli_solve import register_solve_command
+from autocontext.cli_worker import register_worker_command
 from autocontext.config import load_settings
 from autocontext.config.presets import VALID_PRESET_NAMES
 from autocontext.config.settings import AppSettings
@@ -1538,6 +1539,7 @@ register_hermes_command(app, console=console)
 register_new_scenario_command(app, console=console)
 register_solve_command(app, console=console)
 register_queue_command(app, console=console)
+register_worker_command(app, console=console)
 
 
 if __name__ == "__main__":

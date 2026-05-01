@@ -176,6 +176,12 @@ class GenerationRunner:
                         allow_fallback=settings.ssh_allow_fallback,
                     )
                 )
+        elif settings.executor_mode == "gondolin":
+            raise ValueError(
+                "Gondolin executor mode is reserved for the optional microVM "
+                "sandbox backend and is not wired yet. Use monty for in-process "
+                "sandboxing, or local/ssh/primeintellect for supported executors."
+            )
         else:
             self.executor = ExecutionSupervisor(executor=LocalExecutor())
         self.events = EventStreamEmitter(settings.event_stream_path)

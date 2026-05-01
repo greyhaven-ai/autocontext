@@ -174,6 +174,18 @@ export type {
   TaskRunnerFromSettingsOpts,
   TaskConfig,
 } from "./execution/task-runner.js";
+export type {
+  TaskQueueEnqueueStore,
+  TaskQueueWorkerStore,
+} from "./execution/task-queue-store.js";
+export { createDefaultGondolinSandboxPolicy } from "./execution/gondolin-contract.js";
+export type {
+  GondolinBackend,
+  GondolinExecutionRequest,
+  GondolinExecutionResult,
+  GondolinSandboxPolicy,
+  GondolinSecretRef,
+} from "./execution/gondolin-contract.js";
 export { JudgeExecutor } from "./execution/judge-executor.js";
 export { ActionFilterHarness, ActionDictSchema } from "./execution/action-filter.js";
 export type { ActionDict, ScenarioLike, HarnessLoaderLike } from "./execution/action-filter.js";

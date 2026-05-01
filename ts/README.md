@@ -183,6 +183,7 @@ autoctx new-scenario --template prompt-optimization --name support_triage
 # Interactive, simulations, and missions
 autoctx tui [--port 8000]
 autoctx serve [--port 8000] [--json] # HTTP API
+autoctx worker [--poll-interval 5] [--concurrency 2]
 autoctx mcp-serve                     # MCP server on stdio
 autoctx simulate -d "simulate deploying a web service with rollback"
 autoctx simulate -d "simulate escalation thresholds" --sweep max_escalations=1:5:1
@@ -207,6 +208,7 @@ autoctx repl --scenario my_saved_task
 
 # Task queue
 autoctx queue -s <spec> [--priority N] [--browser-url https://status.example.com]
+autoctx worker --poll-interval 5 --concurrency 2
 autoctx status
 ```
 

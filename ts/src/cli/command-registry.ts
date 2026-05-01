@@ -43,6 +43,7 @@ export type DbCommandName =
   | "improve"
   | "repl"
   | "queue"
+  | "worker"
   | "status"
   | "serve"
   | "mcp-serve";
@@ -88,6 +89,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   { name: "improve", description: "Run multi-round improvement loop", group: "primary", route: { kind: "db", command: "improve" } },
   { name: "repl", description: "Run a direct REPL-loop session", group: "primary", route: { kind: "db", command: "repl" } },
   { name: "queue", description: "Add a task to the background runner queue", group: "primary", route: { kind: "db", command: "queue" } },
+  { name: "worker", description: "Run the background task queue worker", group: "primary", route: { kind: "db", command: "worker" } },
   { name: "status", description: "Show queue status", group: "primary", route: { kind: "db", command: "status" } },
   { name: "serve", description: "Start HTTP API server [--json]", group: "primary", route: { kind: "db", command: "serve" } },
   { name: "train", description: "Train a distilled model from curated dataset (requires configured executor)", group: "primary", route: { kind: "no-db", command: "train" } },

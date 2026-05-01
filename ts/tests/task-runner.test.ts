@@ -386,6 +386,54 @@ describe("TaskRunner.runBatch", () => {
   });
 });
 
+describe("TaskRunner.run", () => {
+  it("processes queued tasks until the empty-poll limit is reached", async () => {
+    const store = createStore();
+    enqueueTask(store, "spec-1", {
+      taskPrompt: "Task 1",
+      rubric: "Be good",
+      initialOutput: "Output 1",
+    });
+    enqueueTask(store, "spec-2", {
+      taskPrompt: "Task 2",
+      rubric: "Be good",
+      initialOutput: "Output 2",
+    });
+
+    const runner = new TaskRunner({
+      store,
+      provider: makeMockProvider(),
+      concurrency: 2,
+      pollInterval: 0,
+      maxConsecutiveEmpty: 1,
+    });
+
+    await expect(runner.run()).resolves.toBe(2);
+    expect(runner.tasksProcessed).toBe(2);
+    expect(store.pendingTaskCount()).toBe(0);
+  });
+
+  it("stops immediately after shutdown is requested", async () => {
+    const store = createStore();
+    enqueueTask(store, "spec-1", {
+      taskPrompt: "Task 1",
+      rubric: "Be good",
+      initialOutput: "Output 1",
+    });
+
+    const runner = new TaskRunner({
+      store,
+      provider: makeMockProvider(),
+      pollInterval: 0,
+      maxConsecutiveEmpty: 1,
+    });
+    runner.shutdown();
+
+    await expect(runner.run()).resolves.toBe(0);
+    expect(store.pendingTaskCount()).toBe(1);
+  });
+});
+
 describe("minRounds wiring (AC-53)", () => {
   it("enqueueTask passes minRounds to config", () => {
     const store = createStore();

@@ -248,6 +248,7 @@ pi install npm:pi-autocontext
 | `analyze`     | `autoctx analyze --id <id> --type <kind>`          | Inspect or compare runs, simulations, investigations, or missions after the fact       |
 | `mission`     | `autoctx mission create --name "..." --goal "..."` | Verifier-driven goal advanced step by step until done                                  |
 | `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
+| `worker`      | `autoctx worker --poll-interval 5`                 | Process queued tasks on a persistent host beside `autoctx serve`                      |
 | `export`      | `autoctx export <run-id>`                          | Share solved knowledge as JSON, skills, or Pi-local package directories                |
 | `train`       | `autoctx train --scenario <name> --data <jsonl>`   | Distill stable exported data into a cheaper local runtime                              |
 | `hermes`      | `uv run autoctx hermes inspect --json` (Python)    | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill       |
@@ -277,7 +278,7 @@ All 11 families execute in both Python and TypeScript. TypeScript uses V8 isolat
 
 **Agent runtimes**: Claude CLI, Codex CLI, Hermes CLI, Direct API, Pi variants, plus branch-aware session and persistent Pi RPC for local agent loops.
 
-**Executors**: Local subprocess, SSH remote, Monty (`pydantic-monty` sandbox), PrimeIntellect remote sandbox.
+**Executors**: Local subprocess, SSH remote, Monty (`pydantic-monty` sandbox), PrimeIntellect remote sandbox. Gondolin is reserved as an optional fail-closed microVM backend until its adapter is wired.
 
 **Harness profiles and hooks**: The Python control plane supports a Pi-shaped lean profile that caps prompt context during generation and exports a minimal tool-affordance allowlist for agent surfaces that enforce tool gating. Semantic prompt compactions are recorded as Pi-shaped JSONL entries under each run; the TypeScript package now includes a mirrored deterministic prompt compactor plus `ArtifactStore` ledger read/write/latest APIs for standalone npm runs. Python and TypeScript runs can load `AUTOCONTEXT_EXTENSIONS`; Python extensions are Python modules, while TypeScript extensions are JavaScript/ESM modules that register hooks around context assembly, semantic compaction, provider calls, judge calls, artifact writes, and run lifecycle events.
 
@@ -313,6 +314,7 @@ Yes. Wire `autoctx mcp-serve` (or `bunx autoctx mcp-serve`) into Claude Code, Cu
 - Repo layout for coding agents: [AGENTS.md](AGENTS.md)
 - Sandboxed agents that need to trigger MLX training on the host: [autocontext/docs/mlx-training.md](autocontext/docs/mlx-training.md)
 - Sandbox and executor notes: [autocontext/docs/sandbox.md](autocontext/docs/sandbox.md)
+- Persistent host worker: [autocontext/docs/persistent-host.md](autocontext/docs/persistent-host.md)
 - License: [LICENSE](LICENSE)
 
 ## Acknowledgments

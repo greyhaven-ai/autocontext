@@ -2,11 +2,12 @@ import { ImprovementLoop } from "./improvement-loop.js";
 import { SequentialDelegatedJudge, type JudgeInterface } from "../judge/delegated.js";
 import { renderAgentTaskPrompt, resolveCustomAgentTask } from "../scenarios/custom-loader.js";
 import type { LLMProvider, AgentTaskInterface, ImprovementResult } from "../types/index.js";
-import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
+import type { TaskQueueRow } from "../storage/index.js";
 import type { TaskConfig } from "./task-runner-config.js";
 import { parseTaskConfig, serializeTaskResult } from "./task-runner-config.js";
 import type { RlmSessionRecord, RlmTaskConfig } from "../rlm/types.js";
 import type { QueuedTaskBrowserContextService } from "./queued-task-browser-context.js";
+import type { TaskQueueWorkerStore } from "./task-queue-store.js";
 
 interface SavedTaskSpec {
   judgeRubric?: string;
@@ -130,7 +131,7 @@ export function buildQueuedTaskExecutionPlan(opts: {
 }
 
 export async function executeQueuedTaskWorkflow(opts: {
-  store: SQLiteStore;
+  store: TaskQueueWorkerStore;
   task: TaskQueueRow;
   provider: LLMProvider;
   model: string;

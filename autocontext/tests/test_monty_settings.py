@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from autocontext.config.settings import AppSettings, load_settings
 
 
@@ -66,3 +68,11 @@ class TestGenerationRunnerMontyWiring:
         runner = GenerationRunner(settings)
         assert isinstance(runner.executor.executor, LocalExecutor)
         assert runner.remote is None
+
+    def test_gondolin_executor_mode_is_reserved_until_backend_is_wired(self) -> None:
+        """Gondolin is fail-closed until a real microVM executor is configured."""
+        settings = AppSettings(agent_provider="deterministic", executor_mode="gondolin")
+        from autocontext.loop.generation_runner import GenerationRunner
+
+        with pytest.raises(ValueError, match="Gondolin"):
+            GenerationRunner(settings)

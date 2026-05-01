@@ -149,6 +149,12 @@ uv run autoctx serve --host 127.0.0.1 --port 8000
 
 Inspect `http://127.0.0.1:8000/` for the API index after the server starts. For an interactive terminal UI, use the TypeScript package: `npx autoctx tui`.
 
+Run a persistent queue worker beside the API server:
+
+```bash
+uv run autoctx worker --poll-interval 5 --concurrency 2
+```
+
 Start the MCP server:
 
 ```bash
@@ -167,6 +173,7 @@ uv run autoctx investigate --description "debug the outage timeline" --mode iter
 uv run autoctx investigate --description "checkout is failing in prod" --browser-url https://status.example.com
 uv run autoctx queue add --task-prompt "Write a 1-line fact about primes" --rubric "correct" --threshold 0.8 --rounds 2
 uv run autoctx queue --spec support_triage --browser-url https://status.example.com
+uv run autoctx worker --poll-interval 5 --concurrency 2
 uv run autoctx simulate --replay deploy_sim --variables threshold=0.9
 uv run autoctx list
 uv run autoctx status <run_id>
@@ -546,6 +553,7 @@ For the TypeScript equivalent, see `ts/src/integrations/anthropic/STABILITY.md`.
 - [Canonical concept model](../docs/concept-model.md)
 - [Agent integration guide](docs/agent-integration.md) — CLI-first integration for external agents, MCP fallback, JSON output reference
 - [Sandbox modes](docs/sandbox.md)
+- [Persistent host worker](docs/persistent-host.md)
 - [MLX host training](docs/mlx-training.md)
 - [TypeScript package guide](../ts/README.md) — `analyze`, mission control, and interactive TUI surfaces
 - [Demo data notes](demo_data/README.md)

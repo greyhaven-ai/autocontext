@@ -8,7 +8,7 @@ import {
   type RlmSessionRecord,
   type RlmTaskConfig,
 } from "../rlm/types.js";
-import type { SQLiteStore } from "../storage/index.js";
+import type { TaskQueueEnqueueStore } from "./task-queue-store.js";
 
 export interface TaskConfig {
   maxRounds?: number;
@@ -169,7 +169,7 @@ export function buildEnqueueTaskConfig(opts?: EnqueueTaskRequest): Record<string
 }
 
 export function enqueueConfiguredTask(
-  store: SQLiteStore,
+  store: TaskQueueEnqueueStore,
   specName: string,
   opts?: EnqueueTaskRequest,
 ): string {
