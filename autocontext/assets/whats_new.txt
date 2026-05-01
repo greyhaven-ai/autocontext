@@ -1,6 +1,4 @@
-**Pi-shaped scenario hardening** keeps schema-evolution simulations from persisting empty mutation plans and improves recovery from Pi-style JSON wrappers.
-**Budgeted Pi/Pi-RPC role calls** now report effective bounded timeouts and clean up one-shot persistent clients after use.
-**RLM convergence guards** capture explicit final-answer tags, cautious closure cues, and repeated silent no-progress cases without stealing normal inspection turns.
-**Rubric drift monitoring** now catches within-generation mean-versus-best compression and slower dimension decline.
-**Task-like solve lifecycle metadata** separates persisted generations from improvement rounds for hook consumers.
-**Pi extension release alignment** keeps `pi-autocontext` one package behind `autoctx` while publishing the next extension patch.
+**Plain-language CLI continuity** lets Python and TypeScript callers use positional goals/scenarios, `--iterations`, and run-scoped exports while preserving the existing flag forms.
+**Hermes Agent integration** adds read-only Hermes v0.12 inspection plus an exportable CLI-first `autocontext` skill for Hermes agents.
+**Packaged CLI startup** no longer crashes when installed without banner assets.
+**Release alignment** bumps Python `autocontext` and npm `autoctx` to `0.5.0`, with `pi-autocontext` moving to `0.2.4` on its own lower-numbered line.

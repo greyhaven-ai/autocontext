@@ -1,6 +1,6 @@
 {
   "name": "pi-autocontext",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "autocontext extension for Pi coding agent \u2014 iterative strategy generation, LLM judging, and evaluation tools",
   "type": "module",
   "keywords": ["pi-package", "pi", "pi-extension", "autocontext", "autoctx", "evaluation", "llm", "judging"],
@@ -18,7 +18,7 @@
     "@sinclair/typebox": "*"
   },
   "dependencies": {
-    "autoctx": "^0.4.8"
+    "autoctx": "^0.4.9 || ^0.5.0"
   },
   "devDependencies": {
     "@sinclair/typebox": "^0.34.0",

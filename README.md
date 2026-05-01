@@ -22,7 +22,7 @@ Autocontext is a harness. You point it at a goal in plain language. It iterates 
 The fastest path uses our **Pi runtime**, a local coding agent that handles its own auth. No API key plumbing, no provider config: install Pi, install autocontext, point one at the other.
 
 ```bash
-uv tool install autocontext==0.4.9
+uv tool install autocontext==0.5.0
 
 AUTOCONTEXT_AGENT_PROVIDER=pi \
 AUTOCONTEXT_PI_COMMAND=pi \
@@ -36,7 +36,7 @@ Pi runs locally as a subprocess and emits live traces back into the harness. For
 Prefer TypeScript? Same surface, same command:
 
 ```bash
-bun add -g autoctx@0.4.9
+bun add -g autoctx@0.5.0
 AUTOCONTEXT_AGENT_PROVIDER=pi bunx autoctx solve \
   "improve customer-support replies for billing disputes" \
   --iterations 5 --json
@@ -205,14 +205,12 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 ```
 
 <!-- autocontext-whats-new:start -->
-## What's New in 0.4.9
+## What's New in 0.5.0
 
-- **Pi-shaped scenario hardening** keeps schema-evolution simulations from persisting empty mutation plans and improves recovery from Pi-style JSON wrappers.
-- **Budgeted Pi/Pi-RPC role calls** now report effective bounded timeouts and clean up one-shot persistent clients after use.
-- **RLM convergence guards** capture explicit final-answer tags, cautious closure cues, and repeated silent no-progress cases without stealing normal inspection turns.
-- **Rubric drift monitoring** now catches within-generation mean-versus-best compression and slower dimension decline.
-- **Task-like solve lifecycle metadata** separates persisted generations from improvement rounds for hook consumers.
-- **Pi extension release alignment** keeps `pi-autocontext` one package behind `autoctx` while publishing the next extension patch.
+- **Plain-language CLI continuity** lets Python and TypeScript callers use positional goals/scenarios, `--iterations`, and run-scoped exports while preserving the existing flag forms.
+- **Hermes Agent integration** adds read-only Hermes v0.12 inspection plus an exportable CLI-first `autocontext` skill for Hermes agents.
+- **Packaged CLI startup** no longer crashes when installed without banner assets.
+- **Release alignment** bumps Python `autocontext` and npm `autoctx` to `0.5.0`, with `pi-autocontext` moving to `0.2.4` on its own lower-numbered line.
 <!-- autocontext-whats-new:end -->
 
 ## Choose Your Package
@@ -227,11 +225,11 @@ uv run autoctx train --scenario support_triage --data training/billing.jsonl --t
 
 ```bash
 # Python: library or CLI tool
-uv pip install autocontext==0.4.9
-uv tool install autocontext==0.4.9
+uv pip install autocontext==0.5.0
+uv tool install autocontext==0.5.0
 
 # TypeScript
-bun add -g autoctx@0.4.9
+bun add -g autoctx@0.5.0
 
 # Pi extension
 pi install npm:pi-autocontext

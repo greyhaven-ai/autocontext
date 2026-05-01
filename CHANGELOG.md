@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-01
+
 ### Added
 
 - Python and TypeScript `autoctx solve` now accept the plain-language goal as a positional argument while keeping `--description` as a named option.
@@ -16,6 +18,11 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Python installed `autoctx` no longer crashes on no-args startup when packaged banner assets are missing.
+
+### Changed
+
+- Python `autocontext` and TypeScript `autoctx` package metadata are bumped to `0.5.0`.
+- Pi `pi-autocontext` package metadata is bumped to `0.2.4`, and its `autoctx` dependency range accepts both the current `0.4.9` package and the upcoming `0.5.0` npm line.
 
 ## [0.4.9] - 2026-04-30
 
@@ -335,7 +342,8 @@ All notable changes to this project will be documented in this file.
 - FastAPI dashboard with WebSocket events.
 - CLI via Typer (Python) and `parseArgs` (TypeScript).
 
-[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.9...HEAD
+[Unreleased]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.5.0...HEAD
+[0.5.0]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.9...py-v0.5.0
 [0.4.9]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.8...py-v0.4.9
 [0.4.8]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.7...py-v0.4.8
 [0.4.7]: https://github.com/greyhaven-ai/autocontext/compare/py-v0.4.6...py-v0.4.7
