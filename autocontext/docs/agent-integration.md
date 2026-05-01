@@ -227,6 +227,45 @@ JSON output shape:
 }
 ```
 
+#### `autoctx hermes` — Inspect Hermes and export the Hermes skill
+
+```bash
+# Read-only inventory of Hermes v0.12 skills, usage telemetry, and Curator reports
+autoctx hermes inspect --json
+
+# Inspect a non-default profile
+autoctx hermes inspect --home "$HERMES_HOME" --json
+
+# Export the Hermes autocontext skill for Hermes to load
+autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+```
+
+JSON output shape for `inspect`:
+
+```json
+{
+  "hermes_home": "/Users/alice/.hermes",
+  "skill_count": 12,
+  "agent_created_skill_count": 4,
+  "bundled_skill_count": 7,
+  "hub_skill_count": 1,
+  "pinned_skill_count": 2,
+  "archived_skill_count": 3,
+  "skills": [],
+  "curator": {
+    "run_count": 2,
+    "latest": {
+      "counts": {
+        "consolidated_this_run": 1,
+        "pruned_this_run": 0
+      }
+    }
+  }
+}
+```
+
+`autoctx hermes inspect` does not mutate `~/.hermes`. Treat Hermes Curator as the owner of Hermes skill lifecycle changes; use this command for read-only analysis, dataset planning, and recommendations.
+
 ### Error Handling
 
 All commands follow the same error contract when `--json` is passed:
@@ -470,6 +509,9 @@ A Hermes agent can drive autocontext entirely through CLI commands. This workflo
 # Install autocontext (from repo root)
 cd autocontext && uv venv && source .venv/bin/activate && uv sync --group dev
 
+# Install the Hermes-facing autocontext skill into the active Hermes profile
+autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+
 # Set the Hermes gateway env vars once
 export AUTOCONTEXT_AGENT_PROVIDER=openai-compatible
 export AUTOCONTEXT_AGENT_BASE_URL=http://localhost:8080/v1
@@ -481,6 +523,12 @@ export AUTOCONTEXT_JUDGE_PROVIDER=openai-compatible
 export AUTOCONTEXT_JUDGE_BASE_URL=http://localhost:8080/v1
 export AUTOCONTEXT_JUDGE_API_KEY=no-key
 export AUTOCONTEXT_JUDGE_MODEL=hermes-3-llama-3.1-70b
+```
+
+Before using local Hermes curation data, inspect it read-only:
+
+```bash
+autoctx hermes inspect --json | jq .
 ```
 
 #### Step 1: Discover scenarios
@@ -564,12 +612,12 @@ autoctx solve \
 
 | Path                           | Best for                                                                          | Complexity |
 | ------------------------------ | --------------------------------------------------------------------------------- | ---------- |
-| **CLI-first** (this section)   | Hermes agents driving `autoctx` via shell commands                                | Lowest     |
+| **CLI-first** (this section)   | Hermes agents driving `autoctx` via shell commands and `--json` output            | Lowest     |
 | **OpenAI-compatible provider** | autocontext calling Hermes for agent/judge completions                            | Low        |
-| **MCP server**                 | Tool-catalog agents (Claude Code, MCP clients)                                    | Medium     |
+| **MCP server**                 | Managed tool-catalog environments where schemas/discovery add value               | Medium     |
 | **Native Hermes runtime**      | autocontext calling the local Hermes CLI with Hermes-side workspace/skill context | Highest    |
 
-The CLI-first path is recommended for getting started. Move to the gateway or native provider paths when you want autocontext to call Hermes instead of Hermes calling autocontext.
+The CLI-first path is recommended for getting started, especially now that the `autoctx` CLI is the mature shared surface. Move to the gateway or native provider paths when you want autocontext to call Hermes instead of Hermes calling autocontext. Add MCP only when typed schemas, discovery, or host policy make it better than the CLI for that environment.
 
 ## MCP Integration (Secondary)
 
@@ -814,7 +862,7 @@ All tools use the `autocontext_` prefix (e.g., `autocontext_list_scenarios`). Th
 | **Long-running jobs** | Poll via `autocontext_solve_status` | Poll via `autoctx status`       |
 | **Best for**          | Hermes agents with MCP support      | Hermes agents with shell access |
 
-Use MCP when Hermes has native MCP client support and you want automatic tool discovery. Use CLI-first when you want simpler debugging or are scripting a workflow.
+Use CLI-first as the default Hermes skill workflow. Use MCP when Hermes has native MCP client support and automatic tool discovery or typed invocation materially improves the local setup.
 
 ## Python SDK (Programmatic)
 

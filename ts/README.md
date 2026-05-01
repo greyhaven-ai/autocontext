@@ -410,6 +410,7 @@ These workflows require infrastructure not available in the npm package:
 - `ecosystem` — Multi-provider cycling
 - `ab-test` — Requires ecosystem runner
 - `resume` / `wait` — Run recovery infrastructure
+- `hermes inspect` / `hermes export-skill` — Hermes v0.12 Curator inspection and Hermes skill export
 - `trigger-distillation` — Training pipeline
 - Monitor conditions — Monitoring engine
 

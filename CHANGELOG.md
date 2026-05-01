@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Python and TypeScript `autoctx run <scenario>` now accept a positional scenario while keeping `--scenario` for scripts.
 - Python and TypeScript `autoctx export <run-id>` now export knowledge from a specific run while keeping scenario-level export support.
 - TypeScript CLI/TUI help now uses the same plain-language run vocabulary, including `status <run-id>`, `show <run-id> --best`, and `watch <run-id>`.
+- Python `autoctx hermes inspect` now reads Hermes v0.12 skill usage telemetry and Curator reports without mutating `~/.hermes`, and `autoctx hermes export-skill` emits a first-class Hermes `autocontext` skill that teaches CLI-first workflows with MCP as optional.
 
 ### Fixed
 

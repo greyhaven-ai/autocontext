@@ -54,7 +54,7 @@ See [`.env.example`](.env.example) for every provider's variables. Prefer to clo
 
 ## Or Just Talk To Your Agent
 
-If you already work inside a coding agent (Claude Code, Pi, Cursor, or anything MCP-aware), you don't need to learn the CLI. Wire autocontext in once and your agent gets a natural-language entry point.
+If you already work inside a coding agent, you can wire autocontext in once and give the agent a natural-language entry point. Hermes and other terminal-capable agents should start with the CLI-backed skill; MCP remains available for clients that want a tool-catalog protocol.
 
 **Pi** ships an autocontext skill out of the box. Install the published Pi package and Pi loads natural-language wrappers over live tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, and `autocontext_list_scenarios`.
 
@@ -83,6 +83,14 @@ Then you just ask:
 ```
 
 After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, `autocontext_list_scenarios`, `autocontext_export_skill`, and `autocontext_search_strategies`. The MCP server runs on stdio. The TypeScript package exposes the same capabilities with its documented tool names via `bunx autoctx mcp-serve`.
+
+**Hermes Agent** can load a CLI-first skill and inspect Hermes Curator state without MCP:
+
+```bash
+cd autocontext
+uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+uv run autoctx hermes inspect --json
+```
 
 Full integration guide: [autocontext/docs/agent-integration.md](autocontext/docs/agent-integration.md).
 
@@ -244,6 +252,7 @@ pi install npm:pi-autocontext
 | `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
 | `export`      | `autoctx export <run-id>`                          | Share solved knowledge as JSON, skills, or Pi-local package directories                |
 | `train`       | `autoctx train --scenario <name> --data <jsonl>`   | Distill stable exported data into a cheaper local runtime                              |
+| `hermes`      | `uv run autoctx hermes inspect --json` (Python)    | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill       |
 | `replay`      | `autoctx replay <run_id> --generation N`           | Inspect what happened before deciding what knowledge should persist                    |
 
 ## Scenario Families
