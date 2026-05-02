@@ -126,7 +126,7 @@ The image build, reverse proxy, auth, TLS, and secret distribution are deploymen
 The OSS worker now depends on a narrow task queue contract instead of SQLite inheritance:
 
 - Python: `autocontext.execution.TaskQueueStore` / `TaskQueueEnqueueStore`
-- TypeScript: `TaskQueueWorkerStore` / `TaskQueueEnqueueStore`
+- TypeScript: `TaskQueueWorkerStore` / `TaskQueueEnqueueStore`, with methods that may return values directly or as promises.
 
 Adapters must provide atomic task claim, task lookup, completion, failure, and enqueue semantics. SQLite is the bundled implementation. A hosted Postgres adapter can add leases, heartbeats, retries, and multi-worker coordination behind that contract without changing `TaskRunner`.
 

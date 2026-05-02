@@ -1,8 +1,10 @@
 import type { TaskQueueRow } from "../storage/index.js";
 
+export type MaybePromise<T> = T | Promise<T>;
+
 export interface TaskQueueWorkerStore {
-  dequeueTask(): TaskQueueRow | null;
-  getTask(taskId: string): TaskQueueRow | null;
+  dequeueTask(): MaybePromise<TaskQueueRow | null>;
+  getTask(taskId: string): MaybePromise<TaskQueueRow | null>;
   completeTask(
     taskId: string,
     bestScore: number,
@@ -10,8 +12,8 @@ export interface TaskQueueWorkerStore {
     totalRounds: number,
     metThreshold: boolean,
     resultJson?: string,
-  ): void;
-  failTask(taskId: string, error: string): void;
+  ): MaybePromise<void>;
+  failTask(taskId: string, error: string): MaybePromise<void>;
 }
 
 export interface TaskQueueEnqueueStore extends TaskQueueWorkerStore {
@@ -21,5 +23,5 @@ export interface TaskQueueEnqueueStore extends TaskQueueWorkerStore {
     priority?: number,
     config?: Record<string, unknown>,
     scheduledAt?: string,
-  ): void;
+  ): MaybePromise<void>;
 }

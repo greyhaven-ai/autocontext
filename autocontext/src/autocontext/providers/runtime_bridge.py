@@ -18,8 +18,17 @@ class RuntimeBridgeProvider(LLMProvider):
         self._runtime = runtime
         self._default_model_name = default_model_name
 
+    @property
+    def supports_concurrent_requests(self) -> bool:
+        return getattr(self._runtime, "supports_concurrent_requests", True) is not False
+
     def default_model(self) -> str:
         return self._default_model_name
+
+    def close(self) -> None:
+        close = getattr(self._runtime, "close", None)
+        if callable(close):
+            close()
 
     def complete(
         self,

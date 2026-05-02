@@ -304,3 +304,38 @@ class TestWorkerCommand:
             max_consecutive_empty=1,
             concurrency=3,
         )
+
+    def test_worker_forces_single_concurrency_for_stateful_provider(self) -> None:
+        settings = MagicMock(judge_model="settings-model", judge_provider="pi-rpc")
+        store = MagicMock()
+        provider = MagicMock()
+        provider.default_model.return_value = "provider-model"
+        provider.supports_concurrent_requests = False
+        runner_mock = MagicMock(tasks_processed=1)
+        runner_mock.run_batch.return_value = 1
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._sqlite_from_settings", return_value=store),
+            patch("autocontext.providers.registry.get_provider", return_value=provider),
+            patch(
+                "autocontext.execution.task_runner.create_task_runner_from_settings",
+                return_value=runner_mock,
+            ) as mock_create_runner,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "worker",
+                    "--once",
+                    "--concurrency",
+                    "4",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["concurrency"] == 1
+        runner_mock.run_batch.assert_called_once_with(1)
+        mock_create_runner.assert_called_once()
+        assert mock_create_runner.call_args.kwargs["concurrency"] == 1

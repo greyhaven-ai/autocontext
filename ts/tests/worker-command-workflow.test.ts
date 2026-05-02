@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   planWorkerCommand,
   renderWorkerResult,
+  resolveWorkerConcurrency,
   WORKER_HELP_TEXT,
 } from "../src/cli/worker-command-workflow.js";
 
@@ -68,6 +69,12 @@ describe("worker command workflow", () => {
       concurrency: 1,
       json: false,
     })).toContain("Processed 1 task");
+  });
+
+  it("forces single concurrency for stateful providers", () => {
+    expect(resolveWorkerConcurrency({ supportsConcurrentRequests: false }, 4)).toBe(1);
+    expect(resolveWorkerConcurrency({ supportsConcurrentRequests: true }, 4)).toBe(4);
+    expect(resolveWorkerConcurrency({}, 4)).toBe(4);
   });
 
   it("documents persistent worker options", () => {

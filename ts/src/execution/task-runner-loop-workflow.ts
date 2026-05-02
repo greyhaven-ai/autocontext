@@ -5,13 +5,13 @@ export function buildTaskRunnerModel(defaultModel: string, explicitModel?: strin
   return explicitModel || defaultModel;
 }
 
-export function dequeueTaskBatch(
+export async function dequeueTaskBatch(
   store: Pick<TaskQueueWorkerStore, "dequeueTask">,
   maxTasks: number,
-): TaskQueueRow[] {
+): Promise<TaskQueueRow[]> {
   const tasks: TaskQueueRow[] = [];
   for (let index = 0; index < maxTasks; index++) {
-    const task = store.dequeueTask();
+    const task = await store.dequeueTask();
     if (!task) {
       break;
     }

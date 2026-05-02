@@ -175,6 +175,7 @@ export type {
   TaskConfig,
 } from "./execution/task-runner.js";
 export type {
+  MaybePromise,
   TaskQueueEnqueueStore,
   TaskQueueWorkerStore,
 } from "./execution/task-queue-store.js";

@@ -51,4 +51,32 @@ describe("task queue store contract", () => {
 
     expect(store.getTask(taskId)?.spec_name).toBe("hosted-spec");
   });
+
+  it("lets hosted Postgres-style stores expose async queue methods", async () => {
+    const rows = new Map<string, TaskQueueRow>();
+    const store = {
+      enqueueTask: async (id: string, specName: string) => {
+        rows.set(id, makeTask(id, specName));
+      },
+      dequeueTask: async () => rows.values().next().value ?? null,
+      getTask: async (taskId: string) => rows.get(taskId) ?? null,
+      completeTask: async (taskId: string) => {
+        const task = rows.get(taskId);
+        if (task) rows.set(taskId, { ...task, status: "completed" });
+      },
+      failTask: async (taskId: string, error: string) => {
+        const task = rows.get(taskId);
+        if (task) rows.set(taskId, { ...task, status: "failed", error });
+      },
+    } satisfies TaskQueueEnqueueStore;
+
+    await store.enqueueTask("hosted-async", "postgres-spec");
+    const task = await store.dequeueTask();
+    expect(task?.spec_name).toBe("postgres-spec");
+
+    await store.completeTask("hosted-async", 0.9, "done", 1, true);
+    await expect(store.getTask("hosted-async")).resolves.toMatchObject({
+      status: "completed",
+    });
+  });
 });

@@ -190,7 +190,7 @@ export async function executeQueuedTaskWorkflow(opts: {
       calibrationExamples: plan.calibrationExamples,
     });
 
-    opts.store.completeTask(
+    await opts.store.completeTask(
       opts.task.id,
       result.bestScore,
       result.bestOutput,
@@ -200,7 +200,7 @@ export async function executeQueuedTaskWorkflow(opts: {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    opts.store.failTask(opts.task.id, message);
+    await opts.store.failTask(opts.task.id, message);
   }
 }
 

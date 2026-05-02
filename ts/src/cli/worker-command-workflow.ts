@@ -30,6 +30,10 @@ export interface WorkerCommandPlan {
   json: boolean;
 }
 
+export interface WorkerConcurrencyProvider {
+  readonly supportsConcurrentRequests?: boolean;
+}
+
 export function planWorkerCommand(values: WorkerCommandValues): WorkerCommandPlan {
   const pollInterval = parseNonNegativeFloat(
     values["poll-interval"] ?? "60",
@@ -53,6 +57,16 @@ export function planWorkerCommand(values: WorkerCommandValues): WorkerCommandPla
     once: values.once === true,
     json: values.json === true,
   };
+}
+
+export function resolveWorkerConcurrency(
+  provider: WorkerConcurrencyProvider,
+  requestedConcurrency: number,
+): number {
+  if (requestedConcurrency > 1 && provider.supportsConcurrentRequests === false) {
+    return 1;
+  }
+  return requestedConcurrency;
 }
 
 export function renderWorkerResult(input: {

@@ -81,6 +81,13 @@ def _select_worker_model(settings: AppSettings, provider: LLMProvider, model: st
     return provider.default_model()
 
 
+def _resolve_worker_concurrency(provider: LLMProvider, requested: int) -> int:
+    supports_concurrent = getattr(provider, "supports_concurrent_requests", True)
+    if requested > 1 and supports_concurrent is False:
+        return 1
+    return requested
+
+
 def run_worker_command(
     *,
     poll_interval: float,
@@ -118,6 +125,7 @@ def run_worker_command(
 
     try:
         provider = get_provider_fn(settings)
+        effective_concurrency = _resolve_worker_concurrency(provider, concurrency)
         runner = create_task_runner_fn(
             settings,
             store=store,
@@ -125,10 +133,10 @@ def run_worker_command(
             model=_select_worker_model(settings, provider, model),
             poll_interval=poll_interval,
             max_consecutive_empty=max_empty_polls,
-            concurrency=concurrency,
+            concurrency=effective_concurrency,
         )
         if once:
-            tasks_processed = runner.run_batch(concurrency)
+            tasks_processed = runner.run_batch(effective_concurrency)
             mode = "once"
         else:
             tasks_processed = runner.run()
@@ -151,7 +159,7 @@ def run_worker_command(
         "mode": mode,
         "tasks_processed": tasks_processed,
         "poll_interval": poll_interval,
-        "concurrency": concurrency,
+        "concurrency": effective_concurrency,
     }
     if json_output:
         write_json_stdout(payload)

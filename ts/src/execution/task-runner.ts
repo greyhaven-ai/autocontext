@@ -217,16 +217,16 @@ export class TaskRunner {
   }
 
   async runOnce(): Promise<TaskQueueRow | null> {
-    const task = this.#store.dequeueTask();
+    const task = await this.#store.dequeueTask();
     if (!task) return null;
     await this.#processTask(task);
     this.#tasksProcessed++;
-    return this.#store.getTask(task.id) ?? null;
+    return (await this.#store.getTask(task.id)) ?? null;
   }
 
   async runBatch(limit?: number): Promise<number> {
     const maxTasks = limit ?? this.#concurrency;
-    const tasks = dequeueTaskBatch(this.#store, maxTasks);
+    const tasks = await dequeueTaskBatch(this.#store, maxTasks);
     if (tasks.length === 0) return 0;
 
     await Promise.all(tasks.map((task) => this.#processTask(task)));

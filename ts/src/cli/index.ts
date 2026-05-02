@@ -996,6 +996,7 @@ async function cmdWorker(dbPath: string): Promise<void> {
   const {
     planWorkerCommand,
     renderWorkerResult,
+    resolveWorkerConcurrency,
     WORKER_HELP_TEXT,
   } = await import("./worker-command-workflow.js");
 
@@ -1018,6 +1019,7 @@ async function cmdWorker(dbPath: string): Promise<void> {
   const { provider, model } = await getProvider(
     plan.model ? { model: plan.model } : {},
   );
+  const concurrency = resolveWorkerConcurrency(provider, plan.concurrency);
 
   const { hookBus } = await initializeHookBus({
     extensions: settings.extensions,
@@ -1031,7 +1033,7 @@ async function cmdWorker(dbPath: string): Promise<void> {
     model: plan.model ?? model,
     pollInterval: plan.pollInterval,
     maxConsecutiveEmpty: plan.maxEmptyPolls,
-    concurrency: plan.concurrency,
+    concurrency,
     hookBus,
   });
 
@@ -1041,13 +1043,13 @@ async function cmdWorker(dbPath: string): Promise<void> {
 
   try {
     const tasksProcessed = plan.once
-      ? await runner.runBatch(plan.concurrency)
+      ? await runner.runBatch(concurrency)
       : await runner.run();
     console.log(renderWorkerResult({
       mode: plan.once ? "once" : "daemon",
       tasksProcessed,
       pollInterval: plan.pollInterval,
-      concurrency: plan.concurrency,
+      concurrency,
       json: plan.json,
     }));
   } finally {
