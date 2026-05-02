@@ -7,6 +7,7 @@
  *   autoctx improve   — run improvement loop
  *   autoctx repl      — run a direct REPL-loop session
  *   autoctx queue     — add task to background queue
+ *   autoctx worker    — run background queue worker
  *   autoctx status    — check queue status
  *   autoctx serve     — start HTTP API server
  *   autoctx mcp-serve — start MCP server on stdio
@@ -69,6 +70,7 @@ const DB_COMMAND_HANDLERS: Record<DbCommandName, (dbPath: string) => Promise<voi
   improve: cmdImprove,
   repl: cmdRepl,
   queue: cmdQueue,
+  worker: cmdWorker,
   status: cmdStatus,
   serve: cmdServeHttp,
   "mcp-serve": cmdMcpServe,
@@ -975,6 +977,87 @@ async function cmdQueue(dbPath: string): Promise<void> {
 
   console.log(renderQueuedTaskResult({ taskId: id, specName: plan.specName }));
   store.close();
+}
+
+async function cmdWorker(dbPath: string): Promise<void> {
+  const { values } = parseArgs({
+    args: process.argv.slice(3),
+    options: {
+      "poll-interval": { type: "string", default: "60" },
+      concurrency: { type: "string", default: "1" },
+      "max-empty-polls": { type: "string", default: "0" },
+      model: { type: "string" },
+      once: { type: "boolean" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  const {
+    planWorkerCommand,
+    renderWorkerResult,
+    resolveWorkerConcurrency,
+    WORKER_HELP_TEXT,
+  } = await import("./worker-command-workflow.js");
+
+  if (values.help) {
+    console.log(WORKER_HELP_TEXT);
+    process.exit(0);
+  }
+
+  const plan = planWorkerCommand(values);
+  const { SQLiteStore } = await import("../storage/index.js");
+  const {
+    createTaskRunnerFromSettings,
+  } = await import("../execution/task-runner.js");
+  const { loadSettings } = await import("../config/index.js");
+  const { initializeHookBus } = await import("../extensions/index.js");
+
+  const settings = loadSettings();
+  const store = new SQLiteStore(dbPath);
+  store.migrate(getMigrationsDir());
+  const { provider, model } = await getProvider(
+    plan.model ? { model: plan.model } : {},
+  );
+  const concurrency = resolveWorkerConcurrency(provider, plan.concurrency);
+
+  const { hookBus } = await initializeHookBus({
+    extensions: settings.extensions,
+    failFast: settings.extensionFailFast,
+  });
+
+  const runner = createTaskRunnerFromSettings({
+    settings,
+    store,
+    provider,
+    model: plan.model ?? model,
+    pollInterval: plan.pollInterval,
+    maxConsecutiveEmpty: plan.maxEmptyPolls,
+    concurrency,
+    hookBus,
+  });
+
+  const handleShutdown = () => runner.shutdown();
+  process.once("SIGINT", handleShutdown);
+  process.once("SIGTERM", handleShutdown);
+
+  try {
+    const tasksProcessed = plan.once
+      ? await runner.runBatch(concurrency)
+      : await runner.run();
+    console.log(renderWorkerResult({
+      mode: plan.once ? "once" : "daemon",
+      tasksProcessed,
+      pollInterval: plan.pollInterval,
+      concurrency,
+      json: plan.json,
+    }));
+  } finally {
+    process.off("SIGINT", handleShutdown);
+    process.off("SIGTERM", handleShutdown);
+    provider.close?.();
+    store.close();
+  }
 }
 
 async function cmdStatus(dbPath: string): Promise<void> {

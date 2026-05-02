@@ -240,3 +240,102 @@ class TestQueueCommand:
             browser_url="https://status.example.com",
             priority=0,
         )
+
+
+class TestWorkerCommand:
+    def test_worker_help(self) -> None:
+        result = runner.invoke(app, ["worker", "--help"])
+        stdout = strip_ansi(result.stdout)
+        assert result.exit_code == 0
+        assert "--poll-interval" in stdout
+        assert "--concurrency" in stdout
+        assert "--max-empty-polls" in stdout
+        assert "--once" in stdout
+
+    def test_worker_once_wires_task_runner_factory(self) -> None:
+        settings = MagicMock(judge_model="settings-model", judge_provider="anthropic")
+        store = MagicMock()
+        provider = MagicMock()
+        provider.default_model.return_value = "provider-model"
+        runner_mock = MagicMock(tasks_processed=2)
+        runner_mock.run_batch.return_value = 2
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._sqlite_from_settings", return_value=store),
+            patch("autocontext.providers.registry.get_provider", return_value=provider),
+            patch(
+                "autocontext.execution.task_runner.create_task_runner_from_settings",
+                return_value=runner_mock,
+            ) as mock_create_runner,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "worker",
+                    "--once",
+                    "--poll-interval",
+                    "0.25",
+                    "--concurrency",
+                    "3",
+                    "--max-empty-polls",
+                    "1",
+                    "--model",
+                    "override-model",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == {
+            "status": "stopped",
+            "mode": "once",
+            "tasks_processed": 2,
+            "poll_interval": 0.25,
+            "concurrency": 3,
+        }
+        runner_mock.run_batch.assert_called_once_with(3)
+        mock_create_runner.assert_called_once_with(
+            settings,
+            store=store,
+            provider=provider,
+            model="override-model",
+            poll_interval=0.25,
+            max_consecutive_empty=1,
+            concurrency=3,
+        )
+
+    def test_worker_forces_single_concurrency_for_stateful_provider(self) -> None:
+        settings = MagicMock(judge_model="settings-model", judge_provider="pi-rpc")
+        store = MagicMock()
+        provider = MagicMock()
+        provider.default_model.return_value = "provider-model"
+        provider.supports_concurrent_requests = False
+        runner_mock = MagicMock(tasks_processed=1)
+        runner_mock.run_batch.return_value = 1
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.cli._sqlite_from_settings", return_value=store),
+            patch("autocontext.providers.registry.get_provider", return_value=provider),
+            patch(
+                "autocontext.execution.task_runner.create_task_runner_from_settings",
+                return_value=runner_mock,
+            ) as mock_create_runner,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "worker",
+                    "--once",
+                    "--concurrency",
+                    "4",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["concurrency"] == 1
+        runner_mock.run_batch.assert_called_once_with(1)
+        mock_create_runner.assert_called_once()
+        assert mock_create_runner.call_args.kwargs["concurrency"] == 1

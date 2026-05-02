@@ -37,6 +37,8 @@ export interface LLMProvider {
 
   close?(): void;
 
+  readonly supportsConcurrentRequests?: boolean;
+
   readonly name: string;
 }
 

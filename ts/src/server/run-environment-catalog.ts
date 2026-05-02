@@ -74,6 +74,11 @@ export function buildEnvironmentInfo(opts: {
     ],
     executors: [
       { mode: "local", available: true, description: "Local subprocess execution" },
+      {
+        mode: "gondolin",
+        available: false,
+        description: "Optional microVM sandbox backend; reserved until a Gondolin executor is configured",
+      },
     ],
     currentExecutor: "local",
     agentProvider: opts.activeProviderType ?? "none",

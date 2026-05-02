@@ -601,6 +601,7 @@ describe("PiRPCRuntime", () => {
       },
     );
 
+    expect(provider.supportsConcurrentRequests).toBe(false);
     const first = await provider.complete({ systemPrompt: "", userPrompt: "first prompt" });
     const second = await provider.complete({ systemPrompt: "", userPrompt: "second prompt" });
 

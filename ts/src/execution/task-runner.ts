@@ -11,7 +11,7 @@ import type {
 import type { HookBus } from "../extensions/index.js";
 import type { AppSettings } from "../config/index.js";
 import { type DelegatedResult, type JudgeInterface } from "../judge/delegated.js";
-import type { SQLiteStore, TaskQueueRow } from "../storage/index.js";
+import type { TaskQueueRow } from "../storage/index.js";
 import { assertFamilyContract } from "../scenarios/family-interfaces.js";
 import {
   type RlmSessionRecord,
@@ -37,6 +37,10 @@ import {
   buildTaskRunnerModel,
   dequeueTaskBatch,
 } from "./task-runner-loop-workflow.js";
+import type {
+  TaskQueueEnqueueStore,
+  TaskQueueWorkerStore,
+} from "./task-queue-store.js";
 
 export type { TaskConfig } from "./task-runner-config.js";
 
@@ -164,7 +168,7 @@ export class SimpleAgentTask implements AgentTaskInterface {
 }
 
 export interface TaskRunnerOpts {
-  store: SQLiteStore;
+  store: TaskQueueWorkerStore;
   provider: LLMProvider;
   model?: string;
   knowledgeRoot?: string;
@@ -184,7 +188,7 @@ export interface TaskRunnerFromSettingsOpts
 }
 
 export class TaskRunner {
-  #store: SQLiteStore;
+  #store: TaskQueueWorkerStore;
   #provider: LLMProvider;
   #model: string;
   #knowledgeRoot?: string;
@@ -213,21 +217,44 @@ export class TaskRunner {
   }
 
   async runOnce(): Promise<TaskQueueRow | null> {
-    const task = this.#store.dequeueTask();
+    const task = await this.#store.dequeueTask();
     if (!task) return null;
     await this.#processTask(task);
     this.#tasksProcessed++;
-    return this.#store.getTask(task.id) ?? null;
+    return (await this.#store.getTask(task.id)) ?? null;
   }
 
   async runBatch(limit?: number): Promise<number> {
     const maxTasks = limit ?? this.#concurrency;
-    const tasks = dequeueTaskBatch(this.#store, maxTasks);
+    const tasks = await dequeueTaskBatch(this.#store, maxTasks);
     if (tasks.length === 0) return 0;
 
     await Promise.all(tasks.map((task) => this.#processTask(task)));
     this.#tasksProcessed += tasks.length;
     return tasks.length;
+  }
+
+  async run(): Promise<number> {
+    let consecutiveEmpty = 0;
+
+    while (!this.#shutdown) {
+      const processed = await this.runBatch(this.#concurrency);
+      if (processed === 0) {
+        consecutiveEmpty++;
+        if (
+          this.#maxConsecutiveEmpty > 0 &&
+          consecutiveEmpty >= this.#maxConsecutiveEmpty
+        ) {
+          break;
+        }
+        await this.#sleep(this.#pollInterval);
+        continue;
+      }
+
+      consecutiveEmpty = 0;
+    }
+
+    return this.#tasksProcessed;
   }
 
   shutdown(): void {
@@ -264,10 +291,19 @@ export class TaskRunner {
       },
     });
   }
+
+  async #sleep(seconds: number): Promise<void> {
+    let remainingMs = Math.max(0, seconds * 1000);
+    while (remainingMs > 0 && !this.#shutdown) {
+      const chunkMs = Math.min(1000, remainingMs);
+      await new Promise((resolve) => setTimeout(resolve, chunkMs));
+      remainingMs -= chunkMs;
+    }
+  }
 }
 
 export function enqueueTask(
-  store: SQLiteStore,
+  store: TaskQueueEnqueueStore,
   specName: string,
   opts?: EnqueueTaskRequest,
 ): string {

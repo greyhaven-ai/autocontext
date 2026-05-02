@@ -10,6 +10,7 @@ import pytest
 
 from autocontext.config.settings import AppSettings
 from autocontext.execution.improvement_loop import ImprovementResult, RoundResult
+from autocontext.execution.task_queue_store import TaskQueueEnqueueStore, TaskQueueStore
 from autocontext.execution.task_runner import (
     SimpleAgentTask,
     TaskConfig,
@@ -267,6 +268,10 @@ class TestSimpleAgentTask:
 # ---------------------------------------------------------------------------
 
 class TestTaskRunner:
+    def test_sqlite_store_satisfies_task_queue_store_contract(self, store):
+        assert isinstance(store, TaskQueueStore)
+        assert isinstance(store, TaskQueueEnqueueStore)
+
     def test_run_once_empty_queue(self, store):
         provider = _MockProvider()
         runner = TaskRunner(store=store, provider=provider)

@@ -359,6 +359,7 @@ type PiRpcCommand = Record<string, unknown> & { type: string; id?: string };
 type PiRpcEvent = Record<string, unknown> & { type?: string };
 
 export class PiPersistentRPCRuntime extends PiRPCRuntime {
+  readonly supportsConcurrentRequests = false;
   private process: ReturnType<typeof spawn> | null = null;
   private stdoutBuffer = "";
   private stdoutLines: string[] = [];

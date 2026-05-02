@@ -9,6 +9,7 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want to wire Claude Code or another MCP client? Use the MCP config snippet.
 - Want a typed Python integration? Use the Python SDK example.
 - Want a Node/TypeScript integration? Use the TypeScript library example.
+- Want always-on queued work? Use the persistent host worker recipe.
 
 ## Python CLI From Source
 
@@ -67,6 +68,24 @@ Add this to your project-level `.claude/settings.json` and replace `/ABSOLUTE/PA
 ```
 
 For a fuller comparison of CLI, MCP, and SDK integrations, see [autocontext/docs/agent-integration.md](../autocontext/docs/agent-integration.md).
+
+## Persistent Host Worker
+
+Run the API server and worker from the same durable workspace when queued tasks should continue in the background:
+
+```bash
+cd autocontext
+export AUTOCONTEXT_DB_PATH=/srv/autoctx/runs/autocontext.sqlite3
+export AUTOCONTEXT_RUNS_ROOT=/srv/autoctx/runs
+export AUTOCONTEXT_KNOWLEDGE_ROOT=/srv/autoctx/knowledge
+
+uv run autoctx serve --host 0.0.0.0 --port 8000
+uv run autoctx worker --poll-interval 5 --concurrency 2
+```
+
+When using a stateful persistent provider such as persistent Pi RPC, the worker keeps effective concurrency at `1` for that provider so task streams cannot overlap.
+
+For bounded smoke tests, use `uv run autoctx worker --once --json`. See [autocontext/docs/persistent-host.md](../autocontext/docs/persistent-host.md) for deployment notes.
 
 ## Hermes Agent Skill And Curator Inspection
 

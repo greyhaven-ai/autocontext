@@ -342,6 +342,8 @@ class PiPersistentRPCRuntime(PiRPCRuntime):
     use Pi's queue/state commands across a single session.
     """
 
+    supports_concurrent_requests = False
+
     def __init__(self, config: PiRPCConfig | None = None) -> None:
         super().__init__(config)
         self._process: subprocess.Popen[str] | None = None

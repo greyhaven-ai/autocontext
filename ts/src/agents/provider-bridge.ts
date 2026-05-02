@@ -20,6 +20,10 @@ export class RuntimeBridgeProvider implements LLMProvider {
     this.#model = model;
   }
 
+  get supportsConcurrentRequests(): boolean {
+    return this.#runtime.supportsConcurrentRequests !== false;
+  }
+
   defaultModel(): string {
     return this.#model;
   }
@@ -70,6 +74,10 @@ export class RetryProvider implements LLMProvider {
     this.#maxRetries = opts.maxRetries;
     this.#baseDelay = opts.baseDelay ?? 250;
     this.#maxDelay = opts.maxDelay ?? 10_000;
+  }
+
+  get supportsConcurrentRequests(): boolean {
+    return this.#inner.supportsConcurrentRequests !== false;
   }
 
   defaultModel(): string {

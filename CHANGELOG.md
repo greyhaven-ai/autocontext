@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Python and TypeScript now expose `autoctx worker` to run the existing task queue `TaskRunner` as a daemon or one-shot batch worker, with persistent-host deployment docs for `serve + worker`.
+- Added narrow Python/TypeScript task queue store contracts so future hosted storage adapters can provide Postgres-backed claim/complete/fail/enqueue semantics without changing `TaskRunner`.
+- Gondolin is documented as a reserved optional microVM sandbox backend, fails closed until a real adapter is configured, and now has public request/policy/backend contracts for out-of-tree adapters.
+
+### Fixed
+
+- Worker commands now clamp concurrency to one for stateful persistent runtimes, and Python runtime-bridge providers close underlying runtimes on shutdown.
+- TypeScript task runners now await queue-store methods so hosted Postgres adapters can implement the queue contract asynchronously.
+
 ## [0.5.0] - 2026-05-01
 
 ### Added

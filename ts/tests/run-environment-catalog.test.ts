@@ -86,6 +86,11 @@ describe("run environment catalog", () => {
     });
 
     expect(info.currentExecutor).toBe("local");
+    expect(info.executors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mode: "gondolin", available: false }),
+      ]),
+    );
     expect(info.agentProvider).toBe("deterministic");
     expect(info.scenarios).toEqual([
       { name: "grid_ctf", description: "Capture the flag rules" },

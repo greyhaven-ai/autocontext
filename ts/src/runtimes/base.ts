@@ -28,5 +28,7 @@ export interface AgentRuntime {
 
   close?(): void;
 
+  readonly supportsConcurrentRequests?: boolean;
+
   readonly name: string;
 }

@@ -10,7 +10,7 @@ import {
 } from "../src/execution/task-runner-loop-workflow.js";
 
 describe("task runner workflows", () => {
-  it("builds task runner model defaults and dequeues up to the requested batch size", () => {
+  it("builds task runner model defaults and dequeues up to the requested batch size", async () => {
     expect(buildTaskRunnerModel("provider-default")).toBe("provider-default");
     expect(buildTaskRunnerModel("provider-default", "explicit-model")).toBe("explicit-model");
 
@@ -20,7 +20,7 @@ describe("task runner workflows", () => {
       dequeueTask: vi.fn(() => dequeued[index++] ?? null),
     } as never;
 
-    expect(dequeueTaskBatch(store, 5)).toEqual([{ id: "t1" }, { id: "t2" }]);
+    await expect(dequeueTaskBatch(store, 5)).resolves.toEqual([{ id: "t1" }, { id: "t2" }]);
   });
 
   it("builds revision prompts and normalizes judge results", async () => {
