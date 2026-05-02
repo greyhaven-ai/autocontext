@@ -155,6 +155,8 @@ Run a persistent queue worker beside the API server:
 uv run autoctx worker --poll-interval 5 --concurrency 2
 ```
 
+Stateful persistent providers, such as persistent Pi RPC, run with effective concurrency `1` so one long-lived runtime cannot mix events across tasks.
+
 Start the MCP server:
 
 ```bash

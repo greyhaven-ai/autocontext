@@ -212,6 +212,8 @@ autoctx worker --poll-interval 5 --concurrency 2
 autoctx status
 ```
 
+Stateful persistent providers, including persistent Pi RPC, run with effective worker concurrency `1` to keep long-lived runtime sessions isolated.
+
 ## Provider Configuration
 
 Configure the agent provider via environment variables:

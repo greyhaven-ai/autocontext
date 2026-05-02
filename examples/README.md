@@ -83,6 +83,8 @@ uv run autoctx serve --host 0.0.0.0 --port 8000
 uv run autoctx worker --poll-interval 5 --concurrency 2
 ```
 
+When using a stateful persistent provider such as persistent Pi RPC, the worker keeps effective concurrency at `1` for that provider so task streams cannot overlap.
+
 For bounded smoke tests, use `uv run autoctx worker --once --json`. See [autocontext/docs/persistent-host.md](../autocontext/docs/persistent-host.md) for deployment notes.
 
 ## Hermes Agent Skill And Curator Inspection

@@ -22,6 +22,8 @@ autoctx worker --poll-interval 5 --concurrency 2
 
 `autoctx queue` and MCP `queue_task` calls write into the task queue. `autoctx worker` wraps the existing `TaskRunner`, polls that queue, processes tasks in priority order, and persists task results back into the configured store.
 
+If the selected provider/runtime is stateful and persistent, for example persistent Pi RPC, worker concurrency is forced to `1`. Use non-persistent provider instances or a hosted storage/runtime adapter when you need true parallel task execution.
+
 ## Durable State
 
 Keep these paths on persistent storage:
