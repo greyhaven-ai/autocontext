@@ -57,7 +57,7 @@ export class AgentOsSessionAdapter {
   }
 
   async submitTurn(sessionId: string, prompt: string): Promise<TurnResult> {
-    const binding = this.getBinding(sessionId);
+    const binding = this.#getBinding(sessionId);
     const { session, aosSessionId } = binding;
 
     // Submit turn through autocontext's session model
@@ -83,7 +83,7 @@ export class AgentOsSessionAdapter {
   }
 
   async closeSession(sessionId: string): Promise<void> {
-    const binding = this.getBinding(sessionId);
+    const binding = this.#getBinding(sessionId);
     const { session, aosSessionId } = binding;
 
     await this.#runtime.closeSession(aosSessionId);
@@ -100,7 +100,7 @@ export class AgentOsSessionAdapter {
     return this.#bindings.get(sessionId)?.session;
   }
 
-  private getBinding(sessionId: string): SessionBinding {
+  #getBinding(sessionId: string): SessionBinding {
     const binding = this.#bindings.get(sessionId);
     if (!binding) throw new Error(`Session '${sessionId}' not found in adapter`);
     if (binding.session.status !== SessionStatus.ACTIVE) {

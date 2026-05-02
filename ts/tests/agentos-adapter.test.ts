@@ -6,6 +6,8 @@
  * stub AgentOsRuntime so there's no real VM dependency.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, beforeEach } from "vitest";
 
 // ---- Stub agentOS runtime ----
@@ -178,6 +180,20 @@ describe("AgentOsSessionAdapter", () => {
     await adapter.closeSession(s1.sessionId);
     expect(adapter.activeSessions).toHaveLength(1);
   });
+
+  it("uses real #private runtime fields and helpers", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "agentos", "adapter.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("#runtime");
+    expect(source).toContain("#config");
+    expect(source).toContain("#bindings");
+    expect(source).toContain("#getBinding");
+    expect(source).not.toContain("private runtime:");
+    expect(source).not.toContain("private getBinding");
+  });
 });
 
 describe("AgentOsLifecycle", () => {
@@ -206,5 +222,15 @@ describe("AgentOsLifecycle", () => {
     expect(lifecycle.needsSandbox("Run browser tests with Playwright")).toBe(true);
     expect(lifecycle.needsSandbox("Write a utility function")).toBe(false);
     expect(lifecycle.needsSandbox("Start a dev server on port 3000")).toBe(true);
+  });
+
+  it("keeps sandbox keywords as a const tuple for literal-union typing", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "src", "agentos", "lifecycle.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("] as const;");
+    expect(source).toContain("type SandboxKeyword = (typeof SANDBOX_KEYWORDS)[number]");
   });
 });
