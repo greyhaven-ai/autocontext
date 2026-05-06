@@ -13,3 +13,11 @@ export type {
   ModelDecisionReason,
   ModelRouterContext,
 } from "./model-router.js";
+
+export { evaluateTaskBudget } from "./task-budget.js";
+export type {
+  TaskBudgetAction,
+  TaskBudgetCheckpoint,
+  TaskBudgetDecision,
+  TaskBudgetInputs,
+} from "./task-budget.js";

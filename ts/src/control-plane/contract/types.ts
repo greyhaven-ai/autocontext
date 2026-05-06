@@ -84,6 +84,84 @@ export type EvalRunRef = {
   readonly ingestedAt: string;
 };
 
+export type EvalTrialStatus =
+  | "passed"
+  | "failed"
+  | "infrastructure-error"
+  | "cancelled"
+  | "discarded";
+
+export type EvalTrial = {
+  readonly taskId: string;
+  readonly trialId: string;
+  readonly attempt: number;
+  readonly status: EvalTrialStatus;
+  readonly reward?: number;
+  readonly errorKind?: string;
+  readonly replacementForTrialId?: string;
+  readonly startedAt?: string;
+  readonly completedAt?: string;
+  readonly rawResultPath?: string;
+  readonly notes?: readonly string[];
+};
+
+export type EvalReconciliationView =
+  | "first-completed-per-task"
+  | "best-of-k";
+
+export type EvalReconciliationCounts = {
+  readonly taskCount: number;
+  readonly selectedTaskCount: number;
+  readonly passed: number;
+  readonly failed: number;
+  readonly infrastructureErrors: number;
+  readonly cancelled: number;
+  readonly discarded: number;
+  readonly duplicatesIgnored: number;
+};
+
+export type EvalRunReconciliation = {
+  readonly view: EvalReconciliationView;
+  readonly score: number;
+  readonly selectedTrialIdsByTask: Readonly<Record<string, string>>;
+  readonly ignoredTrialIds: readonly string[];
+  readonly unresolvedTaskIds: readonly string[];
+  readonly counts: EvalReconciliationCounts;
+};
+
+export type WebPolicy =
+  | "disabled"
+  | "docs-and-downloads-only"
+  | "unrestricted";
+
+export type IntegrityMode =
+  | "standard"
+  | "external-eval"
+  | "customer-run";
+
+export type AdapterProvenance = {
+  readonly provider: string;
+  readonly model: string;
+  readonly reasoningEffort?: string;
+  readonly promptTemplatePath?: string;
+  readonly promptTemplateHash?: ContentHash;
+  readonly webPolicy: WebPolicy;
+  readonly integrityMode: IntegrityMode;
+  readonly authMode?: string;
+};
+
+export type EvalRunIntegrity = {
+  readonly status: "clean" | "discarded" | "contaminated";
+  readonly discardedReason?: string;
+  readonly notes?: readonly string[];
+};
+
+export type MemoryPackRef = {
+  readonly packId: string;
+  readonly version: string;
+  readonly contentHash: ContentHash;
+};
+
 export type EvalRun = {
   readonly schemaVersion: SchemaVersion;
   readonly runId: string;
@@ -96,6 +174,11 @@ export type EvalRun = {
     readonly sampleCount: number;
   };
   readonly ingestedAt: string;
+  readonly adapterProvenance?: AdapterProvenance;
+  readonly integrity?: EvalRunIntegrity;
+  readonly trials?: readonly EvalTrial[];
+  readonly reconciliation?: EvalRunReconciliation;
+  readonly memoryPacks?: readonly MemoryPackRef[];
 };
 
 // ---- PromotionEvent ----

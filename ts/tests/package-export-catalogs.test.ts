@@ -24,6 +24,10 @@ describe("package root exports", () => {
     expect(pkg.loadExtensions).toBeDefined();
     expect(pkg.completeWithProviderHooks).toBeDefined();
     expect(pkg.chooseModel).toBeDefined();
+    expect(pkg.evaluateTaskBudget).toBeDefined();
+    expect(pkg.reconcileEvalTrials).toBeDefined();
+    expect(pkg.probeDirectoryContract).toBeDefined();
+    expect(pkg.validateOperationalMemoryPack).toBeDefined();
     expect(pkg.resolveBrowserSessionConfig).toBeDefined();
     expect(pkg.evaluateBrowserActionPolicy).toBeDefined();
     expect(pkg.validateBrowserSessionConfig).toBeDefined();
@@ -46,6 +50,25 @@ describe("package root exports", () => {
     expect(packageJson.exports?.["./control-plane/runtime"]).toEqual({
       import: "./dist/control-plane/runtime/index.js",
       types: "./dist/control-plane/runtime/index.d.ts",
+    });
+  });
+
+  it("publishes external-eval helper subpaths", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"),
+    ) as { exports?: Record<string, { import?: string; types?: string }> };
+
+    expect(packageJson.exports?.["./control-plane/eval-ledger"]).toEqual({
+      import: "./dist/control-plane/eval-ledger/index.js",
+      types: "./dist/control-plane/eval-ledger/index.d.ts",
+    });
+    expect(packageJson.exports?.["./control-plane/contract-probes"]).toEqual({
+      import: "./dist/control-plane/contract-probes/index.js",
+      types: "./dist/control-plane/contract-probes/index.d.ts",
+    });
+    expect(packageJson.exports?.["./control-plane/memory-packs"]).toEqual({
+      import: "./dist/control-plane/memory-packs/index.js",
+      types: "./dist/control-plane/memory-packs/index.d.ts",
     });
   });
 
