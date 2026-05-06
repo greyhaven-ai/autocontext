@@ -101,13 +101,14 @@ describe("RuntimeSessionAgentRuntime", () => {
     eventStore.close();
   });
 
-  it("records runtime failures as session errors without invoking consumers twice", async () => {
+  it("records runtime failures as session errors while preserving rejection semantics", async () => {
     let calls = 0;
+    const failure = new Error("provider unavailable");
     const failingRuntime: AgentRuntime = {
       name: "FailingRuntime",
       generate: async (): Promise<AgentOutput> => {
         calls += 1;
-        throw new Error("provider unavailable");
+        throw failure;
       },
       revise: async () => ({ text: "unused" }),
     };
@@ -121,17 +122,9 @@ describe("RuntimeSessionAgentRuntime", () => {
       session,
     });
 
-    const output = await runtime.generate({ prompt: "Draft auth summary" });
+    await expect(runtime.generate({ prompt: "Draft auth summary" })).rejects.toBe(failure);
 
     expect(calls).toBe(1);
-    expect(output).toEqual({
-      text: "",
-      metadata: {
-        error: "provider unavailable",
-        runtime: "FailingRuntime",
-        runtimeSessionId: "runtime-parent",
-      },
-    });
     expect(session.log.events.at(-1)?.payload).toMatchObject({
       text: "",
       error: "provider unavailable",

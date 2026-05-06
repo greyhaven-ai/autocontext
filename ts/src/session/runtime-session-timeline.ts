@@ -32,6 +32,7 @@ export interface RuntimeSessionPromptTimelineItem {
   prompt_preview: string;
   response_preview: string;
   error: string;
+  request_id: string;
   prompt_event_id: string;
   response_event_id: string;
 }
@@ -67,6 +68,8 @@ export interface RuntimeSessionGenericTimelineItem {
 export function buildRuntimeSessionTimeline(log: RuntimeSessionEventLog): RuntimeSessionTimeline {
   const items: RuntimeSessionTimelineItem[] = [];
   const openPrompts: RuntimeSessionPromptTimelineItem[] = [];
+  const promptsByRequestId = new Map<string, RuntimeSessionPromptTimelineItem>();
+  const promptsByEventId = new Map<string, RuntimeSessionPromptTimelineItem>();
   const childTasks = new Map<string, RuntimeSessionChildTaskTimelineItem>();
 
   for (const event of log.events) {
@@ -74,11 +77,19 @@ export function buildRuntimeSessionTimeline(log: RuntimeSessionEventLog): Runtim
       case RuntimeSessionEventType.PROMPT_SUBMITTED: {
         const item = promptItemFromEvent(event);
         openPrompts.push(item);
+        promptsByEventId.set(item.prompt_event_id, item);
+        if (item.request_id) {
+          promptsByRequestId.set(item.request_id, item);
+        }
         items.push(item);
         break;
       }
       case RuntimeSessionEventType.ASSISTANT_MESSAGE: {
-        const prompt = openPrompts.shift();
+        const prompt = findPromptForResponse(event, {
+          openPrompts,
+          promptsByEventId,
+          promptsByRequestId,
+        });
         if (prompt) {
           completePromptItem(prompt, event);
         } else {
@@ -145,9 +156,41 @@ function promptItemFromEvent(event: RuntimeSessionEvent): RuntimeSessionPromptTi
     prompt_preview: preview(event.payload.prompt),
     response_preview: "",
     error: "",
+    request_id: readString(event.payload.requestId),
     prompt_event_id: event.eventId,
     response_event_id: "",
   };
+}
+
+function findPromptForResponse(
+  event: RuntimeSessionEvent,
+  state: {
+    openPrompts: RuntimeSessionPromptTimelineItem[];
+    promptsByEventId: Map<string, RuntimeSessionPromptTimelineItem>;
+    promptsByRequestId: Map<string, RuntimeSessionPromptTimelineItem>;
+  },
+): RuntimeSessionPromptTimelineItem | undefined {
+  const requestId = readString(event.payload.requestId);
+  const promptEventId = readString(event.payload.promptEventId);
+  const prompt = (requestId ? state.promptsByRequestId.get(requestId) : undefined)
+    ?? (promptEventId ? state.promptsByEventId.get(promptEventId) : undefined);
+  if (!prompt && (requestId || promptEventId)) {
+    return undefined;
+  }
+  const matchedPrompt = prompt ?? state.openPrompts[0];
+  if (!matchedPrompt) {
+    return undefined;
+  }
+
+  state.promptsByEventId.delete(matchedPrompt.prompt_event_id);
+  if (matchedPrompt.request_id) {
+    state.promptsByRequestId.delete(matchedPrompt.request_id);
+  }
+  const idx = state.openPrompts.indexOf(matchedPrompt);
+  if (idx !== -1) {
+    state.openPrompts.splice(idx, 1);
+  }
+  return matchedPrompt;
 }
 
 function completePromptItem(

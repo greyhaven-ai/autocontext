@@ -228,6 +228,165 @@ describe("runtime session read model", () => {
     ]);
   });
 
+  it("pairs concurrent role responses by request id instead of FIFO prompt order", () => {
+    const log = RuntimeSessionEventLog.fromJSON({
+      sessionId: "run:abc:runtime",
+      parentSessionId: "",
+      taskId: "",
+      workerId: "",
+      metadata: { goal: "autoctx run support_triage", runId: "abc" },
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:00:04.000Z",
+      events: [
+        {
+          eventId: "event-1",
+          sessionId: "run:abc:runtime",
+          sequence: 0,
+          eventType: RuntimeSessionEventType.PROMPT_SUBMITTED,
+          timestamp: "2026-04-10T00:00:01.000Z",
+          payload: {
+            requestId: "analyst-request",
+            role: "analyst",
+            prompt: "Analyze the failure",
+            cwd: "/workspace",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+        {
+          eventId: "event-2",
+          sessionId: "run:abc:runtime",
+          sequence: 1,
+          eventType: RuntimeSessionEventType.PROMPT_SUBMITTED,
+          timestamp: "2026-04-10T00:00:02.000Z",
+          payload: {
+            requestId: "coach-request",
+            role: "coach",
+            prompt: "Review the patch",
+            cwd: "/workspace",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+        {
+          eventId: "event-3",
+          sessionId: "run:abc:runtime",
+          sequence: 2,
+          eventType: RuntimeSessionEventType.ASSISTANT_MESSAGE,
+          timestamp: "2026-04-10T00:00:03.000Z",
+          payload: {
+            requestId: "coach-request",
+            role: "coach",
+            text: "Coach response",
+            cwd: "/workspace",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+        {
+          eventId: "event-4",
+          sessionId: "run:abc:runtime",
+          sequence: 3,
+          eventType: RuntimeSessionEventType.ASSISTANT_MESSAGE,
+          timestamp: "2026-04-10T00:00:04.000Z",
+          payload: {
+            requestId: "analyst-request",
+            role: "analyst",
+            text: "Analyst response",
+            cwd: "/workspace",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+      ],
+    });
+
+    const timeline = buildRuntimeSessionTimeline(log);
+
+    expect(timeline.items).toEqual([
+      expect.objectContaining({
+        kind: "prompt",
+        request_id: "analyst-request",
+        role: "analyst",
+        prompt_preview: "Analyze the failure",
+        response_preview: "Analyst response",
+        response_event_id: "event-4",
+      }),
+      expect.objectContaining({
+        kind: "prompt",
+        request_id: "coach-request",
+        role: "coach",
+        prompt_preview: "Review the patch",
+        response_preview: "Coach response",
+        response_event_id: "event-3",
+      }),
+    ]);
+  });
+
+  it("does not fall back to FIFO when a response carries an unmatched request id", () => {
+    const log = RuntimeSessionEventLog.fromJSON({
+      sessionId: "run:abc:runtime",
+      parentSessionId: "",
+      taskId: "",
+      workerId: "",
+      metadata: { goal: "autoctx run support_triage", runId: "abc" },
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:00:02.000Z",
+      events: [
+        {
+          eventId: "event-1",
+          sessionId: "run:abc:runtime",
+          sequence: 0,
+          eventType: RuntimeSessionEventType.PROMPT_SUBMITTED,
+          timestamp: "2026-04-10T00:00:01.000Z",
+          payload: {
+            requestId: "prompt-request",
+            role: "analyst",
+            prompt: "Analyze the failure",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+        {
+          eventId: "event-2",
+          sessionId: "run:abc:runtime",
+          sequence: 1,
+          eventType: RuntimeSessionEventType.ASSISTANT_MESSAGE,
+          timestamp: "2026-04-10T00:00:02.000Z",
+          payload: {
+            requestId: "other-request",
+            role: "coach",
+            text: "Unmatched response",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+      ],
+    });
+
+    const timeline = buildRuntimeSessionTimeline(log);
+
+    expect(timeline.items).toEqual([
+      expect.objectContaining({
+        kind: "prompt",
+        status: "in_flight",
+        request_id: "prompt-request",
+        response_preview: "",
+      }),
+      expect.objectContaining({
+        kind: "event",
+        event_id: "event-2",
+        event_type: RuntimeSessionEventType.ASSISTANT_MESSAGE,
+      }),
+    ]);
+  });
+
   it("reads runtime-session timelines by run id through the store port", () => {
     const load = vi.fn(() => createLog("run:abc:runtime"));
     const list = vi.fn();

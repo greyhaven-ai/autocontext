@@ -55,13 +55,19 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
     run: () => Promise<AgentOutput>,
   ): Promise<AgentOutput> {
     let output: AgentOutput | undefined;
+    let failure: unknown;
     const result = await this.session.submitPrompt({
       prompt,
       role: this.role,
       cwd: this.cwd,
       commands: this.commands,
       handler: async () => {
-        output = await run();
+        try {
+          output = await run();
+        } catch (error) {
+          failure = error;
+          throw error;
+        }
         return {
           text: output.text,
           metadata: agentOutputMetadata(this.runtime.name, output, {
@@ -73,14 +79,7 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
     });
 
     if (result.isError) {
-      return {
-        text: "",
-        metadata: {
-          error: result.error,
-          runtime: this.runtime.name,
-          runtimeSessionId: this.session.sessionId,
-        },
-      };
+      throw failure ?? new Error(result.error);
     }
 
     if (!output) {

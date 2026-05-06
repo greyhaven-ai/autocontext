@@ -73,4 +73,43 @@ describe("RuntimeBridgeProvider session recording", () => {
       cwd: "/workspace/tasks",
     });
   });
+
+  it("records provider runtime failures without converting them into empty completions", async () => {
+    const failure = new Error("down");
+    const runtime: AgentRuntime = {
+      name: "FailingRuntime",
+      generate: async (): Promise<AgentOutput> => {
+        throw failure;
+      },
+      revise: async () => ({ text: "unused" }),
+    };
+    const session = RuntimeSession.create({
+      sessionId: "runtime-bridge-session",
+      goal: "run queued task",
+      workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
+    });
+    const provider = new RuntimeBridgeProvider(runtime, "bridge-model", {
+      session,
+      role: "task-runner",
+      cwd: "tasks",
+    });
+
+    await expect(provider.complete({
+      systemPrompt: "Be precise",
+      userPrompt: "Draft the answer",
+      model: "requested-model",
+    })).rejects.toBe(failure);
+
+    expect(session.log.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.PROMPT_SUBMITTED,
+      RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]);
+    expect(session.log.events[1].payload).toMatchObject({
+      text: "",
+      error: "down",
+      isError: true,
+      role: "task-runner",
+      cwd: "/workspace/tasks",
+    });
+  });
 });

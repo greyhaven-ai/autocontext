@@ -145,7 +145,9 @@ export class RuntimeSession {
       cwd: opts.cwd,
       commands: opts.commands,
     });
-    this.log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
+    const requestId = randomUUID().slice(0, 12);
+    const promptEvent = this.log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
+      requestId,
       prompt: opts.prompt,
       role,
       cwd: scopedWorkspace.cwd,
@@ -161,6 +163,8 @@ export class RuntimeSession {
         sessionLog: this.log,
       });
       this.log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
+        requestId,
+        promptEventId: promptEvent.eventId,
         text: output.text,
         metadata: output.metadata ?? {},
         role,
@@ -178,6 +182,8 @@ export class RuntimeSession {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
+        requestId,
+        promptEventId: promptEvent.eventId,
         text: "",
         error: message,
         isError: true,
