@@ -88,6 +88,40 @@ JSON output shape:
 }
 ```
 
+The TypeScript CLI also includes an optional `runtime_session` object in
+`status`, `show`, and `watch --json` output when a CLI-backed provider run has a
+persisted runtime-session event log. Use `autoctx runtime-sessions show
+--run-id <run_id> --json` to inspect the recorded provider prompts, messages,
+and child-task events. Use `autoctx runtime-sessions timeline --run-id
+<run_id> --json` for the operator-facing grouped prompt/response and child-task
+timeline. TypeScript MCP clients can inspect the same logs and timeline with
+`list_runtime_sessions`, `get_runtime_session`, and
+`get_runtime_session_timeline` using either `sessionId` or `runId`. TypeScript
+HTTP/cockpit clients can inspect them with
+`GET /api/cockpit/runtime-sessions`,
+`GET /api/cockpit/runtime-sessions/:session_id`, and
+`GET /api/cockpit/runs/:run_id/runtime-session`; timeline views are available
+at `GET /api/cockpit/runtime-sessions/:session_id/timeline` and
+`GET /api/cockpit/runs/:run_id/runtime-session/timeline`. Cockpit run list, status, and
+resume responses include `runtime_session` (a summary or `null`) and
+`runtime_session_url` so UI clients can discover the full log without deriving
+paths. TypeScript `/ws/events` also streams live `runtime_session_event`
+envelopes on the `runtime_session` channel, with the current session summary and
+newly appended event in each payload.
+
+In the TypeScript interactive TUI, `/timeline <run_id>` renders the same
+operator-facing runtime-session timeline; `/timeline` uses the active run id
+when one is available. The TUI recent-activity feed also summarizes live
+runtime-session prompt, assistant, shell, tool, and child-task events as they
+arrive. Operators can run
+`/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]`
+to focus that live feed and tune event detail while a run is active. The TUI
+saves those activity settings in the resolved autoctx config directory and
+reloads them on restart; `/activity reset` clears the saved preference and
+returns the feed to `all normal`. On startup, Recent Activity logs the loaded
+activity setting before the command help. Bare `/activity` and `/activity status`
+report the current setting without rewriting the saved preference.
+
 #### `autoctx list` — List recent runs
 
 ```bash
@@ -650,7 +684,7 @@ The server uses the stdio transport and exposes tools with the `autocontext_` pr
 
 - **Evaluation**: `autocontext_evaluate_output`, `autocontext_generate_output`
 - **Knowledge**: `autocontext_read_playbook`, `autocontext_search_strategies`, `autocontext_export_skill`
-- **Runs**: `autocontext_list_runs`, `autocontext_run_status`
+- **Runs**: `autocontext_list_runs`, `autocontext_run_status`, and TypeScript MCP `list_runtime_sessions` / `get_runtime_session` / `get_runtime_session_timeline`
 - **Scenarios**: `autocontext_list_scenarios`, `autocontext_describe_scenario`
 - **Sandbox**: `autocontext_sandbox_create`, `autocontext_sandbox_run`, `autocontext_sandbox_destroy`
 

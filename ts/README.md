@@ -18,6 +18,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 - **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
 - **Package management**: strategy package export/import, training data export
 - **Training hook surface**: dataset validation and executor-backed `train` entry point
+- **Runtime workspace/session primitives**: workspace-scoped filesystem/shell contracts, scoped command grants, runtime session event logs, child-task lineage helpers, a runtime-session facade, and AgentRuntime session recording
 - **Production-traces emit SDK** at `autoctx/production-traces` — customer-facing emit APIs mirroring the Python SDK (A2-II-a)
 
 The TypeScript package includes mirrored deterministic semantic prompt
@@ -167,6 +168,9 @@ autoctx solve "improve customer-support replies for billing disputes" --iteratio
 autoctx run support_triage --iterations 3 --json
 autoctx run --scenario support_triage --iterations 3 --json
 autoctx list --json
+autoctx runtime-sessions list --limit 10
+autoctx runtime-sessions show --run-id <run-id> --json
+autoctx runtime-sessions timeline --run-id <run-id> --json
 autoctx status <run-id>
 autoctx show <run-id> --best
 autoctx watch <run-id>
@@ -276,6 +280,45 @@ AUTOCONTEXT_AGENT_PROVIDER=deterministic autoctx run support_triage --json
 
 Supported providers: `anthropic`, `openai`, `openai-compatible`, `gemini`, `mistral`, `groq`, `openrouter`, `azure-openai`, `ollama`, `vllm`, `hermes`, `claude-cli`, `codex`, `pi`, `pi-rpc`, `deterministic`.
 
+Programmatic callers can pass `runtimeSession`, `runtimeSessionRole`,
+`runtimeSessionCwd`, and `runtimeSessionCommands` to `createProvider()` for
+CLI-backed providers (`claude-cli`, `codex`, `pi`, `pi-rpc`). Those options
+wrap the underlying `AgentRuntime` at the provider bridge so provider
+completions are recorded in the `RuntimeSession` event log.
+`autoctx run` also creates a run-scoped runtime session automatically for
+CLI-backed providers and persists it in the configured SQLite database. Use
+`autoctx runtime-sessions list` and `autoctx runtime-sessions show
+--run-id <run-id> --json` to inspect those recorded provider prompts,
+messages, and child-task events. Use `autoctx runtime-sessions timeline
+--run-id <run-id> --json` when operators need a grouped prompt/response and
+child-task timeline instead of the raw event log. `autoctx status <run-id> --json`,
+`autoctx show <run-id> --json`, and `autoctx watch <run-id> --json` include a
+`runtime_session` summary when that persisted log exists. HTTP clients can read
+the same data from `GET /api/cockpit/runtime-sessions`,
+`GET /api/cockpit/runtime-sessions/:session_id`, and
+`GET /api/cockpit/runs/:run_id/runtime-session`; timeline views are available
+at `GET /api/cockpit/runtime-sessions/:session_id/timeline` and
+`GET /api/cockpit/runs/:run_id/runtime-session/timeline`. Cockpit run list, status, and
+resume responses also include `runtime_session` (a summary or `null`) plus
+`runtime_session_url` for direct log discovery. The interactive server emits
+live runtime updates on `/ws/events` as `runtime_session_event` envelopes on the
+`runtime_session` channel; each payload includes the current session summary and
+the appended event.
+
+Inside `autoctx tui`, operators can run `/timeline <run-id>` to render the same
+runtime-session timeline in the recent-activity pane. If a run is active,
+`/timeline` uses that active run id. The TUI recent-activity feed also
+summarizes live runtime-session prompt, assistant, shell, tool, and child-task
+events as they arrive. Use
+`/activity [status|reset|<all|runtime|prompts|commands|children|errors> [quiet|normal|verbose]]`
+to focus that live feed and tune how much detail each runtime event includes.
+Those activity settings are saved in the resolved autoctx config directory and
+reloaded when the TUI starts again; `/activity reset` clears the saved
+preference and returns the feed to `all normal`. On startup, Recent Activity
+logs the loaded activity setting before the command help. Bare `/activity` and
+`/activity status` report the current setting without rewriting the saved
+preference.
+
 `autoctx simulate` and `autoctx investigate` require a configured provider for spec generation. If you want synthetic placeholder behavior for CI/testing, select the deterministic provider explicitly instead of relying on implicit fallback.
 
 Key environment variables:
@@ -330,7 +373,7 @@ Saved custom scenarios under `knowledge/_custom_scenarios/` can be reused direct
 | Family        | Tools                                                                                                            |
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Scenarios     | list_scenarios, get_scenario, validate_strategy, run_match, run_tournament, run_scenario                         |
-| Runs          | list_runs, get_run_status, get_generation_detail, run_replay                                                     |
+| Runs          | list_runs, get_run_status, get_generation_detail, list_runtime_sessions, get_runtime_session, get_runtime_session_timeline, run_replay |
 | Knowledge     | get_playbook, read_trajectory, read_hints, read_analysis, read_tools, read_skills                                |
 | Evaluation    | evaluate_output, run_improvement_loop, run_repl_session, generate_output                                         |
 | Task queue    | queue_task, get_queue_status, get_task_result                                                                    |

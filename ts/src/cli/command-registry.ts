@@ -30,6 +30,7 @@ export type DbCommandName =
   | "solve"
   | "run"
   | "list"
+  | "runtime-sessions"
   | "replay"
   | "show"
   | "watch"
@@ -67,6 +68,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   { name: "init", description: "Scaffold project config and AGENTS guidance", group: "primary", route: { kind: "no-db", command: "init" } },
   { name: "run", description: "Run generation loop for a scenario", group: "primary", route: { kind: "db", command: "run" } },
   { name: "list", description: "List recent runs", group: "primary", route: { kind: "db", command: "list" } },
+  { name: "runtime-sessions", description: "Inspect recorded runtime sessions", group: "primary", route: { kind: "db", command: "runtime-sessions" } },
   { name: "replay", description: "Print replay JSON for a generation", group: "primary", route: { kind: "db", command: "replay" } },
   { name: "show", description: "Show the best or latest generation for a run", group: "primary", route: { kind: "db", command: "show" } },
   { name: "watch", description: "Follow a run until it finishes", group: "primary", route: { kind: "db", command: "watch" } },

@@ -92,6 +92,12 @@ type TsControlBoundary = {
 	blockedPackageDependencies: string[];
 };
 
+type TsUmbrellaBoundary = {
+	packagePath: string;
+	internalOnlyExportPrefixes: string[];
+	internalOnlyRootImportPathSubstrings: string[];
+};
+
 type LicensingGuardrails = {
 	status: string;
 	decisionDate: string;
@@ -149,6 +155,7 @@ type PackageBoundaries = {
 	typescript: {
 		core: TsCoreBoundary;
 		control: TsControlBoundary;
+		umbrella: TsUmbrellaBoundary;
 	};
 };
 
@@ -790,6 +797,34 @@ describe("package boundaries", () => {
 
 		for (const blocked of core.blockedProgramPathSubstrings) {
 			expect(fileList.some((entry) => entry.includes(blocked))).toBe(false);
+		}
+	});
+
+	it("keeps interactive TUI internals outside the TypeScript core package", () => {
+		const core = loadBoundaries().typescript.core;
+
+		expect(core.blockedProgramPathSubstrings).toContain("/ts/src/tui/");
+	});
+
+	it("keeps TUI command helpers off the umbrella package public export surface", () => {
+		const umbrella = loadBoundaries().typescript.umbrella;
+		const packageJson = loadJson<TsPackageJson>(
+			join(repoRoot, umbrella.packagePath, "package.json"),
+		);
+		const rootBarrel = readFileSync(
+			join(repoRoot, umbrella.packagePath, "src", "index.ts"),
+			"utf-8",
+		);
+		const rootImports = importSpecifiers(rootBarrel);
+
+		expect(umbrella.internalOnlyExportPrefixes).toContain("./tui");
+		for (const prefix of umbrella.internalOnlyExportPrefixes) {
+			expect(Object.keys(packageJson.exports).some((entry) => entry.startsWith(prefix))).toBe(
+				false,
+			);
+		}
+		for (const substring of umbrella.internalOnlyRootImportPathSubstrings) {
+			expect(rootImports.some((specifier) => specifier.includes(substring))).toBe(false);
 		}
 	});
 

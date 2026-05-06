@@ -2,6 +2,7 @@ import { loadSettings, type AppSettings } from "../config/index.js";
 import {
   buildRoleProviderBundle,
   type GenerationRole,
+  type ProviderCompositionOpts,
   type RoleProviderBundle,
 } from "../providers/index.js";
 
@@ -17,6 +18,7 @@ export interface RunManagerProviderSessionDeps {
   buildRoleProviderBundle?: (
     settings: AppSettings,
     overrides?: Partial<ProviderSessionOverride>,
+    opts?: ProviderCompositionOpts,
   ) => RoleProviderBundle;
 }
 
@@ -57,7 +59,10 @@ export class RunManagerProviderSession {
     this.#providerOverride = null;
   }
 
-  resolveProviderBundle(settings = this.#loadSettings()): RoleProviderBundle {
+  resolveProviderBundle(
+    settings = this.#loadSettings(),
+    opts?: ProviderCompositionOpts,
+  ): RoleProviderBundle {
     if (this.#providerOverride === null) {
       throw new Error("No active provider configured for this session. Use /login or /provider.");
     }
@@ -68,7 +73,7 @@ export class RunManagerProviderSession {
       apiKey: overrides.apiKey,
       baseUrl: overrides.baseUrl,
       model: overrides.model,
-    });
+    }, opts);
   }
 
   buildProvider(role?: GenerationRole, settings = this.#loadSettings()) {
@@ -86,7 +91,11 @@ export class RunManagerProviderSession {
   #buildRoleProviderBundle(
     settings: AppSettings,
     overrides?: Partial<ProviderSessionOverride>,
+    opts?: ProviderCompositionOpts,
   ): RoleProviderBundle {
+    if (opts) {
+      return (this.#deps.buildRoleProviderBundle ?? buildRoleProviderBundle)(settings, overrides, opts);
+    }
     return (this.#deps.buildRoleProviderBundle ?? buildRoleProviderBundle)(settings, overrides);
   }
 }

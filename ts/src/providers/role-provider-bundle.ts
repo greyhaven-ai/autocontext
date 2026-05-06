@@ -1,6 +1,16 @@
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { LLMProvider } from "../types/index.js";
 import { createProvider, type CreateProviderOpts } from "./provider-factory.js";
 import { resolveProviderConfig, type ProviderConfig } from "./provider-config-resolution.js";
+import {
+  createLocalWorkspaceEnv,
+  type RuntimeCommandGrant,
+  type RuntimeWorkspaceEnv,
+} from "../runtimes/workspace-env.js";
+import { RuntimeSession } from "../session/runtime-session.js";
+import { RuntimeSessionEventStore } from "../session/runtime-events.js";
+import type { RuntimeSessionEventSink } from "../session/runtime-session-notifications.js";
 
 export type GenerationRole = "competitor" | "analyst" | "coach" | "architect" | "curator";
 
@@ -43,6 +53,23 @@ export interface RoleProviderSettings {
   piRpcApiKey?: string;
   piRpcSessionPersistence?: boolean;
   piRpcPersistent?: boolean;
+  dbPath?: string;
+}
+
+export interface ProviderRuntimeSessionOpts {
+  sessionId?: string;
+  goal: string;
+  dbPath?: string;
+  workspace?: RuntimeWorkspaceEnv;
+  workspaceRoot?: string;
+  cwd?: string;
+  commands?: RuntimeCommandGrant[];
+  metadata?: Record<string, unknown>;
+  eventSink?: RuntimeSessionEventSink;
+}
+
+export interface ProviderCompositionOpts {
+  runtimeSession?: ProviderRuntimeSessionOpts;
 }
 
 export interface RoleProviderBundle {
@@ -50,6 +77,7 @@ export interface RoleProviderBundle {
   defaultConfig: ProviderConfig;
   roleProviders: Partial<Record<GenerationRole, LLMProvider>>;
   roleModels: Partial<Record<GenerationRole, string>>;
+  runtimeSession?: RuntimeSession;
   close?: () => void;
 }
 
@@ -97,6 +125,23 @@ export function withRuntimeSettings(
   };
 }
 
+function withRuntimeSession(
+  config: ProviderConfig,
+  settings: Partial<RoleProviderSettings>,
+  runtimeSession: RuntimeSessionProvider | undefined,
+  role: GenerationRole | "default",
+): CreateProviderOpts {
+  const base = withRuntimeSettings(config, settings);
+  if (!runtimeSession) return base;
+  return {
+    ...base,
+    runtimeSession: runtimeSession.session,
+    runtimeSessionRole: role,
+    runtimeSessionCwd: runtimeSession.cwd,
+    runtimeSessionCommands: runtimeSession.commands,
+  };
+}
+
 interface RoleConfigInput {
   providerType?: string;
   model?: string;
@@ -138,26 +183,43 @@ function resolveRoleConfig(
 export function createConfiguredProvider(
   overrides: Partial<ProviderConfig> = {},
   settings: Partial<RoleProviderSettings> = {},
+  opts: ProviderCompositionOpts = {},
 ): {
   provider: LLMProvider;
   config: ProviderConfig;
+  runtimeSession?: RuntimeSession;
+  close?: () => void;
 } {
   const config = resolveProviderConfig(overrides);
+  const runtimeSession = createRuntimeSessionProvider(settings, opts.runtimeSession);
+  const provider = createProvider(withRuntimeSession(config, settings, runtimeSession, "default"));
+  let closed = false;
   return {
-    provider: createProvider(withRuntimeSettings(config, settings)),
+    provider,
     config,
+    runtimeSession: runtimeSession?.session,
+    close: () => {
+      if (closed) return;
+      closed = true;
+      provider.close?.();
+      runtimeSession?.eventStore.close();
+    },
   };
 }
 
 export function buildRoleProviderBundle(
   settings: RoleProviderSettings,
   overrides: Partial<ProviderConfig> = {},
+  opts: ProviderCompositionOpts = {},
 ): RoleProviderBundle {
+  const runtimeSession = createRuntimeSessionProvider(settings, opts.runtimeSession);
   const defaultConfig = resolveProviderConfig({
     ...overrides,
     providerType: overrides.providerType ?? settings.agentProvider,
   });
-  const defaultProvider = createProvider(withRuntimeSettings(defaultConfig, settings));
+  const defaultProvider = createProvider(
+    withRuntimeSession(defaultConfig, settings, runtimeSession, "default"),
+  );
 
   const roleConfigs: Record<GenerationRole, ProviderConfig> = {
     competitor: resolveRoleConfig(defaultConfig, overrides, {
@@ -190,11 +252,19 @@ export function buildRoleProviderBundle(
   };
 
   const roleProviders: Partial<Record<GenerationRole, LLMProvider>> = {
-    competitor: createProvider(withRuntimeSettings(roleConfigs.competitor, settings)),
-    analyst: createProvider(withRuntimeSettings(roleConfigs.analyst, settings)),
-    coach: createProvider(withRuntimeSettings(roleConfigs.coach, settings)),
-    architect: createProvider(withRuntimeSettings(roleConfigs.architect, settings)),
-    curator: createProvider(withRuntimeSettings(roleConfigs.curator, settings)),
+    competitor: createProvider(
+      withRuntimeSession(roleConfigs.competitor, settings, runtimeSession, "competitor"),
+    ),
+    analyst: createProvider(
+      withRuntimeSession(roleConfigs.analyst, settings, runtimeSession, "analyst"),
+    ),
+    coach: createProvider(withRuntimeSession(roleConfigs.coach, settings, runtimeSession, "coach")),
+    architect: createProvider(
+      withRuntimeSession(roleConfigs.architect, settings, runtimeSession, "architect"),
+    ),
+    curator: createProvider(
+      withRuntimeSession(roleConfigs.curator, settings, runtimeSession, "curator"),
+    ),
   };
   const bundle: RoleProviderBundle = {
     defaultProvider,
@@ -207,9 +277,53 @@ export function buildRoleProviderBundle(
       architect: roleConfigs.architect.model,
       curator: roleConfigs.curator.model,
     },
+    runtimeSession: runtimeSession?.session,
   };
+  let closed = false;
   return {
     ...bundle,
-    close: () => closeProviderBundle(bundle),
+    close: () => {
+      if (closed) return;
+      closed = true;
+      closeProviderBundle(bundle);
+      runtimeSession?.eventStore.close();
+    },
+  };
+}
+
+interface RuntimeSessionProvider {
+  session: RuntimeSession;
+  eventStore: RuntimeSessionEventStore;
+  cwd?: string;
+  commands?: RuntimeCommandGrant[];
+}
+
+function createRuntimeSessionProvider(
+  settings: Partial<RoleProviderSettings>,
+  opts?: ProviderRuntimeSessionOpts,
+): RuntimeSessionProvider | undefined {
+  if (!opts) return undefined;
+  const dbPath = opts.dbPath ?? settings.dbPath;
+  if (!dbPath) {
+    throw new Error("Runtime session provider recording requires a dbPath");
+  }
+  const resolvedDbPath = resolve(dbPath);
+  mkdirSync(dirname(resolvedDbPath), { recursive: true });
+  const eventStore = new RuntimeSessionEventStore(resolvedDbPath);
+  const workspace = opts.workspace
+    ?? createLocalWorkspaceEnv({ root: opts.workspaceRoot ?? process.cwd() });
+  const session = RuntimeSession.create({
+    sessionId: opts.sessionId,
+    goal: opts.goal,
+    workspace,
+    eventStore,
+    eventSink: opts.eventSink,
+    metadata: opts.metadata,
+  });
+  return {
+    session,
+    eventStore,
+    cwd: opts.cwd,
+    commands: opts.commands,
   };
 }

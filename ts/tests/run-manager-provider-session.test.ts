@@ -60,6 +60,34 @@ describe("run-manager provider session", () => {
     );
   });
 
+  it("forwards runtime-session composition options to provider bundle resolution", () => {
+    const buildRoleProviderBundle = vi.fn(() => ({
+      defaultProvider: { name: "default", defaultModel: () => "session-model", complete: vi.fn() },
+      defaultConfig: { providerType: "deterministic", apiKey: "", baseUrl: "", model: "session-model" },
+      roleProviders: {},
+      roleModels: {},
+    } satisfies RoleProviderBundle));
+    const session = new RunManagerProviderSession({ providerType: "deterministic" }, {
+      loadSettings: () => makeSettings("anthropic"),
+      buildRoleProviderBundle,
+    });
+    const opts = {
+      runtimeSession: {
+        sessionId: "run:abc:runtime",
+        goal: "autoctx run grid_ctf",
+        dbPath: "/tmp/autoctx.db",
+      },
+    };
+
+    session.resolveProviderBundle(makeSettings("anthropic"), opts);
+
+    expect(buildRoleProviderBundle).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ providerType: "deterministic" }),
+      opts,
+    );
+  });
+
   it("treats clearActiveProvider as an explicit unauthenticated session", () => {
     const session = new RunManagerProviderSession({ providerType: "deterministic" }, {
       loadSettings: () => makeSettings("anthropic"),

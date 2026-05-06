@@ -10,6 +10,9 @@ Core exported tools:
   get_queue_status      Check task queue status
   list_runs             List recent runs
   get_run_status        Get detailed run status
+  list_runtime_sessions List recorded runtime sessions
+  get_runtime_session   Inspect a runtime session by session id or run id
+  get_runtime_session_timeline Inspect a runtime-session timeline by session id or run id
   run_replay            Replay a generation
   list_scenarios        List available scenarios
   export_package        Export strategy package data

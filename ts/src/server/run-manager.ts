@@ -8,7 +8,12 @@ import type { AppSettings } from "../config/index.js";
 import { LoopController } from "../loop/controller.js";
 import { EventStreamEmitter } from "../loop/events.js";
 import type { EventCallback } from "../loop/events.js";
-import type { GenerationRole, RoleProviderBundle } from "../providers/index.js";
+import type {
+  GenerationRole,
+  ProviderRuntimeSessionOpts,
+  RoleProviderBundle,
+} from "../providers/index.js";
+import { runtimeSessionIdForRun } from "../session/runtime-session-ids.js";
 import type { ScenarioPreviewInfo } from "../scenarios/draft-workflow.js";
 import {
   InteractiveScenarioSession,
@@ -37,6 +42,7 @@ import {
   resolveBuiltInGameScenario,
   resolveRunStartPlan,
 } from "./run-start-workflow.js";
+import { createRuntimeSessionEventStreamSink } from "./runtime-session-event-stream.js";
 
 export interface RunManagerOpts {
   dbPath: string;
@@ -252,7 +258,10 @@ export class RunManager {
 
     if (plan.kind === "builtin_game") {
       const settings = loadSettings();
-      const providerBundle = this.#resolveProviderBundle(settings);
+      const providerBundle = this.#resolveProviderBundle(
+        settings,
+        this.#runtimeSessionOptsForRun(id, plan.scenarioName),
+      );
       const scenarioInstance = resolveBuiltInGameScenario({
         scenarioName: plan.scenarioName,
       });
@@ -283,7 +292,10 @@ export class RunManager {
 
     if (plan.kind === "agent_task_custom") {
       const settings = loadSettings();
-      const providerBundle = this.#resolveProviderBundle(settings);
+      const providerBundle = this.#resolveProviderBundle(
+        settings,
+        this.#runtimeSessionOptsForRun(id, plan.scenarioName),
+      );
       this.#runPromise = createManagedRunExecution({
         runId: id,
         execute: async () => {
@@ -373,11 +385,32 @@ export class RunManager {
     return ready;
   }
 
-  #resolveProviderBundle(settings = loadSettings()) {
+  #resolveProviderBundle(
+    settings = loadSettings(),
+    runtimeSession?: ProviderRuntimeSessionOpts,
+  ) {
     if (this.#opts.deps?.resolveProviderBundle) {
       return this.#opts.deps.resolveProviderBundle(settings);
     }
-    return this.#providerSession.resolveProviderBundle(settings);
+    return this.#providerSession.resolveProviderBundle(
+      settings,
+      runtimeSession ? { runtimeSession } : undefined,
+    );
+  }
+
+  #runtimeSessionOptsForRun(runId: string, scenarioName: string): ProviderRuntimeSessionOpts {
+    return {
+      sessionId: runtimeSessionIdForRun(runId),
+      goal: `autoctx run ${scenarioName}`,
+      dbPath: this.#opts.dbPath,
+      workspaceRoot: process.cwd(),
+      metadata: {
+        command: "serve",
+        runId,
+        scenarioName,
+      },
+      eventSink: createRuntimeSessionEventStreamSink(this.#events),
+    };
   }
 
   buildProvider(role?: GenerationRole) {

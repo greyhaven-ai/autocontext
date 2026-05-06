@@ -57,6 +57,7 @@ const DB_COMMAND_HANDLERS: Record<DbCommandName, (dbPath: string) => Promise<voi
   solve: cmdSolve,
   run: cmdRun,
   list: cmdList,
+  "runtime-sessions": cmdRuntimeSessions,
   replay: cmdReplay,
   show: cmdShow,
   watch: cmdWatch,
@@ -440,6 +441,7 @@ async function cmdRun(dbPath: string): Promise<void> {
   const { buildRoleProviderBundle } = await import("../providers/index.js");
   const { initializeHookBus } = await import("../extensions/index.js");
   const { resolveRunnableScenarioClass } = await import("./runnable-scenario-resolution.js");
+  const { runtimeSessionIdForRun } = await import("../session/runtime-session-ids.js");
 
   const settings = loadSettings();
   let plan;
@@ -466,6 +468,19 @@ async function cmdRun(dbPath: string): Promise<void> {
   const providerBundle = buildRoleProviderBundle(
     settings,
     plan.providerType ? { providerType: plan.providerType } : {},
+    {
+      runtimeSession: {
+        sessionId: runtimeSessionIdForRun(plan.runId),
+        goal: `autoctx run ${plan.scenarioName}`,
+        dbPath,
+        workspaceRoot: process.cwd(),
+        metadata: {
+          command: "run",
+          runId: plan.runId,
+          scenarioName: plan.scenarioName,
+        },
+      },
+    },
   );
 
   if (!SCENARIO_REGISTRY[plan.scenarioName]) {
@@ -1092,7 +1107,8 @@ async function cmdStatus(dbPath: string): Promise<void> {
       store.close();
       process.exit(1);
     }
-    console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json));
+    const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
+    console.log(renderRunStatus(run, store.getGenerations(runId), !!values.json, runtimeSession));
     store.close();
     return;
   }
@@ -1261,6 +1277,40 @@ async function cmdList(dbPath: string): Promise<void> {
   }
 }
 
+async function cmdRuntimeSessions(dbPath: string): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(3),
+    allowPositionals: true,
+    options: {
+      id: { type: "string" },
+      "run-id": { type: "string" },
+      limit: { type: "string", default: "50" },
+      json: { type: "boolean" },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+
+  const {
+    executeRuntimeSessionsCommandWorkflow,
+    planRuntimeSessionsCommand,
+    RUNTIME_SESSIONS_HELP_TEXT,
+  } = await import("./runtime-session-command-workflow.js");
+
+  if (values.help) {
+    console.log(RUNTIME_SESSIONS_HELP_TEXT);
+    process.exit(0);
+  }
+
+  const { RuntimeSessionEventStore } = await import("../session/runtime-events.js");
+  const store = new RuntimeSessionEventStore(dbPath);
+  try {
+    const plan = planRuntimeSessionsCommand(values, positionals);
+    console.log(executeRuntimeSessionsCommandWorkflow({ plan, store }));
+  } finally {
+    store.close();
+  }
+}
+
 async function cmdReplay(_dbPath: string): Promise<void> {
   const { values } = parseArgs({
     args: process.argv.slice(3),
@@ -1351,7 +1401,8 @@ async function cmdShow(dbPath: string): Promise<void> {
     if (!run) {
       throw new Error(`Error: run '${runId}' not found`);
     }
-    console.log(renderRunShow(run, store.getGenerations(runId), values));
+    const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
+    console.log(renderRunShow(run, store.getGenerations(runId), values, runtimeSession));
   } catch (error) {
     console.error(errorMessage(error));
     process.exit(1);
@@ -1405,10 +1456,11 @@ async function cmdWatch(dbPath: string): Promise<void> {
         throw new Error(`Error: run '${runId}' not found`);
       }
       const generations = store.getGenerations(runId);
+      const runtimeSession = await loadRuntimeSessionSummaryForRun(dbPath, runId);
       console.log(
         values.json
-          ? renderRunStatusJsonLine(run, generations)
-          : renderRunStatus(run, generations, false),
+          ? renderRunStatusJsonLine(run, generations, runtimeSession)
+          : renderRunStatus(run, generations, false, runtimeSession),
       );
       if (run.status !== "running") {
         return;
@@ -1420,6 +1472,19 @@ async function cmdWatch(dbPath: string): Promise<void> {
     process.exit(1);
   } finally {
     store.close();
+  }
+}
+
+async function loadRuntimeSessionSummaryForRun(dbPath: string, runId: string) {
+  const { RuntimeSessionEventStore } = await import("../session/runtime-events.js");
+  const { runtimeSessionIdForRun } = await import("../session/runtime-session-ids.js");
+  const { summarizeRuntimeSession } = await import("../session/runtime-session-read-model.js");
+  const eventStore = new RuntimeSessionEventStore(dbPath);
+  try {
+    const log = eventStore.load(runtimeSessionIdForRun(runId));
+    return log ? summarizeRuntimeSession(log) : null;
+  } finally {
+    eventStore.close();
   }
 }
 

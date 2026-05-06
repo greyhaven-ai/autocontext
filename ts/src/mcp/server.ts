@@ -17,6 +17,7 @@ import { registerFeedbackReplayTools } from "./feedback-replay-tools.js";
 import { registerKnowledgeReadbackTools } from "./knowledge-readback-tools.js";
 import { registerMissionTools } from "./mission-tools.js";
 import { registerRunManagementTools } from "./run-management-tools.js";
+import { registerRuntimeSessionTools } from "./runtime-session-tools.js";
 import { registerSandboxTools } from "./sandbox-tools.js";
 import { registerScenarioCatalogTools } from "./scenario-catalog-tools.js";
 import { registerScenarioExecutionTools } from "./scenario-execution-tools.js";
@@ -97,6 +98,10 @@ export function createMcpServer(opts: MtsServerOpts): McpServer {
       notifyWebhookUrl: settings.notifyWebhookUrl,
       notifyOn: settings.notifyOn,
     },
+  });
+
+  registerRuntimeSessionTools(server, {
+    dbPath: opts.dbPath ?? settings.dbPath,
   });
 
   registerScenarioExecutionTools(server);

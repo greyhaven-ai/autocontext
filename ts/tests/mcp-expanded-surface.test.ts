@@ -30,6 +30,7 @@ type RegisteredToolServer = {
 };
 
 async function createToolServer(dir: string): Promise<{
+  dbPath: string;
   store: import("../src/storage/index.js").SQLiteStore;
   server: RegisteredToolServer;
 }> {
@@ -37,16 +38,18 @@ async function createToolServer(dir: string): Promise<{
   const { DeterministicProvider } = await import("../src/providers/deterministic.js");
   const { createMcpServer } = await import("../src/mcp/server.js");
 
-  const store = new SQLiteStore(join(dir, "test.db"));
+  const dbPath = join(dir, "test.db");
+  const store = new SQLiteStore(dbPath);
   store.migrate(join(__dirname, "..", "migrations"));
   const server = createMcpServer({
     store,
     provider: new DeterministicProvider(),
+    dbPath,
     runsRoot: join(dir, "runs"),
     knowledgeRoot: join(dir, "knowledge"),
   }) as unknown as RegisteredToolServer;
 
-  return { store, server };
+  return { dbPath, store, server };
 }
 
 describe("Expanded MCP server tool registration", () => {
@@ -70,6 +73,9 @@ describe("Expanded MCP server tool registration", () => {
     expect(toolNames).toContain("get_scenario");
     expect(toolNames).toContain("list_runs");
     expect(toolNames).toContain("get_run_status");
+    expect(toolNames).toContain("list_runtime_sessions");
+    expect(toolNames).toContain("get_runtime_session");
+    expect(toolNames).toContain("get_runtime_session_timeline");
     expect(toolNames).toContain("get_playbook");
     expect(toolNames).toContain("run_scenario");
     expect(toolNames).toContain("get_generation_detail");
@@ -253,6 +259,68 @@ describe("Expanded MCP tool handlers", () => {
     expect(payload.scenario).toBe("grid_ctf");
     expect(payload.narrative).toBe("Blue team secured the center route.");
     expect(payload.timeline).toEqual([{ turn: 1, action: "advance" }]);
+
+    store.close();
+  });
+
+  it("runtime-session tools return persisted run-scoped event logs", async () => {
+    const { dbPath, store, server } = await createToolServer(dir);
+    const {
+      RuntimeSessionEventLog,
+      RuntimeSessionEventStore,
+      RuntimeSessionEventType,
+    } = await import("../src/session/runtime-events.js");
+
+    const eventStore = new RuntimeSessionEventStore(dbPath);
+    const log = RuntimeSessionEventLog.create({
+      sessionId: "run:run-1:runtime",
+      metadata: { goal: "autoctx run grid_ctf", runId: "run-1" },
+    });
+    log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
+      role: "architect",
+      prompt: "Improve the strategy",
+    });
+    eventStore.save(log);
+    eventStore.close();
+
+    const listed = await server._registeredTools.list_runtime_sessions.handler({
+      limit: 5,
+    }, {});
+    const listedPayload = JSON.parse(listed.content[0].text) as Record<string, unknown>;
+    expect(listedPayload.sessions).toEqual([
+      expect.objectContaining({
+        session_id: "run:run-1:runtime",
+        goal: "autoctx run grid_ctf",
+        event_count: 1,
+      }),
+    ]);
+
+    const shown = await server._registeredTools.get_runtime_session.handler({
+      runId: "run-1",
+    }, {});
+    const shownPayload = JSON.parse(shown.content[0].text) as Record<string, unknown>;
+    expect(shownPayload.sessionId).toBe("run:run-1:runtime");
+    expect(shownPayload.events).toEqual([
+      expect.objectContaining({
+        eventType: RuntimeSessionEventType.PROMPT_SUBMITTED,
+        payload: {
+          role: "architect",
+          prompt: "Improve the strategy",
+        },
+      }),
+    ]);
+
+    const timeline = await server._registeredTools.get_runtime_session_timeline.handler({
+      runId: "run-1",
+    }, {});
+    const timelinePayload = JSON.parse(timeline.content[0].text) as Record<string, unknown>;
+    expect(timelinePayload.items).toEqual([
+      expect.objectContaining({
+        kind: "prompt",
+        status: "in_flight",
+        prompt_preview: "Improve the strategy",
+      }),
+    ]);
 
     store.close();
   });

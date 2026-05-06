@@ -121,6 +121,7 @@
 				"../../../ts/src/judge/rubric-coherence.ts",
 				"../../../ts/src/prompts/context-budget.ts",
 				"../../../ts/src/prompts/templates.ts",
+				"../../../ts/src/runtimes/workspace-env.ts",
 				"../../../ts/src/scenarios/game-interface.ts",
 				"../../../ts/src/scenarios/primary-family-interface-types.ts",
 				"../../../ts/src/scenarios/simulation-family-interface-types.ts",
@@ -153,13 +154,18 @@
 				"/ts/src/server/",
 				"/ts/src/loop/",
 				"/ts/src/config/",
-				"/ts/src/runtimes/",
+				"/ts/src/runtimes/claude-cli",
+				"/ts/src/runtimes/codex-cli",
+				"/ts/src/runtimes/direct-api",
+				"/ts/src/runtimes/pi-cli",
+				"/ts/src/runtimes/pi-rpc",
 				"/ts/src/providers/",
 				"/ts/src/agents/",
 				"/ts/src/production-traces/cli/",
 				"/ts/src/production-traces/ingest/",
 				"/ts/src/production-traces/dataset/",
 				"/ts/src/production-traces/retention/",
+				"/ts/src/tui/",
 				"/ts/src/traces/"
 			],
 			"blockedPackageDependencies": [
@@ -191,6 +197,15 @@
 			],
 			"blockedPackageDependencies": [
 				"autoctx"
+			]
+		},
+		"umbrella": {
+			"packagePath": "ts",
+			"internalOnlyExportPrefixes": [
+				"./tui"
+			],
+			"internalOnlyRootImportPathSubstrings": [
+				"/tui/"
 			]
 		}
 	},

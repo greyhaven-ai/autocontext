@@ -162,6 +162,8 @@ describe("mcp-serve --help", () => {
     expect(out).toContain("evaluate_output");
     expect(out).toContain("run_improvement_loop");
     expect(out).toContain("queue_task");
+    expect(out).toContain("list_runtime_sessions");
+    expect(out).toContain("get_runtime_session");
     expect(out).not.toContain("autocontext_judge");
   });
 

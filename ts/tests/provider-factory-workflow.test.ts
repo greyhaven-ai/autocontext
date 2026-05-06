@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { SUPPORTED_PROVIDER_TYPES, createProvider } from "../src/providers/provider-factory.js";
+import { createInMemoryWorkspaceEnv } from "../src/runtimes/workspace-env.js";
+import { RuntimeSession } from "../src/session/runtime-session.js";
 
 describe("provider factory workflow", () => {
   it("creates compat providers with their family defaults", () => {
@@ -21,6 +23,23 @@ describe("provider factory workflow", () => {
     expect(createProvider({ providerType: "codex" }).name).toBe("runtime-bridge");
     expect(createProvider({ providerType: "pi" }).name).toBe("runtime-bridge");
     expect(createProvider({ providerType: "pi-rpc" }).name).toBe("runtime-bridge");
+  });
+
+  it("accepts runtime session recording options for runtime-backed providers", () => {
+    const session = RuntimeSession.create({
+      sessionId: "provider-factory-session",
+      goal: "record provider calls",
+      workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
+    });
+
+    const provider = createProvider({
+      providerType: "claude-cli",
+      runtimeSession: session,
+      runtimeSessionRole: "provider-factory",
+      runtimeSessionCwd: "tasks",
+    });
+
+    expect(provider.name).toBe("runtime-bridge");
   });
 
   it("reports the supported provider surface in unknown-provider errors", () => {

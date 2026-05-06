@@ -5,8 +5,11 @@ import { ClaudeCLIRuntime } from "../runtimes/claude-cli.js";
 import { CodexCLIRuntime, CodexCLIConfig } from "../runtimes/codex-cli.js";
 import { PiCLIRuntime, PiCLIConfig } from "../runtimes/pi-cli.js";
 import { PiPersistentRPCRuntime, PiRPCRuntime, PiRPCConfig } from "../runtimes/pi-rpc.js";
-import { RuntimeBridgeProvider } from "../agents/provider-bridge.js";
+import { RuntimeBridgeProvider, type RuntimeBridgeProviderOpts } from "../agents/provider-bridge.js";
+import type { AgentRuntime } from "../runtimes/base.js";
 import { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
+import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";
+import type { RuntimeSession } from "../session/runtime-session.js";
 
 export { SUPPORTED_PROVIDER_TYPES } from "./supported-provider-types.js";
 
@@ -175,6 +178,10 @@ export interface CreateProviderOpts {
   piRpcApiKey?: string;
   piRpcSessionPersistence?: boolean;
   piRpcPersistent?: boolean;
+  runtimeSession?: RuntimeSession;
+  runtimeSessionRole?: string;
+  runtimeSessionCwd?: string;
+  runtimeSessionCommands?: RuntimeCommandGrant[];
 }
 
 export function createProvider(opts: CreateProviderOpts): LLMProvider {
@@ -230,7 +237,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
       sessionPersistence: opts.claudeSessionPersistence,
       timeout: opts.claudeTimeout ? opts.claudeTimeout * 1000 : undefined,
     });
-    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "sonnet");
+    return createRuntimeBridgeProvider(runtime, resolvedModel ?? "sonnet", opts, "claude-cli");
   }
 
   if (type === "codex") {
@@ -244,7 +251,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         quiet: opts.codexQuiet,
       }),
     );
-    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "o4-mini");
+    return createRuntimeBridgeProvider(runtime, resolvedModel ?? "o4-mini", opts, "codex");
   }
 
   if (type === "pi") {
@@ -258,7 +265,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         noContextFiles: opts.piNoContextFiles,
       }),
     );
-    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "pi-default");
+    return createRuntimeBridgeProvider(runtime, resolvedModel ?? "pi-default", opts, "pi");
   }
 
   if (type === "pi-rpc") {
@@ -274,7 +281,7 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
         noContextFiles: opts.piNoContextFiles,
       }),
     );
-    return new RuntimeBridgeProvider(runtime as never, resolvedModel ?? "pi-rpc-default");
+    return createRuntimeBridgeProvider(runtime, resolvedModel ?? "pi-rpc-default", opts, "pi-rpc");
   }
 
   const compat = OPENAI_COMPATIBLE_PROVIDER_DEFAULTS[type];
@@ -293,4 +300,26 @@ export function createProvider(opts: CreateProviderOpts): LLMProvider {
   throw new ProviderError(
     `Unknown provider type: ${JSON.stringify(type)}. Supported: ${SUPPORTED_PROVIDER_TYPES.join(", ")}`,
   );
+}
+
+function createRuntimeBridgeProvider(
+  runtime: AgentRuntime,
+  model: string,
+  opts: CreateProviderOpts,
+  defaultRole: string,
+): LLMProvider {
+  return new RuntimeBridgeProvider(runtime, model, runtimeBridgeProviderOpts(opts, defaultRole));
+}
+
+function runtimeBridgeProviderOpts(
+  opts: CreateProviderOpts,
+  defaultRole: string,
+): RuntimeBridgeProviderOpts {
+  if (!opts.runtimeSession) return {};
+  return {
+    session: opts.runtimeSession,
+    role: opts.runtimeSessionRole ?? defaultRole,
+    cwd: opts.runtimeSessionCwd,
+    commands: opts.runtimeSessionCommands,
+  };
 }

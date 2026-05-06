@@ -38,6 +38,7 @@ import { buildMonitorApiRoutes } from "./monitor-api.js";
 import { MonitorEngine } from "./monitor-engine.js";
 import { buildNotebookApiRoutes } from "./notebook-api.js";
 import { buildOpenClawApiRoutes } from "./openclaw-api.js";
+import { buildRuntimeSessionApiRoutes } from "./runtime-session-api.js";
 import { buildSimulationApiRoutes } from "./simulation-api.js";
 import { renderDashboardHtml } from "./simulation-dashboard.js";
 import { buildSessionBootstrapMessages, buildStateMessage } from "./websocket-session-bootstrap.js";
@@ -47,6 +48,7 @@ import { RunManager } from "./run-manager.js";
 import type { RunManagerState } from "./run-manager.js";
 import type { EventCallback } from "../loop/events.js";
 import { loadSettings, type AppSettings } from "../config/index.js";
+import { RuntimeSessionEventStore } from "../session/runtime-events.js";
 import { SQLiteStore } from "../storage/index.js";
 import { ArtifactStore } from "../knowledge/artifact-store.js";
 import { SolveManager } from "../knowledge/solver.js";
@@ -200,10 +202,14 @@ export class InteractiveServer {
     });
     const cockpitApi = buildCockpitApiRoutes({
       openStore: () => this.#openStore(),
+      openRuntimeSessionStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
       notebookApi: cockpitNotebookApi,
       settings,
       runsRoot: this.#runManager.getRunsRoot(),
       knowledgeRoot: this.#runManager.getKnowledgeRoot(),
+    });
+    const runtimeSessionApi = buildRuntimeSessionApiRoutes({
+      openStore: () => new RuntimeSessionEventStore(this.#runManager.getDbPath()),
     });
     const hubApi = buildHubApiRoutes({
       runsRoot: this.#runManager.getRunsRoot(),
@@ -273,6 +279,13 @@ export class InteractiveServer {
           notebooks: "/api/notebooks",
           openclaw: "/api/openclaw",
           cockpit: "/api/cockpit",
+          runtime_sessions: {
+            list: "/api/cockpit/runtime-sessions",
+            show: "/api/cockpit/runtime-sessions/:session_id",
+            timeline: "/api/cockpit/runtime-sessions/:session_id/timeline",
+            run: "/api/cockpit/runs/:run_id/runtime-session",
+            run_timeline: "/api/cockpit/runs/:run_id/runtime-session/timeline",
+          },
           hub: "/api/hub",
           websocket: "/ws/interactive",
           events: "/ws/events",
@@ -525,6 +538,51 @@ export class InteractiveServer {
     // Cockpit run routes
     if (method === "GET" && (url === "/api/cockpit/runs" || url === "/api/cockpit/runs/")) {
       const response = cockpitApi.listRuns();
+      json(response.status, response.body);
+      return;
+    }
+
+    // Cockpit runtime-session routes
+    if (method === "GET" && (url === "/api/cockpit/runtime-sessions" || url === "/api/cockpit/runtime-sessions/")) {
+      const response = runtimeSessionApi.list(requestUrl.searchParams);
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitRuntimeSessionTimelineMatch = url.match(
+      /^\/api\/cockpit\/runtime-sessions\/([^/]+)\/timeline$/,
+    );
+    if (method === "GET" && cockpitRuntimeSessionTimelineMatch) {
+      const [, rawSessionId] = cockpitRuntimeSessionTimelineMatch;
+      const response = runtimeSessionApi.getTimelineBySessionId(decodeURIComponent(rawSessionId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitRuntimeSessionMatch = url.match(/^\/api\/cockpit\/runtime-sessions\/([^/]+)$/);
+    if (method === "GET" && cockpitRuntimeSessionMatch) {
+      const [, rawSessionId] = cockpitRuntimeSessionMatch;
+      const response = runtimeSessionApi.getBySessionId(decodeURIComponent(rawSessionId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitRunRuntimeSessionTimelineMatch = url.match(
+      /^\/api\/cockpit\/runs\/([^/]+)\/runtime-session\/timeline$/,
+    );
+    if (method === "GET" && cockpitRunRuntimeSessionTimelineMatch) {
+      const [, rawRunId] = cockpitRunRuntimeSessionTimelineMatch;
+      const response = runtimeSessionApi.getTimelineByRunId(decodeURIComponent(rawRunId!));
+      json(response.status, response.body);
+      return;
+    }
+
+    const cockpitRunRuntimeSessionMatch = url.match(
+      /^\/api\/cockpit\/runs\/([^/]+)\/runtime-session$/,
+    );
+    if (method === "GET" && cockpitRunRuntimeSessionMatch) {
+      const [, rawRunId] = cockpitRunRuntimeSessionMatch;
+      const response = runtimeSessionApi.getByRunId(decodeURIComponent(rawRunId!));
       json(response.status, response.body);
       return;
     }

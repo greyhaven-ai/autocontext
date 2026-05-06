@@ -41,6 +41,10 @@ describe("CLI command registry", () => {
 
   it("classifies commands by dispatch surface", () => {
     expect(resolveCliCommand("run")).toEqual({ kind: "db", command: "run" });
+    expect(resolveCliCommand("runtime-sessions")).toEqual({
+      kind: "db",
+      command: "runtime-sessions",
+    });
     expect(resolveCliCommand("mission")).toEqual({
       kind: "db",
       command: "mission",

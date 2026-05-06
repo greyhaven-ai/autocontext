@@ -4,7 +4,10 @@
  */
 
 import type { CompletionResult, LLMProvider } from "../types/index.js";
-import type { AgentRuntime } from "../runtimes/index.js";
+import type { AgentRuntime } from "../runtimes/base.js";
+import { RuntimeSessionAgentRuntime } from "../runtimes/runtime-session-agent.js";
+import type { RuntimeCommandGrant } from "../runtimes/workspace-env.js";
+import type { RuntimeSession } from "../session/runtime-session.js";
 
 // ---------------------------------------------------------------------------
 // RuntimeBridgeProvider — adapt AgentRuntime → LLMProvider
@@ -15,8 +18,16 @@ export class RuntimeBridgeProvider implements LLMProvider {
   #runtime: AgentRuntime;
   #model: string;
 
-  constructor(runtime: AgentRuntime, model: string) {
-    this.#runtime = runtime;
+  constructor(runtime: AgentRuntime, model: string, opts: RuntimeBridgeProviderOpts = {}) {
+    this.#runtime = opts.session
+      ? new RuntimeSessionAgentRuntime({
+          runtime,
+          session: opts.session,
+          role: opts.role ?? "runtime-bridge",
+          cwd: opts.cwd,
+          commands: opts.commands,
+        })
+      : runtime;
     this.#model = model;
   }
 
@@ -49,6 +60,13 @@ export class RuntimeBridgeProvider implements LLMProvider {
       usage: {},
     };
   }
+}
+
+export interface RuntimeBridgeProviderOpts {
+  session?: RuntimeSession;
+  role?: string;
+  cwd?: string;
+  commands?: RuntimeCommandGrant[];
 }
 
 // ---------------------------------------------------------------------------

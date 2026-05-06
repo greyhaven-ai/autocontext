@@ -1,4 +1,24 @@
 export type { AgentOutput, AgentRuntime } from "./base.js";
+export { RuntimeSessionAgentRuntime } from "./runtime-session-agent.js";
+export type { RuntimeSessionAgentRuntimeOpts } from "./runtime-session-agent.js";
+export {
+  createInMemoryWorkspaceEnv,
+  createLocalWorkspaceEnv,
+  defineRuntimeCommand,
+} from "./workspace-env.js";
+export type {
+  InMemoryWorkspaceEnvOptions,
+  LocalWorkspaceEnvOptions,
+  RuntimeCommandContext,
+  RuntimeCommandGrant,
+  RuntimeCommandGrantOptions,
+  RuntimeCommandHandler,
+  RuntimeExecOptions,
+  RuntimeExecResult,
+  RuntimeFileStat,
+  RuntimeScopeOptions,
+  RuntimeWorkspaceEnv,
+} from "./workspace-env.js";
 export { DirectAPIRuntime } from "./direct-api.js";
 export { ClaudeCLIRuntime, createSessionRuntime } from "./claude-cli.js";
 export type { ClaudeCLIConfig } from "./claude-cli.js";

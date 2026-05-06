@@ -21,7 +21,7 @@ export type {
 } from "./roles.js";
 
 export { RuntimeBridgeProvider, RetryProvider } from "./provider-bridge.js";
-export type { RetryOpts } from "./provider-bridge.js";
+export type { RetryOpts, RuntimeBridgeProviderOpts } from "./provider-bridge.js";
 
 export { ModelRouter, TierConfig } from "./model-router.js";
 export type { TierConfigOpts, SelectOpts } from "./model-router.js";
