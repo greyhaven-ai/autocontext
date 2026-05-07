@@ -96,7 +96,7 @@ describe("RuntimeSession", () => {
       goal: "ship auth",
       workspace,
       eventStore,
-      metadata: { project: "autocontext" },
+      metadata: { project: "autocontext", attempt: BigInt(1) },
     });
 
     const result = await session.submitPrompt({
@@ -133,6 +133,7 @@ describe("RuntimeSession", () => {
     expect(loaded!.metadata).toMatchObject({
       goal: "ship auth",
       project: "autocontext",
+      attempt: "1",
     });
     expect(loaded!.events.at(-1)?.payload).toMatchObject({
       text: "parent done in /workspace/project",
@@ -167,7 +168,7 @@ describe("RuntimeSession", () => {
       ],
       handler: async ({ workspace: childWorkspace }) => {
         const command = await childWorkspace.exec("summarize auth flow");
-        return { text: command.stdout };
+        return { text: command.stdout, metadata: { tokens: BigInt(3) } };
       },
     });
 
@@ -199,6 +200,128 @@ describe("RuntimeSession", () => {
     expect(childLogs[0].taskId).toBe("task-1");
     expect(childLogs[0].events.at(-1)?.payload).toMatchObject({
       text: "/workspace/project:auth flow",
+      metadata: { tokens: "3" },
+    });
+
+    eventStore.close();
+  });
+
+  it("keeps reused child task ids as distinct child session logs", async () => {
+    const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
+    const eventStore = createEventStore();
+    const session = RuntimeSession.create({
+      sessionId: "runtime-parent",
+      goal: "ship auth",
+      workspace,
+      eventStore,
+    });
+
+    const first = await session.runChildTask({
+      taskId: "retry",
+      prompt: "Investigate regression",
+      role: "analyst",
+      handler: () => ({ text: "first attempt" }),
+    });
+    const second = await session.runChildTask({
+      taskId: "retry",
+      prompt: "Investigate regression again",
+      role: "analyst",
+      handler: () => ({ text: "second attempt" }),
+    });
+
+    expect(first.taskId).toBe("retry");
+    expect(second.taskId).toBe("retry");
+    expect(first.childSessionId).not.toBe(second.childSessionId);
+    expect(first.childSessionId).toMatch(/^task:runtime-parent:retry:/);
+    expect(second.childSessionId).toMatch(/^task:runtime-parent:retry:/);
+
+    const children = new Map(session.listChildLogs().map((log) => [log.sessionId, log]));
+    expect([...children.keys()].sort()).toEqual(
+      [first.childSessionId, second.childSessionId].sort(),
+    );
+    expect(children.get(first.childSessionId)?.taskId).toBe("retry");
+    expect(children.get(second.childSessionId)?.taskId).toBe("retry");
+    expect(children.get(first.childSessionId)?.events.at(-1)?.payload.text).toBe("first attempt");
+    expect(children.get(second.childSessionId)?.events.at(-1)?.payload.text).toBe("second attempt");
+
+    const parent = eventStore.load("runtime-parent");
+    expect(parent).not.toBeNull();
+    expect(
+      parent!.events
+        .filter((event) => event.payload.taskId === "retry")
+        .map((event) => event.payload.childSessionId),
+    ).toEqual([
+      first.childSessionId,
+      first.childSessionId,
+      second.childSessionId,
+      second.childSessionId,
+    ]);
+
+    eventStore.close();
+  });
+
+  it("sanitizes non-json metadata before persisting prompt responses", async () => {
+    const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
+    const eventStore = createEventStore();
+    const session = RuntimeSession.create({
+      sessionId: "runtime-metadata",
+      goal: "ship auth",
+      workspace,
+      eventStore,
+    });
+
+    class Marker {
+      toString(): string {
+        return "marker-value";
+      }
+    }
+    class ThrowingToJSON {
+      toJSON(): unknown {
+        throw new Error("toJSON failed");
+      }
+
+      toString(): string {
+        return "throwing-to-json";
+      }
+    }
+    const throwingToJSONGetter = Object.defineProperty(
+      {
+        toString: () => "throwing-to-json-getter",
+      },
+      "toJSON",
+      {
+        get: () => {
+          throw new Error("toJSON getter failed");
+        },
+      },
+    );
+    const result = await session.submitPrompt({
+      prompt: "Inspect auth flow",
+      handler: () => ({
+        text: "done",
+        metadata: {
+          count: BigInt(7),
+          marker: new Marker(),
+          throwingToJSON: new ThrowingToJSON(),
+          throwingToJSONGetter,
+          nested: { count: BigInt(8) },
+        },
+      }),
+    });
+
+    expect(result.isError).toBe(false);
+    const loaded = eventStore.load("runtime-metadata");
+    expect(loaded).not.toBeNull();
+    expect(loaded!.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.PROMPT_SUBMITTED,
+      RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]);
+    expect(loaded!.events[1].payload.metadata).toEqual({
+      count: "7",
+      marker: "marker-value",
+      throwingToJSON: "throwing-to-json",
+      throwingToJSONGetter: "throwing-to-json-getter",
+      nested: { count: "8" },
     });
 
     eventStore.close();

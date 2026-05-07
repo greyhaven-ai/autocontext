@@ -11,6 +11,7 @@ import {
   RuntimeSessionEventStore,
   RuntimeSessionEventType,
 } from "./runtime-events.js";
+import { jsonSafeRecord } from "./runtime-json.js";
 import type { RuntimeSessionEventSink } from "./runtime-session-notifications.js";
 
 export interface RuntimeSessionCreateOpts {
@@ -105,7 +106,7 @@ export class RuntimeSession {
 
   static create(opts: RuntimeSessionCreateOpts): RuntimeSession {
     const sessionId = opts.sessionId ?? `runtime:${randomUUID().slice(0, 12)}`;
-    const metadata = { ...(opts.metadata ?? {}), goal: opts.goal };
+    const metadata = { ...jsonSafeRecord(opts.metadata), goal: opts.goal };
     const log = RuntimeSessionEventLog.create({ sessionId, metadata });
     return new RuntimeSession({
       goal: opts.goal,
@@ -166,7 +167,7 @@ export class RuntimeSession {
         requestId,
         promptEventId: promptEvent.eventId,
         text: output.text,
-        metadata: output.metadata ?? {},
+        metadata: jsonSafeRecord(output.metadata),
         role,
         cwd: scopedWorkspace.cwd,
       });
