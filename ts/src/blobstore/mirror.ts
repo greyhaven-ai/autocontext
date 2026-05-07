@@ -6,11 +6,15 @@ import type { BlobStore } from "./store.js";
 import type { BlobRegistry } from "./registry.js";
 
 export class BlobMirror {
-  constructor(
-    private store: BlobStore,
-    private minSizeBytes: number = 1024,
-    private registry?: BlobRegistry,
-  ) {}
+  #store: BlobStore;
+  #minSizeBytes: number;
+  #registry?: BlobRegistry;
+
+  constructor(store: BlobStore, minSizeBytes: number = 1024, registry?: BlobRegistry) {
+    this.#store = store;
+    this.#minSizeBytes = minSizeBytes;
+    this.#registry = registry;
+  }
 
   mirrorArtifact(
     key: string,
@@ -19,16 +23,16 @@ export class BlobMirror {
     runId?: string,
     artifactName?: string,
   ): BlobRef | null {
-    if (data.length < this.minSizeBytes) return null;
-    const digest = this.store.put(key, data);
+    if (data.length < this.#minSizeBytes) return null;
+    const digest = this.#store.put(key, data);
     const ref = createBlobRef({
       kind,
       digest,
       sizeBytes: data.length,
       remoteUri: key,
     });
-    if (this.registry && runId && artifactName)
-      this.registry.register(runId, artifactName, ref);
+    if (this.#registry && runId && artifactName)
+      this.#registry.register(runId, artifactName, ref);
     return ref;
   }
 
@@ -40,8 +44,8 @@ export class BlobMirror {
     runId?: string,
     artifactName?: string,
   ): BlobRef | null {
-    if (sizeBytes < this.minSizeBytes) return null;
-    const digest = this.store.putFile(key, path);
+    if (sizeBytes < this.#minSizeBytes) return null;
+    const digest = this.#store.putFile(key, path);
     const ref = createBlobRef({
       kind,
       digest,
@@ -49,8 +53,8 @@ export class BlobMirror {
       localPath: path,
       remoteUri: key,
     });
-    if (this.registry && runId && artifactName)
-      this.registry.register(runId, artifactName, ref);
+    if (this.#registry && runId && artifactName)
+      this.#registry.register(runId, artifactName, ref);
     return ref;
   }
 }

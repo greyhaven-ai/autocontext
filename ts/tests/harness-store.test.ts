@@ -65,6 +65,14 @@ describe("HarnessStore", () => {
       expect(versions.score_action).toBeDefined();
     });
 
+    it("returns empty version metadata for malformed harness_version.json", () => {
+      const dir = join(knowledgeRoot, "grid_ctf", "harness");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "harness_version.json"), JSON.stringify(["bad"]), "utf-8");
+
+      expect(store.getVersions()).toEqual({});
+    });
+
     it.each(["", "../escape", "bad/name", "contains space", "123abc"])(
       "rejects invalid harness name %s",
       (name) => {

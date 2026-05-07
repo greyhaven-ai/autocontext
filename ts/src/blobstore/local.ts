@@ -18,34 +18,54 @@ import {
   prefixMatches,
   resolveBlobPath,
 } from "./store.js";
+import { fsError, isNotFoundError } from "./fs-errors.js";
 
 export class LocalBlobStore implements BlobStore {
-  constructor(private root: string) {
-    mkdirSync(root, { recursive: true });
+  #root: string;
+
+  constructor(root: string) {
+    this.#root = root;
+    try {
+      mkdirSync(root, { recursive: true });
+    } catch (error) {
+      throw fsError("initialize blob store", root, error);
+    }
   }
 
   put(key: string, data: Buffer): string {
-    const path = resolveBlobPath(this.root, key);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, data);
-    return sha256(data);
+    const path = resolveBlobPath(this.#root, key);
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, data);
+      return sha256(data);
+    } catch (error) {
+      throw fsError("write blob", key, error);
+    }
   }
 
   get(key: string): Buffer | null {
-    const path = resolveBlobPath(this.root, key);
-    if (!existsSync(path)) return null;
-    return readFileSync(path);
+    const path = resolveBlobPath(this.#root, key);
+    try {
+      return readFileSync(path);
+    } catch (error) {
+      if (isNotFoundError(error)) return null;
+      throw fsError("read blob", key, error);
+    }
   }
 
   head(key: string): BlobStoreMeta | null {
-    const path = resolveBlobPath(this.root, key);
-    if (!existsSync(path)) return null;
-    const data = readFileSync(path);
-    return {
-      sizeBytes: data.length,
-      digest: sha256(data),
-      contentType: guessContentType(key),
-    };
+    const path = resolveBlobPath(this.#root, key);
+    try {
+      const data = readFileSync(path);
+      return {
+        sizeBytes: data.length,
+        digest: sha256(data),
+        contentType: guessContentType(key),
+      };
+    } catch (error) {
+      if (isNotFoundError(error)) return null;
+      throw fsError("read blob metadata", key, error);
+    }
   }
 
   listPrefix(prefix: string): string[] {
@@ -58,34 +78,51 @@ export class LocalBlobStore implements BlobStore {
           walk(full);
           continue;
         }
-        const rel = relative(this.root, full).replace(/\\/g, "/");
+        const rel = relative(this.#root, full).replace(/\\/g, "/");
         if (prefixMatches(rel, prefix)) results.push(rel);
       }
     };
-    walk(this.root);
+    try {
+      walk(this.#root);
+    } catch (error) {
+      if (isNotFoundError(error)) return [];
+      throw fsError("list blobs for prefix", prefix, error);
+    }
     return results.sort();
   }
 
   delete(key: string): boolean {
-    const path = resolveBlobPath(this.root, key);
-    if (!existsSync(path)) return false;
-    unlinkSync(path);
-    return true;
+    const path = resolveBlobPath(this.#root, key);
+    try {
+      unlinkSync(path);
+      return true;
+    } catch (error) {
+      if (isNotFoundError(error)) return false;
+      throw fsError("delete blob", key, error);
+    }
   }
 
   putFile(key: string, path: string): string {
-    const dest = resolveBlobPath(this.root, key);
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(path, dest);
-    return sha256(readFileSync(dest));
+    const dest = resolveBlobPath(this.#root, key);
+    try {
+      mkdirSync(dirname(dest), { recursive: true });
+      copyFileSync(path, dest);
+      return sha256(readFileSync(dest));
+    } catch (error) {
+      throw fsError("write blob from file", key, error);
+    }
   }
 
   getFile(key: string, dest: string): boolean {
-    const src = resolveBlobPath(this.root, key);
-    if (!existsSync(src)) return false;
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
-    return true;
+    const src = resolveBlobPath(this.#root, key);
+    try {
+      mkdirSync(dirname(dest), { recursive: true });
+      copyFileSync(src, dest);
+      return true;
+    } catch (error) {
+      if (isNotFoundError(error)) return false;
+      throw fsError("write blob to file", key, error);
+    }
   }
 }
 

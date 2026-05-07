@@ -13,18 +13,18 @@ export interface RuntimeSessionAgentRuntimeOpts {
 
 export class RuntimeSessionAgentRuntime implements AgentRuntime {
   readonly name: string;
-  private readonly runtime: AgentRuntime;
-  private readonly session: RuntimeSession;
-  private readonly role: string;
-  private readonly cwd?: string;
-  private readonly commands?: RuntimeCommandGrant[];
+  #runtime: AgentRuntime;
+  #session: RuntimeSession;
+  #role: string;
+  #cwd?: string;
+  #commands?: RuntimeCommandGrant[];
 
   constructor(opts: RuntimeSessionAgentRuntimeOpts) {
-    this.runtime = opts.runtime;
-    this.session = opts.session;
-    this.role = opts.role ?? "agent-runtime";
-    this.cwd = opts.cwd;
-    this.commands = opts.commands;
+    this.#runtime = opts.runtime;
+    this.#session = opts.session;
+    this.#role = opts.role ?? "agent-runtime";
+    this.#cwd = opts.cwd;
+    this.#commands = opts.commands;
     this.name = `RuntimeSession(${opts.runtime.name})`;
   }
 
@@ -33,7 +33,7 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
     system?: string;
     schema?: Record<string, unknown>;
   }): Promise<AgentOutput> {
-    return this.record("generate", opts.prompt, () => this.runtime.generate(opts));
+    return this.#record("generate", opts.prompt, () => this.#runtime.generate(opts));
   }
 
   async revise(opts: {
@@ -42,25 +42,25 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
     feedback: string;
     system?: string;
   }): Promise<AgentOutput> {
-    return this.record("revise", opts.prompt, () => this.runtime.revise(opts));
+    return this.#record("revise", opts.prompt, () => this.#runtime.revise(opts));
   }
 
   close(): void {
-    this.runtime.close?.();
+    this.#runtime.close?.();
   }
 
-  private async record(
+  async #record(
     operation: string,
     prompt: string,
     run: () => Promise<AgentOutput>,
   ): Promise<AgentOutput> {
     let output: AgentOutput | undefined;
     let failure: unknown;
-    const result = await this.session.submitPrompt({
+    const result = await this.#session.submitPrompt({
       prompt,
-      role: this.role,
-      cwd: this.cwd,
-      commands: this.commands,
+      role: this.#role,
+      cwd: this.#cwd,
+      commands: this.#commands,
       handler: async () => {
         try {
           output = await run();
@@ -70,9 +70,9 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
         }
         return {
           text: output.text,
-          metadata: agentOutputMetadata(this.runtime.name, output, {
+          metadata: agentOutputMetadata(this.#runtime.name, output, {
             operation,
-            runtimeSessionId: this.session.sessionId,
+            runtimeSessionId: this.#session.sessionId,
           }),
         };
       },
@@ -86,8 +86,8 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
       return {
         text: result.text,
         metadata: {
-          runtime: this.runtime.name,
-          runtimeSessionId: this.session.sessionId,
+          runtime: this.#runtime.name,
+          runtimeSessionId: this.#session.sessionId,
         },
       };
     }
@@ -96,7 +96,7 @@ export class RuntimeSessionAgentRuntime implements AgentRuntime {
       ...output,
       metadata: {
         ...(output.metadata ?? {}),
-        runtimeSessionId: this.session.sessionId,
+        runtimeSessionId: this.#session.sessionId,
       },
     };
   }

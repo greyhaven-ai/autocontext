@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -234,6 +234,19 @@ describe("Agent task CRUD", () => {
 
     taskStore.delete("test-task");
     expect(taskStore.list().length).toBe(0);
+  });
+
+  it("AgentTaskStore skips malformed task specs by shape", async () => {
+    const { AgentTaskStore } = await import("../src/scenarios/agent-task-store.js");
+
+    const taskDir = join(dir, "tasks");
+    mkdirSync(taskDir, { recursive: true });
+    writeFileSync(join(taskDir, "bad.json"), JSON.stringify({ name: "bad" }), "utf-8");
+
+    const taskStore = new AgentTaskStore(taskDir);
+
+    expect(taskStore.list()).toEqual([]);
+    expect(taskStore.get("bad")).toBeNull();
   });
 });
 

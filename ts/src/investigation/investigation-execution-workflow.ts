@@ -11,6 +11,10 @@ export interface InvestigationExecutionResult {
   finalState: Record<string, unknown>;
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
 export async function executeGeneratedInvestigation(opts: {
   source: string;
   maxSteps?: number;
@@ -44,15 +48,12 @@ export async function executeGeneratedInvestigation(opts: {
 
   const collectedEvidence = ((state.collectedEvidence ?? []) as Array<Record<string, unknown>>)
     .map((item, index) => ({
-      id: typeof item.id === "string" ? item.id : `collected_${index}`,
+      id: nonEmptyString(item.id) ?? `collected_${index}`,
       content:
-        typeof item.content === "string"
-          ? item.content
-          : typeof item.summary === "string"
-            ? item.summary
-            : typeof item.id === "string"
-              ? item.id
-              : "unknown",
+        nonEmptyString(item.content)
+          ?? nonEmptyString(item.summary)
+          ?? nonEmptyString(item.id)
+          ?? "unknown",
       isRedHerring: !!item.isRedHerring,
       relevance: typeof item.relevance === "number" ? item.relevance : 0,
     }));

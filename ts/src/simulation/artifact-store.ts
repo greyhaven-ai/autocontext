@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import { getScenarioTypeMarker } from "../scenarios/families.js";
 import type { ScenarioFamilyName } from "../scenarios/families.js";
 import type { SimulationResult } from "./types.js";
@@ -23,6 +24,18 @@ export interface PersistSimulationArtifactsOpts {
   spec: Record<string, unknown>;
   source: string;
   scenarioDir?: string;
+}
+
+const JsonObjectSchema = z.object({}).passthrough();
+
+function readJsonObject(path: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+    const result = JsonObjectSchema.safeParse(parsed);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export function persistSimulationArtifacts(
@@ -57,10 +70,10 @@ export function loadPersistedSimulationSpec(
     return null;
   }
 
-  const persisted = JSON.parse(readFileSync(specPath, "utf-8")) as Record<
-    string,
-    unknown
-  >;
+  const persisted = readJsonObject(specPath);
+  if (!persisted) {
+    return null;
+  }
   const { name: _name, family: _family, ...spec } = persisted;
   return spec;
 }
@@ -73,9 +86,8 @@ export function resolveSimulationArtifact(
   const baseReportPath = join(simulationsRoot, id, "report.json");
   if (existsSync(baseReportPath)) {
     try {
-      const report = JSON.parse(
-        readFileSync(baseReportPath, "utf-8"),
-      ) as SimulationResult;
+      const report = readJsonObject(baseReportPath) as SimulationResult | null;
+      if (!report) return null;
       return {
         scenarioDir: join(simulationsRoot, id),
         reportPath: baseReportPath,
@@ -103,9 +115,8 @@ export function resolveSimulationArtifact(
       continue;
     }
     try {
-      const report = JSON.parse(
-        readFileSync(replayReportPath, "utf-8"),
-      ) as SimulationResult;
+      const report = readJsonObject(replayReportPath) as SimulationResult | null;
+      if (!report) return null;
       return {
         scenarioDir: join(simulationsRoot, entry.name),
         reportPath: replayReportPath,

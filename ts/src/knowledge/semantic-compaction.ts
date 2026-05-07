@@ -68,7 +68,7 @@ const IMPORTANT_KEYWORDS = [
   "regression",
   "failure",
   "mitigation",
-];
+] as const;
 
 export function compactPromptComponents(components: Record<string, string>): Record<string, string> {
   const result: Record<string, string> = {};

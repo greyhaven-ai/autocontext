@@ -186,24 +186,21 @@ function memoryDirStat(mtime: Date): RuntimeFileStat {
 
 class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   readonly cwd: string;
+  #closed = false;
+  #commands: Map<string, RuntimeCommandGrant>;
+  #state: MemoryState;
 
-  private closed = false;
-  private readonly commands: Map<string, RuntimeCommandGrant>;
-
-  constructor(
-    private readonly state: MemoryState,
-    cwd: string,
-    commands: RuntimeCommandGrant[] = [],
-  ) {
+  constructor(state: MemoryState, cwd: string, commands: RuntimeCommandGrant[] = []) {
+    this.#state = state;
     this.cwd = normalizeVirtualPath(cwd, "/");
-    this.commands = commandMap(commands);
-    ensureMemoryParentDirs(this.state, this.cwd);
+    this.#commands = commandMap(commands);
+    ensureMemoryParentDirs(this.#state, this.cwd);
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
-    this.assertOpen();
+    this.#assertOpen();
     const granted = await maybeRunGrantedCommand(
-      this.commands,
+      this.#commands,
       command,
       options,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
@@ -217,11 +214,11 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
-    this.assertOpen();
+    this.#assertOpen();
     return new InMemoryWorkspaceEnv(
-      this.state,
+      this.#state,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
-      mergeCommandGrants([...this.commands.values()], options.commands ?? []),
+      mergeCommandGrants([...this.#commands.values()], options.commands ?? []),
     );
   }
 
@@ -230,39 +227,39 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async readFileBytes(filePath: string): Promise<Uint8Array> {
-    this.assertOpen();
+    this.#assertOpen();
     const resolved = this.resolvePath(filePath);
-    const file = this.state.files.get(resolved);
+    const file = this.#state.files.get(resolved);
     if (!file) throw new Error(`File not found: ${resolved}`);
     return copyBytes(file.content);
   }
 
   async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const resolved = this.resolvePath(filePath);
-    ensureMemoryParentDirs(this.state, path.posix.dirname(resolved));
-    this.state.files.set(resolved, {
+    ensureMemoryParentDirs(this.#state, path.posix.dirname(resolved));
+    this.#state.files.set(resolved, {
       content: toBytes(content),
       mtime: new Date(),
     });
   }
 
   async stat(filePath: string): Promise<RuntimeFileStat> {
-    this.assertOpen();
+    this.#assertOpen();
     const resolved = this.resolvePath(filePath);
-    const file = this.state.files.get(resolved);
+    const file = this.#state.files.get(resolved);
     if (file) return memoryFileStat(file);
-    const dirMtime = this.state.dirs.get(resolved);
+    const dirMtime = this.#state.dirs.get(resolved);
     if (dirMtime) return memoryDirStat(dirMtime);
     throw new Error(`Path not found: ${resolved}`);
   }
 
   async readdir(dirPath: string): Promise<string[]> {
-    this.assertOpen();
+    this.#assertOpen();
     const resolved = this.resolvePath(dirPath);
-    if (!this.state.dirs.has(resolved)) throw new Error(`Directory not found: ${resolved}`);
+    if (!this.#state.dirs.has(resolved)) throw new Error(`Directory not found: ${resolved}`);
     const entries = new Set<string>();
-    for (const candidate of [...this.state.dirs.keys(), ...this.state.files.keys()]) {
+    for (const candidate of [...this.#state.dirs.keys(), ...this.#state.files.keys()]) {
       if (candidate === resolved) continue;
       if (path.posix.dirname(candidate) === resolved) {
         entries.add(path.posix.basename(candidate));
@@ -272,41 +269,41 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async exists(filePath: string): Promise<boolean> {
-    this.assertOpen();
+    this.#assertOpen();
     const resolved = this.resolvePath(filePath);
-    return this.state.files.has(resolved) || this.state.dirs.has(resolved);
+    return this.#state.files.has(resolved) || this.#state.dirs.has(resolved);
   }
 
   async mkdir(dirPath: string, options: { recursive?: boolean } = {}): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const resolved = this.resolvePath(dirPath);
     const parent = path.posix.dirname(resolved);
-    if (!options.recursive && !this.state.dirs.has(parent)) {
+    if (!options.recursive && !this.#state.dirs.has(parent)) {
       throw new Error(`Parent directory not found: ${parent}`);
     }
-    ensureMemoryParentDirs(this.state, options.recursive ? resolved : parent);
-    this.state.dirs.set(resolved, new Date());
+    ensureMemoryParentDirs(this.#state, options.recursive ? resolved : parent);
+    this.#state.dirs.set(resolved, new Date());
   }
 
   async rm(filePath: string, options: { recursive?: boolean; force?: boolean } = {}): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const resolved = this.resolvePath(filePath);
-    if (this.state.files.delete(resolved)) return;
-    if (!this.state.dirs.has(resolved)) {
+    if (this.#state.files.delete(resolved)) return;
+    if (!this.#state.dirs.has(resolved)) {
       if (options.force) return;
       throw new Error(`Path not found: ${resolved}`);
     }
-    const children = [...this.state.files.keys(), ...this.state.dirs.keys()].filter(
+    const children = [...this.#state.files.keys(), ...this.#state.dirs.keys()].filter(
       (candidate) => candidate !== resolved && candidate.startsWith(`${resolved}/`),
     );
     if (children.length > 0 && !options.recursive) {
       throw new Error(`Directory not empty: ${resolved}`);
     }
     for (const child of children) {
-      this.state.files.delete(child);
-      this.state.dirs.delete(child);
+      this.#state.files.delete(child);
+      this.#state.dirs.delete(child);
     }
-    if (resolved !== "/") this.state.dirs.delete(resolved);
+    if (resolved !== "/") this.#state.dirs.delete(resolved);
   }
 
   resolvePath(filePath: string): string {
@@ -314,23 +311,23 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async cleanup(): Promise<void> {
-    this.closed = true;
+    this.#closed = true;
   }
 
-  private assertOpen(): void {
-    if (this.closed) throw new Error("Workspace environment has been cleaned up");
+  #assertOpen(): void {
+    if (this.#closed) throw new Error("Workspace environment has been cleaned up");
   }
 }
 
 class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   readonly cwd: string;
-  private readonly root: string;
-  private readonly commands: Map<string, RuntimeCommandGrant>;
+  #root: string;
+  #commands: Map<string, RuntimeCommandGrant>;
 
   constructor(root: string, cwd: string, commands: RuntimeCommandGrant[] = []) {
-    this.root = path.resolve(root);
+    this.#root = path.resolve(root);
     this.cwd = normalizeVirtualPath(cwd, "/");
-    this.commands = commandMap(commands);
+    this.#commands = commandMap(commands);
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
@@ -338,36 +335,36 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
       return { stdout: "", stderr: "Operation aborted", exitCode: 130 };
     }
     const virtualCwd = options.cwd ? this.resolvePath(options.cwd) : this.cwd;
-    const granted = await maybeRunGrantedCommand(this.commands, command, options, virtualCwd);
+    const granted = await maybeRunGrantedCommand(this.#commands, command, options, virtualCwd);
     if (granted) return granted;
-    return runShell(command, this.toHostPath(virtualCwd), options);
+    return runShell(command, this.#toHostPath(virtualCwd), options);
   }
 
   async scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
     return new LocalWorkspaceEnv(
-      this.root,
+      this.#root,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
-      mergeCommandGrants([...this.commands.values()], options.commands ?? []),
+      mergeCommandGrants([...this.#commands.values()], options.commands ?? []),
     );
   }
 
   async readFile(filePath: string): Promise<string> {
-    return fs.readFile(this.toHostPath(this.resolvePath(filePath)), "utf-8");
+    return fs.readFile(this.#toHostPath(this.resolvePath(filePath)), "utf-8");
   }
 
   async readFileBytes(filePath: string): Promise<Uint8Array> {
-    const content = await fs.readFile(this.toHostPath(this.resolvePath(filePath)));
+    const content = await fs.readFile(this.#toHostPath(this.resolvePath(filePath)));
     return new Uint8Array(content);
   }
 
   async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
-    const hostPath = this.toHostPath(this.resolvePath(filePath));
+    const hostPath = this.#toHostPath(this.resolvePath(filePath));
     await fs.mkdir(path.dirname(hostPath), { recursive: true });
     await fs.writeFile(hostPath, content);
   }
 
   async stat(filePath: string): Promise<RuntimeFileStat> {
-    const stat = await fs.lstat(this.toHostPath(this.resolvePath(filePath)));
+    const stat = await fs.lstat(this.#toHostPath(this.resolvePath(filePath)));
     return {
       isFile: stat.isFile(),
       isDirectory: stat.isDirectory(),
@@ -378,12 +375,12 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async readdir(dirPath: string): Promise<string[]> {
-    return (await fs.readdir(this.toHostPath(this.resolvePath(dirPath)))).sort();
+    return (await fs.readdir(this.#toHostPath(this.resolvePath(dirPath)))).sort();
   }
 
   async exists(filePath: string): Promise<boolean> {
     try {
-      await fs.access(this.toHostPath(this.resolvePath(filePath)));
+      await fs.access(this.#toHostPath(this.resolvePath(filePath)));
       return true;
     } catch {
       return false;
@@ -391,13 +388,13 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   async mkdir(dirPath: string, options: { recursive?: boolean } = {}): Promise<void> {
-    await fs.mkdir(this.toHostPath(this.resolvePath(dirPath)), {
+    await fs.mkdir(this.#toHostPath(this.resolvePath(dirPath)), {
       recursive: options.recursive ?? false,
     });
   }
 
   async rm(filePath: string, options: { recursive?: boolean; force?: boolean } = {}): Promise<void> {
-    await fs.rm(this.toHostPath(this.resolvePath(filePath)), {
+    await fs.rm(this.#toHostPath(this.resolvePath(filePath)), {
       recursive: options.recursive ?? false,
       force: options.force ?? false,
     });
@@ -411,10 +408,10 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
     // Local workspaces are caller-owned. Cleanup is intentionally a no-op.
   }
 
-  private toHostPath(virtualPath: string): string {
+  #toHostPath(virtualPath: string): string {
     const relative = virtualPath.replace(/^\/+/, "");
-    const hostPath = path.resolve(this.root, relative);
-    const outsideRoot = path.relative(this.root, hostPath).startsWith("..");
+    const hostPath = path.resolve(this.#root, relative);
+    const outsideRoot = path.relative(this.#root, hostPath).startsWith("..");
     if (outsideRoot) throw new Error(`Path escapes workspace root: ${virtualPath}`);
     return hostPath;
   }

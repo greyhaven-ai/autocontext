@@ -41,17 +41,14 @@ const DEFAULT_SANDBOX_ESCALATION_KEYWORDS = [
 ] as const;
 
 export class AgentOsPermissions {
-  readonly network: boolean;
-  readonly filesystem: AgentOsFilesystemMode;
-  readonly processes: boolean;
-  readonly maxMemoryMb: number;
+  readonly network!: boolean;
+  readonly filesystem!: AgentOsFilesystemMode;
+  readonly processes!: boolean;
+  readonly maxMemoryMb!: number;
 
   constructor(opts: AgentOsPermissionsOpts = {}) {
     const resolved = { ...AGENT_OS_PERMISSIONS_DEFAULTS, ...opts };
-    this.network = resolved.network;
-    this.filesystem = resolved.filesystem;
-    this.processes = resolved.processes;
-    this.maxMemoryMb = resolved.maxMemoryMb;
+    Object.assign(this, resolved);
   }
 }
 
@@ -67,17 +64,19 @@ export type AgentOsConfigOpts = Partial<typeof AGENT_OS_CONFIG_DEFAULTS> & {
 };
 
 export class AgentOsConfig {
-  readonly enabled: boolean;
-  readonly agentType: string;
-  readonly workspacePath: string;
+  readonly enabled!: boolean;
+  readonly agentType!: string;
+  readonly workspacePath!: string;
   readonly permissions: AgentOsPermissions;
   readonly sandboxEscalationKeywords: string[];
 
   constructor(opts: AgentOsConfigOpts = {}) {
     const resolved = { ...AGENT_OS_CONFIG_DEFAULTS, ...opts };
-    this.enabled = resolved.enabled;
-    this.agentType = resolved.agentType;
-    this.workspacePath = resolved.workspacePath;
+    Object.assign(this, {
+      enabled: resolved.enabled,
+      agentType: resolved.agentType,
+      workspacePath: resolved.workspacePath,
+    });
     this.permissions = opts.permissions ?? new AgentOsPermissions();
     this.sandboxEscalationKeywords = [
       ...(opts.sandboxEscalationKeywords ?? DEFAULT_SANDBOX_ESCALATION_KEYWORDS),

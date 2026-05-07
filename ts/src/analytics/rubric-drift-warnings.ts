@@ -26,7 +26,7 @@ export function makeWarning(
   thresholdValue: number,
 ): DriftWarning {
   const rawScenarios = Array.isArray(snapshot.metadata.scenarios) ? snapshot.metadata.scenarios : [];
-  const affectedScenarios = rawScenarios.map((scenario) => String(scenario)).filter(Boolean).sort();
+  const affectedScenarios = rawScenarios.map(String).filter(Boolean).sort();
   const affectedProviders = snapshot.agentProvider ? [snapshot.agentProvider] : [];
   const affectedReleases = snapshot.release ? [snapshot.release] : [];
 

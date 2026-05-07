@@ -31,15 +31,15 @@ export class RuntimeBridgeProvider implements LLMProvider {
     this.#model = model;
   }
 
-  get supportsConcurrentRequests(): boolean {
+  get supportsConcurrentRequests() {
     return this.#runtime.supportsConcurrentRequests !== false;
   }
 
-  defaultModel(): string {
+  defaultModel() {
     return this.#model;
   }
 
-  close(): void {
+  close() {
     this.#runtime.close?.();
   }
 
@@ -94,15 +94,15 @@ export class RetryProvider implements LLMProvider {
     this.#maxDelay = opts.maxDelay ?? 10_000;
   }
 
-  get supportsConcurrentRequests(): boolean {
+  get supportsConcurrentRequests() {
     return this.#inner.supportsConcurrentRequests !== false;
   }
 
-  defaultModel(): string {
+  defaultModel() {
     return this.#inner.defaultModel();
   }
 
-  close(): void {
+  close() {
     this.#inner.close?.();
   }
 

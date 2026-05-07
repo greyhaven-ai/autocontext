@@ -5,6 +5,7 @@
 
 import { execFileSync } from "node:child_process";
 import type { AgentOutput } from "./index.js";
+import { definedConfigOptions } from "./config-options.js";
 
 export interface CodexCLIConfigOpts {
   model?: string;
@@ -15,29 +16,37 @@ export interface CodexCLIConfigOpts {
   extraArgs?: string[];
 }
 
+const CODEX_CLI_CONFIG_DEFAULTS = {
+  model: "o4-mini",
+  approvalMode: "full-auto",
+  timeout: 120.0,
+  workspace: "",
+  quiet: false,
+  extraArgs: [] as string[],
+};
+
 export class CodexCLIConfig {
-  readonly model: string;
-  readonly approvalMode: string;
-  readonly timeout: number;
-  readonly workspace: string;
-  readonly quiet: boolean;
-  readonly extraArgs: string[];
+  readonly model!: string;
+  readonly approvalMode!: string;
+  readonly timeout!: number;
+  readonly workspace!: string;
+  readonly quiet!: boolean;
+  readonly extraArgs!: string[];
 
   constructor(opts: CodexCLIConfigOpts = {}) {
-    this.model = opts.model ?? "o4-mini";
-    this.approvalMode = opts.approvalMode ?? "full-auto";
-    this.timeout = opts.timeout ?? 120.0;
-    this.workspace = opts.workspace ?? "";
-    this.quiet = opts.quiet ?? false;
-    this.extraArgs = opts.extraArgs ?? [];
+    Object.assign(this, {
+      ...CODEX_CLI_CONFIG_DEFAULTS,
+      ...definedConfigOptions(opts),
+      extraArgs: [...(opts.extraArgs ?? CODEX_CLI_CONFIG_DEFAULTS.extraArgs)],
+    });
   }
 }
 
 export class CodexCLIRuntime {
-  private config: CodexCLIConfig;
+  #config: CodexCLIConfig;
 
   constructor(config?: CodexCLIConfig) {
-    this.config = config ?? new CodexCLIConfig();
+    this.#config = config ?? new CodexCLIConfig();
   }
 
   readonly name = "codex-cli";
@@ -48,7 +57,7 @@ export class CodexCLIRuntime {
     schema?: Record<string, unknown>;
   }): Promise<AgentOutput> {
     const args = this.buildArgs(opts.schema);
-    return this.invoke(opts.prompt, args);
+    return this.#invoke(opts.prompt, args);
   }
 
   async revise(opts: {
@@ -63,26 +72,26 @@ export class CodexCLIRuntime {
       `## Judge Feedback\n${opts.feedback}\n\n` +
       `## Original Task\n${opts.prompt}\n\n` +
       `Produce an improved version:`;
-    return this.invoke(revisionPrompt, this.buildArgs());
+    return this.#invoke(revisionPrompt, this.buildArgs());
   }
 
   buildArgs(schema?: Record<string, unknown>): string[] {
     const args = ["exec"];
-    args.push("--model", this.config.model);
+    args.push("--model", this.#config.model);
 
-    if (this.config.approvalMode === "full-auto") {
+    if (this.#config.approvalMode === "full-auto") {
       args.push("--full-auto");
     }
-    if (this.config.quiet) {
+    if (this.#config.quiet) {
       args.push("--quiet");
     }
-    if (this.config.workspace) {
-      args.push("--cd", this.config.workspace);
+    if (this.#config.workspace) {
+      args.push("--cd", this.#config.workspace);
     }
     if (schema) {
       args.push("--output-schema", JSON.stringify(schema));
     }
-    args.push(...this.config.extraArgs);
+    args.push(...this.#config.extraArgs);
     return args;
   }
 
@@ -126,10 +135,10 @@ export class CodexCLIRuntime {
     return { text: raw.trim(), metadata: {} };
   }
 
-  private async invoke(prompt: string, args: string[]): Promise<AgentOutput> {
+  async #invoke(prompt: string, args: string[]): Promise<AgentOutput> {
     try {
       const stdout = execFileSync("codex", [...args, prompt], {
-        timeout: this.config.timeout * 1000,
+        timeout: this.#config.timeout * 1000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });

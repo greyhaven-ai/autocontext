@@ -15,6 +15,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import { SQLiteStore } from "../storage/index.js";
 import { MissionManager } from "../mission/manager.js";
 import { normalizeConfidence } from "../analytics/number-utils.js";
@@ -84,6 +85,18 @@ export interface AnalysisResult {
 
 function generateId(): string {
   return `analysis_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const ArtifactRecordSchema = z.object({}).passthrough();
+
+function readJsonRecord(path: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+    const result = ArtifactRecordSchema.safeParse(parsed);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export class AnalysisEngine {
@@ -243,11 +256,7 @@ export class AnalysisEngine {
     if (!existsSync(reportPath)) {
       return null;
     }
-    try {
-      return JSON.parse(readFileSync(reportPath, "utf-8")) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
+    return readJsonRecord(reportPath);
   }
 
   private loadMissionArtifact(id: string): Record<string, unknown> | null {
@@ -362,7 +371,7 @@ export class AnalysisEngine {
       if (!latest) {
         return null;
       }
-      return JSON.parse(readFileSync(join(checkpointDir, latest), "utf-8")) as Record<string, unknown>;
+      return readJsonRecord(join(checkpointDir, latest));
     } catch {
       return null;
     }

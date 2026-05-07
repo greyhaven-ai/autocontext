@@ -14,13 +14,16 @@ export interface SyncResult {
 }
 
 export class SyncManager {
-  constructor(
-    private store: BlobStore,
-    private runsRoot: string,
-  ) {}
+  #store: BlobStore;
+  #runsRoot: string;
+
+  constructor(store: BlobStore, runsRoot: string) {
+    this.#store = store;
+    this.#runsRoot = runsRoot;
+  }
 
   syncRun(runId: string): SyncResult {
-    const runDir = join(this.runsRoot, runId);
+    const runDir = join(this.#runsRoot, runId);
     if (!existsSync(runDir))
       return {
         runId,
@@ -44,7 +47,7 @@ export class SyncManager {
         }
         const key = `runs/${runId}/${relative(runDir, full)}`;
         try {
-          const meta = this.store.head(key);
+          const meta = this.#store.head(key);
           const localSize = statSync(full).size;
           const localDigest = digestFile(full);
           if (
@@ -55,7 +58,7 @@ export class SyncManager {
             skipped++;
             continue;
           }
-          this.store.putFile(key, full);
+          this.#store.putFile(key, full);
           synced++;
           totalBytes += localSize;
         } catch (e) {
@@ -79,13 +82,13 @@ export class SyncManager {
     syncedRuns: string[];
     runCount: number;
   } {
-    const keys = this.store.listPrefix("runs/");
+    const keys = this.#store.listPrefix("runs/");
     let totalBytes = 0;
     const runs = new Set<string>();
     for (const key of keys) {
       const parts = key.split("/");
       if (parts.length >= 2) runs.add(parts[1]);
-      const meta = this.store.head(key);
+      const meta = this.#store.head(key);
       if (meta) totalBytes += meta.sizeBytes;
     }
     return {

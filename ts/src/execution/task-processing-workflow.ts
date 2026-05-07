@@ -114,14 +114,14 @@ export function buildQueuedTaskExecutionPlan(opts: {
   return {
     taskPrompt,
     rubric,
-    referenceContext: config.referenceContext ?? savedTask?.spec.referenceContext ?? undefined,
+    referenceContext: config.referenceContext ?? savedTask?.spec.referenceContext,
     browserUrl: config.browserUrl,
-    requiredConcepts: config.requiredConcepts ?? savedTask?.spec.requiredConcepts ?? undefined,
-    calibrationExamples: config.calibrationExamples ?? savedTask?.spec.calibrationExamples ?? undefined,
+    requiredConcepts: config.requiredConcepts ?? savedTask?.spec.requiredConcepts,
+    calibrationExamples: config.calibrationExamples ?? savedTask?.spec.calibrationExamples,
     maxRounds: config.maxRounds ?? savedTask?.spec.maxRounds ?? 5,
     qualityThreshold: config.qualityThreshold ?? savedTask?.spec.qualityThreshold ?? 0.9,
     minRounds: config.minRounds ?? 1,
-    revisionPrompt: config.revisionPrompt ?? savedTask?.spec.revisionPrompt ?? undefined,
+    revisionPrompt: config.revisionPrompt ?? savedTask?.spec.revisionPrompt,
     initialOutput: config.initialOutput,
     rlm: config.rlm,
     delegatedJudge: config.delegatedResults?.length
