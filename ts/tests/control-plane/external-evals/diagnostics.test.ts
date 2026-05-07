@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   buildExternalEvalDiagnosticReport,
+  buildExternalEvalImprovementSignals,
   buildOperationalMemoryPackFromDiagnostics,
 } from "../../../src/control-plane/external-evals/index.js";
 import { validateOperationalMemoryPack } from "../../../src/control-plane/memory-packs/index.js";
@@ -213,4 +214,203 @@ describe("external eval diagnostics", () => {
       countsByCategory: { "integrity-risk": 1 },
     });
   });
+
+  test("derives reusable improvement signals from agent-task verifier failures", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-heldout-1",
+      createdAt: "2026-05-07T18:50:00.000Z",
+      trials: [
+        {
+          taskId: "run-pdp11-code",
+          trialId: "run-pdp11-code.1-of-1.tb-heldout-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "sanitize-git-repo.hard",
+          trialId: "sanitize-git-repo.hard.1-of-1.tb-heldout-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "raman-fitting",
+          trialId: "raman-fitting.1-of-1.tb-heldout-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "path-tracing",
+          trialId: "path-tracing.1-of-1.tb-heldout-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "git-multibranch",
+          trialId: "git-multibranch.1-of-1.tb-heldout-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "run-pdp11-code.1-of-1.tb-heldout-1",
+          evidenceRefs: ["run-pdp11-code/results.json"],
+          verifierOutput: prettyVerifierOutput({
+            test_out_file_exists: "failed",
+            test_out_file_content: "failed",
+          }),
+        },
+        {
+          trialId: "sanitize-git-repo.hard.1-of-1.tb-heldout-1",
+          evidenceRefs: ["sanitize-git-repo.hard/results.json"],
+          verifierOutput: prettyVerifierOutput({
+            test_removal_of_secret_information: "passed",
+            test_correct_replacement_of_secret_information: "passed",
+            test_no_other_files_changed: "failed",
+          }),
+        },
+        {
+          trialId: "raman-fitting.1-of-1.tb-heldout-1",
+          evidenceRefs: ["raman-fitting/results.json"],
+          verifierOutput: prettyVerifierOutput({
+            test_result_file_exists: "passed",
+            test_G_Peak: "failed",
+            test_2D_Peak: "failed",
+          }),
+        },
+        {
+          trialId: "path-tracing.1-of-1.tb-heldout-1",
+          evidenceRefs: ["path-tracing/results.json"],
+          verifierOutput: prettyVerifierOutput({
+            test_image_c_exists: "passed",
+            test_runs_and_produces_output: "passed",
+            test_image_similarity: "passed",
+            test_image_compiles: "failed",
+          }),
+        },
+        {
+          trialId: "git-multibranch.1-of-1.tb-heldout-1",
+          evidenceRefs: ["git-multibranch/results.json"],
+          verifierOutput: prettyVerifierOutput({
+            test_multi_branch_https_deploy: "failed",
+          }),
+        },
+      ],
+    });
+
+    const signals = buildExternalEvalImprovementSignals(report);
+
+    expect(report.improvementSignals).toEqual(signals);
+    expect(signals.map((signal) => signal.kind)).toEqual([
+      "required-artifact-contract",
+      "change-surface-discipline",
+      "domain-correctness-validation",
+      "exact-verifier-command",
+      "consumer-path-parity",
+    ]);
+    expect(signals.every((signal) => signal.taskIds.length === 1)).toBe(true);
+    expect(signals.every((signal) => signal.reusableBehavior.includes("task-specific") === false)).toBe(true);
+    expect(signals.every((signal) => signal.evidenceRefs.length > 0)).toBe(true);
+
+    const pack = buildOperationalMemoryPackFromDiagnostics({
+      packId: "tb-heldout-1-operational-checklists",
+      version: "1.0.0",
+      createdAt: "2026-05-07T18:55:00.000Z",
+      report,
+    });
+
+    expect(pack.findings.map((finding) => finding.id)).toEqual([
+      "tb-heldout-1-required-artifact-contract",
+      "tb-heldout-1-change-surface-discipline",
+      "tb-heldout-1-domain-correctness-validation",
+      "tb-heldout-1-exact-verifier-command",
+      "tb-heldout-1-consumer-path-parity",
+    ]);
+    expect(pack.findings.every((finding) => finding.containsTaskAnswer === false)).toBe(true);
+    expect(validateOperationalMemoryPack(pack)).toEqual({ valid: true });
+  });
+
+  test("recomputes memory-pack improvement signals from diagnostics", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-clean-1",
+      createdAt: "2026-05-07T19:00:00.000Z",
+      trials: [],
+      evidence: [],
+    });
+    const reportWithInjectedSignal = {
+      ...report,
+      improvementSignals: [
+        {
+          id: "injected-signal",
+          runId: report.runId,
+          kind: "required-artifact-contract",
+          confidence: 1,
+          summary: "Leaked benchmark answer FLAG{secret}",
+          evidenceRefs: ["injected/results.json"],
+          taskIds: ["injected-task"],
+          trialIds: ["injected-trial"],
+          reusableBehavior: "Reuse leaked benchmark answer FLAG{secret}",
+          targetFamilies: ["terminal"],
+          risk: "low",
+        },
+      ],
+    };
+
+    const pack = buildOperationalMemoryPackFromDiagnostics({
+      packId: "tb-clean-1-operational-checklists",
+      version: "1.0.0",
+      createdAt: "2026-05-07T19:05:00.000Z",
+      report: reportWithInjectedSignal,
+    });
+
+    expect(pack.findings).toEqual([]);
+    expect(validateOperationalMemoryPack(pack)).toEqual({ valid: true });
+  });
+
+  test("bounds verifier excerpt extraction for long logs", () => {
+    const lateFailure = "late fatal failure should not be scanned";
+    const verifierOutput = [
+      "first fallback line",
+      ...Array.from({ length: 5_000 }, (_, index) => `unique noise line ${index}`),
+      lateFailure,
+    ].join("\n");
+
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-long-log-1",
+      createdAt: "2026-05-07T19:10:00.000Z",
+      trials: [
+        {
+          taskId: "long-log-task",
+          trialId: "long-log-task.1-of-1.tb-long-log-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "long-log-task.1-of-1.tb-long-log-1",
+          evidenceRefs: ["long-log-task/results.json"],
+          verifierOutput,
+        },
+      ],
+    });
+
+    expect(report.diagnostics[0]?.failureExcerpts).toEqual([
+      "first fallback line",
+      "unique noise line 0",
+      "unique noise line 1",
+      "unique noise line 2",
+    ]);
+    expect(report.diagnostics[0]?.failureExcerpts).not.toContain(lateFailure);
+  });
 });
+
+function prettyVerifierOutput(parserResults: Record<string, string>): string {
+  return JSON.stringify(parserResults, null, 2);
+}

@@ -25,6 +25,13 @@ export type ExternalEvalDiagnosticCategory =
   | "integrity-risk"
   | "unknown";
 
+export type ExternalEvalImprovementSignalKind =
+  | "required-artifact-contract"
+  | "change-surface-discipline"
+  | "domain-correctness-validation"
+  | "exact-verifier-command"
+  | "consumer-path-parity";
+
 export interface ExternalEvalTokenUsage {
   readonly input: number;
   readonly output: number;
@@ -92,11 +99,26 @@ export interface ExternalEvalTrialDiagnostic {
   readonly recommendations: readonly string[];
 }
 
+export interface ExternalEvalImprovementSignal {
+  readonly id: string;
+  readonly runId: string;
+  readonly kind: ExternalEvalImprovementSignalKind;
+  readonly confidence: number;
+  readonly summary: string;
+  readonly evidenceRefs: readonly string[];
+  readonly taskIds: readonly string[];
+  readonly trialIds: readonly string[];
+  readonly reusableBehavior: string;
+  readonly targetFamilies: readonly string[];
+  readonly risk: OperationalMemoryFinding["risk"];
+}
+
 export interface ExternalEvalDiagnosticReport {
   readonly schemaVersion: "external-eval-diagnostics/v1";
   readonly runId: string;
   readonly createdAt: string;
   readonly diagnostics: readonly ExternalEvalTrialDiagnostic[];
+  readonly improvementSignals?: readonly ExternalEvalImprovementSignal[];
   readonly summary: {
     readonly totalTrials: number;
     readonly unresolvedTrials: number;
@@ -182,18 +204,26 @@ export function buildExternalEvalDiagnosticReport(
   const diagnostics = inputs.trials
     .filter((trial) => trial.status !== "passed")
     .map((trial) => buildTrialDiagnostic(inputs.runId, trial, evidenceByTrialId.get(trial.trialId)));
+  const improvementSignals = buildImprovementSignals(inputs.runId, diagnostics);
 
   return {
     schemaVersion: "external-eval-diagnostics/v1",
     runId: inputs.runId,
     createdAt: inputs.createdAt,
     diagnostics,
+    improvementSignals,
     summary: {
       totalTrials: inputs.trials.length,
       unresolvedTrials: diagnostics.length,
       countsByCategory: countDiagnosticsByCategory(diagnostics),
     },
   };
+}
+
+export function buildExternalEvalImprovementSignals(
+  report: Pick<ExternalEvalDiagnosticReport, "runId" | "diagnostics">,
+): readonly ExternalEvalImprovementSignal[] {
+  return buildImprovementSignals(report.runId, report.diagnostics);
 }
 
 export function buildOperationalMemoryPackFromDiagnostics(
@@ -450,18 +480,53 @@ function isInfrastructureFailureMode(errorKind: string | undefined): boolean {
 }
 
 function sanitizeVerifierOutput(output: string): readonly string[] {
-  const excerpts: string[] = [];
-  for (const rawLine of stripAnsi(output).split(/\r?\n/)) {
-    const line = sanitizeVerifierLine(rawLine);
-    if (line.length === 0 || excerpts.includes(line)) continue;
-    excerpts.push(line);
-    if (excerpts.length >= 4) break;
+  const failureExcerpts: string[] = [];
+  const fallbackExcerpts: string[] = [];
+  const seen = new Set<string>();
+  const scanLimit = Math.min(output.length, maxVerifierScanChars);
+  let lineStart = 0;
+  let scannedLines = 0;
+
+  while (lineStart <= scanLimit && scannedLines < maxVerifierScanLines) {
+    const newlineIndex = output.indexOf("\n", lineStart);
+    const lineEnd = newlineIndex === -1 ? scanLimit : Math.min(newlineIndex, scanLimit);
+    addVerifierExcerpt(output.slice(lineStart, lineEnd), seen, failureExcerpts, fallbackExcerpts);
+    scannedLines += 1;
+
+    if (failureExcerpts.length >= maxVerifierExcerpts) break;
+    if (newlineIndex === -1 || newlineIndex >= scanLimit) break;
+    lineStart = newlineIndex + 1;
   }
-  return excerpts;
+
+  return [...failureExcerpts, ...fallbackExcerpts].slice(0, maxVerifierExcerpts);
+}
+
+const maxVerifierExcerpts = 4;
+const maxVerifierScanLines = 512;
+const maxVerifierScanChars = 256 * 1024;
+
+function addVerifierExcerpt(
+  rawLine: string,
+  seen: Set<string>,
+  failureExcerpts: string[],
+  fallbackExcerpts: string[],
+): void {
+  const line = sanitizeVerifierLine(rawLine);
+  if (line.length === 0 || seen.has(line)) return;
+
+  const target = isVerifierFailureLine(line) ? failureExcerpts : fallbackExcerpts;
+  if (target.length >= maxVerifierExcerpts) return;
+
+  target.push(line);
+  seen.add(line);
+}
+
+function isVerifierFailureLine(line: string): boolean {
+  return /\b(?:failed|failure|error|fatal|missing|required|assertionerror)\b/i.test(line);
 }
 
 function sanitizeVerifierLine(rawLine: string): string {
-  const line = rawLine.trim();
+  const line = stripAnsi(rawLine).replace(/\r$/, "").trim();
   if (line.length === 0) return "";
   if (/expected\b.*\bgot\b/i.test(line)) {
     return "Verifier expected output differed from actual output [values redacted].";
@@ -523,8 +588,179 @@ function buildOperationalFindings(
       containsSecret: false,
     });
   }
+  for (const signal of buildExternalEvalImprovementSignals(report)) {
+    findings.push({
+      id: signal.id,
+      summary: signal.summary,
+      evidenceRefs: signal.evidenceRefs,
+      reusableBehavior: signal.reusableBehavior,
+      targetFamilies: signal.targetFamilies,
+      risk: signal.risk,
+      containsTaskAnswer: false,
+      containsSecret: false,
+    });
+  }
 
   return findings;
+}
+
+const improvementSignalKindOrder: readonly ExternalEvalImprovementSignalKind[] = [
+  "required-artifact-contract",
+  "change-surface-discipline",
+  "domain-correctness-validation",
+  "exact-verifier-command",
+  "consumer-path-parity",
+];
+
+function buildImprovementSignals(
+  runId: string,
+  diagnostics: readonly ExternalEvalTrialDiagnostic[],
+): readonly ExternalEvalImprovementSignal[] {
+  const diagnosticsByKind = new Map<ExternalEvalImprovementSignalKind, ExternalEvalTrialDiagnostic[]>();
+
+  for (const diagnostic of diagnostics) {
+    for (const kind of detectImprovementSignalKinds(diagnostic)) {
+      const existing = diagnosticsByKind.get(kind) ?? [];
+      diagnosticsByKind.set(kind, [...existing, diagnostic]);
+    }
+  }
+
+  return improvementSignalKindOrder.flatMap((kind) => {
+    const matchingDiagnostics = diagnosticsByKind.get(kind) ?? [];
+    if (matchingDiagnostics.length === 0) return [];
+    const metadata = improvementSignalMetadata(kind);
+    return [
+      {
+        id: `${runId}-${kind}`,
+        runId,
+        kind,
+        confidence: roundConfidence(
+          Math.max(...matchingDiagnostics.map((diagnostic) => diagnostic.confidence), metadata.confidence),
+        ),
+        summary: metadata.summary,
+        evidenceRefs: collectEvidenceRefs(matchingDiagnostics),
+        taskIds: [...new Set(matchingDiagnostics.map((diagnostic) => diagnostic.taskId))],
+        trialIds: [...new Set(matchingDiagnostics.map((diagnostic) => diagnostic.trialId))],
+        reusableBehavior: metadata.reusableBehavior,
+        targetFamilies: metadata.targetFamilies,
+        risk: metadata.risk,
+      },
+    ];
+  });
+}
+
+function detectImprovementSignalKinds(
+  diagnostic: ExternalEvalTrialDiagnostic,
+): readonly ExternalEvalImprovementSignalKind[] {
+  if (
+    diagnostic.category === "adapter-runtime-failure" ||
+    diagnostic.category === "integrity-risk" ||
+    diagnostic.category === "setup-environment-failure" ||
+    diagnostic.category === "unknown"
+  ) {
+    return [];
+  }
+
+  const text = normalizeSignalText([
+    diagnostic.taskId,
+    diagnostic.summary,
+    ...diagnostic.failureExcerpts,
+  ].join("\n"));
+  const kinds = new Set<ExternalEvalImprovementSignalKind>();
+
+  if (
+    /(?:test_[a-z0-9_]*(?:file|artifact|output)(?:_[a-z0-9]+)*|(?:file|artifact|output)_exists)["']?\s*[:=]\s*["']?failed/.test(
+      text,
+    ) ||
+    /missing.{0,60}(?:file|artifact|output)/.test(text)
+  ) {
+    kinds.add("required-artifact-contract");
+  }
+  if (
+    /no_other_files_changed|other files changed|unrelated files|unexpected (?:file|change)|change surface/.test(
+      text,
+    )
+  ) {
+    kinds.add("change-surface-discipline");
+  }
+  if (
+    /(?:peak|numeric|tolerance|score|accuracy|prediction)[^,\n}]{0,120}failed/.test(text) ||
+    /failed[^,\n}]{0,120}(?:peak|numeric|tolerance|score|accuracy|prediction)/.test(text)
+  ) {
+    kinds.add("domain-correctness-validation");
+  }
+  if (
+    /(?:compile|compiles|compilation|build|linker|gcc|rustc)[^,\n}]{0,120}failed/.test(text) ||
+    /failed[^,\n}]{0,120}(?:compile|compiles|compilation|build|linker|gcc|rustc)/.test(text)
+  ) {
+    kinds.add("exact-verifier-command");
+  }
+  if (/(?:branch|deploy|push|clone|https|ssh|consumer path|downstream path)[^,\n}]{0,120}failed/.test(text)) {
+    kinds.add("consumer-path-parity");
+  }
+
+  return improvementSignalKindOrder.filter((kind) => kinds.has(kind));
+}
+
+function improvementSignalMetadata(kind: ExternalEvalImprovementSignalKind): Omit<
+  ExternalEvalImprovementSignal,
+  "id" | "runId" | "kind" | "confidence" | "evidenceRefs" | "taskIds" | "trialIds"
+> & { readonly confidence: number } {
+  switch (kind) {
+    case "required-artifact-contract":
+      return {
+        confidence: 0.8,
+        summary: "Verify required output artifacts at their checked paths before completion.",
+        reusableBehavior:
+          "Before finishing, independently confirm every required file or output artifact exists at the exact checked path and that its contents can be read back from that path.",
+        targetFamilies: ["terminal", "artifact-contract", "file-output"],
+        risk: "low",
+      };
+    case "change-surface-discipline":
+      return {
+        confidence: 0.8,
+        summary: "Preserve the intended change surface while satisfying the task.",
+        reusableBehavior:
+          "Snapshot the files that are allowed to change, perform the edit, then compare the final tree against that allowed set before declaring completion.",
+        targetFamilies: ["terminal", "repository-maintenance", "safety-cleanup"],
+        risk: "medium",
+      };
+    case "domain-correctness-validation":
+      return {
+        confidence: 0.75,
+        summary: "Validate domain-level correctness, not just output shape.",
+        reusableBehavior:
+          "When the checker evaluates numeric, scientific, prediction, or scoring quality, add an independent reasonableness check for the measured value instead of stopping at schema or file validation.",
+        targetFamilies: ["terminal", "numeric-analysis", "model-evaluation"],
+        risk: "medium",
+      };
+    case "exact-verifier-command":
+      return {
+        confidence: 0.8,
+        summary: "Run the exact compiler, build, or verifier command expected downstream.",
+        reusableBehavior:
+          "When a task names or implies a build command, validate with that exact command and clean build inputs, not only with a nearby smoke test or already-built artifact.",
+        targetFamilies: ["terminal", "build-validation", "artifact-contract"],
+        risk: "low",
+      };
+    case "consumer-path-parity":
+      return {
+        confidence: 0.75,
+        summary: "Validate through the same downstream consumer path that will be checked.",
+        reusableBehavior:
+          "For branch, deploy, push, clone, service, or protocol work, exercise the same downstream path and transport that the checker or consumer will use before marking the work done.",
+        targetFamilies: ["terminal", "service-setup", "stateful-workflow"],
+        risk: "medium",
+      };
+  }
+}
+
+function normalizeSignalText(input: string): string {
+  return stripAnsi(input).toLowerCase().replace(/\s+/g, " ");
+}
+
+function roundConfidence(confidence: number): number {
+  return Math.round(confidence * 100) / 100;
 }
 
 function collectEvidenceRefs(diagnostics: readonly ExternalEvalTrialDiagnostic[]): readonly string[] {

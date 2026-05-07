@@ -694,6 +694,7 @@ export type {
 } from "./control-plane/memory-packs/index.js";
 export {
   buildExternalEvalDiagnosticReport,
+  buildExternalEvalImprovementSignals,
   buildOperationalMemoryPackFromDiagnostics,
   classifyExternalEvalTrial,
   validateExternalEvalAdapterLifecycle,
@@ -708,6 +709,8 @@ export type {
   ExternalEvalAdapterLifecycleStatus,
   ExternalEvalDiagnosticCategory,
   ExternalEvalDiagnosticReport,
+  ExternalEvalImprovementSignal,
+  ExternalEvalImprovementSignalKind,
   ExternalEvalTokenUsage,
   ExternalEvalTrialDiagnostic,
   ExternalEvalTrialEvidence,
