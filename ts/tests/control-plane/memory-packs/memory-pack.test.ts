@@ -49,4 +49,31 @@ describe("validateOperationalMemoryPack", () => {
       expect(result.errors).toContain("finding leaky contains secret material");
     }
   });
+
+  test("rejects malformed leakage flags instead of treating them as absent", () => {
+    const result = validateOperationalMemoryPack({
+      packId: "bad-pack",
+      version: "1.0.0",
+      createdAt: "2026-05-06T19:00:00.000Z",
+      status: "sanitized",
+      findings: [
+        {
+          id: "leaky",
+          summary: "Contains malformed leakage flags.",
+          evidenceRefs: ["trace"],
+          reusableBehavior: "Use only sanitized behavior.",
+          targetFamilies: ["terminal"],
+          risk: "high",
+          containsTaskAnswer: "true",
+          containsSecret: "true",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({ valid: false });
+    if (!result.valid) {
+      expect(result.errors).toContain("finding leaky containsTaskAnswer must be a boolean when present");
+      expect(result.errors).toContain("finding leaky containsSecret must be a boolean when present");
+    }
+  });
 });

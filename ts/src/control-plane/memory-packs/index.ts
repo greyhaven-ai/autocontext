@@ -58,12 +58,25 @@ function validateFinding(input: unknown, errors: string[]): void {
   requireStringArray(input, "evidenceRefs", errors);
   requireStringArray(input, "targetFamilies", errors);
   requireEnum(input, "risk", ["low", "medium", "high"], errors);
+  requireOptionalBoolean(input, "containsTaskAnswer", id, errors);
+  requireOptionalBoolean(input, "containsSecret", id, errors);
 
   if (input.containsTaskAnswer === true) {
     errors.push(`finding ${id} contains task-specific answer material`);
   }
   if (input.containsSecret === true) {
     errors.push(`finding ${id} contains secret material`);
+  }
+}
+
+function requireOptionalBoolean(
+  input: Readonly<Record<string, unknown>>,
+  field: "containsTaskAnswer" | "containsSecret",
+  findingId: string,
+  errors: string[],
+): void {
+  if (Object.prototype.hasOwnProperty.call(input, field) && typeof input[field] !== "boolean") {
+    errors.push(`finding ${findingId} ${field} must be a boolean when present`);
   }
 }
 

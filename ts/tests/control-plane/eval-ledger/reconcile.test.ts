@@ -89,4 +89,51 @@ describe("reconcileEvalTrials", () => {
     expect(reconciliation.counts.failed).toBe(1);
     expect(reconciliation.score).toBeCloseTo(2 / 3);
   });
+
+  test("first-completed-per-task prefers the earliest completedAt when attempts overlap", () => {
+    const reconciliation = reconcileEvalTrials(
+      [
+        {
+          taskId: "task-e",
+          trialId: "task-e-slow-fail",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+          completedAt: "2026-05-06T19:10:00.000Z",
+        },
+        {
+          taskId: "task-e",
+          trialId: "task-e-fast-pass",
+          attempt: 2,
+          status: "passed",
+          reward: 1,
+          completedAt: "2026-05-06T19:05:00.000Z",
+        },
+      ],
+      { view: "first-completed-per-task" },
+    );
+
+    expect(reconciliation.selectedTrialIdsByTask).toEqual({
+      "task-e": "task-e-fast-pass",
+    });
+    expect(reconciliation.score).toBe(1);
+  });
+
+  test("preserves external task ids that collide with object prototype keys", () => {
+    const reconciliation = reconcileEvalTrials(
+      [
+        {
+          taskId: "__proto__",
+          trialId: "proto-task-1",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+        },
+      ],
+      { view: "first-completed-per-task" },
+    );
+
+    expect(Object.prototype.hasOwnProperty.call(reconciliation.selectedTrialIdsByTask, "__proto__")).toBe(true);
+    expect(JSON.stringify(reconciliation.selectedTrialIdsByTask)).toBe("{\"__proto__\":\"proto-task-1\"}");
+  });
 });

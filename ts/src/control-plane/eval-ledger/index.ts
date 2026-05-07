@@ -41,10 +41,33 @@ export function reconcileEvalTrials(
 function orderTrials(trials: readonly EvalTrial[]): readonly OrderedTrial[] {
   return trials
     .map((trial, index) => ({ trial, index }))
-    .sort((left, right) => {
-      const byAttempt = left.trial.attempt - right.trial.attempt;
-      return byAttempt === 0 ? left.index - right.index : byAttempt;
-    });
+    .sort(compareOrderedTrials);
+}
+
+function compareOrderedTrials(left: OrderedTrial, right: OrderedTrial): number {
+  const byCompletion = compareCompletedAt(left.trial, right.trial);
+  if (byCompletion !== 0) return byCompletion;
+
+  const byAttempt = left.trial.attempt - right.trial.attempt;
+  return byAttempt === 0 ? left.index - right.index : byAttempt;
+}
+
+function compareCompletedAt(left: EvalTrial, right: EvalTrial): number {
+  const leftTime = completedAtMs(left);
+  const rightTime = completedAtMs(right);
+
+  if (leftTime !== null && rightTime !== null) {
+    return leftTime === rightTime ? 0 : leftTime - rightTime;
+  }
+  if (leftTime !== null) return -1;
+  if (rightTime !== null) return 1;
+  return 0;
+}
+
+function completedAtMs(trial: EvalTrial): number | null {
+  if (trial.completedAt === undefined) return null;
+  const time = Date.parse(trial.completedAt);
+  return Number.isNaN(time) ? null : time;
 }
 
 function collectTaskIds(trials: readonly OrderedTrial[]): readonly string[] {
@@ -121,14 +144,14 @@ function selectedTrialRecord(
   selected: ReadonlyMap<string, EvalTrial>,
   taskIds: readonly string[],
 ): Readonly<Record<string, string>> {
-  const record: Record<string, string> = {};
+  const entries: Array<[string, string]> = [];
   for (const taskId of taskIds) {
     const trial = selected.get(taskId);
     if (trial !== undefined) {
-      record[taskId] = trial.trialId;
+      entries.push([taskId, trial.trialId]);
     }
   }
-  return record;
+  return Object.fromEntries(entries) as Readonly<Record<string, string>>;
 }
 
 function isScored(trial: EvalTrial): boolean {

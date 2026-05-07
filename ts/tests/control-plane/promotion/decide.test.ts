@@ -96,6 +96,48 @@ describe("decidePromotion — example cases", () => {
     expect(d.deltas.safety.regressions).toHaveLength(1);
   });
 
+  test("candidate with non-clean EvalRun integrity cannot drive promotion", () => {
+    const baseline = mkArtifact();
+    const candidate = mkArtifact();
+    const d = decidePromotion({
+      candidate: {
+        artifact: candidate,
+        evalRun: {
+          ...mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+          integrity: { status: "contaminated" },
+        },
+      },
+      baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) },
+      thresholds: defaultThresholds(),
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    });
+
+    expect(d.pass).toBe(false);
+    expect(d.recommendedTargetState).toBe("disabled");
+    expect(d.reasoning).toContain("candidate EvalRun integrity status is contaminated");
+  });
+
+  test("baseline with non-clean EvalRun integrity blocks comparison evidence", () => {
+    const baseline = mkArtifact();
+    const candidate = mkArtifact();
+    const d = decidePromotion({
+      candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })) },
+      baseline: {
+        artifact: baseline,
+        evalRun: {
+          ...mkEvalRun(baseline, mkMetrics()),
+          integrity: { status: "discarded", discardedReason: "infra retry superseded it" },
+        },
+      },
+      thresholds: defaultThresholds(),
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    });
+
+    expect(d.pass).toBe(false);
+    expect(d.recommendedTargetState).toBe("disabled");
+    expect(d.reasoning).toContain("baseline EvalRun integrity status is discarded");
+  });
+
   test("no baseline (first candidate) → recommendedTargetState=shadow regardless of absolute metrics", () => {
     const candidate = mkArtifact();
     const d = decidePromotion({

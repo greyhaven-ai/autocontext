@@ -1,4 +1,5 @@
 import { CURRENT_SCHEMA_VERSION } from "../contract/schema-version.js";
+import { describeNonCleanEvalRunIntegrity } from "../contract/eval-run-integrity.js";
 import type {
   Artifact,
   CostMetric,
@@ -29,6 +30,9 @@ export function decidePromotion(inputs: DecidePromotionInputs): PromotionDecisio
   const { candidate, baseline, thresholds, evaluatedAt } = inputs;
   const cm = candidate.evalRun.metrics;
   const bm = baseline?.evalRun.metrics;
+  const integrityIssue =
+    describeNonCleanEvalRunIntegrity(candidate.evalRun, "candidate") ??
+    (baseline === null ? null : describeNonCleanEvalRunIntegrity(baseline.evalRun, "baseline"));
 
   // --- Quality delta ---
   const qualityBaseline = bm?.quality.score ?? 0;
@@ -67,7 +71,7 @@ export function decidePromotion(inputs: DecidePromotionInputs): PromotionDecisio
 
   // --- Aggregate pass ---
   const hfOk = humanFeedback?.passed ?? true;
-  const pass = safetyPassed && qualityPassed && costPassed && latencyPassed && hfOk;
+  const pass = integrityIssue === null && safetyPassed && qualityPassed && costPassed && latencyPassed && hfOk;
 
   // --- Confidence ---
   const minSamples = Math.min(
@@ -89,7 +93,17 @@ export function decidePromotion(inputs: DecidePromotionInputs): PromotionDecisio
   });
 
   // --- Reasoning ---
-  const reasoning = buildReasoning({ pass, safetyPassed, qualityPassed, costPassed, latencyPassed, confidence, qualityDelta, hasBaseline: baseline !== null });
+  const reasoning = buildReasoning({
+    pass,
+    integrityIssue,
+    safetyPassed,
+    qualityPassed,
+    costPassed,
+    latencyPassed,
+    confidence,
+    qualityDelta,
+    hasBaseline: baseline !== null,
+  });
 
   const decision: PromotionDecision = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -169,6 +183,7 @@ function recommendState(i: RecommendInputs): "shadow" | "canary" | "active" | "d
 
 function buildReasoning(i: {
   pass: boolean;
+  integrityIssue: string | null;
   safetyPassed: boolean;
   qualityPassed: boolean;
   costPassed: boolean;
@@ -177,6 +192,7 @@ function buildReasoning(i: {
   qualityDelta: number;
   hasBaseline: boolean;
 }): string {
+  if (i.integrityIssue !== null) return `${i.integrityIssue}; rejected as promotion evidence.`;
   if (!i.safetyPassed) return "Safety regressions present — rejected regardless of other dimensions.";
   if (!i.hasBaseline) return `No incumbent baseline; candidate gets shadow to enable future comparison.`;
   const parts: string[] = [];
