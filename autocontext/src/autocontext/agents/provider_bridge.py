@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+from autocontext.extensions.llm import HookedLanguageModelClient
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
 from autocontext.runtimes.errors import format_runtime_failure
@@ -212,6 +213,11 @@ def wrap_runtime_session_client(
     """Attach recording to runtime-backed clients, leaving plain LLM clients alone."""
     if isinstance(client, RuntimeSessionRecordingClient):
         return client
+    if isinstance(client, HookedLanguageModelClient):
+        inner = wrap_runtime_session_client(client.inner, session=session, role=role, cwd=cwd)
+        if inner is client.inner:
+            return client
+        return HookedLanguageModelClient(inner, client.hook_bus, provider_name=client.provider_name)
     if _find_runtime_bridge_client(client) is None:
         return client
     return RuntimeSessionRecordingClient(client, session=session, role=role, cwd=cwd)

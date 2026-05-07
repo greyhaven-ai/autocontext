@@ -46,6 +46,26 @@ class _FailingAgentRuntime:
         raise RuntimeError("runtime down")
 
 
+class _ClosableAgentRuntime(_DeterministicAgentRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _PromptCapturingAgentRuntime:
+    name = "PromptCapturingAgentRuntime"
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def generate(self, prompt: str) -> AgentOutput:
+        self.prompts.append(prompt)
+        return AgentOutput(text="captured", model="runtime-model", metadata={})
+
+
 def _prompts():
     return build_prompt_bundle(
         scenario_rules="Capture the flag while preserving defense.",
@@ -193,3 +213,97 @@ def test_runtime_session_recording_preserves_runtime_failure_semantics(tmp_path:
     ]
     assert log.events[1].payload["isError"] is True
     assert log.events[1].payload["error"] == "runtime down"
+
+
+def test_runtime_session_recording_closes_budgeted_runtime_client(tmp_path: Path, monkeypatch) -> None:
+    from autocontext.session import RuntimeSession
+
+    runtime = _ClosableAgentRuntime()
+    role_client = RuntimeBridgeClient(runtime)
+    monkeypatch.setattr("autocontext.agents.provider_bridge.create_role_client", lambda *args, **kwargs: role_client)
+    monkeypatch.setattr("autocontext.agents.role_runtime_overrides.time.monotonic", lambda: 100.0)
+
+    settings = AppSettings(
+        agent_provider="pi-rpc",
+        db_path=tmp_path / "events.db",
+        pi_timeout=900.0,
+        pi_rpc_persistent=True,
+    )
+    orchestrator = AgentOrchestrator(client=DeterministicDevClient(), settings=settings)
+    store = RuntimeSessionEventStore(settings.db_path)
+    try:
+        orchestrator._active_runtime_session = RuntimeSession.create(
+            session_id=runtime_session_id_for_run("run-budgeted"),
+            goal="autoctx budgeted runtime",
+            event_store=store,
+        )
+
+        with orchestrator._use_role_runtime(
+            "analyst",
+            orchestrator.analyst,
+            generation=1,
+            scenario_name="grid_ctf",
+            generation_deadline=520.0,
+        ):
+            assert orchestrator.analyst.runtime.client is not role_client
+            orchestrator.analyst.runtime.client.generate(
+                model="runtime-model",
+                prompt="describe the strategy",
+                max_tokens=4096,
+                temperature=0.0,
+                role="analyst",
+            )
+            assert runtime.closed is False
+    finally:
+        store.close()
+
+    assert runtime.closed is True
+    assert id(role_client) not in orchestrator._disposable_client_ids
+
+
+def test_runtime_session_recording_logs_hook_mutated_provider_prompt(tmp_path: Path) -> None:
+    from autocontext.extensions import HookBus, HookedLanguageModelClient, HookEvents, HookResult
+    from autocontext.session import RuntimeSession
+
+    runtime = _PromptCapturingAgentRuntime()
+    hook_bus = HookBus()
+
+    def mutate_prompt(event):
+        return HookResult(payload={"prompt": f"{event.payload['prompt']} plus hook"})
+
+    hook_bus.on(HookEvents.BEFORE_PROVIDER_REQUEST, mutate_prompt)
+    store = RuntimeSessionEventStore(tmp_path / "events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id=runtime_session_id_for_run("run-hooked"),
+            goal="autoctx hooked runtime",
+            event_store=store,
+        )
+        client = HookedLanguageModelClient(
+            RuntimeBridgeClient(runtime),
+            hook_bus,
+            provider_name="runtime:analyst",
+        )
+        recorded_client = wrap_runtime_session_client(
+            client,
+            session=session,
+            role="analyst",
+            cwd="/workspace",
+        )
+
+        response = recorded_client.generate(
+            model="runtime-model",
+            prompt="original prompt",
+            max_tokens=4096,
+            temperature=0.0,
+            role="analyst",
+        )
+        log = store.load(session.session_id)
+    finally:
+        store.close()
+
+    assert response.text == "captured"
+    assert runtime.prompts == ["original prompt plus hook"]
+    assert log is not None
+    prompt_events = [event for event in log.events if event.event_type == RuntimeSessionEventType.PROMPT_SUBMITTED]
+    assert prompt_events[0].payload["prompt"] == "original prompt plus hook"
