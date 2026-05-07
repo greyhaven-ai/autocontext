@@ -328,6 +328,45 @@ def test_runtime_session_event_sink_failures_do_not_interrupt_recording(tmp_path
         store.close()
 
 
+def test_runtime_session_sanitizes_non_json_metadata_before_recording(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeSession, RuntimeSessionPromptHandlerOutput
+    from autocontext.session.runtime_events import RuntimeSessionEventStore, RuntimeSessionEventType
+
+    class Marker:
+        def __str__(self) -> str:
+            return "marker-value"
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+        )
+
+        result = session.submit_prompt(
+            prompt="Analyze",
+            handler=lambda input: RuntimeSessionPromptHandlerOutput(
+                text="Recorded",
+                metadata={"path": tmp_path, "marker": Marker()},
+            ),
+        )
+
+        assert result.is_error is False
+        loaded = store.load("run:abc:runtime")
+        assert loaded is not None
+        assert [event.event_type for event in loaded.events] == [
+            RuntimeSessionEventType.PROMPT_SUBMITTED,
+            RuntimeSessionEventType.ASSISTANT_MESSAGE,
+        ]
+        assert loaded.events[1].payload["metadata"] == {
+            "path": str(tmp_path),
+            "marker": "marker-value",
+        }
+    finally:
+        store.close()
+
+
 def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
     from autocontext.session import RuntimeChildTaskHandlerOutput, RuntimeSession
     from autocontext.session.runtime_events import RuntimeSessionEventStore, RuntimeSessionEventType
@@ -342,13 +381,13 @@ def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
 
         def handler(input):
             assert input.task_id == "retry"
-            assert input.child_session_id == "task:run:abc:runtime:retry"
+            assert input.child_session_id == f"task:run:abc:runtime:retry:{input.worker_id}"
             assert input.parent_session_id == "run:abc:runtime"
             assert input.role == "analyst"
             assert input.cwd == "/workspace"
             assert input.depth == 1
             assert input.max_depth == 4
-            return RuntimeChildTaskHandlerOutput(text="Child complete", metadata={"role": "analyst"})
+            return RuntimeChildTaskHandlerOutput(text="Child complete", metadata={"role": "analyst", "artifact": tmp_path})
 
         result = session.run_child_task(
             prompt="Investigate regression",
@@ -359,7 +398,7 @@ def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
         )
 
         assert result.task_id == "retry"
-        assert result.child_session_id == "task:run:abc:runtime:retry"
+        assert result.child_session_id == f"task:run:abc:runtime:retry:{result.worker_id}"
         assert result.parent_session_id == "run:abc:runtime"
         assert result.role == "analyst"
         assert result.cwd == "/workspace"
@@ -370,7 +409,7 @@ def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
         assert result.max_depth == 4
 
         parent = store.load("run:abc:runtime")
-        child = store.load("task:run:abc:runtime:retry")
+        child = store.load(result.child_session_id)
         assert parent is not None
         assert child is not None
         assert [event.event_type for event in parent.events] == [
@@ -388,8 +427,62 @@ def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
             RuntimeSessionEventType.PROMPT_SUBMITTED,
             RuntimeSessionEventType.ASSISTANT_MESSAGE,
         ]
-        assert child.events[1].payload["metadata"] == {"role": "analyst"}
+        assert child.events[1].payload["metadata"] == {"role": "analyst", "artifact": str(tmp_path)}
         assert [log.session_id for log in session.list_child_logs()] == [child.session_id]
+    finally:
+        store.close()
+
+
+def test_runtime_session_reused_task_ids_keep_distinct_child_logs(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeChildTaskHandlerOutput, RuntimeSession
+    from autocontext.session.runtime_events import RuntimeSessionEventStore
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+        )
+
+        first = session.run_child_task(
+            prompt="Investigate regression",
+            role="analyst",
+            task_id="retry",
+            handler=lambda input: RuntimeChildTaskHandlerOutput(text="first attempt"),
+        )
+        second = session.run_child_task(
+            prompt="Investigate regression again",
+            role="analyst",
+            task_id="retry",
+            handler=lambda input: RuntimeChildTaskHandlerOutput(text="second attempt"),
+        )
+
+        assert first.task_id == second.task_id == "retry"
+        assert first.child_session_id != second.child_session_id
+        assert first.child_session_id.startswith("task:run:abc:runtime:retry:")
+        assert second.child_session_id.startswith("task:run:abc:runtime:retry:")
+
+        children = {log.session_id: log for log in session.list_child_logs()}
+        assert set(children) == {first.child_session_id, second.child_session_id}
+        assert children[first.child_session_id].task_id == "retry"
+        assert children[second.child_session_id].task_id == "retry"
+        assert children[first.child_session_id].events[1].payload["text"] == "first attempt"
+        assert children[second.child_session_id].events[1].payload["text"] == "second attempt"
+
+        parent = store.load("run:abc:runtime")
+        assert parent is not None
+        started_child_sessions = [
+            event.payload["childSessionId"]
+            for event in parent.events
+            if event.payload.get("taskId") == "retry" and "childSessionId" in event.payload
+        ]
+        assert started_child_sessions == [
+            first.child_session_id,
+            first.child_session_id,
+            second.child_session_id,
+            second.child_session_id,
+        ]
     finally:
         store.close()
 
@@ -421,7 +514,7 @@ def test_runtime_session_child_task_depth_limit_is_recorded(tmp_path: Path) -> N
         assert result.is_error is True
         assert result.text == ""
         assert result.error == "Maximum child task depth (1) exceeded"
-        child = store.load("task:run:abc:runtime:depth")
+        child = store.load(result.child_session_id)
         assert child is not None
         assert child.events[1].payload["isError"] is True
         assert child.events[1].payload["error"] == "Maximum child task depth (1) exceeded"

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Self
 
@@ -137,7 +138,7 @@ class RuntimeSession:
         clean_session_id = session_id or f"runtime:{uuid.uuid4().hex[:12]}"
         log = RuntimeSessionEventLog.create(
             session_id=clean_session_id,
-            metadata={**(metadata or {}), "goal": goal},
+            metadata={**_json_safe_record(metadata), "goal": goal},
         )
         return cls(
             goal=goal,
@@ -214,7 +215,7 @@ class RuntimeSession:
                     "requestId": request_id,
                     "promptEventId": prompt_event.event_id,
                     "text": output.text,
-                    "metadata": dict(output.metadata),
+                    "metadata": _json_safe_record(output.metadata),
                     "role": role,
                     "cwd": cwd,
                 },
@@ -318,7 +319,7 @@ class RuntimeChildTaskRunner:
         worker = self._coordinator.delegate(prompt, role)
         self._coordinator.start_worker(worker.worker_id)
         child_depth = self._depth + 1
-        child_session_id = f"task:{self._parent_log.session_id}:{clean_task_id}"
+        child_session_id = f"task:{self._parent_log.session_id}:{clean_task_id}:{worker.worker_id}"
         child_log = RuntimeSessionEventLog.create(
             session_id=child_session_id,
             parent_session_id=self._parent_log.session_id,
@@ -389,7 +390,7 @@ class RuntimeChildTaskRunner:
                 RuntimeSessionEventType.ASSISTANT_MESSAGE,
                 {
                     "text": output.text,
-                    "metadata": dict(output.metadata),
+                    "metadata": _json_safe_record(output.metadata),
                     "depth": child_depth,
                     "maxDepth": self._max_depth,
                 },
@@ -554,6 +555,23 @@ def _normalize_child_output(output: RuntimeChildTaskHandlerOutput | str) -> Runt
     if isinstance(output, RuntimeChildTaskHandlerOutput):
         return output
     return RuntimeChildTaskHandlerOutput(text=output)
+
+
+def _json_safe_record(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    if value is None:
+        return {}
+    return {str(key): _json_safe_value(item) for key, item in value.items()}
+
+
+def _json_safe_value(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, allow_nan=False))
+    except (TypeError, ValueError):
+        if isinstance(value, Mapping):
+            return {str(key): _json_safe_value(item) for key, item in value.items()}
+        if isinstance(value, list | tuple):
+            return [_json_safe_value(item) for item in value]
+        return str(value)
 
 
 def _normalize_depth(value: int, name: str) -> int:
