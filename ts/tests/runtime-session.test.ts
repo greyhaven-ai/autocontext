@@ -275,6 +275,26 @@ describe("RuntimeSession", () => {
         return "marker-value";
       }
     }
+    class ThrowingToJSON {
+      toJSON(): unknown {
+        throw new Error("toJSON failed");
+      }
+
+      toString(): string {
+        return "throwing-to-json";
+      }
+    }
+    const throwingToJSONGetter = Object.defineProperty(
+      {
+        toString: () => "throwing-to-json-getter",
+      },
+      "toJSON",
+      {
+        get: () => {
+          throw new Error("toJSON getter failed");
+        },
+      },
+    );
     const result = await session.submitPrompt({
       prompt: "Inspect auth flow",
       handler: () => ({
@@ -282,6 +302,8 @@ describe("RuntimeSession", () => {
         metadata: {
           count: BigInt(7),
           marker: new Marker(),
+          throwingToJSON: new ThrowingToJSON(),
+          throwingToJSONGetter,
           nested: { count: BigInt(8) },
         },
       }),
@@ -297,6 +319,8 @@ describe("RuntimeSession", () => {
     expect(loaded!.events[1].payload.metadata).toEqual({
       count: "7",
       marker: "marker-value",
+      throwingToJSON: "throwing-to-json",
+      throwingToJSONGetter: "throwing-to-json-getter",
       nested: { count: "8" },
     });
 
