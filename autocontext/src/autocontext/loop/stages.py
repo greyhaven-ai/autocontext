@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from autocontext.agents.architect import parse_dag_changes
+from autocontext.agents.runtime_session_wiring import run_runtime_session_scope
 from autocontext.config.harness_profile import render_harness_tool_context, resolve_harness_runtime_profile
 from autocontext.harness.evaluation.dimensional import detect_dimension_regression
 from autocontext.harness.evaluation.failure_report import FailureReport
@@ -474,18 +475,19 @@ def stage_agent_generation(
         if ctx.settings.generation_time_budget_seconds > 0
         else None
     )
-    outputs = orchestrator.run_generation(
-        ctx.prompts,
-        generation_index=ctx.generation,
-        tool_context=ctx.tool_context,
-        run_id=ctx.run_id,
-        scenario_name=ctx.scenario_name,
-        strategy_interface=ctx.strategy_interface,
-        on_role_event=on_role_event,
-        scenario_rules=ctx.scenario.describe_rules(),
-        current_strategy=ctx.current_strategy or None,
-        generation_deadline=generation_deadline,
-    )
+    with run_runtime_session_scope(orchestrator, run_id=ctx.run_id, scenario_name=ctx.scenario_name):
+        outputs = orchestrator.run_generation(
+            ctx.prompts,
+            generation_index=ctx.generation,
+            tool_context=ctx.tool_context,
+            run_id=ctx.run_id,
+            scenario_name=ctx.scenario_name,
+            strategy_interface=ctx.strategy_interface,
+            on_role_event=on_role_event,
+            scenario_rules=ctx.scenario.describe_rules(),
+            current_strategy=ctx.current_strategy or None,
+            generation_deadline=generation_deadline,
+        )
 
     selected_strategy = outputs.strategy
     exploration_metadata: dict[str, Any] = {}

@@ -164,7 +164,7 @@ uv sync --group dev --extra mcp
 uv run autoctx mcp-serve
 ```
 
-Runtime-session logs created by the TypeScript runtime-session provider bundle can be read from Python too when both packages point at the same `AUTOCONTEXT_DB_PATH`. The Python cockpit API exposes `GET /api/cockpit/runtime-sessions`, `GET /api/cockpit/runtime-sessions/{session_id}`, `GET /api/cockpit/runtime-sessions/{session_id}/timeline`, `GET /api/cockpit/runs/{run_id}/runtime-session`, and `GET /api/cockpit/runs/{run_id}/runtime-session/timeline`. The Python MCP server exposes the same read model through `autocontext_list_runtime_sessions`, `autocontext_get_runtime_session`, and `autocontext_get_runtime_session_timeline`, plus unprefixed aliases.
+Python runtime-backed `run` and `solve` role calls automatically append provider prompts and responses to the run-scoped runtime-session log. Runtime-session logs created by the TypeScript runtime-session provider bundle can be read from Python too when both packages point at the same `AUTOCONTEXT_DB_PATH`. The Python cockpit API exposes `GET /api/cockpit/runtime-sessions`, `GET /api/cockpit/runtime-sessions/{session_id}`, `GET /api/cockpit/runtime-sessions/{session_id}/timeline`, `GET /api/cockpit/runs/{run_id}/runtime-session`, and `GET /api/cockpit/runs/{run_id}/runtime-session/timeline`. The Python MCP server exposes the same read model through `autocontext_list_runtime_sessions`, `autocontext_get_runtime_session`, and `autocontext_get_runtime_session_timeline`, plus unprefixed aliases.
 
 ## Main CLI Commands
 

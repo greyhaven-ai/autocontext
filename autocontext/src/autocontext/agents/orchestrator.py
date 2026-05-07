@@ -19,6 +19,7 @@ from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from autocontext.agents.role_runtime_overrides import apply_role_overrides, settings_for_budgeted_role_call
+from autocontext.agents.runtime_session_wiring import runtime_session_client_for_role
 from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.agents.translator import StrategyTranslator
@@ -500,6 +501,7 @@ class AgentOrchestrator:
             )
         finally:
             self._active_generation_deadline = previous_deadline
+        client = runtime_session_client_for_role(self, client, role)
         runner.runtime.client = client
         if model is not None:
             runner.model = model

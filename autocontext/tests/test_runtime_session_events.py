@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 
 def _concurrent_log():
@@ -112,6 +114,23 @@ def test_runtime_session_event_log_uses_typescript_compatible_json_shape() -> No
     restored = RuntimeSessionEventLog.from_dict(payload)
     assert restored.session_id == log.session_id
     assert restored.events[1].payload["requestId"] == "req-1"
+
+
+def test_runtime_session_event_log_assigns_unique_sequences_for_concurrent_appends() -> None:
+    from autocontext.session.runtime_events import RuntimeSessionEventLog, RuntimeSessionEventType
+
+    log = RuntimeSessionEventLog.create(session_id="run:abc:runtime")
+    barrier = Barrier(8)
+
+    def append_event(index: int) -> int:
+        barrier.wait()
+        return log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {"prompt": f"Prompt {index}"}).sequence
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        sequences = list(pool.map(append_event, range(8)))
+
+    assert sorted(sequences) == list(range(8))
+    assert [event.sequence for event in log.events] == list(range(8))
 
 
 def test_runtime_session_event_store_round_trips_logs_and_children(tmp_path: Path) -> None:
