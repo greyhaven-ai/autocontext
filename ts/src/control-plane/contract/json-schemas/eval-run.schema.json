@@ -21,6 +21,118 @@
         "sampleCount": { "type": "integer", "minimum": 0 }
       }
     },
-    "ingestedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" }
+    "ingestedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" },
+    "adapterProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "webPolicy", "integrityMode"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "reasoningEffort": { "type": "string", "minLength": 1 },
+        "promptTemplatePath": { "type": "string", "minLength": 1 },
+        "promptTemplateHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" },
+        "webPolicy": { "enum": ["disabled", "docs-and-downloads-only", "unrestricted"] },
+        "integrityMode": { "enum": ["standard", "external-eval", "customer-run"] },
+        "authMode": { "type": "string", "minLength": 1 }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["clean", "discarded", "contaminated"] },
+        "discardedReason": { "type": "string", "minLength": 1 },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "trials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["taskId", "trialId", "attempt", "status"],
+        "properties": {
+          "taskId": { "type": "string", "minLength": 1 },
+          "trialId": { "type": "string", "minLength": 1 },
+          "attempt": { "type": "integer", "minimum": 0 },
+          "status": {
+            "enum": ["passed", "failed", "infrastructure-error", "cancelled", "discarded"]
+          },
+          "reward": { "type": "number" },
+          "errorKind": { "type": "string", "minLength": 1 },
+          "replacementForTrialId": { "type": "string", "minLength": 1 },
+          "startedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" },
+          "completedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" },
+          "rawResultPath": { "type": "string", "minLength": 1 },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["view", "score", "selectedTrialIdsByTask", "ignoredTrialIds", "unresolvedTaskIds", "counts"],
+      "properties": {
+        "view": { "enum": ["first-completed-per-task", "best-of-k"] },
+        "score": { "type": "number", "minimum": 0 },
+        "selectedTrialIdsByTask": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "ignoredTrialIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "unresolvedTaskIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "taskCount",
+            "selectedTaskCount",
+            "passed",
+            "failed",
+            "infrastructureErrors",
+            "cancelled",
+            "discarded",
+            "duplicatesIgnored"
+          ],
+          "properties": {
+            "taskCount": { "type": "integer", "minimum": 0 },
+            "selectedTaskCount": { "type": "integer", "minimum": 0 },
+            "passed": { "type": "integer", "minimum": 0 },
+            "failed": { "type": "integer", "minimum": 0 },
+            "infrastructureErrors": { "type": "integer", "minimum": 0 },
+            "cancelled": { "type": "integer", "minimum": 0 },
+            "discarded": { "type": "integer", "minimum": 0 },
+            "duplicatesIgnored": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "memoryPacks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["packId", "version", "contentHash"],
+        "properties": {
+          "packId": { "type": "string", "minLength": 1 },
+          "version": { "type": "string", "minLength": 1 },
+          "contentHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" }
+        }
+      }
+    }
   }
 }

@@ -182,6 +182,23 @@ describe("validateEvalRunForIngestion", () => {
     expect(r.valid).toBe(false);
   });
 
+  test("rejects non-clean EvalRun integrity before ingestion", () => {
+    const reg = openRegistry(registryRoot);
+    const run = makeEvalRun(artifact.id, {
+      integrity: {
+        status: "contaminated",
+        notes: ["manual review found answer leakage"],
+      },
+    });
+
+    const r = validateEvalRunForIngestion(run, { registry: reg });
+
+    expect(r.valid).toBe(false);
+    if (!r.valid) {
+      expect(r.errors).toContain("/integrity/status must be clean for ingestion (got contaminated)");
+    }
+  });
+
   test("rejects missing required schema fields (e.g. no safety block)", () => {
     const reg = openRegistry(registryRoot);
     // Synthesize an EvalRun with missing safety.regressions by spreading.

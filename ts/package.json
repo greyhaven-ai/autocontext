@@ -41,6 +41,18 @@
       "import": "./dist/control-plane/runtime/index.js",
       "types": "./dist/control-plane/runtime/index.d.ts"
     },
+    "./control-plane/eval-ledger": {
+      "import": "./dist/control-plane/eval-ledger/index.js",
+      "types": "./dist/control-plane/eval-ledger/index.d.ts"
+    },
+    "./control-plane/contract-probes": {
+      "import": "./dist/control-plane/contract-probes/index.js",
+      "types": "./dist/control-plane/contract-probes/index.d.ts"
+    },
+    "./control-plane/memory-packs": {
+      "import": "./dist/control-plane/memory-packs/index.js",
+      "types": "./dist/control-plane/memory-packs/index.d.ts"
+    },
     "./production-traces": {
       "types": "./dist/production-traces/sdk/index.d.ts",
       "import": "./dist/production-traces/sdk/index.js",

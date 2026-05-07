@@ -663,10 +663,32 @@ export type {
 } from "./mission/index.js";
 
 // Control-plane runtime helpers
-export { chooseModel } from "./control-plane/runtime/index.js";
+export { chooseModel, evaluateTaskBudget } from "./control-plane/runtime/index.js";
 export type {
   ChooseModelInputs,
   ModelDecision,
   ModelDecisionReason,
   ModelRouterContext,
+  TaskBudgetAction,
+  TaskBudgetCheckpoint,
+  TaskBudgetDecision,
+  TaskBudgetInputs,
 } from "./control-plane/runtime/index.js";
+
+// Control-plane external eval helpers
+export { reconcileEvalTrials } from "./control-plane/eval-ledger/index.js";
+export type { ReconcileEvalTrialsOptions } from "./control-plane/eval-ledger/index.js";
+export { probeDirectoryContract } from "./control-plane/contract-probes/index.js";
+export type {
+  DirectoryContractFailure,
+  DirectoryContractFailureKind,
+  DirectoryContractProbeInputs,
+  DirectoryContractProbeResult,
+} from "./control-plane/contract-probes/index.js";
+export { validateOperationalMemoryPack } from "./control-plane/memory-packs/index.js";
+export type {
+  OperationalMemoryFinding,
+  OperationalMemoryPack,
+  OperationalMemoryPackStatus,
+  OperationalMemoryRisk,
+} from "./control-plane/memory-packs/index.js";

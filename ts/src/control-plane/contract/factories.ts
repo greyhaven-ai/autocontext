@@ -14,6 +14,11 @@ import type {
   ActuatorType,
   Artifact,
   EvalRun,
+  AdapterProvenance,
+  EvalRunIntegrity,
+  EvalRunReconciliation,
+  EvalTrial,
+  MemoryPackRef,
   MetricBundle,
   PromotionEvent,
   Provenance,
@@ -74,6 +79,11 @@ export interface CreateEvalRunInputs {
   readonly metrics: MetricBundle;
   readonly datasetProvenance: EvalRun["datasetProvenance"];
   readonly ingestedAt: string;
+  readonly adapterProvenance?: AdapterProvenance;
+  readonly integrity?: EvalRunIntegrity;
+  readonly trials?: readonly EvalTrial[];
+  readonly reconciliation?: EvalRunReconciliation;
+  readonly memoryPacks?: readonly MemoryPackRef[];
 }
 
 export function createEvalRun(inputs: CreateEvalRunInputs): EvalRun {
@@ -85,6 +95,11 @@ export function createEvalRun(inputs: CreateEvalRunInputs): EvalRun {
     metrics: inputs.metrics,
     datasetProvenance: inputs.datasetProvenance,
     ingestedAt: inputs.ingestedAt,
+    ...(inputs.adapterProvenance !== undefined ? { adapterProvenance: inputs.adapterProvenance } : {}),
+    ...(inputs.integrity !== undefined ? { integrity: inputs.integrity } : {}),
+    ...(inputs.trials !== undefined ? { trials: inputs.trials } : {}),
+    ...(inputs.reconciliation !== undefined ? { reconciliation: inputs.reconciliation } : {}),
+    ...(inputs.memoryPacks !== undefined ? { memoryPacks: inputs.memoryPacks } : {}),
   };
 }
 

@@ -10,6 +10,7 @@
 // Import discipline (§3.2): imports contract/ and registry/ only.
 
 import { parseContentHash } from "../contract/branded-ids.js";
+import { evalRunIntegrityStatus } from "../contract/eval-run-integrity.js";
 import type { EvalRun, MetricBundle, ValidationResult } from "../contract/types.js";
 import { validateEvalRun } from "../contract/validators.js";
 import type { Registry } from "../registry/index.js";
@@ -68,6 +69,11 @@ export function validateEvalRunForIngestion(
   // Numeric fields in MetricBundle must be finite.
   if (maybeRun.metrics !== undefined && maybeRun.metrics !== null) {
     collectNonFiniteFields(maybeRun.metrics, errors);
+  }
+
+  const integrityStatus = evalRunIntegrityStatus(maybeRun);
+  if (integrityStatus !== "clean") {
+    errors.push(`/integrity/status must be clean for ingestion (got ${String(integrityStatus)})`);
   }
 
   // artifactId must exist in registry (last — loadArtifact may throw).
