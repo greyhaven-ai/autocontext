@@ -1,4 +1,4 @@
-import type { ValidationResult } from "../contract/types.js";
+import type { EvalRunIntegrity, ValidationResult } from "../contract/types.js";
 
 export type OperationalMemoryPackStatus = "draft" | "sanitized" | "active" | "deprecated";
 export type OperationalMemoryRisk = "low" | "medium" | "high";
@@ -19,6 +19,7 @@ export interface OperationalMemoryPack {
   readonly version: string;
   readonly createdAt: string;
   readonly status: OperationalMemoryPackStatus;
+  readonly integrity?: EvalRunIntegrity;
   readonly findings: readonly OperationalMemoryFinding[];
 }
 
@@ -33,6 +34,7 @@ export function validateOperationalMemoryPack(input: unknown): ValidationResult 
   requireString(input, "version", errors);
   requireString(input, "createdAt", errors);
   requireEnum(input, "status", ["draft", "sanitized", "active", "deprecated"], errors);
+  validateOptionalIntegrity(input.integrity, errors);
 
   if (!Array.isArray(input.findings)) {
     errors.push("findings must be an array");
@@ -43,6 +45,23 @@ export function validateOperationalMemoryPack(input: unknown): ValidationResult 
   }
 
   return errors.length === 0 ? { valid: true } : { valid: false, errors };
+}
+
+function validateOptionalIntegrity(input: unknown, errors: string[]): void {
+  if (input === undefined) return;
+  if (!isRecord(input)) {
+    errors.push("integrity must be an object when present");
+    return;
+  }
+
+  requireEnum(input, "status", ["clean", "discarded", "contaminated"], errors);
+  requireOptionalString(input, "discardedReason", "integrity", errors);
+  if (
+    Object.prototype.hasOwnProperty.call(input, "notes") &&
+    (!Array.isArray(input.notes) || !input.notes.every((item) => typeof item === "string" && item.length > 0))
+  ) {
+    errors.push("integrity notes must be an array of non-empty strings when present");
+  }
 }
 
 function validateFinding(input: unknown, errors: string[]): void {
@@ -77,6 +96,17 @@ function requireOptionalBoolean(
 ): void {
   if (Object.prototype.hasOwnProperty.call(input, field) && typeof input[field] !== "boolean") {
     errors.push(`finding ${findingId} ${field} must be a boolean when present`);
+  }
+}
+
+function requireOptionalString(
+  input: Readonly<Record<string, unknown>>,
+  field: string,
+  parent: string,
+  errors: string[],
+): void {
+  if (Object.prototype.hasOwnProperty.call(input, field) && typeof input[field] !== "string") {
+    errors.push(`${parent} ${field} must be a string when present`);
   }
 }
 
