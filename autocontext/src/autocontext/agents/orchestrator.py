@@ -19,6 +19,7 @@ from autocontext.agents.model_router import ModelRouter, TierConfig
 from autocontext.agents.parsers import parse_analyst_output, parse_architect_output, parse_coach_output, parse_competitor_output
 from autocontext.agents.role_router import ProviderClass, RoleRouter, RoutingContext
 from autocontext.agents.role_runtime_overrides import apply_role_overrides, settings_for_budgeted_role_call
+from autocontext.agents.runtime_session_wiring import runtime_session_client_for_role
 from autocontext.agents.skeptic import SkepticAgent
 from autocontext.agents.subagent_runtime import SubagentRuntime
 from autocontext.agents.translator import StrategyTranslator
@@ -489,9 +490,9 @@ class AgentOrchestrator:
         original_model = runner.model
         previous_deadline = self._active_generation_deadline
         self._active_generation_deadline = generation_deadline
-        client: LanguageModelClient | None = None
+        resolved_client: LanguageModelClient | None = None
         try:
-            client, model = self._resolve_role_execution(
+            resolved_client, model = self._resolve_role_execution(
                 role,
                 generation=generation,
                 retry_count=retry_count,
@@ -500,6 +501,7 @@ class AgentOrchestrator:
             )
         finally:
             self._active_generation_deadline = previous_deadline
+        client = runtime_session_client_for_role(self, resolved_client, role)
         runner.runtime.client = client
         if model is not None:
             runner.model = model
@@ -508,8 +510,8 @@ class AgentOrchestrator:
         finally:
             runner.runtime.client = original_client
             runner.model = original_model
-            if client is not None:
-                self._close_disposable_client(client)
+            if resolved_client is not None:
+                self._close_disposable_client(resolved_client)
 
     def run_generation(
         self,

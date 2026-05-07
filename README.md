@@ -82,7 +82,7 @@ Then you just ask:
 }
 ```
 
-After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, `autocontext_list_scenarios`, `autocontext_export_skill`, and `autocontext_search_strategies`. It also exposes runtime-session readers as `autocontext_list_runtime_sessions`, `autocontext_get_runtime_session`, and `autocontext_get_runtime_session_timeline`, with unprefixed aliases for parity with TypeScript MCP. The TypeScript package exposes the same capabilities with its documented tool names via `bunx autoctx mcp-serve`.
+After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, `autocontext_list_scenarios`, `autocontext_export_skill`, and `autocontext_search_strategies`. It also exposes runtime-session readers as `autocontext_list_runtime_sessions`, `autocontext_get_runtime_session`, and `autocontext_get_runtime_session_timeline`, with unprefixed aliases for parity with TypeScript MCP; Python runtime-backed `run` and `solve` role calls populate those logs automatically. The TypeScript package exposes the same capabilities with its documented tool names via `bunx autoctx mcp-serve`.
 
 **Hermes Agent** can load a CLI-first skill and inspect Hermes Curator state without MCP:
 

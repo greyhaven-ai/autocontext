@@ -17,6 +17,7 @@ from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
+from threading import RLock
 from typing import Any, Self
 
 from pydantic import BaseModel, Field, PrivateAttr
@@ -97,6 +98,7 @@ class RuntimeSessionEventLog(BaseModel):
     updated_at: str = ""
 
     _subscribers: list[RuntimeSessionEventLogSubscriber] = PrivateAttr(default_factory=list)
+    _lock: RLock = PrivateAttr(default_factory=RLock)
 
     @classmethod
     def create(
@@ -121,40 +123,44 @@ class RuntimeSessionEventLog(BaseModel):
         event_type: RuntimeSessionEventType,
         payload: dict[str, Any] | None = None,
     ) -> RuntimeSessionEvent:
-        event = RuntimeSessionEvent(
-            session_id=self.session_id,
-            sequence=len(self.events),
-            event_type=event_type,
-            payload=payload or {},
-            parent_session_id=self.parent_session_id,
-            task_id=self.task_id,
-            worker_id=self.worker_id,
-        )
-        self.events.append(event)
-        self.updated_at = event.timestamp
-        self._notify(event)
-        return event
+        with self._lock:
+            event = RuntimeSessionEvent(
+                session_id=self.session_id,
+                sequence=len(self.events),
+                event_type=event_type,
+                payload=payload or {},
+                parent_session_id=self.parent_session_id,
+                task_id=self.task_id,
+                worker_id=self.worker_id,
+            )
+            self.events.append(event)
+            self.updated_at = event.timestamp
+            self._notify(event)
+            return event
 
     def subscribe(self, callback: RuntimeSessionEventLogSubscriber) -> Callable[[], None]:
-        self._subscribers.append(callback)
+        with self._lock:
+            self._subscribers.append(callback)
 
         def unsubscribe() -> None:
-            if callback in self._subscribers:
-                self._subscribers.remove(callback)
+            with self._lock:
+                if callback in self._subscribers:
+                    self._subscribers.remove(callback)
 
         return unsubscribe
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "sessionId": self.session_id,
-            "parentSessionId": self.parent_session_id,
-            "taskId": self.task_id,
-            "workerId": self.worker_id,
-            "metadata": dict(self.metadata),
-            "events": [event.to_dict() for event in self.events],
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at,
-        }
+        with self._lock:
+            return {
+                "sessionId": self.session_id,
+                "parentSessionId": self.parent_session_id,
+                "taskId": self.task_id,
+                "workerId": self.worker_id,
+                "metadata": dict(self.metadata),
+                "events": [event.to_dict() for event in self.events],
+                "createdAt": self.created_at,
+                "updatedAt": self.updated_at,
+            }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:

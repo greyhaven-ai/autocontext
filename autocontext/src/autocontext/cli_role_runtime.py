@@ -57,6 +57,7 @@ def resolve_role_runtime(
     *,
     role: str,
     scenario_name: str = "",
+    run_id: str = "",
     sqlite: Any | None = None,
     artifacts: Any | None = None,
     hook_bus: HookBus | None = None,
@@ -85,5 +86,20 @@ def resolve_role_runtime(
     if generation_deadline is not None:
         resolve_kwargs["generation_deadline"] = generation_deadline
     client, model = orchestrator.resolve_role_execution(role, **resolve_kwargs)
+    if run_id:
+        from autocontext.agents.provider_bridge import wrap_runtime_session_client
+        from autocontext.session.runtime_session_recording import create_runtime_session_for_run
+
+        recording = create_runtime_session_for_run(
+            db_path=settings.db_path,
+            run_id=run_id,
+            scenario_name=scenario_name,
+        )
+        client = wrap_runtime_session_client(
+            client,
+            session=recording.session,
+            role=role,
+            cwd=str(Path.cwd()),
+        )
     resolved_model = model or _role_default_model(settings, role)
     return _wrap_role_client_as_provider(client, resolved_model, role=role)

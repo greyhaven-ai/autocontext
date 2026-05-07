@@ -23,6 +23,11 @@ from autocontext.session.runtime_session_read_model import (
     read_runtime_session_summaries,
     summarize_runtime_session,
 )
+from autocontext.session.runtime_session_recording import (
+    RuntimeSessionRunRecording,
+    create_runtime_session_for_run,
+    open_runtime_session_for_run,
+)
 from autocontext.session.runtime_session_timeline import (
     build_runtime_session_timeline,
     read_runtime_session_timeline_by_id,
@@ -44,7 +49,10 @@ __all__ = [
     "RuntimeSessionPromptHandlerInput",
     "RuntimeSessionPromptHandlerOutput",
     "RuntimeSessionPromptResult",
+    "RuntimeSessionRunRecording",
     "build_runtime_session_timeline",
+    "create_runtime_session_for_run",
+    "open_runtime_session_for_run",
     "read_runtime_session_by_id",
     "read_runtime_session_by_run_id",
     "read_runtime_session_summaries",

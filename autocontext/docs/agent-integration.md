@@ -90,7 +90,9 @@ JSON output shape:
 
 The TypeScript CLI also includes an optional `runtime_session` object in
 `status`, `show`, and `watch --json` output when a CLI-backed provider run has a
-persisted runtime-session event log. Use `autoctx runtime-sessions show
+persisted runtime-session event log. Python runtime-backed `run` and `solve`
+role calls write the same run-scoped log automatically. Use
+`autoctx runtime-sessions show
 --run-id <run_id> --json` to inspect the recorded provider prompts, messages,
 and child-task events. Use `autoctx runtime-sessions timeline --run-id
 <run_id> --json` for the operator-facing grouped prompt/response and child-task

@@ -234,6 +234,7 @@ def run_task_like_scenario(
             role_runtime_settings,
             role="competitor",
             scenario_name=scenario_name,
+            run_id=active_run_id,
             sqlite=sqlite,
             hook_bus=hook_bus,
             generation_deadline=budget.deadline(),

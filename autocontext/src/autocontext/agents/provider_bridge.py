@@ -15,8 +15,9 @@ import os
 import shlex
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+from autocontext.extensions.llm import HookedLanguageModelClient
 from autocontext.harness.core.llm_client import LanguageModelClient
 from autocontext.harness.core.types import ModelResponse, RoleUsage
 from autocontext.runtimes.errors import format_runtime_failure
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from autocontext.config.settings import AppSettings
     from autocontext.providers.base import LLMProvider
     from autocontext.runtimes.base import AgentRuntime
+    from autocontext.session.runtime_session import RuntimeSession
 
 
 class ProviderBridgeClient(LanguageModelClient):
@@ -113,6 +115,149 @@ class RuntimeBridgeClient(LanguageModelClient):
         close = getattr(self._runtime, "close", None)
         if callable(close):
             close()
+
+
+class RuntimeSessionRecordingClient(LanguageModelClient):
+    """Record runtime-backed client calls into a run-scoped RuntimeSession."""
+
+    def __init__(
+        self,
+        inner: LanguageModelClient,
+        *,
+        session: RuntimeSession,
+        role: str,
+        cwd: str = "",
+    ) -> None:
+        self.inner = inner
+        self.session = session
+        self.role = role
+        self.cwd = cwd
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.inner, name)
+
+    def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        role: str = "",
+    ) -> ModelResponse:
+        from autocontext.session.runtime_session import RuntimeSessionPromptHandlerOutput
+
+        response: ModelResponse | None = None
+        failure: Exception | None = None
+        resolved_role = role or self.role
+
+        def handler(_input: object) -> RuntimeSessionPromptHandlerOutput:
+            nonlocal response, failure
+            try:
+                response = self.inner.generate(
+                    model=model,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    role=resolved_role,
+                )
+            except Exception as exc:
+                failure = exc
+                raise
+            return RuntimeSessionPromptHandlerOutput(
+                text=response.text,
+                metadata=_runtime_session_response_metadata(
+                    self.inner,
+                    response,
+                    runtime_session_id=self.session.session_id,
+                    operation="generate",
+                ),
+            )
+
+        result = self.session.submit_prompt(
+            prompt=prompt,
+            handler=handler,
+            role=resolved_role,
+            cwd=self.cwd,
+        )
+        if result.is_error:
+            raise failure or RuntimeError(result.error)
+        if response is None:
+            return ModelResponse(
+                text=result.text,
+                usage=RoleUsage(
+                    input_tokens=max(1, len(prompt) // 4),
+                    output_tokens=max(1, len(result.text) // 4),
+                    latency_ms=0,
+                    model=model,
+                ),
+                metadata={"runtimeSessionId": self.session.session_id},
+            )
+        metadata = dict(response.metadata)
+        metadata["runtimeSessionId"] = self.session.session_id
+        return ModelResponse(text=response.text, usage=response.usage, metadata=metadata)
+
+    def close(self) -> None:
+        close = getattr(self.inner, "close", None)
+        if callable(close):
+            close()
+
+
+def wrap_runtime_session_client(
+    client: LanguageModelClient,
+    *,
+    session: RuntimeSession,
+    role: str,
+    cwd: str = "",
+) -> LanguageModelClient:
+    """Attach recording to runtime-backed clients, leaving plain LLM clients alone."""
+    if isinstance(client, RuntimeSessionRecordingClient):
+        return client
+    if isinstance(client, HookedLanguageModelClient):
+        inner = wrap_runtime_session_client(client.inner, session=session, role=role, cwd=cwd)
+        if inner is client.inner:
+            return client
+        return HookedLanguageModelClient(inner, client.hook_bus, provider_name=client.provider_name)
+    if _find_runtime_bridge_client(client) is None:
+        return client
+    return RuntimeSessionRecordingClient(client, session=session, role=role, cwd=cwd)
+
+
+def _find_runtime_bridge_client(client: object) -> RuntimeBridgeClient | None:
+    current = client
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, RuntimeBridgeClient):
+            return current
+        current = getattr(current, "inner", None)
+    return None
+
+
+def _runtime_session_response_metadata(
+    client: LanguageModelClient,
+    response: ModelResponse,
+    *,
+    runtime_session_id: str,
+    operation: str,
+) -> dict[str, Any]:
+    bridge = _find_runtime_bridge_client(client)
+    runtime = getattr(bridge, "_runtime", None) if bridge is not None else None
+    metadata: dict[str, Any] = dict(response.metadata)
+    metadata.update(
+        {
+            "operation": operation,
+            "runtime": getattr(runtime, "name", client.__class__.__name__),
+            "runtimeSessionId": runtime_session_id,
+            "model": response.usage.model,
+            "usage": {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "latency_ms": response.usage.latency_ms,
+            },
+        }
+    )
+    return metadata
 
 
 def _role_setting(settings: AppSettings, role: str, suffix: str) -> str:
