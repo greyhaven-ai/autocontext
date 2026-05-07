@@ -84,4 +84,36 @@ describe("external eval adapter lifecycle", () => {
     expect(trial.status).toBe("failed");
     expect(trial.errorKind).toBeUndefined();
   });
+
+  test("classifies adapter crashes as infrastructure errors and preserves lifecycle error kind", () => {
+    const trial = classifyExternalEvalTrial({
+      taskId: "adapter-crash-task",
+      trialId: "adapter-crash-task.1-of-1.tb-run-1",
+      attempt: 1,
+      isResolved: false,
+      failureMode: "unset",
+      lifecycle: {
+        runId: "tb-run-1",
+        taskId: "adapter-crash-task",
+        trialId: "adapter-crash-task.1-of-1.tb-run-1",
+        adapter: "host-codex-docker",
+        command: {
+          argv: ["codex", "exec"],
+          cwd: "/tmp",
+        },
+        status: "failed",
+        errorKind: "adapter-crash",
+        exitCode: 1,
+        artifacts: {
+          stdoutPath: "agent-logs/host-codex-stdout.txt",
+          stderrPath: "agent-logs/host-codex-stderr.txt",
+        },
+      },
+    });
+
+    expect(trial.status).toBe("infrastructure-error");
+    expect(trial.errorKind).toBe("adapter-crash");
+    expect(trial.reward).toBeUndefined();
+    expect(trial.notes).toContain("adapter_status=failed");
+  });
 });

@@ -180,7 +180,7 @@ export function buildExternalEvalDiagnosticReport(
   }
 
   const diagnostics = inputs.trials
-    .filter((trial) => trial.status !== "passed" && trial.status !== "discarded")
+    .filter((trial) => trial.status !== "passed")
     .map((trial) => buildTrialDiagnostic(inputs.runId, trial, evidenceByTrialId.get(trial.trialId)));
 
   return {
@@ -225,9 +225,9 @@ function classifyUnresolvedStatus(inputs: ClassifyExternalEvalTrialInputs): Eval
   if (lifecycleStatus === "cancelled") return "cancelled";
   if (
     lifecycleStatus === "timed-out" ||
-    failureMode.includes("timeout") ||
-    failureMode === "agent_timeout" ||
-    failureMode === "infrastructure-error"
+    lifecycleStatus === "failed" ||
+    isInfrastructureFailureMode(failureMode) ||
+    isInfrastructureFailureMode(inputs.lifecycle?.errorKind)
   ) {
     return "infrastructure-error";
   }
@@ -266,6 +266,9 @@ function buildTrialNotes(inputs: ClassifyExternalEvalTrialInputs): readonly stri
     if (inputs.lifecycle.timeoutSource !== undefined) {
       notes.push(`timeout_source=${inputs.lifecycle.timeoutSource}`);
     }
+    if (inputs.lifecycle.errorKind !== undefined) {
+      notes.push(`adapter_error_kind=${inputs.lifecycle.errorKind}`);
+    }
     if (inputs.lifecycle.artifacts.stdoutPath !== undefined) {
       notes.push(`stdout=${inputs.lifecycle.artifacts.stdoutPath}`);
     }
@@ -283,7 +286,7 @@ function buildTrialDiagnostic(
 ): ExternalEvalTrialDiagnostic {
   const lifecycle = evidence?.adapterLifecycle;
   const category = classifyDiagnosticCategory(trial, evidence);
-  const failureExcerpts = buildFailureExcerpts(category, evidence);
+  const failureExcerpts = buildFailureExcerpts(category, trial, evidence);
 
   return {
     id: `${runId}:${trial.trialId}`,
@@ -308,7 +311,16 @@ function classifyDiagnosticCategory(
   trial: EvalTrial,
   evidence: ExternalEvalTrialEvidence | undefined,
 ): ExternalEvalDiagnosticCategory {
-  if (trial.status === "infrastructure-error" || evidence?.adapterLifecycle?.status === "timed-out") {
+  if (trial.status === "discarded") {
+    return "integrity-risk";
+  }
+  if (
+    trial.status === "infrastructure-error" ||
+    evidence?.adapterLifecycle?.status === "timed-out" ||
+    evidence?.adapterLifecycle?.status === "failed" ||
+    isInfrastructureFailureMode(trial.errorKind) ||
+    isInfrastructureFailureMode(evidence?.adapterLifecycle?.errorKind)
+  ) {
     return "adapter-runtime-failure";
   }
   if (trial.status === "cancelled") {
@@ -345,6 +357,7 @@ function diagnosticConfidence(
   evidence: ExternalEvalTrialEvidence | undefined,
 ): number {
   if (category === "adapter-runtime-failure" && trial.status === "infrastructure-error") return 0.95;
+  if (category === "integrity-risk" && trial.status === "discarded") return 0.9;
   if (evidence?.verifierOutput !== undefined && evidence.verifierOutput.length > 0) return 0.85;
   return category === "unknown" ? 0.25 : 0.6;
 }
@@ -400,17 +413,40 @@ function diagnosticRecommendations(category: ExternalEvalDiagnosticCategory): re
 
 function buildFailureExcerpts(
   category: ExternalEvalDiagnosticCategory,
+  trial: EvalTrial,
   evidence: ExternalEvalTrialEvidence | undefined,
 ): readonly string[] {
   if (category === "adapter-runtime-failure" && evidence?.adapterLifecycle !== undefined) {
     const lifecycle = evidence.adapterLifecycle;
     return [
       `adapter_status=${lifecycle.status}`,
+      ...(lifecycle.errorKind !== undefined ? [`adapter_error_kind=${lifecycle.errorKind}`] : []),
       ...(lifecycle.timeoutSource !== undefined ? [`timeout_source=${lifecycle.timeoutSource}`] : []),
+    ];
+  }
+  if (category === "integrity-risk") {
+    return [
+      `trial_status=${trial.status}`,
+      ...(trial.errorKind !== undefined ? [`error_kind=${trial.errorKind}`] : []),
+      ...(trial.notes ?? []),
     ];
   }
 
   return sanitizeVerifierOutput(evidence?.verifierOutput ?? "");
+}
+
+function isInfrastructureFailureMode(errorKind: string | undefined): boolean {
+  const kind = normalizedFailureMode(errorKind).toLowerCase();
+  return (
+    kind.includes("timeout") ||
+    kind.includes("adapter") ||
+    kind.includes("runtime") ||
+    kind.includes("infrastructure") ||
+    kind.includes("subprocess") ||
+    kind.includes("process") ||
+    kind.includes("container") ||
+    kind === "agent_timeout"
+  );
 }
 
 function sanitizeVerifierOutput(output: string): readonly string[] {
