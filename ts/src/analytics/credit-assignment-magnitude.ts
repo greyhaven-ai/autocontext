@@ -29,8 +29,8 @@ export function textChangeMagnitude(oldValue: string, newValue: string): number 
 }
 
 export function listChangeMagnitude(oldValues: unknown[], newValues: unknown[]): number {
-  const oldSet = new Set(oldValues.map((value) => String(value)));
-  const newSet = new Set(newValues.map((value) => String(value)));
+  const oldSet = new Set(oldValues.map(String));
+  const newSet = new Set(newValues.map(String));
   if (oldSet.size === newSet.size && [...oldSet].every((value) => newSet.has(value))) {
     return 0;
   }
@@ -66,8 +66,8 @@ export function buildComponentChangeMagnitudes(
   const newTools = Array.isArray(currentState.tools) ? currentState.tools : [];
   const toolsMagnitude = listChangeMagnitude(oldTools, newTools);
   if (toolsMagnitude > 0) {
-    const oldSet = new Set(oldTools.map((value) => String(value)));
-    const newSet = new Set(newTools.map((value) => String(value)));
+    const oldSet = new Set(oldTools.map(String));
+    const newSet = new Set(newTools.map(String));
     const added = [...newSet].filter((value) => !oldSet.has(value)).length;
     const removed = [...oldSet].filter((value) => !newSet.has(value)).length;
     changes.push({ component: "tools", magnitude: toolsMagnitude, description: `+${added}/-${removed} tools` });

@@ -105,6 +105,19 @@ describe("AnalysisEngine — single target", () => {
     expect(result.summary.headline).toContain("not found");
     expect(result.limitations.length).toBeGreaterThan(0);
   });
+
+  it("treats non-object report JSON as an unloaded artifact", () => {
+    const dir = join(tmpDir, "_simulations", "malformed_shape");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "report.json"), JSON.stringify(["not", "an", "artifact"]), "utf-8");
+
+    const engine = createEngine();
+    const result = engine.analyze({ id: "malformed_shape", type: "simulation" });
+
+    expect(result.summary.headline).toContain("not found");
+    expect(result.findings).toHaveLength(0);
+  });
+
   it("analyzes a real run from SQLite + runsRoot artifacts", () => {
     mkdirSync(join(tmpDir, "runs", "run_123"), { recursive: true });
     writeFileSync(
@@ -161,6 +174,19 @@ describe("AnalysisEngine — single target", () => {
     expect(result.target.type).toBe("mission");
     expect(result.summary.headline).toContain("Ship login");
     expect(result.findings.some((f) => f.statement.includes("completed"))).toBe(true);
+  });
+
+  it("ignores non-object mission checkpoint JSON", () => {
+    const missionId = "mission_bad_checkpoint";
+    const checkpointDir = join(tmpDir, "runs", "missions", missionId, "checkpoints");
+    mkdirSync(checkpointDir, { recursive: true });
+    writeFileSync(join(checkpointDir, "001.json"), JSON.stringify(["not", "a", "checkpoint"]), "utf-8");
+
+    const engine = createEngine();
+    const result = engine.analyze({ id: missionId, type: "mission" });
+
+    expect(result.summary.headline).toContain("not found");
+    expect(result.findings).toHaveLength(0);
   });
 });
 

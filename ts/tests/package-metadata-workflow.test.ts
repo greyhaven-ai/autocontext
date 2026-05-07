@@ -1,5 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -40,6 +40,14 @@ describe("package metadata workflow", () => {
     });
   });
 
+  it("ignores package metadata with non-object JSON shape", () => {
+    const path = packageMetadataPath(dir, "grid_ctf");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(["not", "metadata"]), "utf-8");
+
+    expect(readPackageMetadata(dir, "grid_ctf")).toEqual({});
+  });
+
   it("prefers parsed best-match strategy and falls back to persisted metadata on invalid JSON", () => {
     store.createRun("run-1", "grid_ctf", 1, "local");
     store.upsertGeneration("run-1", 1, {
@@ -69,6 +77,29 @@ describe("package metadata workflow", () => {
       passedValidation: true,
       validationErrors: "",
       strategyJson: "{bad-json",
+    });
+
+    expect(bestStrategyForScenario(store, "grid_ctf", { best_strategy: { fallback: true } })).toEqual({ fallback: true });
+  });
+
+  it("falls back when best-match strategy JSON is not an object", () => {
+    store.createRun("run-2", "grid_ctf", 1, "local");
+    store.upsertGeneration("run-2", 1, {
+      meanScore: 0.6,
+      bestScore: 0.8,
+      elo: 1100,
+      wins: 1,
+      losses: 0,
+      gateDecision: "advance",
+      status: "completed",
+    });
+    store.updateRunStatus("run-2", "completed");
+    store.recordMatch("run-2", 1, {
+      seed: 44,
+      score: 0.8,
+      passedValidation: true,
+      validationErrors: "",
+      strategyJson: JSON.stringify(["not", "strategy"]),
     });
 
     expect(bestStrategyForScenario(store, "grid_ctf", { best_strategy: { fallback: true } })).toEqual({ fallback: true });

@@ -19,29 +19,20 @@ const TIER_CONFIG_DEFAULTS = {
 export type TierConfigOpts = Partial<typeof TIER_CONFIG_DEFAULTS>;
 
 export class TierConfig {
-  readonly enabled: boolean;
-  readonly tierHaikuModel: string;
-  readonly tierSonnetModel: string;
-  readonly tierOpusModel: string;
-  readonly competitorHaikuMaxGen: number;
-  readonly competitorRetryEscalation: number;
-  readonly coachMinTier: string;
-  readonly architectMinTier: string;
-  readonly analystMinTier: string;
-  readonly translatorMinTier: string;
+  readonly enabled!: boolean;
+  readonly tierHaikuModel!: string;
+  readonly tierSonnetModel!: string;
+  readonly tierOpusModel!: string;
+  readonly competitorHaikuMaxGen!: number;
+  readonly competitorRetryEscalation!: number;
+  readonly coachMinTier!: string;
+  readonly architectMinTier!: string;
+  readonly analystMinTier!: string;
+  readonly translatorMinTier!: string;
 
   constructor(opts: TierConfigOpts = {}) {
     const resolved = { ...TIER_CONFIG_DEFAULTS, ...opts };
-    this.enabled = resolved.enabled;
-    this.tierHaikuModel = resolved.tierHaikuModel;
-    this.tierSonnetModel = resolved.tierSonnetModel;
-    this.tierOpusModel = resolved.tierOpusModel;
-    this.competitorHaikuMaxGen = resolved.competitorHaikuMaxGen;
-    this.competitorRetryEscalation = resolved.competitorRetryEscalation;
-    this.coachMinTier = resolved.coachMinTier;
-    this.architectMinTier = resolved.architectMinTier;
-    this.analystMinTier = resolved.analystMinTier;
-    this.translatorMinTier = resolved.translatorMinTier;
+    Object.assign(this, resolved);
   }
 }
 

@@ -70,6 +70,16 @@ describe("simulation artifact store", () => {
     });
   });
 
+  it("returns null for malformed persisted simulation specs", () => {
+    const specPath = join(tmpDir, "spec.json");
+
+    writeFileSync(specPath, JSON.stringify(["not", "a", "spec"]), "utf-8");
+    expect(loadPersistedSimulationSpec(specPath)).toBeNull();
+
+    writeFileSync(specPath, "{ malformed", "utf-8");
+    expect(loadPersistedSimulationSpec(specPath)).toBeNull();
+  });
+
   it("loads a saved simulation report by simulation name", () => {
     const report: SimulationResult = {
       id: "sim_base",

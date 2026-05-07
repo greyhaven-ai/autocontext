@@ -8,11 +8,13 @@ import type { AgentOutput, AgentRuntime } from "./base.js";
 
 export class DirectAPIRuntime implements AgentRuntime {
   readonly name = "DirectAPI";
+  #provider: LLMProvider;
+  #model?: string;
 
-  constructor(
-    private provider: LLMProvider,
-    private model?: string,
-  ) {}
+  constructor(provider: LLMProvider, model?: string) {
+    this.#provider = provider;
+    this.#model = model;
+  }
 
   async generate(opts: {
     prompt: string;
@@ -22,10 +24,10 @@ export class DirectAPIRuntime implements AgentRuntime {
     const sys =
       opts.system ??
       "You are a skilled writer and analyst. Complete the task precisely.";
-    const result = await this.provider.complete({
+    const result = await this.#provider.complete({
       systemPrompt: sys,
       userPrompt: opts.prompt,
-      model: this.model,
+      model: this.#model,
     });
     return {
       text: result.text,
@@ -50,10 +52,10 @@ export class DirectAPIRuntime implements AgentRuntime {
     const sys =
       opts.system ??
       "You are revising content based on expert feedback. Improve the output.";
-    const result = await this.provider.complete({
+    const result = await this.#provider.complete({
       systemPrompt: sys,
       userPrompt: revisionPrompt,
-      model: this.model,
+      model: this.#model,
     });
     return {
       text: result.text,

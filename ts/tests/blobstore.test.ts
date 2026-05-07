@@ -94,6 +94,14 @@ describe("LocalBlobStore", () => {
       "invalid blob key",
     );
   });
+
+  it("wraps unreadable blob entries with key context", () => {
+    const store = new LocalBlobStore(join(tmpDir, "blobs"));
+    mkdirSync(join(tmpDir, "blobs", "dir-key"), { recursive: true });
+
+    expect(() => store.get("dir-key")).toThrow("Failed to read blob 'dir-key'");
+    expect(() => store.head("dir-key")).toThrow("Failed to read blob metadata 'dir-key'");
+  });
 });
 
 describe("BlobRegistry", () => {
@@ -119,6 +127,15 @@ describe("BlobRegistry", () => {
     registry.save(path);
     const loaded = BlobRegistry.load(path);
     expect(loaded.lookup("r1", "f.txt")).not.toBeNull();
+  });
+
+  it("ignores malformed registry payloads instead of registering partial refs", () => {
+    const path = join(tmpDir, "registry.json");
+    writeFileSync(path, JSON.stringify({ r1: { "bad.txt": { kind: "trace" } } }), "utf-8");
+
+    const loaded = BlobRegistry.load(path);
+
+    expect(loaded.lookup("r1", "bad.txt")).toBeNull();
   });
 });
 
@@ -147,6 +164,13 @@ describe("HydrationCache", () => {
     expect(() => cache.put("../escape.txt", data, digest)).toThrow(
       "invalid blob key",
     );
+  });
+
+  it("wraps unreadable cache entries with key context", () => {
+    const cache = new HydrationCache(join(tmpDir, "cache"), 100);
+    mkdirSync(join(tmpDir, "cache", "dir-key"), { recursive: true });
+
+    expect(() => cache.get("dir-key")).toThrow("Failed to read cache entry 'dir-key'");
   });
 });
 

@@ -411,12 +411,18 @@ export {
   parseCoachOutput,
   parseArchitectOutput,
   extractDelimitedSection,
+} from "./agents/roles.js";
+export {
   RuntimeBridgeProvider,
   RetryProvider,
+} from "./agents/provider-bridge.js";
+export {
   ModelRouter,
   TierConfig,
+} from "./agents/model-router.js";
+export {
   AgentOrchestrator,
-} from "./agents/index.js";
+} from "./agents/orchestrator.js";
 export type {
   Role,
   RoleConfig,
@@ -424,13 +430,19 @@ export type {
   AnalystOutput,
   CoachOutput,
   ArchitectOutput,
+} from "./agents/roles.js";
+export type {
   RetryOpts,
   RuntimeBridgeProviderOpts,
+} from "./agents/provider-bridge.js";
+export type {
   TierConfigOpts,
   SelectOpts,
+} from "./agents/model-router.js";
+export type {
   GenerationPrompts,
   GenerationResult,
-} from "./agents/index.js";
+} from "./agents/orchestrator.js";
 
 // Loop
 export {
@@ -452,8 +464,8 @@ export type {
 
 
 // Analytics / Traces
-export { ActorRef, TraceEvent, RunTrace } from "./analytics/index.js";
-export type { TraceEventInit } from "./analytics/index.js";
+export { ActorRef, TraceEvent, RunTrace } from "./analytics/run-trace.js";
+export type { TraceEventInit } from "./analytics/run-trace.js";
 export {
   SCHEMA_VERSION,
   ToolCallSchema,

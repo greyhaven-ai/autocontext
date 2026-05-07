@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 
 export interface AgentTaskSpec {
   name: string;
@@ -14,45 +15,52 @@ export interface AgentTaskSpec {
   requiredConcepts?: string[];
 }
 
+const AgentTaskStoreSpecSchema = z.object({
+  name: z.string().min(1),
+  taskPrompt: z.string().min(1),
+  rubric: z.string().min(1),
+  referenceContext: z.string().optional(),
+  requiredConcepts: z.array(z.string()).optional(),
+});
+
+function readTaskSpec(path: string): AgentTaskSpec | null {
+  try {
+    return AgentTaskStoreSpecSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
+  } catch {
+    return null;
+  }
+}
+
 export class AgentTaskStore {
-  private dir: string;
+  #dir: string;
 
   constructor(dir: string) {
-    this.dir = dir;
+    this.#dir = dir;
     mkdirSync(dir, { recursive: true });
   }
 
   create(spec: AgentTaskSpec): void {
-    const path = join(this.dir, `${spec.name}.json`);
-    writeFileSync(path, JSON.stringify(spec, null, 2), "utf-8");
+    const parsed = AgentTaskStoreSpecSchema.parse(spec);
+    const path = join(this.#dir, `${spec.name}.json`);
+    writeFileSync(path, JSON.stringify(parsed, null, 2), "utf-8");
   }
 
   list(): AgentTaskSpec[] {
-    if (!existsSync(this.dir)) return [];
-    return readdirSync(this.dir)
+    if (!existsSync(this.#dir)) return [];
+    return readdirSync(this.#dir)
       .filter((f) => f.endsWith(".json"))
-      .map((f) => {
-        try {
-          return JSON.parse(readFileSync(join(this.dir, f), "utf-8")) as AgentTaskSpec;
-        } catch {
-          return null;
-        }
-      })
+      .map((f) => readTaskSpec(join(this.#dir, f)))
       .filter((s): s is AgentTaskSpec => s !== null);
   }
 
   get(name: string): AgentTaskSpec | null {
-    const path = join(this.dir, `${name}.json`);
+    const path = join(this.#dir, `${name}.json`);
     if (!existsSync(path)) return null;
-    try {
-      return JSON.parse(readFileSync(path, "utf-8")) as AgentTaskSpec;
-    } catch {
-      return null;
-    }
+    return readTaskSpec(path);
   }
 
   delete(name: string): boolean {
-    const path = join(this.dir, `${name}.json`);
+    const path = join(this.#dir, `${name}.json`);
     if (!existsSync(path)) return false;
     rmSync(path);
     return true;

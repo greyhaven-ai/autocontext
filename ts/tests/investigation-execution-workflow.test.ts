@@ -58,4 +58,45 @@ module.exports.scenario = {
       },
     });
   });
+
+  it("uses the first non-empty evidence text when generated content is blank", async () => {
+    const source = `
+module.exports.scenario = {
+  initialState() {
+    return {
+      collectedEvidence: [
+        { id: "fallback-id", content: "", summary: "Config drift observed", relevance: 0.7 },
+        { id: "", content: "   ", summary: "", relevance: 0.2 },
+      ],
+    };
+  },
+  isTerminal() {
+    return true;
+  },
+  getAvailableActions() {
+    return [];
+  },
+  executeAction(state) {
+    return { result: {}, state };
+  },
+};
+`;
+
+    const result = await executeGeneratedInvestigation({ source });
+
+    expect(result.collectedEvidence).toEqual([
+      {
+        id: "fallback-id",
+        content: "Config drift observed",
+        isRedHerring: false,
+        relevance: 0.7,
+      },
+      {
+        id: "collected_1",
+        content: "unknown",
+        isRedHerring: false,
+        relevance: 0.2,
+      },
+    ]);
+  });
 });

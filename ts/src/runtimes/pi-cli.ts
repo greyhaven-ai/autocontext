@@ -5,6 +5,7 @@
 
 import { execFileSync } from "node:child_process";
 import type { AgentOutput } from "./base.js";
+import { definedConfigOptions } from "./config-options.js";
 
 export interface PiCLIConfigOpts {
   piCommand?: string;
@@ -14,33 +15,37 @@ export interface PiCLIConfigOpts {
   noContextFiles?: boolean;
 }
 
+const PI_CLI_CONFIG_DEFAULTS = {
+  piCommand: "pi",
+  model: "",
+  timeout: 300.0,
+  workspace: "",
+  noContextFiles: false,
+};
+
 export class PiCLIConfig {
-  readonly piCommand: string;
-  readonly model: string;
-  readonly timeout: number;
-  readonly workspace: string;
-  readonly noContextFiles: boolean;
+  readonly piCommand!: string;
+  readonly model!: string;
+  readonly timeout!: number;
+  readonly workspace!: string;
+  readonly noContextFiles!: boolean;
 
   constructor(opts: PiCLIConfigOpts = {}) {
-    this.piCommand = opts.piCommand ?? "pi";
-    this.model = opts.model ?? "";
-    this.timeout = opts.timeout ?? 300.0;
-    this.workspace = opts.workspace ?? "";
-    this.noContextFiles = opts.noContextFiles ?? false;
+    Object.assign(this, { ...PI_CLI_CONFIG_DEFAULTS, ...definedConfigOptions(opts) });
   }
 }
 
 export class PiCLIRuntime {
   readonly name = "pi-cli";
-  private config: PiCLIConfig;
+  #config: PiCLIConfig;
 
   constructor(config?: PiCLIConfig) {
-    this.config = config ?? new PiCLIConfig();
+    this.#config = config ?? new PiCLIConfig();
   }
 
   async generate(opts: { prompt: string; system?: string }): Promise<AgentOutput> {
     const fullPrompt = opts.system ? `${opts.system}\n\n${opts.prompt}` : opts.prompt;
-    return this.invoke(fullPrompt);
+    return this.#invoke(fullPrompt);
   }
 
   async revise(opts: {
@@ -54,7 +59,7 @@ export class PiCLIRuntime {
       `## Judge Feedback\n${opts.feedback}\n\n` +
       `## Original Task\n${opts.prompt}\n\n` +
       `Produce an improved version:`;
-    return this.invoke(revisionPrompt);
+    return this.#invoke(revisionPrompt);
   }
 
   parseOutput(raw: string): AgentOutput {
@@ -63,22 +68,22 @@ export class PiCLIRuntime {
     return { text: trimmed, metadata: {} };
   }
 
-  private invoke(prompt: string): AgentOutput {
+  #invoke(prompt: string): AgentOutput {
     const args = ["--print"];
-    if (this.config.model) {
-      args.push("--model", this.config.model);
+    if (this.#config.model) {
+      args.push("--model", this.#config.model);
     }
-    if (this.config.noContextFiles) {
+    if (this.#config.noContextFiles) {
       args.push("--no-context-files");
     }
 
     try {
-      const stdout = execFileSync(this.config.piCommand, args, {
+      const stdout = execFileSync(this.#config.piCommand, args, {
         input: prompt,
-        timeout: this.config.timeout * 1000,
+        timeout: this.#config.timeout * 1000,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
-        cwd: this.config.workspace || undefined,
+        cwd: this.#config.workspace || undefined,
       });
       return this.parseOutput(stdout);
     } catch (err: unknown) {

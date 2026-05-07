@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import type { AgentOutput } from "./base.js";
+import { definedConfigOptions } from "./config-options.js";
 
 export interface PiRPCConfigOpts {
   piCommand?: string;
@@ -17,23 +18,31 @@ export interface PiRPCConfigOpts {
   extraArgs?: string[];
 }
 
+const PI_RPC_CONFIG_DEFAULTS = {
+  piCommand: "pi",
+  model: "",
+  timeout: 120.0,
+  workspace: "",
+  sessionPersistence: true,
+  noContextFiles: false,
+  extraArgs: [] as string[],
+};
+
 export class PiRPCConfig {
-  readonly piCommand: string;
-  readonly model: string;
-  readonly timeout: number;
-  readonly workspace: string;
-  readonly sessionPersistence: boolean;
-  readonly noContextFiles: boolean;
-  readonly extraArgs: string[];
+  readonly piCommand!: string;
+  readonly model!: string;
+  readonly timeout!: number;
+  readonly workspace!: string;
+  readonly sessionPersistence!: boolean;
+  readonly noContextFiles!: boolean;
+  readonly extraArgs!: string[];
 
   constructor(opts: PiRPCConfigOpts = {}) {
-    this.piCommand = opts.piCommand ?? "pi";
-    this.model = opts.model ?? "";
-    this.timeout = opts.timeout ?? 120.0;
-    this.workspace = opts.workspace ?? "";
-    this.sessionPersistence = opts.sessionPersistence ?? true;
-    this.noContextFiles = opts.noContextFiles ?? false;
-    this.extraArgs = [...(opts.extraArgs ?? [])];
+    Object.assign(this, {
+      ...PI_RPC_CONFIG_DEFAULTS,
+      ...definedConfigOptions(opts),
+      extraArgs: [...(opts.extraArgs ?? PI_RPC_CONFIG_DEFAULTS.extraArgs)],
+    });
   }
 }
 
@@ -360,16 +369,16 @@ type PiRpcEvent = Record<string, unknown> & { type?: string };
 
 export class PiPersistentRPCRuntime extends PiRPCRuntime {
   readonly supportsConcurrentRequests = false;
-  private process: ReturnType<typeof spawn> | null = null;
-  private stdoutBuffer = "";
-  private stdoutLines: string[] = [];
-  private stderr = "";
-  private waiters: Array<() => void> = [];
-  private processError: Error | null = null;
-  private processExitCode: number | null = null;
+  #process: ReturnType<typeof spawn> | null = null;
+  #stdoutBuffer = "";
+  #stdoutLines: string[] = [];
+  #stderr = "";
+  #waiters: Array<() => void> = [];
+  #processError: Error | null = null;
+  #processExitCode: number | null = null;
 
   close(): void {
-    const child = this.process;
+    const child = this.#process;
     if (!child) return;
     if (child.stdin && child.stdin.writable && !child.stdin.destroyed) {
       child.stdin.end();
@@ -377,7 +386,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
     if (!child.killed && child.exitCode === null) {
       child.kill();
     }
-    this.process = null;
+    this.#process = null;
     this.notifyWaiters();
   }
 
@@ -391,7 +400,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
     const command = this.withId(this.buildPromptCommand(fullPrompt));
     try {
       const lines = await this.collectUntil(command, (line) => this.isTerminalRpcEvent(line));
-      return this.parseOutput(lines.join(""), this.processExitCode ?? 0, this.stderr);
+      return this.parseOutput(lines.join(""), this.#processExitCode ?? 0, this.#stderr);
     } catch (error) {
       if (error instanceof Error && error.message === "timeout") {
         this.close();
@@ -430,14 +439,14 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
   }
 
   private ensureProcess(): ReturnType<typeof spawn> {
-    if (this.process && this.process.exitCode === null && !this.process.killed) {
-      return this.process;
+    if (this.#process && this.#process.exitCode === null && !this.#process.killed) {
+      return this.#process;
     }
-    this.stdoutBuffer = "";
-    this.stdoutLines = [];
-    this.stderr = "";
-    this.processError = null;
-    this.processExitCode = null;
+    this.#stdoutBuffer = "";
+    this.#stdoutLines = [];
+    this.#stderr = "";
+    this.#processError = null;
+    this.#processExitCode = null;
 
     const child = spawn(this.config.piCommand, this.buildArgs(), {
       stdio: ["pipe", "pipe", "pipe"],
@@ -449,32 +458,32 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
       this.pushStdout(chunk);
     });
     child.stderr.on("data", (chunk: string | Buffer) => {
-      this.stderr += this.normalizeOutput(chunk);
+      this.#stderr += this.normalizeOutput(chunk);
     });
     child.on("error", (error) => {
-      this.processError = error instanceof Error ? error : new Error(String(error));
+      this.#processError = error instanceof Error ? error : new Error(String(error));
       this.notifyWaiters();
     });
     child.on("close", (code, signal) => {
-      if (this.stdoutBuffer) {
-        this.stdoutLines.push(this.stdoutBuffer);
-        this.stdoutBuffer = "";
+      if (this.#stdoutBuffer) {
+        this.#stdoutLines.push(this.#stdoutBuffer);
+        this.#stdoutBuffer = "";
       }
-      this.processExitCode = code ?? (signal ? 1 : 0);
+      this.#processExitCode = code ?? (signal ? 1 : 0);
       this.notifyWaiters();
     });
-    this.process = child;
+    this.#process = child;
     return child;
   }
 
   private pushStdout(chunk: string | Buffer): void {
-    this.stdoutBuffer += this.normalizeOutput(chunk);
-    let newlineIndex = this.stdoutBuffer.indexOf("\n");
+    this.#stdoutBuffer += this.normalizeOutput(chunk);
+    let newlineIndex = this.#stdoutBuffer.indexOf("\n");
     while (newlineIndex >= 0) {
-      const line = this.stdoutBuffer.slice(0, newlineIndex);
-      this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
-      this.stdoutLines.push(`${line}\n`);
-      newlineIndex = this.stdoutBuffer.indexOf("\n");
+      const line = this.#stdoutBuffer.slice(0, newlineIndex);
+      this.#stdoutBuffer = this.#stdoutBuffer.slice(newlineIndex + 1);
+      this.#stdoutLines.push(`${line}\n`);
+      newlineIndex = this.#stdoutBuffer.indexOf("\n");
     }
     this.notifyWaiters();
   }
@@ -528,13 +537,13 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
   }
 
   private async nextLine(deadline: number): Promise<string | null> {
-    if (this.stdoutLines.length > 0) {
-      return this.stdoutLines.shift() ?? null;
+    if (this.#stdoutLines.length > 0) {
+      return this.#stdoutLines.shift() ?? null;
     }
-    if (this.processError) {
-      throw this.processError;
+    if (this.#processError) {
+      throw this.#processError;
     }
-    if (this.processExitCode !== null) {
+    if (this.#processExitCode !== null) {
       return null;
     }
 
@@ -543,11 +552,11 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
       throw new Error("timeout");
     }
     await this.waitForOutput(remaining);
-    if (this.stdoutLines.length > 0) {
-      return this.stdoutLines.shift() ?? null;
+    if (this.#stdoutLines.length > 0) {
+      return this.#stdoutLines.shift() ?? null;
     }
-    if (this.processError) {
-      throw this.processError;
+    if (this.#processError) {
+      throw this.#processError;
     }
     if (Date.now() >= deadline) {
       throw new Error("timeout");
@@ -561,7 +570,7 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        this.waiters = this.waiters.filter((waiter) => waiter !== notify);
+        this.#waiters = this.#waiters.filter((waiter) => waiter !== notify);
         resolve();
       }, timeoutMs);
       const notify = (): void => {
@@ -570,12 +579,12 @@ export class PiPersistentRPCRuntime extends PiRPCRuntime {
         clearTimeout(timer);
         resolve();
       };
-      this.waiters.push(notify);
+      this.#waiters.push(notify);
     });
   }
 
   private notifyWaiters(): void {
-    const waiters = this.waiters.splice(0);
+    const waiters = this.#waiters.splice(0);
     for (const waiter of waiters) {
       waiter();
     }

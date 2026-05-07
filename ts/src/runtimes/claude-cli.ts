@@ -26,29 +26,29 @@ export interface ClaudeCLIConfig {
 
 export class ClaudeCLIRuntime implements AgentRuntime {
   readonly name = "ClaudeCLI";
-  private config: Required<
+  #config: Required<
     Pick<ClaudeCLIConfig, "model" | "permissionMode" | "timeout">
   > &
     ClaudeCLIConfig;
-  private _totalCost = 0;
-  private _claudePath: string | null;
+  #totalCost = 0;
+  #claudePath: string | null;
 
   constructor(config?: ClaudeCLIConfig) {
-    this.config = {
+    this.#config = {
       model: "sonnet",
       permissionMode: "bypassPermissions",
       timeout: 600_000,
       ...config,
     };
-    this._claudePath = which("claude");
+    this.#claudePath = which("claude");
   }
 
   get available(): boolean {
-    return this._claudePath !== null;
+    return this.#claudePath !== null;
   }
 
   get totalCost(): number {
-    return this._totalCost;
+    return this.#totalCost;
   }
 
   async generate(opts: {
@@ -56,8 +56,8 @@ export class ClaudeCLIRuntime implements AgentRuntime {
     system?: string;
     schema?: Record<string, unknown>;
   }): Promise<AgentOutput> {
-    const args = this.buildArgs(opts.system, opts.schema);
-    return this.invoke(opts.prompt, args);
+    const args = this.#buildArgs(opts.system, opts.schema);
+    return this.#invoke(opts.prompt, args);
   }
 
   async revise(opts: {
@@ -72,67 +72,66 @@ export class ClaudeCLIRuntime implements AgentRuntime {
       `## Judge Feedback\n${opts.feedback}\n\n` +
       `## Original Task\n${opts.prompt}\n\n` +
       "Produce an improved version:";
-    const args = this.buildArgs(opts.system);
-    return this.invoke(revisionPrompt, args);
+    const args = this.#buildArgs(opts.system);
+    return this.#invoke(revisionPrompt, args);
   }
 
-  private buildArgs(
+  #buildArgs(
     system?: string,
     schema?: Record<string, unknown>,
   ): string[] {
-    const claude = this._claudePath ?? "claude";
     const args = ["-p", "--output-format", "json"];
 
-    args.push("--model", this.config.model);
-    if (this.config.fallbackModel) {
-      args.push("--fallback-model", this.config.fallbackModel);
+    args.push("--model", this.#config.model);
+    if (this.#config.fallbackModel) {
+      args.push("--fallback-model", this.#config.fallbackModel);
     }
-    if (this.config.tools != null) {
-      args.push("--tools", this.config.tools);
+    if (this.#config.tools != null) {
+      args.push("--tools", this.#config.tools);
     }
-    args.push("--permission-mode", this.config.permissionMode);
+    args.push("--permission-mode", this.#config.permissionMode);
 
-    if (!this.config.sessionPersistence) {
+    if (!this.#config.sessionPersistence) {
       args.push("--no-session-persistence");
     }
-    if (this.config.sessionId) {
-      args.push("--session-id", this.config.sessionId);
+    if (this.#config.sessionId) {
+      args.push("--session-id", this.#config.sessionId);
     }
 
     if (system) {
       args.push("--system-prompt", system);
-    } else if (this.config.systemPrompt) {
-      args.push("--system-prompt", this.config.systemPrompt);
+    } else if (this.#config.systemPrompt) {
+      args.push("--system-prompt", this.#config.systemPrompt);
     }
-    if (this.config.appendSystemPrompt) {
-      args.push("--append-system-prompt", this.config.appendSystemPrompt);
+    if (this.#config.appendSystemPrompt) {
+      args.push("--append-system-prompt", this.#config.appendSystemPrompt);
     }
     if (schema) {
       args.push("--json-schema", JSON.stringify(schema));
     }
-    if (this.config.extraArgs) {
-      for (const arg of this.config.extraArgs) {
+    if (this.#config.extraArgs) {
+      for (const arg of this.#config.extraArgs) {
         if (typeof arg !== "string") {
           throw new Error(`extraArgs must be strings, got ${typeof arg}`);
         }
       }
-      args.push(...this.config.extraArgs);
+      args.push(...this.#config.extraArgs);
     }
 
     return args;
   }
 
-  private async invoke(prompt: string, args: string[]): Promise<AgentOutput> {
-    const claude = this._claudePath ?? "claude";
+  async #invoke(prompt: string, args: string[]): Promise<AgentOutput> {
+    const claude = this.#claudePath ?? "claude";
     args.push(prompt);
 
     try {
       const { stdout } = await execFileAsync(claude, args, {
-        timeout: this.config.timeout,
+        timeout: this.#config.timeout,
         maxBuffer: 10 * 1024 * 1024,
         encoding: "utf8",
       });
-      return this.parseOutput(stdout);
+      return this.#parseOutput(stdout);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "killed" in err) {
         return { text: "", metadata: { error: "timeout" } };
@@ -141,16 +140,16 @@ export class ClaudeCLIRuntime implements AgentRuntime {
       if (e.code === "ENOENT") {
         return { text: "", metadata: { error: "claude_not_found" } };
       }
-      if (e.stdout) return this.parseOutput(e.stdout);
+      if (e.stdout) return this.#parseOutput(e.stdout);
       return { text: "", metadata: { error: String(err) } };
     }
   }
 
-  private parseOutput(raw: string): AgentOutput {
+  #parseOutput(raw: string): AgentOutput {
     try {
       const data = JSON.parse(raw);
       const cost = data.total_cost_usd;
-      if (cost != null) this._totalCost += cost;
+      if (cost != null) this.#totalCost += cost;
 
       const modelUsage = data.modelUsage ?? {};
       const model = Object.keys(modelUsage)[0];
