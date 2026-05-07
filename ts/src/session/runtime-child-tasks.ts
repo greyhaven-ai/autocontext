@@ -8,6 +8,7 @@ import {
   RuntimeSessionEventStore,
   RuntimeSessionEventType,
 } from "./runtime-events.js";
+import { jsonSafeRecord } from "./runtime-json.js";
 import type { RuntimeSessionEventSink } from "./runtime-session-notifications.js";
 
 export const DEFAULT_CHILD_TASK_MAX_DEPTH = 4;
@@ -120,7 +121,7 @@ export class RuntimeChildTaskRunner {
       cwd: opts.cwd,
       commands: opts.commands,
     });
-    const childSessionId = `task:${this.parentLog.sessionId}:${taskId}`;
+    const childSessionId = `task:${this.parentLog.sessionId}:${taskId}:${worker.workerId}`;
     const childLog = RuntimeSessionEventLog.create({
       sessionId: childSessionId,
       parentSessionId: this.parentLog.sessionId,
@@ -182,7 +183,7 @@ export class RuntimeChildTaskRunner {
       const text = output.text;
       childLog.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
         text,
-        metadata: output.metadata ?? {},
+        metadata: jsonSafeRecord(output.metadata),
         depth: childDepth,
         maxDepth: this.maxDepth,
       });
