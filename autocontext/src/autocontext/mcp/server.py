@@ -132,6 +132,50 @@ def autocontext_run_replay(run_id: str, generation: int) -> str:
     return json.dumps(tools.run_replay(_get_ctx(), run_id, generation))
 
 
+@mcp.tool()
+def autocontext_list_runtime_sessions(limit: int = 50) -> str:
+    """List recorded runtime-session event logs."""
+    return json.dumps(tools.list_runtime_sessions(_get_ctx(), limit))
+
+
+def _runtime_session_response(session_id: str, run_id: str) -> str:
+    return json.dumps(tools.get_runtime_session(_get_ctx(), session_id=session_id or None, run_id=run_id or None))
+
+
+def _runtime_session_timeline_response(session_id: str, run_id: str) -> str:
+    return json.dumps(tools.get_runtime_session_timeline(_get_ctx(), session_id=session_id or None, run_id=run_id or None))
+
+
+@mcp.tool()
+def autocontext_get_runtime_session(session_id: str = "", run_id: str = "") -> str:
+    """Read a runtime-session event log by session id or run id."""
+    return _runtime_session_response(session_id, run_id)
+
+
+@mcp.tool()
+def autocontext_get_runtime_session_timeline(session_id: str = "", run_id: str = "") -> str:
+    """Read an operator-facing runtime-session timeline by session id or run id."""
+    return _runtime_session_timeline_response(session_id, run_id)
+
+
+@mcp.tool()
+def list_runtime_sessions(limit: int = 50) -> str:
+    """Alias for autocontext_list_runtime_sessions."""
+    return json.dumps(tools.list_runtime_sessions(_get_ctx(), limit))
+
+
+@mcp.tool()
+def get_runtime_session(session_id: str = "", run_id: str = "") -> str:
+    """Alias for autocontext_get_runtime_session."""
+    return _runtime_session_response(session_id, run_id)
+
+
+@mcp.tool()
+def get_runtime_session_timeline(session_id: str = "", run_id: str = "") -> str:
+    """Alias for autocontext_get_runtime_session_timeline."""
+    return _runtime_session_timeline_response(session_id, run_id)
+
+
 # -- Sandbox tools --
 
 
