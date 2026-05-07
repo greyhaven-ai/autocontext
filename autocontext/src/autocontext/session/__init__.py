@@ -4,6 +4,18 @@ from autocontext.session.runtime_events import (
     RuntimeSessionEventStore,
     RuntimeSessionEventType,
 )
+from autocontext.session.runtime_session import (
+    DEFAULT_CHILD_TASK_MAX_DEPTH,
+    RuntimeChildTaskHandlerInput,
+    RuntimeChildTaskHandlerOutput,
+    RuntimeChildTaskResult,
+    RuntimeChildTaskRunner,
+    RuntimeSession,
+    RuntimeSessionEventSink,
+    RuntimeSessionPromptHandlerInput,
+    RuntimeSessionPromptHandlerOutput,
+    RuntimeSessionPromptResult,
+)
 from autocontext.session.runtime_session_ids import runtime_session_id_for_run
 from autocontext.session.runtime_session_read_model import (
     read_runtime_session_by_id,
@@ -18,10 +30,20 @@ from autocontext.session.runtime_session_timeline import (
 )
 
 __all__ = [
+    "DEFAULT_CHILD_TASK_MAX_DEPTH",
+    "RuntimeChildTaskHandlerInput",
+    "RuntimeChildTaskHandlerOutput",
+    "RuntimeChildTaskResult",
+    "RuntimeChildTaskRunner",
+    "RuntimeSession",
     "RuntimeSessionEvent",
     "RuntimeSessionEventLog",
+    "RuntimeSessionEventSink",
     "RuntimeSessionEventStore",
     "RuntimeSessionEventType",
+    "RuntimeSessionPromptHandlerInput",
+    "RuntimeSessionPromptHandlerOutput",
+    "RuntimeSessionPromptResult",
     "build_runtime_session_timeline",
     "read_runtime_session_by_id",
     "read_runtime_session_by_run_id",

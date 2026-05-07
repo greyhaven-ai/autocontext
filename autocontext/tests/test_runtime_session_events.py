@@ -203,6 +203,325 @@ def test_runtime_session_event_store_closes_operation_connections(tmp_path: Path
     assert closed_connections >= 4
 
 
+def test_runtime_session_records_successful_prompt_with_request_correlation(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeSession, RuntimeSessionPromptHandlerOutput
+    from autocontext.session.runtime_events import RuntimeSessionEventStore, RuntimeSessionEventType
+
+    observed: list[tuple[RuntimeSessionEventType, str]] = []
+
+    class EventSink:
+        def on_runtime_session_event(self, event, log) -> None:
+            observed.append((event.event_type, log.session_id))
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+            event_sink=EventSink(),
+            metadata={"runId": "abc"},
+        )
+
+        def handler(input):
+            assert input.session_id == "run:abc:runtime"
+            assert input.prompt == "Analyze the failure"
+            assert input.role == "analyst"
+            assert input.cwd == "/workspace"
+            assert input.session_log is session.log
+            return RuntimeSessionPromptHandlerOutput(text="Analysis complete", metadata={"tokens": 12})
+
+        result = session.submit_prompt(
+            prompt="Analyze the failure",
+            role="analyst",
+            cwd="/workspace",
+            handler=handler,
+        )
+
+        assert result.session_id == "run:abc:runtime"
+        assert result.role == "analyst"
+        assert result.cwd == "/workspace"
+        assert result.text == "Analysis complete"
+        assert result.is_error is False
+        assert result.error == ""
+
+        loaded = store.load("run:abc:runtime")
+        assert loaded is not None
+        assert loaded.metadata == {"goal": "autoctx run support_triage", "runId": "abc"}
+        prompt, response = loaded.events
+        assert prompt.event_type == RuntimeSessionEventType.PROMPT_SUBMITTED
+        assert response.event_type == RuntimeSessionEventType.ASSISTANT_MESSAGE
+        assert prompt.payload["requestId"]
+        assert response.payload["requestId"] == prompt.payload["requestId"]
+        assert response.payload["promptEventId"] == prompt.event_id
+        assert response.payload["metadata"] == {"tokens": 12}
+        assert observed == [
+            (RuntimeSessionEventType.PROMPT_SUBMITTED, "run:abc:runtime"),
+            (RuntimeSessionEventType.ASSISTANT_MESSAGE, "run:abc:runtime"),
+        ]
+    finally:
+        store.close()
+
+
+def test_runtime_session_records_handler_failure_without_raising(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeSession
+    from autocontext.session.runtime_events import RuntimeSessionEventStore, RuntimeSessionEventType
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+        )
+
+        def handler(input):
+            raise RuntimeError("runtime down")
+
+        result = session.submit_prompt(prompt="Analyze the failure", handler=handler)
+
+        assert result.session_id == "run:abc:runtime"
+        assert result.role == "assistant"
+        assert result.cwd == ""
+        assert result.text == ""
+        assert result.is_error is True
+        assert result.error == "runtime down"
+
+        loaded = store.load("run:abc:runtime")
+        assert loaded is not None
+        assert [event.event_type for event in loaded.events] == [
+            RuntimeSessionEventType.PROMPT_SUBMITTED,
+            RuntimeSessionEventType.ASSISTANT_MESSAGE,
+        ]
+        response = loaded.events[1]
+        assert response.payload["isError"] is True
+        assert response.payload["error"] == "runtime down"
+    finally:
+        store.close()
+
+
+def test_runtime_session_event_sink_failures_do_not_interrupt_recording(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeSession, RuntimeSessionPromptHandlerOutput
+    from autocontext.session.runtime_events import RuntimeSessionEventStore
+
+    class FailingSink:
+        def on_runtime_session_event(self, event, log) -> None:
+            raise RuntimeError("sink unavailable")
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+            event_sink=FailingSink(),
+        )
+
+        result = session.submit_prompt(
+            prompt="Analyze",
+            handler=lambda input: RuntimeSessionPromptHandlerOutput(text="Still recorded"),
+        )
+
+        assert result.text == "Still recorded"
+        assert store.load("run:abc:runtime") is not None
+    finally:
+        store.close()
+
+
+def test_runtime_session_sanitizes_non_json_metadata_before_recording(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeSession, RuntimeSessionPromptHandlerOutput
+    from autocontext.session.runtime_events import RuntimeSessionEventStore, RuntimeSessionEventType
+
+    class Marker:
+        def __str__(self) -> str:
+            return "marker-value"
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+        )
+
+        result = session.submit_prompt(
+            prompt="Analyze",
+            handler=lambda input: RuntimeSessionPromptHandlerOutput(
+                text="Recorded",
+                metadata={"path": tmp_path, "marker": Marker()},
+            ),
+        )
+
+        assert result.is_error is False
+        loaded = store.load("run:abc:runtime")
+        assert loaded is not None
+        assert [event.event_type for event in loaded.events] == [
+            RuntimeSessionEventType.PROMPT_SUBMITTED,
+            RuntimeSessionEventType.ASSISTANT_MESSAGE,
+        ]
+        assert loaded.events[1].payload["metadata"] == {
+            "path": str(tmp_path),
+            "marker": "marker-value",
+        }
+    finally:
+        store.close()
+
+
+def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeChildTaskHandlerOutput, RuntimeSession
+    from autocontext.session.runtime_events import RuntimeSessionEventStore, RuntimeSessionEventType
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+        )
+
+        def handler(input):
+            assert input.task_id == "retry"
+            assert input.child_session_id == f"task:run:abc:runtime:retry:{input.worker_id}"
+            assert input.parent_session_id == "run:abc:runtime"
+            assert input.role == "analyst"
+            assert input.cwd == "/workspace"
+            assert input.depth == 1
+            assert input.max_depth == 4
+            return RuntimeChildTaskHandlerOutput(text="Child complete", metadata={"role": "analyst", "artifact": tmp_path})
+
+        result = session.run_child_task(
+            prompt="Investigate regression",
+            role="analyst",
+            task_id="retry",
+            cwd="/workspace",
+            handler=handler,
+        )
+
+        assert result.task_id == "retry"
+        assert result.child_session_id == f"task:run:abc:runtime:retry:{result.worker_id}"
+        assert result.parent_session_id == "run:abc:runtime"
+        assert result.role == "analyst"
+        assert result.cwd == "/workspace"
+        assert result.text == "Child complete"
+        assert result.is_error is False
+        assert result.error == ""
+        assert result.depth == 1
+        assert result.max_depth == 4
+
+        parent = store.load("run:abc:runtime")
+        child = store.load(result.child_session_id)
+        assert parent is not None
+        assert child is not None
+        assert [event.event_type for event in parent.events] == [
+            RuntimeSessionEventType.CHILD_TASK_STARTED,
+            RuntimeSessionEventType.CHILD_TASK_COMPLETED,
+        ]
+        started, completed = parent.events
+        assert started.payload["childSessionId"] == child.session_id
+        assert completed.payload["childSessionId"] == child.session_id
+        assert completed.payload["result"] == "Child complete"
+        assert child.parent_session_id == parent.session_id
+        assert child.task_id == "retry"
+        assert child.worker_id
+        assert [event.event_type for event in child.events] == [
+            RuntimeSessionEventType.PROMPT_SUBMITTED,
+            RuntimeSessionEventType.ASSISTANT_MESSAGE,
+        ]
+        assert child.events[1].payload["metadata"] == {"role": "analyst", "artifact": str(tmp_path)}
+        assert [log.session_id for log in session.list_child_logs()] == [child.session_id]
+    finally:
+        store.close()
+
+
+def test_runtime_session_reused_task_ids_keep_distinct_child_logs(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeChildTaskHandlerOutput, RuntimeSession
+    from autocontext.session.runtime_events import RuntimeSessionEventStore
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+        )
+
+        first = session.run_child_task(
+            prompt="Investigate regression",
+            role="analyst",
+            task_id="retry",
+            handler=lambda input: RuntimeChildTaskHandlerOutput(text="first attempt"),
+        )
+        second = session.run_child_task(
+            prompt="Investigate regression again",
+            role="analyst",
+            task_id="retry",
+            handler=lambda input: RuntimeChildTaskHandlerOutput(text="second attempt"),
+        )
+
+        assert first.task_id == second.task_id == "retry"
+        assert first.child_session_id != second.child_session_id
+        assert first.child_session_id.startswith("task:run:abc:runtime:retry:")
+        assert second.child_session_id.startswith("task:run:abc:runtime:retry:")
+
+        children = {log.session_id: log for log in session.list_child_logs()}
+        assert set(children) == {first.child_session_id, second.child_session_id}
+        assert children[first.child_session_id].task_id == "retry"
+        assert children[second.child_session_id].task_id == "retry"
+        assert children[first.child_session_id].events[1].payload["text"] == "first attempt"
+        assert children[second.child_session_id].events[1].payload["text"] == "second attempt"
+
+        parent = store.load("run:abc:runtime")
+        assert parent is not None
+        started_child_sessions = [
+            event.payload["childSessionId"]
+            for event in parent.events
+            if event.payload.get("taskId") == "retry" and "childSessionId" in event.payload
+        ]
+        assert started_child_sessions == [
+            first.child_session_id,
+            first.child_session_id,
+            second.child_session_id,
+            second.child_session_id,
+        ]
+    finally:
+        store.close()
+
+
+def test_runtime_session_child_task_depth_limit_is_recorded(tmp_path: Path) -> None:
+    from autocontext.session import RuntimeSession
+    from autocontext.session.runtime_events import RuntimeSessionEventStore
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        session = RuntimeSession.create(
+            session_id="run:abc:runtime",
+            goal="autoctx run support_triage",
+            event_store=store,
+            depth=1,
+            max_depth=1,
+        )
+
+        def handler(input):
+            raise AssertionError("depth-limited child task should not run")
+
+        result = session.run_child_task(
+            prompt="Too deep",
+            role="analyst",
+            task_id="depth",
+            handler=handler,
+        )
+
+        assert result.is_error is True
+        assert result.text == ""
+        assert result.error == "Maximum child task depth (1) exceeded"
+        child = store.load(result.child_session_id)
+        assert child is not None
+        assert child.events[1].payload["isError"] is True
+        assert child.events[1].payload["error"] == "Maximum child task depth (1) exceeded"
+    finally:
+        store.close()
+
+
 def test_runtime_session_read_model_resolves_run_ids_and_summaries() -> None:
     from autocontext.session.runtime_session_ids import runtime_session_id_for_run
     from autocontext.session.runtime_session_read_model import (

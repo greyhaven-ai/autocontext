@@ -183,6 +183,23 @@ class Coordinator(BaseModel):
             "worker_id": worker_id,
         })
 
+    def start_worker(self, worker_id: str) -> None:
+        """Mark a delegated worker as running."""
+        worker = self._get_worker(worker_id)
+        worker.start()
+        self._emit(CoordinatorEventType.WORKER_STARTED, {
+            "worker_id": worker_id,
+        })
+
+    def fail_worker(self, worker_id: str, error: str = "") -> None:
+        """Mark a running worker as failed."""
+        worker = self._get_worker(worker_id)
+        worker.fail(error=error)
+        self._emit(CoordinatorEventType.WORKER_FAILED, {
+            "worker_id": worker_id,
+            "error": error,
+        })
+
     def stop_worker(self, worker_id: str, reason: str = "") -> None:
         """Redirect a worker away from its current task."""
         worker = self._get_worker(worker_id)
