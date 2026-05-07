@@ -24,7 +24,7 @@ Run the commands in this README from the `autocontext/` directory. The Python pa
 - Persists playbooks, hints, tools, reports, and snapshots across runs
 - Supports staged validation, harness synthesis, and harness-aware routing
 - Exports training data and runs autoresearch-style local training loops
-- Exposes evaluation, validation, artifact, and discovery operations over MCP and HTTP
+- Exposes evaluation, validation, artifact, runtime-session, and discovery operations over MCP and HTTP
 
 ## Surface Summary
 
@@ -36,7 +36,7 @@ The Python package is the full control-plane surface in this repo. It currently 
 - local training workflows via `autoctx export-training-data` and `autoctx train`
 - scenario creation and materialization via `autoctx new-scenario`
 - Hermes Agent integration helpers via `autoctx hermes inspect` and `autoctx hermes export-skill`
-- HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`
+- HTTP API and MCP server surfaces via `autoctx serve` and `autoctx mcp-serve`, including runtime-session log and timeline readers for provider-backed runs
 
 Some newer operator-facing surfaces are currently TypeScript-first:
 
@@ -163,6 +163,8 @@ Start the MCP server:
 uv sync --group dev --extra mcp
 uv run autoctx mcp-serve
 ```
+
+Runtime-session logs created by the TypeScript runtime-session provider bundle can be read from Python too when both packages point at the same `AUTOCONTEXT_DB_PATH`. The Python cockpit API exposes `GET /api/cockpit/runtime-sessions`, `GET /api/cockpit/runtime-sessions/{session_id}`, `GET /api/cockpit/runtime-sessions/{session_id}/timeline`, `GET /api/cockpit/runs/{run_id}/runtime-session`, and `GET /api/cockpit/runs/{run_id}/runtime-session/timeline`. The Python MCP server exposes the same read model through `autocontext_list_runtime_sessions`, `autocontext_get_runtime_session`, and `autocontext_get_runtime_session_timeline`, plus unprefixed aliases.
 
 ## Main CLI Commands
 

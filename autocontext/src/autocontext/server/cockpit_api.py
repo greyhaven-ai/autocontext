@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -17,6 +18,19 @@ from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.changelog import build_changelog
 from autocontext.server.writeup import generate_writeup
+from autocontext.session.runtime_events import RuntimeSessionEventStore
+from autocontext.session.runtime_session_ids import runtime_session_id_for_run
+from autocontext.session.runtime_session_read_model import (
+    RuntimeSessionSummary,
+    read_runtime_session_by_id,
+    read_runtime_session_by_run_id,
+    read_runtime_session_summaries,
+    summarize_runtime_session,
+)
+from autocontext.session.runtime_session_timeline import (
+    read_runtime_session_timeline_by_id,
+    read_runtime_session_timeline_by_run_id,
+)
 from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
 
 logger = logging.getLogger(__name__)
@@ -52,6 +66,32 @@ def _build_effective_notebook_preview(
         notebook,
         current_best_score=current_best_score,
     ).to_dict()
+
+
+def _get_runtime_session_store(request: Request) -> RuntimeSessionEventStore:
+    settings = getattr(request.app.state, "app_settings", None)
+    if settings is None:
+        raise HTTPException(status_code=500, detail="Application settings are not configured")
+    return RuntimeSessionEventStore(settings.db_path)
+
+
+def _runtime_session_url_for_run(run_id: str) -> str:
+    return f"/api/cockpit/runs/{quote(run_id, safe='')}/runtime-session"
+
+
+def _runtime_session_discovery(
+    runtime_store: RuntimeSessionEventStore,
+    run_id: str,
+) -> dict[str, RuntimeSessionSummary | str | None]:
+    log = read_runtime_session_by_run_id(runtime_store, run_id)
+    return {
+        "runtime_session": summarize_runtime_session(log) if log is not None else None,
+        "runtime_session_url": _runtime_session_url_for_run(run_id),
+    }
+
+
+def _runtime_session_not_found(message: str, session_id: str) -> HTTPException:
+    return HTTPException(status_code=404, detail={"detail": message, "session_id": session_id})
 
 
 class NotebookUpdateBody(BaseModel):
@@ -179,6 +219,101 @@ def cockpit_delete_notebook(session_id: str, request: Request) -> dict[str, str]
 
 
 # ---------------------------------------------------------------------------
+# Runtime-session endpoints (provider runtime observability)
+# ---------------------------------------------------------------------------
+
+
+@cockpit_router.get("/runtime-sessions")
+def list_runtime_sessions(request: Request, limit: int = 50) -> dict[str, Any]:
+    """List recorded runtime-session event logs."""
+    if limit <= 0:
+        raise HTTPException(status_code=422, detail="limit must be a positive integer")
+    runtime_store = _get_runtime_session_store(request)
+    try:
+        return {"sessions": read_runtime_session_summaries(runtime_store, limit=limit)}
+    finally:
+        runtime_store.close()
+
+
+@cockpit_router.get("/runtime-sessions/{session_id}/timeline")
+def get_runtime_session_timeline(session_id: str, request: Request) -> dict[str, Any]:
+    """Read an operator-facing runtime-session timeline by session id."""
+    clean_session_id = session_id.strip()
+    if not clean_session_id:
+        raise HTTPException(status_code=422, detail="session_id is required")
+    runtime_store = _get_runtime_session_store(request)
+    try:
+        timeline = read_runtime_session_timeline_by_id(runtime_store, clean_session_id)
+        if timeline is None:
+            raise _runtime_session_not_found(
+                f"Runtime session timeline '{clean_session_id}' not found",
+                clean_session_id,
+            )
+        return timeline
+    finally:
+        runtime_store.close()
+
+
+@cockpit_router.get("/runtime-sessions/{session_id}")
+def get_runtime_session(session_id: str, request: Request) -> dict[str, Any]:
+    """Read a recorded runtime-session event log by session id."""
+    clean_session_id = session_id.strip()
+    if not clean_session_id:
+        raise HTTPException(status_code=422, detail="session_id is required")
+    runtime_store = _get_runtime_session_store(request)
+    try:
+        log = read_runtime_session_by_id(runtime_store, clean_session_id)
+        if log is None:
+            raise _runtime_session_not_found(
+                f"Runtime session '{clean_session_id}' not found",
+                clean_session_id,
+            )
+        return log.to_dict()
+    finally:
+        runtime_store.close()
+
+
+@cockpit_router.get("/runs/{run_id}/runtime-session/timeline")
+def get_run_runtime_session_timeline(run_id: str, request: Request) -> dict[str, Any]:
+    """Resolve a run id to its runtime-session timeline."""
+    clean_run_id = run_id.strip()
+    if not clean_run_id:
+        raise HTTPException(status_code=422, detail="run_id is required")
+    resolved_session_id = runtime_session_id_for_run(clean_run_id)
+    runtime_store = _get_runtime_session_store(request)
+    try:
+        timeline = read_runtime_session_timeline_by_run_id(runtime_store, clean_run_id)
+        if timeline is None:
+            raise _runtime_session_not_found(
+                f"Runtime session timeline for run '{clean_run_id}' not found",
+                resolved_session_id,
+            )
+        return timeline
+    finally:
+        runtime_store.close()
+
+
+@cockpit_router.get("/runs/{run_id}/runtime-session")
+def get_run_runtime_session(run_id: str, request: Request) -> dict[str, Any]:
+    """Resolve a run id to its runtime-session event log."""
+    clean_run_id = run_id.strip()
+    if not clean_run_id:
+        raise HTTPException(status_code=422, detail="run_id is required")
+    resolved_session_id = runtime_session_id_for_run(clean_run_id)
+    runtime_store = _get_runtime_session_store(request)
+    try:
+        log = read_runtime_session_by_run_id(runtime_store, clean_run_id)
+        if log is None:
+            raise _runtime_session_not_found(
+                f"Runtime session for run '{clean_run_id}' not found",
+                resolved_session_id,
+            )
+        return log.to_dict()
+    finally:
+        runtime_store.close()
+
+
+# ---------------------------------------------------------------------------
 # Run endpoints (read-only)
 # ---------------------------------------------------------------------------
 
@@ -188,35 +323,40 @@ def list_runs(request: Request) -> list[dict[str, Any]]:
     """List recent runs with summary info."""
     store = _get_store(request)
     runs = store.list_runs(limit=50)
+    runtime_store = _get_runtime_session_store(request)
 
     result: list[dict[str, Any]] = []
-    for run_dict in runs:
-        run_id = run_dict["run_id"]
-        scenario = run_dict["scenario"]
+    try:
+        for run_dict in runs:
+            run_id = run_dict["run_id"]
+            scenario = run_dict["scenario"]
 
-        # Get generation summary
-        with store.connect() as conn:
-            gen_rows = conn.execute(
-                "SELECT generation_index, best_score, elo, duration_seconds "
-                "FROM generations WHERE run_id = ? ORDER BY generation_index",
-                (run_id,),
-            ).fetchall()
+            # Get generation summary
+            with store.connect() as conn:
+                gen_rows = conn.execute(
+                    "SELECT generation_index, best_score, elo, duration_seconds "
+                    "FROM generations WHERE run_id = ? ORDER BY generation_index",
+                    (run_id,),
+                ).fetchall()
 
-        generations_completed = len(gen_rows)
-        best_score = max((g["best_score"] for g in gen_rows), default=0.0)
-        best_elo = max((g["elo"] for g in gen_rows), default=0.0)
-        total_duration = sum(g["duration_seconds"] or 0.0 for g in gen_rows)
+            generations_completed = len(gen_rows)
+            best_score = max((g["best_score"] for g in gen_rows), default=0.0)
+            best_elo = max((g["elo"] for g in gen_rows), default=0.0)
+            total_duration = sum(g["duration_seconds"] or 0.0 for g in gen_rows)
 
-        result.append({
-            "run_id": run_id,
-            "scenario_name": scenario,
-            "generations_completed": generations_completed,
-            "best_score": best_score,
-            "best_elo": best_elo,
-            "status": run_dict["status"],
-            "created_at": run_dict["created_at"],
-            "duration_seconds": round(total_duration, 1),
-        })
+            result.append({
+                "run_id": run_id,
+                "scenario_name": scenario,
+                "generations_completed": generations_completed,
+                "best_score": best_score,
+                "best_elo": best_elo,
+                "status": run_dict["status"],
+                "created_at": run_dict["created_at"],
+                "duration_seconds": round(total_duration, 1),
+                **_runtime_session_discovery(runtime_store, run_id),
+            })
+    finally:
+        runtime_store.close()
 
     return result
 
@@ -261,6 +401,12 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
             "duration_seconds": gd["duration_seconds"],
         })
 
+    runtime_store = _get_runtime_session_store(request)
+    try:
+        runtime_session_discovery = _runtime_session_discovery(runtime_store, run_id)
+    finally:
+        runtime_store.close()
+
     return {
         "run_id": run_id,
         "scenario_name": run_dict["scenario"],
@@ -268,6 +414,7 @@ def run_status(run_id: str, request: Request) -> dict[str, Any]:
         "status": run_dict["status"],
         "created_at": run_dict["created_at"],
         "generations": generations,
+        **runtime_session_discovery,
     }
 
 
@@ -364,6 +511,11 @@ def resume_info(run_id: str, request: Request) -> dict[str, Any]:
         hint = f"Run status is '{status}'."
 
     notebook_preview = _build_effective_notebook_preview(store, run_id)
+    runtime_store = _get_runtime_session_store(request)
+    try:
+        runtime_session_discovery = _runtime_session_discovery(runtime_store, run_id)
+    finally:
+        runtime_store.close()
 
     return {
         "run_id": run_id,
@@ -373,6 +525,7 @@ def resume_info(run_id: str, request: Request) -> dict[str, Any]:
         "can_resume": can_resume,
         "resume_hint": hint,
         "effective_notebook_context": notebook_preview,
+        **runtime_session_discovery,
     }
 
 

@@ -68,6 +68,11 @@ from autocontext.mcp.monitor_tools import (  # noqa: F401
     autocontext_list_monitors,
     autocontext_wait_for_monitor,
 )
+from autocontext.mcp.runtime_session_tools import (  # noqa: F401
+    get_runtime_session,
+    get_runtime_session_timeline,
+    list_runtime_sessions,
+)
 from autocontext.scenarios import SCENARIO_REGISTRY
 from autocontext.scenarios.capabilities import (
     can_run_match,

@@ -96,8 +96,11 @@ and child-task events. Use `autoctx runtime-sessions timeline --run-id
 <run_id> --json` for the operator-facing grouped prompt/response and child-task
 timeline. TypeScript MCP clients can inspect the same logs and timeline with
 `list_runtime_sessions`, `get_runtime_session`, and
-`get_runtime_session_timeline` using either `sessionId` or `runId`. TypeScript
-HTTP/cockpit clients can inspect them with
+`get_runtime_session_timeline` using either `sessionId` or `runId`. Python MCP
+clients can use the prefixed `autocontext_list_runtime_sessions`,
+`autocontext_get_runtime_session`, and
+`autocontext_get_runtime_session_timeline` tools, or the same unprefixed aliases.
+Python and TypeScript HTTP/cockpit clients can inspect them with
 `GET /api/cockpit/runtime-sessions`,
 `GET /api/cockpit/runtime-sessions/:session_id`, and
 `GET /api/cockpit/runs/:run_id/runtime-session`; timeline views are available
@@ -684,7 +687,7 @@ The server uses the stdio transport and exposes tools with the `autocontext_` pr
 
 - **Evaluation**: `autocontext_evaluate_output`, `autocontext_generate_output`
 - **Knowledge**: `autocontext_read_playbook`, `autocontext_search_strategies`, `autocontext_export_skill`
-- **Runs**: `autocontext_list_runs`, `autocontext_run_status`, and TypeScript MCP `list_runtime_sessions` / `get_runtime_session` / `get_runtime_session_timeline`
+- **Runs**: `autocontext_list_runs`, `autocontext_run_status`, `autocontext_list_runtime_sessions`, `autocontext_get_runtime_session`, `autocontext_get_runtime_session_timeline`, and the unprefixed TypeScript-compatible runtime-session aliases
 - **Scenarios**: `autocontext_list_scenarios`, `autocontext_describe_scenario`
 - **Sandbox**: `autocontext_sandbox_create`, `autocontext_sandbox_run`, `autocontext_sandbox_destroy`
 
