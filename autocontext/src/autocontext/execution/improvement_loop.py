@@ -12,12 +12,17 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from autocontext.execution.output_cleaner import clean_revision_output
+from autocontext.execution.output_verifier import OutputVerifier
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
 
 logger = logging.getLogger(__name__)
 
 TerminationReason = Literal[
-    "threshold_met", "max_rounds", "plateau_stall", "unchanged_output", "consecutive_failures",
+    "threshold_met",
+    "max_rounds",
+    "plateau_stall",
+    "unchanged_output",
+    "consecutive_failures",
 ]
 
 PLATEAU_EPSILON = 0.01
@@ -25,12 +30,14 @@ PLATEAU_PATIENCE = 2
 NEAR_THRESHOLD_MARGIN = 0.02
 DIMENSION_DELTA_THRESHOLD = 0.05
 
-_PARSE_FAILURE_MARKERS = frozenset({
-    "no parseable score found",
-    "missing JUDGE_RESULT markers",
-    "invalid JSON",
-    "Failed to parse judge response",
-})
+_PARSE_FAILURE_MARKERS = frozenset(
+    {
+        "no parseable score found",
+        "missing JUDGE_RESULT markers",
+        "invalid JSON",
+        "Failed to parse judge response",
+    }
+)
 
 
 def _is_parse_failure(score: float, reasoning: str) -> bool:
@@ -106,6 +113,7 @@ class ImprovementLoop:
         max_score_delta: float = 0.5,
         cap_score_jumps: bool = False,
         dimension_threshold: float | None = None,
+        output_verifier: OutputVerifier | None = None,
     ) -> None:
         self.task = task
         self.max_rounds = max(1, max_rounds)
@@ -114,6 +122,10 @@ class ImprovementLoop:
         self.max_score_delta = max_score_delta
         self.cap_score_jumps = cap_score_jumps
         self.dimension_threshold = dimension_threshold
+        # AC-733: optional external verifier (compiler, type-checker, etc.).
+        # When set, a non-passing verifier round forces effective_score to 0
+        # and feeds the verifier's stderr/stdout into the next revision prompt.
+        self.output_verifier = output_verifier if (output_verifier and output_verifier.enabled) else None
 
     def run(
         self,
@@ -185,11 +197,7 @@ class ImprovementLoop:
             state["oracle_revision_feedback_context"] = context
             return AgentTaskResult(
                 score=judge_result.score,
-                reasoning=(
-                    f"{judge_result.reasoning}\n\n"
-                    "Objective Verification Feedback:\n"
-                    f"{context}"
-                ),
+                reasoning=(f"{judge_result.reasoning}\n\nObjective Verification Feedback:\n{context}"),
                 dimension_scores=judge_result.dimension_scores,
                 internal_retries=judge_result.internal_retries,
             )
@@ -230,11 +238,13 @@ class ImprovementLoop:
                 threshold_met_round = None  # Reset stability tracking on parse failure
                 logger.warning(
                     "round %d: judge parse failure (%s), not counting toward score",
-                    round_num, result.reasoning[:80],
+                    round_num,
+                    result.reasoning[:80],
                 )
                 if consecutive_failures >= max_consecutive_failures:
                     logger.error(
-                        "aborting: %d consecutive judge failures", consecutive_failures,
+                        "aborting: %d consecutive judge failures",
+                        consecutive_failures,
                     )
                     termination_reason = "consecutive_failures"
                     break
@@ -291,17 +301,22 @@ class ImprovementLoop:
                 delta = abs(result.score - prev_valid_score)
                 if delta > self.max_score_delta:
                     logger.warning(
-                        "Score jump of %.3f exceeds max_score_delta %.3f "
-                        "(round %d: %.3f -> %.3f)",
-                        delta, self.max_score_delta,
-                        round_num, prev_valid_score, result.score,
+                        "Score jump of %.3f exceeds max_score_delta %.3f (round %d: %.3f -> %.3f)",
+                        delta,
+                        self.max_score_delta,
+                        round_num,
+                        prev_valid_score,
+                        result.score,
                     )
                     if self.cap_score_jumps:
-                        effective_score = max(0.0, (
-                            prev_valid_score + self.max_score_delta
-                            if result.score > prev_valid_score
-                            else prev_valid_score - self.max_score_delta
-                        ))
+                        effective_score = max(
+                            0.0,
+                            (
+                                prev_valid_score + self.max_score_delta
+                                if result.score > prev_valid_score
+                                else prev_valid_score - self.max_score_delta
+                            ),
+                        )
 
             # Reference verification hook — apply score penalty if facts unverified
             if effective_score > 0:
@@ -313,6 +328,31 @@ class ImprovementLoop:
                         round_result.reasoning += annotation
                     effective_score = max(0.0, effective_score * 0.9)
                     round_result.score = effective_score
+
+            # AC-733: external-command verifier hook. Override the judge score
+            # to 0 when the verifier rejects the output, so the threshold logic
+            # cannot accept a "judge says 1.0 but compiler says no" round.
+            # The verifier's message is appended to the round reasoning so the
+            # next revision prompt sees the actual error rather than the
+            # judge's prose impression.
+            if self.output_verifier is not None:
+                verifier_outcome = self.output_verifier.run(current_output)
+                if not verifier_outcome.ok:
+                    annotation = "\n\nExternal Verifier Output:\n" + verifier_outcome.message
+                    round_result.reasoning += annotation
+                    result = AgentTaskResult(
+                        score=0.0,
+                        reasoning=result.reasoning + annotation,
+                        dimension_scores=result.dimension_scores,
+                        internal_retries=result.internal_retries,
+                    )
+                    effective_score = 0.0
+                    round_result.score = 0.0
+                    logger.info(
+                        "round %d: external verifier rejected output (exit %d), score forced to 0",
+                        round_num,
+                        verifier_outcome.exit_code,
+                    )
 
             if effective_score > best_score:
                 best_score = effective_score
@@ -330,26 +370,33 @@ class ImprovementLoop:
                     _pareto_objectives.append(OptimizationObjective(dim_name, "maximize"))
                     for existing in _pareto_frontier.candidates:
                         existing.scores.setdefault(dim_name, 0.0)
-            _pareto_frontier.add(Candidate(
-                candidate_id=f"round-{round_num}",
-                artifact=current_output,
-                scores=candidate_scores,
-                asi=[],
-            ))
+            _pareto_frontier.add(
+                Candidate(
+                    candidate_id=f"round-{round_num}",
+                    artifact=current_output,
+                    scores=candidate_scores,
+                    asi=[],
+                )
+            )
 
             # Collect ASI from weak dimensions
             for dim, dscore in result.dimension_scores.items():
                 if dscore < 0.5:
-                    _collected_asi.append(ActionableSideInfo(
-                        example_id=f"round-{round_num}-{dim}",
-                        outcome="weak_dimension",
-                        diagnosis=f"{dim} scored {dscore:.2f} in round {round_num}",
-                        suggested_fix=f"Improve {dim} dimension",
-                    ))
+                    _collected_asi.append(
+                        ActionableSideInfo(
+                            example_id=f"round-{round_num}-{dim}",
+                            outcome="weak_dimension",
+                            diagnosis=f"{dim} scored {dscore:.2f} in round {round_num}",
+                            suggested_fix=f"Improve {dim} dimension",
+                        )
+                    )
 
             logger.info(
                 "round %d score: %.2f (best: %.2f at round %d)",
-                round_num, effective_score, best_score, best_round,
+                round_num,
+                effective_score,
+                best_score,
+                best_round,
             )
 
             # Plateau detection (only after min_rounds satisfied)
@@ -398,7 +445,9 @@ class ImprovementLoop:
                     # Score barely meets threshold — continue to confirm stability
                     logger.info(
                         "score %.3f barely meets threshold %.2f at round %d, continuing to confirm",
-                        effective_score, self.quality_threshold, round_num,
+                        effective_score,
+                        self.quality_threshold,
+                        round_num,
                     )
                     threshold_met_round = round_num
                 else:

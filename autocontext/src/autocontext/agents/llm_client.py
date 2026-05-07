@@ -538,11 +538,7 @@ def build_client_from_settings(
 ) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
     if settings.agent_provider == "anthropic":
-        api_key = (
-            settings.anthropic_api_key
-            or os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY", "")
-        )
+        api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY", "")
         if not api_key:
             raise ValueError(
                 "AUTOCONTEXT_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY is required when AUTOCONTEXT_AGENT_PROVIDER=anthropic"
@@ -579,6 +575,7 @@ def build_client_from_settings(
     if settings.agent_provider == "claude-cli":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
+        from autocontext.runtimes.runtime_budget import RuntimeBudget
 
         claude_config = ClaudeCLIConfig(
             model=settings.claude_model,
@@ -591,7 +588,12 @@ def build_client_from_settings(
             retry_backoff_multiplier=settings.claude_retry_backoff_multiplier,
             max_total_seconds=settings.claude_max_total_seconds,
         )
-        return RuntimeBridgeClient(ClaudeCLIRuntime(claude_config))
+        runtime = ClaudeCLIRuntime(claude_config)
+        # AC-735: attach a wall-clock budget so total runtime is bounded
+        # across all subprocess invocations, not just per-call.
+        if settings.claude_max_total_seconds > 0:
+            runtime.attach_budget(RuntimeBudget.starting_now(total_seconds=settings.claude_max_total_seconds))
+        return RuntimeBridgeClient(runtime)
     if settings.agent_provider == "codex":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime

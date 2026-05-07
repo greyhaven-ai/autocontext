@@ -27,10 +27,12 @@ class _CapturingSolveManager:
         description: str,
         generations: int = 5,
         family_override: str | None = None,
+        verbatim_task_prompt: str | None = None,
     ) -> SolveJob:
         type(self).last_description = description
         type(self).last_generations = generations
         type(self).last_family_override = family_override
+        del verbatim_task_prompt
         pkg = SkillPackage(
             scenario_name="grid_ctf",
             display_name="Grid Ctf",
@@ -63,8 +65,9 @@ class _FailingSolveManager:
         description: str,
         generations: int = 5,
         family_override: str | None = None,
+        verbatim_task_prompt: str | None = None,
     ) -> SolveJob:
-        del description, generations, family_override
+        del description, generations, family_override, verbatim_task_prompt
         return SolveJob(
             job_id="solve_fail",
             description="Broken solve",
@@ -84,8 +87,9 @@ class _BudgetedFailingSolveManager:
         description: str,
         generations: int = 5,
         family_override: str | None = None,
+        verbatim_task_prompt: str | None = None,
     ) -> SolveJob:
-        del description, generations, family_override
+        del description, generations, family_override, verbatim_task_prompt
         return SolveJob(
             job_id="solve_budget_fail",
             description="Budgeted solve",
@@ -105,8 +109,9 @@ class _FallbackSolveManager:
         description: str,
         generations: int = 5,
         family_override: str | None = None,
+        verbatim_task_prompt: str | None = None,
     ) -> SolveJob:
-        del description, generations, family_override
+        del description, generations, family_override, verbatim_task_prompt
         pkg = SkillPackage(
             scenario_name="fallback_case",
             display_name="Fallback Case",

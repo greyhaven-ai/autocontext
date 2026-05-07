@@ -1478,6 +1478,29 @@ def improve(
         help="Override runtime timeout in seconds for CLI-backed providers",
     ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    verify_cmd: str = typer.Option(
+        "",
+        "--verify-cmd",
+        help=(
+            "External command to verify each round's output (AC-733). "
+            "Non-zero exit forces the round score to 0 and feeds the "
+            "command's stderr/stdout into the next revision prompt. "
+            "Use the literal `{file}` placeholder to receive the output as a "
+            "temp-file path; otherwise the output is piped to stdin. "
+            "Examples: 'lake env lean {file}', 'mypy {file}', 'cargo check'."
+        ),
+    ),
+    verify_suffix: str = typer.Option(
+        ".txt",
+        "--verify-suffix",
+        help="Suffix for the temp file passed to --verify-cmd (e.g. '.lean', '.py').",
+    ),
+    verify_timeout: float = typer.Option(
+        300.0,
+        "--verify-timeout",
+        min=1.0,
+        help="Timeout in seconds for each --verify-cmd invocation.",
+    ),
 ) -> None:
     """Run multi-round improvement loop on agent output.
 
@@ -1485,6 +1508,7 @@ def improve(
     the improvement loop with judge-guided iteration.
     """
     from autocontext.execution.improvement_loop import ImprovementLoop
+    from autocontext.execution.output_verifier import make_verifier
     from autocontext.execution.task_runner import SimpleAgentTask
     from autocontext.providers.registry import get_provider as get_judge_provider
 
@@ -1503,10 +1527,16 @@ def improve(
             model=settings.judge_model,
         )
         state = task.initial_state()
+        verifier = make_verifier(
+            verify_cmd or None,
+            file_suffix=verify_suffix,
+            timeout_s=verify_timeout,
+        )
         loop = ImprovementLoop(
             task=task,
             max_rounds=max_rounds,
             quality_threshold=threshold,
+            output_verifier=verifier,
         )
         starting_output = initial_output or task.generate_output(state)
         result = loop.run(initial_output=starting_output, state=state)

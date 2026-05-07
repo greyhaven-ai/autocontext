@@ -16,6 +16,7 @@ from autocontext.runtimes.direct_api import DirectAPIRuntime
 # AgentOutput
 # ---------------------------------------------------------------------------
 
+
 class TestAgentOutput:
     def test_defaults(self):
         o = AgentOutput(text="hello")
@@ -26,8 +27,12 @@ class TestAgentOutput:
 
     def test_all_fields(self):
         o = AgentOutput(
-            text="hi", structured={"key": "val"}, cost_usd=0.05,
-            model="sonnet", session_id="abc", metadata={"turns": 3},
+            text="hi",
+            structured={"key": "val"},
+            cost_usd=0.05,
+            model="sonnet",
+            session_id="abc",
+            metadata={"turns": 3},
         )
         assert o.cost_usd == 0.05
         assert o.structured["key"] == "val"
@@ -36,6 +41,7 @@ class TestAgentOutput:
 # ---------------------------------------------------------------------------
 # DirectAPIRuntime
 # ---------------------------------------------------------------------------
+
 
 class _MockProvider(LLMProvider):
     def __init__(self, response: str = "mock output"):
@@ -87,6 +93,7 @@ class TestDirectAPIRuntime:
 # ClaudeCLIConfig
 # ---------------------------------------------------------------------------
 
+
 class TestClaudeCLIConfig:
     def test_defaults(self):
         cfg = ClaudeCLIConfig()
@@ -110,19 +117,22 @@ class TestClaudeCLIConfig:
 # ClaudeCLIRuntime
 # ---------------------------------------------------------------------------
 
+
 def _mock_claude_json(result: str = "output text", cost: float = 0.05, is_error: bool = False) -> str:
-    return json.dumps({
-        "type": "result",
-        "subtype": "success",
-        "is_error": is_error,
-        "result": result,
-        "total_cost_usd": cost,
-        "session_id": "test-session-123",
-        "duration_ms": 1500,
-        "num_turns": 1,
-        "usage": {"input_tokens": 100, "output_tokens": 50},
-        "modelUsage": {"claude-sonnet-4-20250514": {"inputTokens": 100, "outputTokens": 50}},
-    })
+    return json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": is_error,
+            "result": result,
+            "total_cost_usd": cost,
+            "session_id": "test-session-123",
+            "duration_ms": 1500,
+            "num_turns": 1,
+            "usage": {"input_tokens": 100, "output_tokens": 50},
+            "modelUsage": {"claude-sonnet-4-20250514": {"inputTokens": 100, "outputTokens": 50}},
+        }
+    )
 
 
 class TestClaudeCLIRuntime:
@@ -140,21 +150,25 @@ class TestClaudeCLIRuntime:
         assert "--no-session-persistence" in args
 
     def test_build_args_with_tools(self):
+        # AC-736: --tools is emitted as a single ``--tools=<value>`` token
+        # so empty values render unambiguously in ``ps`` listings.
         cfg = ClaudeCLIConfig(tools="Bash,Read")
         runtime = ClaudeCLIRuntime(cfg)
         runtime._claude_path = "claude"
         args = runtime._build_args()
-        assert "--tools" in args
-        idx = args.index("--tools")
-        assert args[idx + 1] == "Bash,Read"
+        assert "--tools=Bash,Read" in args
+        # Bare --tools (with separate value arg) must NOT appear.
+        assert "--tools" not in args
 
     def test_build_args_no_tools(self):
+        # AC-736: empty tools renders as ``--tools=`` rather than the
+        # confusing ``--tools  --permission-mode`` double-space pattern.
         cfg = ClaudeCLIConfig(tools="")
         runtime = ClaudeCLIRuntime(cfg)
         runtime._claude_path = "claude"
         args = runtime._build_args()
-        idx = args.index("--tools")
-        assert args[idx + 1] == ""
+        assert "--tools=" in args
+        assert "--tools" not in args
 
     def test_build_args_with_session(self):
         cfg = ClaudeCLIConfig(session_id="my-session", session_persistence=True)
@@ -215,7 +229,10 @@ class TestClaudeCLIRuntime:
     @patch("subprocess.run")
     def test_generate_calls_subprocess(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=_mock_claude_json("generated"), stderr="",
+            args=[],
+            returncode=0,
+            stdout=_mock_claude_json("generated"),
+            stderr="",
         )
         runtime = ClaudeCLIRuntime()
         runtime._claude_path = "/usr/bin/claude"
@@ -228,7 +245,10 @@ class TestClaudeCLIRuntime:
     @patch("subprocess.run")
     def test_revise_includes_feedback(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=_mock_claude_json("revised"), stderr="",
+            args=[],
+            returncode=0,
+            stdout=_mock_claude_json("revised"),
+            stderr="",
         )
         runtime = ClaudeCLIRuntime()
         runtime._claude_path = "/usr/bin/claude"
@@ -330,7 +350,10 @@ class TestClaudeCLIRuntime:
     @patch("subprocess.run")
     def test_nonzero_exit_with_output(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout=_mock_claude_json("partial"), stderr="warning",
+            args=[],
+            returncode=1,
+            stdout=_mock_claude_json("partial"),
+            stderr="warning",
         )
         runtime = ClaudeCLIRuntime()
         runtime._claude_path = "/usr/bin/claude"
@@ -340,7 +363,10 @@ class TestClaudeCLIRuntime:
     @patch("subprocess.run")
     def test_nonzero_exit_no_output(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="fatal error",
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="fatal error",
         )
         runtime = ClaudeCLIRuntime()
         runtime._claude_path = "/usr/bin/claude"
@@ -352,6 +378,7 @@ class TestClaudeCLIRuntime:
 # ---------------------------------------------------------------------------
 # create_session_runtime
 # ---------------------------------------------------------------------------
+
 
 class TestCreateSessionRuntime:
     def test_creates_with_session_id(self):
