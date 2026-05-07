@@ -95,6 +95,14 @@ review discovers a boundary mistake.
 - `autocontext/src/autocontext/storage/`
 - `autocontext/src/autocontext/util/`
 
+`autocontext/src/autocontext/runtimes/workspace_env.py` is the Python
+counterpart to the TypeScript runtime workspace contract. It defines the
+Apache-core `RuntimeWorkspaceEnv` protocol for shell execution, file
+reads/writes, stat/listing, virtual cwd resolution, scoped child environments,
+and cleanup, with local filesystem and in-memory adapters. The contract is
+runtime isolation plumbing for sessions and sandbox-backed execution; it is not
+a deployment provider integration or a top-level product noun.
+
 ### Python Control-Plane Candidates
 
 - `autocontext/src/autocontext/server/`
@@ -136,6 +144,15 @@ contract plus local/in-memory adapters and scoped command grants. Provider
 wrappers such as Claude CLI, Codex CLI, Pi, and direct API runtimes remain
 outside the core package boundary unless they are split into pure contracts and
 provider-specific implementations.
+
+Runtime workspace adapters in both languages use virtual absolute paths. A
+relative path resolves against the environment `cwd`; an absolute path resolves
+inside the adapter's virtual root. Local adapters map that virtual root onto a
+caller-owned host directory and must never allow `..` traversal to escape it.
+Scoped environments share the same backing workspace while narrowing cwd and
+adding or overriding command grants for one operation branch. `cleanup()` marks
+owned in-memory workspaces closed and is a no-op for caller-owned local
+workspaces.
 
 ### TypeScript Control-Plane Candidates
 
