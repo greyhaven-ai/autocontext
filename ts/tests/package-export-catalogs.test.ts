@@ -30,6 +30,7 @@ describe("package root exports", () => {
     expect(pkg.validateOperationalMemoryPack).toBeDefined();
     expect(pkg.classifyExternalEvalTrial).toBeDefined();
     expect(pkg.buildExternalEvalDiagnosticReport).toBeDefined();
+    expect(pkg.buildExternalEvalImprovementSignals).toBeDefined();
     expect(pkg.buildOperationalMemoryPackFromDiagnostics).toBeDefined();
     expect(pkg.resolveBrowserSessionConfig).toBeDefined();
     expect(pkg.evaluateBrowserActionPolicy).toBeDefined();
