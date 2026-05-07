@@ -53,6 +53,10 @@
       "import": "./dist/control-plane/memory-packs/index.js",
       "types": "./dist/control-plane/memory-packs/index.d.ts"
     },
+    "./control-plane/external-evals": {
+      "import": "./dist/control-plane/external-evals/index.js",
+      "types": "./dist/control-plane/external-evals/index.d.ts"
+    },
     "./production-traces": {
       "types": "./dist/production-traces/sdk/index.d.ts",
       "import": "./dist/production-traces/sdk/index.js",

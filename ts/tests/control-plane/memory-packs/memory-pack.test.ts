@@ -8,6 +8,10 @@ describe("validateOperationalMemoryPack", () => {
       version: "1.0.0",
       createdAt: "2026-05-06T19:00:00.000Z",
       status: "sanitized",
+      integrity: {
+        status: "clean",
+        notes: ["Derived from external eval diagnostics without task answers."],
+      },
       findings: [
         {
           id: "preserve-sidecars",

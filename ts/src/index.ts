@@ -692,3 +692,23 @@ export type {
   OperationalMemoryPackStatus,
   OperationalMemoryRisk,
 } from "./control-plane/memory-packs/index.js";
+export {
+  buildExternalEvalDiagnosticReport,
+  buildOperationalMemoryPackFromDiagnostics,
+  classifyExternalEvalTrial,
+  validateExternalEvalAdapterLifecycle,
+} from "./control-plane/external-evals/index.js";
+export type {
+  BuildExternalEvalDiagnosticReportInputs,
+  BuildOperationalMemoryPackFromDiagnosticsInputs,
+  ClassifyExternalEvalTrialInputs,
+  ExternalEvalAdapterArtifacts,
+  ExternalEvalAdapterCommand,
+  ExternalEvalAdapterLifecycle,
+  ExternalEvalAdapterLifecycleStatus,
+  ExternalEvalDiagnosticCategory,
+  ExternalEvalDiagnosticReport,
+  ExternalEvalTokenUsage,
+  ExternalEvalTrialDiagnostic,
+  ExternalEvalTrialEvidence,
+} from "./control-plane/external-evals/index.js";

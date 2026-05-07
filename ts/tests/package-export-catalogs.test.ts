@@ -28,6 +28,9 @@ describe("package root exports", () => {
     expect(pkg.reconcileEvalTrials).toBeDefined();
     expect(pkg.probeDirectoryContract).toBeDefined();
     expect(pkg.validateOperationalMemoryPack).toBeDefined();
+    expect(pkg.classifyExternalEvalTrial).toBeDefined();
+    expect(pkg.buildExternalEvalDiagnosticReport).toBeDefined();
+    expect(pkg.buildOperationalMemoryPackFromDiagnostics).toBeDefined();
     expect(pkg.resolveBrowserSessionConfig).toBeDefined();
     expect(pkg.evaluateBrowserActionPolicy).toBeDefined();
     expect(pkg.validateBrowserSessionConfig).toBeDefined();
@@ -69,6 +72,10 @@ describe("package root exports", () => {
     expect(packageJson.exports?.["./control-plane/memory-packs"]).toEqual({
       import: "./dist/control-plane/memory-packs/index.js",
       types: "./dist/control-plane/memory-packs/index.d.ts",
+    });
+    expect(packageJson.exports?.["./control-plane/external-evals"]).toEqual({
+      import: "./dist/control-plane/external-evals/index.js",
+      types: "./dist/control-plane/external-evals/index.d.ts",
     });
   });
 
