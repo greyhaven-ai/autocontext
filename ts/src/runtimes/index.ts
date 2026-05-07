@@ -3,11 +3,13 @@ export { RuntimeSessionAgentRuntime } from "./runtime-session-agent.js";
 export type { RuntimeSessionAgentRuntimeOpts } from "./runtime-session-agent.js";
 export {
   createInMemoryWorkspaceEnv,
+  createLocalRuntimeCommandGrant,
   createLocalWorkspaceEnv,
   defineRuntimeCommand,
 } from "./workspace-env.js";
 export type {
   InMemoryWorkspaceEnvOptions,
+  LocalRuntimeCommandGrantOptions,
   LocalWorkspaceEnvOptions,
   RuntimeCommandContext,
   RuntimeCommandGrant,
@@ -16,7 +18,18 @@ export type {
   RuntimeExecOptions,
   RuntimeExecResult,
   RuntimeFileStat,
+  RuntimeGrantEvent,
+  RuntimeGrantEventPhase,
+  RuntimeGrantEventSink,
+  RuntimeGrantInheritanceMode,
+  RuntimeGrantKind,
+  RuntimeGrantOutputRedactionMetadata,
+  RuntimeGrantProvenance,
+  RuntimeGrantRedactionMetadata,
+  RuntimeGrantScopePolicy,
   RuntimeScopeOptions,
+  RuntimeScopedGrant,
+  RuntimeToolGrant,
   RuntimeWorkspaceEnv,
 } from "./workspace-env.js";
 export { DirectAPIRuntime } from "./direct-api.js";

@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Python now has parity readers for runtime-session event logs: a TypeScript-compatible event/store/read-model/timeline layer, cockpit endpoints for listing logs and resolving run-scoped timelines, run list/status/resume discovery fields, and MCP tools `autocontext_list_runtime_sessions`, `autocontext_get_runtime_session`, and `autocontext_get_runtime_session_timeline` with unprefixed aliases.
 - Python runtime-backed run and solve role calls now automatically append provider prompts and responses to the run-scoped runtime-session log, preserving runtime failure semantics while making the new Python readers useful without manual recorder wiring.
 - Python now exposes a core `RuntimeWorkspaceEnv` contract with local filesystem and in-memory adapters, virtual path resolution, scoped command grants, and explicit cleanup semantics to match the TypeScript runtime workspace boundary.
+- TypeScript runtime workspace command grants now expose structured start/end/error observability events, a no-shell local process wrapper with explicit env inheritance, redacted/truncated command output previews, child-task inheritance policy, and scoped command/tool grant types for runtime-session calls without serializing trusted env values into prompts or session logs.
 
 ### Fixed
 

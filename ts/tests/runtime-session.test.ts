@@ -327,6 +327,184 @@ describe("RuntimeSession", () => {
     eventStore.close();
   });
 
+  it("records scoped command grant events without serializing trusted secrets", async () => {
+    const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
+    const session = RuntimeSession.create({
+      sessionId: "runtime-grants",
+      goal: "ship auth",
+      workspace,
+    });
+
+    const result = await session.submitPrompt({
+      prompt: "Run the scoped helper",
+      commands: [
+        defineRuntimeCommand(
+          "show-secret",
+          async () => ({
+            stdout: "trusted-secret",
+            stderr: "",
+            exitCode: 0,
+          }),
+          { env: { AUTOCTX_TOKEN: "trusted-secret" } },
+        ),
+      ],
+      handler: async ({ workspace: scopedWorkspace }) => {
+        const command = await scopedWorkspace.exec("show-secret --token trusted-secret");
+        expect(command.stdout).toBe("trusted-secret");
+        return { text: "handled" };
+      },
+    });
+
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(session.log.toJSON())).not.toContain("trusted-secret");
+    expect(session.log.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.PROMPT_SUBMITTED,
+      RuntimeSessionEventType.SHELL_COMMAND,
+      RuntimeSessionEventType.SHELL_COMMAND,
+      RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]);
+    expect(session.log.events[1].payload).toMatchObject({
+      phase: "start",
+      commandName: "show-secret",
+      argsSummary: ["--token", "[redacted]"],
+      redaction: { envKeys: ["AUTOCTX_TOKEN"] },
+    });
+    expect(session.log.events[2].payload).toMatchObject({
+      phase: "end",
+      commandName: "show-secret",
+      exitCode: 0,
+      stdout: "[redacted]",
+      redaction: {
+        envKeys: ["AUTOCTX_TOKEN"],
+        stdout: { redacted: true, truncated: false },
+      },
+    });
+  });
+
+  it("records command grant errors without changing handled prompt outcomes", async () => {
+    const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
+    const session = RuntimeSession.create({
+      sessionId: "runtime-grant-error",
+      goal: "ship auth",
+      workspace,
+    });
+
+    const result = await session.submitPrompt({
+      prompt: "Run the scoped helper",
+      commands: [
+        defineRuntimeCommand(
+          "explode",
+          () => {
+            throw new Error("boom trusted-secret");
+          },
+          { env: { AUTOCTX_TOKEN: "trusted-secret" } },
+        ),
+      ],
+      handler: async ({ workspace: scopedWorkspace }) => {
+        await expect(scopedWorkspace.exec("explode")).rejects.toThrow("boom trusted-secret");
+        return { text: "recovered" };
+      },
+    });
+
+    expect(result).toMatchObject({ isError: false, text: "recovered" });
+    expect(JSON.stringify(session.log.toJSON())).not.toContain("trusted-secret");
+    expect(session.log.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.PROMPT_SUBMITTED,
+      RuntimeSessionEventType.SHELL_COMMAND,
+      RuntimeSessionEventType.SHELL_COMMAND,
+      RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]);
+    expect(session.log.events[2].payload).toMatchObject({
+      phase: "error",
+      commandName: "explode",
+      error: "boom [redacted]",
+      redaction: { envKeys: ["AUTOCTX_TOKEN"] },
+    });
+  });
+
+  it("does not leak prompt-scoped command grants into later child tasks", async () => {
+    const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
+    const session = RuntimeSession.create({
+      sessionId: "runtime-grant-scope",
+      goal: "ship auth",
+      workspace,
+    });
+
+    await session.submitPrompt({
+      prompt: "Use a one-call command grant",
+      commands: [
+        defineRuntimeCommand("one-call", () => ({
+          stdout: "available",
+          stderr: "",
+          exitCode: 0,
+        })),
+      ],
+      handler: async ({ workspace: scopedWorkspace }) => {
+        expect(await scopedWorkspace.exec("one-call")).toMatchObject({
+          stdout: "available",
+          exitCode: 0,
+        });
+        return { text: "done" };
+      },
+    });
+
+    const child = await session.runChildTask({
+      taskId: "after-prompt",
+      prompt: "Try the old grant",
+      role: "tester",
+      handler: async ({ workspace: childWorkspace }) => {
+        const command = await childWorkspace.exec("one-call");
+        return { text: String(command.exitCode) };
+      },
+    });
+
+    expect(child).toMatchObject({
+      isError: false,
+      text: "127",
+    });
+  });
+
+  it("honors command grant child-task inheritance policy", async () => {
+    const workspace = await createInMemoryWorkspaceEnv({ cwd: "/workspace" }).scope({
+      commands: [
+        defineRuntimeCommand(
+          "parent-only",
+          () => ({
+            stdout: "parent",
+            stderr: "",
+            exitCode: 0,
+          }),
+          { scope: { inheritToChildTasks: false } },
+        ),
+      ],
+    });
+    const session = RuntimeSession.create({
+      sessionId: "runtime-grant-inheritance",
+      goal: "ship auth",
+      workspace,
+    });
+
+    const parent = await session.submitPrompt({
+      prompt: "Use parent grant",
+      handler: async ({ workspace: scopedWorkspace }) => {
+        const command = await scopedWorkspace.exec("parent-only");
+        return { text: command.stdout };
+      },
+    });
+    const child = await session.runChildTask({
+      taskId: "child-no-inherit",
+      prompt: "Try parent grant",
+      role: "tester",
+      handler: async ({ workspace: childWorkspace }) => {
+        const command = await childWorkspace.exec("parent-only");
+        return { text: String(command.exitCode) };
+      },
+    });
+
+    expect(parent).toMatchObject({ isError: false, text: "parent" });
+    expect(child).toMatchObject({ isError: false, text: "127" });
+  });
+
   it("propagates child task depth limits through the facade", async () => {
     const workspace = createInMemoryWorkspaceEnv({ cwd: "/workspace" });
     const session = RuntimeSession.create({
