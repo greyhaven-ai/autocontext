@@ -40,9 +40,7 @@ def create_provider(
 
         return RetryProvider(
             AnthropicProvider(
-                api_key=api_key
-                or os.getenv("ANTHROPIC_API_KEY")
-                or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY"),
+                api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY"),
                 default_model_name=model or "claude-sonnet-4-20250514",
             )
         )
@@ -63,21 +61,25 @@ def create_provider(
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
         from autocontext.providers.retry import RetryProvider
 
-        return RetryProvider(OpenAICompatibleProvider(
-            api_key="ollama",
-            base_url=base_url or "http://localhost:11434/v1",
-            default_model_name=model or "llama3.1",
-        ))
+        return RetryProvider(
+            OpenAICompatibleProvider(
+                api_key="ollama",
+                base_url=base_url or "http://localhost:11434/v1",
+                default_model_name=model or "llama3.1",
+            )
+        )
 
     if provider_type == "vllm":
         from autocontext.providers.openai_compat import OpenAICompatibleProvider
         from autocontext.providers.retry import RetryProvider
 
-        return RetryProvider(OpenAICompatibleProvider(
-            api_key=api_key or "no-key",
-            base_url=base_url or "http://localhost:8000/v1",
-            default_model_name=model or "default",
-        ))
+        return RetryProvider(
+            OpenAICompatibleProvider(
+                api_key=api_key or "no-key",
+                base_url=base_url or "http://localhost:8000/v1",
+                default_model_name=model or "default",
+            )
+        )
 
     if provider_type == "mlx":
         from autocontext.providers.mlx_provider import MLXProvider
@@ -87,8 +89,7 @@ def create_provider(
         return MLXProvider(model_path=model)
 
     raise ProviderError(
-        f"Unknown provider type: {provider_type!r}. "
-        f"Supported: anthropic, openai, openai-compatible, ollama, vllm, mlx"
+        f"Unknown provider type: {provider_type!r}. Supported: anthropic, openai, openai-compatible, ollama, vllm, mlx"
     )
 
 
@@ -96,9 +97,7 @@ def create_provider(
 # credentials. When judge_provider is left as its "auto" default (AC-586),
 # get_provider() inherits from the effective execution provider if it's in this
 # set.
-_RUNTIME_BRIDGE_PROVIDERS: frozenset[str] = frozenset(
-    {"claude-cli", "codex", "pi", "pi-rpc"}
-)
+_RUNTIME_BRIDGE_PROVIDERS: frozenset[str] = frozenset({"claude-cli", "codex", "pi", "pi-rpc"})
 
 _AUTO_JUDGE_PROVIDER_PRIORITY: tuple[str, ...] = (
     "competitor_provider",
@@ -164,60 +163,59 @@ def get_provider(settings: AppSettings) -> LLMProvider:
         )
 
     if provider_type == "claude-cli":
+        # AC-735: route through the shared factory so judge/provider paths
+        # honor claude_max_total_seconds (the budget is attached uniformly).
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
-        from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
+        from autocontext.runtimes.claude_cli import build_claude_cli_runtime
 
-        claude_runtime = ClaudeCLIRuntime(ClaudeCLIConfig(
-            model=settings.claude_model,
-            tools=settings.claude_tools,
-            permission_mode=settings.claude_permission_mode,
-            session_persistence=settings.claude_session_persistence,
-            timeout=settings.claude_timeout,
-            max_retries=settings.claude_max_retries,
-            retry_backoff_seconds=settings.claude_retry_backoff_seconds,
-            retry_backoff_multiplier=settings.claude_retry_backoff_multiplier,
-            max_total_seconds=settings.claude_max_total_seconds,
-        ))
+        claude_runtime = build_claude_cli_runtime(settings)
         return RuntimeBridgeProvider(claude_runtime, default_model_name=settings.claude_model)
 
     if provider_type == "codex":
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
         from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime
 
-        codex_runtime = CodexCLIRuntime(CodexCLIConfig(
-            model=settings.codex_model,
-            approval_mode=settings.codex_approval_mode,
-            timeout=settings.codex_timeout,
-            workspace=settings.codex_workspace,
-            quiet=settings.codex_quiet,
-        ))
+        codex_runtime = CodexCLIRuntime(
+            CodexCLIConfig(
+                model=settings.codex_model,
+                approval_mode=settings.codex_approval_mode,
+                timeout=settings.codex_timeout,
+                workspace=settings.codex_workspace,
+                quiet=settings.codex_quiet,
+            )
+        )
         return RuntimeBridgeProvider(codex_runtime, default_model_name=settings.codex_model)
 
     if provider_type == "pi":
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
         from autocontext.runtimes.pi_cli import PiCLIConfig, PiCLIRuntime
 
-        pi_runtime = PiCLIRuntime(PiCLIConfig(
-            pi_command=settings.pi_command,
-            timeout=settings.pi_timeout,
-            workspace=settings.pi_workspace,
-            model=settings.pi_model,
-            no_context_files=settings.pi_no_context_files,
-        ))
+        pi_runtime = PiCLIRuntime(
+            PiCLIConfig(
+                pi_command=settings.pi_command,
+                timeout=settings.pi_timeout,
+                workspace=settings.pi_workspace,
+                model=settings.pi_model,
+                no_context_files=settings.pi_no_context_files,
+            )
+        )
         return RuntimeBridgeProvider(pi_runtime, default_model_name=settings.pi_model or "pi-default")
 
     if provider_type == "pi-rpc":
         from autocontext.providers.runtime_bridge import RuntimeBridgeProvider
         from autocontext.runtimes.pi_rpc import PiRPCConfig, build_pi_rpc_runtime
 
-        pi_rpc_runtime = build_pi_rpc_runtime(PiRPCConfig(
-            pi_command=settings.pi_command,
-            model=settings.pi_model or settings.judge_model,
-            timeout=settings.pi_timeout,
-            workspace=settings.pi_workspace,
-            session_persistence=settings.pi_rpc_session_persistence,
-            no_context_files=settings.pi_no_context_files,
-        ), persistent=settings.pi_rpc_persistent)
+        pi_rpc_runtime = build_pi_rpc_runtime(
+            PiRPCConfig(
+                pi_command=settings.pi_command,
+                model=settings.pi_model or settings.judge_model,
+                timeout=settings.pi_timeout,
+                workspace=settings.pi_workspace,
+                session_persistence=settings.pi_rpc_session_persistence,
+                no_context_files=settings.pi_no_context_files,
+            ),
+            persistent=settings.pi_rpc_persistent,
+        )
         return RuntimeBridgeProvider(
             pi_rpc_runtime,
             default_model_name=settings.pi_model or settings.judge_model or "pi-rpc-default",
@@ -229,11 +227,7 @@ def get_provider(settings: AppSettings) -> LLMProvider:
         if provider_type in ("openai", "openai-compatible"):
             api_key = os.getenv("OPENAI_API_KEY")
         else:
-            api_key = (
-                settings.anthropic_api_key
-                or os.getenv("ANTHROPIC_API_KEY")
-                or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
-            )
+            api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
 
     return create_provider(
         provider_type=provider_type,

@@ -13,6 +13,7 @@ import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
 from autocontext.runtimes.base import AgentOutput, AgentRuntime
 from autocontext.runtimes.runtime_budget import RuntimeBudget, RuntimeBudgetExpired
@@ -213,11 +214,20 @@ class ClaudeCLIRuntime(AgentRuntime):
                 if attempt_index < max_retries and self._has_retry_budget(total_start):
                     delay = self._retry_delay(attempt_index)
                     remaining = self._remaining_total_budget(total_start)
-                    if remaining is not None and delay >= remaining:
+                    # AC-735: external budget must also cover the planned
+                    # sleep — without this guard the sleep itself can push
+                    # the runtime past the advertised wall-clock cap.
+                    external_remaining = self._budget.remaining() if self._budget is not None else None
+                    if (remaining is not None and delay >= remaining) or (
+                        external_remaining is not None and delay >= external_remaining
+                    ):
                         logger.warning(
-                            "claude-cli retry skipped reason=timeout_budget_exhausted delay=%.2fs remaining=%.2fs elapsed=%.1fs",
+                            "claude-cli retry skipped reason=budget_exhausted "
+                            "delay=%.2fs internal_remaining=%s "
+                            "external_remaining=%s elapsed=%.1fs",
                             delay,
-                            remaining,
+                            f"{remaining:.2f}" if remaining is not None else "n/a",
+                            f"{external_remaining:.2f}" if external_remaining is not None else "n/a",
                             elapsed,
                         )
                         return self._timeout_output(
@@ -375,6 +385,39 @@ class ClaudeCLIRuntime(AgentRuntime):
                 "usage": data.get("usage", {}),
             },
         )
+
+
+def build_claude_cli_runtime(
+    settings: Any,
+    *,
+    model_override: str | None = None,
+) -> ClaudeCLIRuntime:
+    """Single source of truth for settings-driven ClaudeCLIRuntime construction.
+
+    Wires retry config from settings AND attaches a RuntimeBudget when
+    ``settings.claude_max_total_seconds > 0``. All call sites that build
+    a ClaudeCLIRuntime from AppSettings must route through here so the
+    advertised wall-clock cap is enforced uniformly across:
+
+    - ``build_client_from_settings`` (default agent provider)
+    - ``create_role_client('claude-cli', ...)`` (per-role overrides)
+    - ``providers.registry.get_provider('claude-cli', ...)`` (judge etc.)
+    """
+    config = ClaudeCLIConfig(
+        model=model_override or settings.claude_model or "sonnet",
+        tools=settings.claude_tools,
+        permission_mode=settings.claude_permission_mode,
+        session_persistence=settings.claude_session_persistence,
+        timeout=settings.claude_timeout,
+        max_retries=settings.claude_max_retries,
+        retry_backoff_seconds=settings.claude_retry_backoff_seconds,
+        retry_backoff_multiplier=settings.claude_retry_backoff_multiplier,
+        max_total_seconds=settings.claude_max_total_seconds,
+    )
+    runtime = ClaudeCLIRuntime(config)
+    if settings.claude_max_total_seconds > 0:
+        runtime.attach_budget(RuntimeBudget.starting_now(total_seconds=settings.claude_max_total_seconds))
+    return runtime
 
 
 def create_session_runtime(

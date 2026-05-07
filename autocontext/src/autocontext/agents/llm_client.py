@@ -574,26 +574,11 @@ def build_client_from_settings(
         return ProviderBridgeClient(provider, use_provider_default_model=True)
     if settings.agent_provider == "claude-cli":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
-        from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
-        from autocontext.runtimes.runtime_budget import RuntimeBudget
+        from autocontext.runtimes.claude_cli import build_claude_cli_runtime
 
-        claude_config = ClaudeCLIConfig(
-            model=settings.claude_model,
-            tools=settings.claude_tools,
-            permission_mode=settings.claude_permission_mode,
-            session_persistence=settings.claude_session_persistence,
-            timeout=settings.claude_timeout,
-            max_retries=settings.claude_max_retries,
-            retry_backoff_seconds=settings.claude_retry_backoff_seconds,
-            retry_backoff_multiplier=settings.claude_retry_backoff_multiplier,
-            max_total_seconds=settings.claude_max_total_seconds,
-        )
-        runtime = ClaudeCLIRuntime(claude_config)
-        # AC-735: attach a wall-clock budget so total runtime is bounded
-        # across all subprocess invocations, not just per-call.
-        if settings.claude_max_total_seconds > 0:
-            runtime.attach_budget(RuntimeBudget.starting_now(total_seconds=settings.claude_max_total_seconds))
-        return RuntimeBridgeClient(runtime)
+        # AC-735: route through the shared factory so the wall-clock budget
+        # is attached on every claude-cli construction path.
+        return RuntimeBridgeClient(build_claude_cli_runtime(settings))
     if settings.agent_provider == "codex":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime

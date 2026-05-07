@@ -56,11 +56,18 @@ logger = logging.getLogger(__name__)
 # Default rubric used when the operator does not supply one. Kept generic so
 # verbatim-mode scenarios still get a sensible LLM judge baseline; users who
 # want strict scoring should pass --rubric.
+#
+# Note: the rubric describes scoring criteria ONLY. Output formatting is
+# owned by ``LLMJudge`` (it instructs the model to emit JSON inside
+# ``<!-- JUDGE_RESULT_START -->`` / ``<!-- JUDGE_RESULT_END -->`` markers).
+# A rubric that also dictates output format (e.g. "output only a decimal")
+# would contradict the judge's contract and silently turn successful
+# evaluations into parse failures.
 _DEFAULT_VERBATIM_JUDGE_RUBRIC = (
     "Score 0.0 to 1.0 based on whether the output completely and "
-    "correctly satisfies the task prompt. Output 1.0 only when every "
-    "explicit requirement in the task prompt is met. Output ONLY the "
-    "score as a decimal number."
+    "correctly satisfies the task prompt. A score of 1.0 requires every "
+    "explicit requirement in the task prompt to be met; partial credit "
+    "should be proportional to the share of requirements met."
 )
 
 
