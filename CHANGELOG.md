@@ -17,6 +17,11 @@ All notable changes to this project will be documented in this file.
 
 - Worker commands now clamp concurrency to one for stateful persistent runtimes, and Python runtime-bridge providers close underlying runtimes on shutdown.
 - TypeScript task runners now await queue-store methods so hosted Postgres adapters can implement the queue contract asynchronously.
+- AC-733..AC-738 batch from the putnam_2013_a5 stress test: `improve` now exposes `--verify-cmd`/`--verify-suffix`/`--verify-timeout` for compile/test gates that can force score=0 and feed stderr back into revision; `solve` accepts `--task-prompt` to bypass the LLM scenario designer (which truncated long Lean/Putnam-style prompts), `--task-file` for file-backed descriptions, `--generations` as an alias for `--gens`, and `-d` short form for `--description`; `--family` typos surface a `did_you_mean` suggestion via the new `FamilyName` value object instead of silently falling through; `AUTOCONTEXT_CLAUDE_TOOLS=""` now renders as a single `--tools=` argv token rather than a stray double-space; and `AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS` (default `0`/off) attaches a `RuntimeBudget` to every settings-driven `ClaudeCLIRuntime` (default agent provider, per-role overrides, and the judge/provider registry path), with retry backoff sleeps bounded by both the per-invocation cap and the attached budget.
+
+### Changed
+
+- Default of `AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS` is now `0` (disabled, opt-in). Set explicitly when you want a wall-clock cap on total Claude CLI runtime; the per-invocation retry cap inside `ClaudeCLIConfig` keeps its 25-minute default for in-process retry sequences.
 
 ## [0.5.0] - 2026-05-01
 

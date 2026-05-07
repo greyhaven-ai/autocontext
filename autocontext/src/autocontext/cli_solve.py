@@ -27,18 +27,18 @@ def _validate_family_override(family_name: str | None) -> None:
     """Validate the --family flag value. Raises typer.Exit(1) on unknown.
 
     Empty string and None both mean "not provided" → no raise.
-    """
-    from autocontext.scenarios.families import list_families
 
-    if not family_name:
-        return
-    known = {f.name for f in list_families()}
-    if family_name not in known:
-        typer.echo(
-            f"unknown --family {family_name!r}. Valid: {sorted(known)}",
-            err=True,
-        )
-        raise typer.Exit(code=1)
+    AC-738: delegates to :class:`FamilyName` so typos like
+    ``agent-task`` (dash) get a "did you mean ``agent_task``?" suggestion
+    rather than silently falling through.
+    """
+    from autocontext.cli_family_name import FamilyName, FamilyNameError
+
+    try:
+        FamilyName.from_user_input(family_name)
+    except FamilyNameError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @dataclass(slots=True)
@@ -74,6 +74,7 @@ def run_solve_command(
     write_json_stdout: Callable[[object], None],
     write_json_stderr: Callable[[str], None],
     family_override: str | None = None,
+    verbatim_task_prompt: str | None = None,
 ) -> None:
     """Create a scenario on demand, run it, and export the solved package."""
     from autocontext.knowledge.solver import SolveManager
@@ -90,6 +91,7 @@ def run_solve_command(
             description=description,
             generations=gens,
             family_override=family_override or None,
+            verbatim_task_prompt=verbatim_task_prompt or None,
         )
     except KeyboardInterrupt:
         if json_output:
@@ -180,9 +182,36 @@ def register_solve_command(
     @app.command()
     def solve(
         description_text: str | None = typer.Argument(None, help="Plain-language scenario/problem description"),
-        description: str = typer.Option("", "--description", "-d", help="Same description as a named option"),
-        gens: int | None = typer.Option(None, "--gens", min=1, max=50, help="Generations to run for the solve"),
-        iterations: int | None = typer.Option(None, "--iterations", min=1, max=50, help="Plain-language alias for --gens"),
+        description: str = typer.Option(
+            "",
+            "--description",
+            "-d",
+            help="Natural-language scenario/problem description (or use --task-file).",
+        ),
+        task_file: str = typer.Option(
+            "",
+            "--task-file",
+            help=(
+                "Path to a file whose contents are used as the task "
+                "description (mutually exclusive with --description). "
+                "Convenient for long descriptions stored on disk (AC-737)."
+            ),
+        ),
+        gens: int | None = typer.Option(
+            None,
+            "--gens",
+            "--generations",
+            min=1,
+            max=50,
+            help="Generations to run for the solve (--generations alias accepted).",
+        ),
+        iterations: int | None = typer.Option(
+            None,
+            "--iterations",
+            min=1,
+            max=50,
+            help="Plain-language alias for --gens",
+        ),
         timeout: float | None = typer.Option(
             None,
             "--timeout",
@@ -202,10 +231,47 @@ def register_solve_command(
             "--family",
             help="Force a specific scenario family, bypassing the keyword classifier",
         ),
+        task_prompt: str = typer.Option(
+            "",
+            "--task-prompt",
+            help=(
+                "Verbatim task_prompt for the agent (AC-734). When set, the "
+                "LLM scenario designer is bypassed and this exact text becomes "
+                "the compiled scenario's task_prompt — preserves long, "
+                "detail-laden prompts (e.g. Lean lemma signatures) that the "
+                "designer would otherwise truncate or generalize away."
+            ),
+        ),
     ) -> None:
         _validate_family_override(family)
-        resolved_description = _resolve_solve_description(description, description_text)
         write_json_stderr = _cli_attr(dependency_module, "_write_json_stderr")
+
+        # --description (named) takes precedence over the positional argument
+        # (test_solve_prefers_description_option_over_positional_description).
+        resolved_text = _resolve_solve_description(description, description_text)
+
+        # AC-737: resolve --description / --task-file (or positional) through
+        # TaskInput. Refuses both-supplied (ambiguous). When neither is set
+        # we fall through to the legacy "is required" message below for
+        # backward-compat with existing CLI surface.
+        from autocontext.cli_task_input import TaskInput, TaskInputError
+
+        if resolved_text or task_file:
+            try:
+                resolved = TaskInput.from_args(
+                    text=resolved_text or None,
+                    file=task_file or None,
+                )
+            except TaskInputError as exc:
+                if json_output:
+                    write_json_stderr(str(exc))
+                else:
+                    typer.echo(str(exc), err=True)
+                raise typer.Exit(code=1) from exc
+            resolved_description = resolved.text
+        else:
+            resolved_description = ""
+
         if not resolved_description:
             message = '--description is required. You can also run: autoctx solve "plain-language goal".'
             if json_output:
@@ -225,4 +291,5 @@ def register_solve_command(
             write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
             write_json_stderr=write_json_stderr,
             family_override=family or None,
+            verbatim_task_prompt=task_prompt or None,
         )

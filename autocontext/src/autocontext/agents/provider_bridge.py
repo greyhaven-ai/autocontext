@@ -286,11 +286,7 @@ def _provider_api_key(provider_type: str, settings: AppSettings, *, role: str = 
     if role_api_key:
         return role_api_key
     if provider_type == "anthropic":
-        return (
-            settings.anthropic_api_key
-            or os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
-        )
+        return settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY")
     if provider_type in ("openai", "openai-compatible"):
         return settings.agent_api_key or settings.judge_api_key or os.getenv("OPENAI_API_KEY")
     if provider_type == "vllm":
@@ -341,20 +337,11 @@ def _create_claude_cli_bridge(
     *,
     model_override: str | None = None,
 ) -> LanguageModelClient:
-    from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
+    # AC-735: route through the shared factory so per-role overrides also
+    # honor claude_max_total_seconds (the budget is attached uniformly).
+    from autocontext.runtimes.claude_cli import build_claude_cli_runtime
 
-    config = ClaudeCLIConfig(
-        model=model_override or settings.claude_model or "sonnet",
-        tools=settings.claude_tools,
-        permission_mode=settings.claude_permission_mode,
-        session_persistence=settings.claude_session_persistence,
-        timeout=settings.claude_timeout,
-        max_retries=settings.claude_max_retries,
-        retry_backoff_seconds=settings.claude_retry_backoff_seconds,
-        retry_backoff_multiplier=settings.claude_retry_backoff_multiplier,
-        max_total_seconds=settings.claude_max_total_seconds,
-    )
-    return RuntimeBridgeClient(ClaudeCLIRuntime(config))
+    return RuntimeBridgeClient(build_claude_cli_runtime(settings, model_override=model_override))
 
 
 def _create_codex_cli_bridge(

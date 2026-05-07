@@ -538,11 +538,7 @@ def build_client_from_settings(
 ) -> LanguageModelClient:
     """Construct a LanguageModelClient from AppSettings."""
     if settings.agent_provider == "anthropic":
-        api_key = (
-            settings.anthropic_api_key
-            or os.getenv("ANTHROPIC_API_KEY")
-            or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY", "")
-        )
+        api_key = settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("AUTOCONTEXT_ANTHROPIC_API_KEY", "")
         if not api_key:
             raise ValueError(
                 "AUTOCONTEXT_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY is required when AUTOCONTEXT_AGENT_PROVIDER=anthropic"
@@ -578,20 +574,11 @@ def build_client_from_settings(
         return ProviderBridgeClient(provider, use_provider_default_model=True)
     if settings.agent_provider == "claude-cli":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
-        from autocontext.runtimes.claude_cli import ClaudeCLIConfig, ClaudeCLIRuntime
+        from autocontext.runtimes.claude_cli import build_claude_cli_runtime
 
-        claude_config = ClaudeCLIConfig(
-            model=settings.claude_model,
-            tools=settings.claude_tools,
-            permission_mode=settings.claude_permission_mode,
-            session_persistence=settings.claude_session_persistence,
-            timeout=settings.claude_timeout,
-            max_retries=settings.claude_max_retries,
-            retry_backoff_seconds=settings.claude_retry_backoff_seconds,
-            retry_backoff_multiplier=settings.claude_retry_backoff_multiplier,
-            max_total_seconds=settings.claude_max_total_seconds,
-        )
-        return RuntimeBridgeClient(ClaudeCLIRuntime(claude_config))
+        # AC-735: route through the shared factory so the wall-clock budget
+        # is attached on every claude-cli construction path.
+        return RuntimeBridgeClient(build_claude_cli_runtime(settings))
     if settings.agent_provider == "codex":
         from autocontext.agents.provider_bridge import RuntimeBridgeClient
         from autocontext.runtimes.codex_cli import CodexCLIConfig, CodexCLIRuntime

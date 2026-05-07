@@ -621,7 +621,11 @@ class AppSettings(BaseModel):
     claude_max_retries: int = Field(default=2, ge=0, description="Claude CLI timeout retry budget per invocation")
     claude_retry_backoff_seconds: float = Field(default=0.25, ge=0.0, description="Claude CLI retry backoff")
     claude_retry_backoff_multiplier: float = Field(default=2.0, ge=1.0, description="Claude CLI retry backoff multiplier")
-    claude_max_total_seconds: float = Field(default=25 * 60.0, ge=1.0, description="Claude CLI total retry cap")
+    claude_max_total_seconds: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Wall-clock ceiling on total Claude CLI runtime across all invocations (AC-735; 0=off)",
+    )
     claude_tools: str | None = Field(default=None, description="Claude CLI tools override")
     claude_permission_mode: str = Field(default="bypassPermissions", description="Claude CLI permission mode")
     claude_session_persistence: bool = Field(default=False, description="Persist Claude CLI sessions across turns")
@@ -734,9 +738,7 @@ class AppSettings(BaseModel):
     blob_store_min_size_bytes: int = Field(default=1024, ge=0, description="Min artifact size to mirror (0=all)")
     # Classifier fast-path threshold (AC-628)
     classifier_fast_path_threshold: float = Field(
-        default_factory=lambda: float(
-            __import__("os").getenv("AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD", "0.65")
-        ),
+        default_factory=lambda: float(__import__("os").getenv("AUTOCONTEXT_CLASSIFIER_FAST_PATH_THRESHOLD", "0.65")),
         ge=0.0,
         le=1.0,
         validate_default=True,

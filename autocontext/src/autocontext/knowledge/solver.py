@@ -75,6 +75,11 @@ class SolveJob:
     created_at: float = field(default_factory=time.time)
     family_override: str | None = None
     llm_classifier_fallback_used: bool = False
+    # AC-734: when set, bypass the LLM scenario designer and use this
+    # text verbatim as the agent task_prompt. Preserves long, detail-laden
+    # descriptions (e.g. Lean lemma signatures) that the designer would
+    # otherwise truncate or generalize away.
+    verbatim_task_prompt: str | None = None
 
 
 @dataclass(slots=True)
@@ -491,11 +496,17 @@ class SolveManager:
         description: str,
         generations: int = 5,
         family_override: str | None = None,
+        verbatim_task_prompt: str | None = None,
     ) -> SolveJob:
         """Run solve-on-demand synchronously in the current process.
 
         If ``family_override`` is provided, the scenario family classifier is
         bypassed and the solver routes directly to the named family's pipeline.
+
+        If ``verbatim_task_prompt`` is provided (AC-734), the LLM scenario
+        designer is bypassed entirely; the supplied text becomes the
+        compiled scenario's ``task_prompt`` verbatim. ``description`` is
+        still used for the derived scenario name and logging.
         """
         job_id = f"solve_{uuid.uuid4().hex[:8]}"
         job = SolveJob(
@@ -503,6 +514,7 @@ class SolveManager:
             description=description,
             generations=generations,
             family_override=family_override,
+            verbatim_task_prompt=verbatim_task_prompt,
         )
         self._jobs[job_id] = job
         self._run_job(job)
@@ -514,13 +526,31 @@ class SolveManager:
             with active_hook_bus(self.hook_bus):
                 # 1. Create scenario
                 job.status = "creating_scenario"
-                builder = self._build_creator()
-                if builder is None:
-                    job.status = "failed"
-                    job.error = "Scenario creation pipeline unavailable (no API key or unsupported provider)"
-                    return
 
-                created = builder.build(job.description, family_override=job.family_override)
+                if job.verbatim_task_prompt is not None:
+                    # AC-734: bypass the LLM designer entirely; the operator's
+                    # text is the task_prompt. No provider/network required for
+                    # the build step.
+                    from autocontext.knowledge.verbatim_solve import (
+                        VerbatimSolveRequest,
+                        build_verbatim_solve_scenario,
+                    )
+
+                    created = build_verbatim_solve_scenario(
+                        VerbatimSolveRequest(
+                            description=job.description,
+                            task_prompt=job.verbatim_task_prompt,
+                        ),
+                        knowledge_root=self._settings.knowledge_root,
+                    )
+                else:
+                    builder = self._build_creator()
+                    if builder is None:
+                        job.status = "failed"
+                        job.error = "Scenario creation pipeline unavailable (no API key or unsupported provider)"
+                        return
+                    created = builder.build(job.description, family_override=job.family_override)
+
                 job.scenario_name = created.scenario_name
                 job.family_name = created.family_name
                 job.llm_classifier_fallback_used = created.llm_classifier_fallback_used

@@ -1,4 +1,5 @@
 """AC-579 — --family CLI override for autoctx solve."""
+
 from __future__ import annotations
 
 import pytest
@@ -183,6 +184,9 @@ class TestRunSolveCommandFamilyOverride:
                 description="x",
                 generations=1,
                 family_override="simulation",
+                # AC-734: verbatim_task_prompt defaults to None when --task-prompt
+                # is not supplied; the kwarg is forwarded explicitly.
+                verbatim_task_prompt=None,
             )
 
     def test_run_solve_command_defaults_family_override_to_none(self, tmp_path) -> None:
@@ -227,4 +231,7 @@ class TestRunSolveCommandFamilyOverride:
                 description="x",
                 generations=1,
                 family_override=None,
+                # AC-734: verbatim_task_prompt defaults to None when --task-prompt
+                # is not supplied; the kwarg is forwarded explicitly.
+                verbatim_task_prompt=None,
             )
