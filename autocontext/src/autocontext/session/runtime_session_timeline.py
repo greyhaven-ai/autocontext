@@ -16,7 +16,7 @@ def build_runtime_session_timeline(log: RuntimeSessionEventLog) -> RuntimeSessio
     open_prompts: list[RuntimeSessionTimelineItem] = []
     prompts_by_request_id: dict[str, RuntimeSessionTimelineItem] = {}
     prompts_by_event_id: dict[str, RuntimeSessionTimelineItem] = {}
-    child_tasks: dict[str, RuntimeSessionTimelineItem] = {}
+    child_tasks_by_correlation_key: dict[str, RuntimeSessionTimelineItem] = {}
 
     for event in log.events:
         if event.event_type == RuntimeSessionEventType.PROMPT_SUBMITTED:
@@ -39,11 +39,13 @@ def build_runtime_session_timeline(log: RuntimeSessionEventLog) -> RuntimeSessio
                 _complete_prompt_item(prompt, event)
         elif event.event_type == RuntimeSessionEventType.CHILD_TASK_STARTED:
             item = _child_task_item_from_started_event(event)
-            child_tasks[item["task_id"]] = item
+            correlation_key = _child_task_correlation_key_from_item(item)
+            if correlation_key:
+                child_tasks_by_correlation_key[correlation_key] = item
             items.append(item)
         elif event.event_type == RuntimeSessionEventType.CHILD_TASK_COMPLETED:
-            task_id = _read_str(event.payload.get("taskId"))
-            child_item = child_tasks.get(task_id) if task_id else None
+            correlation_key = _child_task_correlation_key_from_event(event)
+            child_item = child_tasks_by_correlation_key.get(correlation_key) if correlation_key else None
             if child_item is None:
                 items.append(_generic_item_from_event(event))
             else:
@@ -151,6 +153,25 @@ def _child_task_item_from_started_event(event: RuntimeSessionEvent) -> RuntimeSe
         "result_preview": "",
         "error": "",
     }
+
+
+def _child_task_correlation_key_from_item(item: RuntimeSessionTimelineItem) -> str:
+    return _child_task_correlation_key(item["task_id"], item["child_session_id"])
+
+
+def _child_task_correlation_key_from_event(event: RuntimeSessionEvent) -> str:
+    return _child_task_correlation_key(
+        _read_str(event.payload.get("taskId")),
+        _read_str(event.payload.get("childSessionId")),
+    )
+
+
+def _child_task_correlation_key(task_id: str, child_session_id: str) -> str:
+    if child_session_id:
+        return f"child_session_id:{child_session_id}"
+    if task_id:
+        return f"task_id:{task_id}"
+    return ""
 
 
 def _complete_child_task_item(item: RuntimeSessionTimelineItem, event: RuntimeSessionEvent) -> None:

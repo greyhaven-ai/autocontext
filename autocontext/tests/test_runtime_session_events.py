@@ -152,6 +152,57 @@ def test_runtime_session_event_store_round_trips_logs_and_children(tmp_path: Pat
         store.close()
 
 
+def test_runtime_session_event_store_closes_operation_connections(tmp_path: Path, monkeypatch) -> None:
+    from autocontext.session import runtime_events
+    from autocontext.session.runtime_events import RuntimeSessionEventLog, RuntimeSessionEventStore, RuntimeSessionEventType
+
+    real_connect = runtime_events.sqlite3.connect
+    closed_connections = 0
+
+    class TrackedConnection:
+        def __init__(self, conn):
+            object.__setattr__(self, "_conn", conn)
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return self._conn.__exit__(exc_type, exc, traceback)
+
+        def __getattr__(self, name: str):
+            return getattr(self._conn, name)
+
+        def __setattr__(self, name: str, value) -> None:
+            if name == "_conn":
+                object.__setattr__(self, name, value)
+                return
+            setattr(self._conn, name, value)
+
+        def close(self) -> None:
+            nonlocal closed_connections
+            closed_connections += 1
+            self._conn.close()
+
+    def connect(*args, **kwargs):
+        return TrackedConnection(real_connect(*args, **kwargs))
+
+    monkeypatch.setattr(runtime_events.sqlite3, "connect", connect)
+    log = RuntimeSessionEventLog.create(session_id="run:abc:runtime")
+    log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {"prompt": "Analyze"})
+
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        store.save(log)
+
+        assert store.load(log.session_id) is not None
+        assert [entry.session_id for entry in store.list(limit=1)] == [log.session_id]
+    finally:
+        store.close()
+
+    assert closed_connections >= 4
+
+
 def test_runtime_session_read_model_resolves_run_ids_and_summaries() -> None:
     from autocontext.session.runtime_session_ids import runtime_session_id_for_run
     from autocontext.session.runtime_session_read_model import (
@@ -236,3 +287,54 @@ def test_runtime_session_timeline_keeps_unmatched_correlated_response_generic() 
     assert timeline["items"][0]["status"] == "in_flight"
     assert timeline["items"][1]["kind"] == "event"
     assert timeline["items"][1]["event_id"] == unmatched.event_id
+
+
+def test_runtime_session_timeline_pairs_child_completions_by_child_session_id() -> None:
+    from autocontext.session.runtime_events import RuntimeSessionEventLog, RuntimeSessionEventType
+    from autocontext.session.runtime_session_timeline import build_runtime_session_timeline
+
+    log = RuntimeSessionEventLog.from_dict(
+        {
+            "sessionId": "run:abc:runtime",
+            "createdAt": "2026-04-10T00:00:00.000Z",
+            "updatedAt": "2026-04-10T00:00:03.000Z",
+            "events": [
+                {
+                    "eventId": "event-1",
+                    "sessionId": "run:abc:runtime",
+                    "sequence": 0,
+                    "eventType": RuntimeSessionEventType.CHILD_TASK_STARTED,
+                    "timestamp": "2026-04-10T00:00:01.000Z",
+                    "payload": {"taskId": "retry", "childSessionId": "c1", "workerId": "worker-1"},
+                },
+                {
+                    "eventId": "event-2",
+                    "sessionId": "run:abc:runtime",
+                    "sequence": 1,
+                    "eventType": RuntimeSessionEventType.CHILD_TASK_STARTED,
+                    "timestamp": "2026-04-10T00:00:02.000Z",
+                    "payload": {"taskId": "retry", "childSessionId": "c2", "workerId": "worker-2"},
+                },
+                {
+                    "eventId": "event-3",
+                    "sessionId": "run:abc:runtime",
+                    "sequence": 2,
+                    "eventType": RuntimeSessionEventType.CHILD_TASK_COMPLETED,
+                    "timestamp": "2026-04-10T00:00:03.000Z",
+                    "payload": {"taskId": "retry", "childSessionId": "c1", "result": "c1 done"},
+                },
+            ],
+        }
+    )
+
+    timeline = build_runtime_session_timeline(log)
+    first, second = timeline["items"]
+
+    assert first["child_session_id"] == "c1"
+    assert first["status"] == "completed"
+    assert first["sequence_end"] == 2
+    assert first["result_preview"] == "c1 done"
+    assert second["child_session_id"] == "c2"
+    assert second["status"] == "started"
+    assert second["sequence_end"] is None
+    assert timeline["in_flight_count"] == 1

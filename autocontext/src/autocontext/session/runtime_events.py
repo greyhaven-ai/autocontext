@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -192,7 +193,7 @@ class RuntimeSessionEventStore:
 
     def save(self, log: RuntimeSessionEventLog) -> None:
         data = log.to_dict()
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 INSERT INTO runtime_sessions (
@@ -242,7 +243,7 @@ class RuntimeSessionEventStore:
             )
 
     def load(self, session_id: str) -> RuntimeSessionEventLog | None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             session = conn.execute(
                 """
                 SELECT session_id, parent_session_id, task_id, worker_id, metadata_json, created_at, updated_at
@@ -291,7 +292,7 @@ class RuntimeSessionEventStore:
 
     def list(self, *, limit: int = 50) -> RuntimeSessionEventLogList:
         clean_limit = limit if isinstance(limit, int) and limit > 0 else 50
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 """
                 SELECT session_id
@@ -304,7 +305,7 @@ class RuntimeSessionEventStore:
         return [log for row in rows if (log := self.load(row["session_id"])) is not None]
 
     def list_children(self, parent_session_id: str) -> RuntimeSessionEventLogList:
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 """
                 SELECT session_id
@@ -317,7 +318,7 @@ class RuntimeSessionEventStore:
         return [log for row in rows if (log := self.load(row["session_id"])) is not None]
 
     def close(self) -> None:
-        """Compatibility no-op; connections are scoped per operation."""
+        """Compatibility no-op; operation-scoped connections close immediately."""
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -325,8 +326,14 @@ class RuntimeSessionEventStore:
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        with closing(self._connect()) as conn:
+            with conn:
+                yield conn
+
     def _ensure_schema(self) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS runtime_sessions (
