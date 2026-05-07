@@ -82,7 +82,7 @@ Then you just ask:
 }
 ```
 
-After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, `autocontext_list_scenarios`, `autocontext_export_skill`, and `autocontext_search_strategies`. The MCP server runs on stdio. The TypeScript package exposes the same capabilities with its documented tool names via `bunx autoctx mcp-serve`.
+After that, Python MCP exposes prefixed tools such as `autocontext_solve_scenario`, `autocontext_evaluate_output`, `autocontext_run_improvement_loop`, `autocontext_run_status`, `autocontext_list_scenarios`, `autocontext_export_skill`, and `autocontext_search_strategies`. The MCP server runs on stdio. The TypeScript package exposes the same capabilities with its documented tool names via `bunx autoctx mcp-serve`, including `list_runtime_sessions`, `get_runtime_session`, and `get_runtime_session_timeline` for recorded provider-runtime logs.
 
 **Hermes Agent** can load a CLI-first skill and inspect Hermes Curator state without MCP:
 
@@ -239,20 +239,21 @@ pi install npm:pi-autocontext
 
 ## Surfaces
 
-| Surface       | Command                                            | When to use it                                                                         |
-| ------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `solve`       | `autoctx solve "..." --iterations 3`               | Hand the harness a goal in plain language; it generates the scenario and runs the loop |
-| `run`         | `autoctx run <scenario> --iterations 3`            | Improve behavior inside a saved scenario across generations                            |
-| `simulate`    | `autoctx simulate -d "..."`                        | Model a system, sweep parameters, replay, compare                                      |
-| `investigate` | `autoctx investigate -d "..."`                     | Evidence-driven diagnosis, either synthetic harness or live iterative LLM session      |
-| `analyze`     | `autoctx analyze --id <id> --type <kind>`          | Inspect or compare runs, simulations, investigations, or missions after the fact       |
-| `mission`     | `autoctx mission create --name "..." --goal "..."` | Verifier-driven goal advanced step by step until done                                  |
-| `campaign`    | `bunx autoctx campaign ...` (TypeScript)           | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
-| `worker`      | `autoctx worker --poll-interval 5`                 | Process queued tasks on a persistent host beside `autoctx serve`                      |
-| `export`      | `autoctx export <run-id>`                          | Share solved knowledge as JSON, skills, or Pi-local package directories                |
-| `train`       | `autoctx train --scenario <name> --data <jsonl>`   | Distill stable exported data into a cheaper local runtime                              |
-| `hermes`      | `uv run autoctx hermes inspect --json` (Python)    | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill       |
-| `replay`      | `autoctx replay <run_id> --generation N`           | Inspect what happened before deciding what knowledge should persist                    |
+| Surface            | Command                                                | When to use it                                                                         |
+| ------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `solve`            | `autoctx solve "..." --iterations 3`                   | Hand the harness a goal in plain language; it generates the scenario and runs the loop |
+| `run`              | `autoctx run <scenario> --iterations 3`                | Improve behavior inside a saved scenario across generations                            |
+| `simulate`         | `autoctx simulate -d "..."`                            | Model a system, sweep parameters, replay, compare                                      |
+| `investigate`      | `autoctx investigate -d "..."`                         | Evidence-driven diagnosis, either synthetic harness or live iterative LLM session      |
+| `analyze`          | `autoctx analyze --id <id> --type <kind>`              | Inspect or compare runs, simulations, investigations, or missions after the fact       |
+| `mission`          | `autoctx mission create --name "..." --goal "..."`     | Verifier-driven goal advanced step by step until done                                  |
+| `campaign`         | `bunx autoctx campaign ...` (TypeScript)               | Coordinate multiple missions with budgets, dependencies, progress aggregation          |
+| `worker`           | `autoctx worker --poll-interval 5`                     | Process queued tasks on a persistent host beside `autoctx serve`                       |
+| `export`           | `autoctx export <run-id>`                              | Share solved knowledge as JSON, skills, or Pi-local package directories                |
+| `train`            | `autoctx train --scenario <name> --data <jsonl>`       | Distill stable exported data into a cheaper local runtime                              |
+| `runtime-sessions` | `bunx autoctx runtime-sessions timeline --run-id <run-id>` (TypeScript) | Inspect persisted provider prompts, messages, child-task events, and operator-facing timelines from runtime-backed runs; also exposed through TypeScript MCP, cockpit HTTP, the interactive TUI `/timeline` plus persisted filterable and resettable `/activity` live feed, and `/ws/events` updates |
+| `hermes`           | `uv run autoctx hermes inspect --json` (Python)        | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill       |
+| `replay`           | `autoctx replay <run_id> --generation N`               | Inspect what happened before deciding what knowledge should persist                    |
 
 ## Scenario Families
 

@@ -241,6 +241,39 @@ async function createTestServer(dir: string) {
   return { server, mgr, baseUrl: `http://localhost:${server.port}` };
 }
 
+async function persistRuntimeSession(dir: string): Promise<void> {
+  const {
+    RuntimeSessionEventLog,
+    RuntimeSessionEventStore,
+    RuntimeSessionEventType,
+  } = await import("../src/session/runtime-events.js");
+  const eventStore = new RuntimeSessionEventStore(join(dir, "test.db"));
+  const log = RuntimeSessionEventLog.create({
+    sessionId: "run:test-run-1:runtime",
+    metadata: { goal: "autoctx run grid_ctf", runId: "test-run-1" },
+  });
+  log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
+    role: "architect",
+    prompt: "Improve the grid strategy",
+  });
+  log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
+    role: "architect",
+    text: "Try measured aggression around the flag.",
+  });
+  eventStore.save(log);
+  eventStore.close();
+}
+
+function expectTestRunRuntimeSessionDiscovery(value: unknown): void {
+  expect(value).toMatchObject({
+    runtime_session: expect.objectContaining({
+      session_id: "run:test-run-1:runtime",
+      event_count: 2,
+    }),
+    runtime_session_url: "/api/cockpit/runs/test-run-1/runtime-session",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Health endpoint (already exists — regression check)
 // ---------------------------------------------------------------------------
@@ -350,6 +383,21 @@ describe("HTTP API — health", () => {
       method: "GET",
       path: "/api/cockpit/runs",
       status: "aligned",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/cockpit/runtime-sessions",
+      status: "python_gap",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/cockpit/runs/:run_id/runtime-session",
+      status: "python_gap",
+    }));
+    expect(matrix.routes).toContainEqual(expect.objectContaining({
+      method: "GET",
+      path: "/api/cockpit/runs/:run_id/runtime-session/timeline",
+      status: "python_gap",
     }));
     expect(matrix.routes).toContainEqual(expect.objectContaining({
       method: "GET",
@@ -802,10 +850,25 @@ describe("HTTP API — cockpit", () => {
       best_score: 0.7,
       best_elo: 1050,
       status: "running",
+      runtime_session: null,
+      runtime_session_url: "/api/cockpit/runs/test-run-1/runtime-session",
     }));
   });
 
+  it("GET /api/cockpit/runs includes runtime-session summaries when present", async () => {
+    await persistRuntimeSession(dir);
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs`);
+
+    expect(status).toBe(200);
+    const runs = body as Array<Record<string, unknown>>;
+    const run = runs.find((item) => item.run_id === "test-run-1");
+    expectTestRunRuntimeSessionDiscovery(run);
+  });
+
   it("GET /api/cockpit/runs/:run_id/status returns detailed generation state", async () => {
+    await persistRuntimeSession(dir);
+
     const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/status`);
 
     expect(status).toBe(200);
@@ -820,6 +883,7 @@ describe("HTTP API — cockpit", () => {
         elo: 1050,
       })],
     });
+    expectTestRunRuntimeSessionDiscovery(body);
   });
 
   it("GET /api/cockpit/runs/:run_id/compare/:gen_a/:gen_b compares generations", async () => {
@@ -848,6 +912,8 @@ describe("HTTP API — cockpit", () => {
   });
 
   it("GET /api/cockpit/runs/:run_id/resume returns resume affordances", async () => {
+    await persistRuntimeSession(dir);
+
     const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/resume`);
 
     expect(status).toBe(200);
@@ -858,6 +924,7 @@ describe("HTTP API — cockpit", () => {
       can_resume: true,
     });
     expect((body as Record<string, unknown>).resume_hint).toContain("generation 2");
+    expectTestRunRuntimeSessionDiscovery(body);
   });
 
   it("GET /api/cockpit/writeup/:run_id returns a markdown writeup", async () => {
@@ -921,6 +988,120 @@ describe("HTTP API — cockpit", () => {
           playbook_changed: false,
         },
       ],
+    });
+  });
+
+  it("GET /api/cockpit/runtime-sessions lists recorded provider-runtime logs", async () => {
+    await persistRuntimeSession(dir);
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runtime-sessions?limit=5`);
+
+    expect(status).toBe(200);
+    expect(body).toEqual({
+      sessions: [
+        expect.objectContaining({
+          session_id: "run:test-run-1:runtime",
+          goal: "autoctx run grid_ctf",
+          event_count: 2,
+        }),
+      ],
+    });
+  });
+
+  it("GET /api/cockpit/runtime-sessions/:session_id returns a recorded event log", async () => {
+    await persistRuntimeSession(dir);
+
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runtime-sessions/${encodeURIComponent("run:test-run-1:runtime")}`,
+    );
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      sessionId: "run:test-run-1:runtime",
+      metadata: { goal: "autoctx run grid_ctf", runId: "test-run-1" },
+      events: [
+        expect.objectContaining({
+          eventType: "prompt_submitted",
+          payload: {
+            role: "architect",
+            prompt: "Improve the grid strategy",
+          },
+        }),
+        expect.objectContaining({
+          eventType: "assistant_message",
+          payload: {
+            role: "architect",
+            text: "Try measured aggression around the flag.",
+          },
+        }),
+      ],
+    });
+  });
+
+  it("GET /api/cockpit/runtime-sessions/:session_id/timeline returns an operator timeline", async () => {
+    await persistRuntimeSession(dir);
+
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runtime-sessions/${encodeURIComponent("run:test-run-1:runtime")}/timeline`,
+    );
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      summary: {
+        session_id: "run:test-run-1:runtime",
+        event_count: 2,
+      },
+      item_count: 1,
+      items: [
+        expect.objectContaining({
+          kind: "prompt",
+          status: "completed",
+          role: "architect",
+          prompt_preview: "Improve the grid strategy",
+          response_preview: "Try measured aggression around the flag.",
+        }),
+      ],
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/runtime-session resolves the run-scoped log", async () => {
+    await persistRuntimeSession(dir);
+
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/runtime-session`);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      sessionId: "run:test-run-1:runtime",
+      metadata: { runId: "test-run-1" },
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/runtime-session/timeline resolves the run-scoped timeline", async () => {
+    await persistRuntimeSession(dir);
+
+    const { status, body } = await fetchJson(
+      `${baseUrl}/api/cockpit/runs/test-run-1/runtime-session/timeline`,
+    );
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      summary: { session_id: "run:test-run-1:runtime" },
+      items: [
+        expect.objectContaining({
+          kind: "prompt",
+          status: "completed",
+        }),
+      ],
+    });
+  });
+
+  it("GET /api/cockpit/runs/:run_id/runtime-session returns 404 when no log exists", async () => {
+    const { status, body } = await fetchJson(`${baseUrl}/api/cockpit/runs/test-run-1/runtime-session`);
+
+    expect(status).toBe(404);
+    expect(body).toEqual({
+      detail: "Runtime session for run 'test-run-1' not found",
+      session_id: "run:test-run-1:runtime",
     });
   });
 
@@ -1617,5 +1798,64 @@ describe("HTTP API — dashboard event stream", () => {
     expect(payload.v).toBe(1);
     expect(payload.channel).toBe("generation");
     expect((payload.payload as Record<string, unknown>).run_id).toBe("ws-test");
+  }, 15000);
+
+  it("streams runtime-session events over /ws/events", async () => {
+    const { WebSocket } = await import("ws");
+    const { createInMemoryWorkspaceEnv } = await import("../src/runtimes/workspace-env.js");
+    const { RuntimeSession } = await import("../src/session/runtime-session.js");
+    const { RuntimeSessionEventStore } = await import("../src/session/runtime-events.js");
+    const { createRuntimeSessionEventStreamSink } =
+      await import("../src/server/runtime-session-event-stream.js");
+    const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws/events";
+    const eventStore = new RuntimeSessionEventStore(join(dir, "test.db"));
+
+    try {
+      const raw = await new Promise<string>((resolve, reject) => {
+        const ws = new WebSocket(wsUrl);
+        ws.once("open", () => {
+          ws.once("message", (data) => {
+            resolve(data.toString());
+            ws.close();
+          });
+          ws.once("error", reject);
+
+          const session = RuntimeSession.create({
+            sessionId: "runtime-ws",
+            goal: "ship live runtime visibility",
+            workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
+            eventStore,
+            eventSink: createRuntimeSessionEventStreamSink(mgr.events),
+          });
+          void session.submitPrompt({
+            prompt: "Inspect live runtime state",
+            role: "observer",
+            handler: () => ({ text: "visible" }),
+          });
+        });
+        ws.once("error", reject);
+      });
+      const payload = JSON.parse(raw) as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        event: "runtime_session_event",
+        channel: "runtime_session",
+        v: 1,
+        payload: {
+          session_id: "runtime-ws",
+          goal: "ship live runtime visibility",
+          event_count: 1,
+          event: {
+            event_type: "prompt_submitted",
+            sequence: 0,
+            payload: {
+              prompt: "Inspect live runtime state",
+              role: "observer",
+            },
+          },
+        },
+      });
+    } finally {
+      eventStore.close();
+    }
   }, 15000);
 });

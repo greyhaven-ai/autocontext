@@ -25,6 +25,8 @@ export {
   createConfiguredProvider,
   withRuntimeSettings,
   type GenerationRole,
+  type ProviderCompositionOpts,
+  type ProviderRuntimeSessionOpts,
   type RoleProviderBundle,
   type RoleProviderSettings,
 } from "./role-provider-bundle.js";

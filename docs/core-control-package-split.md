@@ -130,6 +130,13 @@ review discovers a boundary mistake.
 - `ts/src/types/`
 - open/shared pieces of `ts/src/traces/` and `ts/src/production-traces/`
 
+`ts/src/runtimes/workspace-env.ts` is the first explicit runtime carve-out in
+the TypeScript core artifact: it is a pure workspace/session environment
+contract plus local/in-memory adapters and scoped command grants. Provider
+wrappers such as Claude CLI, Codex CLI, Pi, and direct API runtimes remain
+outside the core package boundary unless they are split into pure contracts and
+provider-specific implementations.
+
 ### TypeScript Control-Plane Candidates
 
 - `ts/src/control-plane/`

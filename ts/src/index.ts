@@ -208,7 +208,28 @@ export type {
 } from "./execution/tournament.js";
 
 // Runtimes
-export type { AgentOutput, AgentRuntime } from "./runtimes/index.js";
+export type {
+  AgentOutput,
+  AgentRuntime,
+  InMemoryWorkspaceEnvOptions,
+  LocalWorkspaceEnvOptions,
+  RuntimeCommandContext,
+  RuntimeCommandGrant,
+  RuntimeCommandGrantOptions,
+  RuntimeCommandHandler,
+  RuntimeExecOptions,
+  RuntimeExecResult,
+  RuntimeFileStat,
+  RuntimeScopeOptions,
+  RuntimeWorkspaceEnv,
+} from "./runtimes/index.js";
+export {
+  createInMemoryWorkspaceEnv,
+  createLocalWorkspaceEnv,
+  defineRuntimeCommand,
+  RuntimeSessionAgentRuntime,
+} from "./runtimes/index.js";
+export type { RuntimeSessionAgentRuntimeOpts } from "./runtimes/index.js";
 export { DirectAPIRuntime } from "./runtimes/index.js";
 export { ClaudeCLIRuntime, createSessionRuntime } from "./runtimes/index.js";
 export type { ClaudeCLIConfig } from "./runtimes/index.js";
@@ -232,6 +253,69 @@ export {
 } from "./session/types.js";
 export type { SessionEvent } from "./session/types.js";
 export { SessionStore } from "./session/store.js";
+export {
+  RuntimeSessionEventLog,
+  RuntimeSessionEventStore,
+  RuntimeSessionEventType,
+} from "./session/runtime-events.js";
+export type {
+  RuntimeSessionEvent,
+  RuntimeSessionEventLogCreateOpts,
+  RuntimeSessionEventLogJSON,
+  RuntimeSessionEventLogSubscriber,
+} from "./session/runtime-events.js";
+export { RuntimeSession } from "./session/runtime-session.js";
+export { runtimeSessionIdForRun } from "./session/runtime-session-ids.js";
+export { buildRuntimeSessionEventNotification } from "./session/runtime-session-notifications.js";
+export {
+  readRuntimeSessionById,
+  readRuntimeSessionByRunId,
+  readRuntimeSessionSummaries,
+  summarizeRuntimeSession,
+} from "./session/runtime-session-read-model.js";
+export {
+  buildRuntimeSessionTimeline,
+  readRuntimeSessionTimelineById,
+  readRuntimeSessionTimelineByRunId,
+} from "./session/runtime-session-timeline.js";
+export type {
+  RuntimeSessionCreateOpts,
+  RuntimeSessionLoadOpts,
+  RuntimeSessionPromptHandler,
+  RuntimeSessionPromptHandlerInput,
+  RuntimeSessionPromptHandlerOutput,
+  RuntimeSessionPromptResult,
+  RuntimeSessionSubmitPromptOpts,
+} from "./session/runtime-session.js";
+export type {
+  RuntimeSessionReadStore,
+  RuntimeSessionSummary,
+} from "./session/runtime-session-read-model.js";
+export type {
+  RuntimeSessionChildTaskTimelineItem,
+  RuntimeSessionGenericTimelineItem,
+  RuntimeSessionPromptTimelineItem,
+  RuntimeSessionTimeline,
+  RuntimeSessionTimelineItem,
+} from "./session/runtime-session-timeline.js";
+export type {
+  RuntimeSessionEventNotification,
+  RuntimeSessionEventSink,
+} from "./session/runtime-session-notifications.js";
+export {
+  DEFAULT_CHILD_TASK_MAX_DEPTH,
+  RuntimeChildTaskRunner,
+  createAgentRuntimeChildTaskHandler,
+} from "./session/runtime-child-tasks.js";
+export type {
+  AgentRuntimeChildTaskHandlerOptions,
+  RuntimeChildTaskHandler,
+  RuntimeChildTaskHandlerInput,
+  RuntimeChildTaskHandlerOutput,
+  RuntimeChildTaskResult,
+  RuntimeChildTaskRunnerOpts,
+  RuntimeChildTaskRunOpts,
+} from "./session/runtime-child-tasks.js";
 
 // Scenarios
 export type {
@@ -341,6 +425,7 @@ export type {
   CoachOutput,
   ArchitectOutput,
   RetryOpts,
+  RuntimeBridgeProviderOpts,
   TierConfigOpts,
   SelectOpts,
   GenerationPrompts,

@@ -641,6 +641,102 @@ describe("AC-422: list --json", () => {
   });
 });
 
+describe("runtime session run inspection", () => {
+  it("status --json includes a persisted runtime session summary when present", async () => {
+    const dir = makeTempDir();
+    try {
+      const dbPath = join(dir, "runs", "autocontext.sqlite3");
+      mkdirSync(join(dir, "runs"), { recursive: true });
+
+      const { SQLiteStore } = await import("../src/storage/index.js");
+      const {
+        RuntimeSessionEventLog,
+        RuntimeSessionEventStore,
+        RuntimeSessionEventType,
+      } = await import("../src/session/runtime-events.js");
+      const { runtimeSessionIdForRun } = await import("../src/session/runtime-session-ids.js");
+
+      const store = new SQLiteStore(dbPath);
+      store.migrate(join(import.meta.dirname, "..", "migrations"));
+      store.createRun("run-123", "grid_ctf", 1, "local", "codex");
+      store.upsertGeneration("run-123", 1, {
+        meanScore: 0.5,
+        bestScore: 0.7,
+        elo: 1010,
+        wins: 2,
+        losses: 1,
+        gateDecision: "advance",
+        status: "completed",
+      });
+      store.close();
+
+      const eventStore = new RuntimeSessionEventStore(dbPath);
+      const log = RuntimeSessionEventLog.create({
+        sessionId: runtimeSessionIdForRun("run-123"),
+        metadata: { goal: "autoctx run grid_ctf" },
+      });
+      log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
+        role: "default",
+        prompt: "improve grid ctf",
+      });
+      eventStore.save(log);
+      eventStore.close();
+
+      const { stdout, exitCode } = runCli(["status", "run-123", "--json"], {
+        env: { AUTOCONTEXT_DB_PATH: dbPath },
+      });
+
+      expect(exitCode).toBe(0);
+      const payload = JSON.parse(stdout);
+      expect(payload.runtime_session).toMatchObject({
+        session_id: "run:run-123:runtime",
+        event_count: 1,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("runtime-sessions show can resolve the run-scoped session by run id", async () => {
+    const dir = makeTempDir();
+    try {
+      const dbPath = join(dir, "runs", "autocontext.sqlite3");
+      mkdirSync(join(dir, "runs"), { recursive: true });
+
+      const {
+        RuntimeSessionEventLog,
+        RuntimeSessionEventStore,
+        RuntimeSessionEventType,
+      } = await import("../src/session/runtime-events.js");
+      const { runtimeSessionIdForRun } = await import("../src/session/runtime-session-ids.js");
+
+      const eventStore = new RuntimeSessionEventStore(dbPath);
+      const log = RuntimeSessionEventLog.create({
+        sessionId: runtimeSessionIdForRun("run-123"),
+        metadata: { goal: "autoctx run grid_ctf" },
+      });
+      log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
+        role: "default",
+        text: "improved strategy",
+      });
+      eventStore.save(log);
+      eventStore.close();
+
+      const { stdout, exitCode } = runCli(
+        ["runtime-sessions", "show", "--run-id", "run-123", "--json"],
+        { env: { AUTOCONTEXT_DB_PATH: dbPath } },
+      );
+
+      expect(exitCode).toBe(0);
+      const payload = JSON.parse(stdout);
+      expect(payload.sessionId).toBe("run:run-123:runtime");
+      expect(payload.events).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // AC-421: serve --json startup output
 // ---------------------------------------------------------------------------

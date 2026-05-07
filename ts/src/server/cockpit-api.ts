@@ -7,11 +7,15 @@ import type {
   RunRow,
   SQLiteStore,
 } from "../storage/index.js";
+import type { RuntimeSessionReadStore } from "../session/runtime-session-read-model.js";
 import type { LLMProvider } from "../types/index.js";
 import { buildChangelog } from "./cockpit-changelog.js";
 import { requestConsultation } from "./cockpit-consultation.js";
 import { buildWriteup } from "./cockpit-writeup.js";
 import type { NotebookApiRoutes } from "./notebook-api.js";
+import {
+  runtimeSessionDiscoveryForRun,
+} from "./runtime-session-api.js";
 
 export interface CockpitApiResponse {
   status: number;
@@ -41,6 +45,9 @@ type NotebookField =
   | "unresolved_questions"
   | "operator_observations"
   | "follow_ups";
+type ClosableRuntimeSessionReadStore = RuntimeSessionReadStore & {
+  close?: () => void;
+};
 
 const ROLE_NOTEBOOK_FIELDS: Record<RoleName, NotebookField[]> = {
   competitor: ["current_objective", "current_hypotheses", "follow_ups"],
@@ -59,6 +66,7 @@ const FIELD_HEADERS: Record<NotebookField, string> = {
 
 export function buildCockpitApiRoutes(opts: {
   openStore: () => SQLiteStore;
+  openRuntimeSessionStore?: () => ClosableRuntimeSessionReadStore;
   notebookApi: NotebookApiRoutes;
   settings: AppSettings;
   runsRoot: string;
@@ -83,14 +91,18 @@ export function buildCockpitApiRoutes(opts: {
     deleteNotebook: (sessionId) => opts.notebookApi.delete(sessionId),
     listRuns: () => withStore(opts.openStore, (store) => ({
       status: 200,
-      body: store.listRuns(50).map((run) => summarizeRun(store, run)),
+      body: withRuntimeSessionStore(opts.openRuntimeSessionStore, (runtimeStore) =>
+        store.listRuns(50).map((run) => ({
+          ...summarizeRun(store, run),
+          ...runtimeSessionDiscoveryForRun(runtimeStore, run.run_id),
+        }))),
     })),
     runStatus: (runId) => withStore(opts.openStore, (store) => {
       const run = store.getRun(runId);
       if (!run) {
         return { status: 404, body: { detail: `Run '${runId}' not found` } };
       }
-      return {
+      return withRuntimeSessionStore(opts.openRuntimeSessionStore, (runtimeStore) => ({
         status: 200,
         body: {
           run_id: run.run_id,
@@ -99,8 +111,9 @@ export function buildCockpitApiRoutes(opts: {
           status: run.status,
           created_at: run.created_at,
           generations: store.getGenerations(runId).map(formatGenerationStatus),
+          ...runtimeSessionDiscoveryForRun(runtimeStore, runId),
         },
-      };
+      }));
     }),
     changelog: (runId) => withStore(opts.openStore, (store) => {
       if (!store.getRun(runId)) {
@@ -149,7 +162,7 @@ export function buildCockpitApiRoutes(opts: {
         resumeHint = `Run status is '${run.status}'.`;
       }
       const notebook = store.getNotebook(runId);
-      return {
+      return withRuntimeSessionStore(opts.openRuntimeSessionStore, (runtimeStore) => ({
         status: 200,
         body: {
           run_id: runId,
@@ -161,8 +174,9 @@ export function buildCockpitApiRoutes(opts: {
           effective_notebook_context: notebook
             ? buildEffectiveNotebookPreview(notebook, getRunBestScore(store, runId))
             : null,
+          ...runtimeSessionDiscoveryForRun(runtimeStore, runId),
         },
-      };
+      }));
     }),
     writeup: (runId) => withStore(opts.openStore, (store) => {
       const run = store.getRun(runId);
@@ -216,6 +230,21 @@ async function withStoreAsync(
     return await fn(store);
   } finally {
     store.close();
+  }
+}
+
+function withRuntimeSessionStore<T>(
+  openStore: (() => ClosableRuntimeSessionReadStore) | undefined,
+  fn: (store: RuntimeSessionReadStore | null) => T,
+): T {
+  if (!openStore) {
+    return fn(null);
+  }
+  const store = openStore();
+  try {
+    return fn(store);
+  } finally {
+    store.close?.();
   }
 }
 

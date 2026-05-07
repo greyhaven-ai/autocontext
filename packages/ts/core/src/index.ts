@@ -1,6 +1,24 @@
 export const packageRole = "core";
 export const packageTopologyVersion = 1;
 
+export {
+	createInMemoryWorkspaceEnv,
+	createLocalWorkspaceEnv,
+	defineRuntimeCommand,
+} from "../../../../ts/src/runtimes/workspace-env.js";
+export type {
+	InMemoryWorkspaceEnvOptions,
+	LocalWorkspaceEnvOptions,
+	RuntimeCommandContext,
+	RuntimeCommandGrant,
+	RuntimeCommandGrantOptions,
+	RuntimeCommandHandler,
+	RuntimeExecOptions,
+	RuntimeExecResult,
+	RuntimeFileStat,
+	RuntimeScopeOptions,
+	RuntimeWorkspaceEnv,
+} from "../../../../ts/src/runtimes/workspace-env.js";
 export { expectedScore, updateElo } from "../../../../ts/src/execution/elo.js";
 export type {
 	ParsedJudge,

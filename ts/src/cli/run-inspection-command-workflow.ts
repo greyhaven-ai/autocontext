@@ -1,3 +1,5 @@
+import type { RuntimeSessionSummary } from "../session/runtime-session-read-model.js";
+
 export const RUN_STATUS_HELP_TEXT = `autoctx status — show queue status or a run status
 
 Usage:
@@ -89,9 +91,10 @@ export function renderRunStatus(
   run: RunInspectionRun,
   generations: RunInspectionGeneration[],
   json: boolean,
+  runtimeSession?: RuntimeSessionSummary | null,
 ): string {
   if (json) {
-    return JSON.stringify(runStatusPayload(run, generations), null, 2);
+    return JSON.stringify(runStatusPayload(run, generations, runtimeSession), null, 2);
   }
 
   const latest = latestGeneration(generations);
@@ -102,20 +105,23 @@ export function renderRunStatus(
     `  Generations: ${generations.length}/${run.target_generations}`,
     latest ? `  Latest best score: ${formatScore(latest.best_score)} (generation ${latest.generation_index})` : null,
     latest ? `  Latest gate: ${latest.gate_decision}` : null,
+    runtimeSession ? `  Runtime session: ${runtimeSession.session_id}` : null,
   ].filter((line): line is string => line !== null).join("\n");
 }
 
 export function renderRunStatusJsonLine(
   run: RunInspectionRun,
   generations: RunInspectionGeneration[],
+  runtimeSession?: RuntimeSessionSummary | null,
 ): string {
-  return JSON.stringify(runStatusPayload(run, generations));
+  return JSON.stringify(runStatusPayload(run, generations, runtimeSession));
 }
 
 export function renderRunShow(
   run: RunInspectionRun,
   generations: RunInspectionGeneration[],
   values: ShowValues,
+  runtimeSession?: RuntimeSessionSummary | null,
 ): string {
   const generation = selectGeneration(generations, values);
   if (!generation) {
@@ -123,7 +129,7 @@ export function renderRunShow(
   }
 
   if (values.json) {
-    return JSON.stringify({ run, generation }, null, 2);
+    return JSON.stringify({ run, generation, runtime_session: runtimeSession ?? null }, null, 2);
   }
 
   return [
@@ -135,7 +141,8 @@ export function renderRunShow(
     `  Mean score: ${formatScore(generation.mean_score)}`,
     `  ELO: ${formatScore(generation.elo)}`,
     `  Gate: ${generation.gate_decision}`,
-  ].join("\n");
+    runtimeSession ? `  Runtime session: ${runtimeSession.session_id}` : null,
+  ].filter((line): line is string => line !== null).join("\n");
 }
 
 function selectGeneration(
@@ -164,13 +171,16 @@ function latestGeneration(generations: RunInspectionGeneration[]): RunInspection
 function runStatusPayload(
   run: RunInspectionRun,
   generations: RunInspectionGeneration[],
+  runtimeSession?: RuntimeSessionSummary | null,
 ): {
   run: RunInspectionRun;
   latest_generation: RunInspectionGeneration | null;
+  runtime_session: RuntimeSessionSummary | null;
 } {
   return {
     run,
     latest_generation: latestGeneration(generations),
+    runtime_session: runtimeSession ?? null,
   };
 }
 
