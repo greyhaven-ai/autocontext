@@ -210,6 +210,7 @@ export function buildExternalEvalDiagnosticReport(
     .filter(({ trial, evidence }) => trial.status !== "passed" || hasAdapterRuntimeIssue(trial, evidence))
     .map(({ trial, evidence }) => buildTrialDiagnostic(inputs.runId, trial, evidence));
   const improvementSignals = buildImprovementSignals(inputs.runId, diagnostics);
+  const countsByCategory = countDiagnosticsByCategory(diagnostics);
 
   return {
     schemaVersion: "external-eval-diagnostics/v1",
@@ -220,10 +221,8 @@ export function buildExternalEvalDiagnosticReport(
     summary: {
       totalTrials: inputs.trials.length,
       unresolvedTrials: inputs.trials.filter((trial) => trial.status !== "passed").length,
-      runtimeIssueTrials: trialsWithEvidence.filter(({ trial, evidence }) =>
-        hasAdapterRuntimeIssue(trial, evidence),
-      ).length,
-      countsByCategory: countDiagnosticsByCategory(diagnostics),
+      runtimeIssueTrials: countsByCategory["adapter-runtime-failure"] ?? 0,
+      countsByCategory,
     },
   };
 }

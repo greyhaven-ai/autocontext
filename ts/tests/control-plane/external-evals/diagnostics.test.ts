@@ -181,6 +181,32 @@ describe("external eval diagnostics", () => {
     });
   });
 
+  test("counts runtime-status diagnostics as runtime issue trials", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-run-1",
+      createdAt: "2026-05-07T15:11:00.000Z",
+      trials: [
+        {
+          taskId: "bare-infra-task",
+          trialId: "bare-infra-task.1-of-1.tb-run-1",
+          attempt: 1,
+          status: "infrastructure-error",
+        },
+      ],
+    });
+
+    expect(report.diagnostics).toHaveLength(1);
+    expect(report.diagnostics[0]).toMatchObject({
+      category: "adapter-runtime-failure",
+    });
+    expect(report.summary).toMatchObject({
+      totalTrials: 1,
+      unresolvedTrials: 1,
+      runtimeIssueTrials: 1,
+      countsByCategory: { "adapter-runtime-failure": 1 },
+    });
+  });
+
   test("keeps resolved trials with adapter runtime issues visible without counting them unresolved", () => {
     const report = buildExternalEvalDiagnosticReport({
       runId: "tb-run-1",
