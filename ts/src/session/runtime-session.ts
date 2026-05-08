@@ -12,6 +12,7 @@ import {
   RuntimeSessionEventType,
 } from "./runtime-events.js";
 import { jsonSafeRecord } from "./runtime-json.js";
+import { createRuntimeSessionGrantEventSink } from "./runtime-grant-events.js";
 import type { RuntimeSessionEventSink } from "./runtime-session-notifications.js";
 
 export interface RuntimeSessionCreateOpts {
@@ -142,17 +143,23 @@ export class RuntimeSession {
 
   async submitPrompt(opts: RuntimeSessionSubmitPromptOpts): Promise<RuntimeSessionPromptResult> {
     const role = opts.role ?? "assistant";
+    const requestId = randomUUID().slice(0, 12);
+    let promptEventId = "";
     const scopedWorkspace = await this.workspace.scope({
       cwd: opts.cwd,
       commands: opts.commands,
+      grantEventSink: createRuntimeSessionGrantEventSink(this.log, () => ({
+        requestId,
+        promptEventId,
+      })),
     });
-    const requestId = randomUUID().slice(0, 12);
     const promptEvent = this.log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {
       requestId,
       prompt: opts.prompt,
       role,
       cwd: scopedWorkspace.cwd,
     });
+    promptEventId = promptEvent.eventId;
 
     try {
       const output = await opts.handler({

@@ -26,6 +26,8 @@ export interface RuntimeFileStat {
 export interface RuntimeScopeOptions {
   cwd?: string;
   commands?: RuntimeCommandGrant[];
+  grantEventSink?: RuntimeGrantEventSink;
+  grantInheritance?: RuntimeGrantInheritanceMode;
 }
 
 export interface RuntimeWorkspaceEnv {
@@ -59,7 +61,9 @@ export interface LocalWorkspaceEnvOptions {
 
 export interface RuntimeCommandContext {
   cwd: string;
+  hostCwd?: string;
   env: Record<string, string>;
+  timeoutMs?: number;
   signal?: AbortSignal;
 }
 
@@ -70,12 +74,87 @@ export type RuntimeCommandHandler = (
 
 export interface RuntimeCommandGrantOptions {
   env?: Record<string, string>;
+  description?: string;
+  provenance?: RuntimeGrantProvenance;
+  scope?: RuntimeGrantScopePolicy;
+  outputLimitBytes?: number;
 }
 
 export interface RuntimeCommandGrant {
+  kind?: "command";
   name: string;
   env: Record<string, string>;
   execute: RuntimeCommandHandler;
+  description?: string;
+  provenance?: RuntimeGrantProvenance;
+  scope?: RuntimeGrantScopePolicy;
+  outputLimitBytes?: number;
+}
+
+export interface LocalRuntimeCommandGrantOptions extends RuntimeCommandGrantOptions {
+  args?: string[];
+  inheritEnv?: string[];
+  timeoutMs?: number;
+}
+
+export interface RuntimeToolGrant {
+  kind: "tool";
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  provenance?: RuntimeGrantProvenance;
+  scope?: RuntimeGrantScopePolicy;
+}
+
+export type RuntimeScopedGrant = RuntimeCommandGrant | RuntimeToolGrant;
+export type RuntimeGrantKind = "command" | "tool";
+export type RuntimeGrantInheritanceMode = "scope" | "child_task";
+
+export interface RuntimeGrantProvenance {
+  source?: string;
+  description?: string;
+}
+
+export interface RuntimeGrantScopePolicy {
+  inheritToChildTasks?: boolean;
+}
+
+export type RuntimeGrantEventPhase = "start" | "end" | "error";
+
+export interface RuntimeGrantOutputRedactionMetadata {
+  redacted: boolean;
+  truncated: boolean;
+  originalBytes: number;
+  emittedBytes: number;
+}
+
+export interface RuntimeGrantRedactionMetadata {
+  envKeys: string[];
+  args: {
+    redacted: boolean;
+    truncated: boolean;
+  };
+  stdout?: RuntimeGrantOutputRedactionMetadata;
+  stderr?: RuntimeGrantOutputRedactionMetadata;
+  error?: RuntimeGrantOutputRedactionMetadata;
+}
+
+export interface RuntimeGrantEvent {
+  kind: RuntimeGrantKind;
+  phase: RuntimeGrantEventPhase;
+  name: string;
+  cwd: string;
+  argsSummary: string[];
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  redaction: RuntimeGrantRedactionMetadata;
+  provenance?: RuntimeGrantProvenance;
+}
+
+export interface RuntimeGrantEventSink {
+  onRuntimeGrantEvent(event: RuntimeGrantEvent): void;
 }
 
 type MemoryFile = {
@@ -87,6 +166,10 @@ type MemoryState = {
   files: Map<string, MemoryFile>;
   dirs: Map<string, Date>;
 };
+
+const DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES = 4096;
+const DEFAULT_RUNTIME_COMMAND_ARG_LIMIT = 12;
+const DEFAULT_RUNTIME_COMMAND_ARG_BYTES = 160;
 
 export function createInMemoryWorkspaceEnv(
   options: InMemoryWorkspaceEnvOptions = {},
@@ -108,10 +191,41 @@ export function defineRuntimeCommand(
     throw new Error("Runtime command names must be non-empty and contain no whitespace");
   }
   return {
+    kind: "command",
     name: trimmed,
     env: { ...(options.env ?? {}) },
     execute,
+    description: options.description,
+    provenance: options.provenance,
+    scope: options.scope,
+    outputLimitBytes: normalizeOutputLimit(options.outputLimitBytes),
   };
+}
+
+export function createLocalRuntimeCommandGrant(
+  name: string,
+  executable: string,
+  options: LocalRuntimeCommandGrantOptions = {},
+): RuntimeCommandGrant {
+  const cleanExecutable = executable.trim();
+  if (!cleanExecutable) {
+    throw new Error("Local runtime command executable must be non-empty");
+  }
+  const fixedArgs = [...(options.args ?? [])];
+  const inheritedEnv = pickProcessEnv(options.inheritEnv ?? []);
+  return defineRuntimeCommand(
+    name,
+    (args, context) => runProcess(cleanExecutable, [...fixedArgs, ...args], {
+      cwd: context.hostCwd ?? context.cwd,
+      env: context.env,
+      signal: context.signal,
+      timeoutMs: combineTimeoutMs(options.timeoutMs, context.timeoutMs),
+    }),
+    {
+      ...options,
+      env: { ...inheritedEnv, ...(options.env ?? {}) },
+    },
+  );
 }
 
 function createMemoryState(files?: Record<string, string | Uint8Array>): MemoryState {
@@ -188,12 +302,19 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   readonly cwd: string;
   #closed = false;
   #commands: Map<string, RuntimeCommandGrant>;
+  #grantEventSink?: RuntimeGrantEventSink;
   #state: MemoryState;
 
-  constructor(state: MemoryState, cwd: string, commands: RuntimeCommandGrant[] = []) {
+  constructor(
+    state: MemoryState,
+    cwd: string,
+    commands: RuntimeCommandGrant[] = [],
+    grantEventSink?: RuntimeGrantEventSink,
+  ) {
     this.#state = state;
     this.cwd = normalizeVirtualPath(cwd, "/");
     this.#commands = commandMap(commands);
+    this.#grantEventSink = grantEventSink;
     ensureMemoryParentDirs(this.#state, this.cwd);
   }
 
@@ -204,6 +325,8 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
       command,
       options,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
+      undefined,
+      this.#grantEventSink,
     );
     if (granted) return granted;
     return {
@@ -218,7 +341,11 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
     return new InMemoryWorkspaceEnv(
       this.#state,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
-      mergeCommandGrants([...this.#commands.values()], options.commands ?? []),
+      mergeCommandGrants(
+        inheritedCommandGrants([...this.#commands.values()], options.grantInheritance),
+        options.commands ?? [],
+      ),
+      options.grantEventSink ?? this.#grantEventSink,
     );
   }
 
@@ -323,11 +450,18 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   readonly cwd: string;
   #root: string;
   #commands: Map<string, RuntimeCommandGrant>;
+  #grantEventSink?: RuntimeGrantEventSink;
 
-  constructor(root: string, cwd: string, commands: RuntimeCommandGrant[] = []) {
+  constructor(
+    root: string,
+    cwd: string,
+    commands: RuntimeCommandGrant[] = [],
+    grantEventSink?: RuntimeGrantEventSink,
+  ) {
     this.#root = path.resolve(root);
     this.cwd = normalizeVirtualPath(cwd, "/");
     this.#commands = commandMap(commands);
+    this.#grantEventSink = grantEventSink;
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
@@ -335,16 +469,28 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
       return { stdout: "", stderr: "Operation aborted", exitCode: 130 };
     }
     const virtualCwd = options.cwd ? this.resolvePath(options.cwd) : this.cwd;
-    const granted = await maybeRunGrantedCommand(this.#commands, command, options, virtualCwd);
+    const hostCwd = this.#toHostPath(virtualCwd);
+    const granted = await maybeRunGrantedCommand(
+      this.#commands,
+      command,
+      options,
+      virtualCwd,
+      hostCwd,
+      this.#grantEventSink,
+    );
     if (granted) return granted;
-    return runShell(command, this.#toHostPath(virtualCwd), options);
+    return runShell(command, hostCwd, options);
   }
 
   async scope(options: RuntimeScopeOptions = {}): Promise<RuntimeWorkspaceEnv> {
     return new LocalWorkspaceEnv(
       this.#root,
       options.cwd ? this.resolvePath(options.cwd) : this.cwd,
-      mergeCommandGrants([...this.#commands.values()], options.commands ?? []),
+      mergeCommandGrants(
+        inheritedCommandGrants([...this.#commands.values()], options.grantInheritance),
+        options.commands ?? [],
+      ),
+      options.grantEventSink ?? this.#grantEventSink,
     );
   }
 
@@ -436,21 +582,85 @@ function mergeCommandGrants(
   return [...result.values()];
 }
 
+function inheritedCommandGrants(
+  commands: RuntimeCommandGrant[],
+  mode: RuntimeGrantInheritanceMode = "scope",
+): RuntimeCommandGrant[] {
+  if (mode !== "child_task") return commands;
+  return commands.filter((command) => command.scope?.inheritToChildTasks !== false);
+}
+
 async function maybeRunGrantedCommand(
   commands: Map<string, RuntimeCommandGrant>,
   commandLine: string,
   options: RuntimeExecOptions,
   cwd: string,
+  hostCwd: string | undefined,
+  grantEventSink: RuntimeGrantEventSink | undefined,
 ): Promise<RuntimeExecResult | null> {
   const parsed = parseCommandLine(commandLine);
   if (!parsed) return null;
   const grant = commands.get(parsed.name);
   if (!grant) return null;
-  return grant.execute(parsed.args, {
+  const commandEnv = { ...(options.env ?? {}), ...grant.env };
+  const secrets = secretValues(commandEnv);
+  const args = summarizeArgs(parsed.args, secrets);
+  const redaction = baseGrantRedaction(commandEnv, args);
+  emitRuntimeGrantEvent(grantEventSink, {
+    kind: "command",
+    phase: "start",
+    name: grant.name,
     cwd,
-    env: { ...(options.env ?? {}), ...grant.env },
-    signal: options.signal,
+    argsSummary: args.summary,
+    redaction,
+    provenance: grant.provenance,
   });
+  try {
+    const result = await grant.execute(parsed.args, {
+      cwd,
+      hostCwd,
+      env: commandEnv,
+      timeoutMs: options.timeoutMs,
+      signal: options.signal,
+    });
+    const outputLimitBytes = runtimeCommandOutputLimit(grant);
+    const stdout = previewText(result.stdout, secrets, outputLimitBytes);
+    const stderr = previewText(result.stderr, secrets, outputLimitBytes);
+    emitRuntimeGrantEvent(grantEventSink, {
+      kind: "command",
+      phase: "end",
+      name: grant.name,
+      cwd,
+      argsSummary: args.summary,
+      exitCode: result.exitCode,
+      stdout: stdout.text,
+      stderr: stderr.text,
+      redaction: {
+        ...redaction,
+        stdout: stdout.metadata,
+        stderr: stderr.metadata,
+      },
+      provenance: grant.provenance,
+    });
+    return result;
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const message = previewText(rawMessage, secrets, runtimeCommandOutputLimit(grant));
+    emitRuntimeGrantEvent(grantEventSink, {
+      kind: "command",
+      phase: "error",
+      name: grant.name,
+      cwd,
+      argsSummary: args.summary,
+      error: message.text,
+      redaction: {
+        ...redaction,
+        error: message.metadata,
+      },
+      provenance: grant.provenance,
+    });
+    throw error;
+  }
 }
 
 function parseCommandLine(commandLine: string): { name: string; args: string[] } | null {
@@ -473,15 +683,56 @@ function runShell(
   cwd: string,
   options: RuntimeExecOptions,
 ): Promise<RuntimeExecResult> {
+  return runSpawnedProcess({
+    command,
+    args: [],
+    cwd,
+    env: { ...process.env, ...(options.env ?? {}) },
+    shell: true,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+function runProcess(
+  executable: string,
+  args: string[],
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  },
+): Promise<RuntimeExecResult> {
+  return runSpawnedProcess({
+    command: executable,
+    args,
+    cwd: options.cwd,
+    env: options.env,
+    shell: false,
+    signal: options.signal,
+    timeoutMs: options.timeoutMs,
+  });
+}
+
+function runSpawnedProcess(options: {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  shell: boolean;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): Promise<RuntimeExecResult> {
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let timedOut = false;
 
-    const child = spawn(command, {
-      cwd,
-      env: { ...process.env, ...(options.env ?? {}) },
-      shell: true,
+    const child = spawn(options.command, options.args, {
+      cwd: options.cwd,
+      env: options.env,
+      shell: options.shell,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -522,4 +773,119 @@ function runShell(
       resolve({ stdout, stderr, exitCode: code ?? 1 });
     });
   });
+}
+
+function normalizeOutputLimit(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Runtime command outputLimitBytes must be a non-negative finite number");
+  }
+  return Math.floor(value);
+}
+
+function runtimeCommandOutputLimit(grant: RuntimeCommandGrant): number {
+  return normalizeOutputLimit(grant.outputLimitBytes);
+}
+
+function secretValues(env: Record<string, string>): string[] {
+  return [...new Set(Object.values(env).filter((value) => value.length > 0))];
+}
+
+function baseGrantRedaction(
+  env: Record<string, string>,
+  args: { redacted: boolean; truncated: boolean },
+): RuntimeGrantRedactionMetadata {
+  return {
+    envKeys: Object.keys(env).sort(),
+    args: {
+      redacted: args.redacted,
+      truncated: args.truncated,
+    },
+  };
+}
+
+function pickProcessEnv(keys: string[]): Record<string, string> {
+  const picked: Record<string, string> = {};
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value !== undefined) picked[key] = value;
+  }
+  return picked;
+}
+
+function combineTimeoutMs(
+  configured: number | undefined,
+  callSite: number | undefined,
+): number | undefined {
+  if (configured === undefined) return callSite;
+  if (callSite === undefined) return configured;
+  return Math.min(configured, callSite);
+}
+
+function summarizeArgs(
+  args: string[],
+  secrets: string[],
+): { summary: string[]; redacted: boolean; truncated: boolean } {
+  let redacted = false;
+  let truncated = args.length > DEFAULT_RUNTIME_COMMAND_ARG_LIMIT;
+  const summary = args.slice(0, DEFAULT_RUNTIME_COMMAND_ARG_LIMIT).map((arg) => {
+    const preview = previewText(arg, secrets, DEFAULT_RUNTIME_COMMAND_ARG_BYTES);
+    redacted = redacted || preview.metadata.redacted;
+    truncated = truncated || preview.metadata.truncated;
+    return preview.text;
+  });
+  if (args.length > DEFAULT_RUNTIME_COMMAND_ARG_LIMIT) {
+    summary.push(`[${args.length - DEFAULT_RUNTIME_COMMAND_ARG_LIMIT} more args]`);
+  }
+  return { summary, redacted, truncated };
+}
+
+function previewText(
+  value: string,
+  secrets: string[],
+  limitBytes: number,
+): { text: string; metadata: RuntimeGrantOutputRedactionMetadata } {
+  const originalBytes = Buffer.byteLength(value, "utf-8");
+  const redacted = redactSecrets(value, secrets);
+  const truncated = truncateUtf8(redacted.text, limitBytes);
+  return {
+    text: truncated.text,
+    metadata: {
+      redacted: redacted.redacted,
+      truncated: truncated.truncated,
+      originalBytes,
+      emittedBytes: Buffer.byteLength(truncated.text, "utf-8"),
+    },
+  };
+}
+
+function redactSecrets(value: string, secrets: string[]): { text: string; redacted: boolean } {
+  let text = value;
+  let redacted = false;
+  for (const secret of secrets) {
+    if (!secret || !text.includes(secret)) continue;
+    text = text.split(secret).join("[redacted]");
+    redacted = true;
+  }
+  return { text, redacted };
+}
+
+function truncateUtf8(value: string, limitBytes: number): { text: string; truncated: boolean } {
+  const buffer = Buffer.from(value, "utf-8");
+  if (buffer.byteLength <= limitBytes) return { text: value, truncated: false };
+  return {
+    text: buffer.subarray(0, limitBytes).toString("utf-8"),
+    truncated: true,
+  };
+}
+
+function emitRuntimeGrantEvent(
+  sink: RuntimeGrantEventSink | undefined,
+  event: RuntimeGrantEvent,
+): void {
+  try {
+    sink?.onRuntimeGrantEvent(event);
+  } catch {
+    // Observability sinks must never change command execution semantics.
+  }
 }

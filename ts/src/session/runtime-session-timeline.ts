@@ -289,7 +289,23 @@ function eventDetails(payload: Record<string, unknown>): Record<string, string |
     if (typeof value === "string" && value !== "") details[key] = preview(value);
     if (typeof value === "number" || typeof value === "boolean") details[key] = value;
   }
+  const commandName = aliasedDetail(payload, "commandName");
+  if (details.command === undefined && commandName !== undefined) {
+    details.command = commandName;
+  }
+  const toolName = aliasedDetail(payload, "toolName");
+  if (details.tool === undefined && toolName !== undefined) {
+    details.tool = toolName;
+  }
   return details;
+}
+
+function aliasedDetail(
+  payload: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = payload[key];
+  return typeof value === "string" && value !== "" ? preview(value) : undefined;
 }
 
 function isInFlightItem(item: RuntimeSessionTimelineItem): boolean {

@@ -8,6 +8,7 @@ import {
   RuntimeSessionEventStore,
   RuntimeSessionEventType,
 } from "./runtime-events.js";
+import { createRuntimeSessionGrantEventSink } from "./runtime-grant-events.js";
 import { jsonSafeRecord } from "./runtime-json.js";
 import type { RuntimeSessionEventSink } from "./runtime-session-notifications.js";
 
@@ -116,11 +117,7 @@ export class RuntimeChildTaskRunner {
     const worker = this.coordinator.delegate(opts.prompt, opts.role);
     this.coordinator.startWorker(worker.workerId);
     const childDepth = this.depth + 1;
-
-    const childWorkspace = await this.workspace.scope({
-      cwd: opts.cwd,
-      commands: opts.commands,
-    });
+    const childCwd = opts.cwd ? this.workspace.resolvePath(opts.cwd) : this.workspace.cwd;
     const childSessionId = `task:${this.parentLog.sessionId}:${taskId}:${worker.workerId}`;
     const childLog = RuntimeSessionEventLog.create({
       sessionId: childSessionId,
@@ -129,19 +126,29 @@ export class RuntimeChildTaskRunner {
       workerId: worker.workerId,
       metadata: {
         role: opts.role,
-        cwd: childWorkspace.cwd,
+        cwd: childCwd,
         depth: childDepth,
         maxDepth: this.maxDepth,
       },
     });
     this.observeChildLog(childLog);
+    const childWorkspace = await this.workspace.scope({
+      cwd: opts.cwd,
+      commands: opts.commands,
+      grantInheritance: "child_task",
+      grantEventSink: createRuntimeSessionGrantEventSink(childLog, {
+        taskId,
+        childSessionId,
+        workerId: worker.workerId,
+      }),
+    });
 
     this.parentLog.append(RuntimeSessionEventType.CHILD_TASK_STARTED, {
       taskId,
       childSessionId,
       workerId: worker.workerId,
       role: opts.role,
-      cwd: childWorkspace.cwd,
+      cwd: childCwd,
       depth: childDepth,
       maxDepth: this.maxDepth,
     });

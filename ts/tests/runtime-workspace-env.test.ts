@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  createLocalRuntimeCommandGrant,
   createInMemoryWorkspaceEnv,
   createLocalWorkspaceEnv,
   defineRuntimeCommand,
@@ -132,5 +133,147 @@ describe("RuntimeWorkspaceEnv", () => {
       stderr: "",
       exitCode: 0,
     });
+  });
+
+  it("runs local command grants without shell expansion and redacts trusted env from events", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
+    const observed: unknown[] = [];
+    const env = createLocalWorkspaceEnv({ root, cwd: "/repo" });
+    await env.mkdir(".", { recursive: true });
+    const scoped = await env.scope({
+      grantEventSink: {
+        onRuntimeGrantEvent: (event) => {
+          observed.push(event);
+        },
+      },
+      commands: [
+        createLocalRuntimeCommandGrant("node-secret", process.execPath, {
+          args: ["-e", "process.stdout.write(process.env.AUTOCTX_TOKEN ?? '')"],
+          env: { AUTOCTX_TOKEN: "trusted-secret" },
+        }),
+      ],
+    });
+
+    const result = await scoped.exec("node-secret");
+
+    expect(result).toEqual({
+      stdout: "trusted-secret",
+      stderr: "",
+      exitCode: 0,
+    });
+    expect(JSON.stringify(observed)).not.toContain("trusted-secret");
+    expect(observed).toMatchObject([
+      {
+        kind: "command",
+        phase: "start",
+        name: "node-secret",
+        cwd: "/repo",
+        redaction: { envKeys: ["AUTOCTX_TOKEN"] },
+      },
+      {
+        kind: "command",
+        phase: "end",
+        name: "node-secret",
+        cwd: "/repo",
+        exitCode: 0,
+        stdout: "[redacted]",
+        redaction: {
+          envKeys: ["AUTOCTX_TOKEN"],
+          stdout: { redacted: true, truncated: false },
+        },
+      },
+    ]);
+  });
+
+  it("does not pass unallowlisted host env into local command grants", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
+    const previous = process.env.AUTOCTX_HOST_SECRET;
+    process.env.AUTOCTX_HOST_SECRET = "host-secret";
+    try {
+      const observed: unknown[] = [];
+      const env = createLocalWorkspaceEnv({ root, cwd: "/repo" });
+      await env.mkdir(".", { recursive: true });
+      const scoped = await env.scope({
+        grantEventSink: {
+          onRuntimeGrantEvent: (event) => {
+            observed.push(event);
+          },
+        },
+        commands: [
+          createLocalRuntimeCommandGrant("node-host-env", process.execPath, {
+            args: ["-e", "process.stdout.write(process.env.AUTOCTX_HOST_SECRET ?? '')"],
+          }),
+        ],
+      });
+
+      const result = await scoped.exec("node-host-env");
+
+      expect(result).toEqual({ stdout: "", stderr: "", exitCode: 0 });
+      expect(JSON.stringify(observed)).not.toContain("host-secret");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.AUTOCTX_HOST_SECRET;
+      } else {
+        process.env.AUTOCTX_HOST_SECRET = previous;
+      }
+    }
+  });
+
+  it("redacts exec env values supplied to scoped command grants", async () => {
+    const observed: unknown[] = [];
+    const env = createInMemoryWorkspaceEnv({ cwd: "/project" });
+    const scoped = await env.scope({
+      grantEventSink: {
+        onRuntimeGrantEvent: (event) => {
+          observed.push(event);
+        },
+      },
+      commands: [
+        defineRuntimeCommand("echo-env", async (_args, context) => ({
+          stdout: context.env.AUTOCTX_EXEC_SECRET ?? "",
+          stderr: "",
+          exitCode: 0,
+        })),
+      ],
+    });
+
+    const result = await scoped.exec("echo-env", {
+      env: { AUTOCTX_EXEC_SECRET: "exec-secret" },
+    });
+
+    expect(result.stdout).toBe("exec-secret");
+    expect(JSON.stringify(observed)).not.toContain("exec-secret");
+    expect(observed).toMatchObject([
+      {
+        phase: "start",
+        redaction: { envKeys: ["AUTOCTX_EXEC_SECRET"] },
+      },
+      {
+        phase: "end",
+        stdout: "[redacted]",
+        redaction: {
+          envKeys: ["AUTOCTX_EXEC_SECRET"],
+          stdout: { redacted: true },
+        },
+      },
+    ]);
+  });
+
+  it("applies call-site exec timeouts to local command grants", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
+    const env = createLocalWorkspaceEnv({ root, cwd: "/repo" });
+    await env.mkdir(".", { recursive: true });
+    const scoped = await env.scope({
+      commands: [
+        createLocalRuntimeCommandGrant("node-hang", process.execPath, {
+          args: ["-e", "setTimeout(() => {}, 1000)"],
+        }),
+      ],
+    });
+
+    const result = await scoped.exec("node-hang", { timeoutMs: 25 });
+
+    expect(result.exitCode).toBe(124);
+    expect(result.stderr).toBe("Command timed out");
   });
 });

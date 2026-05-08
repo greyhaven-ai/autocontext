@@ -387,6 +387,55 @@ describe("runtime session read model", () => {
     ]);
   });
 
+  it("uses scoped grant command and tool names in generic timeline titles", () => {
+    const log = RuntimeSessionEventLog.fromJSON({
+      sessionId: "run:abc:runtime",
+      parentSessionId: "",
+      taskId: "",
+      workerId: "",
+      metadata: { goal: "autoctx run support_triage", runId: "abc" },
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:00:02.000Z",
+      events: [
+        {
+          eventId: "event-1",
+          sessionId: "run:abc:runtime",
+          sequence: 0,
+          eventType: RuntimeSessionEventType.SHELL_COMMAND,
+          timestamp: "2026-04-10T00:00:01.000Z",
+          payload: { commandName: "scoped-helper", phase: "end", exitCode: 0 },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+        {
+          eventId: "event-2",
+          sessionId: "run:abc:runtime",
+          sequence: 1,
+          eventType: RuntimeSessionEventType.TOOL_CALL,
+          timestamp: "2026-04-10T00:00:02.000Z",
+          payload: { toolName: "scoped-tool", phase: "end" },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+      ],
+    });
+
+    const timeline = buildRuntimeSessionTimeline(log);
+
+    expect(timeline.items).toEqual([
+      expect.objectContaining({
+        event_type: "shell_command",
+        title: "shell_command command=scoped-helper exitCode=0",
+      }),
+      expect.objectContaining({
+        event_type: "tool_call",
+        title: "tool_call tool=scoped-tool",
+      }),
+    ]);
+  });
+
   it("reads runtime-session timelines by run id through the store port", () => {
     const load = vi.fn(() => createLog("run:abc:runtime"));
     const list = vi.fn();

@@ -18,8 +18,19 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 - **Evaluation**: one-shot judging, multi-round improvement loops, REPL-loop sessions
 - **Package management**: strategy package export/import, training data export
 - **Training hook surface**: dataset validation and executor-backed `train` entry point
-- **Runtime workspace/session primitives**: workspace-scoped filesystem/shell contracts, scoped command grants, runtime session event logs, child-task lineage helpers, a runtime-session facade, and AgentRuntime session recording
+- **Runtime workspace/session primitives**: workspace-scoped filesystem/shell contracts, scoped command/tool grants with redacted lifecycle events, runtime session event logs, child-task lineage helpers, a runtime-session facade, and AgentRuntime session recording
 - **Production-traces emit SDK** at `autoctx/production-traces` — customer-facing emit APIs mirroring the Python SDK (A2-II-a)
+
+Runtime command grants are host-created capability handles, not prompt text.
+Trusted env values are injected only into the grant handler or local child
+process. Local grant wrappers do not inherit `process.env`; callers must opt in
+with an explicit `inheritEnv` allowlist. Runtime-session logs record
+`start`/`end`/`error` events with command name, args summary, exit code, and
+redaction metadata; they redact values from the exact env supplied to the
+grant. Prompt-scoped grants last only for that runtime call. Child tasks receive
+grants only when the caller passes grants to `runChildTask()` or when an
+already-granted workspace contains grants whose policy allows child-task
+inheritance.
 
 The TypeScript package includes mirrored deterministic semantic prompt
 compaction for long-lived playbooks, trajectories, and session reports.

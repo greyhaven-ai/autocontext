@@ -154,6 +154,21 @@ adding or overriding command grants for one operation branch. `cleanup()` marks
 owned in-memory workspaces closed and is a no-op for caller-owned local
 workspaces.
 
+TypeScript scoped command/tool grants are host-created capability handles. Grant
+env values stay in trusted host code and are never rendered into prompt text.
+Local grant wrappers do not inherit the host `process.env`; callers must opt in
+with an explicit `inheritEnv` allowlist. Runtime-session recording translates
+grant lifecycle notifications into structured `SHELL_COMMAND`/`TOOL_CALL`
+events with grant name, phase, args summary, exit code, and redaction metadata;
+stdout, stderr, args, and error previews are truncated and redacted against the
+exact env supplied to the grant before they enter the log.
+`createLocalRuntimeCommandGrant()` runs the allowed executable directly with
+`shell: false`, so wrapper invocations do not depend on shell history or shell
+interpolation. Prompt-scoped grants are not inherited by later prompts or child
+tasks; child tasks receive grants only when the caller passes grants to
+`runChildTask()` or when an already-granted workspace contains grants whose
+policy allows child-task inheritance.
+
 ### TypeScript Control-Plane Candidates
 
 - `ts/src/control-plane/`
