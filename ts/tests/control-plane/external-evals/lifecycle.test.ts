@@ -85,6 +85,38 @@ describe("external eval adapter lifecycle", () => {
     expect(trial.errorKind).toBeUndefined();
   });
 
+  test("preserves runtime timeout metadata on resolved trials", () => {
+    const trial = classifyExternalEvalTrial({
+      taskId: "service-completed-but-agent-timeout",
+      trialId: "service-completed-but-agent-timeout.1-of-1.tb-run-1",
+      attempt: 1,
+      isResolved: true,
+      failureMode: "unset",
+      lifecycle: {
+        runId: "tb-run-1",
+        taskId: "service-completed-but-agent-timeout",
+        trialId: "service-completed-but-agent-timeout.1-of-1.tb-run-1",
+        adapter: "host-codex-docker",
+        command: {
+          argv: ["codex", "exec"],
+          cwd: "/tmp",
+        },
+        status: "timed-out",
+        timeoutSource: "terminal-bench-agent-timeout",
+        artifacts: {
+          stdoutPath: "agent-logs/host-codex-stdout.txt",
+          stderrPath: "agent-logs/host-codex-stderr.txt",
+        },
+      },
+    });
+
+    expect(trial.status).toBe("passed");
+    expect(trial.reward).toBe(1);
+    expect(trial.errorKind).toBe("terminal-bench-agent-timeout");
+    expect(trial.notes).toContain("adapter_status=timed-out");
+    expect(trial.notes).toContain("timeout_source=terminal-bench-agent-timeout");
+  });
+
   test("classifies adapter crashes as infrastructure errors and preserves lifecycle error kind", () => {
     const trial = classifyExternalEvalTrial({
       taskId: "adapter-crash-task",

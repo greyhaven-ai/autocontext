@@ -122,6 +122,7 @@ export interface ExternalEvalDiagnosticReport {
   readonly summary: {
     readonly totalTrials: number;
     readonly unresolvedTrials: number;
+    readonly runtimeIssueTrials: number;
     readonly countsByCategory: Readonly<Partial<Record<ExternalEvalDiagnosticCategory, number>>>;
   };
 }
@@ -201,9 +202,13 @@ export function buildExternalEvalDiagnosticReport(
     evidenceByTrialId.set(evidence.trialId, evidence);
   }
 
-  const diagnostics = inputs.trials
-    .filter((trial) => trial.status !== "passed")
-    .map((trial) => buildTrialDiagnostic(inputs.runId, trial, evidenceByTrialId.get(trial.trialId)));
+  const trialsWithEvidence = inputs.trials.map((trial) => ({
+    trial,
+    evidence: evidenceByTrialId.get(trial.trialId),
+  }));
+  const diagnostics = trialsWithEvidence
+    .filter(({ trial, evidence }) => trial.status !== "passed" || hasAdapterRuntimeIssue(trial, evidence))
+    .map(({ trial, evidence }) => buildTrialDiagnostic(inputs.runId, trial, evidence));
   const improvementSignals = buildImprovementSignals(inputs.runId, diagnostics);
 
   return {
@@ -214,7 +219,10 @@ export function buildExternalEvalDiagnosticReport(
     improvementSignals,
     summary: {
       totalTrials: inputs.trials.length,
-      unresolvedTrials: diagnostics.length,
+      unresolvedTrials: inputs.trials.filter((trial) => trial.status !== "passed").length,
+      runtimeIssueTrials: trialsWithEvidence.filter(({ trial, evidence }) =>
+        hasAdapterRuntimeIssue(trial, evidence),
+      ).length,
       countsByCategory: countDiagnosticsByCategory(diagnostics),
     },
   };
@@ -268,15 +276,28 @@ function classifyErrorKind(
   inputs: ClassifyExternalEvalTrialInputs,
   status: EvalTrialStatus,
 ): string | undefined {
-  if (status === "passed" || status === "failed") {
+  if (status === "passed") {
+    return normalizedFailureMode(inputs.failureMode) || runtimeLifecycleErrorKind(inputs) || undefined;
+  }
+  if (status === "failed") {
     return normalizedFailureMode(inputs.failureMode) || undefined;
   }
   const failureMode = normalizedFailureMode(inputs.failureMode);
-  return failureMode || inputs.lifecycle?.errorKind || inputs.lifecycle?.timeoutSource || inputs.lifecycle?.status;
+  return failureMode || runtimeLifecycleErrorKind(inputs);
 }
 
 function normalizedFailureMode(failureMode: string | undefined): string {
   return failureMode === undefined || failureMode === "unset" ? "" : failureMode;
+}
+
+function runtimeLifecycleErrorKind(inputs: ClassifyExternalEvalTrialInputs): string | undefined {
+  const lifecycle = inputs.lifecycle;
+  if (lifecycle === undefined) return undefined;
+  const errorKind = normalizedFailureMode(lifecycle.errorKind);
+  if (errorKind.length > 0) return errorKind;
+  const timeoutSource = normalizedFailureMode(lifecycle.timeoutSource);
+  if (timeoutSource.length > 0) return timeoutSource;
+  return isRuntimeIssueLifecycleStatus(lifecycle.status) ? lifecycle.status : undefined;
 }
 
 function defaultReward(status: EvalTrialStatus): number | undefined {
@@ -346,10 +367,7 @@ function classifyDiagnosticCategory(
   }
   if (
     trial.status === "infrastructure-error" ||
-    evidence?.adapterLifecycle?.status === "timed-out" ||
-    evidence?.adapterLifecycle?.status === "failed" ||
-    isInfrastructureFailureMode(trial.errorKind) ||
-    isInfrastructureFailureMode(evidence?.adapterLifecycle?.errorKind)
+    hasAdapterRuntimeIssue(trial, evidence)
   ) {
     return "adapter-runtime-failure";
   }
@@ -387,6 +405,7 @@ function diagnosticConfidence(
   evidence: ExternalEvalTrialEvidence | undefined,
 ): number {
   if (category === "adapter-runtime-failure" && trial.status === "infrastructure-error") return 0.95;
+  if (category === "adapter-runtime-failure" && hasAdapterRuntimeIssue(trial, evidence)) return 0.9;
   if (category === "integrity-risk" && trial.status === "discarded") return 0.9;
   if (evidence?.verifierOutput !== undefined && evidence.verifierOutput.length > 0) return 0.85;
   return category === "unknown" ? 0.25 : 0.6;
@@ -395,7 +414,7 @@ function diagnosticConfidence(
 function diagnosticSummary(category: ExternalEvalDiagnosticCategory): string {
   switch (category) {
     case "adapter-runtime-failure":
-      return "The trial failed in the adapter or runtime before an ordinary verifier result could be trusted.";
+      return "The trial reported adapter or runtime failure metadata that should be isolated from task-quality scoring.";
     case "setup-environment-failure":
       return "The trial failed while preparing or validating environment state used by the consumer or verifier.";
     case "verifier-contract-mismatch":
@@ -446,13 +465,8 @@ function buildFailureExcerpts(
   trial: EvalTrial,
   evidence: ExternalEvalTrialEvidence | undefined,
 ): readonly string[] {
-  if (category === "adapter-runtime-failure" && evidence?.adapterLifecycle !== undefined) {
-    const lifecycle = evidence.adapterLifecycle;
-    return [
-      `adapter_status=${lifecycle.status}`,
-      ...(lifecycle.errorKind !== undefined ? [`adapter_error_kind=${lifecycle.errorKind}`] : []),
-      ...(lifecycle.timeoutSource !== undefined ? [`timeout_source=${lifecycle.timeoutSource}`] : []),
-    ];
+  if (category === "adapter-runtime-failure") {
+    return buildAdapterRuntimeExcerpts(trial, evidence?.adapterLifecycle);
   }
   if (category === "integrity-risk") {
     return [
@@ -463,6 +477,36 @@ function buildFailureExcerpts(
   }
 
   return sanitizeVerifierOutput(evidence?.verifierOutput ?? "");
+}
+
+function buildAdapterRuntimeExcerpts(
+  trial: EvalTrial,
+  lifecycle: ExternalEvalAdapterLifecycle | undefined,
+): readonly string[] {
+  const excerpts: string[] = [];
+  const add = (excerpt: string | undefined): void => {
+    if (excerpt !== undefined && excerpt.length > 0 && !excerpts.includes(excerpt)) {
+      excerpts.push(excerpt);
+    }
+  };
+
+  add(trial.errorKind !== undefined ? `error_kind=${trial.errorKind}` : undefined);
+  add(lifecycle !== undefined ? `adapter_status=${lifecycle.status}` : undefined);
+  add(lifecycle?.errorKind !== undefined ? `adapter_error_kind=${lifecycle.errorKind}` : undefined);
+  add(lifecycle?.timeoutSource !== undefined ? `timeout_source=${lifecycle.timeoutSource}` : undefined);
+
+  for (const note of trial.notes ?? []) {
+    if (
+      note.startsWith("failure_mode=") ||
+      note.startsWith("adapter_status=") ||
+      note.startsWith("adapter_error_kind=") ||
+      note.startsWith("timeout_source=")
+    ) {
+      add(note);
+    }
+  }
+
+  return excerpts;
 }
 
 function isInfrastructureFailureMode(errorKind: string | undefined): boolean {
@@ -477,6 +521,25 @@ function isInfrastructureFailureMode(errorKind: string | undefined): boolean {
     kind.includes("container") ||
     kind === "agent_timeout"
   );
+}
+
+function hasAdapterRuntimeIssue(
+  trial: EvalTrial,
+  evidence: ExternalEvalTrialEvidence | undefined,
+): boolean {
+  const lifecycle = evidence?.adapterLifecycle;
+  return (
+    isInfrastructureFailureMode(trial.errorKind) ||
+    isRuntimeIssueLifecycleStatus(lifecycle?.status) ||
+    isInfrastructureFailureMode(lifecycle?.errorKind) ||
+    isInfrastructureFailureMode(lifecycle?.timeoutSource)
+  );
+}
+
+function isRuntimeIssueLifecycleStatus(
+  status: ExternalEvalAdapterLifecycleStatus | undefined,
+): boolean {
+  return status === "failed" || status === "timed-out" || status === "cancelled";
 }
 
 function sanitizeVerifierOutput(output: string): readonly string[] {
@@ -561,6 +624,9 @@ function buildOperationalFindings(
   const verifierDiagnostics = report.diagnostics.filter(
     (diagnostic) => diagnostic.category === "verifier-contract-mismatch",
   );
+  const integrityDiagnostics = report.diagnostics.filter(
+    (diagnostic) => diagnostic.category === "integrity-risk",
+  );
 
   if (setupDiagnostics.length > 0) {
     findings.push({
@@ -584,6 +650,19 @@ function buildOperationalFindings(
         "Confirm required files, config directives, service routes, and output artifacts in the locations consumed by the checker, not only through manual smoke tests or included fragments.",
       targetFamilies: ["terminal", "service-config", "artifact-contract"],
       risk: "low",
+      containsTaskAnswer: false,
+      containsSecret: false,
+    });
+  }
+  if (integrityDiagnostics.length > 0) {
+    findings.push({
+      id: `${report.runId}-benchmark-integrity-boundary`,
+      summary: "Keep benchmark verifier-only data outside agent inspection paths.",
+      evidenceRefs: collectEvidenceRefs(integrityDiagnostics),
+      reusableBehavior:
+        "For external benchmark runs, do not list, read, copy, execute, or search verifier-only directories, hidden grader files, benchmark canaries, or solution files; avoid broad filesystem scans unless verifier-only paths are explicitly pruned, and prefer allowlisted task-visible paths.",
+      targetFamilies: ["terminal", "external-eval", "benchmark-integrity"],
+      risk: "medium",
       containsTaskAnswer: false,
       containsSecret: false,
     });

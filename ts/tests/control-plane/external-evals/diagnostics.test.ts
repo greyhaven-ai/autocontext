@@ -181,6 +181,60 @@ describe("external eval diagnostics", () => {
     });
   });
 
+  test("keeps resolved trials with adapter runtime issues visible without counting them unresolved", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-run-1",
+      createdAt: "2026-05-07T15:12:00.000Z",
+      trials: [
+        {
+          taskId: "service-completed-but-agent-timeout",
+          trialId: "service-completed-but-agent-timeout.1-of-1.tb-run-1",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+          errorKind: "terminal-bench-agent-timeout",
+          notes: ["failure_mode=terminal-bench-agent-timeout", "timeout_source=terminal-bench-agent-timeout"],
+        },
+      ],
+      evidence: [
+        {
+          trialId: "service-completed-but-agent-timeout.1-of-1.tb-run-1",
+          evidenceRefs: ["service-completed-but-agent-timeout/results.json"],
+          adapterLifecycle: {
+            runId: "tb-run-1",
+            taskId: "service-completed-but-agent-timeout",
+            trialId: "service-completed-but-agent-timeout.1-of-1.tb-run-1",
+            adapter: "host-codex-docker",
+            command: { argv: ["codex", "exec"], cwd: "/tmp" },
+            status: "completed",
+            artifacts: {
+              stdoutPath: "agent-logs/host-codex-stdout.txt",
+              stderrPath: "agent-logs/host-codex-stderr.txt",
+            },
+          },
+        },
+      ],
+    });
+
+    expect(report.diagnostics).toHaveLength(1);
+    expect(report.diagnostics[0]).toMatchObject({
+      category: "adapter-runtime-failure",
+      confidence: 0.9,
+    });
+    expect(report.diagnostics[0]?.failureExcerpts).toEqual([
+      "error_kind=terminal-bench-agent-timeout",
+      "adapter_status=completed",
+      "failure_mode=terminal-bench-agent-timeout",
+      "timeout_source=terminal-bench-agent-timeout",
+    ]);
+    expect(report.summary).toMatchObject({
+      totalTrials: 1,
+      unresolvedTrials: 0,
+      runtimeIssueTrials: 1,
+      countsByCategory: { "adapter-runtime-failure": 1 },
+    });
+  });
+
   test("keeps discarded integrity-risk trials visible in diagnostics", () => {
     const report = buildExternalEvalDiagnosticReport({
       runId: "tb-run-1",
@@ -213,6 +267,52 @@ describe("external eval diagnostics", () => {
       unresolvedTrials: 1,
       countsByCategory: { "integrity-risk": 1 },
     });
+  });
+
+  test("derives sanitized benchmark-boundary memory from integrity-risk diagnostics", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-integrity-1",
+      createdAt: "2026-05-07T15:20:00.000Z",
+      trials: [
+        {
+          taskId: "contaminated-task",
+          trialId: "contaminated-task.1-of-1.tb-integrity-1",
+          attempt: 1,
+          status: "discarded",
+          errorKind: "integrity-contamination",
+          notes: [
+            "integrity_leak=/protected command observed in agent logs",
+            "adapter_status=completed",
+          ],
+        },
+      ],
+      evidence: [
+        {
+          trialId: "contaminated-task.1-of-1.tb-integrity-1",
+          evidenceRefs: ["contaminated-task/results.json"],
+        },
+      ],
+    });
+
+    const pack = buildOperationalMemoryPackFromDiagnostics({
+      packId: "tb-integrity-1-operational-checklists",
+      version: "1.0.0",
+      createdAt: "2026-05-07T15:25:00.000Z",
+      report,
+    });
+
+    expect(pack.findings).toHaveLength(1);
+    expect(pack.findings[0]).toMatchObject({
+      id: "tb-integrity-1-benchmark-integrity-boundary",
+      summary: "Keep benchmark verifier-only data outside agent inspection paths.",
+      risk: "medium",
+      containsTaskAnswer: false,
+      containsSecret: false,
+    });
+    expect(pack.findings[0]?.reusableBehavior).toContain("verifier-only");
+    expect(pack.findings[0]?.reusableBehavior).not.toContain("contaminated-task");
+    expect(pack.findings[0]?.targetFamilies).toContain("benchmark-integrity");
+    expect(validateOperationalMemoryPack(pack)).toEqual({ valid: true });
   });
 
   test("derives reusable improvement signals from agent-task verifier failures", () => {
