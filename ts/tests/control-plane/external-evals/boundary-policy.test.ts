@@ -91,6 +91,46 @@ describe("external eval benchmark boundary policy", () => {
     );
   });
 
+  test("scopes run-level boundary assessments to the classified trial", () => {
+    const boundaryAssessment = assessExternalEvalBoundaryPolicy({
+      policy,
+      observations: [
+        {
+          trialId: "bad",
+          accessKind: "read",
+          path: "/protected/answer.txt",
+          source: "tool-call",
+        },
+      ],
+    });
+
+    const goodTrial = classifyExternalEvalTrial({
+      taskId: "good-task",
+      trialId: "good",
+      attempt: 1,
+      isResolved: true,
+      boundaryAssessment,
+    });
+    const badTrial = classifyExternalEvalTrial({
+      taskId: "bad-task",
+      trialId: "bad",
+      attempt: 1,
+      isResolved: true,
+      boundaryAssessment,
+    });
+
+    expect(goodTrial.status).toBe("passed");
+    expect(goodTrial.errorKind).toBeUndefined();
+    expect(goodTrial.notes).toBeUndefined();
+    expect(badTrial).toMatchObject({
+      status: "discarded",
+      errorKind: "external-eval-boundary-violation",
+    });
+    expect(badTrial.notes).toContain(
+      "boundary_violation=read /protected/answer.txt blocked-path-prefix",
+    );
+  });
+
   test("can report boundary contamination without changing the trial score", () => {
     const boundaryAssessment = assessExternalEvalBoundaryPolicy({
       policy: { ...policy, mode: "report-only" },
@@ -127,6 +167,51 @@ describe("external eval benchmark boundary policy", () => {
     expect(report.diagnostics[0]).toMatchObject({
       category: "integrity-risk",
       confidence: 0.95,
+    });
+  });
+
+  test("scopes run-level boundary diagnostics to the affected trial", () => {
+    const boundaryAssessment = assessExternalEvalBoundaryPolicy({
+      policy,
+      observations: [
+        {
+          trialId: "bad",
+          accessKind: "read",
+          path: "/protected/answer.txt",
+          source: "trace",
+        },
+      ],
+    });
+
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-run-1",
+      createdAt: "2026-05-08T15:29:00.000Z",
+      trials: [
+        {
+          taskId: "good-task",
+          trialId: "good",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+        },
+        {
+          taskId: "bad-task",
+          trialId: "bad",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+        },
+      ],
+      evidence: [
+        { trialId: "good", boundaryAssessment },
+        { trialId: "bad", boundaryAssessment },
+      ],
+    });
+
+    expect(report.diagnostics).toHaveLength(1);
+    expect(report.diagnostics[0]).toMatchObject({
+      trialId: "bad",
+      category: "integrity-risk",
     });
   });
 
@@ -174,5 +259,48 @@ describe("external eval benchmark boundary policy", () => {
       "boundary_violation=search / outside-allowed-path-prefix",
     ]);
     expect(report.summary.countsByCategory).toEqual({ "integrity-risk": 1 });
+  });
+
+  test("counts runtime issues even when integrity risk is the primary diagnostic", () => {
+    const boundaryAssessment = assessExternalEvalBoundaryPolicy({
+      policy,
+      observations: [
+        {
+          trialId: "infra-with-boundary",
+          accessKind: "read",
+          path: "/protected",
+          source: "adapter-log",
+        },
+      ],
+    });
+
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-run-1",
+      createdAt: "2026-05-08T15:31:00.000Z",
+      trials: [
+        {
+          taskId: "infra-with-boundary",
+          trialId: "infra-with-boundary",
+          attempt: 1,
+          status: "infrastructure-error",
+          errorKind: "adapter-crash",
+        },
+      ],
+      evidence: [
+        {
+          trialId: "infra-with-boundary",
+          boundaryAssessment,
+        },
+      ],
+    });
+
+    expect(report.diagnostics).toHaveLength(1);
+    expect(report.diagnostics[0]).toMatchObject({
+      category: "integrity-risk",
+    });
+    expect(report.summary).toMatchObject({
+      runtimeIssueTrials: 1,
+      countsByCategory: { "integrity-risk": 1 },
+    });
   });
 });

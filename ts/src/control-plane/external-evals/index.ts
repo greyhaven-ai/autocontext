@@ -259,21 +259,20 @@ export function assessExternalEvalBoundaryPolicy(
     status,
     mode: inputs.policy.mode,
     violations,
-    notes: violations.map(
-      (violation) => `boundary_violation=${violation.accessKind} ${violation.path} ${violation.reason}`,
-    ),
+    notes: boundaryViolationNotes(violations),
   };
 }
 
 export function classifyExternalEvalTrial(inputs: ClassifyExternalEvalTrialInputs): EvalTrial {
-  const status = shouldDiscardBoundaryAssessment(inputs.boundaryAssessment)
+  const scopedInputs = scopedClassifyInputs(inputs);
+  const status = shouldDiscardBoundaryAssessment(scopedInputs.boundaryAssessment)
     ? "discarded"
-    : inputs.isResolved
+    : scopedInputs.isResolved
       ? "passed"
-      : classifyUnresolvedStatus(inputs);
-  const errorKind = classifyErrorKind(inputs, status);
+      : classifyUnresolvedStatus(scopedInputs);
+  const errorKind = classifyErrorKind(scopedInputs, status);
   const reward = isScoreableTrialStatus(status) ? inputs.reward ?? defaultReward(status) : undefined;
-  const notes = buildTrialNotes(inputs);
+  const notes = buildTrialNotes(scopedInputs);
 
   return {
     taskId: inputs.taskId,
@@ -289,6 +288,23 @@ export function classifyExternalEvalTrial(inputs: ClassifyExternalEvalTrialInput
   };
 }
 
+function scopedClassifyInputs(inputs: ClassifyExternalEvalTrialInputs): ClassifyExternalEvalTrialInputs {
+  const boundaryAssessment = boundaryAssessmentForTrial(inputs.boundaryAssessment, inputs.trialId);
+  return {
+    taskId: inputs.taskId,
+    trialId: inputs.trialId,
+    attempt: inputs.attempt,
+    isResolved: inputs.isResolved,
+    ...(inputs.failureMode !== undefined ? { failureMode: inputs.failureMode } : {}),
+    ...(inputs.reward !== undefined ? { reward: inputs.reward } : {}),
+    ...(inputs.startedAt !== undefined ? { startedAt: inputs.startedAt } : {}),
+    ...(inputs.completedAt !== undefined ? { completedAt: inputs.completedAt } : {}),
+    ...(inputs.rawResultPath !== undefined ? { rawResultPath: inputs.rawResultPath } : {}),
+    ...(inputs.lifecycle !== undefined ? { lifecycle: inputs.lifecycle } : {}),
+    ...(boundaryAssessment !== undefined ? { boundaryAssessment } : {}),
+  };
+}
+
 export function buildExternalEvalDiagnosticReport(
   inputs: BuildExternalEvalDiagnosticReportInputs,
 ): ExternalEvalDiagnosticReport {
@@ -299,7 +315,7 @@ export function buildExternalEvalDiagnosticReport(
 
   const trialsWithEvidence = inputs.trials.map((trial) => ({
     trial,
-    evidence: evidenceByTrialId.get(trial.trialId),
+    evidence: scopedTrialEvidence(evidenceByTrialId.get(trial.trialId), trial.trialId),
   }));
   const diagnostics = trialsWithEvidence
     .filter(
@@ -321,7 +337,9 @@ export function buildExternalEvalDiagnosticReport(
     summary: {
       totalTrials: inputs.trials.length,
       unresolvedTrials: inputs.trials.filter((trial) => trial.status !== "passed").length,
-      runtimeIssueTrials: countsByCategory["adapter-runtime-failure"] ?? 0,
+      runtimeIssueTrials: trialsWithEvidence.filter(({ trial, evidence }) =>
+        hasRuntimeIssueForSummary(trial, evidence),
+      ).length,
       countsByCategory,
     },
   };
@@ -637,6 +655,46 @@ function buildBoundaryIntegrityExcerpts(
   return boundaryNotes;
 }
 
+function scopedTrialEvidence(
+  evidence: ExternalEvalTrialEvidence | undefined,
+  trialId: string,
+): ExternalEvalTrialEvidence | undefined {
+  if (evidence === undefined || evidence.boundaryAssessment === undefined) return evidence;
+  const boundaryAssessment = boundaryAssessmentForTrial(evidence.boundaryAssessment, trialId);
+
+  return {
+    trialId: evidence.trialId,
+    ...(evidence.evidenceRefs !== undefined ? { evidenceRefs: evidence.evidenceRefs } : {}),
+    ...(evidence.verifierOutput !== undefined ? { verifierOutput: evidence.verifierOutput } : {}),
+    ...(evidence.adapterLifecycle !== undefined ? { adapterLifecycle: evidence.adapterLifecycle } : {}),
+    ...(boundaryAssessment !== undefined ? { boundaryAssessment } : {}),
+  };
+}
+
+function boundaryAssessmentForTrial(
+  assessment: ExternalEvalBoundaryAssessment | undefined,
+  trialId: string,
+): ExternalEvalBoundaryAssessment | undefined {
+  if (assessment === undefined) return undefined;
+  const violations = assessment.violations.filter((violation) => violation.trialId === trialId);
+  if (violations.length === 0) return undefined;
+
+  return {
+    status: assessment.mode === "discard" ? "discarded" : "contaminated",
+    mode: assessment.mode,
+    violations,
+    notes: boundaryViolationNotes(violations),
+  };
+}
+
+function boundaryViolationNotes(
+  violations: readonly ExternalEvalBoundaryViolation[],
+): readonly string[] {
+  return violations.map(
+    (violation) => `boundary_violation=${violation.accessKind} ${violation.path} ${violation.reason}`,
+  );
+}
+
 function hasBoundaryIntegrityRisk(
   trial: EvalTrial,
   evidence: ExternalEvalTrialEvidence | undefined,
@@ -756,6 +814,17 @@ function isRuntimeIssueLifecycleStatus(
   status: ExternalEvalAdapterLifecycleStatus | undefined,
 ): boolean {
   return status === "failed" || status === "timed-out" || status === "cancelled";
+}
+
+function hasRuntimeIssueForSummary(
+  trial: EvalTrial,
+  evidence: ExternalEvalTrialEvidence | undefined,
+): boolean {
+  return (
+    trial.status === "infrastructure-error" ||
+    trial.status === "cancelled" ||
+    hasAdapterRuntimeIssue(trial, evidence)
+  );
 }
 
 function sanitizeVerifierOutput(output: string): readonly string[] {
