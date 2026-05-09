@@ -222,7 +222,10 @@ export class RuntimeSessionEventStore {
           task_id = excluded.task_id,
           worker_id = excluded.worker_id,
           metadata_json = excluded.metadata_json,
-          updated_at = excluded.updated_at
+          updated_at = CASE
+            WHEN excluded.updated_at > runtime_sessions.updated_at THEN excluded.updated_at
+            ELSE runtime_sessions.updated_at
+          END
       `).run(
         data.sessionId,
         data.parentSessionId,
@@ -232,20 +235,33 @@ export class RuntimeSessionEventStore {
         data.createdAt,
         data.updatedAt,
       );
-      this.db.prepare("DELETE FROM runtime_session_events WHERE session_id = ?")
-        .run(data.sessionId);
+      const existingRows = this.db.prepare(`
+        SELECT event_id, sequence
+        FROM runtime_session_events
+        WHERE session_id = ?
+      `).all(data.sessionId) as RuntimeSessionEventKeyRow[];
+      const existingEventIds = new Set(existingRows.map((row) => row.event_id));
+      const usedSequences = new Set(existingRows.map((row) => row.sequence));
+      let nextSequence = nextRuntimeSessionSequence(usedSequences);
       const insertEvent = this.db.prepare(`
-        INSERT INTO runtime_session_events (
+        INSERT OR IGNORE INTO runtime_session_events (
           event_id, session_id, sequence, event_type, timestamp,
           parent_session_id, task_id, worker_id, payload_json
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const event of data.events) {
+        if (existingEventIds.has(event.eventId)) continue;
+        let sequence = Number.isInteger(event.sequence) && event.sequence >= 0
+          ? event.sequence
+          : nextSequence;
+        if (usedSequences.has(sequence)) {
+          sequence = nextSequence;
+        }
         insertEvent.run(
           event.eventId,
-          event.sessionId,
-          event.sequence,
+          event.sessionId || data.sessionId,
+          sequence,
           event.eventType,
           event.timestamp,
           event.parentSessionId,
@@ -253,6 +269,9 @@ export class RuntimeSessionEventStore {
           event.workerId,
           JSON.stringify(event.payload),
         );
+        existingEventIds.add(event.eventId);
+        usedSequences.add(sequence);
+        nextSequence = nextRuntimeSessionSequence(usedSequences, sequence + 1);
       }
     });
     transaction();
@@ -371,6 +390,22 @@ type RuntimeSessionEventRow = {
   worker_id: string;
   payload_json: string;
 };
+
+type RuntimeSessionEventKeyRow = {
+  event_id: string;
+  sequence: number;
+};
+
+function nextRuntimeSessionSequence(
+  usedSequences: Set<number>,
+  start = usedSequences.size,
+): number {
+  let sequence = start;
+  while (usedSequences.has(sequence)) {
+    sequence += 1;
+  }
+  return sequence;
+}
 
 function rowToEvent(row: RuntimeSessionEventRow): RuntimeSessionEvent {
   return {

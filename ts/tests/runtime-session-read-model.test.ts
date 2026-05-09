@@ -387,6 +387,84 @@ describe("runtime session read model", () => {
     ]);
   });
 
+  it("pairs repeated child task completions by child session id", () => {
+    const log = RuntimeSessionEventLog.fromJSON({
+      sessionId: "run:abc:runtime",
+      parentSessionId: "",
+      taskId: "",
+      workerId: "",
+      metadata: { goal: "autoctx run support_triage", runId: "abc" },
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:00:03.000Z",
+      events: [
+        {
+          eventId: "event-1",
+          sessionId: "run:abc:runtime",
+          sequence: 0,
+          eventType: RuntimeSessionEventType.CHILD_TASK_STARTED,
+          timestamp: "2026-04-10T00:00:01.000Z",
+          payload: {
+            taskId: "retry",
+            childSessionId: "c1",
+            workerId: "worker-1",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+        {
+          eventId: "event-2",
+          sessionId: "run:abc:runtime",
+          sequence: 1,
+          eventType: RuntimeSessionEventType.CHILD_TASK_STARTED,
+          timestamp: "2026-04-10T00:00:02.000Z",
+          payload: {
+            taskId: "retry",
+            childSessionId: "c2",
+            workerId: "worker-2",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+        {
+          eventId: "event-3",
+          sessionId: "run:abc:runtime",
+          sequence: 2,
+          eventType: RuntimeSessionEventType.CHILD_TASK_COMPLETED,
+          timestamp: "2026-04-10T00:00:03.000Z",
+          payload: {
+            taskId: "retry",
+            childSessionId: "c1",
+            result: "c1 done",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+      ],
+    });
+
+    const timeline = buildRuntimeSessionTimeline(log);
+
+    expect(timeline.items).toEqual([
+      expect.objectContaining({
+        kind: "child_task",
+        child_session_id: "c1",
+        status: "completed",
+        sequence_end: 2,
+        result_preview: "c1 done",
+      }),
+      expect.objectContaining({
+        kind: "child_task",
+        child_session_id: "c2",
+        status: "started",
+        sequence_end: null,
+      }),
+    ]);
+    expect(timeline.in_flight_count).toBe(1);
+  });
+
   it("uses scoped grant command and tool names in generic timeline titles", () => {
     const log = RuntimeSessionEventLog.fromJSON({
       sessionId: "run:abc:runtime",
