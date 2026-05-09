@@ -99,13 +99,14 @@ export function buildRuntimeSessionTimeline(log: RuntimeSessionEventLog): Runtim
       }
       case RuntimeSessionEventType.CHILD_TASK_STARTED: {
         const item = childTaskItemFromStartedEvent(event);
-        childTasks.set(item.task_id, item);
+        for (const key of childTaskCorrelationKeysFromEvent(event)) {
+          childTasks.set(key, item);
+        }
         items.push(item);
         break;
       }
       case RuntimeSessionEventType.CHILD_TASK_COMPLETED: {
-        const taskId = readString(event.payload.taskId);
-        const item = taskId ? childTasks.get(taskId) : undefined;
+        const item = findChildTaskForCompletion(event, childTasks);
         if (item) {
           completeChildTaskItem(item, event);
         } else {
@@ -227,6 +228,29 @@ function childTaskItemFromStartedEvent(event: RuntimeSessionEvent): RuntimeSessi
     result_preview: "",
     error: "",
   };
+}
+
+function findChildTaskForCompletion(
+  event: RuntimeSessionEvent,
+  childTasks: Map<string, RuntimeSessionChildTaskTimelineItem>,
+): RuntimeSessionChildTaskTimelineItem | undefined {
+  for (const key of childTaskCorrelationKeysFromEvent(event)) {
+    const item = childTasks.get(key);
+    if (item) return item;
+  }
+  return undefined;
+}
+
+function childTaskCorrelationKeysFromEvent(event: RuntimeSessionEvent): string[] {
+  const keys: string[] = [];
+  const childSessionId = readString(event.payload.childSessionId);
+  if (childSessionId) keys.push(`child:${childSessionId}`);
+  const taskId = readString(event.payload.taskId);
+  const workerId = readString(event.payload.workerId);
+  if (taskId && workerId) keys.push(`task:${taskId}:worker:${workerId}`);
+  if (taskId) keys.push(`task:${taskId}`);
+  if (keys.length === 0) keys.push(`event:${event.eventId}`);
+  return keys;
 }
 
 function completeChildTaskItem(

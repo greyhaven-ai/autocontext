@@ -171,6 +171,35 @@ def test_runtime_session_event_store_round_trips_logs_and_children(tmp_path: Pat
         store.close()
 
 
+def test_runtime_session_event_store_does_not_truncate_newer_events_on_stale_save(tmp_path: Path) -> None:
+    from autocontext.session.runtime_events import RuntimeSessionEventLog, RuntimeSessionEventStore, RuntimeSessionEventType
+
+    log = RuntimeSessionEventLog.create(session_id="run:abc:runtime")
+    log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, {"prompt": "first"})
+    store = RuntimeSessionEventStore(tmp_path / "runtime-events.db")
+    try:
+        store.save(log)
+        stale = store.load(log.session_id)
+        assert stale is not None
+
+        log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {"text": "second"})
+        store.save(log)
+        store.save(stale)
+
+        loaded = store.load(log.session_id)
+        assert loaded is not None
+        assert [event.event_type for event in loaded.events] == [
+            RuntimeSessionEventType.PROMPT_SUBMITTED,
+            RuntimeSessionEventType.ASSISTANT_MESSAGE,
+        ]
+        assert [event.payload for event in loaded.events] == [
+            {"prompt": "first"},
+            {"text": "second"},
+        ]
+    finally:
+        store.close()
+
+
 def test_runtime_session_event_store_closes_operation_connections(tmp_path: Path, monkeypatch) -> None:
     from autocontext.session import runtime_events
     from autocontext.session.runtime_events import RuntimeSessionEventLog, RuntimeSessionEventStore, RuntimeSessionEventType

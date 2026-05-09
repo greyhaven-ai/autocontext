@@ -211,7 +211,10 @@ class RuntimeSessionEventStore:
                     task_id = excluded.task_id,
                     worker_id = excluded.worker_id,
                     metadata_json = excluded.metadata_json,
-                    updated_at = excluded.updated_at
+                    updated_at = CASE
+                        WHEN excluded.updated_at > runtime_sessions.updated_at THEN excluded.updated_at
+                        ELSE runtime_sessions.updated_at
+                    END
                 """,
                 (
                     data["sessionId"],
@@ -223,20 +226,29 @@ class RuntimeSessionEventStore:
                     data["updatedAt"],
                 ),
             )
-            conn.execute("DELETE FROM runtime_session_events WHERE session_id = ?", (data["sessionId"],))
-            conn.executemany(
+            event_rows = conn.execute(
                 """
-                INSERT INTO runtime_session_events (
-                    event_id, session_id, sequence, event_type, timestamp,
-                    parent_session_id, task_id, worker_id, payload_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT event_id, sequence
+                FROM runtime_session_events
+                WHERE session_id = ?
                 """,
-                [
+                (data["sessionId"],),
+            ).fetchall()
+            existing_event_ids = {row["event_id"] for row in event_rows}
+            used_sequences = {row["sequence"] for row in event_rows}
+            next_sequence = _next_runtime_session_sequence(used_sequences)
+            rows_to_insert = []
+            for event in data["events"]:
+                if event["eventId"] in existing_event_ids:
+                    continue
+                sequence = event["sequence"] if isinstance(event["sequence"], int) and event["sequence"] >= 0 else next_sequence
+                if sequence in used_sequences:
+                    sequence = next_sequence
+                rows_to_insert.append(
                     (
                         event["eventId"],
-                        event["sessionId"],
-                        event["sequence"],
+                        event["sessionId"] or data["sessionId"],
+                        sequence,
                         event["eventType"],
                         event["timestamp"],
                         event["parentSessionId"],
@@ -244,8 +256,19 @@ class RuntimeSessionEventStore:
                         event["workerId"],
                         json.dumps(event["payload"]),
                     )
-                    for event in data["events"]
-                ],
+                )
+                existing_event_ids.add(event["eventId"])
+                used_sequences.add(sequence)
+                next_sequence = _next_runtime_session_sequence(used_sequences, sequence + 1)
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO runtime_session_events (
+                    event_id, session_id, sequence, event_type, timestamp,
+                    parent_session_id, task_id, worker_id, payload_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows_to_insert,
             )
 
     def load(self, session_id: str) -> RuntimeSessionEventLog | None:
@@ -400,3 +423,10 @@ def _safe_json_record(raw: str) -> dict[str, Any]:
         return _read_record(json.loads(raw))
     except json.JSONDecodeError:
         return {}
+
+
+def _next_runtime_session_sequence(used_sequences: set[int], start: int | None = None) -> int:
+    sequence = len(used_sequences) if start is None else start
+    while sequence in used_sequences:
+        sequence += 1
+    return sequence

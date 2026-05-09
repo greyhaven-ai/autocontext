@@ -83,6 +83,34 @@ describe("RuntimeSessionEventStore", () => {
     store.close();
   });
 
+  it("does not truncate newer events when saving a stale loaded log", () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "runtime-events-")), "events.db");
+    const store = new RuntimeSessionEventStore(dbPath);
+    const log = RuntimeSessionEventLog.create({ sessionId: "session-1" });
+    log.append(RuntimeSessionEventType.PROMPT_SUBMITTED, { prompt: "first" });
+    store.save(log);
+
+    const stale = store.load("session-1");
+    expect(stale).not.toBeNull();
+
+    log.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, { text: "second" });
+    store.save(log);
+    store.save(stale!);
+
+    const loaded = store.load("session-1");
+
+    expect(loaded?.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.PROMPT_SUBMITTED,
+      RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]);
+    expect(loaded?.events.map((event) => event.payload)).toEqual([
+      { prompt: "first" },
+      { text: "second" },
+    ]);
+
+    store.close();
+  });
+
   it("lists child task events by parent session", () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), "runtime-events-")), "events.db");
     const store = new RuntimeSessionEventStore(dbPath);

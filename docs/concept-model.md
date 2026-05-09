@@ -66,6 +66,33 @@ These are the execution nouns we should use when describing how the system actua
 | replay | `Artifact` view over a `Run` generation | The replay itself is an artifact. |
 | playbook | A `Knowledge` artifact | It should be described as one kind of knowledge, not the whole knowledge system. |
 | artifacts | Umbrella category over runtime outputs | Use as a collection term, not a peer to `Scenario` or `Mission`. |
+| runtime-session event log | `Artifact` emitted by a `Run` or child task | Durable observability and replay source for provider turns, shell/tool activity, child-task lineage, and compaction summaries. |
+
+## Durable Session Event Storage
+
+A durable `runtime-session event log` is an append-only `Artifact` for one `Run` or child task. It is not a new top-level product noun; it is the storage bridge that lets operators replay what happened while still mapping every event back to `Run`, `Step`, `Artifact`, `Knowledge`, `Budget`, and `Policy`.
+
+The concrete cross-runtime shape is `RuntimeSessionEventLog`, persisted through `RuntimeSessionEventStore` in TypeScript and Python. Each log has a stable `sessionId`, optional `parentSessionId`, optional `taskId`, optional `workerId`, metadata for the run/runtime surface, and ordered events with `eventId`, `sequence`, timestamp, event type, and JSON-safe payload. A parent run log uses the run-scoped session id; every child task log has its own unique child session id and keeps `parentSessionId`, `taskId`, and `workerId` as lineage rather than identity.
+
+| Event | Canonical mapping | Durable storage requirement |
+| --- | --- | --- |
+| `PROMPT_SUBMITTED` / `ASSISTANT_MESSAGE` | Provider turn inside a `Run`; may be evidence for a `Step` when emitted from a mission or child workflow. | Preserve request correlation (`requestId` or prompt event reference), role, model/runtime metadata, sanitized prompt/response previews, and failure metadata without changing runtime failure semantics. |
+| `SHELL_COMMAND` | Runtime action constrained by `Budget` and `Policy`; may become `Step` evidence. | Persist command name, cwd, exit status, duration, and redacted stdout/stderr/error previews. Redaction metadata must cover the effective environment passed to the command. |
+| `TOOL_CALL` | Runtime tool/grant action constrained by `Policy`; may emit an `Artifact` or modify run state. | Persist tool or grant name, input/output previews, duration, status, and redaction metadata. Scoped grants should keep inheritance policy visible for child-task review. |
+| `CHILD_TASK_STARTED` / `CHILD_TASK_COMPLETED` | Child `Task` or child `Run` launched while advancing a parent `Run`/`Step`. | Parent events include `taskId`, `workerId`, and `childSessionId`; the child log uses that `childSessionId` as `sessionId` and points back with `parentSessionId`. Reused logical task ids must not overwrite prior child logs. |
+| `COMPACTION` | Summary checkpoint over a prior event range; usually a compaction `Artifact`, and only `Knowledge` after validation/promotion. | Persist source event range, summary artifact id/path, summary text or preview, and any promoted knowledge id. Compaction never deletes the original event log. |
+
+Replay requirements are observational, not deterministic re-execution. A replay reader must be able to load one `RuntimeSessionEventLog`, order by `sequence`, correlate prompt/response pairs by stable event or request ids instead of FIFO assumptions, follow `childSessionId` links into child logs, and render shell/tool/grant activity without exposing secrets. Missing payload fields should degrade the timeline, not invalidate the log.
+
+Compaction requirements are deliberately separate from prompt history mutation. The runtime may append `COMPACTION` events that point at compaction artifacts or ledger entries, but the source events remain durable. A compaction summary can become `Knowledge` only through the same validation or promotion path as playbooks, hints, and lessons.
+
+Runtime sessions complement `RunTrace` and the external production trace contract; they should not duplicate either schema by default. `RunTrace` remains the causal run-state artifact used by analytics. A production trace remains the customer-facing emit/ingest privacy contract. Runtime-session logs are operator-facing observability artifacts; they can later export into either surface through an adapter when that reuse is intentional.
+
+Follow-up implementation issues should stay scoped to adapter work rather than changing the vocabulary model:
+
+- Emit and persist `COMPACTION` events from the compaction ledger path once compaction artifacts are normalized.
+- Add an explicit runtime-session to `RunTrace` export adapter if analytics needs session-derived events.
+- Keep Python and TypeScript command/tool grant event parity as scoped grant recording expands.
 
 ## Current Gaps And Risks
 

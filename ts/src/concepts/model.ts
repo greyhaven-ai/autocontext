@@ -158,6 +158,13 @@ const CONCEPT_MODEL: ConceptModel = {
       category: "collection",
       notes: "Collection term for runtime outputs.",
     },
+    {
+      surface: "runtime-session event log",
+      canonical_concept: "Artifact",
+      category: "artifact",
+      notes:
+        "Append-only observability and replay artifact for one Run or child task; events map to Run/Step actions and compaction summaries may reference promoted Knowledge.",
+    },
   ],
 };
 
