@@ -159,6 +159,7 @@ export async function executeBuiltInGameStartRun(opts: {
       events: opts.events,
       hookBus,
       loadedExtensions,
+      runtimeSession: opts.providerBundle.runtimeSession,
     }) ?? new GenerationRunner({
       provider: opts.providerBundle.defaultProvider,
       roleProviders: opts.providerBundle.roleProviders,
@@ -189,6 +190,7 @@ export async function executeBuiltInGameStartRun(opts: {
       events: opts.events,
       hookBus,
       loadedExtensions,
+      runtimeSession: opts.providerBundle.runtimeSession,
     });
 
     await runner.run(opts.runId, opts.generations);

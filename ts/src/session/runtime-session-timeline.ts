@@ -291,7 +291,16 @@ function eventTitleDetails(
   details: Record<string, string | number | boolean>,
 ): Record<string, string | number | boolean> {
   const titleDetails: Record<string, string | number | boolean> = {};
-  for (const key of ["command", "tool", "exitCode", "taskId", "childSessionId"]) {
+  for (const key of [
+    "command",
+    "tool",
+    "exitCode",
+    "taskId",
+    "childSessionId",
+    "entryId",
+    "entryCount",
+    "components",
+  ]) {
     const value = details[key];
     if (value !== undefined) titleDetails[key] = value;
   }
@@ -308,6 +317,11 @@ function eventDetails(payload: Record<string, unknown>): Record<string, string |
     "exitCode",
     "taskId",
     "childSessionId",
+    "entryId",
+    "entryCount",
+    "components",
+    "ledgerPath",
+    "generation",
   ]) {
     const value = payload[key];
     if (typeof value === "string" && value !== "") details[key] = preview(value);

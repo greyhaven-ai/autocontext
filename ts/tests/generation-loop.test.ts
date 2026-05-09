@@ -405,7 +405,12 @@ describe("GenerationRunner", () => {
   it("records semantic compaction ledger entries during standalone TypeScript prompt assembly", async () => {
     const { GenerationRunner } = await import("../src/loop/generation-runner.js");
     const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { createInMemoryWorkspaceEnv } = await import("../src/runtimes/workspace-env.js");
     const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { RuntimeSession } = await import("../src/session/runtime-session.js");
+    const { runtimeSessionIdForRun } = await import("../src/session/runtime-session-ids.js");
+    const { RuntimeSessionEventStore, RuntimeSessionEventType } =
+      await import("../src/session/runtime-events.js");
     const { SQLiteStore } = await import("../src/storage/index.js");
 
     const dbPath = join(dir, "semantic-compaction.db");
@@ -425,18 +430,34 @@ describe("GenerationRunner", () => {
 
     const store = new SQLiteStore(dbPath);
     store.migrate(join(__dirname, "..", "migrations"));
-    const runner = new GenerationRunner({
-      provider: new DeterministicProvider(),
-      scenario: new GridCtfScenario(),
-      store,
-      runsRoot,
-      knowledgeRoot,
-      matchesPerGeneration: 2,
-      maxRetries: 0,
-      minDelta: 0.0,
-    });
+    const runtimeEventStore = new RuntimeSessionEventStore(dbPath);
+    try {
+      const runtimeSession = RuntimeSession.create({
+        sessionId: runtimeSessionIdForRun("semantic-run"),
+        goal: "autoctx run grid_ctf",
+        workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
+        eventStore: runtimeEventStore,
+        metadata: {
+          runId: "semantic-run",
+          scenarioName: "grid_ctf",
+        },
+      });
+      const runner = new GenerationRunner({
+        provider: new DeterministicProvider(),
+        scenario: new GridCtfScenario(),
+        store,
+        runsRoot,
+        knowledgeRoot,
+        matchesPerGeneration: 2,
+        maxRetries: 0,
+        minDelta: 0.0,
+        runtimeSession,
+      });
 
-    await runner.run("semantic-run", 1);
+      await runner.run("semantic-run", 1);
+    } finally {
+      runtimeEventStore.close();
+    }
 
     const ledgerPath = join(runsRoot, "semantic-run", "compactions.jsonl");
     expect(existsSync(ledgerPath)).toBe(true);
@@ -468,6 +489,22 @@ describe("GenerationRunner", () => {
     expect(prompt).toContain("rollback guard");
     expect(prompt).toContain("freshness filtering");
     expect(prompt).not.toContain("filler paragraph\nfiller paragraph\nfiller paragraph");
+
+    const verifyRuntimeEventStore = new RuntimeSessionEventStore(dbPath);
+    const runtimeLog = verifyRuntimeEventStore.load(runtimeSessionIdForRun("semantic-run"));
+    verifyRuntimeEventStore.close();
+    const compactionEvent = runtimeLog?.events.find(
+      (event) => event.eventType === RuntimeSessionEventType.COMPACTION,
+    );
+    expect(compactionEvent?.payload).toMatchObject({
+      runId: "semantic-run",
+      generation: 1,
+      entryId: sessionReportEntry.id,
+      entryCount: expect.any(Number),
+      components: expect.stringContaining("session_reports"),
+      ledgerPath,
+    });
+    expect(runtimeLog?.events.at(-1)?.eventType).not.toBeUndefined();
 
     store.close();
   });

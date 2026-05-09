@@ -233,6 +233,7 @@ export async function executeRunCommandWorkflow<
     roleProviders: unknown;
     roleModels: unknown;
     defaultConfig: { providerType: string };
+    runtimeSession?: unknown;
     close?: () => void;
   },
   TStore extends { migrate(path: string): void; close(): void },
@@ -280,6 +281,7 @@ export async function executeRunCommandWorkflow<
     explorationMode: unknown;
     notifyWebhookUrl: unknown;
     notifyOn: unknown;
+    runtimeSession?: TProviderBundle["runtimeSession"];
   } | Record<string, unknown>) => TRunner;
 }): Promise<RunCommandResult> {
   const scenario = new opts.ScenarioClass();
@@ -314,6 +316,7 @@ export async function executeRunCommandWorkflow<
       explorationMode: opts.settings.explorationMode,
       notifyWebhookUrl: opts.settings.notifyWebhookUrl,
       notifyOn: opts.settings.notifyOn,
+      runtimeSession: opts.providerBundle.runtimeSession,
     });
     const result = await runner.run(opts.plan.runId, opts.plan.gens);
     const provider = opts.providerBundle.defaultConfig.providerType;

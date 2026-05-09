@@ -293,11 +293,13 @@ export {
 } from "./session/runtime-session-timeline.js";
 export type {
   RuntimeSessionCreateOpts,
+  RuntimeSessionCompactionEntry,
   RuntimeSessionLoadOpts,
   RuntimeSessionPromptHandler,
   RuntimeSessionPromptHandlerInput,
   RuntimeSessionPromptHandlerOutput,
   RuntimeSessionPromptResult,
+  RuntimeSessionRecordCompactionOpts,
   RuntimeSessionSubmitPromptOpts,
 } from "./session/runtime-session.js";
 export type {

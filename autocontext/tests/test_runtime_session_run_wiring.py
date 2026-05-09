@@ -9,6 +9,7 @@ from autocontext.agents.llm_client import DeterministicDevClient
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.agents.provider_bridge import RuntimeBridgeClient, wrap_runtime_session_client
 from autocontext.config.settings import AppSettings
+from autocontext.loop.stage_helpers.semantic_benchmark import prepare_generation_prompts
 from autocontext.loop.stage_types import GenerationContext
 from autocontext.loop.stages import stage_agent_generation
 from autocontext.prompts.templates import build_prompt_bundle
@@ -16,6 +17,8 @@ from autocontext.runtimes.base import AgentOutput
 from autocontext.scenarios.base import Observation
 from autocontext.session.runtime_events import RuntimeSessionEventStore, RuntimeSessionEventType
 from autocontext.session.runtime_session_ids import runtime_session_id_for_run
+from autocontext.session.runtime_session_recording import create_runtime_session_for_run
+from autocontext.storage.artifacts import ArtifactStore
 
 
 class _DeterministicAgentRuntime:
@@ -129,6 +132,93 @@ def test_orchestrator_records_run_scoped_runtime_session_for_runtime_bridge(tmp_
     ]
     assert assistant_events
     assert all(event.payload.get("metadata", {}).get("runtimeSessionId") == log.session_id for event in assistant_events)
+
+
+def test_prompt_compaction_records_run_scoped_runtime_session_event(tmp_path: Path) -> None:
+    settings = AppSettings(agent_provider="deterministic", db_path=tmp_path / "events.db")
+    recording = create_runtime_session_for_run(
+        db_path=settings.db_path,
+        run_id="run-compaction",
+        scenario_name="grid_ctf",
+    )
+    recording.close()
+    scenario = MagicMock()
+    ctx = GenerationContext(
+        run_id="run-compaction",
+        scenario_name="grid_ctf",
+        scenario=scenario,
+        generation=3,
+        settings=settings,
+        previous_best=0.0,
+        challenger_elo=1000.0,
+        score_history=[],
+        gate_decision_history=[],
+        coach_competitor_hints="",
+        replay_narrative="",
+    )
+    artifacts = ArtifactStore(
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude/skills",
+    )
+
+    prepare_generation_prompts(
+        ctx,
+        artifacts=artifacts,
+        scenario_rules="Capture the flag while preserving defense.",
+        strategy_interface='{"aggression": float}',
+        evaluation_criteria="Score valid balanced strategies.",
+        previous_summary="best: 0.0",
+        observation=Observation(narrative="A compact grid is visible.", state={}, constraints=[]),
+        current_playbook="",
+        available_tools="",
+        operational_lessons="",
+        replay_narrative="",
+        coach_competitor_hints="",
+        coach_hint_feedback="",
+        recent_analysis="",
+        analyst_feedback="",
+        analyst_attribution="",
+        coach_attribution="",
+        architect_attribution="",
+        score_trajectory="",
+        strategy_registry="",
+        progress_json="",
+        experiment_log="",
+        dead_ends="",
+        research_protocol="",
+        session_reports=(
+            "# Session Report: prior\n"
+            + "filler paragraph\n" * 220
+            + "\n## Findings\n"
+            + "- Preserve the rollback guard after failed harness mutations.\n"
+        ),
+        architect_tool_usage_report="",
+        constraint_mode=False,
+        context_budget_tokens=0,
+        notebook_contexts=None,
+        environment_snapshot="",
+        evidence_manifest="",
+        evidence_manifests=None,
+        evidence_cache_hits=0,
+        evidence_cache_lookups=0,
+    )
+
+    store = RuntimeSessionEventStore(settings.db_path)
+    try:
+        log = store.load(runtime_session_id_for_run("run-compaction"))
+    finally:
+        store.close()
+
+    assert log is not None
+    compaction_events = [event for event in log.events if event.event_type == RuntimeSessionEventType.COMPACTION]
+    assert len(compaction_events) == 1
+    assert compaction_events[0].payload["runId"] == "run-compaction"
+    assert compaction_events[0].payload["generation"] == 3
+    assert compaction_events[0].payload["entryCount"] >= 1
+    assert "session_reports" in compaction_events[0].payload["components"]
+    assert compaction_events[0].payload["ledgerPath"].endswith("run-compaction/compactions.jsonl")
 
 
 def test_resolve_role_runtime_records_run_scoped_runtime_session(tmp_path: Path, monkeypatch) -> None:
