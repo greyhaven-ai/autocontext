@@ -718,13 +718,16 @@ export type {
   OperationalMemoryRisk,
 } from "./control-plane/memory-packs/index.js";
 export {
+  assessExternalEvalBoundaryPolicy,
   buildExternalEvalDiagnosticReport,
   buildExternalEvalImprovementSignals,
   buildOperationalMemoryPackFromDiagnostics,
   classifyExternalEvalTrial,
   validateExternalEvalAdapterLifecycle,
+  validateExternalEvalBoundaryPolicy,
 } from "./control-plane/external-evals/index.js";
 export type {
+  AssessExternalEvalBoundaryPolicyInputs,
   BuildExternalEvalDiagnosticReportInputs,
   BuildOperationalMemoryPackFromDiagnosticsInputs,
   ClassifyExternalEvalTrialInputs,
@@ -732,6 +735,14 @@ export type {
   ExternalEvalAdapterCommand,
   ExternalEvalAdapterLifecycle,
   ExternalEvalAdapterLifecycleStatus,
+  ExternalEvalBoundaryAccessKind,
+  ExternalEvalBoundaryAssessment,
+  ExternalEvalBoundaryObservation,
+  ExternalEvalBoundaryObservationSource,
+  ExternalEvalBoundaryPolicy,
+  ExternalEvalBoundaryPolicyMode,
+  ExternalEvalBoundaryViolation,
+  ExternalEvalBoundaryViolationReason,
   ExternalEvalDiagnosticCategory,
   ExternalEvalDiagnosticReport,
   ExternalEvalImprovementSignal,

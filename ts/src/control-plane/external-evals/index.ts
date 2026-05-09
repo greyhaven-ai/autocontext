@@ -17,6 +17,24 @@ export type ExternalEvalAdapterLifecycleStatus =
   | "timed-out"
   | "cancelled";
 
+export type ExternalEvalBoundaryPolicyMode = "report-only" | "discard";
+export type ExternalEvalBoundaryAccessKind =
+  | "read"
+  | "write"
+  | "list"
+  | "execute"
+  | "search"
+  | "unknown";
+export type ExternalEvalBoundaryObservationSource =
+  | "adapter-command"
+  | "adapter-log"
+  | "tool-call"
+  | "trace"
+  | "manual";
+export type ExternalEvalBoundaryViolationReason =
+  | "blocked-path-prefix"
+  | "outside-allowed-path-prefix";
+
 export type ExternalEvalDiagnosticCategory =
   | "agent-task-failure"
   | "verifier-contract-mismatch"
@@ -66,6 +84,36 @@ export interface ExternalEvalAdapterLifecycle {
   readonly artifacts: ExternalEvalAdapterArtifacts;
 }
 
+export interface ExternalEvalBoundaryPolicy {
+  readonly mode: ExternalEvalBoundaryPolicyMode;
+  readonly blockedPathPrefixes?: readonly string[];
+  readonly allowedPathPrefixes?: readonly string[];
+}
+
+export interface ExternalEvalBoundaryObservation {
+  readonly trialId: string;
+  readonly accessKind: ExternalEvalBoundaryAccessKind;
+  readonly path: string;
+  readonly source: ExternalEvalBoundaryObservationSource;
+  readonly command?: string;
+}
+
+export interface ExternalEvalBoundaryViolation extends ExternalEvalBoundaryObservation {
+  readonly reason: ExternalEvalBoundaryViolationReason;
+}
+
+export interface ExternalEvalBoundaryAssessment {
+  readonly status: EvalRunIntegrity["status"];
+  readonly mode: ExternalEvalBoundaryPolicyMode;
+  readonly violations: readonly ExternalEvalBoundaryViolation[];
+  readonly notes: readonly string[];
+}
+
+export interface AssessExternalEvalBoundaryPolicyInputs {
+  readonly policy: ExternalEvalBoundaryPolicy;
+  readonly observations: readonly ExternalEvalBoundaryObservation[];
+}
+
 export interface ClassifyExternalEvalTrialInputs {
   readonly taskId: string;
   readonly trialId: string;
@@ -77,6 +125,7 @@ export interface ClassifyExternalEvalTrialInputs {
   readonly completedAt?: string;
   readonly rawResultPath?: string;
   readonly lifecycle?: ExternalEvalAdapterLifecycle;
+  readonly boundaryAssessment?: ExternalEvalBoundaryAssessment;
 }
 
 export interface ExternalEvalTrialEvidence {
@@ -84,6 +133,7 @@ export interface ExternalEvalTrialEvidence {
   readonly evidenceRefs?: readonly string[];
   readonly verifierOutput?: string;
   readonly adapterLifecycle?: ExternalEvalAdapterLifecycle;
+  readonly boundaryAssessment?: ExternalEvalBoundaryAssessment;
 }
 
 export interface ExternalEvalTrialDiagnostic {
@@ -174,10 +224,55 @@ export function validateExternalEvalAdapterLifecycle(input: unknown): Validation
   return errors.length === 0 ? { valid: true } : { valid: false, errors };
 }
 
+export function validateExternalEvalBoundaryPolicy(input: unknown): ValidationResult {
+  const errors: string[] = [];
+
+  if (!isRecord(input)) {
+    return { valid: false, errors: ["boundary policy must be an object"] };
+  }
+
+  requireEnum(input, "mode", ["report-only", "discard"], errors);
+  validateOptionalStringArray(input, "blockedPathPrefixes", errors);
+  validateOptionalStringArray(input, "allowedPathPrefixes", errors);
+
+  const blockedCount = Array.isArray(input.blockedPathPrefixes) ? input.blockedPathPrefixes.length : 0;
+  const allowedCount = Array.isArray(input.allowedPathPrefixes) ? input.allowedPathPrefixes.length : 0;
+  if (blockedCount + allowedCount === 0) {
+    errors.push("boundary policy must declare at least one blocked or allowed path prefix");
+  }
+
+  return errors.length === 0 ? { valid: true } : { valid: false, errors };
+}
+
+export function assessExternalEvalBoundaryPolicy(
+  inputs: AssessExternalEvalBoundaryPolicyInputs,
+): ExternalEvalBoundaryAssessment {
+  const blockedPathPrefixes = normalizeBoundaryPrefixes(inputs.policy.blockedPathPrefixes ?? []);
+  const allowedPathPrefixes = normalizeBoundaryPrefixes(inputs.policy.allowedPathPrefixes ?? []);
+  const violations = inputs.observations.flatMap((observation) =>
+    assessBoundaryObservation(observation, blockedPathPrefixes, allowedPathPrefixes),
+  );
+  const status =
+    violations.length === 0 ? "clean" : inputs.policy.mode === "discard" ? "discarded" : "contaminated";
+
+  return {
+    status,
+    mode: inputs.policy.mode,
+    violations,
+    notes: violations.map(
+      (violation) => `boundary_violation=${violation.accessKind} ${violation.path} ${violation.reason}`,
+    ),
+  };
+}
+
 export function classifyExternalEvalTrial(inputs: ClassifyExternalEvalTrialInputs): EvalTrial {
-  const status = inputs.isResolved ? "passed" : classifyUnresolvedStatus(inputs);
+  const status = shouldDiscardBoundaryAssessment(inputs.boundaryAssessment)
+    ? "discarded"
+    : inputs.isResolved
+      ? "passed"
+      : classifyUnresolvedStatus(inputs);
   const errorKind = classifyErrorKind(inputs, status);
-  const reward = inputs.reward ?? defaultReward(status);
+  const reward = isScoreableTrialStatus(status) ? inputs.reward ?? defaultReward(status) : undefined;
   const notes = buildTrialNotes(inputs);
 
   return {
@@ -207,7 +302,12 @@ export function buildExternalEvalDiagnosticReport(
     evidence: evidenceByTrialId.get(trial.trialId),
   }));
   const diagnostics = trialsWithEvidence
-    .filter(({ trial, evidence }) => trial.status !== "passed" || hasAdapterRuntimeIssue(trial, evidence))
+    .filter(
+      ({ trial, evidence }) =>
+        trial.status !== "passed" ||
+        hasAdapterRuntimeIssue(trial, evidence) ||
+        hasBoundaryIntegrityRisk(trial, evidence),
+    )
     .map(({ trial, evidence }) => buildTrialDiagnostic(inputs.runId, trial, evidence));
   const improvementSignals = buildImprovementSignals(inputs.runId, diagnostics);
   const countsByCategory = countDiagnosticsByCategory(diagnostics);
@@ -275,6 +375,9 @@ function classifyErrorKind(
   inputs: ClassifyExternalEvalTrialInputs,
   status: EvalTrialStatus,
 ): string | undefined {
+  if (status === "discarded" && shouldDiscardBoundaryAssessment(inputs.boundaryAssessment)) {
+    return "external-eval-boundary-violation";
+  }
   if (status === "passed") {
     return normalizedFailureMode(inputs.failureMode) || runtimeLifecycleErrorKind(inputs) || undefined;
   }
@@ -305,6 +408,10 @@ function defaultReward(status: EvalTrialStatus): number | undefined {
   return undefined;
 }
 
+function isScoreableTrialStatus(status: EvalTrialStatus): boolean {
+  return status === "passed" || status === "failed";
+}
+
 function buildTrialNotes(inputs: ClassifyExternalEvalTrialInputs): readonly string[] {
   const notes: string[] = [];
   const failureMode = normalizedFailureMode(inputs.failureMode);
@@ -325,6 +432,10 @@ function buildTrialNotes(inputs: ClassifyExternalEvalTrialInputs): readonly stri
     if (inputs.lifecycle.artifacts.stderrPath !== undefined) {
       notes.push(`stderr=${inputs.lifecycle.artifacts.stderrPath}`);
     }
+  }
+  if (hasBoundaryAssessmentIssue(inputs.boundaryAssessment)) {
+    notes.push(`integrity_status=${inputs.boundaryAssessment.status}`);
+    notes.push(...inputs.boundaryAssessment.notes);
   }
   return notes;
 }
@@ -361,7 +472,7 @@ function classifyDiagnosticCategory(
   trial: EvalTrial,
   evidence: ExternalEvalTrialEvidence | undefined,
 ): ExternalEvalDiagnosticCategory {
-  if (trial.status === "discarded") {
+  if (trial.status === "discarded" || hasBoundaryIntegrityRisk(trial, evidence)) {
     return "integrity-risk";
   }
   if (
@@ -403,6 +514,7 @@ function diagnosticConfidence(
   trial: EvalTrial,
   evidence: ExternalEvalTrialEvidence | undefined,
 ): number {
+  if (category === "integrity-risk" && hasBoundaryIntegrityRisk(trial, evidence)) return 0.95;
   if (category === "adapter-runtime-failure" && trial.status === "infrastructure-error") return 0.95;
   if (category === "adapter-runtime-failure" && hasAdapterRuntimeIssue(trial, evidence)) return 0.9;
   if (category === "integrity-risk" && trial.status === "discarded") return 0.9;
@@ -468,7 +580,8 @@ function buildFailureExcerpts(
     return buildAdapterRuntimeExcerpts(trial, evidence?.adapterLifecycle);
   }
   if (category === "integrity-risk") {
-    return [
+    const boundaryExcerpts = buildBoundaryIntegrityExcerpts(trial, evidence);
+    return boundaryExcerpts.length > 0 ? boundaryExcerpts : [
       `trial_status=${trial.status}`,
       ...(trial.errorKind !== undefined ? [`error_kind=${trial.errorKind}`] : []),
       ...(trial.notes ?? []),
@@ -506,6 +619,110 @@ function buildAdapterRuntimeExcerpts(
   }
 
   return excerpts;
+}
+
+function buildBoundaryIntegrityExcerpts(
+  trial: EvalTrial,
+  evidence: ExternalEvalTrialEvidence | undefined,
+): readonly string[] {
+  const assessment = evidence?.boundaryAssessment;
+  if (hasBoundaryAssessmentIssue(assessment)) {
+    return [`integrity_status=${assessment.status}`, ...assessment.notes];
+  }
+
+  const trialNotes = trial.notes ?? [];
+  const boundaryNotes = trialNotes.filter(
+    (note) => note.startsWith("integrity_status=") || note.startsWith("boundary_violation="),
+  );
+  return boundaryNotes;
+}
+
+function hasBoundaryIntegrityRisk(
+  trial: EvalTrial,
+  evidence: ExternalEvalTrialEvidence | undefined,
+): boolean {
+  return hasBoundaryAssessmentIssue(evidence?.boundaryAssessment) || hasTrialBoundaryIntegrityNote(trial);
+}
+
+function hasBoundaryAssessmentIssue(
+  assessment: ExternalEvalBoundaryAssessment | undefined,
+): assessment is ExternalEvalBoundaryAssessment {
+  return assessment !== undefined && assessment.status !== "clean";
+}
+
+function shouldDiscardBoundaryAssessment(
+  assessment: ExternalEvalBoundaryAssessment | undefined,
+): assessment is ExternalEvalBoundaryAssessment {
+  return assessment !== undefined && assessment.status === "discarded";
+}
+
+function hasTrialBoundaryIntegrityNote(trial: EvalTrial): boolean {
+  return (trial.notes ?? []).some((note) => note.startsWith("boundary_violation="));
+}
+
+function assessBoundaryObservation(
+  observation: ExternalEvalBoundaryObservation,
+  blockedPathPrefixes: readonly string[],
+  allowedPathPrefixes: readonly string[],
+): readonly ExternalEvalBoundaryViolation[] {
+  const path = normalizeBoundaryPath(observation.path);
+  if (blockedPathPrefixes.some((prefix) => boundaryPathMatchesPrefix(path, prefix))) {
+    return [buildBoundaryViolation(observation, path, "blocked-path-prefix")];
+  }
+  if (
+    allowedPathPrefixes.length > 0 &&
+    !allowedPathPrefixes.some((prefix) => boundaryPathMatchesPrefix(path, prefix))
+  ) {
+    return [buildBoundaryViolation(observation, path, "outside-allowed-path-prefix")];
+  }
+  return [];
+}
+
+function buildBoundaryViolation(
+  observation: ExternalEvalBoundaryObservation,
+  path: string,
+  reason: ExternalEvalBoundaryViolationReason,
+): ExternalEvalBoundaryViolation {
+  return {
+    trialId: observation.trialId,
+    accessKind: observation.accessKind,
+    path,
+    source: observation.source,
+    reason,
+    ...(observation.command !== undefined ? { command: observation.command } : {}),
+  };
+}
+
+function normalizeBoundaryPrefixes(prefixes: readonly string[]): readonly string[] {
+  return [...new Set(prefixes.map(normalizeBoundaryPath))];
+}
+
+function boundaryPathMatchesPrefix(path: string, prefix: string): boolean {
+  return prefix === "/" ? path.startsWith("/") : path === prefix || path.startsWith(`${prefix}/`);
+}
+
+function normalizeBoundaryPath(input: string): string {
+  const raw = input.trim().replace(/\\/g, "/");
+  if (raw.length === 0) return ".";
+
+  const absolute = raw.startsWith("/");
+  const parts: string[] = [];
+  for (const part of raw.split("/")) {
+    if (part.length === 0 || part === ".") continue;
+    if (part === "..") {
+      if (parts.length > 0 && parts[parts.length - 1] !== "..") {
+        parts.pop();
+      } else if (!absolute) {
+        parts.push(part);
+      }
+      continue;
+    }
+    parts.push(part);
+  }
+
+  const normalized = parts.join("/");
+  if (absolute) return normalized.length > 0 ? `/${normalized}` : "/";
+  return normalized.length > 0 ? normalized : ".";
 }
 
 function isInfrastructureFailureMode(errorKind: string | undefined): boolean {
@@ -895,6 +1112,18 @@ function requireOptionalString(
 ): void {
   if (Object.prototype.hasOwnProperty.call(input, field) && typeof input[field] !== "string") {
     errors.push(`${label} must be a string when present`);
+  }
+}
+
+function validateOptionalStringArray(
+  input: Readonly<Record<string, unknown>>,
+  field: string,
+  errors: string[],
+): void {
+  if (!Object.prototype.hasOwnProperty.call(input, field)) return;
+  const value = input[field];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && item.length > 0)) {
+    errors.push(`${field} must be an array of non-empty strings when present`);
   }
 }
 
