@@ -86,12 +86,10 @@ Replay requirements are observational, not deterministic re-execution. A replay 
 
 Compaction requirements are deliberately separate from prompt history mutation. The runtime may append `COMPACTION` events that point at compaction artifacts or ledger entries, but the source events remain durable. A compaction summary can become `Knowledge` only through the same validation or promotion path as playbooks, hints, and lessons.
 
-Runtime sessions complement `RunTrace` and the external production trace contract; they should not duplicate either schema by default. `RunTrace` remains the causal run-state artifact used by analytics. A production trace remains the customer-facing emit/ingest privacy contract. Runtime-session logs are operator-facing observability artifacts; they can later export into either surface through an adapter when that reuse is intentional.
+Runtime sessions complement `RunTrace` and the external production trace contract; they should not duplicate either schema by default. `RunTrace` remains the causal run-state artifact used by analytics. A production trace remains the customer-facing emit/ingest privacy contract. Runtime-session logs are operator-facing observability artifacts; Python and TypeScript expose explicit runtime-session-to-`RunTrace` adapters for analytics reuse, and those adapters intentionally map only allowlisted lineage, status, command/tool, child-task, and compaction reference fields rather than copying raw prompts, responses, stdout, stderr, or arbitrary handler metadata.
 
-Follow-up implementation issues should stay scoped to adapter work rather than changing the vocabulary model:
+Remaining implementation issues should stay scoped to adapter work rather than changing the vocabulary model:
 
-- Emit and persist `COMPACTION` events from the compaction ledger path once compaction artifacts are normalized.
-- Add an explicit runtime-session to `RunTrace` export adapter if analytics needs session-derived events.
 - Keep Python and TypeScript command/tool grant event parity as scoped grant recording expands.
 
 ## Current Gaps And Risks

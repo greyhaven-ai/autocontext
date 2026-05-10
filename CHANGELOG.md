@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - TypeScript runtime workspace command grants now expose structured start/end/error observability events, a no-shell local process wrapper with explicit env inheritance, redacted/truncated command output previews, child-task inheritance policy, and scoped command/tool grant types for runtime-session calls without serializing trusted env values into prompts or session logs.
 - The canonical concept model now documents durable runtime-session event storage as an `Artifact` model for provider turns, shell/tool activity, child-task lineage, compaction summaries, replay, and the boundary with `RunTrace`/production traces.
 - Python and TypeScript runtime-session logs now record semantic compaction ledger writes as `COMPACTION` events with entry ids, component names, ledger paths, and generation metadata for replay timelines; TypeScript records the hook-finalized ledger entries and paths after artifact write hooks run.
+- Python and TypeScript now expose explicit runtime-session-to-`RunTrace` adapters for analytics reuse, mapping child-task lineage, command/tool status, and compaction artifact references without copying raw prompts, model responses, stdout/stderr, or arbitrary runtime metadata.
 
 ### Fixed
 
