@@ -509,6 +509,121 @@ describe("GenerationRunner", () => {
     store.close();
   });
 
+  it("records hook-mutated semantic compaction ledger entries in runtime sessions", async () => {
+    const { HookBus, HookEvents } = await import("../src/extensions/index.js");
+    const { GenerationRunner } = await import("../src/loop/generation-runner.js");
+    const { DeterministicProvider } = await import("../src/providers/deterministic.js");
+    const { createInMemoryWorkspaceEnv } = await import("../src/runtimes/workspace-env.js");
+    const { GridCtfScenario } = await import("../src/scenarios/grid-ctf.js");
+    const { RuntimeSession } = await import("../src/session/runtime-session.js");
+    const { runtimeSessionIdForRun } = await import("../src/session/runtime-session-ids.js");
+    const { RuntimeSessionEventStore, RuntimeSessionEventType } =
+      await import("../src/session/runtime-events.js");
+    const { SQLiteStore } = await import("../src/storage/index.js");
+
+    const secret = "AUTOCTX_SECRET_SHOULD_NOT_LEAK";
+    const dbPath = join(dir, "semantic-compaction-hooks.db");
+    const runsRoot = join(dir, "runs-hooked");
+    const knowledgeRoot = join(dir, "knowledge-hooked");
+    const runId = "semantic-hook-run";
+    const reportDir = join(knowledgeRoot, "grid_ctf", "session_reports");
+    mkdirSync(reportDir, { recursive: true });
+    writeFileSync(
+      join(reportDir, "prior.md"),
+      "# Session Report: prior\n"
+      + `${secret}\n`.repeat(120)
+      + "\n## Findings\n"
+      + "- Preserve the rollback guard after failed harness mutations.\n",
+      "utf-8",
+    );
+
+    const redactedLedgerPath = join(runsRoot, runId, "redacted", "compactions.jsonl");
+    const redactedLatestEntryPath = join(runsRoot, runId, "redacted", "compactions.latest");
+    const redactedEntry = {
+      id: "redacted-compaction-entry",
+      parentId: "",
+      timestamp: "2026-04-29T00:00:00.000Z",
+      summary: "redacted compaction summary",
+      firstKeptEntryId: "redacted-kept-entry",
+      tokensBefore: 7,
+      details: { component: "redacted_component" },
+    };
+    const hookBus = new HookBus();
+    hookBus.on(HookEvents.ARTIFACT_WRITE, (event) => {
+      const path = String(event.payload.path ?? "");
+      if (path.endsWith("compactions.jsonl")) {
+        return {
+          path: redactedLedgerPath,
+          content: `${JSON.stringify(redactedEntry)}\n`,
+        };
+      }
+      if (path.endsWith("compactions.latest")) {
+        return { path: redactedLatestEntryPath };
+      }
+      return undefined;
+    });
+
+    const store = new SQLiteStore(dbPath);
+    store.migrate(join(__dirname, "..", "migrations"));
+    const runtimeEventStore = new RuntimeSessionEventStore(dbPath);
+    try {
+      const runtimeSession = RuntimeSession.create({
+        sessionId: runtimeSessionIdForRun(runId),
+        goal: "autoctx run grid_ctf",
+        workspace: createInMemoryWorkspaceEnv({ cwd: "/workspace" }),
+        eventStore: runtimeEventStore,
+        metadata: {
+          runId,
+          scenarioName: "grid_ctf",
+        },
+      });
+      const runner = new GenerationRunner({
+        provider: new DeterministicProvider(),
+        scenario: new GridCtfScenario(),
+        store,
+        runsRoot,
+        knowledgeRoot,
+        matchesPerGeneration: 2,
+        maxRetries: 0,
+        minDelta: 0.0,
+        runtimeSession,
+        hookBus,
+      });
+
+      await runner.run(runId, 1);
+    } finally {
+      runtimeEventStore.close();
+    }
+
+    expect(readFileSync(redactedLedgerPath, "utf-8")).toContain("redacted compaction summary");
+    expect(readFileSync(redactedLedgerPath, "utf-8")).not.toContain(secret);
+    expect(readFileSync(redactedLatestEntryPath, "utf-8").trim())
+      .toBe("redacted-compaction-entry");
+
+    const verifyRuntimeEventStore = new RuntimeSessionEventStore(dbPath);
+    const runtimeLog = verifyRuntimeEventStore.load(runtimeSessionIdForRun(runId));
+    verifyRuntimeEventStore.close();
+    const compactionEvent = runtimeLog?.events.find(
+      (event) => event.eventType === RuntimeSessionEventType.COMPACTION,
+    );
+    expect(compactionEvent?.payload).toMatchObject({
+      runId,
+      generation: 1,
+      ledgerPath: redactedLedgerPath,
+      latestEntryPath: redactedLatestEntryPath,
+      entryId: "redacted-compaction-entry",
+      entryIds: ["redacted-compaction-entry"],
+      entryCount: 1,
+      components: "redacted_component",
+      summary: "redacted compaction summary",
+      firstKeptEntryId: "redacted-kept-entry",
+      tokensBefore: 7,
+    });
+    expect(JSON.stringify(compactionEvent?.payload)).not.toContain(secret);
+
+    store.close();
+  });
+
   it("persists only the final attempt when a generation retries", async () => {
     const { GenerationRunner } = await import("../src/loop/generation-runner.js");
     const { SQLiteStore } = await import("../src/storage/index.js");

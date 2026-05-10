@@ -407,6 +407,7 @@ export type {
   HarnessVersionMap,
   VersionedFileStoreOpts,
   GuardResult,
+  AppendedCompactionEntries,
   ArtifactStoreOpts,
   CompactionEntry,
   PromptCompactionOptions,

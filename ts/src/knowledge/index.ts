@@ -14,7 +14,7 @@ export {
 } from "./playbook.js";
 export type { GuardResult } from "./playbook.js";
 export { ArtifactStore } from "./artifact-store.js";
-export type { ArtifactStoreOpts } from "./artifact-store.js";
+export type { AppendedCompactionEntries, ArtifactStoreOpts } from "./artifact-store.js";
 export { CompactionLedgerStore } from "./compaction-ledger.js";
 export type { CompactionEntry } from "./compaction-ledger.js";
 export {

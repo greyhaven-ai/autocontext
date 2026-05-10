@@ -459,13 +459,14 @@ export class GenerationRunner {
       parentId: this.#artifactStore.latestCompactionEntryId(runId),
     });
     if (entries.length > 0) {
-      this.#artifactStore.appendCompactionEntries(runId, entries);
+      const ledgerWrite = this.#artifactStore.appendCompactionEntries(runId, entries);
       this.#runtimeSession?.recordCompaction({
         runId,
         generation,
-        ledgerPath: this.#artifactStore.compactionLedgerPath(runId),
-        latestEntryPath: this.#artifactStore.compactionLatestEntryPath(runId),
-        entries,
+        ledgerPath: ledgerWrite?.ledgerPath ?? this.#artifactStore.compactionLedgerPath(runId),
+        latestEntryPath: ledgerWrite?.latestEntryPath
+          ?? this.#artifactStore.compactionLatestEntryPath(runId),
+        entries: ledgerWrite?.entries ?? entries,
       });
     }
     return finalComponents;
