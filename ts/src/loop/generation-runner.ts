@@ -66,6 +66,7 @@ import {
 } from "./generation-run-state.js";
 import { join } from "node:path";
 import type { GenerationRole } from "../providers/index.js";
+import type { RuntimeSession } from "../session/runtime-session.js";
 
 export interface GenerationRunnerOpts {
   provider: LLMProvider;
@@ -100,6 +101,7 @@ export interface GenerationRunnerOpts {
   generationTimeBudgetSeconds?: number | null;
   hookBus?: HookBus | null;
   loadedExtensions?: string[];
+  runtimeSession?: RuntimeSession;
 }
 
 export interface RunResult {
@@ -140,6 +142,7 @@ export class GenerationRunner {
   #generationTimeBudgetSeconds: number | null;
   #hookBus: HookBus;
   #loadedExtensions: string[];
+  #runtimeSession?: RuntimeSession;
   #runState: GenerationRunState | null = null;
 
   constructor(opts: GenerationRunnerOpts) {
@@ -196,6 +199,7 @@ export class GenerationRunner {
     this.#generationTimeBudgetSeconds = opts.generationTimeBudgetSeconds ?? null;
     this.#hookBus = opts.hookBus ?? new HookBus();
     this.#loadedExtensions = opts.loadedExtensions ?? this.#hookBus.loadedExtensions;
+    this.#runtimeSession = opts.runtimeSession;
   }
 
   async run(runId: string, generations: number): Promise<RunResult> {
@@ -455,7 +459,15 @@ export class GenerationRunner {
       parentId: this.#artifactStore.latestCompactionEntryId(runId),
     });
     if (entries.length > 0) {
-      this.#artifactStore.appendCompactionEntries(runId, entries);
+      const ledgerWrite = this.#artifactStore.appendCompactionEntries(runId, entries);
+      this.#runtimeSession?.recordCompaction({
+        runId,
+        generation,
+        ledgerPath: ledgerWrite?.ledgerPath ?? this.#artifactStore.compactionLedgerPath(runId),
+        latestEntryPath: ledgerWrite?.latestEntryPath
+          ?? this.#artifactStore.compactionLatestEntryPath(runId),
+        entries: ledgerWrite?.entries ?? entries,
+      });
     }
     return finalComponents;
   }

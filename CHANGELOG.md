@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Python now exposes a core `RuntimeWorkspaceEnv` contract with local filesystem and in-memory adapters, virtual path resolution, scoped command grants, and explicit cleanup semantics to match the TypeScript runtime workspace boundary.
 - TypeScript runtime workspace command grants now expose structured start/end/error observability events, a no-shell local process wrapper with explicit env inheritance, redacted/truncated command output previews, child-task inheritance policy, and scoped command/tool grant types for runtime-session calls without serializing trusted env values into prompts or session logs.
 - The canonical concept model now documents durable runtime-session event storage as an `Artifact` model for provider turns, shell/tool activity, child-task lineage, compaction summaries, replay, and the boundary with `RunTrace`/production traces.
+- Python and TypeScript runtime-session logs now record semantic compaction ledger writes as `COMPACTION` events with entry ids, component names, ledger paths, and generation metadata for replay timelines; TypeScript records the hook-finalized ledger entries and paths after artifact write hooks run.
 
 ### Fixed
 

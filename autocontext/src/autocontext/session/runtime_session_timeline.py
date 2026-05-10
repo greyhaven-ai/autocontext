@@ -205,14 +205,27 @@ def _generic_item_from_event(event: RuntimeSessionEvent) -> RuntimeSessionTimeli
 def _event_title_details(details: dict[str, str | int | float | bool]) -> dict[str, str | int | float | bool]:
     return {
         key: details[key]
-        for key in ["command", "tool", "exitCode", "taskId", "childSessionId"]
+        for key in ["command", "tool", "exitCode", "taskId", "childSessionId", "entryId", "entryCount", "components"]
         if key in details
     }
 
 
 def _event_details(payload: dict[str, Any]) -> dict[str, str | int | float | bool]:
     details: dict[str, str | int | float | bool] = {}
-    for key in ["role", "cwd", "command", "tool", "exitCode", "taskId", "childSessionId"]:
+    for key in [
+        "role",
+        "cwd",
+        "command",
+        "tool",
+        "exitCode",
+        "taskId",
+        "childSessionId",
+        "entryId",
+        "entryCount",
+        "components",
+        "ledgerPath",
+        "generation",
+    ]:
         value = payload.get(key)
         if isinstance(value, str) and value:
             details[key] = _preview(value)

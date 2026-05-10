@@ -28,11 +28,46 @@ def _latest_compaction_parent_id(artifacts: ArtifactStore, run_id: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _append_compaction_entries(artifacts: ArtifactStore, run_id: str, entries: list[CompactionEntry]) -> None:
+def _append_compaction_entries(artifacts: ArtifactStore, run_id: str, entries: list[CompactionEntry]) -> bool:
     append = getattr(artifacts, "append_compaction_entries", None)
     if not callable(append):
-        return
+        return False
     append(run_id, entries)
+    return True
+
+
+def _append_compaction_entries_for_context(
+    ctx: GenerationContext,
+    artifacts: ArtifactStore,
+    entries: list[CompactionEntry],
+) -> None:
+    if not _append_compaction_entries(artifacts, ctx.run_id, entries):
+        return
+    if not entries:
+        return
+    db_path = getattr(ctx.settings, "db_path", None)
+    if db_path is None:
+        return
+    from autocontext.session.runtime_session import RuntimeSessionCompactionInput
+    from autocontext.session.runtime_session_recording import create_runtime_session_for_run
+
+    recording = create_runtime_session_for_run(
+        db_path=db_path,
+        run_id=ctx.run_id,
+        scenario_name=ctx.scenario_name,
+    )
+    try:
+        recording.session.record_compaction(
+            RuntimeSessionCompactionInput(
+                run_id=ctx.run_id,
+                generation=ctx.generation,
+                ledger_path=str(artifacts.compaction_ledger_path(ctx.run_id)),
+                latest_entry_path=str(artifacts.compaction_latest_entry_path(ctx.run_id)),
+                entries=[entry.to_dict() for entry in entries],
+            )
+        )
+    finally:
+        recording.close()
 
 
 def _evidence_source_run_ids(ctx: GenerationContext, *, artifacts: ArtifactStore) -> list[str]:
@@ -221,7 +256,7 @@ def prepare_generation_prompts(
         "generation": ctx.generation,
     }
     prompt_kwargs["compaction_entry_parent_id"] = _latest_compaction_parent_id(artifacts, ctx.run_id)
-    prompt_kwargs["compaction_entry_sink"] = lambda entries: _append_compaction_entries(artifacts, ctx.run_id, entries)
+    prompt_kwargs["compaction_entry_sink"] = lambda entries: _append_compaction_entries_for_context(ctx, artifacts, entries)
     build_start = time.perf_counter()
     prompts = build_prompt_bundle(**prompt_kwargs)
     semantic_build_latency_ms = (time.perf_counter() - build_start) * 1000.0

@@ -705,3 +705,44 @@ def test_runtime_session_timeline_pairs_child_completions_by_child_session_id() 
     assert second["status"] == "started"
     assert second["sequence_end"] is None
     assert timeline["in_flight_count"] == 1
+
+
+def test_runtime_session_timeline_surfaces_compaction_details() -> None:
+    from autocontext.session.runtime_events import RuntimeSessionEventLog, RuntimeSessionEventType
+    from autocontext.session.runtime_session_timeline import build_runtime_session_timeline
+
+    log = RuntimeSessionEventLog.from_dict(
+        {
+            "sessionId": "run:abc:runtime",
+            "createdAt": "2026-04-10T00:00:00.000Z",
+            "updatedAt": "2026-04-10T00:00:01.000Z",
+            "events": [
+                {
+                    "eventId": "event-1",
+                    "sessionId": "run:abc:runtime",
+                    "sequence": 0,
+                    "eventType": RuntimeSessionEventType.COMPACTION,
+                    "timestamp": "2026-04-10T00:00:01.000Z",
+                    "payload": {
+                        "runId": "abc",
+                        "generation": 2,
+                        "entryId": "cmp-2",
+                        "entryCount": 2,
+                        "components": "playbook, session_reports",
+                        "ledgerPath": "/runs/abc/compactions.jsonl",
+                    },
+                }
+            ],
+        }
+    )
+
+    timeline = build_runtime_session_timeline(log)
+
+    assert timeline["items"][0]["title"] == "compaction entryId=cmp-2 entryCount=2 components=playbook, session_reports"
+    assert timeline["items"][0]["details"] == {
+        "entryId": "cmp-2",
+        "entryCount": 2,
+        "components": "playbook, session_reports",
+        "ledgerPath": "/runs/abc/compactions.jsonl",
+        "generation": 2,
+    }

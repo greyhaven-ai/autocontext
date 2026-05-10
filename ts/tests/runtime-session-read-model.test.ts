@@ -514,6 +514,54 @@ describe("runtime session read model", () => {
     ]);
   });
 
+  it("surfaces compaction event details in generic timeline titles", () => {
+    const log = RuntimeSessionEventLog.fromJSON({
+      sessionId: "run:abc:runtime",
+      parentSessionId: "",
+      taskId: "",
+      workerId: "",
+      metadata: { goal: "autoctx run support_triage", runId: "abc" },
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:00:01.000Z",
+      events: [
+        {
+          eventId: "event-1",
+          sessionId: "run:abc:runtime",
+          sequence: 0,
+          eventType: RuntimeSessionEventType.COMPACTION,
+          timestamp: "2026-04-10T00:00:01.000Z",
+          payload: {
+            runId: "abc",
+            generation: 2,
+            entryId: "cmp-2",
+            entryCount: 2,
+            components: "playbook, session_reports",
+            ledgerPath: "/runs/abc/compactions.jsonl",
+          },
+          parentSessionId: "",
+          taskId: "",
+          workerId: "",
+        },
+      ],
+    });
+
+    const timeline = buildRuntimeSessionTimeline(log);
+
+    expect(timeline.items).toEqual([
+      expect.objectContaining({
+        event_type: "compaction",
+        title: "compaction entryId=cmp-2 entryCount=2 components=playbook, session_reports",
+        details: expect.objectContaining({
+          entryId: "cmp-2",
+          entryCount: 2,
+          components: "playbook, session_reports",
+          ledgerPath: "/runs/abc/compactions.jsonl",
+          generation: 2,
+        }),
+      }),
+    ]);
+  });
+
   it("reads runtime-session timelines by run id through the store port", () => {
     const load = vi.fn(() => createLog("run:abc:runtime"));
     const list = vi.fn();

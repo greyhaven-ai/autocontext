@@ -71,6 +71,25 @@ export interface RuntimeSessionPromptResult {
   sessionLog: RuntimeSessionEventLog;
 }
 
+export interface RuntimeSessionCompactionEntry {
+  id: string;
+  parentId?: string;
+  timestamp?: string;
+  summary?: string;
+  firstKeptEntryId?: string;
+  tokensBefore?: number;
+  details?: Record<string, unknown>;
+}
+
+export interface RuntimeSessionRecordCompactionOpts {
+  runId: string;
+  entries: RuntimeSessionCompactionEntry[];
+  generation?: number;
+  ledgerPath?: string;
+  latestEntryPath?: string;
+  promotedKnowledgeId?: string;
+}
+
 interface RuntimeSessionConstructorOpts {
   goal: string;
   workspace: RuntimeWorkspaceEnv;
@@ -218,6 +237,12 @@ export class RuntimeSession {
     return this.eventStore?.listChildren(this.sessionId) ?? [];
   }
 
+  recordCompaction(opts: RuntimeSessionRecordCompactionOpts): void {
+    if (opts.entries.length === 0) return;
+    this.log.append(RuntimeSessionEventType.COMPACTION, compactionPayload(opts));
+    this.save();
+  }
+
   save(): void {
     this.eventStore?.save(this.log);
   }
@@ -255,6 +280,48 @@ export class RuntimeSession {
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function compactionPayload(opts: RuntimeSessionRecordCompactionOpts): Record<string, unknown> {
+  const entryIds = opts.entries.map((entry) => readString(entry.id)).filter(Boolean);
+  const components = Array.from(new Set(
+    opts.entries
+      .map((entry) => readString(entry.details?.component))
+      .filter(Boolean),
+  )).sort();
+  const lastEntry = opts.entries.at(-1);
+  const tokensBefore = opts.entries
+    .map((entry) => readNumber(entry.tokensBefore))
+    .reduce((total, value) => total + value, 0);
+  const payload: Record<string, unknown> = {
+    source: "compaction_ledger",
+    runId: opts.runId,
+    ledgerPath: opts.ledgerPath ?? "",
+    latestEntryPath: opts.latestEntryPath ?? "",
+    entryId: readString(lastEntry?.id),
+    entryIds,
+    entryCount: entryIds.length,
+    components: components.join(", "),
+    summary: previewText(readString(lastEntry?.summary)),
+    firstKeptEntryId: readString(lastEntry?.firstKeptEntryId),
+    tokensBefore,
+  };
+  if (opts.generation !== undefined) {
+    payload.generation = opts.generation;
+  }
+  if (opts.promotedKnowledgeId) {
+    payload.promotedKnowledgeId = opts.promotedKnowledgeId;
+  }
+  return jsonSafeRecord(payload);
+}
+
+function previewText(value: string, maxLength = 500): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
 }
 
 function observeRuntimeSessionLog(

@@ -59,6 +59,16 @@ class RuntimeSessionPromptResult:
 
 
 @dataclass(frozen=True)
+class RuntimeSessionCompactionInput:
+    run_id: str
+    entries: list[Mapping[str, Any]]
+    generation: int | None = None
+    ledger_path: str = ""
+    latest_entry_path: str = ""
+    promoted_knowledge_id: str = ""
+
+
+@dataclass(frozen=True)
 class RuntimeChildTaskHandlerInput:
     task_id: str
     child_session_id: str
@@ -261,6 +271,12 @@ class RuntimeSession:
 
     def list_child_logs(self) -> list[RuntimeSessionEventLog]:
         return self._event_store.list_children(self.session_id) if self._event_store is not None else []
+
+    def record_compaction(self, compaction: RuntimeSessionCompactionInput) -> None:
+        if not compaction.entries:
+            return
+        self.log.append(RuntimeSessionEventType.COMPACTION, _compaction_payload(compaction))
+        self.save()
 
     def save(self) -> None:
         if self._event_store is not None:
@@ -574,6 +590,47 @@ def _json_safe_value(value: Any) -> Any:
         return str(value)
 
 
+def _compaction_payload(compaction: RuntimeSessionCompactionInput) -> dict[str, Any]:
+    entry_ids = [
+        entry_id
+        for entry in compaction.entries
+        if (entry_id := _read_str(entry.get("id")))
+    ]
+    components = sorted(
+        {
+            component
+            for entry in compaction.entries
+            if isinstance(entry.get("details"), Mapping)
+            if (component := _read_str(entry["details"].get("component")))
+        }
+    )
+    last_entry = compaction.entries[-1]
+    tokens_before = sum(_read_int(entry.get("tokensBefore")) for entry in compaction.entries)
+    payload: dict[str, Any] = {
+        "source": "compaction_ledger",
+        "runId": compaction.run_id,
+        "ledgerPath": compaction.ledger_path,
+        "latestEntryPath": compaction.latest_entry_path,
+        "entryId": _read_str(last_entry.get("id")),
+        "entryIds": entry_ids,
+        "entryCount": len(entry_ids),
+        "components": ", ".join(components),
+        "summary": _preview_text(_read_str(last_entry.get("summary"))),
+        "firstKeptEntryId": _read_str(last_entry.get("firstKeptEntryId")),
+        "tokensBefore": tokens_before,
+    }
+    if compaction.generation is not None:
+        payload["generation"] = compaction.generation
+    if compaction.promoted_knowledge_id:
+        payload["promotedKnowledgeId"] = compaction.promoted_knowledge_id
+    return _json_safe_record(payload)
+
+
+def _preview_text(value: str, max_length: int = 500) -> str:
+    normalized = " ".join(value.split()).strip()
+    return f"{normalized[: max_length - 3]}..." if len(normalized) > max_length else normalized
+
+
 def _normalize_depth(value: int, name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         msg = f"{name} must be a non-negative integer"
@@ -583,3 +640,7 @@ def _normalize_depth(value: int, name: str) -> int:
 
 def _read_str(value: Any) -> str:
     return value if isinstance(value, str) else ""
+
+
+def _read_int(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0

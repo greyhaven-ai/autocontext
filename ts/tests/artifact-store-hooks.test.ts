@@ -101,4 +101,66 @@ describe("ArtifactStore extension hooks", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("returns hook-mutated compaction entries and paths after ledger writes", () => {
+    const root = makeRoot();
+    try {
+      const bus = new HookBus();
+      const runsRoot = join(root, "runs");
+      const redactedLedgerPath = join(runsRoot, "run-1", "redacted", "compactions.jsonl");
+      const redactedLatestPath = join(runsRoot, "run-1", "redacted", "compactions.latest");
+      const redactedEntry = {
+        id: "redacted-entry",
+        parentId: "",
+        timestamp: "2026-04-29T00:00:00.000Z",
+        summary: "redacted summary",
+        firstKeptEntryId: "redacted-kept",
+        tokensBefore: 5,
+        details: { component: "redacted_component" },
+      };
+      bus.on(HookEvents.ARTIFACT_WRITE, (event) => {
+        const path = String(event.payload.path ?? "");
+        if (path.endsWith("compactions.jsonl")) {
+          return {
+            path: redactedLedgerPath,
+            content: `${JSON.stringify(redactedEntry)}\n`,
+          };
+        }
+        if (path.endsWith("compactions.latest")) {
+          return { path: redactedLatestPath };
+        }
+        return undefined;
+      });
+      const store = new ArtifactStore({
+        runsRoot,
+        knowledgeRoot: join(root, "knowledge"),
+        hookBus: bus,
+      });
+
+      const result = store.appendCompactionEntries("run-1", [{
+        id: "original-entry",
+        parentId: "",
+        timestamp: "2026-04-29T00:00:00.000Z",
+        summary: "secret-bearing summary",
+        firstKeptEntryId: "original-kept",
+        tokensBefore: 100,
+        details: { component: "session_reports" },
+      }]);
+
+      expect(result).toMatchObject({
+        ledgerPath: redactedLedgerPath,
+        latestEntryPath: redactedLatestPath,
+        latestEntryId: "redacted-entry",
+        entries: [{
+          id: "redacted-entry",
+          summary: "redacted summary",
+          details: { component: "redacted_component" },
+        }],
+      });
+      expect(readFileSync(redactedLedgerPath, "utf-8")).toContain("redacted summary");
+      expect(readFileSync(redactedLedgerPath, "utf-8")).not.toContain("secret-bearing summary");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

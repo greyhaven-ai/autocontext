@@ -30,6 +30,13 @@ export interface ArtifactStoreOpts {
   hookBus?: HookBus | null;
 }
 
+export interface AppendedCompactionEntries {
+  ledgerPath: string;
+  latestEntryPath: string;
+  latestEntryId: string;
+  entries: CompactionEntry[];
+}
+
 interface ArtifactWriteRequest {
   path: string;
   format: "json" | "jsonl" | "markdown" | "text";
@@ -69,21 +76,31 @@ export class ArtifactStore {
     return this.compactionLedger.latestEntryPath(runId);
   }
 
-  appendCompactionEntries(runId: string, entries: CompactionEntry[]): void {
-    if (entries.length === 0) return;
+  appendCompactionEntries(
+    runId: string,
+    entries: CompactionEntry[],
+  ): AppendedCompactionEntries | null {
+    if (entries.length === 0) return null;
     const normalizedEntries = entries.map(normalizeCompactionEntry);
+    const originalLedgerContent = serializeCompactionEntries(normalizedEntries);
     const ledgerRequest = this.applyArtifactWriteHook({
       path: this.compactionLedger.ledgerPath(runId),
       format: "jsonl",
       append: true,
       payload: { entries: normalizedEntries },
-      content: serializeCompactionEntries(normalizedEntries),
+      content: originalLedgerContent,
     });
+    const contentChanged = ledgerRequest.content !== undefined
+      && ledgerRequest.content !== originalLedgerContent;
+    const contentEntries = contentChanged
+      ? readCompactionEntriesJsonl(ledgerRequest.content)
+      : null;
+    if (contentChanged && contentEntries === null) {
+      throw new Error("artifact_write content for compaction ledger must be JSONL compaction entries");
+    }
     const payloadEntries = readCompactionEntries(ledgerRequest.payload?.entries);
-    const finalEntries = payloadEntries ?? normalizedEntries;
-    const ledgerContent = payloadEntries
-      ? serializeCompactionEntries(finalEntries)
-      : ledgerRequest.content ?? serializeCompactionEntries(finalEntries);
+    const finalEntries = contentEntries ?? payloadEntries ?? normalizedEntries;
+    const ledgerContent = serializeCompactionEntries(finalEntries);
     mkdirSync(dirname(ledgerRequest.path), { recursive: true });
     appendFileSync(ledgerRequest.path, ensureTrailingNewline(ledgerContent), "utf-8");
 
@@ -100,6 +117,12 @@ export class ArtifactStore {
       ensureTrailingNewline(latestRequest.content ?? `${latestEntryId}\n`),
       "utf-8",
     );
+    return {
+      ledgerPath: ledgerRequest.path,
+      latestEntryPath: latestRequest.path,
+      latestEntryId,
+      entries: finalEntries,
+    };
   }
 
   readCompactionEntries(runId: string, opts: { limit?: number } = {}): CompactionEntry[] {
@@ -348,6 +371,21 @@ function readCompactionEntries(value: unknown): CompactionEntry[] | null {
     });
   }
   return entries;
+}
+
+function readCompactionEntriesJsonl(content: string | undefined): CompactionEntry[] | null {
+  if (content === undefined) {
+    return null;
+  }
+  const parsedEntries: unknown[] = [];
+  for (const line of content.split(/\r?\n/).map((part) => part.trim()).filter(Boolean)) {
+    try {
+      parsedEntries.push(JSON.parse(line) as unknown);
+    } catch {
+      return null;
+    }
+  }
+  return readCompactionEntries(parsedEntries);
 }
 
 function ensureTrailingNewline(content: string): string {
