@@ -207,6 +207,77 @@ describe("external eval diagnostics", () => {
     });
   });
 
+  test("does not treat ordinary assertion mismatches as verifier contracts", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-assertion-1",
+      createdAt: "2026-05-07T15:13:00.000Z",
+      trials: [
+        {
+          taskId: "csv-to-parquet",
+          trialId: "csv-to-parquet.1-of-1.tb-assertion-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "csv-to-parquet.1-of-1.tb-assertion-1",
+          evidenceRefs: ["csv-to-parquet/sessions/tests.log"],
+          verifierOutput: [
+            '"test_data_matches": "failed"',
+            'AssertionError: Attributes of DataFrame.iloc[:, 1] (column name="age") are different',
+            'Expected: int64',
+            'Actual: int32',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(report.diagnostics).toHaveLength(1);
+    expect(report.diagnostics[0]).toMatchObject({
+      category: "agent-task-failure",
+    });
+    expect(report.summary.countsByCategory).toEqual({
+      "agent-task-failure": 1,
+    });
+  });
+
+  test("classifies missing checked files as verifier contracts", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-missing-file-1",
+      createdAt: "2026-05-07T15:14:00.000Z",
+      trials: [
+        {
+          taskId: "polyglot-c-py",
+          trialId: "polyglot-c-py.1-of-1.tb-missing-file-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "polyglot-c-py.1-of-1.tb-missing-file-1",
+          evidenceRefs: ["polyglot-c-py/sessions/tests.log"],
+          verifierOutput: [
+            '"test_fibonacci_polyglot": "failed"',
+            "python3: can't open file '/app/main.py.c': [Errno 2] No such file or directory",
+            "cc1: fatal error: /app/main.py.c: No such file or directory",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(report.diagnostics).toHaveLength(1);
+    expect(report.diagnostics[0]).toMatchObject({
+      category: "verifier-contract-mismatch",
+    });
+    expect(report.summary.countsByCategory).toEqual({
+      "verifier-contract-mismatch": 1,
+    });
+  });
+
   test("keeps resolved trials with adapter runtime issues visible without counting them unresolved", () => {
     const report = buildExternalEvalDiagnosticReport({
       runId: "tb-run-1",
