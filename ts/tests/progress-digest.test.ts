@@ -40,6 +40,31 @@ describe("ProgressDigest", () => {
     expect(digest.workerDigests[0].status).toBe("redirected");
   });
 
+  it("keeps child task failure reasons visible in recent changes", () => {
+    const coord = Coordinator.create("parent-session", "Build API");
+    const worker = coord.delegate("Too deep", "analyst");
+    coord.startWorker(worker.workerId);
+    coord.failWorker(
+      worker.workerId,
+      "Maximum child task depth (1) exceeded",
+      {
+        taskId: "depth",
+        childSessionId: `task:parent-session:depth:${worker.workerId}`,
+        parentSessionId: "parent-session",
+        role: "analyst",
+        cwd: "/workspace",
+        depth: 2,
+        maxDepth: 1,
+        isError: true,
+      },
+    );
+
+    const digest = ProgressDigest.fromCoordinator(coord);
+    const failureChange = digest.recentChanges.find((change) => change.startsWith("worker failed"));
+    expect(failureChange).toContain(`workerId=${worker.workerId}`);
+    expect(failureChange).toContain("error=Maximum child task depth (1) exceeded");
+  });
+
   it("from session without coordinator", () => {
     const session = Session.create({ goal: "Simple task" });
     session.submitTurn({ prompt: "do it", role: "competitor" });

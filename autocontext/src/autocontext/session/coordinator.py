@@ -206,13 +206,7 @@ class Coordinator(BaseModel):
         """Mark a running worker as failed."""
         worker = self._get_worker(worker_id)
         worker.fail(error=error)
-        self._emit(
-            CoordinatorEventType.WORKER_FAILED,
-            {
-                **_worker_event_payload(worker_id, details),
-                "error": error,
-            },
-        )
+        self._emit(CoordinatorEventType.WORKER_FAILED, _failed_worker_event_payload(worker_id, error, details))
 
     def stop_worker(self, worker_id: str, reason: str = "") -> None:
         """Redirect a worker away from its current task."""
@@ -265,4 +259,17 @@ def _worker_event_payload(
     worker_id: str,
     details: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {**dict(details or {}), "worker_id": worker_id}
+    payload = {"worker_id": worker_id, **dict(details or {})}
+    payload["worker_id"] = worker_id
+    return payload
+
+
+def _failed_worker_event_payload(
+    worker_id: str,
+    error: str,
+    details: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {"worker_id": worker_id, "error": error, **dict(details or {})}
+    payload["worker_id"] = worker_id
+    payload["error"] = error
+    return payload

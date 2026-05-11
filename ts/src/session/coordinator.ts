@@ -132,17 +132,17 @@ export class Coordinator {
 
   startWorker(workerId: string, details: Record<string, unknown> = {}): void {
     this.getWorker(workerId).start();
-    this.emit(CoordinatorEventType.WORKER_STARTED, { ...details, workerId });
+    this.emit(CoordinatorEventType.WORKER_STARTED, workerEventPayload(workerId, details));
   }
 
   completeWorker(workerId: string, result: string, details: Record<string, unknown> = {}): void {
     this.getWorker(workerId).complete(result);
-    this.emit(CoordinatorEventType.WORKER_COMPLETED, { ...details, workerId });
+    this.emit(CoordinatorEventType.WORKER_COMPLETED, workerEventPayload(workerId, details));
   }
 
   failWorker(workerId: string, error: string = "", details: Record<string, unknown> = {}): void {
     this.getWorker(workerId).fail(error);
-    this.emit(CoordinatorEventType.WORKER_FAILED, { ...details, workerId, error });
+    this.emit(CoordinatorEventType.WORKER_FAILED, failedWorkerEventPayload(workerId, error, details));
   }
 
   stopWorker(workerId: string, reason: string = ""): void {
@@ -178,4 +178,21 @@ export class Coordinator {
       payload: { coordinatorId: this.coordinatorId, ...payload },
     });
   }
+}
+
+function workerEventPayload(workerId: string, details: Record<string, unknown>): Record<string, unknown> {
+  const payload = { workerId, ...details };
+  payload.workerId = workerId;
+  return payload;
+}
+
+function failedWorkerEventPayload(
+  workerId: string,
+  error: string,
+  details: Record<string, unknown>,
+): Record<string, unknown> {
+  const payload = { workerId, error, ...details };
+  payload.workerId = workerId;
+  payload.error = error;
+  return payload;
 }
