@@ -74,6 +74,10 @@ Runtime context is not a new top-level product noun. It is the ordered prompt/ru
 
 The canonical layer order is exposed in Python as `autocontext.session.RUNTIME_CONTEXT_LAYERS` and in TypeScript as `RUNTIME_CONTEXT_LAYERS` from `autoctx`. Implementations may render the layers differently, but they should keep this order observable:
 
+Python and TypeScript also expose a small materialization surface for this contract: `assemble_runtime_context(RuntimeContextAssemblyRequest)` and `assembleRuntimeContext(new RuntimeContextAssemblyRequest(...))`. Both return a `RuntimeContextBundle` with every canonical layer present, non-empty entries ordered by layer, and provenance metadata for repo instructions, knowledge components, runtime skills, tools, and session history. This bundle is an observable assembly artifact; wiring it into a concrete provider prompt or proprietary deployment policy remains a separate runtime concern.
+
+Child assembly helpers recompute workspace-discovered layers from the child `cwd`, inherit only globally safe layers, and require explicit child `Scenario`/`Task` slices and child session history overrides when those layers should be present.
+
 | Order | Layer | Owner | Persistence | Budget / compaction behavior | Child-task behavior |
 | --- | --- | --- | --- | --- | --- |
 | 1 | system/runtime policy | Runtime | Bundled | Protected; never trimmed by prompt budget. | Inherited. |

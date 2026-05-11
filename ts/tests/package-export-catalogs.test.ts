@@ -37,6 +37,9 @@ describe("package root exports", () => {
     expect(pkg.resolveBrowserSessionConfig).toBeDefined();
     expect(pkg.evaluateBrowserActionPolicy).toBeDefined();
     expect(pkg.validateBrowserSessionConfig).toBeDefined();
+    expect(pkg.assembleRuntimeContext).toBeDefined();
+    expect(pkg.RuntimeContextAssemblyRequest).toBeDefined();
+    expect(pkg.RuntimeContextBundle).toBeDefined();
   });
 
   it("avoids package catalog barrel hops in ts/src/index.ts", () => {
