@@ -1,6 +1,6 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -44,6 +44,37 @@ describe("RuntimeWorkspaceEnv", () => {
     expect(await env.readFile("packages/core/README.md")).toBe("core\n");
   });
 
+  it("rejects in-memory file and directory path collisions", async () => {
+    const env = createInMemoryWorkspaceEnv({ cwd: "/project" });
+    await env.writeFile("node", "file\n");
+
+    await expect(env.writeFile("node/child.txt", "child\n")).rejects.toThrow(
+      "Not a directory: /project/node",
+    );
+    await expect(env.mkdir("node/child", { recursive: true })).rejects.toThrow(
+      "Not a directory: /project/node",
+    );
+
+    const other = createInMemoryWorkspaceEnv({ cwd: "/project" });
+    await other.mkdir("node", { recursive: true });
+
+    await expect(other.writeFile("node", "file\n")).rejects.toThrow(
+      "Is a directory: /project/node",
+    );
+    await expect(env.mkdir("node")).rejects.toThrow("File exists: /project/node");
+  });
+
+  it("rejects in-memory file collisions during fixture setup", () => {
+    expect(() =>
+      createInMemoryWorkspaceEnv({
+        files: {
+          node: "file\n",
+          "node/child.txt": "child\n",
+        },
+      }),
+    ).toThrow("Not a directory: /node");
+  });
+
   it("maps local workspace file operations through the virtual root", async () => {
     const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
     const env = createLocalWorkspaceEnv({ root, cwd: "/repo" });
@@ -53,6 +84,33 @@ describe("RuntimeWorkspaceEnv", () => {
     expect(env.resolvePath("src/index.ts")).toBe("/repo/src/index.ts");
     expect(await env.readFile("/repo/src/index.ts")).toBe("console.log('hello');\n");
     expect(await env.readdir("src")).toEqual(["index.ts"]);
+  });
+
+  it("stats and removes a local symlink without deleting the target", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
+    const env = createLocalWorkspaceEnv({ root, cwd: "/repo" });
+    await env.mkdir("target", { recursive: true });
+    await env.writeFile("target/keep.txt", "safe\n");
+    symlinkSync(join(root, "repo", "target"), join(root, "repo", "link"), "dir");
+
+    const linkStat = await env.stat("link");
+    expect(linkStat.isSymbolicLink).toBe(true);
+    expect(linkStat.isDirectory).toBe(false);
+
+    await env.rm("link", { recursive: true });
+
+    expect(await env.exists("link")).toBe(false);
+    expect(await env.readFile("target/keep.txt")).toBe("safe\n");
+  });
+
+  it("keeps lexical escape paths inside the local workspace root", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-workspace-"));
+    const env = createLocalWorkspaceEnv({ root, cwd: "/repo" });
+    await env.writeFile("../../inside-root.txt", "inside\n");
+
+    expect(await env.readFile("/inside-root.txt")).toBe("inside\n");
+    expect(existsSync(join(root, "inside-root.txt"))).toBe(true);
+    expect(existsSync(join(dirname(root), "inside-root.txt"))).toBe(false);
   });
 
   it("executes local commands inside the requested virtual cwd", async () => {

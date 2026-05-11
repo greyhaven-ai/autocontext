@@ -88,9 +88,7 @@ Compaction requirements are deliberately separate from prompt history mutation. 
 
 Runtime sessions complement `RunTrace` and the external production trace contract; they should not duplicate either schema by default. `RunTrace` remains the causal run-state artifact used by analytics. A production trace remains the customer-facing emit/ingest privacy contract. Runtime-session logs are operator-facing observability artifacts; Python and TypeScript expose explicit runtime-session-to-`RunTrace` adapters for analytics reuse, and those adapters intentionally map only allowlisted lineage, status, command/tool, child-task, and compaction reference fields rather than copying raw prompts, responses, stdout, stderr, or arbitrary handler metadata.
 
-Remaining implementation issues should stay scoped to adapter work rather than changing the vocabulary model:
-
-- Keep Python and TypeScript command/tool grant event parity as scoped grant recording expands.
+Python and TypeScript command grants use the same runtime-session event vocabulary for grant lifecycle recording. Both runtimes redact stdout, stderr, args, and error previews against the effective env supplied to the grant, keep local command wrappers shell-free, and apply child-task inheritance policy before exposing already-scoped grants to child workspaces. Tool grant events use the same `TOOL_CALL` payload fields where a runtime surface emits tool lifecycle notifications.
 
 ## Current Gaps And Risks
 

@@ -4,6 +4,7 @@ from autocontext.session.runtime_events import (
     RuntimeSessionEventStore,
     RuntimeSessionEventType,
 )
+from autocontext.session.runtime_grant_events import create_runtime_session_grant_event_sink
 from autocontext.session.runtime_session import (
     DEFAULT_CHILD_TASK_MAX_DEPTH,
     RuntimeChildTaskHandlerInput,
@@ -53,6 +54,7 @@ __all__ = [
     "RuntimeSessionPromptResult",
     "RuntimeSessionRunRecording",
     "build_runtime_session_timeline",
+    "create_runtime_session_grant_event_sink",
     "create_runtime_session_for_run",
     "open_runtime_session_for_run",
     "read_runtime_session_by_id",

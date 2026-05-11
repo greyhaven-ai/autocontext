@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
 from autocontext.runtimes.workspace_env import (
+    RuntimeCommandGrant,
     RuntimeExecOptions,
+    RuntimeGrantScopePolicy,
     create_in_memory_workspace_env,
+    create_local_runtime_command_grant,
     create_local_workspace_env,
     define_runtime_command,
 )
@@ -98,6 +102,28 @@ def test_local_workspace_executes_commands_inside_virtual_cwd(tmp_path: Path) ->
     assert result.exit_code == 0
 
 
+def test_local_workspace_rejects_exec_cwd_symlink_escape_for_grants(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    (tmp_path / "repo" / "link").symlink_to(outside, target_is_directory=True)
+    scoped = env.scope(
+        commands=[
+            create_local_runtime_command_grant(
+                "write-cwd",
+                sys.executable,
+                args=["-c", "from pathlib import Path; Path('pwned.txt').write_text('outside')"],
+            )
+        ]
+    )
+
+    with pytest.raises(ValueError, match="Path escapes workspace root"):
+        scoped.exec("write-cwd", options=RuntimeExecOptions(cwd="link"))
+
+    assert not (outside / "pwned.txt").exists()
+
+
 def test_scoped_command_grants_are_not_visible_to_parent() -> None:
     env = create_in_memory_workspace_env(cwd="/project")
     scoped = env.scope(
@@ -158,6 +184,158 @@ def test_command_grants_receive_trusted_env_and_virtual_cwd() -> None:
     result = scoped.exec("show-context", options=RuntimeExecOptions(env={"AUTOCTX_TOKEN": "prompt-value"}))
 
     assert result.stdout == "/project/packages/core:trusted-secret"
+
+
+def test_command_grants_emit_redacted_lifecycle_events() -> None:
+    from autocontext.runtimes.workspace_env import RuntimeGrantEvent
+
+    observed: list[RuntimeGrantEvent] = []
+    env = create_in_memory_workspace_env(cwd="/project")
+    scoped = env.scope(
+        commands=[
+            define_runtime_command(
+                "show-secret",
+                lambda _args, context: {
+                    "stdout": context.env.get("AUTOCTX_TOKEN", ""),
+                    "stderr": "",
+                    "exit_code": 0,
+                },
+                env={"AUTOCTX_TOKEN": "trusted-secret"},
+                provenance={"source": "test"},
+            )
+        ],
+        grant_event_sink=lambda event: observed.append(event),
+    )
+
+    result = scoped.exec("show-secret --token trusted-secret")
+
+    assert result.stdout == "trusted-secret"
+    assert "trusted-secret" not in repr([event.to_dict() for event in observed])
+    assert [event.phase for event in observed] == ["start", "end"]
+    assert observed[0].to_dict() == {
+        "kind": "command",
+        "phase": "start",
+        "name": "show-secret",
+        "cwd": "/project",
+        "argsSummary": ["--token", "[redacted]"],
+        "redaction": {
+            "envKeys": ["AUTOCTX_TOKEN"],
+            "args": {"redacted": True, "truncated": False},
+        },
+        "provenance": {"source": "test"},
+    }
+    assert observed[1].to_dict()["stdout"] == "[redacted]"
+    assert observed[1].to_dict()["redaction"]["stdout"]["redacted"] is True
+
+
+def test_command_grants_redact_overlapping_secrets_longest_first() -> None:
+    from autocontext.runtimes.workspace_env import RuntimeGrantEvent
+
+    observed: list[RuntimeGrantEvent] = []
+    env = create_in_memory_workspace_env(cwd="/project")
+    scoped = env.scope(
+        commands=[
+            define_runtime_command(
+                "show-overlap",
+                lambda _args, _context: {
+                    "stdout": "abcd",
+                    "stderr": "",
+                    "exit_code": 0,
+                },
+                env={"A": "abc", "B": "abcd"},
+            )
+        ],
+        grant_event_sink=observed.append,
+    )
+
+    result = scoped.exec("show-overlap abcd")
+
+    assert result.stdout == "abcd"
+    assert [event.phase for event in observed] == ["start", "end"]
+    assert observed[0].args_summary == ["[redacted]"]
+    assert observed[1].stdout == "[redacted]"
+    assert "[redacted]d" not in repr([event.to_dict() for event in observed])
+
+
+def test_command_grants_emit_configured_kind() -> None:
+    from autocontext.runtimes.workspace_env import RuntimeGrantEvent
+
+    observed: list[RuntimeGrantEvent] = []
+    env = create_in_memory_workspace_env(cwd="/project")
+    scoped = env.scope(
+        commands=[
+            RuntimeCommandGrant(
+                name="toolish",
+                kind="tool",
+                execute=lambda _args, _context: {"stdout": "ok", "stderr": "", "exit_code": 0},
+            )
+        ],
+        grant_event_sink=observed.append,
+    )
+
+    result = scoped.exec("toolish")
+
+    assert result.stdout == "ok"
+    assert [event.kind for event in observed] == ["tool", "tool"]
+
+
+def test_local_command_grants_do_not_inherit_host_env_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AUTOCTX_HOST_SECRET", "host-secret")
+    observed = []
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    scoped = env.scope(
+        commands=[
+            create_local_runtime_command_grant(
+                "python-host-env",
+                sys.executable,
+                args=["-c", "import os; print(os.environ.get('AUTOCTX_HOST_SECRET', ''), end='')"],
+            )
+        ],
+        grant_event_sink=observed.append,
+    )
+
+    result = scoped.exec("python-host-env")
+
+    assert result.stdout == ""
+    assert "host-secret" not in repr([event.to_dict() for event in observed])
+
+
+def test_local_command_grants_apply_call_site_timeout(tmp_path: Path) -> None:
+    env = create_local_workspace_env(root=tmp_path, cwd="/repo")
+    env.mkdir(".", recursive=True)
+    scoped = env.scope(
+        commands=[
+            create_local_runtime_command_grant(
+                "slow-python",
+                sys.executable,
+                args=["-c", "import time; time.sleep(1); print('late', end='')"],
+            )
+        ]
+    )
+
+    result = scoped.exec("slow-python", options=RuntimeExecOptions(timeout_ms=10))
+
+    assert result.exit_code == 124
+    assert result.stdout == ""
+    assert result.stderr == "Command timed out"
+
+
+def test_command_grant_child_task_inheritance_policy() -> None:
+    env = create_in_memory_workspace_env(cwd="/project").scope(
+        commands=[
+            define_runtime_command(
+                "parent-only",
+                lambda _args, _context: {"stdout": "parent", "stderr": "", "exit_code": 0},
+                scope=RuntimeGrantScopePolicy(inherit_to_child_tasks=False),
+            )
+        ]
+    )
+
+    child = env.scope(grant_inheritance="child_task")
+
+    assert env.exec("parent-only").stdout == "parent"
+    assert child.exec("parent-only").exit_code == 127
 
 
 def test_cleanup_closes_in_memory_workspace() -> None:
