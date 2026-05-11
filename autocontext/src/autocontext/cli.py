@@ -167,9 +167,15 @@ def _exit_provider_error(
     provider_name: str,
     settings: AppSettings,
     json_output: bool,
+    ndjson_output: bool = False,
 ) -> NoReturn:
     message = format_runtime_provider_error(exc, provider_name=provider_name, settings=settings)
-    if json_output:
+    if ndjson_output:
+        # AC-752 (P2 follow-up): under --ndjson, stdout is contract-bound to be
+        # newline-delimited JSON. Emit a single structured error event on
+        # stdout so ndjson consumers don't get a non-JSON line in the stream.
+        typer.echo(json.dumps({"event": "error", "message": message}))
+    elif json_output:
         _write_json_stderr(message)
     else:
         console.print(f"[red]{message}[/red]")
@@ -1540,6 +1546,16 @@ def improve(
     from autocontext.execution.task_runner import SimpleAgentTask
     from autocontext.providers.registry import get_provider as get_judge_provider
 
+    # AC-752 (P3 follow-up): --json (single final blob) and --ndjson (streaming
+    # events) are mutually exclusive output modes. Passing both produces a
+    # mixed, un-parseable stream. Reject up front with a clear error.
+    if json_output and ndjson_output:
+        typer.echo(
+            "Error: --json and --ndjson are mutually exclusive output modes; pick one.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
     settings = apply_judge_runtime_overrides(
         load_settings(),
         provider_name=provider_override,
@@ -1587,9 +1603,17 @@ def improve(
             provider_name=settings.judge_provider,
             settings=settings,
             json_output=json_output,
+            ndjson_output=ndjson_output,
         )
 
-    if json_output:
+    if ndjson_output:
+        # AC-752: under --ndjson, stdout is pure newline-delimited JSON
+        # (already streamed via on_event). Suppress the Rich human-readable
+        # summary so consumers can reliably parse each stdout line as JSON.
+        # --json + --ndjson is rejected up front, so we don't need to handle
+        # the both-set case here.
+        pass
+    elif json_output:
         _write_json_stdout(
             {
                 "best_score": result.best_score,
@@ -1599,11 +1623,6 @@ def improve(
                 "best_output": result.best_output,
             }
         )
-    elif ndjson_output:
-        # AC-752: under --ndjson, stdout is pure newline-delimited JSON
-        # (already streamed via on_event). Suppress the Rich human-readable
-        # summary so consumers can reliably parse each stdout line as JSON.
-        pass
     else:
         console.print(f"[bold]Best score:[/bold] {result.best_score:.4f} (round {result.best_round})")
         console.print(f"[bold]Rounds:[/bold] {result.total_rounds}")

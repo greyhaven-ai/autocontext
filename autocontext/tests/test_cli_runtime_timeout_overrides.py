@@ -273,6 +273,44 @@ class TestImproveRuntimeTimeoutOverrides:
         # Baseline preserved because the resolved judge provider is not claude-cli.
         assert captured["settings"].claude_max_total_seconds == settings.claude_max_total_seconds
 
+    def test_improve_applies_claude_max_total_seconds_under_auto_judge_provider(self, tmp_path: Path) -> None:
+        # AC-751 (P1 follow-up): when judge_provider='auto' resolves to claude-cli
+        # via agent_provider, the flag should still write claude_max_total_seconds.
+        # Previously the gate compared against the literal 'auto' string and
+        # silently dropped the override on the subscription-tier default path.
+        settings = _settings(tmp_path).model_copy(update={"judge_provider": "auto", "agent_provider": "claude-cli"})
+        captured: dict[str, AppSettings] = {}
+
+        def _fake_get_provider(current: AppSettings) -> _RecordingProvider:
+            captured["settings"] = current
+            return _RecordingProvider()
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", side_effect=_fake_get_provider),
+            patch("autocontext.execution.improvement_loop.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = _FakeLoopResult()
+            result = runner.invoke(
+                app,
+                [
+                    "improve",
+                    "-p",
+                    "x",
+                    "-r",
+                    "y",
+                    "--claude-max-total-seconds",
+                    "1800",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        # The judge_provider stays 'auto' (we don't rewrite it); only the
+        # claude budget should land on settings since auto resolves to claude-cli.
+        assert captured["settings"].judge_provider == "auto"
+        assert captured["settings"].claude_max_total_seconds == 1800.0
+
     def test_improve_timeout_help_mentions_provider_setting(self) -> None:
         # AC-751: `--timeout` help text should call out the specific provider
         # setting it writes to (e.g. `claude_timeout`) so users discover the

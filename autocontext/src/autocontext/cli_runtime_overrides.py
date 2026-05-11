@@ -90,15 +90,27 @@ def apply_judge_runtime_overrides(
     if model:
         updates["judge_model"] = model
 
-    resolved_provider = (provider_name or settings.judge_provider).strip().lower()
+    # AC-751 (P1 follow-up): resolve "auto" the same way get_provider() does,
+    # so provider-specific flags (like --claude-max-total-seconds) gate on the
+    # effective provider rather than the literal "auto" string. Otherwise
+    # subscription-tier users with judge_provider='auto' + agent_provider='claude-cli'
+    # would have their claude budget override silently dropped.
+    from autocontext.providers.registry import resolve_auto_judge_provider
+
+    declared_provider = (provider_name or settings.judge_provider).strip().lower()
+    if declared_provider == "auto":
+        resolved_provider = resolve_auto_judge_provider(settings)
+    else:
+        resolved_provider = declared_provider
+
     _apply_timeout_overrides(
         updates,
         provider_names=[resolved_provider],
         timeout=timeout,
     )
 
-    # AC-751: only meaningful for claude-cli; gated on provider so other
-    # providers don't silently absorb a budget that does not apply to them.
+    # AC-751: only meaningful for claude-cli; gated on the effective provider
+    # so other providers don't silently absorb a budget that does not apply.
     if claude_max_total_seconds is not None and resolved_provider == "claude-cli":
         updates["claude_max_total_seconds"] = claude_max_total_seconds
 

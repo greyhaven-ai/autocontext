@@ -113,7 +113,7 @@ def _configured_provider(settings: AppSettings, field_name: str) -> str:
     return value.lower().strip() if isinstance(value, str) else ""
 
 
-def _resolve_auto_judge_provider(settings: AppSettings) -> str:
+def resolve_auto_judge_provider(settings: AppSettings) -> str:
     """Map judge_provider='auto' to an effective provider type (AC-586).
 
     Prefer the first explicitly configured execution provider in priority order:
@@ -123,6 +123,9 @@ def _resolve_auto_judge_provider(settings: AppSettings) -> str:
     have local CLI auth don't hit the Anthropic SDK's "Could not resolve
     authentication method" error downstream. For any other provider, preserve
     the historical anthropic default.
+
+    Public so CLI override-application logic can gate provider-specific flags
+    on the same effective provider that `get_provider()` will dispatch to.
     """
     for field_name in _AUTO_JUDGE_PROVIDER_PRIORITY:
         provider = _configured_provider(settings, field_name)
@@ -146,7 +149,7 @@ def get_provider(settings: AppSettings) -> LLMProvider:
     """
     provider_type = settings.judge_provider.lower().strip()
     if provider_type == "auto":
-        provider_type = _resolve_auto_judge_provider(settings)
+        provider_type = resolve_auto_judge_provider(settings)
     base_url = settings.judge_base_url
 
     # MLX provider has its own construction path using mlx_* settings

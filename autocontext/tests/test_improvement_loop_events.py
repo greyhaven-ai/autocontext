@@ -258,3 +258,81 @@ class TestImproveNdjsonFlag:
         assert final["best_round"] == 1
         assert final["total_rounds"] == 1
         assert final["met_threshold"] is True
+
+    def test_ndjson_keeps_stdout_parseable_on_provider_error(self, tmp_path) -> None:
+        # AC-752 (P2 follow-up): when --ndjson is set and a provider raises, the
+        # CLI must not write Rich/plain text to stdout (would poison the ndjson
+        # stream). Either an error event line on stdout, or write to stderr.
+        import json as _json
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from autocontext.cli import app
+        from autocontext.config.settings import AppSettings
+        from autocontext.providers.base import ProviderError
+
+        runner = CliRunner()
+
+        class _BoomProvider:
+            def complete(self, *_args, **_kwargs):
+                raise ProviderError("ClaudeCLIRuntime failed: timeout")
+
+            def default_model(self):
+                return "claude-cli"
+
+        settings = AppSettings(
+            db_path=tmp_path / "runs" / "autocontext.sqlite3",
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+            judge_provider="claude-cli",
+        )
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", return_value=_BoomProvider()),
+        ):
+            result = runner.invoke(
+                app,
+                ["improve", "-p", "x", "-r", "y", "--provider", "claude-cli", "--ndjson"],
+            )
+
+        assert result.exit_code == 1
+        # Every non-empty stdout line must be valid JSON, so ndjson consumers
+        # can parse uniformly. An error event is fine; raw text is not.
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            _json.loads(line)  # raises if any stdout line is non-JSON
+
+    def test_json_and_ndjson_combination_is_rejected(self, tmp_path) -> None:
+        # AC-752 (P3 follow-up): --json (final-blob) and --ndjson (streaming) are
+        # mutually exclusive output modes. Passing both produces a mixed,
+        # un-parseable stream. The CLI should reject the combination up front.
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from autocontext.cli import app
+        from autocontext.config.settings import AppSettings
+
+        runner = CliRunner()
+
+        settings = AppSettings(
+            db_path=tmp_path / "runs" / "autocontext.sqlite3",
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+            judge_provider="anthropic",
+        )
+
+        with patch("autocontext.cli.load_settings", return_value=settings):
+            result = runner.invoke(app, ["improve", "-p", "x", "-r", "y", "--json", "--ndjson"])
+
+        assert result.exit_code != 0
+        # The error message should mention both flags so the user knows why.
+        combined = (result.stdout + (result.stderr or "")).lower()
+        assert "--json" in combined and "--ndjson" in combined
