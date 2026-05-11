@@ -414,7 +414,7 @@ class LocalWorkspaceEnv:
     def exec(self, command: str, options: RuntimeExecOptions | None = None) -> RuntimeExecResult:
         exec_options = options or RuntimeExecOptions()
         virtual_cwd = self.resolve_path(exec_options.cwd) if exec_options.cwd else self.cwd
-        host_cwd = self._to_host_path(virtual_cwd)
+        host_cwd = self._to_followed_host_path(virtual_cwd)
         granted = _maybe_run_granted_command(
             self._commands,
             command,
@@ -464,13 +464,13 @@ class LocalWorkspaceEnv:
         )
 
     def read_file(self, file_path: str) -> str:
-        return self._to_host_path(self.resolve_path(file_path)).read_text(encoding="utf-8")
+        return self._to_followed_host_path(self.resolve_path(file_path)).read_text(encoding="utf-8")
 
     def read_file_bytes(self, file_path: str) -> bytes:
-        return self._to_host_path(self.resolve_path(file_path)).read_bytes()
+        return self._to_followed_host_path(self.resolve_path(file_path)).read_bytes()
 
     def write_file(self, file_path: str, content: str | bytes) -> None:
-        host_path = self._to_host_path(self.resolve_path(file_path))
+        host_path = self._to_followed_host_path(self.resolve_path(file_path))
         host_path.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(content, str):
             host_path.write_text(content, encoding="utf-8")
@@ -489,14 +489,14 @@ class LocalWorkspaceEnv:
         )
 
     def readdir(self, dir_path: str) -> list[str]:
-        return sorted(child.name for child in self._to_host_path(self.resolve_path(dir_path)).iterdir())
+        return sorted(child.name for child in self._to_followed_host_path(self.resolve_path(dir_path)).iterdir())
 
     def exists(self, file_path: str) -> bool:
         host_path = self._to_host_path(self.resolve_path(file_path))
         return host_path.exists() or host_path.is_symlink()
 
     def mkdir(self, dir_path: str, *, recursive: bool = False) -> None:
-        self._to_host_path(self.resolve_path(dir_path)).mkdir(parents=recursive, exist_ok=recursive)
+        self._to_followed_host_path(self.resolve_path(dir_path)).mkdir(parents=recursive, exist_ok=recursive)
 
     def rm(self, file_path: str, *, recursive: bool = False, force: bool = False) -> None:
         host_path = self._to_host_path(self.resolve_path(file_path))
@@ -529,6 +529,15 @@ class LocalWorkspaceEnv:
         except ValueError as exc:
             raise ValueError(f"Path escapes workspace root: {virtual_path}") from exc
         return host_path
+
+    def _to_followed_host_path(self, virtual_path: str) -> Path:
+        host_path = self._to_host_path(virtual_path)
+        resolved = host_path.resolve()
+        try:
+            resolved.relative_to(self._root)
+        except ValueError as exc:
+            raise ValueError(f"Path escapes workspace root: {virtual_path}") from exc
+        return resolved
 
 
 def _create_memory_state(files: Mapping[str, str | bytes] | None) -> _MemoryState:
@@ -622,7 +631,7 @@ def _maybe_run_granted_command(
     emit_runtime_grant_event(
         grant_event_sink,
         RuntimeGrantEvent(
-            kind="command",
+            kind=grant.kind,
             phase="start",
             name=grant.name,
             cwd=cwd,
@@ -644,7 +653,7 @@ def _maybe_run_granted_command(
         emit_runtime_grant_event(
             grant_event_sink,
             RuntimeGrantEvent(
-                kind="command",
+                kind=grant.kind,
                 phase="end",
                 name=grant.name,
                 cwd=cwd,
@@ -666,7 +675,7 @@ def _maybe_run_granted_command(
         emit_runtime_grant_event(
             grant_event_sink,
             RuntimeGrantEvent(
-                kind="command",
+                kind=grant.kind,
                 phase="error",
                 name=grant.name,
                 cwd=cwd,

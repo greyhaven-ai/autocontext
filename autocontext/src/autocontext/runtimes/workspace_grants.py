@@ -118,7 +118,7 @@ def normalize_output_limit(value: int | None) -> int:
 
 
 def secret_values(env: Mapping[str, str]) -> list[str]:
-    return sorted({value for value in env.values() if value})
+    return sorted({value for value in env.values() if value}, key=lambda value: (-len(value), value))
 
 
 def base_grant_redaction(
