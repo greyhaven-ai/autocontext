@@ -204,10 +204,21 @@ describe("runtime-session to RunTrace adapter", () => {
     });
     expect(trace.events[1].payload).not.toHaveProperty("stdout");
 
+    expect(trace.events[2].payload).toMatchObject({
+      task_id: "retry",
+      worker_id: "w-1",
+      child_session_id: "task:run:run-1:runtime:retry:w-1",
+    });
+
     expect(trace.events[3].payload).toMatchObject({
       parent_session_id: "run:run-1:runtime",
       task_id: "retry",
       worker_id: "w-1",
+    });
+    expect(trace.events[5].payload).toMatchObject({
+      task_id: "retry",
+      worker_id: "w-1",
+      child_session_id: "task:run:run-1:runtime:retry:w-1",
     });
     expect(trace.events[6].payload).toMatchObject({
       entry_id: "entry-redacted",

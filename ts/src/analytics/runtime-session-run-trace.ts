@@ -160,7 +160,7 @@ function copyString(
   targetKey: string,
 ): void {
   const value = readString(source[sourceKey]);
-  if (value && target[targetKey] === undefined) {
+  if (value && !readString(target[targetKey])) {
     target[targetKey] = value;
   }
 }

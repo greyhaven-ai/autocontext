@@ -36,21 +36,24 @@ def runtime_session_log_to_run_trace(
     resolved_run_id = run_id or _infer_run_id(log)
     resolved_scenario = scenario_name or _infer_scenario_name(log)
     child_start_by_session: dict[str, str] = {}
+    prompt_by_request_id: dict[str, str] = {}
+    trace_event_by_runtime_event_id: dict[str, str] = {}
+    previous_by_session_id: dict[str, str] = {}
     events: list[TraceEvent] = []
     causal_edges: list[CausalEdge] = []
     previous_event_id: str | None = None
 
     for sequence_number, record in enumerate(records, start=1):
         event_id = f"runtime-{record.event.event_id}"
-        if record.event.event_type == RuntimeSessionEventType.CHILD_TASK_STARTED:
-            child_session_id = _read_str(record.event.payload.get("childSessionId"))
-            if child_session_id:
-                child_start_by_session[child_session_id] = event_id
-
-        lineage_parent_id = ""
-        if record.log.parent_session_id:
-            lineage_parent_id = child_start_by_session.get(record.log.session_id, "")
-        parent_event_id = lineage_parent_id or previous_event_id
+        session_id = _runtime_session_id(record)
+        parent_event_id = _parent_event_id_for(
+            record,
+            prompt_by_request_id=prompt_by_request_id,
+            trace_event_by_runtime_event_id=trace_event_by_runtime_event_id,
+            previous_by_session_id=previous_by_session_id,
+            child_start_by_session=child_start_by_session,
+            previous_event_id=previous_event_id,
+        )
         cause_event_ids = [parent_event_id] if parent_event_id else []
         trace_event = TraceEvent(
             event_id=event_id,
@@ -87,6 +90,16 @@ def runtime_session_log_to_run_trace(
                 )
             )
         previous_event_id = event_id
+        previous_by_session_id[session_id] = event_id
+        trace_event_by_runtime_event_id[record.event.event_id] = event_id
+        if record.event.event_type == RuntimeSessionEventType.PROMPT_SUBMITTED:
+            request_id = _read_str(record.event.payload.get("requestId"))
+            if request_id:
+                prompt_by_request_id[request_id] = event_id
+        if record.event.event_type == RuntimeSessionEventType.CHILD_TASK_STARTED:
+            child_session_id = _read_str(record.event.payload.get("childSessionId"))
+            if child_session_id:
+                child_start_by_session[child_session_id] = event_id
 
     created_at = events[0].timestamp if events else log.created_at
     return RunTrace(
@@ -105,6 +118,46 @@ def runtime_session_log_to_run_trace(
             "event_count": len(events),
         },
     )
+
+
+def _parent_event_id_for(
+    record: _RuntimeEventRecord,
+    *,
+    prompt_by_request_id: dict[str, str],
+    trace_event_by_runtime_event_id: dict[str, str],
+    previous_by_session_id: dict[str, str],
+    child_start_by_session: dict[str, str],
+    previous_event_id: str | None,
+) -> str | None:
+    payload = record.event.payload
+    prompt_event_id = _read_str(payload.get("promptEventId"))
+    if prompt_event_id:
+        correlated_parent_id = trace_event_by_runtime_event_id.get(prompt_event_id)
+        if correlated_parent_id:
+            return correlated_parent_id
+
+    if record.event.event_type != RuntimeSessionEventType.PROMPT_SUBMITTED:
+        request_id = _read_str(payload.get("requestId"))
+        if request_id:
+            correlated_parent_id = prompt_by_request_id.get(request_id)
+            if correlated_parent_id:
+                return correlated_parent_id
+
+    session_id = _runtime_session_id(record)
+    previous_session_event_id = previous_by_session_id.get(session_id)
+    if previous_session_event_id:
+        return previous_session_event_id
+
+    if record.log.parent_session_id:
+        child_start_event_id = child_start_by_session.get(record.log.session_id)
+        if child_start_event_id:
+            return child_start_event_id
+
+    return previous_event_id
+
+
+def _runtime_session_id(record: _RuntimeEventRecord) -> str:
+    return record.event.session_id or record.log.session_id
 
 
 def _flatten_runtime_events(
@@ -298,7 +351,7 @@ def _infer_scenario_name(log: RuntimeSessionEventLog) -> str:
 
 def _copy_str(source: dict[str, Any], target: dict[str, Any], source_key: str, target_key: str) -> None:
     value = _read_str(source.get(source_key))
-    if value and target_key not in target:
+    if value and not _read_str(target.get(target_key)):
         target[target_key] = value
 
 

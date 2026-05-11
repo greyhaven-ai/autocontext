@@ -176,11 +176,21 @@ def test_runtime_session_log_to_run_trace_maps_allowlisted_events() -> None:
     assert shell_event.detail["exit_code"] == 0
     assert "stdout" not in shell_event.detail
 
+    child_start = trace.events[2]
+    assert child_start.detail["task_id"] == "retry"
+    assert child_start.detail["worker_id"] == "w-1"
+    assert child_start.detail["child_session_id"] == "task:run:run-1:runtime:retry:w-1"
+
     child_prompt = trace.events[3]
     assert child_prompt.parent_event_id == "runtime-child-start"
     assert child_prompt.detail["parent_session_id"] == "run:run-1:runtime"
     assert child_prompt.detail["task_id"] == "retry"
     assert child_prompt.detail["worker_id"] == "w-1"
+
+    child_done = trace.events[5]
+    assert child_done.detail["task_id"] == "retry"
+    assert child_done.detail["worker_id"] == "w-1"
+    assert child_done.detail["child_session_id"] == "task:run:run-1:runtime:retry:w-1"
 
     compaction_event = trace.events[-1]
     assert compaction_event.category == "checkpoint"
@@ -194,3 +204,76 @@ def test_runtime_session_log_to_run_trace_maps_allowlisted_events() -> None:
     assert "do-not-export" not in serialized
     assert "secret prompt text" not in serialized
     assert "child answer text" not in serialized
+
+
+def test_runtime_session_log_to_run_trace_correlates_concurrent_prompt_responses() -> None:
+    from autocontext.analytics.runtime_session_run_trace import runtime_session_log_to_run_trace
+
+    log = RuntimeSessionEventLog.from_dict(
+        {
+            "sessionId": "run:run-2:runtime",
+            "metadata": {"runId": "run-2", "scenarioName": "grid_ctf"},
+            "createdAt": "2026-05-10T10:00:00.000Z",
+            "updatedAt": "2026-05-10T10:00:03.000Z",
+            "events": [
+                {
+                    "eventId": "prompt-a",
+                    "sessionId": "run:run-2:runtime",
+                    "sequence": 0,
+                    "eventType": RuntimeSessionEventType.PROMPT_SUBMITTED.value,
+                    "timestamp": "2026-05-10T10:00:00.000Z",
+                    "payload": {
+                        "requestId": "req-a",
+                        "role": "analyst",
+                        "prompt": "prompt a",
+                    },
+                },
+                {
+                    "eventId": "prompt-b",
+                    "sessionId": "run:run-2:runtime",
+                    "sequence": 1,
+                    "eventType": RuntimeSessionEventType.PROMPT_SUBMITTED.value,
+                    "timestamp": "2026-05-10T10:00:01.000Z",
+                    "payload": {
+                        "requestId": "req-b",
+                        "role": "coach",
+                        "prompt": "prompt b",
+                    },
+                },
+                {
+                    "eventId": "assistant-b",
+                    "sessionId": "run:run-2:runtime",
+                    "sequence": 2,
+                    "eventType": RuntimeSessionEventType.ASSISTANT_MESSAGE.value,
+                    "timestamp": "2026-05-10T10:00:02.000Z",
+                    "payload": {
+                        "requestId": "req-b",
+                        "promptEventId": "prompt-b",
+                        "role": "coach",
+                        "text": "answer b",
+                    },
+                },
+                {
+                    "eventId": "assistant-a",
+                    "sessionId": "run:run-2:runtime",
+                    "sequence": 3,
+                    "eventType": RuntimeSessionEventType.ASSISTANT_MESSAGE.value,
+                    "timestamp": "2026-05-10T10:00:03.000Z",
+                    "payload": {
+                        "requestId": "req-a",
+                        "promptEventId": "prompt-a",
+                        "role": "analyst",
+                        "text": "answer a",
+                    },
+                },
+            ],
+        }
+    )
+
+    trace = runtime_session_log_to_run_trace(log)
+    by_id = {event.event_id: event for event in trace.events}
+
+    assert by_id["runtime-assistant-b"].parent_event_id == "runtime-prompt-b"
+    assert by_id["runtime-assistant-a"].parent_event_id == "runtime-prompt-a"
+    assert by_id["runtime-assistant-a"].detail["prompt_event_id"] == "prompt-a"
+    assert by_id["runtime-assistant-a"].detail["request_id"] == "req-a"
