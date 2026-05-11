@@ -10,6 +10,7 @@ Domain concepts:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -175,30 +176,43 @@ class Coordinator(BaseModel):
         })
         return results
 
-    def complete_worker(self, worker_id: str, result: str) -> None:
+    def complete_worker(
+        self,
+        worker_id: str,
+        result: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
         """Mark a worker as completed with its result."""
         worker = self._get_worker(worker_id)
         worker.complete(result=result)
-        self._emit(CoordinatorEventType.WORKER_COMPLETED, {
-            "worker_id": worker_id,
-        })
+        self._emit(CoordinatorEventType.WORKER_COMPLETED, _worker_event_payload(worker_id, details))
 
-    def start_worker(self, worker_id: str) -> None:
+    def start_worker(
+        self,
+        worker_id: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
         """Mark a delegated worker as running."""
         worker = self._get_worker(worker_id)
         worker.start()
-        self._emit(CoordinatorEventType.WORKER_STARTED, {
-            "worker_id": worker_id,
-        })
+        self._emit(CoordinatorEventType.WORKER_STARTED, _worker_event_payload(worker_id, details))
 
-    def fail_worker(self, worker_id: str, error: str = "") -> None:
+    def fail_worker(
+        self,
+        worker_id: str,
+        error: str = "",
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
         """Mark a running worker as failed."""
         worker = self._get_worker(worker_id)
         worker.fail(error=error)
-        self._emit(CoordinatorEventType.WORKER_FAILED, {
-            "worker_id": worker_id,
-            "error": error,
-        })
+        self._emit(
+            CoordinatorEventType.WORKER_FAILED,
+            {
+                **_worker_event_payload(worker_id, details),
+                "error": error,
+            },
+        )
 
     def stop_worker(self, worker_id: str, reason: str = "") -> None:
         """Redirect a worker away from its current task."""
@@ -245,3 +259,10 @@ class Coordinator(BaseModel):
             event_type=event_type,
             payload={"coordinator_id": self.coordinator_id, **payload},
         ))
+
+
+def _worker_event_payload(
+    worker_id: str,
+    details: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {**dict(details or {}), "worker_id": worker_id}

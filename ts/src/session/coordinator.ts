@@ -130,19 +130,19 @@ export class Coordinator {
     return results;
   }
 
-  startWorker(workerId: string): void {
+  startWorker(workerId: string, details: Record<string, unknown> = {}): void {
     this.getWorker(workerId).start();
-    this.emit(CoordinatorEventType.WORKER_STARTED, { workerId });
+    this.emit(CoordinatorEventType.WORKER_STARTED, { ...details, workerId });
   }
 
-  completeWorker(workerId: string, result: string): void {
+  completeWorker(workerId: string, result: string, details: Record<string, unknown> = {}): void {
     this.getWorker(workerId).complete(result);
-    this.emit(CoordinatorEventType.WORKER_COMPLETED, { workerId });
+    this.emit(CoordinatorEventType.WORKER_COMPLETED, { ...details, workerId });
   }
 
-  failWorker(workerId: string, error: string = ""): void {
+  failWorker(workerId: string, error: string = "", details: Record<string, unknown> = {}): void {
     this.getWorker(workerId).fail(error);
-    this.emit(CoordinatorEventType.WORKER_FAILED, { workerId, error });
+    this.emit(CoordinatorEventType.WORKER_FAILED, { ...details, workerId, error });
   }
 
   stopWorker(workerId: string, reason: string = ""): void {

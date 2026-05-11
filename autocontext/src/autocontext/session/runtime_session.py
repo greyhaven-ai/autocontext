@@ -365,7 +365,6 @@ class RuntimeChildTaskRunner:
     ) -> RuntimeChildTaskResult:
         clean_task_id = task_id or uuid.uuid4().hex[:12]
         worker = self._coordinator.delegate(prompt, role)
-        self._coordinator.start_worker(worker.worker_id)
         child_depth = self._depth + 1
         child_cwd = self._workspace.resolve_path(cwd) if self._workspace is not None and cwd else (
             self._workspace.cwd if self._workspace is not None else cwd
@@ -402,6 +401,16 @@ class RuntimeChildTaskRunner:
             else None
         )
         child_cwd = child_workspace.cwd if child_workspace is not None else child_cwd
+        coordinator_lineage = _child_task_coordinator_lineage(
+            task_id=clean_task_id,
+            child_session_id=child_session_id,
+            parent_session_id=self._parent_log.session_id,
+            role=role,
+            cwd=child_cwd,
+            depth=child_depth,
+            max_depth=self._max_depth,
+        )
+        self._coordinator.start_worker(worker.worker_id, coordinator_lineage)
 
         self._parent_log.append(
             RuntimeSessionEventType.CHILD_TASK_STARTED,
@@ -465,7 +474,11 @@ class RuntimeChildTaskRunner:
                     "maxDepth": self._max_depth,
                 },
             )
-            self._coordinator.complete_worker(worker.worker_id, output.text)
+            self._coordinator.complete_worker(
+                worker.worker_id,
+                output.text,
+                {**coordinator_lineage, "isError": False},
+            )
             self._parent_log.append(
                 RuntimeSessionEventType.CHILD_TASK_COMPLETED,
                 {
@@ -518,7 +531,22 @@ class RuntimeChildTaskRunner:
         child_log: RuntimeSessionEventLog,
         message: str,
     ) -> RuntimeChildTaskResult:
-        self._coordinator.fail_worker(worker_id, message)
+        self._coordinator.fail_worker(
+            worker_id,
+            message,
+            {
+                **_child_task_coordinator_lineage(
+                    task_id=task_id,
+                    child_session_id=child_session_id,
+                    parent_session_id=self._parent_log.session_id,
+                    role=role,
+                    cwd=cwd,
+                    depth=depth,
+                    max_depth=self._max_depth,
+                ),
+                "isError": True,
+            },
+        )
         child_log.append(
             RuntimeSessionEventType.ASSISTANT_MESSAGE,
             {
@@ -625,6 +653,27 @@ def _normalize_child_output(output: RuntimeChildTaskHandlerOutput | str) -> Runt
     if isinstance(output, RuntimeChildTaskHandlerOutput):
         return output
     return RuntimeChildTaskHandlerOutput(text=output)
+
+
+def _child_task_coordinator_lineage(
+    *,
+    task_id: str,
+    child_session_id: str,
+    parent_session_id: str,
+    role: str,
+    cwd: str,
+    depth: int,
+    max_depth: int,
+) -> dict[str, Any]:
+    return {
+        "taskId": task_id,
+        "childSessionId": child_session_id,
+        "parentSessionId": parent_session_id,
+        "role": role,
+        "cwd": cwd,
+        "depth": depth,
+        "maxDepth": max_depth,
+    }
 
 
 def _json_safe_record(value: Mapping[str, Any] | None) -> dict[str, Any]:
