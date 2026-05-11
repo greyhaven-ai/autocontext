@@ -503,28 +503,40 @@ function classifyDiagnosticCategory(
     return "adapter-runtime-failure";
   }
 
-  const verifierOutput = stripAnsi(evidence?.verifierOutput ?? "").toLowerCase();
-  if (
-    verifierOutput.includes("branch yet to be born") ||
-    verifierOutput.includes("src refspec") ||
-    verifierOutput.includes("failed to push") ||
-    verifierOutput.includes("failed to clone") ||
-    verifierOutput.includes("connection refused") ||
-    verifierOutput.includes("permission denied")
-  ) {
+  const verifierOutput = normalizeDiagnosticOutput(evidence?.verifierOutput ?? "");
+  if (isSetupEnvironmentFailure(verifierOutput)) {
     return "setup-environment-failure";
   }
-  if (
-    verifierOutput.includes("missing required") ||
-    verifierOutput.includes("required fields") ||
-    verifierOutput.includes("not configured") ||
-    verifierOutput.includes("could not find") ||
-    verifierOutput.includes("expected") ||
-    verifierOutput.includes("assertionerror")
-  ) {
+  if (isVerifierContractMismatch(verifierOutput)) {
     return "verifier-contract-mismatch";
   }
   return trial.status === "failed" ? "agent-task-failure" : "unknown";
+}
+
+function normalizeDiagnosticOutput(output: string): string {
+  return stripAnsi(output).toLowerCase();
+}
+
+function isSetupEnvironmentFailure(verifierOutput: string): boolean {
+  return [
+    "branch yet to be born",
+    "src refspec",
+    "failed to push",
+    "failed to clone",
+    "connection refused",
+    "permission denied",
+  ].some((signature) => verifierOutput.includes(signature));
+}
+
+function isVerifierContractMismatch(verifierOutput: string): boolean {
+  return [
+    "missing required",
+    "required fields",
+    "not configured",
+    "could not find",
+    "no such file or directory",
+    "can't open file",
+  ].some((signature) => verifierOutput.includes(signature));
 }
 
 function diagnosticConfidence(
