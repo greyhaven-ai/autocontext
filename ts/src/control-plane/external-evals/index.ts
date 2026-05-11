@@ -4,7 +4,9 @@ import type {
   EvalTrialStatus,
   ValidationResult,
 } from "../contract/types.js";
+import { reconcileEvalTrials } from "../eval-ledger/index.js";
 import type {
+  OperationalMemoryContextApplication,
   OperationalMemoryFinding,
   OperationalMemoryPack,
 } from "../memory-packs/index.js";
@@ -171,6 +173,7 @@ export interface ExternalEvalDiagnosticReport {
   readonly createdAt: string;
   readonly diagnostics: readonly ExternalEvalTrialDiagnostic[];
   readonly improvementSignals?: readonly ExternalEvalImprovementSignal[];
+  readonly contextApplication?: OperationalMemoryContextApplication;
   readonly summary: {
     readonly totalTrials: number;
     readonly unresolvedTrials: number;
@@ -184,6 +187,7 @@ export interface BuildExternalEvalDiagnosticReportInputs {
   readonly createdAt: string;
   readonly trials: readonly EvalTrial[];
   readonly evidence?: readonly ExternalEvalTrialEvidence[];
+  readonly contextApplication?: OperationalMemoryContextApplication;
 }
 
 export interface BuildOperationalMemoryPackFromDiagnosticsInputs {
@@ -191,6 +195,35 @@ export interface BuildOperationalMemoryPackFromDiagnosticsInputs {
   readonly version: string;
   readonly createdAt: string;
   readonly report: ExternalEvalDiagnosticReport;
+}
+
+export type ExternalEvalContextPromotionStatus =
+  | "eligible-for-heldout"
+  | "hold-for-dev"
+  | "reject-regression"
+  | "invalid-task-set";
+
+export interface DecideExternalEvalContextPromotionInputs {
+  readonly baselineRunId: string;
+  readonly candidateRunId: string;
+  readonly baselineTrials: readonly EvalTrial[];
+  readonly candidateTrials: readonly EvalTrial[];
+  readonly minResolvedTaskGain?: number;
+  readonly maxRegressedTasks?: number;
+}
+
+export interface ExternalEvalContextPromotionDecision {
+  readonly pass: boolean;
+  readonly status: ExternalEvalContextPromotionStatus;
+  readonly baselineRunId: string;
+  readonly candidateRunId: string;
+  readonly baselinePassedTaskCount: number;
+  readonly candidatePassedTaskCount: number;
+  readonly improvedTaskIds: readonly string[];
+  readonly regressedTaskIds: readonly string[];
+  readonly missingBaselineTaskIds: readonly string[];
+  readonly missingCandidateTaskIds: readonly string[];
+  readonly notes: readonly string[];
 }
 
 export function validateExternalEvalAdapterLifecycle(input: unknown): ValidationResult {
@@ -336,6 +369,7 @@ export function buildExternalEvalDiagnosticReport(
     createdAt: inputs.createdAt,
     diagnostics,
     improvementSignals,
+    ...(inputs.contextApplication !== undefined ? { contextApplication: inputs.contextApplication } : {}),
     summary: {
       totalTrials: inputs.trials.length,
       unresolvedTrials: inputs.trials.filter((trial) => trial.status !== "passed").length,
@@ -351,6 +385,140 @@ export function buildExternalEvalImprovementSignals(
   report: Pick<ExternalEvalDiagnosticReport, "runId" | "diagnostics">,
 ): readonly ExternalEvalImprovementSignal[] {
   return buildImprovementSignals(report.runId, report.diagnostics);
+}
+
+export function decideExternalEvalContextPromotion(
+  inputs: DecideExternalEvalContextPromotionInputs,
+): ExternalEvalContextPromotionDecision {
+  const minResolvedTaskGain = inputs.minResolvedTaskGain ?? 1;
+  const maxRegressedTasks = inputs.maxRegressedTasks ?? 0;
+  const baselineTaskStatus = firstStatusByTask(inputs.baselineTrials);
+  const candidateTaskStatus = firstStatusByTask(inputs.candidateTrials);
+  const missingBaselineTaskIds = sortedDifference(candidateTaskStatus.keys(), baselineTaskStatus);
+  const missingCandidateTaskIds = sortedDifference(baselineTaskStatus.keys(), candidateTaskStatus);
+
+  const sharedTaskIds = [...baselineTaskStatus.keys()].filter((taskId) => candidateTaskStatus.has(taskId));
+  const improvedTaskIds = sharedTaskIds
+    .filter((taskId) => baselineTaskStatus.get(taskId) !== "passed" && candidateTaskStatus.get(taskId) === "passed")
+    .sort();
+  const regressedTaskIds = sharedTaskIds
+    .filter((taskId) => baselineTaskStatus.get(taskId) === "passed" && candidateTaskStatus.get(taskId) !== "passed")
+    .sort();
+  const baselinePassedTaskCount = countPassedTasks(baselineTaskStatus);
+  const candidatePassedTaskCount = countPassedTasks(candidateTaskStatus);
+  const notes: string[] = [
+    `baseline_passed=${baselinePassedTaskCount}`,
+    `candidate_passed=${candidatePassedTaskCount}`,
+    `improved=${improvedTaskIds.length}`,
+    `regressed=${regressedTaskIds.length}`,
+  ];
+
+  if (missingBaselineTaskIds.length > 0 || missingCandidateTaskIds.length > 0) {
+    return {
+      pass: false,
+      status: "invalid-task-set",
+      baselineRunId: inputs.baselineRunId,
+      candidateRunId: inputs.candidateRunId,
+      baselinePassedTaskCount,
+      candidatePassedTaskCount,
+      improvedTaskIds,
+      regressedTaskIds,
+      missingBaselineTaskIds,
+      missingCandidateTaskIds,
+      notes: [
+        ...notes,
+        "Baseline and candidate context runs must cover the same development task IDs before held-out eligibility.",
+      ],
+    };
+  }
+
+  if (regressedTaskIds.length > maxRegressedTasks) {
+    return {
+      pass: false,
+      status: "reject-regression",
+      baselineRunId: inputs.baselineRunId,
+      candidateRunId: inputs.candidateRunId,
+      baselinePassedTaskCount,
+      candidatePassedTaskCount,
+      improvedTaskIds,
+      regressedTaskIds,
+      missingBaselineTaskIds,
+      missingCandidateTaskIds,
+      notes: [
+        ...notes,
+        `Regressed task count exceeded maxRegressedTasks=${maxRegressedTasks}.`,
+      ],
+    };
+  }
+
+  if (candidatePassedTaskCount - baselinePassedTaskCount < minResolvedTaskGain) {
+    return {
+      pass: false,
+      status: "hold-for-dev",
+      baselineRunId: inputs.baselineRunId,
+      candidateRunId: inputs.candidateRunId,
+      baselinePassedTaskCount,
+      candidatePassedTaskCount,
+      improvedTaskIds,
+      regressedTaskIds,
+      missingBaselineTaskIds,
+      missingCandidateTaskIds,
+      notes: [
+        ...notes,
+        `Resolved task gain did not meet minResolvedTaskGain=${minResolvedTaskGain}.`,
+      ],
+    };
+  }
+
+  return {
+    pass: true,
+    status: "eligible-for-heldout",
+    baselineRunId: inputs.baselineRunId,
+    candidateRunId: inputs.candidateRunId,
+    baselinePassedTaskCount,
+    candidatePassedTaskCount,
+    improvedTaskIds,
+    regressedTaskIds,
+    missingBaselineTaskIds,
+    missingCandidateTaskIds,
+    notes: [
+      ...notes,
+      "Candidate context cleared development-set promotion gates and is eligible for held-out evaluation.",
+    ],
+  };
+}
+
+function firstStatusByTask(trials: readonly EvalTrial[]): ReadonlyMap<string, EvalTrialStatus> {
+  const reconciliation = reconcileEvalTrials(trials, { view: "first-completed-per-task" });
+  const selectedTrialIdsByTask = reconciliation.selectedTrialIdsByTask;
+  const trialById = new Map(trials.map((trial) => [trial.trialId, trial]));
+  const fallbackTrialByTask = new Map<string, EvalTrial>();
+
+  for (const trial of trials) {
+    if (!fallbackTrialByTask.has(trial.taskId)) {
+      fallbackTrialByTask.set(trial.taskId, trial);
+    }
+  }
+
+  const statusByTask = new Map<string, EvalTrialStatus>();
+  for (const [taskId, fallbackTrial] of fallbackTrialByTask.entries()) {
+    const selectedTrialId = selectedTrialIdsByTask[taskId];
+    const selectedTrial = selectedTrialId !== undefined ? trialById.get(selectedTrialId) : undefined;
+    statusByTask.set(taskId, selectedTrial?.status ?? fallbackTrial.status);
+  }
+
+  return statusByTask;
+}
+
+function sortedDifference(
+  taskIds: Iterable<string>,
+  comparison: ReadonlyMap<string, EvalTrialStatus>,
+): readonly string[] {
+  return [...taskIds].filter((taskId) => !comparison.has(taskId)).sort();
+}
+
+function countPassedTasks(taskStatus: ReadonlyMap<string, EvalTrialStatus>): number {
+  return [...taskStatus.values()].filter((status) => status === "passed").length;
 }
 
 export function buildOperationalMemoryPackFromDiagnostics(
