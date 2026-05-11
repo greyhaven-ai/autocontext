@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Self
 
+from autocontext.runtimes.workspace_env import RuntimeCommandGrant, RuntimeWorkspaceEnv
 from autocontext.session.coordinator import Coordinator
 from autocontext.session.runtime_events import (
     RuntimeSessionEvent,
@@ -15,6 +16,7 @@ from autocontext.session.runtime_events import (
     RuntimeSessionEventStore,
     RuntimeSessionEventType,
 )
+from autocontext.session.runtime_grant_events import create_runtime_session_grant_event_sink
 
 DEFAULT_CHILD_TASK_MAX_DEPTH = 4
 
@@ -33,6 +35,7 @@ class RuntimeSessionPromptHandlerInput:
     role: str
     cwd: str
     session_log: RuntimeSessionEventLog
+    workspace: RuntimeWorkspaceEnv | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +83,7 @@ class RuntimeChildTaskHandlerInput:
     depth: int
     max_depth: int
     session_log: RuntimeSessionEventLog
+    workspace: RuntimeWorkspaceEnv | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +123,7 @@ class RuntimeSession:
         goal: str,
         log: RuntimeSessionEventLog,
         coordinator: Coordinator,
+        workspace: RuntimeWorkspaceEnv | None = None,
         event_store: RuntimeSessionEventStore | None = None,
         event_sink: RuntimeSessionEventSink | None = None,
         depth: int = 0,
@@ -127,6 +132,7 @@ class RuntimeSession:
         self.goal = goal
         self.log = log
         self.coordinator = coordinator
+        self.workspace = workspace
         self._event_store = event_store
         self._event_sink = event_sink
         self._depth = _normalize_depth(depth, "depth")
@@ -142,6 +148,7 @@ class RuntimeSession:
         event_store: RuntimeSessionEventStore | None = None,
         event_sink: RuntimeSessionEventSink | None = None,
         metadata: dict[str, Any] | None = None,
+        workspace: RuntimeWorkspaceEnv | None = None,
         depth: int = 0,
         max_depth: int = DEFAULT_CHILD_TASK_MAX_DEPTH,
     ) -> Self:
@@ -154,6 +161,7 @@ class RuntimeSession:
             goal=goal,
             log=log,
             coordinator=Coordinator.create(clean_session_id, goal),
+            workspace=workspace,
             event_store=event_store,
             event_sink=event_sink,
             depth=depth,
@@ -167,6 +175,7 @@ class RuntimeSession:
         session_id: str,
         event_store: RuntimeSessionEventStore,
         event_sink: RuntimeSessionEventSink | None = None,
+        workspace: RuntimeWorkspaceEnv | None = None,
         depth: int = 0,
         max_depth: int = DEFAULT_CHILD_TASK_MAX_DEPTH,
     ) -> Self | None:
@@ -178,6 +187,7 @@ class RuntimeSession:
             goal=goal,
             log=log,
             coordinator=Coordinator.create(log.session_id, goal),
+            workspace=workspace,
             event_store=event_store,
             event_sink=event_sink,
             depth=depth,
@@ -195,17 +205,33 @@ class RuntimeSession:
         handler: RuntimeSessionPromptHandler,
         role: str = "assistant",
         cwd: str = "",
+        commands: Sequence[RuntimeCommandGrant] | None = None,
     ) -> RuntimeSessionPromptResult:
         request_id = uuid.uuid4().hex[:12]
+        prompt_event_id = ""
+        scoped_workspace = (
+            self.workspace.scope(
+                cwd=cwd or None,
+                commands=commands,
+                grant_event_sink=create_runtime_session_grant_event_sink(
+                    self.log,
+                    lambda: {"requestId": request_id, "promptEventId": prompt_event_id},
+                ),
+            )
+            if self.workspace is not None
+            else None
+        )
+        resolved_cwd = scoped_workspace.cwd if scoped_workspace is not None else cwd
         prompt_event = self.log.append(
             RuntimeSessionEventType.PROMPT_SUBMITTED,
             {
                 "requestId": request_id,
                 "prompt": prompt,
                 "role": role,
-                "cwd": cwd,
+                "cwd": resolved_cwd,
             },
         )
+        prompt_event_id = prompt_event.event_id
 
         try:
             output = _normalize_prompt_output(
@@ -214,8 +240,9 @@ class RuntimeSession:
                         session_id=self.session_id,
                         prompt=prompt,
                         role=role,
-                        cwd=cwd,
+                        cwd=resolved_cwd,
                         session_log=self.log,
+                        workspace=scoped_workspace,
                     )
                 )
             )
@@ -227,10 +254,10 @@ class RuntimeSession:
                     "text": output.text,
                     "metadata": _json_safe_record(output.metadata),
                     "role": role,
-                    "cwd": cwd,
+                    "cwd": resolved_cwd,
                 },
             )
-            result = self._prompt_result(role=role, cwd=cwd, text=output.text, is_error=False, error="")
+            result = self._prompt_result(role=role, cwd=resolved_cwd, text=output.text, is_error=False, error="")
             self.save()
             return result
         except Exception as exc:
@@ -244,10 +271,10 @@ class RuntimeSession:
                     "error": message,
                     "isError": True,
                     "role": role,
-                    "cwd": cwd,
+                    "cwd": resolved_cwd,
                 },
             )
-            result = self._prompt_result(role=role, cwd=cwd, text="", is_error=True, error=message)
+            result = self._prompt_result(role=role, cwd=resolved_cwd, text="", is_error=True, error=message)
             self.save()
             return result
 
@@ -259,15 +286,17 @@ class RuntimeSession:
         handler: RuntimeChildTaskHandler,
         task_id: str | None = None,
         cwd: str = "",
+        commands: Sequence[RuntimeCommandGrant] | None = None,
     ) -> RuntimeChildTaskResult:
         return RuntimeChildTaskRunner(
             coordinator=self.coordinator,
             parent_log=self.log,
+            workspace=self.workspace,
             event_store=self._event_store,
             event_sink=self._event_sink,
             depth=self._depth,
             max_depth=self._max_depth,
-        ).run(prompt=prompt, role=role, handler=handler, task_id=task_id, cwd=cwd)
+        ).run(prompt=prompt, role=role, handler=handler, task_id=task_id, cwd=cwd, commands=commands)
 
     def list_child_logs(self) -> list[RuntimeSessionEventLog]:
         return self._event_store.list_children(self.session_id) if self._event_store is not None else []
@@ -310,6 +339,7 @@ class RuntimeChildTaskRunner:
         *,
         coordinator: Coordinator,
         parent_log: RuntimeSessionEventLog,
+        workspace: RuntimeWorkspaceEnv | None = None,
         event_store: RuntimeSessionEventStore | None = None,
         event_sink: RuntimeSessionEventSink | None = None,
         depth: int = 0,
@@ -317,6 +347,7 @@ class RuntimeChildTaskRunner:
     ) -> None:
         self._coordinator = coordinator
         self._parent_log = parent_log
+        self._workspace = workspace
         self._event_store = event_store
         self._event_sink = event_sink
         self._depth = _normalize_depth(depth, "depth")
@@ -330,11 +361,15 @@ class RuntimeChildTaskRunner:
         handler: RuntimeChildTaskHandler,
         task_id: str | None = None,
         cwd: str = "",
+        commands: Sequence[RuntimeCommandGrant] | None = None,
     ) -> RuntimeChildTaskResult:
         clean_task_id = task_id or uuid.uuid4().hex[:12]
         worker = self._coordinator.delegate(prompt, role)
         self._coordinator.start_worker(worker.worker_id)
         child_depth = self._depth + 1
+        child_cwd = self._workspace.resolve_path(cwd) if self._workspace is not None and cwd else (
+            self._workspace.cwd if self._workspace is not None else cwd
+        )
         child_session_id = f"task:{self._parent_log.session_id}:{clean_task_id}:{worker.worker_id}"
         child_log = RuntimeSessionEventLog.create(
             session_id=child_session_id,
@@ -343,12 +378,30 @@ class RuntimeChildTaskRunner:
             worker_id=worker.worker_id,
             metadata={
                 "role": role,
-                "cwd": cwd,
+                "cwd": child_cwd,
                 "depth": child_depth,
                 "maxDepth": self._max_depth,
             },
         )
         _observe_runtime_session_log(child_log, self._event_store, self._event_sink)
+        child_workspace = (
+            self._workspace.scope(
+                cwd=cwd or None,
+                commands=commands,
+                grant_inheritance="child_task",
+                grant_event_sink=create_runtime_session_grant_event_sink(
+                    child_log,
+                    {
+                        "taskId": clean_task_id,
+                        "childSessionId": child_session_id,
+                        "workerId": worker.worker_id,
+                    },
+                ),
+            )
+            if self._workspace is not None
+            else None
+        )
+        child_cwd = child_workspace.cwd if child_workspace is not None else child_cwd
 
         self._parent_log.append(
             RuntimeSessionEventType.CHILD_TASK_STARTED,
@@ -357,7 +410,7 @@ class RuntimeChildTaskRunner:
                 "childSessionId": child_session_id,
                 "workerId": worker.worker_id,
                 "role": role,
-                "cwd": cwd,
+                "cwd": child_cwd,
                 "depth": child_depth,
                 "maxDepth": self._max_depth,
             },
@@ -367,7 +420,7 @@ class RuntimeChildTaskRunner:
             {
                 "prompt": prompt,
                 "role": role,
-                "cwd": cwd,
+                "cwd": child_cwd,
                 "depth": child_depth,
                 "maxDepth": self._max_depth,
             },
@@ -379,7 +432,7 @@ class RuntimeChildTaskRunner:
                 child_session_id=child_session_id,
                 worker_id=worker.worker_id,
                 role=role,
-                cwd=cwd,
+                cwd=child_cwd,
                 depth=child_depth,
                 child_log=child_log,
                 message=f"Maximum child task depth ({self._max_depth}) exceeded",
@@ -395,10 +448,11 @@ class RuntimeChildTaskRunner:
                         worker_id=worker.worker_id,
                         prompt=prompt,
                         role=role,
-                        cwd=cwd,
+                        cwd=child_cwd,
                         depth=child_depth,
                         max_depth=self._max_depth,
                         session_log=child_log,
+                        workspace=child_workspace,
                     )
                 )
             )
@@ -419,7 +473,7 @@ class RuntimeChildTaskRunner:
                     "childSessionId": child_session_id,
                     "workerId": worker.worker_id,
                     "role": role,
-                    "cwd": cwd,
+                    "cwd": child_cwd,
                     "result": output.text,
                     "isError": False,
                     "depth": child_depth,
@@ -431,7 +485,7 @@ class RuntimeChildTaskRunner:
                 child_session_id=child_session_id,
                 worker_id=worker.worker_id,
                 role=role,
-                cwd=cwd,
+                cwd=child_cwd,
                 text=output.text,
                 is_error=False,
                 error="",
@@ -446,7 +500,7 @@ class RuntimeChildTaskRunner:
                 child_session_id=child_session_id,
                 worker_id=worker.worker_id,
                 role=role,
-                cwd=cwd,
+                cwd=child_cwd,
                 depth=child_depth,
                 child_log=child_log,
                 message=str(exc),

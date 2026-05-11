@@ -18,8 +18,17 @@ from autocontext.runtimes.workspace_env import (
     RuntimeFileStat,
     RuntimeWorkspaceEnv,
     create_in_memory_workspace_env,
+    create_local_runtime_command_grant,
     create_local_workspace_env,
     define_runtime_command,
+)
+from autocontext.runtimes.workspace_grants import (
+    RuntimeGrantEvent,
+    RuntimeGrantEventSink,
+    RuntimeGrantEventSinkLike,
+    RuntimeGrantOutputRedactionMetadata,
+    RuntimeGrantProvenance,
+    RuntimeGrantScopePolicy,
 )
 
 __all__ = [
@@ -35,8 +44,15 @@ __all__ = [
     "RuntimeExecOptions",
     "RuntimeExecResult",
     "RuntimeFileStat",
+    "RuntimeGrantEvent",
+    "RuntimeGrantEventSink",
+    "RuntimeGrantEventSinkLike",
+    "RuntimeGrantOutputRedactionMetadata",
+    "RuntimeGrantProvenance",
+    "RuntimeGrantScopePolicy",
     "RuntimeWorkspaceEnv",
     "create_in_memory_workspace_env",
+    "create_local_runtime_command_grant",
     "create_local_workspace_env",
     "define_runtime_command",
 ]

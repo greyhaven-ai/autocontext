@@ -481,6 +481,103 @@ def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
         store.close()
 
 
+def test_runtime_session_records_scoped_command_grant_events(tmp_path: Path) -> None:
+    from autocontext.runtimes.workspace_env import create_in_memory_workspace_env, define_runtime_command
+    from autocontext.session import RuntimeSession, RuntimeSessionPromptHandlerOutput
+    from autocontext.session.runtime_events import RuntimeSessionEventType
+
+    workspace = create_in_memory_workspace_env(cwd="/workspace")
+    session = RuntimeSession.create(
+        session_id="run:abc:runtime",
+        goal="autoctx run support_triage",
+        workspace=workspace,
+    )
+
+    result = session.submit_prompt(
+        prompt="Run the scoped helper",
+        commands=[
+            define_runtime_command(
+                "show-secret",
+                lambda _args, _context: {"stdout": "trusted-secret", "stderr": "", "exit_code": 0},
+                env={"AUTOCTX_TOKEN": "trusted-secret"},
+            )
+        ],
+        handler=lambda input: (
+            input.workspace.exec("show-secret --token trusted-secret")
+            and RuntimeSessionPromptHandlerOutput(text="handled")
+        ),
+    )
+
+    assert result.is_error is False
+    assert "trusted-secret" not in repr(session.log.to_dict())
+    assert [event.event_type for event in session.log.events] == [
+        RuntimeSessionEventType.PROMPT_SUBMITTED,
+        RuntimeSessionEventType.SHELL_COMMAND,
+        RuntimeSessionEventType.SHELL_COMMAND,
+        RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]
+    assert session.log.events[1].payload["commandName"] == "show-secret"
+    assert session.log.events[1].payload["argsSummary"] == ["--token", "[redacted]"]
+    assert session.log.events[2].payload["stdout"] == "[redacted]"
+    assert session.log.events[2].payload["requestId"] == session.log.events[0].payload["requestId"]
+    assert session.log.events[2].payload["promptEventId"] == session.log.events[0].event_id
+
+
+def test_runtime_child_tasks_receive_scoped_workspace_and_grant_events() -> None:
+    from autocontext.runtimes.workspace_env import (
+        RuntimeGrantScopePolicy,
+        create_in_memory_workspace_env,
+        define_runtime_command,
+    )
+    from autocontext.session import RuntimeChildTaskHandlerOutput, RuntimeSession
+    from autocontext.session.runtime_events import RuntimeSessionEventType
+
+    workspace = create_in_memory_workspace_env(cwd="/workspace").scope(
+        commands=[
+            define_runtime_command(
+                "parent-only",
+                lambda _args, _context: {"stdout": "parent", "stderr": "", "exit_code": 0},
+                scope=RuntimeGrantScopePolicy(inherit_to_child_tasks=False),
+            )
+        ]
+    )
+    session = RuntimeSession.create(
+        session_id="run:abc:runtime",
+        goal="autoctx run support_triage",
+        workspace=workspace,
+    )
+
+    result = session.run_child_task(
+        task_id="child",
+        prompt="Summarize",
+        role="analyst",
+        cwd="project",
+        commands=[
+            define_runtime_command(
+                "child-tool",
+                lambda args, context: {"stdout": f"{context.cwd}:{' '.join(args)}", "stderr": "", "exit_code": 0},
+            )
+        ],
+        handler=lambda input: RuntimeChildTaskHandlerOutput(
+            text=f"{input.workspace.exec('parent-only').exit_code};{input.workspace.exec('child-tool ok').stdout}"
+        ),
+    )
+
+    assert result.is_error is False
+    assert result.cwd == "/workspace/project"
+    assert result.text == "127;/workspace/project:ok"
+    assert [event.event_type for event in result.child_session_log.events] == [
+        RuntimeSessionEventType.PROMPT_SUBMITTED,
+        RuntimeSessionEventType.SHELL_COMMAND,
+        RuntimeSessionEventType.SHELL_COMMAND,
+        RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]
+    assert result.child_session_log.events[1].payload["commandName"] == "child-tool"
+    assert result.child_session_log.events[1].payload["taskId"] == "child"
+    assert result.child_session_log.events[1].payload["childSessionId"] == result.child_session_id
+    assert result.child_session_log.events[1].payload["workerId"] == result.worker_id
+
+
 def test_runtime_session_reused_task_ids_keep_distinct_child_logs(tmp_path: Path) -> None:
     from autocontext.session import RuntimeChildTaskHandlerOutput, RuntimeSession
     from autocontext.session.runtime_events import RuntimeSessionEventStore

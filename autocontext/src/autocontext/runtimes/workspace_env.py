@@ -12,7 +12,26 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
+
+from autocontext.runtimes.workspace_grants import (
+    DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES,
+    RuntimeGrantEvent,
+    RuntimeGrantEventSinkLike,
+    RuntimeGrantInheritanceMode,
+    RuntimeGrantKind,
+    RuntimeGrantProvenance,
+    RuntimeGrantScopePolicy,
+    base_grant_redaction,
+    combine_timeout_ms,
+    emit_runtime_grant_event,
+    inherits_to_child_tasks,
+    normalize_output_limit,
+    pick_process_env,
+    preview_text,
+    secret_values,
+    summarize_args,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +61,8 @@ class RuntimeFileStat:
 class RuntimeCommandContext:
     cwd: str
     env: Mapping[str, str]
+    host_cwd: str | None = None
+    timeout_ms: int | None = None
 
 
 RuntimeCommandResult = RuntimeExecResult | Mapping[str, object]
@@ -53,6 +74,11 @@ class RuntimeCommandGrant:
     name: str
     execute: RuntimeCommandHandler
     env: Mapping[str, str] = field(default_factory=dict)
+    kind: RuntimeGrantKind = "command"
+    description: str = ""
+    provenance: Mapping[str, str] | RuntimeGrantProvenance | None = None
+    scope: RuntimeGrantScopePolicy | Mapping[str, Any] | None = None
+    output_limit_bytes: int = DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES
 
 
 class RuntimeWorkspaceEnv(Protocol):
@@ -72,6 +98,8 @@ class RuntimeWorkspaceEnv(Protocol):
         *,
         cwd: str | None = None,
         commands: Sequence[RuntimeCommandGrant] | None = None,
+        grant_event_sink: RuntimeGrantEventSinkLike | None = None,
+        grant_inheritance: RuntimeGrantInheritanceMode = "scope",
     ) -> RuntimeWorkspaceEnv:
         """Return a child view with optional cwd and command grants."""
         ...
@@ -134,11 +162,62 @@ def define_runtime_command(
     execute: RuntimeCommandHandler,
     *,
     env: Mapping[str, str] | None = None,
+    description: str = "",
+    provenance: Mapping[str, str] | RuntimeGrantProvenance | None = None,
+    scope: RuntimeGrantScopePolicy | Mapping[str, Any] | None = None,
+    output_limit_bytes: int | None = None,
 ) -> RuntimeCommandGrant:
     clean_name = name.strip()
     if not clean_name or any(char.isspace() for char in clean_name):
         raise ValueError("Runtime command names must be non-empty and contain no whitespace")
-    return RuntimeCommandGrant(name=clean_name, execute=execute, env=dict(env or {}))
+    return RuntimeCommandGrant(
+        name=clean_name,
+        execute=execute,
+        env=dict(env or {}),
+        description=description,
+        provenance=provenance,
+        scope=scope,
+        output_limit_bytes=normalize_output_limit(output_limit_bytes),
+    )
+
+
+def create_local_runtime_command_grant(
+    name: str,
+    executable: str,
+    *,
+    args: Sequence[str] | None = None,
+    inherit_env: Sequence[str] | None = None,
+    timeout_ms: int | None = None,
+    env: Mapping[str, str] | None = None,
+    description: str = "",
+    provenance: Mapping[str, str] | RuntimeGrantProvenance | None = None,
+    scope: RuntimeGrantScopePolicy | Mapping[str, Any] | None = None,
+    output_limit_bytes: int | None = None,
+) -> RuntimeCommandGrant:
+    clean_executable = executable.strip()
+    if not clean_executable:
+        raise ValueError("Local runtime command executable must be non-empty")
+    fixed_args = list(args or ())
+    inherited_env = pick_process_env(inherit_env or ())
+
+    def execute_local(command_args: Sequence[str], context: RuntimeCommandContext) -> RuntimeExecResult:
+        return _run_process(
+            clean_executable,
+            [*fixed_args, *command_args],
+            cwd=context.host_cwd or context.cwd,
+            env=context.env,
+            timeout_ms=combine_timeout_ms(timeout_ms, context.timeout_ms),
+        )
+
+    return define_runtime_command(
+        name,
+        execute_local,
+        env={**inherited_env, **dict(env or {})},
+        description=description,
+        provenance=provenance,
+        scope=scope,
+        output_limit_bytes=output_limit_bytes,
+    )
 
 
 @dataclass(slots=True)
@@ -159,10 +238,12 @@ class InMemoryWorkspaceEnv:
         state: _MemoryState,
         cwd: str,
         commands: Sequence[RuntimeCommandGrant] = (),
+        grant_event_sink: RuntimeGrantEventSinkLike | None = None,
     ) -> None:
         self._state = state
         self._cwd = _normalize_virtual_path(cwd, "/")
         self._commands = _command_map(commands)
+        self._grant_event_sink = grant_event_sink
         self._closed = False
         _ensure_memory_parent_dirs(self._state, self._cwd)
 
@@ -178,6 +259,8 @@ class InMemoryWorkspaceEnv:
             command,
             exec_options,
             self.resolve_path(exec_options.cwd) if exec_options.cwd else self.cwd,
+            None,
+            self._grant_event_sink,
         )
         if granted is not None:
             return granted
@@ -192,12 +275,18 @@ class InMemoryWorkspaceEnv:
         *,
         cwd: str | None = None,
         commands: Sequence[RuntimeCommandGrant] | None = None,
+        grant_event_sink: RuntimeGrantEventSinkLike | None = None,
+        grant_inheritance: RuntimeGrantInheritanceMode = "scope",
     ) -> RuntimeWorkspaceEnv:
         self._assert_open()
         return InMemoryWorkspaceEnv(
             self._state,
             self.resolve_path(cwd) if cwd else self.cwd,
-            _merge_command_grants(self._commands.values(), commands or ()),
+            _merge_command_grants(
+                _inherited_command_grants(self._commands.values(), grant_inheritance),
+                commands or (),
+            ),
+            grant_event_sink or self._grant_event_sink,
         )
 
     def read_file(self, file_path: str) -> str:
@@ -311,10 +400,12 @@ class LocalWorkspaceEnv:
         root: Path,
         cwd: str,
         commands: Sequence[RuntimeCommandGrant] = (),
+        grant_event_sink: RuntimeGrantEventSinkLike | None = None,
     ) -> None:
         self._root = root.resolve()
         self._cwd = _normalize_virtual_path(cwd, "/")
         self._commands = _command_map(commands)
+        self._grant_event_sink = grant_event_sink
 
     @property
     def cwd(self) -> str:
@@ -323,14 +414,22 @@ class LocalWorkspaceEnv:
     def exec(self, command: str, options: RuntimeExecOptions | None = None) -> RuntimeExecResult:
         exec_options = options or RuntimeExecOptions()
         virtual_cwd = self.resolve_path(exec_options.cwd) if exec_options.cwd else self.cwd
-        granted = _maybe_run_granted_command(self._commands, command, exec_options, virtual_cwd)
+        host_cwd = self._to_host_path(virtual_cwd)
+        granted = _maybe_run_granted_command(
+            self._commands,
+            command,
+            exec_options,
+            virtual_cwd,
+            str(host_cwd),
+            self._grant_event_sink,
+        )
         if granted is not None:
             return granted
         timeout = exec_options.timeout_ms / 1000 if exec_options.timeout_ms is not None else None
         try:
             completed = subprocess.run(
                 command,
-                cwd=self._to_host_path(virtual_cwd),
+                cwd=host_cwd,
                 env={**os.environ, **dict(exec_options.env)},
                 shell=True,
                 check=False,
@@ -351,11 +450,17 @@ class LocalWorkspaceEnv:
         *,
         cwd: str | None = None,
         commands: Sequence[RuntimeCommandGrant] | None = None,
+        grant_event_sink: RuntimeGrantEventSinkLike | None = None,
+        grant_inheritance: RuntimeGrantInheritanceMode = "scope",
     ) -> RuntimeWorkspaceEnv:
         return LocalWorkspaceEnv(
             self._root,
             self.resolve_path(cwd) if cwd else self.cwd,
-            _merge_command_grants(self._commands.values(), commands or ()),
+            _merge_command_grants(
+                _inherited_command_grants(self._commands.values(), grant_inheritance),
+                commands or (),
+            ),
+            grant_event_sink or self._grant_event_sink,
         )
 
     def read_file(self, file_path: str) -> str:
@@ -484,11 +589,22 @@ def _merge_command_grants(
     return list(result.values())
 
 
+def _inherited_command_grants(
+    commands: Iterable[RuntimeCommandGrant],
+    mode: RuntimeGrantInheritanceMode = "scope",
+) -> list[RuntimeCommandGrant]:
+    if mode != "child_task":
+        return list(commands)
+    return [command for command in commands if inherits_to_child_tasks(command.scope)]
+
+
 def _maybe_run_granted_command(
     commands: Mapping[str, RuntimeCommandGrant],
     command_line: str,
     options: RuntimeExecOptions,
     cwd: str,
+    host_cwd: str | None,
+    grant_event_sink: RuntimeGrantEventSinkLike | None,
 ) -> RuntimeExecResult | None:
     try:
         tokens = shlex.split(command_line)
@@ -499,8 +615,68 @@ def _maybe_run_granted_command(
     grant = commands.get(tokens[0])
     if grant is None:
         return None
-    context = RuntimeCommandContext(cwd=cwd, env={**dict(options.env), **dict(grant.env)})
-    return _normalize_exec_result(grant.execute(tokens[1:], context))
+    command_env = {**dict(options.env), **dict(grant.env)}
+    secrets = secret_values(command_env)
+    args = summarize_args(tokens[1:], secrets)
+    redaction = base_grant_redaction(command_env, args)
+    emit_runtime_grant_event(
+        grant_event_sink,
+        RuntimeGrantEvent(
+            kind="command",
+            phase="start",
+            name=grant.name,
+            cwd=cwd,
+            args_summary=args.summary,
+            redaction=redaction,
+            provenance=grant.provenance,
+        ),
+    )
+    try:
+        context = RuntimeCommandContext(
+            cwd=cwd,
+            env=command_env,
+            host_cwd=host_cwd,
+            timeout_ms=options.timeout_ms,
+        )
+        result = _normalize_exec_result(grant.execute(tokens[1:], context))
+        stdout = preview_text(result.stdout, secrets, _runtime_command_output_limit(grant))
+        stderr = preview_text(result.stderr, secrets, _runtime_command_output_limit(grant))
+        emit_runtime_grant_event(
+            grant_event_sink,
+            RuntimeGrantEvent(
+                kind="command",
+                phase="end",
+                name=grant.name,
+                cwd=cwd,
+                args_summary=args.summary,
+                exit_code=result.exit_code,
+                stdout=stdout.text,
+                stderr=stderr.text,
+                redaction={
+                    **redaction,
+                    "stdout": stdout.metadata.to_dict(),
+                    "stderr": stderr.metadata.to_dict(),
+                },
+                provenance=grant.provenance,
+            ),
+        )
+        return result
+    except Exception as exc:
+        message = preview_text(str(exc), secrets, _runtime_command_output_limit(grant))
+        emit_runtime_grant_event(
+            grant_event_sink,
+            RuntimeGrantEvent(
+                kind="command",
+                phase="error",
+                name=grant.name,
+                cwd=cwd,
+                args_summary=args.summary,
+                error=message.text,
+                redaction={**redaction, "error": message.metadata.to_dict()},
+                provenance=grant.provenance,
+            ),
+        )
+        raise
 
 
 def _normalize_exec_result(value: RuntimeCommandResult) -> RuntimeExecResult:
@@ -519,3 +695,36 @@ def _read_exit_code(value: object) -> int:
     if isinstance(value, int):
         return value
     return 0
+
+
+def _runtime_command_output_limit(grant: RuntimeCommandGrant) -> int:
+    return normalize_output_limit(grant.output_limit_bytes)
+
+
+def _run_process(
+    executable: str,
+    args: Sequence[str],
+    *,
+    cwd: str,
+    env: Mapping[str, str],
+    timeout_ms: int | None = None,
+) -> RuntimeExecResult:
+    timeout = timeout_ms / 1000 if timeout_ms is not None else None
+    try:
+        completed = subprocess.run(
+            [executable, *args],
+            cwd=cwd,
+            env=dict(env),
+            shell=False,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return RuntimeExecResult(
+            stdout=exc.stdout if isinstance(exc.stdout, str) else "",
+            stderr=exc.stderr if isinstance(exc.stderr, str) and exc.stderr else "Command timed out",
+            exit_code=124,
+        )
+    return RuntimeExecResult(stdout=completed.stdout, stderr=completed.stderr, exit_code=completed.returncode)

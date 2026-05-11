@@ -235,11 +235,7 @@ function createMemoryState(files?: Record<string, string | Uint8Array>): MemoryS
   };
   for (const [filePath, content] of Object.entries(files ?? {})) {
     const resolved = normalizeVirtualPath(filePath, "/");
-    ensureMemoryParentDirs(state, path.posix.dirname(resolved));
-    state.files.set(resolved, {
-      content: toBytes(content),
-      mtime: new Date(),
-    });
+    writeMemoryFile(state, resolved, content);
   }
   return state;
 }
@@ -274,6 +270,9 @@ function ensureMemoryParentDirs(state: MemoryState, dirPath: string): void {
   state.dirs.set(current, state.dirs.get(current) ?? new Date());
   for (const part of dirPath.split("/").filter(Boolean)) {
     current = current === "/" ? `/${part}` : `${current}/${part}`;
+    if (state.files.has(current)) {
+      throw new Error(`Not a directory: ${current}`);
+    }
     state.dirs.set(current, state.dirs.get(current) ?? new Date());
   }
 }
@@ -296,6 +295,21 @@ function memoryDirStat(mtime: Date): RuntimeFileStat {
     size: 0,
     mtime,
   };
+}
+
+function writeMemoryFile(
+  state: MemoryState,
+  resolved: string,
+  content: string | Uint8Array,
+): void {
+  if (state.dirs.has(resolved)) {
+    throw new Error(`Is a directory: ${resolved}`);
+  }
+  ensureMemoryParentDirs(state, path.posix.dirname(resolved));
+  state.files.set(resolved, {
+    content: toBytes(content),
+    mtime: new Date(),
+  });
 }
 
 class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
@@ -364,11 +378,7 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   async writeFile(filePath: string, content: string | Uint8Array): Promise<void> {
     this.#assertOpen();
     const resolved = this.resolvePath(filePath);
-    ensureMemoryParentDirs(this.#state, path.posix.dirname(resolved));
-    this.#state.files.set(resolved, {
-      content: toBytes(content),
-      mtime: new Date(),
-    });
+    writeMemoryFile(this.#state, resolved, content);
   }
 
   async stat(filePath: string): Promise<RuntimeFileStat> {
@@ -405,6 +415,13 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
     this.#assertOpen();
     const resolved = this.resolvePath(dirPath);
     const parent = path.posix.dirname(resolved);
+    if (this.#state.files.has(resolved)) {
+      throw new Error(`File exists: ${resolved}`);
+    }
+    if (this.#state.dirs.has(resolved)) {
+      if (options.recursive) return;
+      throw new Error(`Directory exists: ${resolved}`);
+    }
     if (!options.recursive && !this.#state.dirs.has(parent)) {
       throw new Error(`Parent directory not found: ${parent}`);
     }
