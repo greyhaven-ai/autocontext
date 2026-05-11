@@ -58,7 +58,8 @@ def _failing_verifier() -> OutputVerifier:
 class TestImprovementLoopEventStream:
     def test_loop_emits_minimum_event_sequence_for_single_round(self) -> None:
         # Single round, no verifier. Expected sequence:
-        #   round_start, judge_done, round_summary, final
+        #   round_start, revision_done, judge_done, round_summary, final
+        # (AC-753: revision_done carries the output being evaluated)
         events: list[ImprovementLoopEvent] = []
         loop = ImprovementLoop(
             task=_OneShotPerfectTask(),
@@ -69,11 +70,17 @@ class TestImprovementLoopEventStream:
         loop.run("initial", {})
 
         event_types = [e.event for e in events]
-        assert event_types == ["round_start", "judge_done", "round_summary", "final"]
+        assert event_types == [
+            "round_start",
+            "revision_done",
+            "judge_done",
+            "round_summary",
+            "final",
+        ]
 
     def test_loop_emits_verifier_event_when_verifier_configured(self) -> None:
-        # With a passing verifier: round_start, judge_done, verifier_done,
-        # round_summary, final.
+        # With a passing verifier: round_start, revision_done, judge_done,
+        # verifier_done, round_summary, final.
         events: list[ImprovementLoopEvent] = []
         loop = ImprovementLoop(
             task=_OneShotPerfectTask(),
@@ -87,6 +94,7 @@ class TestImprovementLoopEventStream:
         event_types = [e.event for e in events]
         assert event_types == [
             "round_start",
+            "revision_done",
             "judge_done",
             "verifier_done",
             "round_summary",
@@ -151,6 +159,91 @@ class TestImprovementLoopEventStream:
         )
         result = loop.run("initial", {})
         assert result.best_score == 1.0
+
+
+# -- AC-753: revision_done events carry per-round output content --
+
+
+class _TwoRoundUpgradingTask(AgentTaskInterface):
+    """Round 1 returns a low score (forces a revision), round 2 returns high.
+    The revision appends a marker so tests can distinguish round-1 output
+    (the seed) from round-2 output (the revision)."""
+
+    def get_task_prompt(self, state):
+        return "."
+
+    def evaluate_output(self, output, state, **kwargs):
+        score = 0.95 if "REVISED" in output else 0.1
+        return AgentTaskResult(score=score, reasoning="x", dimension_scores={})
+
+    def revise_output(self, current_output, judge_result, state):
+        return current_output + "\nREVISED"
+
+    def get_rubric(self):
+        return "."
+
+    def initial_state(self, seed=None):
+        return {}
+
+    def describe_task(self):
+        return "."
+
+
+class TestRevisionDoneEvent:
+    """AC-753: each round emits a revision_done event carrying the output
+    being evaluated, so consumers can salvage verifier-vetoed near-misses
+    without rerunning."""
+
+    def test_revision_done_carries_seed_on_round_one(self) -> None:
+        events: list[ImprovementLoopEvent] = []
+        loop = ImprovementLoop(
+            task=_OneShotPerfectTask(),
+            max_rounds=1,
+            quality_threshold=0.9,
+            on_event=events.append,
+        )
+        loop.run("initial-seed", {})
+
+        rev_events = [e for e in events if e.event == "revision_done"]
+        assert len(rev_events) == 1
+        assert rev_events[0].round == 1
+        assert rev_events[0].output == "initial-seed"
+
+    def test_revision_done_carries_revised_output_on_subsequent_rounds(self) -> None:
+        events: list[ImprovementLoopEvent] = []
+        loop = ImprovementLoop(
+            task=_TwoRoundUpgradingTask(),
+            max_rounds=2,
+            quality_threshold=0.9,
+            on_event=events.append,
+        )
+        loop.run("seed", {})
+
+        rev_events = [e for e in events if e.event == "revision_done"]
+        assert [e.round for e in rev_events] == [1, 2]
+        assert rev_events[0].output == "seed"
+        # Round 2's revision_done carries the revised content produced by
+        # task.revise_output() at the end of round 1.
+        assert rev_events[1].output is not None
+        assert "REVISED" in rev_events[1].output
+
+    def test_revision_done_fires_immediately_after_round_start(self) -> None:
+        # Strict ordering: revision_done must come right after round_start
+        # for the same round, before judge_done. This lets consumers see
+        # the input the judge is about to evaluate.
+        events: list[ImprovementLoopEvent] = []
+        loop = ImprovementLoop(
+            task=_TwoRoundUpgradingTask(),
+            max_rounds=2,
+            quality_threshold=0.9,
+            on_event=events.append,
+        )
+        loop.run("seed", {})
+
+        # Look at the first three events of each round:
+        types = [e.event for e in events]
+        first_round = types[: types.index("round_summary") + 1]
+        assert first_round[:3] == ["round_start", "revision_done", "judge_done"]
 
 
 # -- AC-752: CLI `--ndjson` streams events as JSON lines --
@@ -336,3 +429,154 @@ class TestImproveNdjsonFlag:
         # The error message should mention both flags so the user knows why.
         combined = (result.stdout + (result.stderr or "")).lower()
         assert "--json" in combined and "--ndjson" in combined
+
+    def test_ndjson_includes_revision_done_with_output_by_default(self, tmp_path) -> None:
+        # AC-753: by default, --ndjson emits revision_done events carrying
+        # the per-round output content so consumers can salvage near-misses.
+        import json as _json
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from autocontext.cli import app
+        from autocontext.config.settings import AppSettings
+        from autocontext.providers.base import CompletionResult
+
+        runner = CliRunner()
+
+        class _Provider:
+            def complete(self, *args, **kwargs):
+                return CompletionResult(text="x", model=None)
+
+            def default_model(self):
+                return "m"
+
+        settings = AppSettings(
+            db_path=tmp_path / "runs" / "autocontext.sqlite3",
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+            judge_provider="anthropic",
+        )
+
+        class _FakeLoop:
+            def __init__(self, **kwargs):
+                self._on_event = kwargs.get("on_event") or (lambda _e: None)
+
+            def run(self, **_kwargs):
+                self._on_event(ImprovementLoopEvent(event="round_start", round=1))
+                self._on_event(ImprovementLoopEvent(event="revision_done", round=1, output="lean code v1"))
+                self._on_event(ImprovementLoopEvent(event="judge_done", round=1, score=0.9))
+                self._on_event(ImprovementLoopEvent(event="round_summary", round=1, effective_score=0.9))
+                self._on_event(
+                    ImprovementLoopEvent(
+                        event="final",
+                        best_score=0.9,
+                        best_round=1,
+                        total_rounds=1,
+                        met_threshold=True,
+                    )
+                )
+                return SimpleNamespace(
+                    best_score=0.9,
+                    best_round=1,
+                    total_rounds=1,
+                    met_threshold=True,
+                    best_output="x",
+                )
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", return_value=_Provider()),
+            patch("autocontext.execution.improvement_loop.ImprovementLoop", _FakeLoop),
+        ):
+            result = runner.invoke(app, ["improve", "-p", "x", "-r", "y", "--ndjson"])
+
+        assert result.exit_code == 0, result.output
+        events = [_json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        rev = next(e for e in events if e["event"] == "revision_done")
+        assert rev["round"] == 1
+        assert rev["output"] == "lean code v1"
+
+    def test_no_ndjson_include_output_suppresses_revision_done(self, tmp_path) -> None:
+        # AC-753: --no-ndjson-include-output drops revision_done events
+        # entirely (their only payload is the output content). Other events
+        # are still emitted unchanged.
+        import json as _json
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+
+        from autocontext.cli import app
+        from autocontext.config.settings import AppSettings
+        from autocontext.providers.base import CompletionResult
+
+        runner = CliRunner()
+
+        class _Provider:
+            def complete(self, *args, **kwargs):
+                return CompletionResult(text="x", model=None)
+
+            def default_model(self):
+                return "m"
+
+        settings = AppSettings(
+            db_path=tmp_path / "runs" / "autocontext.sqlite3",
+            runs_root=tmp_path / "runs",
+            knowledge_root=tmp_path / "knowledge",
+            skills_root=tmp_path / "skills",
+            claude_skills_path=tmp_path / ".claude" / "skills",
+            judge_provider="anthropic",
+        )
+
+        class _FakeLoop:
+            def __init__(self, **kwargs):
+                self._on_event = kwargs.get("on_event") or (lambda _e: None)
+
+            def run(self, **_kwargs):
+                self._on_event(ImprovementLoopEvent(event="round_start", round=1))
+                self._on_event(ImprovementLoopEvent(event="revision_done", round=1, output="bulky-lean-code"))
+                self._on_event(ImprovementLoopEvent(event="judge_done", round=1, score=0.9))
+                self._on_event(ImprovementLoopEvent(event="round_summary", round=1, effective_score=0.9))
+                self._on_event(
+                    ImprovementLoopEvent(
+                        event="final",
+                        best_score=0.9,
+                        best_round=1,
+                        total_rounds=1,
+                        met_threshold=True,
+                    )
+                )
+                return SimpleNamespace(
+                    best_score=0.9,
+                    best_round=1,
+                    total_rounds=1,
+                    met_threshold=True,
+                    best_output="x",
+                )
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", return_value=_Provider()),
+            patch("autocontext.execution.improvement_loop.ImprovementLoop", _FakeLoop),
+        ):
+            result = runner.invoke(
+                app,
+                ["improve", "-p", "x", "-r", "y", "--ndjson", "--no-ndjson-include-output"],
+            )
+
+        assert result.exit_code == 0, result.output
+        events = [_json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        types = [e["event"] for e in events]
+        assert "revision_done" not in types
+        # Other events still present.
+        assert "round_start" in types
+        assert "judge_done" in types
+        assert "round_summary" in types
+        assert "final" in types
+        # Defense-in-depth: the suppressed-output mode must not leak the
+        # bulk-output payload anywhere in stdout.
+        assert "bulky-lean-code" not in result.stdout

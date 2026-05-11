@@ -23,6 +23,11 @@ class ImprovementLoopEvent:
     only meaningful for certain event kinds:
 
     - `round_start`: round
+    - `revision_done`: round, output -- carries the output content the loop
+      is about to evaluate. For round 1 this is the seed; for round N>1 it
+      is the result of task.revise_output() at the end of round N-1.
+      Lets consumers salvage near-miss outputs from verifier-vetoed rounds
+      (AC-753).
     - `judge_done`: round, score
     - `verifier_done`: round, verifier_ok, verifier_exit_code
     - `round_summary`: round, effective_score
@@ -31,6 +36,7 @@ class ImprovementLoopEvent:
 
     event: str
     round: int | None = None
+    output: str | None = None
     score: float | None = None
     effective_score: float | None = None
     verifier_ok: bool | None = None

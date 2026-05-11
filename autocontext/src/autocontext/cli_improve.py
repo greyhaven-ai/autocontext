@@ -82,8 +82,18 @@ def register_improve_command(
             help=(
                 "Stream per-round events as newline-delimited JSON to stdout (AC-752). "
                 "Useful for long-running loops where --json would buffer all output until "
-                "completion. Emits one JSON line per event: round_start, judge_done, "
-                "verifier_done, round_summary, and a final summary line."
+                "completion. Emits one JSON line per event: round_start, revision_done, "
+                "judge_done, verifier_done, round_summary, and a final summary line."
+            ),
+        ),
+        ndjson_include_output: bool = typer.Option(
+            True,
+            "--ndjson-include-output/--no-ndjson-include-output",
+            help=(
+                "Include per-round model output in ndjson stream as `revision_done` events "
+                "(default true, AC-753). Lets consumers salvage near-miss verifier-vetoed "
+                "rounds. Pass `--no-ndjson-include-output` for lean events when output content "
+                "is large or unnecessary."
             ),
         ),
         verify_cmd: str = typer.Option(
@@ -158,10 +168,14 @@ def register_improve_command(
             # AC-752: when --ndjson is set, stream per-round events as JSON lines
             # so long-running loops have progress visibility before --json's final
             # blob lands. The event sink writes one compact JSON line per event.
+            # AC-753: revision_done events carry the bulk output content; users
+            # can opt out via --no-ndjson-include-output to keep streams lean.
             on_event: Callable[[ImprovementLoopEvent], None] | None = None
             if ndjson_output:
 
                 def _emit_ndjson(event: ImprovementLoopEvent) -> None:
+                    if event.event == "revision_done" and not ndjson_include_output:
+                        return
                     payload = {k: v for k, v in dataclasses.asdict(event).items() if v is not None}
                     typer.echo(json.dumps(payload))
 

@@ -230,6 +230,11 @@ class ImprovementLoop:
         for round_num in range(1, self.max_rounds + 1):
             logger.info("improvement loop round %d/%d", round_num, self.max_rounds)
             self._on_event(ImprovementLoopEvent(event="round_start", round=round_num))
+            # AC-753: emit the output content being evaluated so consumers can
+            # salvage near-miss verifier-vetoed rounds. For round 1, current_output
+            # is the seed; for round N>1, it's the result of task.revise_output()
+            # at the end of round N-1.
+            self._on_event(ImprovementLoopEvent(event="revision_done", round=round_num, output=current_output))
 
             round_start = time.monotonic()
             result = self.task.evaluate_output(
