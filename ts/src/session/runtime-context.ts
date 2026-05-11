@@ -59,6 +59,87 @@ export class RuntimeContextDiscoveryRequest {
   }
 }
 
+export interface RuntimeContextBundleEntry {
+  readonly entryId: string;
+  readonly title: string;
+  readonly content: string;
+  readonly provenance: Readonly<Record<string, string>>;
+  readonly metadata: Readonly<Record<string, string>>;
+}
+
+export interface RuntimeContextLayerBundle {
+  readonly layer: RuntimeContextLayer;
+  readonly entries: readonly RuntimeContextBundleEntry[];
+}
+
+export class RuntimeContextBundle {
+  readonly layers: readonly RuntimeContextLayerBundle[];
+
+  constructor(layers: readonly RuntimeContextLayerBundle[]) {
+    this.layers = layers;
+  }
+
+  getLayer(key: RuntimeContextLayerKey): RuntimeContextLayerBundle {
+    const layer = this.layers.find((candidate) => candidate.layer.key === key);
+    if (!layer) throw new Error(`unknown runtime context layer: ${key}`);
+    return layer;
+  }
+
+  allEntries(): RuntimeContextBundleEntry[] {
+    return this.layers.flatMap((layer) => [...layer.entries]);
+  }
+}
+
+export interface RuntimeContextAssemblyRequestOptions {
+  readonly discovery: RuntimeContextDiscoveryRequest;
+  readonly systemPolicy?: string;
+  readonly roleInstructions?: string;
+  readonly scenarioContext?: string;
+  readonly knowledgeComponents?: Readonly<Record<string, string>>;
+  readonly knowledgeInclude?: readonly string[];
+  readonly knowledgeExclude?: readonly string[];
+  readonly toolAffordances?: Readonly<Record<string, string>>;
+  readonly sessionHistory?: readonly string[];
+}
+
+export class RuntimeContextAssemblyRequest {
+  readonly discovery: RuntimeContextDiscoveryRequest;
+  readonly systemPolicy: string;
+  readonly roleInstructions: string;
+  readonly scenarioContext: string;
+  readonly knowledgeComponents: Readonly<Record<string, string>>;
+  readonly knowledgeInclude?: readonly string[];
+  readonly knowledgeExclude: readonly string[];
+  readonly toolAffordances: Readonly<Record<string, string>>;
+  readonly sessionHistory: readonly string[];
+
+  constructor(opts: RuntimeContextAssemblyRequestOptions) {
+    this.discovery = opts.discovery;
+    this.systemPolicy = opts.systemPolicy ?? "";
+    this.roleInstructions = opts.roleInstructions ?? "";
+    this.scenarioContext = opts.scenarioContext ?? "";
+    this.knowledgeComponents = opts.knowledgeComponents ?? {};
+    this.knowledgeInclude = opts.knowledgeInclude;
+    this.knowledgeExclude = opts.knowledgeExclude ?? [];
+    this.toolAffordances = opts.toolAffordances ?? {};
+    this.sessionHistory = opts.sessionHistory ?? [];
+  }
+
+  forChildTask(cwd: string): RuntimeContextAssemblyRequest {
+    return new RuntimeContextAssemblyRequest({
+      discovery: this.discovery.forChildTask(cwd),
+      systemPolicy: this.systemPolicy,
+      roleInstructions: this.roleInstructions,
+      scenarioContext: this.scenarioContext,
+      knowledgeComponents: this.knowledgeComponents,
+      knowledgeInclude: this.knowledgeInclude,
+      knowledgeExclude: this.knowledgeExclude,
+      toolAffordances: this.toolAffordances,
+      sessionHistory: this.sessionHistory,
+    });
+  }
+}
+
 export const RUNTIME_CONTEXT_LAYERS: readonly RuntimeContextLayer[] = [
   {
     key: RuntimeContextLayerKey.SYSTEM_POLICY,
@@ -187,6 +268,44 @@ export function selectRuntimeKnowledgeComponents(
   return selected;
 }
 
+export function assembleRuntimeContext(request: RuntimeContextAssemblyRequest): RuntimeContextBundle {
+  const entriesByLayer: Partial<Record<RuntimeContextLayerKey, readonly RuntimeContextBundleEntry[]>> = {
+    [RuntimeContextLayerKey.SYSTEM_POLICY]: singleTextEntry(
+      "system_policy:default",
+      "System Policy",
+      request.systemPolicy,
+      "system_policy",
+    ),
+    [RuntimeContextLayerKey.REPO_INSTRUCTIONS]: repoInstructionEntries(request.discovery),
+    [RuntimeContextLayerKey.ROLE_INSTRUCTIONS]: singleTextEntry(
+      "role_instructions:default",
+      "Role Instructions",
+      request.roleInstructions,
+      "role_instructions",
+    ),
+    [RuntimeContextLayerKey.SCENARIO_CONTEXT]: singleTextEntry(
+      "scenario_context:default",
+      "Scenario Context",
+      request.scenarioContext,
+      "scenario_context",
+    ),
+    [RuntimeContextLayerKey.KNOWLEDGE]: knowledgeEntries(request),
+    [RuntimeContextLayerKey.RUNTIME_SKILLS]: runtimeSkillEntries(request.discovery),
+    [RuntimeContextLayerKey.TOOL_AFFORDANCES]: mappingEntries(request.toolAffordances, {
+      entryIdPrefix: "tool_affordance",
+      sourceType: "tool_affordance",
+    }),
+    [RuntimeContextLayerKey.SESSION_HISTORY]: sessionHistoryEntries(request.sessionHistory),
+  };
+
+  return new RuntimeContextBundle(
+    RUNTIME_CONTEXT_LAYERS.map((layer) => ({
+      layer,
+      entries: entriesByLayer[layer.key] ?? [],
+    })),
+  );
+}
+
 function workspaceRoot(request: RuntimeContextDiscoveryRequest): string {
   return realpathSync(resolve(request.workspaceRoot));
 }
@@ -246,4 +365,95 @@ function isDirectory(path: string): boolean {
 
 function isFile(path: string): boolean {
   return existsSync(path) && statSync(path).isFile();
+}
+
+function singleTextEntry(
+  entryId: string,
+  title: string,
+  content: string,
+  sourceType: string,
+): RuntimeContextBundleEntry[] {
+  if (!content.trim()) return [];
+  return [{ entryId, title, content, provenance: { sourceType }, metadata: {} }];
+}
+
+function repoInstructionEntries(request: RuntimeContextDiscoveryRequest): RuntimeContextBundleEntry[] {
+  return discoverRepoInstructions(request).map((instruction) => ({
+    entryId: `repo_instruction:${instruction.relativePath}`,
+    title: instruction.relativePath,
+    content: instruction.content,
+    provenance: {
+      sourceType: "repo_instruction",
+      relativePath: instruction.relativePath,
+      path: instruction.path,
+    },
+    metadata: {},
+  }));
+}
+
+function knowledgeEntries(request: RuntimeContextAssemblyRequest): RuntimeContextBundleEntry[] {
+  return mappingEntries(
+    selectRuntimeKnowledgeComponents(request.knowledgeComponents, {
+      include: request.knowledgeInclude,
+      exclude: request.knowledgeExclude,
+    }),
+    { entryIdPrefix: "knowledge", sourceType: "knowledge_component", provenanceKey: "component" },
+  );
+}
+
+function runtimeSkillEntries(request: RuntimeContextDiscoveryRequest): RuntimeContextBundleEntry[] {
+  const root = workspaceRoot(request);
+  return discoverRuntimeSkills(request).allManifests().map((manifest) => {
+    const provenance: Record<string, string> = {
+      sourceType: "runtime_skill",
+      name: manifest.name,
+      path: manifest.skillPath,
+    };
+    const relativePath = relativeToRoot(manifest.skillPath, root);
+    if (relativePath) provenance.relativePath = relativePath;
+    return {
+      entryId: `runtime_skill:${manifest.name}`,
+      title: manifest.name,
+      content: manifest.description,
+      provenance,
+      metadata: { manifestFirst: "true" },
+    };
+  });
+}
+
+function mappingEntries(
+  values: Readonly<Record<string, string>>,
+  opts: { entryIdPrefix: string; sourceType: string; provenanceKey?: string },
+): RuntimeContextBundleEntry[] {
+  return Object.entries(values)
+    .filter(([, value]) => value.trim().length > 0)
+    .map(([key, value]) => ({
+      entryId: `${opts.entryIdPrefix}:${key}`,
+      title: key,
+      content: value,
+      provenance: { sourceType: opts.sourceType, [opts.provenanceKey ?? "name"]: key },
+      metadata: {},
+    }));
+}
+
+function sessionHistoryEntries(history: readonly string[]): RuntimeContextBundleEntry[] {
+  const nonEmptyHistory = history
+    .map((content, index) => ({ content, index: index + 1 }))
+    .filter(({ content }) => content.trim().length > 0);
+  return nonEmptyHistory.map(({ content, index }, visibleIndex) => ({
+    entryId: `session_history:${index}`,
+    title:
+      nonEmptyHistory.length === 1
+        ? "Recent Session History"
+        : `Recent Session History #${visibleIndex + 1}`,
+    content,
+    provenance: { sourceType: "session_history", index: String(index) },
+    metadata: {},
+  }));
+}
+
+function relativeToRoot(path: string, root: string): string | null {
+  const resolved = resolve(path);
+  if (!isPathWithinRoot(root, resolved)) return null;
+  return relative(root, resolved).split("\\").join("/");
 }

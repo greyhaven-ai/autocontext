@@ -289,8 +289,11 @@ export {
 export {
   RUNTIME_CONTEXT_LAYER_KEYS,
   RUNTIME_CONTEXT_LAYERS,
+  RuntimeContextAssemblyRequest,
+  RuntimeContextBundle,
   RuntimeContextDiscoveryRequest,
   RuntimeContextLayerKey,
+  assembleRuntimeContext,
   discoverRepoInstructions,
   discoverRuntimeSkills,
   runtimeSkillDiscoveryRoots,
@@ -298,7 +301,10 @@ export {
 } from "./session/runtime-context.js";
 export type {
   RepoInstruction,
+  RuntimeContextAssemblyRequestOptions,
+  RuntimeContextBundleEntry,
   RuntimeContextLayer,
+  RuntimeContextLayerBundle,
   RuntimeContextDiscoveryRequestOptions,
 } from "./session/runtime-context.js";
 export {

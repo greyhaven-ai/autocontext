@@ -7,7 +7,9 @@ import {
   RUNTIME_CONTEXT_LAYER_KEYS,
   RUNTIME_CONTEXT_LAYERS,
   RuntimeContextLayerKey,
+  assembleRuntimeContext,
   RuntimeContextDiscoveryRequest,
+  RuntimeContextAssemblyRequest,
   discoverRepoInstructions,
   discoverRuntimeSkills,
   selectRuntimeKnowledgeComponents,
@@ -111,5 +113,87 @@ describe("runtime context layers", () => {
       playbook: "Use validated strategy.",
       dead_ends: "Avoid stale path.",
     });
+  });
+
+  it("materializes an ordered context bundle with provenance", () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-context-"));
+    writeFileSync(join(root, "AGENTS.md"), "root agents\n");
+    mkdirSync(join(root, "pkg"), { recursive: true });
+    writeFileSync(join(root, "pkg", "CLAUDE.md"), "pkg claude\n");
+    writeSkill(join(root, "pkg", ".claude", "skills"), "shared", "package shared");
+
+    const bundle = assembleRuntimeContext(
+      new RuntimeContextAssemblyRequest({
+        discovery: new RuntimeContextDiscoveryRequest({ workspaceRoot: root, cwd: "/pkg" }),
+        systemPolicy: "System policy text.",
+        roleInstructions: "Role instruction text.",
+        scenarioContext: "Scenario context text.",
+        knowledgeComponents: {
+          playbook: "Use validated strategy.",
+          lessons: "Excluded lesson.",
+          empty: "",
+          private_notes: "do not include",
+        },
+        knowledgeInclude: ["playbook", "lessons", "empty"],
+        knowledgeExclude: ["lessons"],
+        toolAffordances: { shell: "Workspace shell grant." },
+        sessionHistory: ["Recent compacted turn."],
+      }),
+    );
+
+    expect(bundle.layers.map((layer) => layer.layer.key)).toEqual(RUNTIME_CONTEXT_LAYER_KEYS);
+    expect(bundle.allEntries().map((entry) => entry.title)).toEqual([
+      "System Policy",
+      "AGENTS.md",
+      "pkg/CLAUDE.md",
+      "Role Instructions",
+      "Scenario Context",
+      "playbook",
+      "shared",
+      "shell",
+      "Recent Session History",
+    ]);
+
+    const repoEntries = bundle.getLayer(RuntimeContextLayerKey.REPO_INSTRUCTIONS).entries;
+    expect(repoEntries[1].provenance.relativePath).toBe("pkg/CLAUDE.md");
+    expect(repoEntries[1].provenance.sourceType).toBe("repo_instruction");
+
+    const skillEntry = bundle.getLayer(RuntimeContextLayerKey.RUNTIME_SKILLS).entries[0];
+    expect(skillEntry.provenance.sourceType).toBe("runtime_skill");
+    expect(skillEntry.metadata.manifestFirst).toBe("true");
+    expect(skillEntry.content).toBe("package shared");
+  });
+
+  it("recomputes workspace layers for child cwd", () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-context-"));
+    writeFileSync(join(root, "AGENTS.md"), "root agents\n");
+    mkdirSync(join(root, "pkg"), { recursive: true });
+    writeFileSync(join(root, "pkg", "AGENTS.md"), "pkg agents\n");
+    mkdirSync(join(root, "other"), { recursive: true });
+    writeFileSync(join(root, "other", "CLAUDE.md"), "other claude\n");
+    writeSkill(join(root, "pkg", ".claude", "skills"), "pkg-only", "package skill");
+    writeSkill(join(root, "other", ".claude", "skills"), "other-only", "other skill");
+
+    const request = new RuntimeContextAssemblyRequest({
+      discovery: new RuntimeContextDiscoveryRequest({ workspaceRoot: root, cwd: "/pkg" }),
+      roleInstructions: "same role text",
+    });
+
+    const parent = assembleRuntimeContext(request);
+    const child = assembleRuntimeContext(request.forChildTask("/other"));
+
+    expect(parent.getLayer(RuntimeContextLayerKey.REPO_INSTRUCTIONS).entries.map((entry) => entry.provenance.relativePath)).toEqual([
+      "AGENTS.md",
+      "pkg/AGENTS.md",
+    ]);
+    expect(parent.getLayer(RuntimeContextLayerKey.RUNTIME_SKILLS).entries.map((entry) => entry.title)).toEqual(["pkg-only"]);
+    expect(child.getLayer(RuntimeContextLayerKey.REPO_INSTRUCTIONS).entries.map((entry) => entry.provenance.relativePath)).toEqual([
+      "AGENTS.md",
+      "other/CLAUDE.md",
+    ]);
+    expect(child.getLayer(RuntimeContextLayerKey.RUNTIME_SKILLS).entries.map((entry) => entry.title)).toEqual(["other-only"]);
+    expect(child.getLayer(RuntimeContextLayerKey.ROLE_INSTRUCTIONS).entries.map((entry) => entry.content)).toEqual([
+      "same role text",
+    ]);
   });
 });
