@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from autocontext.execution.improvement_events import ImprovementLoopEvent
 from autocontext.execution.output_cleaner import clean_revision_output
 from autocontext.execution.output_verifier import OutputVerifier
 from autocontext.scenarios.agent_task import AgentTaskInterface, AgentTaskResult
@@ -114,6 +116,7 @@ class ImprovementLoop:
         cap_score_jumps: bool = False,
         dimension_threshold: float | None = None,
         output_verifier: OutputVerifier | None = None,
+        on_event: Callable[[ImprovementLoopEvent], None] | None = None,
     ) -> None:
         self.task = task
         self.max_rounds = max(1, max_rounds)
@@ -126,6 +129,9 @@ class ImprovementLoop:
         # When set, a non-passing verifier round forces effective_score to 0
         # and feeds the verifier's stderr/stdout into the next revision prompt.
         self.output_verifier = output_verifier if (output_verifier and output_verifier.enabled) else None
+        # AC-752: optional per-round event sink so callers (e.g. `--ndjson`)
+        # can stream progress without waiting for the final result blob.
+        self._on_event: Callable[[ImprovementLoopEvent], None] = on_event or (lambda _e: None)
 
     def run(
         self,
@@ -207,8 +213,23 @@ class ImprovementLoop:
                 internal_retries=judge_result.internal_retries,
             )
 
+        def _emit_final(final_result: ImprovementResult) -> ImprovementResult:
+            # AC-752: emit a single `final` event right before returning so
+            # streaming consumers (CLI --ndjson) see the run's summary fields.
+            self._on_event(
+                ImprovementLoopEvent(
+                    event="final",
+                    best_score=final_result.best_score,
+                    best_round=final_result.best_round,
+                    total_rounds=final_result.total_rounds,
+                    met_threshold=final_result.met_threshold,
+                )
+            )
+            return final_result
+
         for round_num in range(1, self.max_rounds + 1):
             logger.info("improvement loop round %d/%d", round_num, self.max_rounds)
+            self._on_event(ImprovementLoopEvent(event="round_start", round=round_num))
 
             round_start = time.monotonic()
             result = self.task.evaluate_output(
@@ -222,6 +243,7 @@ class ImprovementLoop:
             judge_calls += 1
             round_ms = int((time.monotonic() - round_start) * 1000)
             total_internal_retries += result.internal_retries
+            self._on_event(ImprovementLoopEvent(event="judge_done", round=round_num, score=result.score))
 
             failed = _is_parse_failure(result.score, result.reasoning)
 
@@ -361,6 +383,22 @@ class ImprovementLoop:
                         round_num,
                         verifier_outcome.exit_code,
                     )
+                self._on_event(
+                    ImprovementLoopEvent(
+                        event="verifier_done",
+                        round=round_num,
+                        verifier_ok=verifier_outcome.ok,
+                        verifier_exit_code=verifier_outcome.exit_code,
+                    )
+                )
+
+            self._on_event(
+                ImprovementLoopEvent(
+                    event="round_summary",
+                    round=round_num,
+                    effective_score=effective_score,
+                )
+            )
 
             if effective_score > best_score:
                 best_score = effective_score
@@ -433,24 +471,26 @@ class ImprovementLoop:
                     # Threshold was met on a previous round too — confirmed stable
                     logger.info("quality threshold %.2f confirmed stable at round %d", self.quality_threshold, round_num)
                     duration_ms = int((time.monotonic() - loop_start) * 1000)
-                    return ImprovementResult(
-                        rounds=rounds,
-                        best_output=best_output,
-                        best_score=best_score,
-                        best_round=best_round,
-                        total_rounds=round_num,
-                        met_threshold=True,
-                        judge_failures=judge_failures,
-                        termination_reason="threshold_met",
-                        dimension_trajectory=dimension_trajectory,
-                        total_internal_retries=total_internal_retries,
-                        duration_ms=duration_ms,
-                        judge_calls=judge_calls,
-                        pareto_frontier=[
-                            {"candidate_id": c.candidate_id, "scores": c.scores, "artifact_len": len(c.artifact)}
-                            for c in _pareto_frontier.candidates
-                        ],
-                        actionable_side_info=[a.to_dict() for a in _collected_asi],
+                    return _emit_final(
+                        ImprovementResult(
+                            rounds=rounds,
+                            best_output=best_output,
+                            best_score=best_score,
+                            best_round=best_round,
+                            total_rounds=round_num,
+                            met_threshold=True,
+                            judge_failures=judge_failures,
+                            termination_reason="threshold_met",
+                            dimension_trajectory=dimension_trajectory,
+                            total_internal_retries=total_internal_retries,
+                            duration_ms=duration_ms,
+                            judge_calls=judge_calls,
+                            pareto_frontier=[
+                                {"candidate_id": c.candidate_id, "scores": c.scores, "artifact_len": len(c.artifact)}
+                                for c in _pareto_frontier.candidates
+                            ],
+                            actionable_side_info=[a.to_dict() for a in _collected_asi],
+                        )
                     )
 
                 if near_threshold and round_num < self.max_rounds:
@@ -466,24 +506,26 @@ class ImprovementLoop:
                     # Clearly above threshold — stop immediately
                     logger.info("quality threshold %.2f met at round %d", self.quality_threshold, round_num)
                     duration_ms = int((time.monotonic() - loop_start) * 1000)
-                    return ImprovementResult(
-                        rounds=rounds,
-                        best_output=best_output,
-                        best_score=best_score,
-                        best_round=best_round,
-                        total_rounds=round_num,
-                        met_threshold=True,
-                        judge_failures=judge_failures,
-                        termination_reason="threshold_met",
-                        dimension_trajectory=dimension_trajectory,
-                        total_internal_retries=total_internal_retries,
-                        duration_ms=duration_ms,
-                        judge_calls=judge_calls,
-                        pareto_frontier=[
-                            {"candidate_id": c.candidate_id, "scores": c.scores, "artifact_len": len(c.artifact)}
-                            for c in _pareto_frontier.candidates
-                        ],
-                        actionable_side_info=[a.to_dict() for a in _collected_asi],
+                    return _emit_final(
+                        ImprovementResult(
+                            rounds=rounds,
+                            best_output=best_output,
+                            best_score=best_score,
+                            best_round=best_round,
+                            total_rounds=round_num,
+                            met_threshold=True,
+                            judge_failures=judge_failures,
+                            termination_reason="threshold_met",
+                            dimension_trajectory=dimension_trajectory,
+                            total_internal_retries=total_internal_retries,
+                            duration_ms=duration_ms,
+                            judge_calls=judge_calls,
+                            pareto_frontier=[
+                                {"candidate_id": c.candidate_id, "scores": c.scores, "artifact_len": len(c.artifact)}
+                                for c in _pareto_frontier.candidates
+                            ],
+                            actionable_side_info=[a.to_dict() for a in _collected_asi],
+                        )
                     )
             else:
                 # Score dropped below threshold after previously meeting it
@@ -522,22 +564,24 @@ class ImprovementLoop:
                 current_output = revised
 
         duration_ms = int((time.monotonic() - loop_start) * 1000)
-        return ImprovementResult(
-            rounds=rounds,
-            best_output=best_output,
-            best_score=best_score,
-            best_round=best_round,
-            total_rounds=len(rounds),
-            met_threshold=False,
-            judge_failures=judge_failures,
-            termination_reason=termination_reason,
-            dimension_trajectory=dimension_trajectory,
-            total_internal_retries=total_internal_retries,
-            duration_ms=duration_ms,
-            judge_calls=judge_calls,
-            pareto_frontier=[
-                {"candidate_id": c.candidate_id, "scores": c.scores, "artifact_len": len(c.artifact)}
-                for c in _pareto_frontier.candidates
-            ],
-            actionable_side_info=[a.to_dict() for a in _collected_asi],
+        return _emit_final(
+            ImprovementResult(
+                rounds=rounds,
+                best_output=best_output,
+                best_score=best_score,
+                best_round=best_round,
+                total_rounds=len(rounds),
+                met_threshold=False,
+                judge_failures=judge_failures,
+                termination_reason=termination_reason,
+                dimension_trajectory=dimension_trajectory,
+                total_internal_retries=total_internal_retries,
+                duration_ms=duration_ms,
+                judge_calls=judge_calls,
+                pareto_frontier=[
+                    {"candidate_id": c.candidate_id, "scores": c.scores, "artifact_len": len(c.artifact)}
+                    for c in _pareto_frontier.candidates
+                ],
+                actionable_side_info=[a.to_dict() for a in _collected_asi],
+            )
         )

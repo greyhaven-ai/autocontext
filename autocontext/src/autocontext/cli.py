@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -1493,6 +1494,16 @@ def improve(
         ),
     ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
+    ndjson_output: bool = typer.Option(
+        False,
+        "--ndjson",
+        help=(
+            "Stream per-round events as newline-delimited JSON to stdout (AC-752). "
+            "Useful for long-running loops where --json would buffer all output until "
+            "completion. Emits one JSON line per event: round_start, judge_done, "
+            "verifier_done, round_summary, and a final summary line."
+        ),
+    ),
     verify_cmd: str = typer.Option(
         "",
         "--verify-cmd",
@@ -1522,6 +1533,8 @@ def improve(
     Creates a simple agent task from the prompt and rubric, then runs
     the improvement loop with judge-guided iteration.
     """
+
+    from autocontext.execution.improvement_events import ImprovementLoopEvent
     from autocontext.execution.improvement_loop import ImprovementLoop
     from autocontext.execution.output_verifier import make_verifier
     from autocontext.execution.task_runner import SimpleAgentTask
@@ -1548,11 +1561,23 @@ def improve(
             file_suffix=verify_suffix,
             timeout_s=verify_timeout,
         )
+        # AC-752: when --ndjson is set, stream per-round events as JSON lines
+        # so long-running loops have progress visibility before --json's final
+        # blob lands. The event sink writes one compact JSON line per event.
+        on_event: Callable[[ImprovementLoopEvent], None] | None = None
+        if ndjson_output:
+
+            def _emit_ndjson(event: ImprovementLoopEvent) -> None:
+                payload = {k: v for k, v in dataclasses.asdict(event).items() if v is not None}
+                typer.echo(json.dumps(payload))
+
+            on_event = _emit_ndjson
         loop = ImprovementLoop(
             task=task,
             max_rounds=max_rounds,
             quality_threshold=threshold,
             output_verifier=verifier,
+            on_event=on_event,
         )
         starting_output = initial_output or task.generate_output(state)
         result = loop.run(initial_output=starting_output, state=state)
@@ -1574,6 +1599,11 @@ def improve(
                 "best_output": result.best_output,
             }
         )
+    elif ndjson_output:
+        # AC-752: under --ndjson, stdout is pure newline-delimited JSON
+        # (already streamed via on_event). Suppress the Rich human-readable
+        # summary so consumers can reliably parse each stdout line as JSON.
+        pass
     else:
         console.print(f"[bold]Best score:[/bold] {result.best_score:.4f} (round {result.best_round})")
         console.print(f"[bold]Rounds:[/bold] {result.total_rounds}")
