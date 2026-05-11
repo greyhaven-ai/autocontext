@@ -68,6 +68,25 @@ These are the execution nouns we should use when describing how the system actua
 | artifacts | Umbrella category over runtime outputs | Use as a collection term, not a peer to `Scenario` or `Mission`. |
 | runtime-session event log | `Artifact` emitted by a `Run` or child task | Durable observability and replay source for provider turns, shell/tool activity, child-task lineage, and compaction summaries. |
 
+## Runtime Context Assembly
+
+Runtime context is not a new top-level product noun. It is the ordered prompt/runtime material assembled for a `Run`, `Step`, or child task from `Policy`, workspace files, AutoContext roles, `Scenario`/`Task` inputs, `Knowledge`, skills, tools, and runtime-session history.
+
+The canonical layer order is exposed in Python as `autocontext.session.RUNTIME_CONTEXT_LAYERS` and in TypeScript as `RUNTIME_CONTEXT_LAYERS` from `@greyhaven/autoctx`. Implementations may render the layers differently, but they should keep this order observable:
+
+| Order | Layer | Owner | Persistence | Budget / compaction behavior | Child-task behavior |
+| --- | --- | --- | --- | --- | --- |
+| 1 | system/runtime policy | Runtime | Bundled | Protected; never trimmed by prompt budget. | Inherited. |
+| 2 | repo-local instructions (`AGENTS.md`, `CLAUDE.md`) | Workspace | Repo files | Protected; missing files are allowed. | Recomputed from the child task `cwd`. |
+| 3 | AutoContext role instructions | AutoContext | Bundled | Protected; role-specific overrides should replace, not duplicate, base role text. | Inherited or overridden by the child role. |
+| 4 | `Scenario`/`Task` prompt context | Scenario / Task | Run input | Protected task slice; too-large user context should fail or be summarized before execution. | Parent passes only the child task slice. |
+| 5 | persisted `Knowledge` (playbooks, hints, lessons, dead ends) | Knowledge store | Knowledge artifacts | Compressible/promotable; include only applicable, non-empty, non-excluded components. | Re-selected for the child task and scenario. |
+| 6 | runtime-discovered skills | Workspace / skill store | Repo or skill store | Manifest-first; load full bodies lazily and deduplicate by skill name. | Recomputed from the child `cwd`; nearest cwd skill roots win duplicate names. |
+| 7 | tool affordances and scoped grants | Runtime | Ephemeral grant scope | Summarize tool metadata and redact secrets; scoped grants carry explicit inheritance policy. | Inherit only grants allowed by policy. |
+| 8 | recent session history and compaction summaries | Runtime session | Runtime-session log and compaction artifacts | Compact when pressure crosses policy thresholds; summaries point back to source events. | Child tasks use their own session log and linked parent lineage. |
+
+Repo instruction discovery walks from workspace root to the current `cwd`, loading `AGENTS.md` and `CLAUDE.md` when present. Skill discovery walks from the current `cwd` back to the root so more specific skill roots can override broad ones by name while still falling back to shared root skills. This intentionally borrows the useful Flue distinction between bundled role behavior and runtime workspace discovery without replacing AutoContext's `Scenario`, `Task`, `Mission`, `Run`, `Artifact`, or `Knowledge` vocabulary.
+
 ## Durable Session Event Storage
 
 A durable `runtime-session event log` is an append-only `Artifact` for one `Run` or child task. It is not a new top-level product noun; it is the storage bridge that lets operators replay what happened while still mapping every event back to `Run`, `Step`, `Artifact`, `Knowledge`, `Budget`, and `Policy`.

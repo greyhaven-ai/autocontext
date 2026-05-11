@@ -287,6 +287,21 @@ export {
   summarizeRuntimeSession,
 } from "./session/runtime-session-read-model.js";
 export {
+  RUNTIME_CONTEXT_LAYER_KEYS,
+  RUNTIME_CONTEXT_LAYERS,
+  RuntimeContextDiscoveryRequest,
+  RuntimeContextLayerKey,
+  discoverRepoInstructions,
+  discoverRuntimeSkills,
+  runtimeSkillDiscoveryRoots,
+  selectRuntimeKnowledgeComponents,
+} from "./session/runtime-context.js";
+export type {
+  RepoInstruction,
+  RuntimeContextLayer,
+  RuntimeContextDiscoveryRequestOptions,
+} from "./session/runtime-context.js";
+export {
   buildRuntimeSessionTimeline,
   readRuntimeSessionTimelineById,
   readRuntimeSessionTimelineByRunId,

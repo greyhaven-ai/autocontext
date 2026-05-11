@@ -1,3 +1,15 @@
+from autocontext.session.runtime_context import (
+    RUNTIME_CONTEXT_LAYER_KEYS,
+    RUNTIME_CONTEXT_LAYERS,
+    RepoInstruction,
+    RuntimeContextDiscoveryRequest,
+    RuntimeContextLayer,
+    RuntimeContextLayerKey,
+    discover_repo_instructions,
+    discover_runtime_skills,
+    runtime_skill_discovery_roots,
+    select_runtime_knowledge_components,
+)
 from autocontext.session.runtime_events import (
     RuntimeSessionEvent,
     RuntimeSessionEventLog,
@@ -38,9 +50,15 @@ from autocontext.session.runtime_session_timeline import (
 
 __all__ = [
     "DEFAULT_CHILD_TASK_MAX_DEPTH",
+    "RUNTIME_CONTEXT_LAYER_KEYS",
+    "RUNTIME_CONTEXT_LAYERS",
+    "RepoInstruction",
     "RuntimeChildTaskHandlerInput",
     "RuntimeChildTaskHandlerOutput",
     "RuntimeChildTaskResult",
+    "RuntimeContextDiscoveryRequest",
+    "RuntimeContextLayer",
+    "RuntimeContextLayerKey",
     "RuntimeChildTaskRunner",
     "RuntimeSession",
     "RuntimeSessionCompactionInput",
@@ -56,6 +74,8 @@ __all__ = [
     "build_runtime_session_timeline",
     "create_runtime_session_grant_event_sink",
     "create_runtime_session_for_run",
+    "discover_repo_instructions",
+    "discover_runtime_skills",
     "open_runtime_session_for_run",
     "read_runtime_session_by_id",
     "read_runtime_session_by_run_id",
@@ -63,5 +83,7 @@ __all__ = [
     "read_runtime_session_timeline_by_id",
     "read_runtime_session_timeline_by_run_id",
     "runtime_session_id_for_run",
+    "runtime_skill_discovery_roots",
+    "select_runtime_knowledge_components",
     "summarize_runtime_session",
 ]
