@@ -203,7 +203,33 @@ class TestWriteup:
         payload = response.json()
         assert "writeup_markdown" in payload
         assert "writeup_html" in payload
+        assert payload["writeup_html_path"].endswith("knowledge/grid_ctf/reports/run1.html")
         assert "Run Summary: run1" in payload["writeup_html"]
+        assert Path(payload["writeup_html_path"]).read_text(encoding="utf-8") == payload["writeup_html"]
+
+    def test_scenario_curation_endpoint_persists_read_only_html(self, cockpit_env: dict[str, Any]) -> None:
+        from autocontext.knowledge.lessons import ApplicabilityMeta
+
+        client: TestClient = cockpit_env["client"]
+        artifacts: ArtifactStore = cockpit_env["artifacts"]
+
+        artifacts.lesson_store.add_lesson(
+            "grid_ctf",
+            "Always verify posted charges before refunding.",
+            ApplicabilityMeta(created_at="2026-05-11T12:00:00Z", generation=3, best_score=0.72),
+        )
+        artifacts.write_hints("grid_ctf", "Prefer concise escalation.")
+        artifacts.append_dead_end("grid_ctf", "Do not retry invalid account states.")
+
+        response = client.get("/api/cockpit/scenarios/grid_ctf/curation")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["scenario_name"] == "grid_ctf"
+        assert payload["curation_html_path"].endswith("knowledge/grid_ctf/curation.html")
+        assert "Read-only derived artifact" in payload["curation_html"]
+        assert "Always verify posted charges before refunding." in payload["curation_html"]
+        assert Path(payload["curation_html_path"]).read_text(encoding="utf-8") == payload["curation_html"]
 
 
 # ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from autocontext.analytics.artifact_rendering import render_scenario_curation_html, scenario_curation_view_from_artifacts
 from autocontext.consultation.runner import ConsultationRunner
 from autocontext.consultation.types import ConsultationRequest as ConsReq
 from autocontext.consultation.types import ConsultationTrigger
@@ -547,12 +548,33 @@ def writeup(run_id: str, request: Request) -> dict[str, Any]:
     run_dict = dict(run_row)
     md = generate_writeup(run_id, store, artifacts)
     html = generate_writeup_html(run_id, store, artifacts)
+    html_path = artifacts.write_run_writeup_html(run_dict["scenario"], run_id, html)
 
     return {
         "run_id": run_id,
         "scenario_name": run_dict["scenario"],
         "writeup_markdown": md,
         "writeup_html": html,
+        "writeup_html_path": str(html_path),
+    }
+
+
+@cockpit_router.get("/scenarios/{scenario_name}/curation")
+def scenario_curation(scenario_name: str, request: Request) -> dict[str, Any]:
+    """Render and persist a read-only scenario curation HTML artifact."""
+    clean_scenario = scenario_name.strip()
+    if not clean_scenario:
+        raise HTTPException(status_code=422, detail="scenario_name is required")
+
+    artifacts = _get_artifacts(request)
+    view = scenario_curation_view_from_artifacts(artifacts, clean_scenario)
+    html = render_scenario_curation_html(view)
+    html_path = artifacts.write_scenario_curation_html(clean_scenario, html)
+
+    return {
+        "scenario_name": clean_scenario,
+        "curation_html": html,
+        "curation_html_path": str(html_path),
     }
 
 

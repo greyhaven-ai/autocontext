@@ -1013,6 +1013,18 @@ class ArtifactStore(ArtifactWriteMethods):
         path.write_text(content, encoding="utf-8")
         return path
 
+    def write_run_writeup_html(self, scenario_name: str, run_id: str, content: str) -> Path:
+        """Write a derived HTML run writeup for operator review."""
+        path = self.knowledge_root / scenario_name / "reports" / f"{run_id}.html"
+        self.write_html(path, content)
+        return path
+
+    def write_scenario_curation_html(self, scenario_name: str, content: str) -> Path:
+        """Write a read-only derived scenario curation artifact."""
+        path = self.knowledge_root / scenario_name / "curation.html"
+        self.write_html(path, content)
+        return path
+
     # --- Normalized progress reports (AC-190) ---------------------------------
 
     def _progress_report_dir(self, scenario_name: str) -> Path:

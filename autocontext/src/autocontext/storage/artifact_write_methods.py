@@ -20,6 +20,7 @@ class _ArtifactWriteHost(Protocol):
     def _mirror_bytes(self, path: Path, data: bytes) -> None: ...
     def write_json(self, path: Path, payload: dict[str, Any]) -> None: ...
     def write_markdown(self, path: Path, content: str) -> None: ...
+    def write_html(self, path: Path, content: str) -> None: ...
     def append_markdown(self, path: Path, content: str, heading: str) -> None: ...
 
 
@@ -46,6 +47,16 @@ class ArtifactWriteMethods:
         content = hook_content or ""
         path.parent.mkdir(parents=True, exist_ok=True)
         rendered = content.strip() + "\n"
+        path.write_text(rendered, encoding="utf-8")
+        self._mirror_bytes(path, rendered.encode("utf-8"))
+
+    def write_html(self: _ArtifactWriteHost, path: Path, content: str) -> None:
+        path, hook_content, _, _ = emit_artifact_write(
+            self._hook_bus, path=path, format="html", content=content, managed_roots=_managed_roots(self)
+        )
+        content = hook_content if hook_content is not None else ""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rendered = content.rstrip() + "\n"
         path.write_text(rendered, encoding="utf-8")
         self._mirror_bytes(path, rendered.encode("utf-8"))
 
