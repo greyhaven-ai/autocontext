@@ -175,6 +175,11 @@ class ImprovementLoop:
         # Plateau detection state
         prev_valid_score: float | None = None
         plateau_count = 0
+        # AC-750: track the last judge score that was NOT zeroed by the external
+        # verifier, so the max_score_delta warning isn't misled by veto-zeroed
+        # rounds. A round whose effective_score was forced to 0 by the verifier
+        # is not a legitimate baseline for the next round's delta comparison.
+        last_unvetoed_score: float | None = None
 
         def _apply_revision_feedback(
             current_text: str,
@@ -296,25 +301,26 @@ class ImprovementLoop:
 
             effective_score = result.score
 
-            # Max score delta warning + optional cap
-            if prev_valid_score is not None:
-                delta = abs(result.score - prev_valid_score)
+            # Max score delta warning + optional cap (AC-750: compare against
+            # the last non-vetoed score, not against post-veto zeros).
+            if last_unvetoed_score is not None:
+                delta = abs(result.score - last_unvetoed_score)
                 if delta > self.max_score_delta:
                     logger.warning(
                         "Score jump of %.3f exceeds max_score_delta %.3f (round %d: %.3f -> %.3f)",
                         delta,
                         self.max_score_delta,
                         round_num,
-                        prev_valid_score,
+                        last_unvetoed_score,
                         result.score,
                     )
                     if self.cap_score_jumps:
                         effective_score = max(
                             0.0,
                             (
-                                prev_valid_score + self.max_score_delta
-                                if result.score > prev_valid_score
-                                else prev_valid_score - self.max_score_delta
+                                last_unvetoed_score + self.max_score_delta
+                                if result.score > last_unvetoed_score
+                                else last_unvetoed_score - self.max_score_delta
                             ),
                         )
 
@@ -335,6 +341,7 @@ class ImprovementLoop:
             # The verifier's message is appended to the round reasoning so the
             # next revision prompt sees the actual error rather than the
             # judge's prose impression.
+            verifier_vetoed = False
             if self.output_verifier is not None:
                 verifier_outcome = self.output_verifier.run(current_output)
                 if not verifier_outcome.ok:
@@ -348,6 +355,7 @@ class ImprovementLoop:
                     )
                     effective_score = 0.0
                     round_result.score = 0.0
+                    verifier_vetoed = True
                     logger.info(
                         "round %d: external verifier rejected output (exit %d), score forced to 0",
                         round_num,
@@ -408,6 +416,10 @@ class ImprovementLoop:
             else:
                 plateau_count = 0
             prev_valid_score = result.score
+            # AC-750: only the judge's view from a non-vetoed round counts as a
+            # legitimate baseline for the next round's max_score_delta check.
+            if not verifier_vetoed:
+                last_unvetoed_score = result.score
 
             # Dimension threshold gate: all dimensions must meet minimum
             dims_ok = True
