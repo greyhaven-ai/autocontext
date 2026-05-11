@@ -82,6 +82,7 @@ def apply_judge_runtime_overrides(
     provider_name: str = "",
     model: str = "",
     timeout: float | None = None,
+    claude_max_total_seconds: float | None = None,
 ) -> AppSettings:
     updates: dict[str, Any] = {}
     if provider_name:
@@ -95,6 +96,11 @@ def apply_judge_runtime_overrides(
         provider_names=[resolved_provider],
         timeout=timeout,
     )
+
+    # AC-751: only meaningful for claude-cli; gated on provider so other
+    # providers don't silently absorb a budget that does not apply to them.
+    if claude_max_total_seconds is not None and resolved_provider == "claude-cli":
+        updates["claude_max_total_seconds"] = claude_max_total_seconds
 
     if not updates:
         return settings
@@ -132,10 +138,7 @@ def format_runtime_provider_error(
         return message
 
     if "generation time budget" in message_lower or "time budget exhausted" in message_lower:
-        return (
-            f"{message}. Retry with --generation-time-budget <seconds> to allow a longer "
-            "per-generation solve budget."
-        )
+        return f"{message}. Retry with --generation-time-budget <seconds> to allow a longer per-generation solve budget."
 
     provider = provider_name.strip().lower()
     timeout_help = {
@@ -163,7 +166,4 @@ def format_runtime_provider_error(
             f"Original error: {message}"
         )
 
-    return (
-        f"{label} timed out after {effective}. "
-        f"Retry with --timeout <seconds> or set {env_var}. Original error: {message}"
-    )
+    return f"{label} timed out after {effective}. Retry with --timeout <seconds> or set {env_var}. Original error: {message}"

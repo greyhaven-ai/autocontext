@@ -1475,7 +1475,22 @@ def improve(
         None,
         "--timeout",
         min=1.0,
-        help="Override runtime timeout in seconds for CLI-backed providers",
+        help=(
+            "Override per-call provider timeout in seconds. For claude-cli this "
+            "writes claude_timeout (env: AUTOCONTEXT_CLAUDE_TIMEOUT, default 600s); "
+            "for codex it writes codex_timeout; for pi/pi-rpc it writes pi_timeout. "
+            "For the overall claude-cli wall-clock budget, see --claude-max-total-seconds."
+        ),
+    ),
+    claude_max_total_seconds: float | None = typer.Option(
+        None,
+        "--claude-max-total-seconds",
+        min=0.0,
+        help=(
+            "Override the wall-clock ceiling on total claude-cli runtime across all "
+            "invocations during this run (env: AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS, "
+            "default 0=off). Only applied when the resolved judge provider is claude-cli."
+        ),
     ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
     verify_cmd: str = typer.Option(
@@ -1516,6 +1531,7 @@ def improve(
         load_settings(),
         provider_name=provider_override,
         timeout=timeout,
+        claude_max_total_seconds=claude_max_total_seconds,
     )
 
     try:
