@@ -72,7 +72,7 @@ These are the execution nouns we should use when describing how the system actua
 
 Runtime context is not a new top-level product noun. It is the ordered prompt/runtime material assembled for a `Run`, `Step`, or child task from `Policy`, workspace files, AutoContext roles, `Scenario`/`Task` inputs, `Knowledge`, skills, tools, and runtime-session history.
 
-The canonical layer order is exposed in Python as `autocontext.session.RUNTIME_CONTEXT_LAYERS` and in TypeScript as `RUNTIME_CONTEXT_LAYERS` from `@greyhaven/autoctx`. Implementations may render the layers differently, but they should keep this order observable:
+The canonical layer order is exposed in Python as `autocontext.session.RUNTIME_CONTEXT_LAYERS` and in TypeScript as `RUNTIME_CONTEXT_LAYERS` from `autoctx`. Implementations may render the layers differently, but they should keep this order observable:
 
 | Order | Layer | Owner | Persistence | Budget / compaction behavior | Child-task behavior |
 | --- | --- | --- | --- | --- | --- |

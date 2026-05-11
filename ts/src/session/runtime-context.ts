@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, relative, resolve } from "node:path";
 
 import { SkillRegistry } from "./skill-registry.js";
 
@@ -188,18 +188,35 @@ export function selectRuntimeKnowledgeComponents(
 }
 
 function workspaceRoot(request: RuntimeContextDiscoveryRequest): string {
-  return resolve(request.workspaceRoot);
+  return realpathSync(resolve(request.workspaceRoot));
 }
 
 function resolveCwd(root: string, cwd: string): string {
   const candidate = cwd.startsWith("/") ? resolve(root, cwd.slice(1)) : resolve(root, cwd);
-  const resolved = resolve(candidate);
-  const rel = relative(root, resolved);
-  if (rel === "") return resolved;
-  if (rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {
+  const resolved = resolvePossiblyMissingPath(candidate);
+  if (!isPathWithinRoot(root, resolved)) {
     throw new Error(`Runtime context cwd escapes workspace root: ${cwd}`);
   }
   return resolved;
+}
+
+function resolvePossiblyMissingPath(path: string): string {
+  let existing = resolve(path);
+  const missingParts: string[] = [];
+
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    if (parent === existing) break;
+    missingParts.unshift(basename(existing));
+    existing = parent;
+  }
+
+  return resolve(realpathSync(existing), ...missingParts);
+}
+
+function isPathWithinRoot(root: string, path: string): boolean {
+  const rel = relative(root, path);
+  return rel === "" || (rel !== ".." && !rel.startsWith("../") && !rel.startsWith("..\\"));
 }
 
 function resolveConfiguredRoot(root: string, skillRoot: string): string {

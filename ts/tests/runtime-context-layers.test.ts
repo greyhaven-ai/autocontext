@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -62,6 +62,19 @@ describe("runtime context layers", () => {
     expect(childInstructions.map((instruction) => instruction.relativePath)).toEqual(["AGENTS.md", "other/AGENTS.md"]);
   });
 
+  it("rejects cwd symlinks that resolve outside the workspace", () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-context-"));
+    const outside = mkdtempSync(join(tmpdir(), "autoctx-outside-"));
+    writeFileSync(join(outside, "AGENTS.md"), "outside agents\n");
+    writeSkill(join(outside, ".claude", "skills"), "outside-only", "outside skill");
+    symlinkSync(outside, join(root, "link"), "dir");
+
+    const request = new RuntimeContextDiscoveryRequest({ workspaceRoot: root, cwd: "/link" });
+
+    expect(() => discoverRepoInstructions(request)).toThrow(/escapes workspace root/);
+    expect(() => discoverRuntimeSkills(request)).toThrow(/escapes workspace root/);
+  });
+
   it("discovers cwd-specific skills and deduplicates by nearest cwd", () => {
     const root = mkdtempSync(join(tmpdir(), "autoctx-context-"));
     const rootSkills = join(root, ".claude", "skills");
@@ -74,7 +87,7 @@ describe("runtime context layers", () => {
     const registry = discoverRuntimeSkills(new RuntimeContextDiscoveryRequest({ workspaceRoot: root, cwd: "/pkg" }));
 
     expect(registry.allManifests().map((manifest) => manifest.name)).toEqual(["pkg-only", "shared", "root-only"]);
-    expect(registry.get("shared")?.manifest.skillPath).toBe(pkgShared);
+    expect(registry.get("shared")?.manifest.skillPath).toBe(realpathSync(pkgShared));
     expect(
       discoverRuntimeSkills(new RuntimeContextDiscoveryRequest({ workspaceRoot: root, cwd: "/" }))
         .allManifests()
