@@ -830,6 +830,54 @@ describe("external eval diagnostics", () => {
       regressedTaskIds: ["fibonacci-server"],
     });
   });
+
+  test("scores promotion by task when imported trial IDs are duplicated", () => {
+    const decision = decideExternalEvalContextPromotion({
+      baselineRunId: "baseline",
+      candidateRunId: "context-duplicated-trial-ids",
+      baselineTrials: [
+        {
+          taskId: "task-a",
+          trialId: "task-a.baseline",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+        },
+        {
+          taskId: "task-b",
+          trialId: "task-b.baseline",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      candidateTrials: [
+        {
+          taskId: "task-a",
+          trialId: "dup",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "task-b",
+          trialId: "dup",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+        },
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      pass: false,
+      status: "reject-regression",
+      baselinePassedTaskCount: 1,
+      candidatePassedTaskCount: 1,
+      improvedTaskIds: ["task-b"],
+      regressedTaskIds: ["task-a"],
+    });
+  });
 });
 
 function prettyVerifierOutput(parserResults: Record<string, string>): string {

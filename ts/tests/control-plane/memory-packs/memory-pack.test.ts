@@ -224,4 +224,44 @@ describe("compileOperationalMemoryContext", () => {
     ]);
     expect(context.prompt).toBe("");
   });
+
+  test("quarantines malformed leakage flags before rendering context", () => {
+    const context = compileOperationalMemoryContext({
+      contextId: "malformed-leakage-context",
+      createdAt: "2026-05-11T15:10:00.000Z",
+      targetFamilies: ["terminal"],
+      packs: [
+        {
+          packId: "malformed-pack",
+          version: "1.0.0",
+          createdAt: "2026-05-11T14:00:00.000Z",
+          status: "sanitized",
+          integrity: { status: "clean" },
+          findings: [
+            {
+              id: "string-secret-flag",
+              summary: "Malformed producer output.",
+              evidenceRefs: ["runs/dev10/leaky/tests.log"],
+              reusableBehavior: "FLAG{secret} should never be rendered.",
+              targetFamilies: ["terminal"],
+              risk: "low",
+              containsSecret: "true" as unknown as boolean,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(context.selectedFindings).toEqual([]);
+    expect(context.skippedFindings).toEqual([
+      {
+        packId: "malformed-pack",
+        findingId: "string-secret-flag",
+        reason: "leakage-risk",
+        detail: "containsSecret must be boolean when present",
+      },
+    ]);
+    expect(context.prompt).not.toContain("FLAG{secret}");
+    expect(context.prompt).toBe("");
+  });
 });

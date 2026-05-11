@@ -491,19 +491,25 @@ export function decideExternalEvalContextPromotion(
 function firstStatusByTask(trials: readonly EvalTrial[]): ReadonlyMap<string, EvalTrialStatus> {
   const reconciliation = reconcileEvalTrials(trials, { view: "first-completed-per-task" });
   const selectedTrialIdsByTask = reconciliation.selectedTrialIdsByTask;
-  const trialById = new Map(trials.map((trial) => [trial.trialId, trial]));
   const fallbackTrialByTask = new Map<string, EvalTrial>();
+  const trialByTaskAndId = new Map<string, Map<string, EvalTrial>>();
 
   for (const trial of trials) {
     if (!fallbackTrialByTask.has(trial.taskId)) {
       fallbackTrialByTask.set(trial.taskId, trial);
     }
+    const taskTrials = trialByTaskAndId.get(trial.taskId) ?? new Map<string, EvalTrial>();
+    if (!taskTrials.has(trial.trialId)) {
+      taskTrials.set(trial.trialId, trial);
+    }
+    trialByTaskAndId.set(trial.taskId, taskTrials);
   }
 
   const statusByTask = new Map<string, EvalTrialStatus>();
   for (const [taskId, fallbackTrial] of fallbackTrialByTask.entries()) {
     const selectedTrialId = selectedTrialIdsByTask[taskId];
-    const selectedTrial = selectedTrialId !== undefined ? trialById.get(selectedTrialId) : undefined;
+    const selectedTrial =
+      selectedTrialId !== undefined ? trialByTaskAndId.get(taskId)?.get(selectedTrialId) : undefined;
     statusByTask.set(taskId, selectedTrial?.status ?? fallbackTrial.status);
   }
 

@@ -114,11 +114,13 @@ export function compileOperationalMemoryContext(
         });
         continue;
       }
-      if (finding.containsTaskAnswer === true || finding.containsSecret === true) {
+      const leakageDetail = findingLeakageRiskDetail(finding);
+      if (leakageDetail !== undefined) {
         skippedFindings.push({
           packId: pack.packId,
           findingId: finding.id,
           reason: "leakage-risk",
+          detail: leakageDetail,
         });
         continue;
       }
@@ -248,6 +250,24 @@ function validateFinding(input: unknown, errors: string[]): void {
   if (input.containsSecret === true) {
     errors.push(`finding ${id} contains secret material`);
   }
+}
+
+function findingLeakageRiskDetail(finding: OperationalMemoryFinding): string | undefined {
+  const record = finding as unknown as Readonly<Record<string, unknown>>;
+  const details = [
+    leakageFlagRiskDetail(record, "containsTaskAnswer"),
+    leakageFlagRiskDetail(record, "containsSecret"),
+  ].filter((detail): detail is string => detail !== undefined);
+  return details.length === 0 ? undefined : details.join("; ");
+}
+
+function leakageFlagRiskDetail(
+  input: Readonly<Record<string, unknown>>,
+  field: "containsTaskAnswer" | "containsSecret",
+): string | undefined {
+  if (!Object.prototype.hasOwnProperty.call(input, field)) return undefined;
+  if (typeof input[field] !== "boolean") return `${field} must be boolean when present`;
+  return input[field] === true ? `${field}=true` : undefined;
 }
 
 function requireOptionalBoolean(
