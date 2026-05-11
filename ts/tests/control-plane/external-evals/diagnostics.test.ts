@@ -3,8 +3,12 @@ import {
   buildExternalEvalDiagnosticReport,
   buildExternalEvalImprovementSignals,
   buildOperationalMemoryPackFromDiagnostics,
+  decideExternalEvalContextPromotion,
 } from "../../../src/control-plane/external-evals/index.js";
-import { validateOperationalMemoryPack } from "../../../src/control-plane/memory-packs/index.js";
+import {
+  compileOperationalMemoryContext,
+  validateOperationalMemoryPack,
+} from "../../../src/control-plane/memory-packs/index.js";
 import type { EvalTrial } from "../../../src/control-plane/contract/types.js";
 
 const trials: EvalTrial[] = [
@@ -690,6 +694,189 @@ describe("external eval diagnostics", () => {
       "unique noise line 2",
     ]);
     expect(report.diagnostics[0]?.failureExcerpts).not.toContain(lateFailure);
+  });
+
+  test("records the applied operational-memory context on diagnostic reports", () => {
+    const contextApplication = compileOperationalMemoryContext({
+      contextId: "tb-dev10-selected-v1",
+      createdAt: "2026-05-11T16:00:00.000Z",
+      taskId: "hf-model-inference",
+      targetFamilies: ["terminal", "artifact-contract"],
+      maxFindings: 1,
+      packs: [
+        {
+          packId: "tb-dev10-memory",
+          version: "1.0.0",
+          createdAt: "2026-05-11T15:00:00.000Z",
+          status: "sanitized",
+          integrity: { status: "clean" },
+          findings: [
+            {
+              id: "required-artifact-contract",
+              summary: "Verify required output artifacts at checked paths.",
+              evidenceRefs: ["runs/dev10/hf-model-inference/tests.log"],
+              reusableBehavior: "Read every required artifact from its checked path before finishing.",
+              targetFamilies: ["terminal", "artifact-contract"],
+              risk: "low",
+              containsTaskAnswer: false,
+              containsSecret: false,
+            },
+            {
+              id: "schema-key-contract",
+              summary: "Validate exact schema keys.",
+              evidenceRefs: ["runs/dev10/schema/tests.log"],
+              reusableBehavior: "Read structured outputs back and compare field names.",
+              targetFamilies: ["terminal", "structured-output"],
+              risk: "low",
+              containsTaskAnswer: false,
+              containsSecret: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-dev10-context-selected",
+      createdAt: "2026-05-11T16:05:00.000Z",
+      trials: [],
+      evidence: [],
+      contextApplication,
+    });
+
+    expect(report.contextApplication?.contextId).toBe("tb-dev10-selected-v1");
+    expect(report.contextApplication?.selectedFindings.map((finding) => finding.findingId)).toEqual([
+      "required-artifact-contract",
+    ]);
+    expect(report.contextApplication?.skippedFindings.map((finding) => finding.reason)).toEqual([
+      "capacity-limit",
+    ]);
+  });
+
+  test("holds context variants without dev-set gain and rejects regressions", () => {
+    const baselineTrials: EvalTrial[] = [
+      {
+        taskId: "fibonacci-server",
+        trialId: "fibonacci-server.1-of-1.baseline",
+        attempt: 1,
+        status: "passed",
+        reward: 1,
+      },
+      {
+        taskId: "hf-model-inference",
+        trialId: "hf-model-inference.1-of-1.baseline",
+        attempt: 1,
+        status: "failed",
+        reward: 0,
+      },
+    ];
+
+    expect(
+      decideExternalEvalContextPromotion({
+        baselineRunId: "baseline",
+        candidateRunId: "context-v1",
+        baselineTrials,
+        candidateTrials: [
+          {
+            taskId: "fibonacci-server",
+            trialId: "fibonacci-server.1-of-1.context-v1",
+            attempt: 1,
+            status: "passed",
+            reward: 1,
+          },
+          {
+            taskId: "hf-model-inference",
+            trialId: "hf-model-inference.1-of-1.context-v1",
+            attempt: 1,
+            status: "failed",
+            reward: 0,
+          },
+        ],
+      }),
+    ).toMatchObject({
+      pass: false,
+      status: "hold-for-dev",
+      baselinePassedTaskCount: 1,
+      candidatePassedTaskCount: 1,
+      improvedTaskIds: [],
+      regressedTaskIds: [],
+    });
+
+    expect(
+      decideExternalEvalContextPromotion({
+        baselineRunId: "baseline",
+        candidateRunId: "context-v2",
+        baselineTrials,
+        candidateTrials: [
+          {
+            taskId: "fibonacci-server",
+            trialId: "fibonacci-server.1-of-1.context-v2",
+            attempt: 1,
+            status: "failed",
+            reward: 0,
+          },
+          {
+            taskId: "hf-model-inference",
+            trialId: "hf-model-inference.1-of-1.context-v2",
+            attempt: 1,
+            status: "failed",
+            reward: 0,
+          },
+        ],
+      }),
+    ).toMatchObject({
+      pass: false,
+      status: "reject-regression",
+      regressedTaskIds: ["fibonacci-server"],
+    });
+  });
+
+  test("scores promotion by task when imported trial IDs are duplicated", () => {
+    const decision = decideExternalEvalContextPromotion({
+      baselineRunId: "baseline",
+      candidateRunId: "context-duplicated-trial-ids",
+      baselineTrials: [
+        {
+          taskId: "task-a",
+          trialId: "task-a.baseline",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+        },
+        {
+          taskId: "task-b",
+          trialId: "task-b.baseline",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      candidateTrials: [
+        {
+          taskId: "task-a",
+          trialId: "dup",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "task-b",
+          trialId: "dup",
+          attempt: 1,
+          status: "passed",
+          reward: 1,
+        },
+      ],
+    });
+
+    expect(decision).toMatchObject({
+      pass: false,
+      status: "reject-regression",
+      baselinePassedTaskCount: 1,
+      candidatePassedTaskCount: 1,
+      improvedTaskIds: ["task-b"],
+      regressedTaskIds: ["task-a"],
+    });
   });
 });
 

@@ -719,12 +719,20 @@ export type {
   DirectoryContractProbeInputs,
   DirectoryContractProbeResult,
 } from "./control-plane/contract-probes/index.js";
-export { validateOperationalMemoryPack } from "./control-plane/memory-packs/index.js";
+export {
+  compileOperationalMemoryContext,
+  validateOperationalMemoryPack,
+} from "./control-plane/memory-packs/index.js";
 export type {
+  CompileOperationalMemoryContextInputs,
+  OperationalMemoryContextApplication,
+  OperationalMemoryContextSkipReason,
   OperationalMemoryFinding,
   OperationalMemoryPack,
   OperationalMemoryPackStatus,
   OperationalMemoryRisk,
+  OperationalMemorySelectedFinding,
+  OperationalMemorySkippedFinding,
 } from "./control-plane/memory-packs/index.js";
 export {
   assessExternalEvalBoundaryPolicy,
@@ -732,6 +740,7 @@ export {
   buildExternalEvalImprovementSignals,
   buildOperationalMemoryPackFromDiagnostics,
   classifyExternalEvalTrial,
+  decideExternalEvalContextPromotion,
   validateExternalEvalAdapterLifecycle,
   validateExternalEvalBoundaryPolicy,
 } from "./control-plane/external-evals/index.js";
@@ -740,6 +749,7 @@ export type {
   BuildExternalEvalDiagnosticReportInputs,
   BuildOperationalMemoryPackFromDiagnosticsInputs,
   ClassifyExternalEvalTrialInputs,
+  DecideExternalEvalContextPromotionInputs,
   ExternalEvalAdapterArtifacts,
   ExternalEvalAdapterCommand,
   ExternalEvalAdapterLifecycle,
@@ -752,6 +762,8 @@ export type {
   ExternalEvalBoundaryPolicyMode,
   ExternalEvalBoundaryViolation,
   ExternalEvalBoundaryViolationReason,
+  ExternalEvalContextPromotionDecision,
+  ExternalEvalContextPromotionStatus,
   ExternalEvalDiagnosticCategory,
   ExternalEvalDiagnosticReport,
   ExternalEvalImprovementSignal,
