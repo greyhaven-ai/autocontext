@@ -82,6 +82,7 @@ def apply_judge_runtime_overrides(
     provider_name: str = "",
     model: str = "",
     timeout: float | None = None,
+    claude_max_total_seconds: float | None = None,
 ) -> AppSettings:
     updates: dict[str, Any] = {}
     if provider_name:
@@ -89,12 +90,29 @@ def apply_judge_runtime_overrides(
     if model:
         updates["judge_model"] = model
 
-    resolved_provider = (provider_name or settings.judge_provider).strip().lower()
+    # AC-751 (P1 follow-up): resolve "auto" the same way get_provider() does,
+    # so provider-specific flags (like --claude-max-total-seconds) gate on the
+    # effective provider rather than the literal "auto" string. Otherwise
+    # subscription-tier users with judge_provider='auto' + agent_provider='claude-cli'
+    # would have their claude budget override silently dropped.
+    from autocontext.providers.registry import resolve_auto_judge_provider
+
+    declared_provider = (provider_name or settings.judge_provider).strip().lower()
+    if declared_provider == "auto":
+        resolved_provider = resolve_auto_judge_provider(settings)
+    else:
+        resolved_provider = declared_provider
+
     _apply_timeout_overrides(
         updates,
         provider_names=[resolved_provider],
         timeout=timeout,
     )
+
+    # AC-751: only meaningful for claude-cli; gated on the effective provider
+    # so other providers don't silently absorb a budget that does not apply.
+    if claude_max_total_seconds is not None and resolved_provider == "claude-cli":
+        updates["claude_max_total_seconds"] = claude_max_total_seconds
 
     if not updates:
         return settings
@@ -132,10 +150,7 @@ def format_runtime_provider_error(
         return message
 
     if "generation time budget" in message_lower or "time budget exhausted" in message_lower:
-        return (
-            f"{message}. Retry with --generation-time-budget <seconds> to allow a longer "
-            "per-generation solve budget."
-        )
+        return f"{message}. Retry with --generation-time-budget <seconds> to allow a longer per-generation solve budget."
 
     provider = provider_name.strip().lower()
     timeout_help = {
@@ -163,7 +178,4 @@ def format_runtime_provider_error(
             f"Original error: {message}"
         )
 
-    return (
-        f"{label} timed out after {effective}. "
-        f"Retry with --timeout <seconds> or set {env_var}. Original error: {message}"
-    )
+    return f"{label} timed out after {effective}. Retry with --timeout <seconds> or set {env_var}. Original error: {message}"

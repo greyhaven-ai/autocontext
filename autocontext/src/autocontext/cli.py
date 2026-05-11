@@ -20,6 +20,7 @@ from rich.table import Table
 from autocontext.agents.orchestrator import AgentOrchestrator
 from autocontext.cli_analytics import register_analytics_command
 from autocontext.cli_hermes import register_hermes_command
+from autocontext.cli_improve import register_improve_command
 from autocontext.cli_investigate import run_investigate_command
 from autocontext.cli_new_scenario import register_new_scenario_command
 from autocontext.cli_queue import register_queue_command
@@ -166,9 +167,15 @@ def _exit_provider_error(
     provider_name: str,
     settings: AppSettings,
     json_output: bool,
+    ndjson_output: bool = False,
 ) -> NoReturn:
     message = format_runtime_provider_error(exc, provider_name=provider_name, settings=settings)
-    if json_output:
+    if ndjson_output:
+        # AC-752 (P2 follow-up): under --ndjson, stdout is contract-bound to be
+        # newline-delimited JSON. Emit a single structured error event on
+        # stdout so ndjson consumers don't get a non-JSON line in the stream.
+        typer.echo(json.dumps({"event": "error", "message": message}))
+    elif json_output:
         _write_json_stderr(message)
     else:
         console.print(f"[red]{message}[/red]")
@@ -1463,109 +1470,9 @@ def judge(
         console.print(f"[bold]Reasoning:[/bold] {result.reasoning}")
 
 
-@app.command()
-def improve(
-    task_prompt: str = typer.Option(..., "--task-prompt", "-p", help="The task prompt"),
-    rubric: str = typer.Option(..., "--rubric", "-r", help="Evaluation rubric"),
-    initial_output: str = typer.Option("", "--output", "-o", help="Starting output to improve"),
-    max_rounds: int = typer.Option(5, "--rounds", "-n", help="Maximum improvement rounds"),
-    threshold: float = typer.Option(0.9, "--threshold", "-t", help="Quality threshold to stop"),
-    provider_override: str = typer.Option("", "--provider", help="Provider override"),
-    timeout: float | None = typer.Option(
-        None,
-        "--timeout",
-        min=1.0,
-        help="Override runtime timeout in seconds for CLI-backed providers",
-    ),
-    json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
-    verify_cmd: str = typer.Option(
-        "",
-        "--verify-cmd",
-        help=(
-            "External command to verify each round's output (AC-733). "
-            "Non-zero exit forces the round score to 0 and feeds the "
-            "command's stderr/stdout into the next revision prompt. "
-            "Use the literal `{file}` placeholder to receive the output as a "
-            "temp-file path; otherwise the output is piped to stdin. "
-            "Examples: 'lake env lean {file}', 'mypy {file}', 'cargo check'."
-        ),
-    ),
-    verify_suffix: str = typer.Option(
-        ".txt",
-        "--verify-suffix",
-        help="Suffix for the temp file passed to --verify-cmd (e.g. '.lean', '.py').",
-    ),
-    verify_timeout: float = typer.Option(
-        300.0,
-        "--verify-timeout",
-        min=1.0,
-        help="Timeout in seconds for each --verify-cmd invocation.",
-    ),
-) -> None:
-    """Run multi-round improvement loop on agent output.
-
-    Creates a simple agent task from the prompt and rubric, then runs
-    the improvement loop with judge-guided iteration.
-    """
-    from autocontext.execution.improvement_loop import ImprovementLoop
-    from autocontext.execution.output_verifier import make_verifier
-    from autocontext.execution.task_runner import SimpleAgentTask
-    from autocontext.providers.registry import get_provider as get_judge_provider
-
-    settings = apply_judge_runtime_overrides(
-        load_settings(),
-        provider_name=provider_override,
-        timeout=timeout,
-    )
-
-    try:
-        provider = get_judge_provider(settings)
-        task = SimpleAgentTask(
-            task_prompt=task_prompt,
-            rubric=rubric,
-            provider=provider,
-            model=settings.judge_model,
-        )
-        state = task.initial_state()
-        verifier = make_verifier(
-            verify_cmd or None,
-            file_suffix=verify_suffix,
-            timeout_s=verify_timeout,
-        )
-        loop = ImprovementLoop(
-            task=task,
-            max_rounds=max_rounds,
-            quality_threshold=threshold,
-            output_verifier=verifier,
-        )
-        starting_output = initial_output or task.generate_output(state)
-        result = loop.run(initial_output=starting_output, state=state)
-    except ProviderError as exc:
-        _exit_provider_error(
-            exc,
-            provider_name=settings.judge_provider,
-            settings=settings,
-            json_output=json_output,
-        )
-
-    if json_output:
-        _write_json_stdout(
-            {
-                "best_score": result.best_score,
-                "best_round": result.best_round,
-                "total_rounds": result.total_rounds,
-                "met_threshold": result.met_threshold,
-                "best_output": result.best_output,
-            }
-        )
-    else:
-        console.print(f"[bold]Best score:[/bold] {result.best_score:.4f} (round {result.best_round})")
-        console.print(f"[bold]Rounds:[/bold] {result.total_rounds}")
-        console.print(f"[bold]Met threshold:[/bold] {result.met_threshold}")
-
-
 register_analytics_command(app, console=console)
 register_hermes_command(app, console=console)
+register_improve_command(app, console=console)
 register_new_scenario_command(app, console=console)
 register_solve_command(app, console=console)
 register_queue_command(app, console=console)

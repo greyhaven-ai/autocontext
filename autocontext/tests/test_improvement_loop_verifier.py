@@ -233,3 +233,109 @@ class TestVerifierIntegration:
         result = loop.run("initial", {})
         assert result.best_score == 1.0
         assert result.met_threshold is True
+
+
+# -- AC-750: max_score_delta warning vs verifier-veto provenance --
+
+
+class _StagedJudgeTask(AgentTaskInterface):
+    """Task whose judge returns a different score depending on whether the
+    output has been revised (i.e. contains the 'FIX' marker).
+
+    This pairs with `_picky_verifier` so we can simulate:
+      round 1: judge=initial_score, verifier vetoes (no FIX yet) -> effective 0
+      round 2: judge=revised_score,  verifier passes (FIX added) -> effective revised_score
+    """
+
+    def __init__(self, *, initial_score: float, revised_score: float) -> None:
+        self._initial_score = initial_score
+        self._revised_score = revised_score
+
+    def get_task_prompt(self, state):
+        return "Produce a clean Lean file."
+
+    def evaluate_output(self, output, state, **kwargs):
+        if "FIX" in output:
+            return AgentTaskResult(
+                score=self._revised_score,
+                reasoning="judge: revised output looks good",
+                dimension_scores={},
+            )
+        return AgentTaskResult(
+            score=self._initial_score,
+            reasoning="judge: initial output is weak",
+            dimension_scores={},
+        )
+
+    def revise_output(self, current_output, judge_result, state):
+        return current_output + "\nFIX"
+
+    def get_rubric(self):
+        return "Score 0-1."
+
+    def initial_state(self, seed=None):
+        return {}
+
+    def describe_task(self):
+        return "."
+
+
+class TestVerifierVetoProvenance:
+    """When the external verifier vetoes a round, `prev_valid_score` becomes 0
+    -- but that 0 is NOT a real judge baseline. The next round's legitimate
+    judge score (e.g. 0.6) should not trigger a misleading
+    `max_score_delta` warning against the veto-zeroed 0.0.
+
+    Concrete repro (2026-05-11): a 3-round Opus run against `lake env lean`.
+    Round 1 timed out -> verifier vetoed -> score 0. Round 2's judge honestly
+    scored 0.6 (the model had fixed several issues) but the warning fired:
+        `Score jump of 0.600 exceeds max_score_delta 0.500 (round 2: 0.000 -> 0.600)`
+    The warning is misleading; round 1's 0 was a veto, not a judge score.
+    """
+
+    def test_no_warning_when_previous_round_was_verifier_vetoed(self, caplog) -> None:
+        import logging
+
+        # Round 1: judge=0.4, verifier vetoes (no FIX) -> effective 0
+        # Round 2: judge=0.6, verifier passes (FIX added) -> effective 0.6
+        # Under the buggy logic this fires "score jump 0.600 vs 0.000".
+        # After the fix the warning is suppressed because round 1's 0 was a veto.
+        task = _StagedJudgeTask(initial_score=0.4, revised_score=0.6)
+        loop = ImprovementLoop(
+            task=task,
+            max_rounds=2,
+            quality_threshold=0.9,
+            max_score_delta=0.5,
+            output_verifier=_picky_verifier(),
+        )
+
+        with caplog.at_level(logging.WARNING, logger="autocontext.execution.improvement_loop"):
+            loop.run("initial", {})
+
+        score_jump_warnings = [record for record in caplog.records if "Score jump" in record.getMessage()]
+        assert score_jump_warnings == [], (
+            "verifier-vetoed previous round should not be a baseline for the "
+            f"max_score_delta warning; got: {[r.getMessage() for r in score_jump_warnings]}"
+        )
+
+    def test_warning_still_fires_for_genuine_judge_score_jump(self, caplog) -> None:
+        import logging
+
+        # No verifier. Round 1 judge=0.1, round 2 judge=0.7. Genuine jump
+        # exceeding max_score_delta=0.5 -- warning should still fire because
+        # the previous score is a real judge baseline.
+        task = _StagedJudgeTask(initial_score=0.1, revised_score=0.7)
+        loop = ImprovementLoop(
+            task=task,
+            max_rounds=2,
+            quality_threshold=0.9,
+            max_score_delta=0.5,
+        )
+
+        with caplog.at_level(logging.WARNING, logger="autocontext.execution.improvement_loop"):
+            loop.run("initial", {})
+
+        score_jump_warnings = [record for record in caplog.records if "Score jump" in record.getMessage()]
+        assert score_jump_warnings, (
+            "genuine score jump (no verifier veto on previous round) should still trigger the max_score_delta warning"
+        )

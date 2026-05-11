@@ -198,6 +198,130 @@ class TestImproveRuntimeTimeoutOverrides:
         assert "--timeout" in payload["error"]
         assert "AUTOCONTEXT_CLAUDE_TIMEOUT" in payload["error"]
 
+    def test_improve_applies_claude_max_total_seconds_override(self, tmp_path: Path) -> None:
+        # AC-751: `--claude-max-total-seconds` exposes settings.claude_max_total_seconds
+        # (the wall-clock budget across all claude-cli invocations in a run).
+        # Mirrors the existing --timeout / claude_timeout test pattern.
+        settings = _settings(tmp_path)
+        captured: dict[str, AppSettings] = {}
+        provider = _RecordingProvider()
+
+        def _fake_get_provider(current: AppSettings) -> _RecordingProvider:
+            captured["settings"] = current
+            return provider
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", side_effect=_fake_get_provider),
+            patch("autocontext.execution.improvement_loop.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = _FakeLoopResult()
+            result = runner.invoke(
+                app,
+                [
+                    "improve",
+                    "-p",
+                    "Draft a trial design",
+                    "-r",
+                    "Score rigor 0-1.",
+                    "--provider",
+                    "claude-cli",
+                    "--claude-max-total-seconds",
+                    "1800",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured["settings"].judge_provider == "claude-cli"
+        assert captured["settings"].claude_max_total_seconds == 1800.0
+
+    def test_improve_claude_max_total_seconds_ignored_for_non_claude_provider(self, tmp_path: Path) -> None:
+        # AC-751: the flag is claude-cli-specific (it writes settings.claude_max_total_seconds,
+        # which is only consumed by the claude-cli runtime). Passing it with a different
+        # judge provider should leave the setting at its baseline rather than silently
+        # writing a value that has no effect.
+        settings = _settings(tmp_path)  # judge_provider="anthropic"
+        captured: dict[str, AppSettings] = {}
+
+        def _fake_get_provider(current: AppSettings) -> _RecordingProvider:
+            captured["settings"] = current
+            return _RecordingProvider()
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", side_effect=_fake_get_provider),
+            patch("autocontext.execution.improvement_loop.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = _FakeLoopResult()
+            result = runner.invoke(
+                app,
+                [
+                    "improve",
+                    "-p",
+                    "x",
+                    "-r",
+                    "y",
+                    "--claude-max-total-seconds",
+                    "1800",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured["settings"].judge_provider == "anthropic"
+        # Baseline preserved because the resolved judge provider is not claude-cli.
+        assert captured["settings"].claude_max_total_seconds == settings.claude_max_total_seconds
+
+    def test_improve_applies_claude_max_total_seconds_under_auto_judge_provider(self, tmp_path: Path) -> None:
+        # AC-751 (P1 follow-up): when judge_provider='auto' resolves to claude-cli
+        # via agent_provider, the flag should still write claude_max_total_seconds.
+        # Previously the gate compared against the literal 'auto' string and
+        # silently dropped the override on the subscription-tier default path.
+        settings = _settings(tmp_path).model_copy(update={"judge_provider": "auto", "agent_provider": "claude-cli"})
+        captured: dict[str, AppSettings] = {}
+
+        def _fake_get_provider(current: AppSettings) -> _RecordingProvider:
+            captured["settings"] = current
+            return _RecordingProvider()
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", side_effect=_fake_get_provider),
+            patch("autocontext.execution.improvement_loop.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = _FakeLoopResult()
+            result = runner.invoke(
+                app,
+                [
+                    "improve",
+                    "-p",
+                    "x",
+                    "-r",
+                    "y",
+                    "--claude-max-total-seconds",
+                    "1800",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        # The judge_provider stays 'auto' (we don't rewrite it); only the
+        # claude budget should land on settings since auto resolves to claude-cli.
+        assert captured["settings"].judge_provider == "auto"
+        assert captured["settings"].claude_max_total_seconds == 1800.0
+
+    def test_improve_timeout_help_mentions_provider_setting(self) -> None:
+        # AC-751: `--timeout` help text should call out the specific provider
+        # setting it writes to (e.g. `claude_timeout`) so users discover the
+        # mapping without reading source.
+        result = runner.invoke(app, ["improve", "--help"])
+
+        assert result.exit_code == 0, result.output
+        # The help should at least mention claude_timeout (or its env var) so
+        # users grepping for "claude" land on the right flag.
+        assert "claude_timeout" in result.output or "AUTOCONTEXT_CLAUDE_TIMEOUT" in result.output
+
 
 class TestPiRpcRuntimeTimeoutOverrides:
     def test_pi_rpc_provider_uses_runtime_timeout_override(self, tmp_path: Path) -> None:
