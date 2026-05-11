@@ -483,6 +483,12 @@ export type {
 export { ActorRef, TraceEvent, RunTrace } from "./analytics/run-trace.js";
 export type { TraceEventInit } from "./analytics/run-trace.js";
 export {
+  runtimeSessionLogToRunTrace,
+} from "./analytics/runtime-session-run-trace.js";
+export type {
+  RuntimeSessionRunTraceOpts,
+} from "./analytics/runtime-session-run-trace.js";
+export {
   SCHEMA_VERSION,
   ToolCallSchema,
   TraceMessageSchema,
