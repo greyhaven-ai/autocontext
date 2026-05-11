@@ -17,7 +17,7 @@ from autocontext.providers.base import LLMProvider
 from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.changelog import build_changelog
-from autocontext.server.writeup import generate_writeup
+from autocontext.server.writeup import generate_writeup, generate_writeup_html
 from autocontext.session.runtime_events import RuntimeSessionEventStore
 from autocontext.session.runtime_session_ids import runtime_session_id_for_run
 from autocontext.session.runtime_session_read_model import (
@@ -546,11 +546,13 @@ def writeup(run_id: str, request: Request) -> dict[str, Any]:
 
     run_dict = dict(run_row)
     md = generate_writeup(run_id, store, artifacts)
+    html = generate_writeup_html(run_id, store, artifacts)
 
     return {
         "run_id": run_id,
         "scenario_name": run_dict["scenario"],
         "writeup_markdown": md,
+        "writeup_html": html,
     }
 
 

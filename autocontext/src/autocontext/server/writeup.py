@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from autocontext.analytics.artifact_rendering import render_markdown_document_html
 from autocontext.analytics.run_trace import TraceStore
 from autocontext.analytics.trace_reporter import ReportStore, TraceReporter
 from autocontext.storage.artifacts import ArtifactStore
@@ -27,6 +28,28 @@ def generate_writeup(
         return writeup.to_markdown()
 
     return _generate_legacy_writeup(run_id, sqlite, artifacts)
+
+
+def generate_writeup_html(
+    run_id: str,
+    sqlite: SQLiteStore,
+    artifacts: ArtifactStore,
+) -> str:
+    """Assemble an HTML writeup from the same structured source as Markdown."""
+    analytics_root = artifacts.knowledge_root / "analytics"
+    report_store = ReportStore(analytics_root)
+    persisted = report_store.latest_writeup_for_run(run_id)
+    if persisted is not None:
+        return persisted.to_html()
+
+    trace = TraceStore(analytics_root).load(f"trace-{run_id}")
+    if trace is not None:
+        writeup = TraceReporter().generate_writeup(trace)
+        report_store.persist_writeup(writeup)
+        return writeup.to_html()
+
+    markdown = _generate_legacy_writeup(run_id, sqlite, artifacts)
+    return render_markdown_document_html(f"Run Summary: {run_id}", markdown)
 
 
 def _generate_legacy_writeup(

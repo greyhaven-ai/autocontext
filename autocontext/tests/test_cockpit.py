@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from autocontext.config.settings import AppSettings
 from autocontext.server.changelog import build_changelog
 from autocontext.server.cockpit_api import cockpit_router
-from autocontext.server.writeup import generate_writeup
+from autocontext.server.writeup import generate_writeup, generate_writeup_html
 from autocontext.storage.artifacts import ArtifactStore
 from autocontext.storage.sqlite_store import SQLiteStore
 
@@ -155,6 +155,55 @@ class TestWriteup:
         result = generate_writeup("run1", store, artifacts)
         assert "Trace-grounded summary from canonical events." in result
         assert "# Run Summary: run1" in result
+
+    def test_generates_html_from_persisted_trace_grounded_writeup(self, tmp_path: Path) -> None:
+        from autocontext.analytics.trace_reporter import ReportStore, TraceFinding, TraceWriteup
+
+        store = _make_store(tmp_path)
+        artifacts = _make_artifacts(tmp_path)
+        _seed_run(store)
+
+        report_store = ReportStore(tmp_path / "knowledge" / "analytics")
+        report_store.persist_writeup(TraceWriteup(
+            writeup_id="trace-writeup-1",
+            run_id="run1",
+            generation_index=None,
+            findings=[
+                TraceFinding(
+                    finding_id="finding-1",
+                    finding_type="weakness",
+                    title="Escaped <finding>",
+                    description="Needs review.",
+                    evidence_event_ids=["event-1"],
+                    severity="medium",
+                    category="failure_motif",
+                ),
+            ],
+            failure_motifs=[],
+            recovery_paths=[],
+            summary="Trace-grounded <summary>.",
+            created_at="2026-03-15T12:00:00Z",
+            metadata={"scenario": "grid_ctf"},
+        ))
+
+        html = generate_writeup_html("run1", store, artifacts)
+
+        assert "Run Summary: run1" in html
+        assert "Trace-grounded &lt;summary&gt;." in html
+        assert "Escaped &lt;finding&gt;" in html
+
+    def test_cockpit_writeup_endpoint_returns_html_additively(self, cockpit_env: dict[str, Any]) -> None:
+        client: TestClient = cockpit_env["client"]
+        store: SQLiteStore = cockpit_env["store"]
+        _seed_run(store)
+
+        response = client.get("/api/cockpit/writeup/run1")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert "writeup_markdown" in payload
+        assert "writeup_html" in payload
+        assert "Run Summary: run1" in payload["writeup_html"]
 
 
 # ---------------------------------------------------------------------------
