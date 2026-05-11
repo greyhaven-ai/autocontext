@@ -102,6 +102,11 @@ export interface RuntimeContextAssemblyRequestOptions {
   readonly sessionHistory?: readonly string[];
 }
 
+export interface RuntimeContextChildTaskOptions {
+  readonly scenarioContext?: string;
+  readonly sessionHistory?: readonly string[];
+}
+
 export class RuntimeContextAssemblyRequest {
   readonly discovery: RuntimeContextDiscoveryRequest;
   readonly systemPolicy: string;
@@ -125,17 +130,17 @@ export class RuntimeContextAssemblyRequest {
     this.sessionHistory = opts.sessionHistory ?? [];
   }
 
-  forChildTask(cwd: string): RuntimeContextAssemblyRequest {
+  forChildTask(cwd: string, opts: RuntimeContextChildTaskOptions = {}): RuntimeContextAssemblyRequest {
     return new RuntimeContextAssemblyRequest({
       discovery: this.discovery.forChildTask(cwd),
       systemPolicy: this.systemPolicy,
       roleInstructions: this.roleInstructions,
-      scenarioContext: this.scenarioContext,
+      scenarioContext: opts.scenarioContext,
       knowledgeComponents: this.knowledgeComponents,
       knowledgeInclude: this.knowledgeInclude,
       knowledgeExclude: this.knowledgeExclude,
       toolAffordances: this.toolAffordances,
-      sessionHistory: this.sessionHistory,
+      sessionHistory: opts.sessionHistory,
     });
   }
 }

@@ -303,6 +303,7 @@ export type {
   RepoInstruction,
   RuntimeContextAssemblyRequestOptions,
   RuntimeContextBundleEntry,
+  RuntimeContextChildTaskOptions,
   RuntimeContextLayer,
   RuntimeContextLayerBundle,
   RuntimeContextDiscoveryRequestOptions,

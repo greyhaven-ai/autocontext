@@ -186,10 +186,19 @@ def test_runtime_context_assembler_recomputes_workspace_layers_for_child_cwd(tmp
     request = RuntimeContextAssemblyRequest(
         discovery=RuntimeContextDiscoveryRequest(workspace_root=tmp_path, cwd="/pkg"),
         role_instructions="same role text",
+        scenario_context="parent scenario context",
+        session_history=("parent session history",),
     )
 
     parent = assemble_runtime_context(request)
     child = assemble_runtime_context(request.for_child_task("/other"))
+    child_with_context = assemble_runtime_context(
+        request.for_child_task(
+            "/other",
+            scenario_context="child task slice",
+            session_history=("child session history",),
+        )
+    )
 
     parent_repo_entries = parent.get_layer(RuntimeContextLayerKey.REPO_INSTRUCTIONS).entries
     child_repo_entries = child.get_layer(RuntimeContextLayerKey.REPO_INSTRUCTIONS).entries
@@ -206,4 +215,12 @@ def test_runtime_context_assembler_recomputes_workspace_layers_for_child_cwd(tmp
     assert [entry.title for entry in child.get_layer(RuntimeContextLayerKey.RUNTIME_SKILLS).entries] == ["other-only"]
     assert [entry.content for entry in child.get_layer(RuntimeContextLayerKey.ROLE_INSTRUCTIONS).entries] == [
         "same role text"
+    ]
+    assert [entry.content for entry in child.get_layer(RuntimeContextLayerKey.SCENARIO_CONTEXT).entries] == []
+    assert [entry.content for entry in child.get_layer(RuntimeContextLayerKey.SESSION_HISTORY).entries] == []
+    assert [entry.content for entry in child_with_context.get_layer(RuntimeContextLayerKey.SCENARIO_CONTEXT).entries] == [
+        "child task slice"
+    ]
+    assert [entry.content for entry in child_with_context.get_layer(RuntimeContextLayerKey.SESSION_HISTORY).entries] == [
+        "child session history"
     ]

@@ -177,10 +177,18 @@ describe("runtime context layers", () => {
     const request = new RuntimeContextAssemblyRequest({
       discovery: new RuntimeContextDiscoveryRequest({ workspaceRoot: root, cwd: "/pkg" }),
       roleInstructions: "same role text",
+      scenarioContext: "parent scenario context",
+      sessionHistory: ["parent session history"],
     });
 
     const parent = assembleRuntimeContext(request);
     const child = assembleRuntimeContext(request.forChildTask("/other"));
+    const childWithContext = assembleRuntimeContext(
+      request.forChildTask("/other", {
+        scenarioContext: "child task slice",
+        sessionHistory: ["child session history"],
+      }),
+    );
 
     expect(parent.getLayer(RuntimeContextLayerKey.REPO_INSTRUCTIONS).entries.map((entry) => entry.provenance.relativePath)).toEqual([
       "AGENTS.md",
@@ -194,6 +202,14 @@ describe("runtime context layers", () => {
     expect(child.getLayer(RuntimeContextLayerKey.RUNTIME_SKILLS).entries.map((entry) => entry.title)).toEqual(["other-only"]);
     expect(child.getLayer(RuntimeContextLayerKey.ROLE_INSTRUCTIONS).entries.map((entry) => entry.content)).toEqual([
       "same role text",
+    ]);
+    expect(child.getLayer(RuntimeContextLayerKey.SCENARIO_CONTEXT).entries.map((entry) => entry.content)).toEqual([]);
+    expect(child.getLayer(RuntimeContextLayerKey.SESSION_HISTORY).entries.map((entry) => entry.content)).toEqual([]);
+    expect(childWithContext.getLayer(RuntimeContextLayerKey.SCENARIO_CONTEXT).entries.map((entry) => entry.content)).toEqual([
+      "child task slice",
+    ]);
+    expect(childWithContext.getLayer(RuntimeContextLayerKey.SESSION_HISTORY).entries.map((entry) => entry.content)).toEqual([
+      "child session history",
     ]);
   });
 });

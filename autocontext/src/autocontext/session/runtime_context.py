@@ -96,17 +96,23 @@ class RuntimeContextAssemblyRequest:
     tool_affordances: Mapping[str, str] = field(default_factory=dict)
     session_history: Sequence[str] = ()
 
-    def for_child_task(self, cwd: str | Path) -> RuntimeContextAssemblyRequest:
+    def for_child_task(
+        self,
+        cwd: str | Path,
+        *,
+        scenario_context: str = "",
+        session_history: Sequence[str] = (),
+    ) -> RuntimeContextAssemblyRequest:
         return RuntimeContextAssemblyRequest(
             discovery=self.discovery.for_child_task(cwd),
             system_policy=self.system_policy,
             role_instructions=self.role_instructions,
-            scenario_context=self.scenario_context,
+            scenario_context=scenario_context,
             knowledge_components=dict(self.knowledge_components),
             knowledge_include=tuple(self.knowledge_include) if self.knowledge_include is not None else None,
             knowledge_exclude=tuple(self.knowledge_exclude),
             tool_affordances=dict(self.tool_affordances),
-            session_history=tuple(self.session_history),
+            session_history=tuple(session_history),
         )
 
 
