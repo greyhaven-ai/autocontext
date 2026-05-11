@@ -124,10 +124,11 @@ describe("external eval diagnostics", () => {
 
     expect(pack.status).toBe("sanitized");
     expect(pack.integrity).toMatchObject({ status: "clean" });
-    expect(pack.findings).toHaveLength(2);
+    expect(pack.findings).toHaveLength(3);
     expect(pack.findings.map((finding) => finding.id)).toEqual([
       "tb-run-1-setup-environment-failure",
       "tb-run-1-verifier-contract-mismatch",
+      "tb-run-1-schema-key-contract",
     ]);
     expect(pack.findings.every((finding) => finding.containsTaskAnswer === false)).toBe(true);
     expect(pack.findings.every((finding) => finding.containsSecret === false)).toBe(true);
@@ -527,6 +528,90 @@ describe("external eval diagnostics", () => {
       "tb-heldout-1-domain-correctness-validation",
       "tb-heldout-1-exact-verifier-command",
       "tb-heldout-1-consumer-path-parity",
+    ]);
+    expect(pack.findings.every((finding) => finding.containsTaskAnswer === false)).toBe(true);
+    expect(validateOperationalMemoryPack(pack)).toEqual({ valid: true });
+  });
+
+  test("derives artifact, schema, and input-source signals from verifier excerpts", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-dev-signal-1",
+      createdAt: "2026-05-07T18:56:00.000Z",
+      trials: [
+        {
+          taskId: "model-artifact-task",
+          trialId: "model-artifact-task.1-of-1.tb-dev-signal-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "structured-output-task",
+          trialId: "structured-output-task.1-of-1.tb-dev-signal-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "rule-driven-script-task",
+          trialId: "rule-driven-script-task.1-of-1.tb-dev-signal-1",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "model-artifact-task.1-of-1.tb-dev-signal-1",
+          evidenceRefs: ["model-artifact-task/results.json"],
+          verifierOutput: [
+            '"test_model_downloaded": "failed"',
+            "AssertionError: Model file tokenizer.json not found",
+          ].join("\n"),
+        },
+        {
+          trialId: "structured-output-task.1-of-1.tb-dev-signal-1",
+          evidenceRefs: ["structured-output-task/results.json"],
+          verifierOutput: [
+            '"test_output_schema": "failed"',
+            "FAILED ../tests/test_outputs.py::test_output_schema - KeyError: 'A'",
+          ].join("\n"),
+        },
+        {
+          trialId: "rule-driven-script-task.1-of-1.tb-dev-signal-1",
+          evidenceRefs: ["rule-driven-script-task/results.json"],
+          verifierOutput: [
+            '"test_detector_content": "failed"',
+            "AssertionError: Script should use the rules file",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    const signals = buildExternalEvalImprovementSignals(report);
+
+    expect(signals.map((signal) => signal.kind)).toEqual([
+      "required-artifact-contract",
+      "schema-key-contract",
+      "required-input-source-usage",
+    ]);
+    expect(signals.map((signal) => signal.summary)).toEqual([
+      "Verify required output artifacts at their checked paths before completion.",
+      "Validate exact output schema keys and field names.",
+      "Use required visible input, rule, and config sources directly.",
+    ]);
+
+    const pack = buildOperationalMemoryPackFromDiagnostics({
+      packId: "tb-dev-signal-1-operational-checklists",
+      version: "1.0.0",
+      createdAt: "2026-05-07T18:57:00.000Z",
+      report,
+    });
+
+    expect(pack.findings.map((finding) => finding.id)).toEqual([
+      "tb-dev-signal-1-required-artifact-contract",
+      "tb-dev-signal-1-schema-key-contract",
+      "tb-dev-signal-1-required-input-source-usage",
     ]);
     expect(pack.findings.every((finding) => finding.containsTaskAnswer === false)).toBe(true);
     expect(validateOperationalMemoryPack(pack)).toEqual({ valid: true });
