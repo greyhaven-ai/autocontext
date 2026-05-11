@@ -45,6 +45,8 @@ export type ExternalEvalDiagnosticCategory =
 
 export type ExternalEvalImprovementSignalKind =
   | "required-artifact-contract"
+  | "schema-key-contract"
+  | "required-input-source-usage"
   | "change-surface-discipline"
   | "domain-correctness-validation"
   | "exact-verifier-command"
@@ -982,6 +984,8 @@ function buildOperationalFindings(
 
 const improvementSignalKindOrder: readonly ExternalEvalImprovementSignalKind[] = [
   "required-artifact-contract",
+  "schema-key-contract",
+  "required-input-source-usage",
   "change-surface-discipline",
   "domain-correctness-validation",
   "exact-verifier-command",
@@ -1048,9 +1052,27 @@ function detectImprovementSignalKinds(
     /(?:test_[a-z0-9_]*(?:file|artifact|output)(?:_[a-z0-9]+)*|(?:file|artifact|output)_exists)["']?\s*[:=]\s*["']?failed/.test(
       text,
     ) ||
-    /missing.{0,60}(?:file|artifact|output)/.test(text)
+    /missing.{0,60}(?:file|artifact|output)/.test(text) ||
+    /(?:model|tokenizer|vocab|artifact|output)?\s*file\s+["']?[a-z0-9_.\-/]+["']?\s+not found/.test(text) ||
+    /(?:artifact|output|model|tokenizer|vocab)[^,\n}]{0,80}not found/.test(text)
   ) {
     kinds.add("required-artifact-contract");
+  }
+  if (
+    /keyerror:\s*["']?[a-z0-9_.-]+["']?/.test(text) ||
+    /missing.{0,80}(?:json )?(?:key|field|property)/.test(text) ||
+    /(?:key|field|property)[^,\n}]{0,80}(?:missing|not found|required)/.test(text)
+  ) {
+    kinds.add("schema-key-contract");
+  }
+  if (
+    /should use the (?:rules?|config|configuration|data|input) file/.test(text) ||
+    /(?:rules?|config|configuration|data|input) file[^,\n}]{0,120}(?:not used|must be used|should be used|was ignored)/.test(
+      text,
+    ) ||
+    /(?:hardcoded|hard-coded)[^,\n}]{0,120}(?:rules?|config|configuration|data|input)/.test(text)
+  ) {
+    kinds.add("required-input-source-usage");
   }
   if (
     /no_other_files_changed|other files changed|unrelated files|unexpected (?:file|change)|change surface/.test(
@@ -1091,6 +1113,24 @@ function improvementSignalMetadata(kind: ExternalEvalImprovementSignalKind): Omi
           "Before finishing, independently confirm every required file or output artifact exists at the exact checked path and that its contents can be read back from that path.",
         targetFamilies: ["terminal", "artifact-contract", "file-output"],
         risk: "low",
+      };
+    case "schema-key-contract":
+      return {
+        confidence: 0.8,
+        summary: "Validate exact output schema keys and field names.",
+        reusableBehavior:
+          "When a task requires structured output, verify the exact key names, aliases, nesting, and required fields by reading the final artifact back before finishing.",
+        targetFamilies: ["terminal", "artifact-contract", "structured-output"],
+        risk: "low",
+      };
+    case "required-input-source-usage":
+      return {
+        confidence: 0.8,
+        summary: "Use required visible input, rule, and config sources directly.",
+        reusableBehavior:
+          "When a task provides rule, config, model, data, or input files, wire the final script or service to consume those sources directly instead of hardcoding behavior from examples.",
+        targetFamilies: ["terminal", "config-driven-workflow", "file-input"],
+        risk: "medium",
       };
     case "change-surface-discipline":
       return {
