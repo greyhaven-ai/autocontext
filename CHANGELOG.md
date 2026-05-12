@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- AC-754: `ImprovementLoop` now peels off an outer markdown code fence (e.g. ` ```lean ... ``` `) when cleaning agent output, so verifiers that compile the output directly (`lake env lean`, `mypy`, `cargo check`, ...) no longer reject otherwise-valid content on the literal fence lines. Applied to both the seed (round 1's input) and the result of every `task.revise_output()` call. The strip is conservative: only the outer wrapper is removed, inner nested fences and unbalanced fences are preserved.
 - AC-750: `ImprovementLoop` no longer fires a misleading `max_score_delta` warning when the previous round was zeroed by the external `--verify-cmd` verifier. The loop now tracks `last_unvetoed_score` separately from `prev_valid_score`; the delta check compares against the last legitimate judge score, while plateau detection still treats consecutive verifier vetoes as a stall.
 - Runtime-session event stores now preserve existing events when saving stale or partial logs, and the TypeScript timeline pairs repeated child-task completions by child session id before falling back to task aliases.
 - Worker commands now clamp concurrency to one for stateful persistent runtimes, and Python runtime-bridge providers close underlying runtimes on shutdown.

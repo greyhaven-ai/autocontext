@@ -954,6 +954,8 @@ Provider errors during a streaming run emit a single `{"event":"error","message"
 
 For lean streams pass `--no-ndjson-include-output`: this drops `revision_done` events entirely (their only payload is the output) and never writes the output payload anywhere on stdout. Default is `--ndjson-include-output`.
 
+The output the loop carries through `revision_done`, the judge call, and `--verify-cmd` is already passed through `clean_revision_output`: revision metadata sections (`## Revised Output`, `## Key Changes Made`, etc.) and a single outer markdown code fence (e.g. ` ```lean ... ``` `) are stripped automatically. This means `--verify-cmd <compiler>` doesn't see literal fence lines on round 1 or after any revision (AC-754).
+
 ## TypeScript CLI
 
 The TypeScript package also publishes a narrower `autoctx` CLI for Node.js environments. It focuses on judge-based evaluation, improvement loops, task queueing, worker execution, and MCP serving rather than the full multi-generation control plane:
