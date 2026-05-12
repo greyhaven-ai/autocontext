@@ -376,6 +376,80 @@ def test_context_selection_store_loads_decisions_in_generation_order(tmp_path: P
     assert [decision.generation for decision in decisions] == [1, 2]
 
 
+def test_context_selection_store_ignores_non_decision_json(tmp_path: Path) -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+    from autocontext.knowledge.context_selection_report import build_context_selection_report
+    from autocontext.storage.context_selection_store import (
+        load_context_selection_decisions,
+        persist_context_selection_decision,
+    )
+
+    artifacts = _artifact_store(tmp_path)
+    persist_context_selection_decision(
+        artifacts,
+        ContextSelectionDecision(
+            run_id="run-1",
+            scenario_name="grid_ctf",
+            generation=1,
+            stage="generation_prompt_context",
+            candidates=(
+                ContextSelectionCandidate.from_contents(
+                    artifact_id="playbook",
+                    artifact_type="prompt_component",
+                    source="prompt_assembly",
+                    candidate_content="abcd",
+                    selected_content="abcd",
+                    selection_reason="retained",
+                ),
+            ),
+        ),
+    )
+    context_dir = artifacts.runs_root / "run-1" / "context_selection"
+    artifacts.write_json(context_dir / "summary.json", {"status": "completed"})
+    artifacts.write_json(
+        context_dir / "gen_2_summary.json",
+        {
+            "schema_version": 1,
+            "run_id": "other-run",
+            "scenario_name": "grid_ctf",
+            "generation": 2,
+            "stage": "summary",
+            "candidates": [],
+        },
+    )
+    artifacts.write_json(
+        context_dir / "gen_3_missing_schema.json",
+        {
+            "run_id": "run-1",
+            "scenario_name": "grid_ctf",
+            "generation": 3,
+            "stage": "missing_schema",
+            "candidates": [],
+        },
+    )
+    artifacts.write_json(
+        context_dir / "gen_4_metadata.json",
+        {
+            "schema_version": 1,
+            "run_id": "run-1",
+            "scenario_name": "grid_ctf",
+            "generation": 4,
+            "stage": "metadata",
+            "candidates": [],
+        },
+    )
+
+    decisions = load_context_selection_decisions(artifacts.runs_root, "run-1")
+    payload = build_context_selection_report(decisions).to_dict()
+
+    assert [decision.generation for decision in decisions] == [1]
+    assert payload["decision_count"] == 1
+    assert payload["summary"]["mean_selected_token_estimate"] == pytest.approx(1)
+
+
 def test_context_selection_store_rejects_run_id_escape(tmp_path: Path) -> None:
     from autocontext.storage.context_selection_store import load_context_selection_decisions
 
