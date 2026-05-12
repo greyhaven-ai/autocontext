@@ -705,14 +705,22 @@ function isSetupEnvironmentFailure(verifierOutput: string): boolean {
 }
 
 function isVerifierContractMismatch(verifierOutput: string): boolean {
-  return [
+  const contractMismatchSignatures = [
     "missing required",
     "required fields",
     "not configured",
     "could not find",
     "no such file or directory",
     "can't open file",
-  ].some((signature) => verifierOutput.includes(signature));
+  ];
+  return (
+    contractMismatchSignatures.some((signature) => verifierOutput.includes(signature)) ||
+    hasArtifactExistenceFailure(verifierOutput)
+  );
+}
+
+function hasArtifactExistenceFailure(text: string): boolean {
+  return artifactExistenceFailurePatterns.some((pattern) => pattern.test(text));
 }
 
 function diagnosticConfidence(
@@ -1222,14 +1230,7 @@ function detectImprovementSignalKinds(
   ].join("\n"));
   const kinds = new Set<ExternalEvalImprovementSignalKind>();
 
-  if (
-    /(?:test_[a-z0-9_]*(?:file|artifact|output)(?:_[a-z0-9]+)*|(?:file|artifact|output)_exists)["']?\s*[:=]\s*["']?failed/.test(
-      text,
-    ) ||
-    /missing.{0,60}(?:file|artifact|output)/.test(text) ||
-    /(?:model|tokenizer|vocab|artifact|output)?\s*file\s+["']?[a-z0-9_.\-/]+["']?\s+not found/.test(text) ||
-    /(?:artifact|output|model|tokenizer|vocab)[^,\n}]{0,80}not found/.test(text)
-  ) {
+  if (hasRequiredArtifactContractSignal(text)) {
     kinds.add("required-artifact-contract");
   }
   if (
@@ -1263,7 +1264,10 @@ function detectImprovementSignalKinds(
   }
   if (
     /(?:compile|compiles|compilation|build|linker|gcc|rustc)[^,\n}]{0,120}failed/.test(text) ||
-    /failed[^,\n}]{0,120}(?:compile|compiles|compilation|build|linker|gcc|rustc)/.test(text)
+    /failed[^,\n}]{0,120}(?:compile|compiles|compilation|build|linker|gcc|rustc)/.test(text) ||
+    /(?:script|macro|command|program|source)[^,\n}]{0,120}(?:well-formed|malformed|syntax|parse)/.test(text) ||
+    /(?:syntax|parse)[^,\n}]{0,120}(?:error|failed|failure)/.test(text) ||
+    /missing\s+:(?:wq|x)\b/.test(text)
   ) {
     kinds.add("exact-verifier-command");
   }
@@ -1272,6 +1276,25 @@ function detectImprovementSignalKinds(
   }
 
   return improvementSignalKindOrder.filter((kind) => kinds.has(kind));
+}
+
+const artifactExistenceFailurePatterns: readonly RegExp[] = [
+  /\b(?:required\s+)?(?:model|tokenizer|vocab|artifact|output|result|submission)?\s*file\s+["']?[a-z0-9_.\-/]+["']?\s+does not exist\b/,
+  /\b(?:required\s+)?(?:model|tokenizer|vocab|artifact|output|result|submission)?\s*file\s+does not exist\s+at\s+["']?[a-z0-9_.\-/]+["']?/,
+  /\bpath\s+["']?[a-z0-9_.\-/]+["']?\s+does not exist\b/,
+  /\b(?:artifact|output|result|submission|model|tokenizer|vocab)[^,\n}]{0,80}\bdoes not exist\b/,
+];
+
+function hasRequiredArtifactContractSignal(text: string): boolean {
+  return (
+    hasArtifactExistenceFailure(text) ||
+    /(?:test_[a-z0-9_]*(?:file|artifact|output)(?:_[a-z0-9]+)*|(?:file|artifact|output)_exists)["']?\s*[:=]\s*["']?failed/.test(
+      text,
+    ) ||
+    /missing.{0,60}(?:file|artifact|output)/.test(text) ||
+    /(?:model|tokenizer|vocab|artifact|output)?\s*file\s+["']?[a-z0-9_.\-/]+["']?\s+not found/.test(text) ||
+    /(?:artifact|output|model|tokenizer|vocab)[^,\n}]{0,80}not found/.test(text)
+  );
 }
 
 function improvementSignalMetadata(kind: ExternalEvalImprovementSignalKind): Omit<
