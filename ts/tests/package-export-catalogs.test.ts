@@ -95,4 +95,15 @@ describe("package root exports", () => {
       types: "./dist/integrations/browser/index.d.ts",
     });
   });
+
+  it("publishes the MCP runtime tool adapter subpath", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"),
+    ) as { exports?: Record<string, { import?: string; types?: string }> };
+
+    expect(packageJson.exports?.["./runtimes/mcp"]).toEqual({
+      import: "./dist/runtimes/mcp-runtime-tools.js",
+      types: "./dist/runtimes/mcp-runtime-tools.d.ts",
+    });
+  });
 });

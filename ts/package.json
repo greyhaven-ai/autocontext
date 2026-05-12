@@ -81,6 +81,10 @@
       "types": "./dist/integrations/browser/index.d.ts",
       "import": "./dist/integrations/browser/index.js"
     },
+    "./runtimes/mcp": {
+      "types": "./dist/runtimes/mcp-runtime-tools.d.ts",
+      "import": "./dist/runtimes/mcp-runtime-tools.js"
+    },
     "./detectors/openai-python": {
       "types": "./dist/control-plane/instrument/detectors/openai-python/index.d.ts",
       "import": "./dist/control-plane/instrument/detectors/openai-python/index.js",
