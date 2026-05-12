@@ -793,7 +793,6 @@ class ArtifactStore(ArtifactWriteMethods):
         skill_dir = self._skill_dir(scenario)
         skill_path = skill_dir / "SKILL.md"
 
-        # --- Collect existing lesson bullets ----------------------------------
         existing_bullets: list[str] = []
         if skill_path.exists():
             in_lessons = False
@@ -806,7 +805,6 @@ class ArtifactStore(ArtifactWriteMethods):
                 if in_lessons and line.startswith("- "):
                     existing_bullets.append(line)
 
-        # --- Add new lessons (deduplicated) -----------------------------------
         if lessons and lessons.strip() not in ("", "No new lessons."):
             for line in lessons.strip().splitlines():
                 stripped = line.strip()
@@ -816,7 +814,6 @@ class ArtifactStore(ArtifactWriteMethods):
                 if bullet not in existing_bullets:
                     existing_bullets.append(bullet)
 
-        # --- Build SKILL.md ---------------------------------------------------
         kebab = scenario.replace("_", "-")
         title = scenario.replace("_", " ").title()
         desc = (
@@ -852,7 +849,6 @@ class ArtifactStore(ArtifactWriteMethods):
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_path.write_text(skill_content, encoding="utf-8")
 
-        # --- Bundle the current playbook into the skill directory -------------
         playbook_content = self.read_playbook(scenario)
         (skill_dir / "playbook.md").write_text(
             playbook_content.strip() + "\n", encoding="utf-8",
