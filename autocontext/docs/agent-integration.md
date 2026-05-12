@@ -926,6 +926,34 @@ print(f"Best score: {result.best_score}")
 package = ac.export_package("grid_ctf")
 ```
 
+## `autoctx improve --ndjson` event stream
+
+`autoctx improve` supports two stdout output modes:
+
+- `--json` (default off): a single JSON object written once at the end with `best_score`, `best_round`, `total_rounds`, `met_threshold`, and `best_output`.
+- `--ndjson` (default off): newline-delimited JSON, one event per line, streamed as the loop progresses. Useful for long-running compile-gated loops where `--json` would buffer everything until the final blob lands.
+
+The two modes are mutually exclusive; passing both exits non-zero.
+
+Under `--ndjson`, the per-round event sequence (with a configured `--verify-cmd`) is:
+
+```
+round_start  -> revision_done -> judge_done -> verifier_done -> round_summary
+```
+
+repeated per round, followed by a single `final` event. Without a verifier the `verifier_done` event is omitted. Field semantics:
+
+- `round_start` carries `round`.
+- `revision_done` carries `round` and `output` (the exact content the round is about to evaluate; for round 1 this is the seed, for round N>1 it is the result of `task.revise_output()` from round N-1). Lets consumers salvage near-miss verifier-vetoed rounds.
+- `judge_done` carries `round` and `score` (the judge's evaluation before any post-processing or veto).
+- `verifier_done` carries `round`, `verifier_ok`, and `verifier_exit_code`.
+- `round_summary` carries `round` and `effective_score` (post-veto, after fact-check penalty).
+- `final` carries `best_score`, `best_round`, `total_rounds`, and `met_threshold`.
+
+Provider errors during a streaming run emit a single `{"event":"error","message":"..."}` line on stdout so the stream stays parseable.
+
+For lean streams pass `--no-ndjson-include-output`: this drops `revision_done` events entirely (their only payload is the output) and never writes the output payload anywhere on stdout. Default is `--ndjson-include-output`.
+
 ## TypeScript CLI
 
 The TypeScript package also publishes a narrower `autoctx` CLI for Node.js environments. It focuses on judge-based evaluation, improvement loops, task queueing, worker execution, and MCP serving rather than the full multi-generation control plane:

@@ -55,6 +55,22 @@ def _failing_verifier() -> OutputVerifier:
     return OutputVerifier(command=[sys.executable, "-c", script])
 
 
+class TestImprovementLoopEventFieldOrder:
+    """AC-753 PR #925 review: keep positional construction backwards-compatible.
+
+    The dataclass is not keyword-only, so the order of fields matters for any
+    external code constructing events positionally. `event, round, score, ...`
+    was the contract before `output` was added; `output` must come after the
+    existing fields so positional construction keeps working.
+    """
+
+    def test_positional_score_argument_still_lands_on_score(self) -> None:
+        e = ImprovementLoopEvent("judge_done", 1, 0.95)
+        # Before the field-order fix, 0.95 silently landed on `output`.
+        assert e.score == 0.95
+        assert e.output is None
+
+
 class TestImprovementLoopEventStream:
     def test_loop_emits_minimum_event_sequence_for_single_round(self) -> None:
         # Single round, no verifier. Expected sequence:

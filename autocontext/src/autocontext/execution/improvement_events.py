@@ -34,9 +34,13 @@ class ImprovementLoopEvent:
     - `final`: best_score, best_round, total_rounds, met_threshold
     """
 
+    # NB: field order is part of the public contract for positional construction.
+    # Existing callers may construct events positionally as
+    # `ImprovementLoopEvent("judge_done", 1, 0.95)`; new fields go at the END so
+    # they don't shift the meaning of trailing positional arguments. AC-753 added
+    # `output` and intentionally appends it after the older fields.
     event: str
     round: int | None = None
-    output: str | None = None
     score: float | None = None
     effective_score: float | None = None
     verifier_ok: bool | None = None
@@ -45,3 +49,4 @@ class ImprovementLoopEvent:
     best_round: int | None = None
     total_rounds: int | None = None
     met_threshold: bool | None = None
+    output: str | None = None
