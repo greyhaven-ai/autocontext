@@ -23,7 +23,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
         run: uv sync --group dev
       - name: Ruff
@@ -46,7 +46,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
         run: uv sync --group dev
       - name: Tests
@@ -69,12 +69,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-          cache: "npm"
-          cache-dependency-path: ts/package-lock.json
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install Python deps
         working-directory: autocontext
         run: uv sync --group dev
@@ -102,7 +100,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
         run: uv sync --group dev
       - name: Deterministic scenario runs
@@ -150,7 +148,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install base deps
         run: uv sync --group dev
       - name: Pin openai to matrix version
@@ -177,8 +175,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-          cache: "npm"
-          cache-dependency-path: ts/package-lock.json
       - name: Reuse setup-node headers for native addons
         shell: bash
         run: |
@@ -188,7 +184,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install Python parity deps
         working-directory: autocontext
         run: uv sync --group dev
@@ -226,7 +222,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install base deps
         run: uv sync --group dev
       - name: Pin anthropic to matrix version
@@ -253,12 +249,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-          cache: "npm"
-          cache-dependency-path: ts/package-lock.json
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install Python parity deps
         working-directory: autocontext
         run: uv sync --group dev
@@ -285,7 +279,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
         run: uv sync --group dev
       - name: Live PrimeIntellect verification
