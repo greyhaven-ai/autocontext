@@ -73,9 +73,9 @@ type Payload = { threadId?: string; message: string };
 
 export const triggers = { webhook: true };
 
-export default async function ({ init, payload }: AutoctxAgentContext<Payload>) {
+export default async function ({ id, init, payload }: AutoctxAgentContext<Payload>) {
   const runtime = await init();
-  const session = await runtime.session(payload.threadId ?? "default");
+  const session = await runtime.session(payload.threadId ?? id ?? "default");
   return session.prompt(payload.message, { role: "support-triager" });
 }
 ```
@@ -97,6 +97,25 @@ const result = await invokeAutoctxAgent(agent, {
   runtime: myAgentRuntime,
   workspace: createInMemoryWorkspaceEnv({ cwd: "/repo" }),
 });
+```
+
+For local iteration, the npm CLI can invoke the same handlers by name or expose
+a tiny dev server. Env file loading is explicit: pass `--env FILE`; values
+already set in the shell win over values in that file.
+
+```bash
+autoctx agent run support \
+  --id ticket-123 \
+  --payload '{"threadId":"ticket-123","message":"Please triage this ticket."}' \
+  --env .env.local \
+  --json
+
+autoctx agent dev --port 3583 --env .env.local
+
+curl http://127.0.0.1:3583/manifest
+curl -X POST http://127.0.0.1:3583/agents/support/invoke \
+  -H 'content-type: application/json' \
+  -d '{"id":"ticket-123","payload":{"message":"Please triage this ticket."}}'
 ```
 
 The TypeScript package includes mirrored deterministic semantic prompt
@@ -249,6 +268,8 @@ autoctx list --json
 autoctx runtime-sessions list --limit 10
 autoctx runtime-sessions show --run-id <run-id> --json
 autoctx runtime-sessions timeline --run-id <run-id> --json
+autoctx agent run support --id ticket-123 --payload '{"message":"Please triage this."}' --env .env.local --json
+autoctx agent dev --port 3583 --env .env.local
 autoctx status <run-id>
 autoctx show <run-id> --best
 autoctx watch <run-id>

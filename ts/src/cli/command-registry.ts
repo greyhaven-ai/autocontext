@@ -16,6 +16,7 @@ export type NoDbCommandName =
   | "logout"
   | "providers"
   | "models"
+  | "agent"
   | "train"
   | "simulate"
   | "investigate"
@@ -83,6 +84,7 @@ const COMMANDS: readonly CommandDescriptor[] = [
   { name: "logout", description: "Clear stored provider credentials", group: "primary", route: { kind: "no-db", command: "logout" } },
   { name: "providers", description: "List all known providers with auth status (JSON)", group: "primary", route: { kind: "no-db", command: "providers" } },
   { name: "models", description: "List available models for authenticated providers (JSON)", group: "primary", route: { kind: "no-db", command: "models" } },
+  { name: "agent", description: "Run or dev-serve local .autoctx/agents handlers", group: "primary", route: { kind: "no-db", command: "agent" } },
   { name: "mission", description: "Manage multi-step task missions", group: "primary", route: { kind: "db", command: "mission" } },
   { name: "campaign", description: "Manage multi-mission campaigns", group: "primary", route: { kind: "db", command: "campaign" } },
   { name: "solve", description: "Create and solve a scenario from plain language", group: "primary", route: { kind: "db", command: "solve" } },

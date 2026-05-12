@@ -48,6 +48,7 @@ export type MaybePromise<T> = T | Promise<T>;
 export interface AutoctxAgentContext<
   Payload = Record<string, unknown>,
 > {
+  id?: string;
   payload: Payload;
   env: Readonly<AutoctxAgentEnv>;
   workspace: RuntimeWorkspaceEnv;
@@ -117,6 +118,7 @@ export interface AutoctxAgentDiscoveryOptions {
 export interface AutoctxAgentInvocationOptions<
   Payload,
 > {
+  id?: string;
   payload: Payload;
   env?: AutoctxAgentEnv;
   workspace?: RuntimeWorkspaceEnv;
@@ -211,6 +213,7 @@ export function createAutoctxAgentContext<
     path: options.agentPath,
   };
   return {
+    id: options.id,
     payload: options.payload,
     env: Object.freeze({ ...(options.env ?? {}) }),
     workspace,

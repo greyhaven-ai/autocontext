@@ -42,6 +42,7 @@ This directory is the maintainer-facing landing page for repository docs. Use it
 - **`investigate`** — evidence-driven diagnosis in synthetic harness or iterative LLM modes
 - **`analyze`** — interpret and compare outputs from all surfaces
 - **`mission`** — real-world goal execution with adaptive planning and campaigns
+- **`agent`** — TypeScript local runner/dev server for experimental `.autoctx/agents` handlers
 - **`train`** — distill curated datasets into scenario-local models
 - **`hermes`** — read-only Hermes v0.12 skill/Curator inspection plus Hermes skill export
 
