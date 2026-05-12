@@ -234,6 +234,40 @@ class TestVerifierIntegration:
         assert result.best_score == 1.0
         assert result.met_threshold is True
 
+    def test_fenced_seed_is_stripped_before_verifier_sees_it(self):
+        # AC-754: a markdown-fenced seed must be unwrapped before round 1's
+        # verifier runs, so the verifier never sees the literal ```lang lines.
+        # A picky verifier that fails on any line starting with ``` would
+        # otherwise reject the round; with the fence strip, it passes.
+        script = textwrap.dedent(
+            """
+            import sys
+            data = sys.stdin.read()
+            for line in data.splitlines():
+                if line.lstrip().startswith('```'):
+                    print('found unexpected fence: ' + line, file=sys.stderr)
+                    sys.exit(2)
+            sys.exit(0)
+            """
+        ).strip()
+        no_fence_verifier = OutputVerifier(command=[sys.executable, "-c", script])
+
+        task = _AlwaysPerfectTask()
+        loop = ImprovementLoop(
+            task=task,
+            max_rounds=1,
+            quality_threshold=0.9,
+            output_verifier=no_fence_verifier,
+        )
+        fenced_seed = "```lean\ntheorem foo : 1 = 1 := rfl\n```"
+        result = loop.run(fenced_seed, {})
+
+        # Verifier passed -> effective score not zeroed -> best_score == 1.0.
+        assert result.best_score == 1.0
+        assert result.met_threshold is True
+        # And the stored output should be the unwrapped form.
+        assert result.best_output == "theorem foo : 1 = 1 := rfl"
+
 
 # -- AC-750: max_score_delta warning vs verifier-veto provenance --
 

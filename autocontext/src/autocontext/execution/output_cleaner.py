@@ -10,6 +10,41 @@ from __future__ import annotations
 import re
 
 
+def _strip_markdown_fence_wrapper(text: str) -> str:
+    """Strip a single outer markdown code fence around the whole output.
+
+    Some LLM providers (notably claude-cli on Lean / Python prompts) return
+    output wrapped in a single ``` ... ``` block, optionally tagged with a
+    language: ``` ```lean ... ``` ```. Verifiers that compile the output
+    directly (`lake env lean`, `mypy`, `cargo check`, ...) choke on the
+    literal fence lines and reject otherwise-valid content. AC-754.
+
+    The strip is conservative: only an outer wrapper that opens on the
+    first non-blank line with ``` (optionally followed by a single language
+    token) AND closes on the last non-blank line with ``` is removed.
+    Unbalanced fences, inline triple-backticks, and nested code blocks
+    inside an outer wrapper are preserved so we never silently mangle
+    content the verifier might actually need.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return text
+    lines = stripped.splitlines()
+    if len(lines) < 2:
+        return text
+    first = lines[0].rstrip()
+    last = lines[-1].rstrip()
+    if not first.startswith("```"):
+        return text
+    lang_token = first[3:]
+    # The opening fence allows at most a single language tag (no whitespace).
+    if lang_token and any(ch.isspace() for ch in lang_token):
+        return text
+    if last != "```":
+        return text
+    return "\n".join(lines[1:-1])
+
+
 def _strip_last_section(text: str, header: str) -> str:
     """Strip from the last occurrence of *header* to the end of *text*.
 
@@ -35,6 +70,9 @@ def clean_revision_output(output: str) -> str:
     - ``## Analysis``, ``## Changes``, ``## Improvements``, ``## Self-Assessment`` sections
       (from the *last* occurrence only, to avoid destroying legitimate content)
     - Trailing "This revision transforms/improves/addresses/fixes..." paragraphs
+    - A single outer markdown code fence (e.g. ``` ```lean ... ``` ```) when
+      the whole output is wrapped in one, so verifiers that compile the
+      content directly do not choke on fence lines (AC-754).
     """
     cleaned = output
 
@@ -61,5 +99,10 @@ def clean_revision_output(output: str) -> str:
         "",
         cleaned,
     )
+
+    # AC-754: peel off an outer markdown fence wrapper after metadata
+    # sections are gone, so a `## Revised Output` header above a fenced
+    # block doesn't prevent the strip.
+    cleaned = _strip_markdown_fence_wrapper(cleaned)
 
     return cleaned.strip()

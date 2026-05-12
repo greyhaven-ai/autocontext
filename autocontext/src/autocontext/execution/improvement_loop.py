@@ -150,8 +150,11 @@ class ImprovementLoop:
         loop_start = time.monotonic()
         judge_calls = 0
         rounds: list[RoundResult] = []
-        current_output = initial_output
-        best_output = initial_output
+        # AC-754: strip markdown fence wrappers (and other metadata) from the
+        # seed too, so a fenced seed doesn't break a round-1 verifier run
+        # before any revision has a chance to clean it up.
+        current_output = clean_revision_output(initial_output)
+        best_output = current_output
         best_score = 0.0
         best_round = 1
         judge_failures = 0
