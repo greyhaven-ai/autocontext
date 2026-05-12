@@ -621,6 +621,128 @@ describe("external eval diagnostics", () => {
     expect(validateOperationalMemoryPack(pack)).toEqual({ valid: true });
   });
 
+  test("derives reusable signals from natural-language verifier failures", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-natural-language-verifier",
+      createdAt: "2026-05-11T20:00:00.000Z",
+      trials: [
+        {
+          taskId: "artifact-path-task",
+          trialId: "artifact-path-task.1-of-1.tb-natural-language-verifier",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+        {
+          taskId: "generated-script-task",
+          trialId: "generated-script-task.1-of-1.tb-natural-language-verifier",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "artifact-path-task.1-of-1.tb-natural-language-verifier",
+          evidenceRefs: ["artifact-path-task/results.json"],
+          verifierOutput: "AssertionError: File /app/output.txt does not exist.",
+        },
+        {
+          trialId: "generated-script-task.1-of-1.tb-natural-language-verifier",
+          evidenceRefs: ["generated-script-task/results.json"],
+          verifierOutput: [
+            "Ensure the generated macro script is well-formed before finishing.",
+            "Missing :wq or :x",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    const signals = buildExternalEvalImprovementSignals(report);
+
+    expect(signals.map((signal) => signal.kind)).toEqual([
+      "required-artifact-contract",
+      "exact-verifier-command",
+    ]);
+    expect(signals.map((signal) => signal.taskIds)).toEqual([
+      ["artifact-path-task"],
+      ["generated-script-task"],
+    ]);
+
+    const pack = buildOperationalMemoryPackFromDiagnostics({
+      packId: "tb-natural-language-verifier-operational-checklists",
+      version: "1.0.0",
+      createdAt: "2026-05-11T20:05:00.000Z",
+      report,
+    });
+
+    expect(pack.findings.map((finding) => finding.id)).toEqual([
+      "tb-natural-language-verifier-verifier-contract-mismatch",
+      "tb-natural-language-verifier-required-artifact-contract",
+      "tb-natural-language-verifier-exact-verifier-command",
+    ]);
+    expect(pack.findings.every((finding) => finding.containsTaskAnswer === false)).toBe(true);
+    expect(validateOperationalMemoryPack(pack)).toEqual({ valid: true });
+  });
+
+  test("keeps domain existence failures out of verifier-contract diagnostics", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-domain-existence",
+      createdAt: "2026-05-11T20:10:00.000Z",
+      trials: [
+        {
+          taskId: "exported-database-task",
+          trialId: "exported-database-task.1-of-1.tb-domain-existence",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "exported-database-task.1-of-1.tb-domain-existence",
+          evidenceRefs: ["exported-database-task/results.json"],
+          verifierOutput: "AssertionError: user alice does not exist in the exported database",
+        },
+      ],
+    });
+
+    expect(report.diagnostics.map((diagnostic) => diagnostic.category)).toEqual([
+      "agent-task-failure",
+    ]);
+    expect(buildExternalEvalImprovementSignals(report)).toEqual([]);
+  });
+
+  test("detects artifact signals when verifier says a required output file does not exist at a path", () => {
+    const report = buildExternalEvalDiagnosticReport({
+      runId: "tb-artifact-existence",
+      createdAt: "2026-05-11T20:15:00.000Z",
+      trials: [
+        {
+          taskId: "artifact-path-task",
+          trialId: "artifact-path-task.1-of-1.tb-artifact-existence",
+          attempt: 1,
+          status: "failed",
+          reward: 0,
+        },
+      ],
+      evidence: [
+        {
+          trialId: "artifact-path-task.1-of-1.tb-artifact-existence",
+          evidenceRefs: ["artifact-path-task/results.json"],
+          verifierOutput: "AssertionError: The required output file does not exist at /app/output.txt",
+        },
+      ],
+    });
+
+    expect(report.diagnostics.map((diagnostic) => diagnostic.category)).toEqual([
+      "verifier-contract-mismatch",
+    ]);
+    expect(buildExternalEvalImprovementSignals(report).map((signal) => signal.kind)).toEqual([
+      "required-artifact-contract",
+    ]);
+  });
+
   test("recomputes memory-pack improvement signals from diagnostics", () => {
     const report = buildExternalEvalDiagnosticReport({
       runId: "tb-clean-1",
