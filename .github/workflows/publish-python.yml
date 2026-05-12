@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Avoid resolving freshly uploaded PyPI artifacts during active supply-chain incidents.
-      UV_EXCLUDE_NEWER: "2026-05-05T00:00:00Z"
+      UV_EXCLUDE_NEWER: "2026-04-10T14:55:41Z"
     defaults:
       run:
         working-directory: autocontext

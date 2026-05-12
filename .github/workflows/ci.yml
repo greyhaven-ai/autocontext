@@ -15,6 +15,8 @@ permissions:
 env:
   # Delay fresh npm versions in CI during supply-chain incidents.
   NPM_CONFIG_MIN_RELEASE_AGE: "7"
+  # Match autocontext/uv.lock so `uv sync --locked` does not re-resolve.
+  UV_EXCLUDE_NEWER: "2026-04-10T14:55:41Z"
 
 jobs:
   lint:
