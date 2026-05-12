@@ -41,6 +41,18 @@ def _prompt_bundle_from_roles(roles: dict[str, Any], fallback: PromptBundle) -> 
     )
 
 
+def _selected_context_components(
+    components: Mapping[str, Any],
+    roles: Mapping[str, str],
+) -> dict[str, str]:
+    role_text = "\n\n".join(roles.values())
+    return {
+        key: value
+        for key, value in components.items()
+        if isinstance(value, str) and value.strip() and value in role_text
+    }
+
+
 # Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
 _COMPETITOR_CONSTRAINT_SUFFIX = (
     "\n\nConstraints:\n"
@@ -112,6 +124,7 @@ def build_prompt_bundle(
     compaction_entry_context: Mapping[str, Any] | None = None,
     compaction_entry_parent_id: str = "",
     compaction_entry_sink: Callable[[list[CompactionEntry]], None] | None = None,
+    context_component_sink: Callable[[dict[str, str]], None] | None = None,
 ) -> PromptBundle:
     _nb = dict(notebook_contexts or {})
     _evidence = dict(evidence_manifests or {})
@@ -169,35 +182,35 @@ def build_prompt_bundle(
         experiment_log = compacted["experiment_log"]
         research_protocol = compacted["research_protocol"]
         session_reports = compacted["session_reports"]
+    context_components = {
+        "playbook": current_playbook,
+        "trajectory": score_trajectory,
+        "lessons": operational_lessons,
+        "tools": available_tools,
+        "analysis": recent_analysis,
+        "analyst_feedback": analyst_feedback,
+        "analyst_attribution": analyst_attribution,
+        "coach_attribution": coach_attribution,
+        "architect_attribution": architect_attribution,
+        "hints": coach_competitor_hints,
+        "coach_hint_feedback": coach_hint_feedback,
+        "experiment_log": experiment_log,
+        "dead_ends": dead_ends,
+        "research_protocol": research_protocol,
+        "session_reports": session_reports,
+        "tool_usage_report": architect_tool_usage_report,
+        "environment_snapshot": environment_snapshot,
+        "evidence_manifest_analyst": analyst_evidence_manifest,
+        "evidence_manifest_architect": architect_evidence_manifest,
+        "notebook_competitor": _nb.get("competitor", ""),
+        "notebook_analyst": _nb.get("analyst", ""),
+        "notebook_coach": _nb.get("coach", ""),
+        "notebook_architect": _nb.get("architect", ""),
+    }
     if context_budget_tokens > 0:
         budget = ContextBudget(max_tokens=context_budget_tokens)
-        budgeted = budget.apply(
-            {
-                "playbook": current_playbook,
-                "trajectory": score_trajectory,
-                "lessons": operational_lessons,
-                "tools": available_tools,
-                "analysis": recent_analysis,
-                "analyst_feedback": analyst_feedback,
-                "analyst_attribution": analyst_attribution,
-                "coach_attribution": coach_attribution,
-                "architect_attribution": architect_attribution,
-                "hints": coach_competitor_hints,
-                "coach_hint_feedback": coach_hint_feedback,
-                "experiment_log": experiment_log,
-                "dead_ends": dead_ends,
-                "research_protocol": research_protocol,
-                "session_reports": session_reports,
-                "tool_usage_report": architect_tool_usage_report,
-                "environment_snapshot": environment_snapshot,
-                "evidence_manifest_analyst": analyst_evidence_manifest,
-                "evidence_manifest_architect": architect_evidence_manifest,
-                "notebook_competitor": _nb.get("competitor", ""),
-                "notebook_analyst": _nb.get("analyst", ""),
-                "notebook_coach": _nb.get("coach", ""),
-                "notebook_architect": _nb.get("architect", ""),
-            }
-        )
+        budgeted = budget.apply(context_components)
+        context_components = budgeted
         current_playbook = budgeted["playbook"]
         score_trajectory = budgeted["trajectory"]
         operational_lessons = budgeted["lessons"]
@@ -223,7 +236,6 @@ def build_prompt_bundle(
             "coach": budgeted["notebook_coach"],
             "architect": budgeted["notebook_architect"],
         }
-
     lessons_block = f"Operational lessons (from prior generations):\n{operational_lessons}\n\n" if operational_lessons else ""
     analysis_block = f"Most recent generation analysis:\n{recent_analysis}\n\n" if recent_analysis else ""
     analyst_feedback_block = f"{analyst_feedback.strip()}\n\n" if analyst_feedback else ""
@@ -349,20 +361,27 @@ def build_prompt_bundle(
             "If no harness mutations, omit the MUTATIONS markers entirely."
         ),
     )
-    if hook_bus is None:
-        return bundle
-    context_event = hook_bus.emit(
-        HookEvents.CONTEXT,
-        {
-            "roles": _prompt_bundle_roles(bundle),
-            "stage": "after_prompt_bundle",
-        },
-    )
-    context_event.raise_if_blocked()
-    maybe_roles = context_event.payload.get("roles")
-    if not isinstance(maybe_roles, dict):
-        return bundle
-    return _prompt_bundle_from_roles(maybe_roles, bundle)
+    final_bundle = bundle
+    if hook_bus is not None:
+        context_event = hook_bus.emit(
+            HookEvents.CONTEXT,
+            {
+                "roles": _prompt_bundle_roles(bundle),
+                "stage": "after_prompt_bundle",
+            },
+        )
+        context_event.raise_if_blocked()
+        maybe_roles = context_event.payload.get("roles")
+        if isinstance(maybe_roles, dict):
+            final_bundle = _prompt_bundle_from_roles(maybe_roles, bundle)
+    if context_component_sink is not None:
+        context_component_sink(
+            _selected_context_components(
+                context_components,
+                _prompt_bundle_roles(final_bundle),
+            )
+        )
+    return final_bundle
 
 
 def code_strategy_competitor_suffix(strategy_interface: str) -> str:
