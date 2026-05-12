@@ -41,6 +41,18 @@ def _prompt_bundle_from_roles(roles: dict[str, Any], fallback: PromptBundle) -> 
     )
 
 
+def _selected_context_components(
+    components: Mapping[str, Any],
+    roles: Mapping[str, str],
+) -> dict[str, str]:
+    role_text = "\n\n".join(roles.values())
+    return {
+        key: value
+        for key, value in components.items()
+        if isinstance(value, str) and value.strip() and value in role_text
+    }
+
+
 # Analyst/architect constraint bullets shared with rlm/prompts.py — keep in sync
 _COMPETITOR_CONSTRAINT_SUFFIX = (
     "\n\nConstraints:\n"
@@ -224,9 +236,6 @@ def build_prompt_bundle(
             "coach": budgeted["notebook_coach"],
             "architect": budgeted["notebook_architect"],
         }
-    if context_component_sink is not None:
-        context_component_sink(dict(context_components))
-
     lessons_block = f"Operational lessons (from prior generations):\n{operational_lessons}\n\n" if operational_lessons else ""
     analysis_block = f"Most recent generation analysis:\n{recent_analysis}\n\n" if recent_analysis else ""
     analyst_feedback_block = f"{analyst_feedback.strip()}\n\n" if analyst_feedback else ""
@@ -352,20 +361,27 @@ def build_prompt_bundle(
             "If no harness mutations, omit the MUTATIONS markers entirely."
         ),
     )
-    if hook_bus is None:
-        return bundle
-    context_event = hook_bus.emit(
-        HookEvents.CONTEXT,
-        {
-            "roles": _prompt_bundle_roles(bundle),
-            "stage": "after_prompt_bundle",
-        },
-    )
-    context_event.raise_if_blocked()
-    maybe_roles = context_event.payload.get("roles")
-    if not isinstance(maybe_roles, dict):
-        return bundle
-    return _prompt_bundle_from_roles(maybe_roles, bundle)
+    final_bundle = bundle
+    if hook_bus is not None:
+        context_event = hook_bus.emit(
+            HookEvents.CONTEXT,
+            {
+                "roles": _prompt_bundle_roles(bundle),
+                "stage": "after_prompt_bundle",
+            },
+        )
+        context_event.raise_if_blocked()
+        maybe_roles = context_event.payload.get("roles")
+        if isinstance(maybe_roles, dict):
+            final_bundle = _prompt_bundle_from_roles(maybe_roles, bundle)
+    if context_component_sink is not None:
+        context_component_sink(
+            _selected_context_components(
+                context_components,
+                _prompt_bundle_roles(final_bundle),
+            )
+        )
+    return final_bundle
 
 
 def code_strategy_competitor_suffix(strategy_interface: str) -> str:

@@ -170,6 +170,45 @@ def _benchmarkable_prompt_components(
     }
 
 
+def _benchmarkable_prompt_components_from_kwargs(prompt_kwargs: dict[str, Any]) -> dict[str, str]:
+    return _benchmarkable_prompt_components(
+        current_playbook=_as_str(prompt_kwargs.get("current_playbook")),
+        score_trajectory=_as_str(prompt_kwargs.get("score_trajectory")),
+        operational_lessons=_as_str(prompt_kwargs.get("operational_lessons")),
+        available_tools=_as_str(prompt_kwargs.get("available_tools")),
+        recent_analysis=_as_str(prompt_kwargs.get("recent_analysis")),
+        analyst_feedback=_as_str(prompt_kwargs.get("analyst_feedback")),
+        analyst_attribution=_as_str(prompt_kwargs.get("analyst_attribution")),
+        coach_attribution=_as_str(prompt_kwargs.get("coach_attribution")),
+        architect_attribution=_as_str(prompt_kwargs.get("architect_attribution")),
+        coach_competitor_hints=_as_str(prompt_kwargs.get("coach_competitor_hints")),
+        coach_hint_feedback=_as_str(prompt_kwargs.get("coach_hint_feedback")),
+        experiment_log=_as_str(prompt_kwargs.get("experiment_log")),
+        dead_ends=_as_str(prompt_kwargs.get("dead_ends")),
+        research_protocol=_as_str(prompt_kwargs.get("research_protocol")),
+        session_reports=_as_str(prompt_kwargs.get("session_reports")),
+        architect_tool_usage_report=_as_str(prompt_kwargs.get("architect_tool_usage_report")),
+        environment_snapshot=_as_str(prompt_kwargs.get("environment_snapshot")),
+        evidence_manifest=_as_str(prompt_kwargs.get("evidence_manifest")),
+        evidence_manifests=_as_str_dict(prompt_kwargs.get("evidence_manifests")),
+        notebook_contexts=_as_str_dict(prompt_kwargs.get("notebook_contexts")),
+    )
+
+
+def _as_str(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _as_str_dict(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    return {
+        str(key): str(item)
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, str)
+    }
+
+
 def prepare_generation_prompts(
     ctx: GenerationContext,
     *,
@@ -262,28 +301,7 @@ def prepare_generation_prompts(
     }
     prompt_kwargs["compaction_entry_parent_id"] = _latest_compaction_parent_id(artifacts, ctx.run_id)
     prompt_kwargs["compaction_entry_sink"] = lambda entries: _append_compaction_entries_for_context(ctx, artifacts, entries)
-    raw_context_components = _benchmarkable_prompt_components(
-        current_playbook=current_playbook,
-        score_trajectory=score_trajectory,
-        operational_lessons=operational_lessons,
-        available_tools=available_tools,
-        recent_analysis=recent_analysis,
-        analyst_feedback=analyst_feedback,
-        analyst_attribution=analyst_attribution,
-        coach_attribution=coach_attribution,
-        architect_attribution=architect_attribution,
-        coach_competitor_hints=coach_competitor_hints,
-        coach_hint_feedback=coach_hint_feedback,
-        experiment_log=experiment_log,
-        dead_ends=dead_ends,
-        research_protocol=research_protocol,
-        session_reports=session_reports,
-        architect_tool_usage_report=architect_tool_usage_report,
-        environment_snapshot=environment_snapshot,
-        evidence_manifest=evidence_manifest,
-        evidence_manifests=evidence_manifests,
-        notebook_contexts=notebook_contexts,
-    )
+    raw_context_components = _benchmarkable_prompt_components_from_kwargs(prompt_kwargs)
     selected_context_components: dict[str, str] = {}
     prompt_kwargs["context_component_sink"] = selected_context_components.update
     build_start = time.perf_counter()
@@ -350,6 +368,7 @@ def _persist_generation_context_selection(
         metadata={
             "context_budget_tokens": context_budget_tokens,
             "semantic_compaction": True,
+            "selected_component_scope": "final_role_prompts_after_context_hook",
             "evidence_cache_hits": evidence_cache_hits,
             "evidence_cache_lookups": evidence_cache_lookups,
         },

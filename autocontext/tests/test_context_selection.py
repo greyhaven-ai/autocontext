@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from autocontext.config.settings import AppSettings
+from autocontext.extensions import HookBus, HookEvents, HookResult
 from autocontext.loop.stage_helpers.semantic_benchmark import prepare_generation_prompts
 from autocontext.loop.stage_types import GenerationContext
 from autocontext.scenarios.base import Observation, ScenarioInterface
@@ -20,6 +21,73 @@ def _artifact_store(tmp_path: Path) -> ArtifactStore:
         tmp_path / "skills",
         tmp_path / ".claude" / "skills",
     )
+
+
+def _generation_context(tmp_path: Path, *, hook_bus: HookBus | None = None) -> tuple[ArtifactStore, GenerationContext]:
+    artifacts = _artifact_store(tmp_path)
+    settings = AppSettings(
+        runs_root=artifacts.runs_root,
+        knowledge_root=artifacts.knowledge_root,
+        skills_root=artifacts.skills_root,
+        claude_skills_path=artifacts.claude_skills_path,
+    )
+    return artifacts, GenerationContext(
+        run_id="run-1",
+        scenario_name="grid_ctf",
+        scenario=cast(ScenarioInterface, object()),
+        generation=2,
+        settings=settings,
+        previous_best=0.4,
+        challenger_elo=1000.0,
+        score_history=[],
+        gate_decision_history=[],
+        coach_competitor_hints="hint text",
+        replay_narrative="",
+        hook_bus=hook_bus,
+    )
+
+
+def _prepare_generation_prompts(ctx: GenerationContext, artifacts: ArtifactStore, *, current_playbook: str = "abcd") -> None:
+    prepare_generation_prompts(
+        ctx,
+        artifacts=artifacts,
+        scenario_rules="rules",
+        strategy_interface="interface",
+        evaluation_criteria="criteria",
+        previous_summary="summary",
+        observation=Observation(narrative="obs", state={}, constraints=[]),
+        current_playbook=current_playbook,
+        available_tools="efgh",
+        operational_lessons="abcd",
+        replay_narrative="",
+        coach_competitor_hints="hint text",
+        coach_hint_feedback="",
+        recent_analysis="",
+        analyst_feedback="",
+        analyst_attribution="",
+        coach_attribution="",
+        architect_attribution="",
+        score_trajectory="",
+        strategy_registry="",
+        progress_json="",
+        experiment_log="",
+        dead_ends="",
+        research_protocol="",
+        session_reports="",
+        architect_tool_usage_report="",
+        constraint_mode=False,
+        context_budget_tokens=0,
+        notebook_contexts=None,
+        environment_snapshot="",
+        evidence_manifest="",
+        evidence_manifests=None,
+        evidence_cache_hits=0,
+        evidence_cache_lookups=0,
+    )
+
+
+def _context_selection_payload(artifacts: ArtifactStore) -> dict[str, Any]:
+    return read_json(artifacts.runs_root / "run-1" / "context_selection" / "gen_2_generation_prompt_context.json")
 
 
 def test_context_selection_decision_calculates_selection_quality_metrics() -> None:
@@ -182,68 +250,49 @@ def test_persist_context_selection_decision_rejects_unsafe_names(tmp_path: Path)
 
 
 def test_prepare_generation_prompts_persists_context_selection_artifact(tmp_path: Path) -> None:
-    artifacts = _artifact_store(tmp_path)
-    settings = AppSettings(
-        runs_root=artifacts.runs_root,
-        knowledge_root=artifacts.knowledge_root,
-        skills_root=artifacts.skills_root,
-        claude_skills_path=artifacts.claude_skills_path,
-    )
-    ctx = GenerationContext(
-        run_id="run-1",
-        scenario_name="grid_ctf",
-        scenario=cast(ScenarioInterface, object()),
-        generation=2,
-        settings=settings,
-        previous_best=0.4,
-        challenger_elo=1000.0,
-        score_history=[],
-        gate_decision_history=[],
-        coach_competitor_hints="hint text",
-        replay_narrative="",
-    )
+    artifacts, ctx = _generation_context(tmp_path)
 
-    prepare_generation_prompts(
-        ctx,
-        artifacts=artifacts,
-        scenario_rules="rules",
-        strategy_interface="interface",
-        evaluation_criteria="criteria",
-        previous_summary="summary",
-        observation=Observation(narrative="obs", state={}, constraints=[]),
-        current_playbook="abcd",
-        available_tools="efgh",
-        operational_lessons="abcd",
-        replay_narrative="",
-        coach_competitor_hints="hint text",
-        coach_hint_feedback="",
-        recent_analysis="",
-        analyst_feedback="",
-        analyst_attribution="",
-        coach_attribution="",
-        architect_attribution="",
-        score_trajectory="",
-        strategy_registry="",
-        progress_json="",
-        experiment_log="",
-        dead_ends="",
-        research_protocol="",
-        session_reports="",
-        architect_tool_usage_report="",
-        constraint_mode=False,
-        context_budget_tokens=0,
-        notebook_contexts=None,
-        environment_snapshot="",
-        evidence_manifest="",
-        evidence_manifests=None,
-        evidence_cache_hits=0,
-        evidence_cache_lookups=0,
-    )
+    _prepare_generation_prompts(ctx, artifacts)
 
-    payload = read_json(artifacts.runs_root / "run-1" / "context_selection" / "gen_2_generation_prompt_context.json")
+    payload = _context_selection_payload(artifacts)
 
     assert payload["run_id"] == "run-1"
     assert payload["stage"] == "generation_prompt_context"
     assert payload["metrics"]["selected_count"] >= 3
     assert payload["metrics"]["selected_token_estimate"] > 0
     assert payload["metrics"]["duplicate_content_rate"] > 0
+
+
+def test_context_selection_candidates_reflect_context_components_hook(tmp_path: Path) -> None:
+    bus = HookBus()
+    expanded_playbook = "x" * 400
+
+    def expand_playbook(event: Any) -> HookResult:
+        components = dict(event.payload["components"])
+        components["current_playbook"] = expanded_playbook
+        return HookResult(payload={"components": components})
+
+    bus.on(HookEvents.CONTEXT_COMPONENTS, expand_playbook)
+    artifacts, ctx = _generation_context(tmp_path, hook_bus=bus)
+
+    _prepare_generation_prompts(ctx, artifacts, current_playbook="abcd")
+
+    payload = _context_selection_payload(artifacts)
+    playbook = next(candidate for candidate in payload["candidates"] if candidate["artifact_id"] == "playbook")
+    assert playbook["candidate_token_estimate"] == 100
+
+
+def test_context_selection_selected_components_reflect_final_context_hook(tmp_path: Path) -> None:
+    bus = HookBus()
+
+    def redact_roles(event: Any) -> HookResult:
+        return HookResult(payload={"roles": {role: "redacted" for role in event.payload["roles"]}})
+
+    bus.on(HookEvents.CONTEXT, redact_roles)
+    artifacts, ctx = _generation_context(tmp_path, hook_bus=bus)
+
+    _prepare_generation_prompts(ctx, artifacts)
+
+    payload = _context_selection_payload(artifacts)
+    assert payload["metrics"]["candidate_count"] > 0
+    assert payload["metrics"]["selected_count"] == 0
