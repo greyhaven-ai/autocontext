@@ -37,14 +37,16 @@ export function resolveApiKeyValue(value: string): string {
   return result.trim();
 }
 
-function isLegacyCredentialStore(data: Record<string, unknown>): boolean {
+function isLegacyCredentialStore(
+  data: Record<string, unknown>,
+): data is Record<string, unknown> & { provider: string } {
   return typeof data.provider === "string" && !data.providers;
 }
 
 function readLegacyProviderCredentials(
-  data: Record<string, unknown>,
+  data: Record<string, unknown> & { provider: string },
 ): CredentialStore {
-  const provider = (data.provider as string).trim();
+  const provider = data.provider.trim();
   const credentials: ProviderCredentials = {};
   if (typeof data.apiKey === "string" && data.apiKey.trim()) {
     credentials.apiKey = data.apiKey.trim();

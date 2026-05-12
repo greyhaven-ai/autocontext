@@ -19,6 +19,7 @@ Need the canonical product/runtime vocabulary first? Start with [docs/concept-mo
 - **Package management**: strategy package export/import, training data export
 - **Training hook surface**: dataset validation and executor-backed `train` entry point
 - **Runtime workspace/session primitives**: workspace-scoped filesystem/shell contracts, scoped command/tool grants with redacted lifecycle events, runtime session event logs, child-task lineage helpers, a runtime-session facade, and AgentRuntime session recording
+- **Experimental agent handler surface** at `autoctx/agent-runtime`: discover and invoke `.autoctx/agents/*.ts` handlers backed by runtime sessions
 - **Production-traces emit SDK** at `autoctx/production-traces` — customer-facing emit APIs mirroring the Python SDK (A2-II-a)
 
 Runtime command grants are host-created capability handles, not prompt text.
@@ -54,6 +55,47 @@ const workspace = await createInMemoryWorkspaceEnv({ cwd: "/repo" }).scope({
 
 const result = await workspace.tools?.[0]?.execute?.({ q: "runtime sessions" });
 await mcpTools.close();
+```
+
+The package also includes an experimental programmable-agent authoring surface
+at `autoctx/agent-runtime`. It discovers handlers from `.autoctx/agents` only
+and avoids colliding with `.autoctx/skills`, scenario directories, or hosted
+deployment concerns. The invoker supplies payload, env, workspace, and an
+`AgentRuntime`; env values are available to trusted handler code but are not
+automatically inserted into prompts.
+
+```ts
+// .autoctx/agents/support.ts
+import type { AutoctxAgentContext } from "autoctx/agent-runtime";
+
+type Payload = { threadId?: string; message: string };
+
+export const triggers = { webhook: true };
+
+export default async function ({ init, payload }: AutoctxAgentContext<Payload>) {
+  const runtime = await init({ model: "anthropic/claude-sonnet-4-6" });
+  const session = await runtime.session(payload.threadId ?? "default");
+  return session.prompt(payload.message, { role: "support-triager" });
+}
+```
+
+```ts
+import {
+  discoverAutoctxAgents,
+  invokeAutoctxAgent,
+  loadAutoctxAgent,
+} from "autoctx/agent-runtime";
+import { createInMemoryWorkspaceEnv } from "autoctx";
+
+const [entry] = await discoverAutoctxAgents({ cwd: process.cwd() });
+const agent = await loadAutoctxAgent(entry);
+
+const result = await invokeAutoctxAgent(agent, {
+  payload: { threadId: "ticket-123", message: "Please triage this ticket." },
+  env: { SUPPORT_TOKEN: process.env.SUPPORT_TOKEN },
+  runtime: myAgentRuntime,
+  workspace: createInMemoryWorkspaceEnv({ cwd: "/repo" }),
+});
 ```
 
 The TypeScript package includes mirrored deterministic semantic prompt
