@@ -9,6 +9,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  # Delay fresh npm versions in CI during supply-chain incidents.
+  NPM_CONFIG_MIN_RELEASE_AGE: "7"
+  # Match autocontext/uv.lock so `uv sync --locked` does not re-resolve.
+  UV_EXCLUDE_NEWER: "2026-04-10T14:55:41Z"
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -23,9 +32,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Ruff
         run: uv run ruff check src tests
       - name: Mypy
@@ -46,9 +55,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Tests
         run: uv run pytest --cov=src/autocontext --cov-report=html:htmlcov -m "not live"
       - name: Upload coverage
@@ -69,18 +78,16 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-          cache: "npm"
-          cache-dependency-path: ts/package-lock.json
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install Python deps
         working-directory: autocontext
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Install TypeScript deps
         working-directory: ts
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Python package boundary checks
         working-directory: autocontext
         run: uv run pytest tests/test_package_topology.py tests/test_package_boundaries.py -q
@@ -102,9 +109,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Deterministic scenario runs
         env:
           AUTOCONTEXT_AGENT_PROVIDER: deterministic
@@ -150,11 +157,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install base deps
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Pin openai to matrix version
-        run: uv pip install "openai==$OPENAI_VERSION"
+        run: uv pip install --exclude-newer 2026-05-05T00:00:00Z "openai==$OPENAI_VERSION"
       - name: Run OpenAI integration tests
         run: uv run pytest tests/production_traces/ tests/integrations/ -q -m "not live"
 
@@ -177,8 +184,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-          cache: "npm"
-          cache-dependency-path: ts/package-lock.json
       - name: Reuse setup-node headers for native addons
         shell: bash
         run: |
@@ -188,14 +193,14 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install Python parity deps
         working-directory: autocontext
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Install base deps
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Pin openai to matrix version
-        run: npm install "openai@$OPENAI_VERSION"
+        run: npm install --ignore-scripts --no-save "openai@$OPENAI_VERSION"
       - name: Run OpenAI integration tests
         run: npm test -- --run --reporter=verbose tests/integrations/ tests/control-plane/instrument/
 
@@ -226,11 +231,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install base deps
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Pin anthropic to matrix version
-        run: uv pip install "anthropic==$ANTHROPIC_VERSION"
+        run: uv pip install --exclude-newer 2026-05-05T00:00:00Z "anthropic==$ANTHROPIC_VERSION"
       - name: Run Anthropic integration tests
         run: uv run pytest tests/production_traces/ tests/integrations/ -q -m "not live"
 
@@ -253,19 +258,17 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-          cache: "npm"
-          cache-dependency-path: ts/package-lock.json
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install Python parity deps
         working-directory: autocontext
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Install base deps
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Pin anthropic to matrix version
-        run: npm install "@anthropic-ai/sdk@$ANTHROPIC_VERSION"
+        run: npm install --ignore-scripts --no-save "@anthropic-ai/sdk@$ANTHROPIC_VERSION"
       - name: Run Anthropic integration tests
         run: npm test -- --run --reporter=verbose tests/integrations/ tests/control-plane/instrument/
 
@@ -285,9 +288,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Install
-        run: uv sync --group dev
+        run: uv sync --locked --group dev
       - name: Live PrimeIntellect verification
         if: ${{ env.AUTOCONTEXT_PRIMEINTELLECT_API_KEY != '' && env.AUTOCONTEXT_ANTHROPIC_API_KEY != '' }}
         env:
