@@ -20,6 +20,9 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # Delay fresh npm versions during publish workflow dependency installs.
+      NPM_CONFIG_MIN_RELEASE_AGE: "7"
     defaults:
       run:
         working-directory: pi
@@ -39,7 +42,7 @@ jobs:
             exit 1
           fi
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Show npm version
         run: npm --version
       - name: Lint package
@@ -49,4 +52,4 @@ jobs:
       - name: Build package
         run: npm run build
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: npm publish --ignore-scripts --access public --provenance

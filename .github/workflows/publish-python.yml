@@ -16,6 +16,9 @@ permissions:
 jobs:
   build-python:
     runs-on: ubuntu-latest
+    env:
+      # Avoid resolving freshly uploaded PyPI artifacts during active supply-chain incidents.
+      UV_EXCLUDE_NEWER: "2026-05-05T00:00:00Z"
     defaults:
       run:
         working-directory: autocontext
@@ -47,7 +50,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Build Python package
         run: uv build
       - name: Upload Python dist
