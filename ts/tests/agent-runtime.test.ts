@@ -48,6 +48,23 @@ describe("experimental agent runtime surface", () => {
     ]);
   });
 
+  it("loads discovered TypeScript-family handlers through the bundled loader", async () => {
+    const root = mkdtempSync(join(tmpdir(), "autoctx-tsx-agent-"));
+    mkdirSync(join(root, ".autoctx", "agents"), { recursive: true });
+    writeFileSync(
+      join(root, ".autoctx", "agents", "panel.tsx"),
+      "export const triggers = { ui: true };\nexport default () => 'tsx-agent';\n",
+    );
+
+    const [entry] = await discoverAutoctxAgents({ cwd: root });
+    const loaded = await loadAutoctxAgent(entry!);
+    const result = await invokeAutoctxAgent(loaded, { payload: {} });
+
+    expect(entry?.extension).toBe(".tsx");
+    expect(loaded.triggers).toEqual({ ui: true });
+    expect(result).toBe("tsx-agent");
+  });
+
   it("loads and invokes a typed .autoctx/agents handler through a runtime session", async () => {
     const root = join(import.meta.dirname, "fixtures", "autoctx-agent-project");
     const [entry] = await discoverAutoctxAgents({ cwd: root });
@@ -85,6 +102,14 @@ describe("experimental agent runtime surface", () => {
       runtimeSessionId: "agent:support:ticket-123",
       experimentalAgentRuntime: true,
     });
+    expect(result.sessionLog.events[1]!.payload.metadata).not.toHaveProperty("costUsd");
+    expect(result.sessionLog.events[1]!.payload.metadata).not.toHaveProperty("structured");
+    expect(result.sessionLog.events[1]!.payload.metadata).not.toHaveProperty(
+      "agentRuntimeSessionId",
+    );
+    expect(JSON.stringify(result.sessionLog.events[1]!.payload.metadata)).not.toContain(
+      "undefined",
+    );
     expect(JSON.stringify(result.sessionLog.toJSON())).not.toContain("secret-token");
   });
 });

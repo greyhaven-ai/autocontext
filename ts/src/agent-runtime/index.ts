@@ -2,6 +2,7 @@ import { promises as fs, type Dirent } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { agentOutputMetadata } from "../runtimes/agent-output-metadata.js";
 import type { AgentOutput, AgentRuntime } from "../runtimes/base.js";
 import {
   createInMemoryWorkspaceEnv,
@@ -69,7 +70,6 @@ export interface AutoctxLoadedAgent<
 
 export interface AutoctxAgentInitOptions {
   runtime?: AgentRuntime;
-  model?: string;
   goal?: string;
   cwd?: string;
   commands?: RuntimeCommandGrant[];
@@ -166,12 +166,12 @@ export async function loadAutoctxAgent<
   entry: AutoctxAgentEntry | string,
 ): Promise<AutoctxLoadedAgent<Payload, Result>> {
   const agentPath = typeof entry === "string" ? path.resolve(entry) : entry.path;
-  const imported = await import(pathToFileURL(agentPath).href);
+  const extension = autoctxAgentExtension(agentPath);
+  const imported = unwrapAgentModule(await importAgentModule(agentPath, extension));
   const handler = imported.default;
   if (!isAutoctxAgentHandler<Payload, Result>(handler)) {
     throw new Error(`AutoContext agent '${agentPath}' must export a default handler function`);
   }
-  const extension = autoctxAgentExtension(agentPath);
   const name = typeof entry === "string"
     ? path.basename(agentPath, extension ?? path.extname(agentPath))
     : entry.name;
@@ -220,7 +220,6 @@ export function createAutoctxAgentContext<
         agent,
         workspace,
         runtime: initOptions.runtime ?? options.runtime,
-        model: initOptions.model,
         cwd: initOptions.cwd,
         commands: [...(options.commands ?? []), ...(initOptions.commands ?? [])],
         tools: [...(options.tools ?? []), ...(initOptions.tools ?? [])],
@@ -236,7 +235,6 @@ interface RuntimeBackedAutoctxAgentOptions {
   agent: AutoctxAgentDescriptor;
   workspace: RuntimeWorkspaceEnv;
   runtime?: AgentRuntime;
-  model?: string;
   goal?: string;
   cwd?: string;
   commands?: RuntimeCommandGrant[];
@@ -250,7 +248,6 @@ class RuntimeBackedAutoctxAgent implements AutoctxAgentRuntime {
   readonly #agent: AutoctxAgentDescriptor;
   readonly #workspace: RuntimeWorkspaceEnv;
   readonly #runtime?: AgentRuntime;
-  readonly #model?: string;
   readonly #goal?: string;
   readonly #cwd?: string;
   readonly #commands: RuntimeCommandGrant[];
@@ -264,7 +261,6 @@ class RuntimeBackedAutoctxAgent implements AutoctxAgentRuntime {
     this.#agent = options.agent;
     this.#workspace = options.workspace;
     this.#runtime = options.runtime;
-    this.#model = options.model;
     this.#goal = options.goal;
     this.#cwd = options.cwd;
     this.#commands = options.commands ?? [];
@@ -293,14 +289,12 @@ class RuntimeBackedAutoctxAgent implements AutoctxAgentRuntime {
         agentName: this.#agent.name,
         agentPath: this.#agent.path,
         agentSessionKey: sessionKey,
-        runtimeModel: this.#model,
         experimentalAgentRuntime: true,
       },
     });
     const handle = new RuntimeBackedAutoctxAgentSession({
       session,
       runtime: this.#runtime,
-      model: this.#model,
       cwd: options.cwd ?? this.#cwd,
       commands: [...this.#commands, ...(options.commands ?? [])],
       tools: [...this.#tools, ...(options.tools ?? [])],
@@ -317,7 +311,6 @@ class RuntimeBackedAutoctxAgent implements AutoctxAgentRuntime {
 class RuntimeBackedAutoctxAgentSession implements AutoctxAgentSession {
   readonly session: RuntimeSession;
   readonly #runtime?: AgentRuntime;
-  readonly #model?: string;
   readonly #cwd?: string;
   readonly #commands: RuntimeCommandGrant[];
   readonly #tools: RuntimeToolGrant[];
@@ -325,14 +318,12 @@ class RuntimeBackedAutoctxAgentSession implements AutoctxAgentSession {
   constructor(options: {
     session: RuntimeSession;
     runtime?: AgentRuntime;
-    model?: string;
     cwd?: string;
     commands?: RuntimeCommandGrant[];
     tools?: RuntimeToolGrant[];
   }) {
     this.session = options.session;
     this.#runtime = options.runtime;
-    this.#model = options.model;
     this.#cwd = options.cwd;
     this.#commands = options.commands ?? [];
     this.#tools = options.tools ?? [];
@@ -360,7 +351,7 @@ class RuntimeBackedAutoctxAgentSession implements AutoctxAgentSession {
         });
         return {
           text: output.text,
-          metadata: agentPromptMetadata(runtime, output, this.#model, this.session.sessionId),
+          metadata: agentPromptMetadata(runtime, output, this.session.sessionId),
         };
       },
     });
@@ -397,9 +388,34 @@ function autoctxAgentExtension(filePath: string): AutoctxAgentExtension | undefi
   return AUTOCTX_AGENT_EXTENSIONS.find((extension) => filePath.endsWith(extension));
 }
 
+async function importAgentModule(
+  agentPath: string,
+  extension: AutoctxAgentExtension | undefined,
+): Promise<Record<string, unknown>> {
+  const agentUrl = pathToFileURL(agentPath).href;
+  if (isTypeScriptAgentExtension(extension)) {
+    const { tsImport } = await import("tsx/esm/api");
+    return await tsImport(agentUrl, { parentURL: import.meta.url });
+  }
+  return await import(agentUrl);
+}
+
+function isTypeScriptAgentExtension(
+  extension: AutoctxAgentExtension | undefined,
+): extension is ".ts" | ".tsx" | ".mts" {
+  return extension === ".ts" || extension === ".tsx" || extension === ".mts";
+}
+
 function readRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   return Object.fromEntries(Object.entries(value));
+}
+
+function unwrapAgentModule(imported: Record<string, unknown>): Record<string, unknown> {
+  if (isAutoctxAgentHandler<unknown, unknown>(imported.default)) return imported;
+  const nested = readRecord(imported.default);
+  if (!nested || !isAutoctxAgentHandler<unknown, unknown>(nested.default)) return imported;
+  return nested;
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -423,17 +439,10 @@ function toPosixPath(value: string): string {
 function agentPromptMetadata(
   runtime: AgentRuntime,
   output: AgentOutput,
-  model: string | undefined,
   runtimeSessionId: string,
 ): Record<string, unknown> {
   return {
-    ...(output.metadata ?? {}),
-    runtime: runtime.name,
-    model: output.model ?? model,
-    costUsd: output.costUsd,
-    structured: output.structured,
-    runtimeSessionId,
-    providerSessionId: output.sessionId,
+    ...agentOutputMetadata(runtime.name, output, { runtimeSessionId }),
     experimentalAgentRuntime: true,
   };
 }

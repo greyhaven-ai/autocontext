@@ -175,7 +175,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ## Experimental TypeScript Agent Handler
 
 The TypeScript package exposes an experimental `autoctx/agent-runtime` subpath
-for local programmable handlers in `.autoctx/agents/*.ts`. This is an
+for local programmable handlers in `.autoctx/agents/*.ts`. It uses the bundled
+`tsx` loader for `.ts`, `.tsx`, and `.mts` files on Node 18+. This is an
 open-source local authoring surface, not the hosted deployment/orchestration
 layer.
 
@@ -195,7 +196,7 @@ export const triggers = { webhook: true };
 export default async function supportAgent(
   { init, payload }: AutoctxAgentContext<SupportPayload>,
 ) {
-  const runtime = await init({ model: "anthropic/claude-sonnet-4-6" });
+  const runtime = await init();
   const session = await runtime.session(payload.threadId ?? "default");
   return session.prompt(payload.message, { role: "support-triager" });
 }

@@ -62,7 +62,8 @@ at `autoctx/agent-runtime`. It discovers handlers from `.autoctx/agents` only
 and avoids colliding with `.autoctx/skills`, scenario directories, or hosted
 deployment concerns. The invoker supplies payload, env, workspace, and an
 `AgentRuntime`; env values are available to trusted handler code but are not
-automatically inserted into prompts.
+automatically inserted into prompts. The package uses its bundled `tsx` loader
+for `.ts`, `.tsx`, and `.mts` agent files on Node 18+.
 
 ```ts
 // .autoctx/agents/support.ts
@@ -73,7 +74,7 @@ type Payload = { threadId?: string; message: string };
 export const triggers = { webhook: true };
 
 export default async function ({ init, payload }: AutoctxAgentContext<Payload>) {
-  const runtime = await init({ model: "anthropic/claude-sonnet-4-6" });
+  const runtime = await init();
   const session = await runtime.session(payload.threadId ?? "default");
   return session.prompt(payload.message, { role: "support-triager" });
 }

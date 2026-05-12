@@ -171,7 +171,6 @@
     "@types/ws": "^8.5.13",
     "fast-check": "^4.7.0",
     "json-schema-to-typescript": "^15.0.4",
-    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
@@ -193,6 +192,7 @@
     "tree-sitter-javascript": "0.21.4",
     "tree-sitter-python": "0.21.0",
     "tree-sitter-typescript": "0.21.2",
+    "tsx": "^4.21.0",
     "ulid": "^3.0.2",
     "ws": "^8.18.0",
     "zod": "^3.24.0"

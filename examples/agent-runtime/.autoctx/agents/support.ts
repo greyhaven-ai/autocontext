@@ -10,7 +10,7 @@ export const triggers = { webhook: true };
 export default async function supportAgent(
   { init, payload }: AutoctxAgentContext<SupportPayload>,
 ) {
-  const runtime = await init({ model: "anthropic/claude-sonnet-4-6" });
+  const runtime = await init();
   const session = await runtime.session(payload.threadId ?? "default");
   return session.prompt(payload.message, { role: "support-triager" });
 }
