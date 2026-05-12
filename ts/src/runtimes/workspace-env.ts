@@ -26,12 +26,14 @@ export interface RuntimeFileStat {
 export interface RuntimeScopeOptions {
   cwd?: string;
   commands?: RuntimeCommandGrant[];
+  tools?: RuntimeToolGrant[];
   grantEventSink?: RuntimeGrantEventSink;
   grantInheritance?: RuntimeGrantInheritanceMode;
 }
 
 export interface RuntimeWorkspaceEnv {
   readonly cwd: string;
+  readonly tools?: readonly RuntimeToolGrant[];
 
   exec(command: string, options?: RuntimeExecOptions): Promise<RuntimeExecResult>;
   scope(options?: RuntimeScopeOptions): Promise<RuntimeWorkspaceEnv>;
@@ -102,9 +104,28 @@ export interface RuntimeToolGrant {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
+  execute?: RuntimeToolHandler;
   provenance?: RuntimeGrantProvenance;
   scope?: RuntimeGrantScopePolicy;
 }
+
+export interface RuntimeToolCallContext {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+export interface RuntimeToolCallResult {
+  text: string;
+  isError?: boolean;
+  content?: unknown[];
+  structuredContent?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export type RuntimeToolHandler = (
+  args: Record<string, unknown>,
+  context?: RuntimeToolCallContext,
+) => Promise<RuntimeToolCallResult> | RuntimeToolCallResult;
 
 export type RuntimeScopedGrant = RuntimeCommandGrant | RuntimeToolGrant;
 export type RuntimeGrantKind = "command" | "tool";
@@ -316,6 +337,7 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   readonly cwd: string;
   #closed = false;
   #commands: Map<string, RuntimeCommandGrant>;
+  #tools: Map<string, RuntimeToolGrant>;
   #grantEventSink?: RuntimeGrantEventSink;
   #state: MemoryState;
 
@@ -323,13 +345,19 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
     state: MemoryState,
     cwd: string,
     commands: RuntimeCommandGrant[] = [],
+    tools: RuntimeToolGrant[] = [],
     grantEventSink?: RuntimeGrantEventSink,
   ) {
     this.#state = state;
     this.cwd = normalizeVirtualPath(cwd, "/");
     this.#commands = commandMap(commands);
+    this.#tools = toolMap(tools);
     this.#grantEventSink = grantEventSink;
     ensureMemoryParentDirs(this.#state, this.cwd);
+  }
+
+  get tools(): readonly RuntimeToolGrant[] {
+    return [...this.#tools.values()];
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
@@ -358,6 +386,10 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
       mergeCommandGrants(
         inheritedCommandGrants([...this.#commands.values()], options.grantInheritance),
         options.commands ?? [],
+      ),
+      mergeToolGrants(
+        inheritedToolGrants([...this.#tools.values()], options.grantInheritance),
+        options.tools ?? [],
       ),
       options.grantEventSink ?? this.#grantEventSink,
     );
@@ -467,18 +499,25 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   readonly cwd: string;
   #root: string;
   #commands: Map<string, RuntimeCommandGrant>;
+  #tools: Map<string, RuntimeToolGrant>;
   #grantEventSink?: RuntimeGrantEventSink;
 
   constructor(
     root: string,
     cwd: string,
     commands: RuntimeCommandGrant[] = [],
+    tools: RuntimeToolGrant[] = [],
     grantEventSink?: RuntimeGrantEventSink,
   ) {
     this.#root = path.resolve(root);
     this.cwd = normalizeVirtualPath(cwd, "/");
     this.#commands = commandMap(commands);
+    this.#tools = toolMap(tools);
     this.#grantEventSink = grantEventSink;
+  }
+
+  get tools(): readonly RuntimeToolGrant[] {
+    return [...this.#tools.values()];
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
@@ -506,6 +545,10 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
       mergeCommandGrants(
         inheritedCommandGrants([...this.#commands.values()], options.grantInheritance),
         options.commands ?? [],
+      ),
+      mergeToolGrants(
+        inheritedToolGrants([...this.#tools.values()], options.grantInheritance),
+        options.tools ?? [],
       ),
       options.grantEventSink ?? this.#grantEventSink,
     );
@@ -588,6 +631,14 @@ function commandMap(commands: RuntimeCommandGrant[]): Map<string, RuntimeCommand
   return result;
 }
 
+function toolMap(tools: RuntimeToolGrant[]): Map<string, RuntimeToolGrant> {
+  const result = new Map<string, RuntimeToolGrant>();
+  for (const tool of tools) {
+    result.set(tool.name, tool);
+  }
+  return result;
+}
+
 function mergeCommandGrants(
   base: RuntimeCommandGrant[],
   overrides: RuntimeCommandGrant[],
@@ -599,12 +650,31 @@ function mergeCommandGrants(
   return [...result.values()];
 }
 
+function mergeToolGrants(
+  base: RuntimeToolGrant[],
+  overrides: RuntimeToolGrant[],
+): RuntimeToolGrant[] {
+  const result = toolMap(base);
+  for (const tool of overrides) {
+    result.set(tool.name, tool);
+  }
+  return [...result.values()];
+}
+
 function inheritedCommandGrants(
   commands: RuntimeCommandGrant[],
   mode: RuntimeGrantInheritanceMode = "scope",
 ): RuntimeCommandGrant[] {
   if (mode !== "child_task") return commands;
   return commands.filter((command) => command.scope?.inheritToChildTasks !== false);
+}
+
+function inheritedToolGrants(
+  tools: RuntimeToolGrant[],
+  mode: RuntimeGrantInheritanceMode = "scope",
+): RuntimeToolGrant[] {
+  if (mode !== "child_task") return tools;
+  return tools.filter((tool) => tool.scope?.inheritToChildTasks !== false);
 }
 
 async function maybeRunGrantedCommand(

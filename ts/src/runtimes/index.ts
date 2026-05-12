@@ -29,7 +29,10 @@ export type {
   RuntimeGrantScopePolicy,
   RuntimeScopeOptions,
   RuntimeScopedGrant,
+  RuntimeToolCallContext,
+  RuntimeToolCallResult,
   RuntimeToolGrant,
+  RuntimeToolHandler,
   RuntimeWorkspaceEnv,
 } from "./workspace-env.js";
 export { DirectAPIRuntime } from "./direct-api.js";

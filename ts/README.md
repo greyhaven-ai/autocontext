@@ -32,6 +32,30 @@ grants only when the caller passes grants to `runChildTask()` or when an
 already-granted workspace contains grants whose policy allows child-task
 inheritance.
 
+TypeScript callers can also adapt remote streamable-HTTP MCP servers into
+scoped runtime tool grants with `connectMcpRuntimeTools()`. The trusted host
+code owns the MCP URL and headers, discovered tool names are normalized with
+collision suffixes, input schemas are preserved, and tool results are converted
+to model-safe text while keeping structured content available to callers:
+
+```ts
+import { createInMemoryWorkspaceEnv } from "autoctx";
+import { connectMcpRuntimeTools } from "autoctx/runtimes/mcp";
+
+const mcpTools = await connectMcpRuntimeTools({
+  url: "https://mcp.example.com/rpc",
+  headers: { Authorization: `Bearer ${process.env.MCP_TOKEN ?? ""}` },
+  namePrefix: "docs",
+});
+
+const workspace = await createInMemoryWorkspaceEnv({ cwd: "/repo" }).scope({
+  tools: mcpTools.tools,
+});
+
+const result = await workspace.tools?.[0]?.execute?.({ q: "runtime sessions" });
+await mcpTools.close();
+```
+
 The TypeScript package includes mirrored deterministic semantic prompt
 compaction for long-lived playbooks, trajectories, and session reports.
 Standalone npm runs compact prompt context before the coarse budget fallback,

@@ -232,7 +232,10 @@ export type {
   RuntimeGrantScopePolicy,
   RuntimeScopeOptions,
   RuntimeScopedGrant,
+  RuntimeToolCallContext,
+  RuntimeToolCallResult,
   RuntimeToolGrant,
+  RuntimeToolHandler,
   RuntimeWorkspaceEnv,
 } from "./runtimes/index.js";
 export {
