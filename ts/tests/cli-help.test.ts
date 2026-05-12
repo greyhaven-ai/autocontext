@@ -173,6 +173,23 @@ describe("mcp-serve --help", () => {
 });
 
 // ---------------------------------------------------------------------------
+// `agent --help`
+// ---------------------------------------------------------------------------
+
+describe("agent --help", () => {
+  const out = runHelp("agent");
+
+  it("documents local programmable agent commands", () => {
+    expect(out).toContain("autoctx agent run <agent>");
+    expect(out).toContain("autoctx agent dev");
+    expect(out).toContain("--payload");
+    expect(out).toContain("--env");
+    expect(out).toContain("/manifest");
+    expect(out).toContain("/agents/<agent>/invoke");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // `login --help`
 // ---------------------------------------------------------------------------
 

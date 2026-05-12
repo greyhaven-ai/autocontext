@@ -252,6 +252,7 @@ pi install npm:pi-autocontext
 | `export`           | `autoctx export <run-id>`                              | Share solved knowledge as JSON, skills, or Pi-local package directories                |
 | `train`            | `autoctx train --scenario <name> --data <jsonl>`       | Distill stable exported data into a cheaper local runtime                              |
 | `runtime-sessions` | `bunx autoctx runtime-sessions timeline --run-id <run-id>` (TypeScript CLI) | Inspect persisted provider prompts, messages, child-task events, and operator-facing timelines from runtime-backed runs; also exposed through Python and TypeScript MCP/cockpit HTTP, the TypeScript TUI `/timeline` plus persisted filterable and resettable `/activity` live feed, and `/ws/events` updates |
+| `agent`            | `bunx autoctx agent run support --id ticket-123 --payload '{"message":"..."}' --json` (TypeScript CLI) | Invoke experimental `.autoctx/agents` handlers locally, or run `autoctx agent dev` for `/manifest` and `/agents/<name>/invoke` routes |
 | `hermes`           | `uv run autoctx hermes inspect --json` (Python)        | Inspect Hermes v0.12 skill usage and Curator reports, or export the Hermes skill       |
 | `replay`           | `autoctx replay <run_id> --generation N`               | Inspect what happened before deciding what knowledge should persist                    |
 
