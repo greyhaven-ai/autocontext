@@ -33,6 +33,7 @@ from autocontext.session.runtime_session_timeline import (
     read_runtime_session_timeline_by_run_id,
 )
 from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
+from autocontext.storage.scenario_paths import normalize_scenario_name_segment
 
 logger = logging.getLogger(__name__)
 
@@ -562,9 +563,10 @@ def writeup(run_id: str, request: Request) -> dict[str, Any]:
 @cockpit_router.get("/scenarios/{scenario_name}/curation")
 def scenario_curation(scenario_name: str, request: Request) -> dict[str, Any]:
     """Render and persist a read-only scenario curation HTML artifact."""
-    clean_scenario = scenario_name.strip()
-    if not clean_scenario:
-        raise HTTPException(status_code=422, detail="scenario_name is required")
+    try:
+        clean_scenario = normalize_scenario_name_segment(scenario_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     artifacts = _get_artifacts(request)
     view = scenario_curation_view_from_artifacts(artifacts, clean_scenario)

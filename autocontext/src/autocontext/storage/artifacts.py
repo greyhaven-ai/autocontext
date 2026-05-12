@@ -29,6 +29,7 @@ from autocontext.storage.artifact_write_methods import ArtifactWriteMethods
 from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_append_bytes, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.storage.compaction_ledger import CompactionLedgerStore
+from autocontext.storage.scenario_paths import resolve_scenario_root
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
@@ -1015,13 +1016,13 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def write_run_writeup_html(self, scenario_name: str, run_id: str, content: str) -> Path:
         """Write a derived HTML run writeup for operator review."""
-        path = self.knowledge_root / scenario_name / "reports" / f"{run_id}.html"
+        path = resolve_scenario_root(self.knowledge_root, scenario_name) / "reports" / f"{run_id}.html"
         self.write_html(path, content)
         return path
 
     def write_scenario_curation_html(self, scenario_name: str, content: str) -> Path:
         """Write a read-only derived scenario curation artifact."""
-        path = self.knowledge_root / scenario_name / "curation.html"
+        path = resolve_scenario_root(self.knowledge_root, scenario_name) / "curation.html"
         self.write_html(path, content)
         return path
 

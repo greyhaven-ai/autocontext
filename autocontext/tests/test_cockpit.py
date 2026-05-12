@@ -231,6 +231,24 @@ class TestWriteup:
         assert "Always verify posted charges before refunding." in payload["curation_html"]
         assert Path(payload["curation_html_path"]).read_text(encoding="utf-8") == payload["curation_html"]
 
+    def test_scenario_curation_endpoint_rejects_dot_segments(self, cockpit_env: dict[str, Any]) -> None:
+        client: TestClient = cockpit_env["client"]
+        tmp_path: Path = cockpit_env["tmp_path"]
+
+        response = client.get("/api/cockpit/scenarios/%2E%2E/curation")
+
+        assert response.status_code == 422
+        assert not (tmp_path / "curation.html").exists()
+
+    @pytest.mark.parametrize("scenario_name", [".", "..", "nested/name", r"nested\name"])
+    def test_scenario_curation_writer_rejects_path_escape(self, tmp_path: Path, scenario_name: str) -> None:
+        artifacts = _make_artifacts(tmp_path)
+
+        with pytest.raises(ValueError, match="single path segment"):
+            artifacts.write_scenario_curation_html(scenario_name, "<html></html>")
+
+        assert not (tmp_path / "curation.html").exists()
+
 
 # ---------------------------------------------------------------------------
 # Changelog builder
