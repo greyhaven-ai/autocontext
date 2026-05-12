@@ -7,6 +7,16 @@ Use this guide to answer a few common maintainer questions:
 - Can we see which projects depend on the repo or packages?
 - Can we identify who accessed the repo?
 
+## Run Artifact Analytics
+
+For completed autocontext runs with persisted context-selection artifacts, summarize candidate versus selected context, selected token estimates, duplicate-content rate, useful-artifact recall, and freshness by generation:
+
+```bash
+cd autocontext
+uv run autoctx analytics context-selection --run-id <run_id>
+uv run autoctx analytics context-selection --run-id <run_id> --json
+```
+
 ## Repository Traffic
 
 For GitHub-hosted repo traffic, use the repository Traffic view:

@@ -144,3 +144,64 @@ def test_analytics_rebuild_traces_cli_rejects_run_id_escape(tmp_path: Path) -> N
     assert payload["status"] == "failed"
     assert "escapes runs root" in payload["error"]
     assert not (tmp_path / "outside" / "traces" / "trace-../outside.json").exists()
+
+
+def test_analytics_context_selection_cli_reports_run_summary(tmp_path: Path) -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+    from autocontext.storage.artifacts import ArtifactStore
+    from autocontext.storage.context_selection_store import persist_context_selection_decision
+
+    events_path = tmp_path / "runs" / "events.ndjson"
+    settings = _settings(tmp_path, events_path)
+    artifacts = ArtifactStore(
+        settings.runs_root,
+        settings.knowledge_root,
+        settings.skills_root,
+        settings.claude_skills_path,
+    )
+    persist_context_selection_decision(
+        artifacts,
+        ContextSelectionDecision(
+            run_id="run-1",
+            scenario_name="grid_ctf",
+            generation=1,
+            stage="generation_prompt_context",
+            candidates=(
+                ContextSelectionCandidate.from_contents(
+                    artifact_id="playbook",
+                    artifact_type="prompt_component",
+                    source="prompt_assembly",
+                    candidate_content="abcd",
+                    selected_content="abcd",
+                    selection_reason="retained",
+                ),
+            ),
+        ),
+    )
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(app, ["analytics", "context-selection", "--run-id", "run-1", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "completed"
+    assert payload["run_id"] == "run-1"
+    assert payload["summary"]["selected_token_estimate"] == 1
+
+
+def test_analytics_context_selection_cli_rejects_missing_artifacts(tmp_path: Path) -> None:
+    events_path = tmp_path / "runs" / "events.ndjson"
+    settings = _settings(tmp_path, events_path)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(app, ["analytics", "context-selection", "--run-id", "run-missing", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "failed"
+    assert "No context selection artifacts found" in payload["error"]

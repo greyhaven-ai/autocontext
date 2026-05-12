@@ -249,6 +249,141 @@ def test_persist_context_selection_decision_rejects_unsafe_names(tmp_path: Path)
     assert not (tmp_path / "outside").exists()
 
 
+def test_context_selection_report_aggregates_decision_metrics() -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+    from autocontext.knowledge.context_selection_report import build_context_selection_report
+
+    report = build_context_selection_report(
+        (
+            ContextSelectionDecision(
+                run_id="run-1",
+                scenario_name="grid_ctf",
+                generation=1,
+                stage="generation_prompt_context",
+                created_at="2026-01-02T03:04:05+00:00",
+                candidates=(
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="playbook",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="a" * 40,
+                        selected_content="a" * 40,
+                        selection_reason="retained",
+                        useful=True,
+                        freshness_generation_delta=1,
+                    ),
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="analysis",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="b" * 20,
+                        selected_content="",
+                        selection_reason="removed",
+                        useful=True,
+                    ),
+                ),
+            ),
+            ContextSelectionDecision(
+                run_id="run-1",
+                scenario_name="grid_ctf",
+                generation=2,
+                stage="generation_prompt_context",
+                created_at="2026-01-02T03:05:05+00:00",
+                candidates=(
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="playbook",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="c" * 20,
+                        selected_content="c" * 20,
+                        selection_reason="retained",
+                        freshness_generation_delta=2,
+                    ),
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="lessons",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="c" * 20,
+                        selected_content="c" * 20,
+                        selection_reason="retained",
+                        freshness_generation_delta=4,
+                    ),
+                ),
+            ),
+        )
+    )
+
+    payload = report.to_dict()
+
+    assert payload["status"] == "completed"
+    assert payload["run_id"] == "run-1"
+    assert payload["scenario_name"] == "grid_ctf"
+    assert payload["decision_count"] == 2
+    assert payload["generation_count"] == 2
+    assert payload["summary"]["selected_token_estimate"] == 20
+    assert payload["summary"]["candidate_token_estimate"] == 25
+    assert payload["summary"]["selection_rate"] == pytest.approx(0.75)
+    assert payload["summary"]["mean_duplicate_content_rate"] == pytest.approx(0.25)
+    assert payload["summary"]["mean_selected_token_estimate"] == pytest.approx(10)
+    assert payload["summary"]["max_selected_token_estimate"] == 10
+    assert payload["summary"]["mean_useful_artifact_recall"] == pytest.approx(0.5)
+    assert payload["summary"]["mean_selected_freshness_generation_delta"] == pytest.approx(2)
+    assert [stage["generation"] for stage in payload["stages"]] == [1, 2]
+
+
+def test_context_selection_store_loads_decisions_in_generation_order(tmp_path: Path) -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+    from autocontext.storage.context_selection_store import (
+        load_context_selection_decisions,
+        persist_context_selection_decision,
+    )
+
+    artifacts = _artifact_store(tmp_path)
+    gen2 = ContextSelectionDecision(
+        run_id="run-1",
+        scenario_name="grid_ctf",
+        generation=2,
+        stage="generation_prompt_context",
+        candidates=(),
+    )
+    gen1 = ContextSelectionDecision(
+        run_id="run-1",
+        scenario_name="grid_ctf",
+        generation=1,
+        stage="generation_prompt_context",
+        candidates=(
+            ContextSelectionCandidate.from_contents(
+                artifact_id="playbook",
+                artifact_type="prompt_component",
+                source="prompt_assembly",
+                candidate_content="abcd",
+                selected_content="abcd",
+                selection_reason="retained",
+            ),
+        ),
+    )
+    persist_context_selection_decision(artifacts, gen2)
+    persist_context_selection_decision(artifacts, gen1)
+
+    decisions = load_context_selection_decisions(artifacts.runs_root, "run-1")
+
+    assert [decision.generation for decision in decisions] == [1, 2]
+
+
+def test_context_selection_store_rejects_run_id_escape(tmp_path: Path) -> None:
+    from autocontext.storage.context_selection_store import load_context_selection_decisions
+
+    with pytest.raises(ValueError):
+        load_context_selection_decisions(tmp_path / "runs", "../outside")
+    assert not (tmp_path / "outside").exists()
+
+
 def test_prepare_generation_prompts_persists_context_selection_artifact(tmp_path: Path) -> None:
     artifacts, ctx = _generation_context(tmp_path)
 
