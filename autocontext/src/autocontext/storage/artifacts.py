@@ -29,7 +29,11 @@ from autocontext.storage.artifact_write_methods import ArtifactWriteMethods
 from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_append_bytes, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.storage.compaction_ledger import CompactionLedgerStore
-from autocontext.storage.scenario_paths import resolve_scenario_root
+from autocontext.storage.scenario_paths import (
+    normalize_scenario_name_segment,
+    resolve_scenario_root,
+    resolve_scenario_skill_dir,
+)
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
@@ -127,17 +131,23 @@ class ArtifactStore(ArtifactWriteMethods):
             self._harness_mutation_store = MutationStore(root=self.knowledge_root)
         return self._harness_mutation_store
 
+    def _scenario_dir(self, scenario_name: str) -> Path:
+        """Resolve a scenario directory under knowledge_root."""
+        return resolve_scenario_root(self.knowledge_root, scenario_name)
+
     def _playbook_store(self, scenario_name: str) -> VersionedFileStore:
         """Lazily create a per-scenario VersionedFileStore with legacy naming."""
-        if scenario_name not in self._playbook_stores:
-            self._playbook_stores[scenario_name] = VersionedFileStore(
-                root=self.knowledge_root / scenario_name,
+        scenario_dir = self._scenario_dir(scenario_name)
+        key = f"playbook:{scenario_dir}"
+        if key not in self._playbook_stores:
+            self._playbook_stores[key] = VersionedFileStore(
+                root=scenario_dir,
                 max_versions=self._max_playbook_versions,
                 versions_dir_name="playbook_versions",
                 version_prefix="playbook_v",
                 version_suffix=".md",
             )
-        return self._playbook_stores[scenario_name]
+        return self._playbook_stores[key]
 
     def generation_dir(self, run_id: str, generation_index: int) -> Path:
         return self.runs_root / run_id / "generations" / f"gen_{generation_index}"
@@ -188,10 +198,11 @@ class ArtifactStore(ArtifactWriteMethods):
         """Overwrite the playbook, archiving current version first."""
         # Ensure parent directory exists (VersionedFileStore.write handles the file,
         # but the scenario directory itself may not exist yet).
-        (self.knowledge_root / scenario_name).mkdir(parents=True, exist_ok=True)
+        scenario_dir = self._scenario_dir(scenario_name)
+        scenario_dir.mkdir(parents=True, exist_ok=True)
         self._playbook_store(scenario_name).write("playbook.md", content.strip() + "\n")
         self._append_mutation(
-            scenario_name,
+            scenario_dir.name,
             mutation_type="playbook_updated",
             payload={"content_length": len(content.strip())},
             description="Playbook updated",
@@ -199,12 +210,12 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def append_coach_history(self, scenario_name: str, generation_index: int, raw_content: str) -> None:
         """Append raw coach output to history file for audit trail."""
-        history_path = self.knowledge_root / scenario_name / "coach_history.md"
+        history_path = self._scenario_dir(scenario_name) / "coach_history.md"
         self.append_markdown(history_path, raw_content, heading=f"generation_{generation_index}")
 
     def _skill_dir(self, scenario_name: str) -> Path:
         """Skill directory: skills/<kebab-scenario>-ops/"""
-        return self.skills_root / f"{scenario_name.replace('_', '-')}-ops"
+        return resolve_scenario_skill_dir(self.skills_root, scenario_name)
 
     def read_skills(self, scenario_name: str) -> str:
         """Read operational lessons for injection into autocontext agent prompts.
@@ -214,18 +225,19 @@ class ArtifactStore(ArtifactWriteMethods):
         in the prompt bundle, so we avoid duplication here.  Claude Code
         reads the full SKILL.md (with bundled resources) on its own.
         """
-        structured_lessons = self.lesson_store.read_lessons(scenario_name)
+        scenario = normalize_scenario_name_segment(scenario_name)
+        structured_lessons = self.lesson_store.read_lessons(scenario)
         if structured_lessons:
-            current_generation = self.lesson_store.current_generation(scenario_name)
+            current_generation = self.lesson_store.current_generation(scenario)
             applicable = self.lesson_store.get_applicable_lessons(
-                scenario_name,
+                scenario,
                 current_generation=current_generation,
             )
             if applicable:
                 return "\n".join(lesson.text.strip() for lesson in applicable).strip()
             return ""
 
-        skill_path = self._skill_dir(scenario_name) / "SKILL.md"
+        skill_path = self._skill_dir(scenario) / "SKILL.md"
         if not skill_path.exists():
             return ""
         content = skill_path.read_text(encoding="utf-8")
@@ -241,10 +253,10 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def write_hints(self, scenario_name: str, content: str) -> None:
         """Persist coach hints so they survive run restarts."""
-        self.write_markdown(self.knowledge_root / scenario_name / "hints.md", content)
+        self.write_markdown(self._scenario_dir(scenario_name) / "hints.md", content)
 
     def _hint_state_path(self, scenario_name: str) -> Path:
-        return self.knowledge_root / scenario_name / "hint_state.json"
+        return self._scenario_dir(scenario_name) / "hint_state.json"
 
     def read_hints(self, scenario_name: str) -> str:
         """Read persisted hints, or empty string if none."""
@@ -253,14 +265,14 @@ class ArtifactStore(ArtifactWriteMethods):
             manager = self.read_hint_manager(scenario_name)
             rendered = manager.format_for_competitor()
             return f"{rendered}\n" if rendered else ""
-        path = self.knowledge_root / scenario_name / "hints.md"
+        path = self._scenario_dir(scenario_name) / "hints.md"
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
     def write_hint_manager(self, scenario_name: str, manager: HintManager) -> None:
         """Persist structured hint state and refresh the plain-text active snapshot."""
         self.write_json(self._hint_state_path(scenario_name), manager.to_dict())
         self.write_markdown(
-            self.knowledge_root / scenario_name / "hints.md",
+            self._scenario_dir(scenario_name) / "hints.md",
             manager.format_for_competitor(),
         )
 
@@ -282,7 +294,7 @@ class ArtifactStore(ArtifactWriteMethods):
                 if isinstance(raw, dict):
                     return HintManager.from_dict(raw, policy_override=effective_policy)
 
-        path = self.knowledge_root / scenario_name / "hints.md"
+        path = self._scenario_dir(scenario_name) / "hints.md"
         if path.exists():
             return HintManager.from_hint_text(
                 path.read_text(encoding="utf-8"),
@@ -292,12 +304,12 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def read_dead_ends(self, scenario_name: str) -> str:
         """Read dead-end registry, or empty string if none."""
-        path = self.knowledge_root / scenario_name / "dead_ends.md"
+        path = self._scenario_dir(scenario_name) / "dead_ends.md"
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
     def append_dead_end(self, scenario_name: str, entry: str) -> None:
         """Append a dead-end entry to the registry file."""
-        path = self.knowledge_root / scenario_name / "dead_ends.md"
+        path = self._scenario_dir(scenario_name) / "dead_ends.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         chunk = f"\n### Dead End\n\n{entry}\n"
         if path.exists():
@@ -311,22 +323,22 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def replace_dead_ends(self, scenario_name: str, content: str) -> None:
         """Overwrite the entire dead_ends.md file (for curator consolidation)."""
-        path = self.knowledge_root / scenario_name / "dead_ends.md"
+        path = self._scenario_dir(scenario_name) / "dead_ends.md"
         self.write_markdown(path, content)
 
     def read_research_protocol(self, scenario_name: str) -> str:
         """Read research protocol, or empty string if none."""
-        path = self.knowledge_root / scenario_name / "research_protocol.md"
+        path = self._scenario_dir(scenario_name) / "research_protocol.md"
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
     def write_research_protocol(self, scenario_name: str, content: str) -> None:
         """Write research protocol."""
-        path = self.knowledge_root / scenario_name / "research_protocol.md"
+        path = self._scenario_dir(scenario_name) / "research_protocol.md"
         self.write_markdown(path, content)
 
     def write_progress(self, scenario_name: str, snapshot_dict: dict[str, Any]) -> None:
         """Write progress snapshot JSON."""
-        path = self.knowledge_root / scenario_name / "progress.json"
+        path = self._scenario_dir(scenario_name) / "progress.json"
         self.write_json(path, snapshot_dict)
 
     def read_mutation_replay(self, scenario_name: str, *, max_entries: int = 10) -> str:
@@ -363,14 +375,14 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def read_progress(self, scenario_name: str) -> dict[str, Any] | None:
         """Read progress snapshot, or None if missing."""
-        path = self.knowledge_root / scenario_name / "progress.json"
+        path = self._scenario_dir(scenario_name) / "progress.json"
         if not path.exists():
             return None
         return read_json(path)  # type: ignore[no-any-return]
 
     def read_latest_advance_analysis(self, scenario_name: str, current_gen: int) -> str:
         """Read the most recent analysis from a generation before current_gen."""
-        analysis_dir = self.knowledge_root / scenario_name / "analysis"
+        analysis_dir = self._scenario_dir(scenario_name) / "analysis"
         if not analysis_dir.exists():
             return ""
         candidates = sorted(analysis_dir.glob("gen_*.md"), reverse=True)
@@ -385,12 +397,12 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def write_analyst_rating(self, scenario_name: str, generation_index: int, rating: AnalystRating) -> None:
         """Persist curator feedback on analyst quality for the generation."""
-        feedback_dir = self.knowledge_root / scenario_name / "analyst_feedback"
+        feedback_dir = self._scenario_dir(scenario_name) / "analyst_feedback"
         self.write_json(feedback_dir / f"gen_{generation_index}.json", rating.to_dict())
 
     def read_latest_analyst_rating(self, scenario_name: str, current_gen: int) -> AnalystRating | None:
         """Read the most recent analyst rating from a generation before current_gen."""
-        feedback_dir = self.knowledge_root / scenario_name / "analyst_feedback"
+        feedback_dir = self._scenario_dir(scenario_name) / "analyst_feedback"
         if not feedback_dir.exists():
             return None
         candidates = sorted(feedback_dir.glob("gen_*.json"), reverse=True)
@@ -417,7 +429,7 @@ class ArtifactStore(ArtifactWriteMethods):
         feedback: HintFeedback,
     ) -> None:
         """Persist competitor feedback on coach hints for the generation."""
-        feedback_dir = self.knowledge_root / scenario_name / "hint_feedback"
+        feedback_dir = self._scenario_dir(scenario_name) / "hint_feedback"
         self.write_json(feedback_dir / f"gen_{generation_index}.json", feedback.to_dict())
 
     def read_latest_hint_feedback(
@@ -426,7 +438,7 @@ class ArtifactStore(ArtifactWriteMethods):
         current_gen: int,
     ) -> HintFeedback | None:
         """Read the most recent hint feedback from a generation before current_gen."""
-        feedback_dir = self.knowledge_root / scenario_name / "hint_feedback"
+        feedback_dir = self._scenario_dir(scenario_name) / "hint_feedback"
         if not feedback_dir.exists():
             return None
         candidates = sorted(feedback_dir.glob("gen_*.json"), reverse=True)
@@ -447,7 +459,7 @@ class ArtifactStore(ArtifactWriteMethods):
         return None
 
     def _credit_assignment_dir(self, scenario_name: str) -> Path:
-        return self.knowledge_root / scenario_name / "credit_assignment"
+        return self._scenario_dir(scenario_name) / "credit_assignment"
 
     def write_credit_assignment(
         self,
@@ -508,7 +520,7 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def harness_dir(self, scenario_name: str) -> Path:
         """Return the harness directory: knowledge/<scenario>/harness/"""
-        return self.knowledge_root / scenario_name / "harness"
+        return self._scenario_dir(scenario_name) / "harness"
 
     @staticmethod
     def _validate_harness_name(name: str) -> str:
@@ -643,7 +655,7 @@ class ArtifactStore(ArtifactWriteMethods):
         )
 
     def tools_dir(self, scenario_name: str) -> Path:
-        return self.knowledge_root / scenario_name / "tools"
+        return self._scenario_dir(scenario_name) / "tools"
 
     def shared_tools_dir(self) -> Path:
         return self.knowledge_root / "_shared" / "tools"
@@ -655,7 +667,7 @@ class ArtifactStore(ArtifactWriteMethods):
         return sorted(names)
 
     def _tool_usage_path(self, scenario_name: str) -> Path:
-        return self.knowledge_root / scenario_name / "tool_usage.json"
+        return self._scenario_dir(scenario_name) / "tool_usage.json"
 
     def read_tool_usage_tracker(self, scenario_name: str, known_tools: list[str]) -> ToolUsageTracker:
         """Load persisted tool-usage state, keeping newly available tools visible."""
@@ -744,13 +756,14 @@ class ArtifactStore(ArtifactWriteMethods):
         coach_playbook: str = "",
     ) -> None:
         gen_dir = self.generation_dir(run_id, generation_index)
+        scenario_dir = self._scenario_dir(scenario_name)
         # Non-critical writes — buffer if available
         self.buffered_write_json(gen_dir / "metrics.json", metrics)
-        self.buffered_write_json(gen_dir / "replays" / f"{scenario_name}_{generation_index}.json", replay_payload)
-        analysis_path = self.knowledge_root / scenario_name / "analysis" / f"gen_{generation_index}.md"
+        self.buffered_write_json(gen_dir / "replays" / f"{scenario_dir.name}_{generation_index}.json", replay_payload)
+        analysis_path = scenario_dir / "analysis" / f"gen_{generation_index}.md"
         self.buffered_write_markdown(analysis_path, analysis_md)
         self.buffered_append_markdown(
-            self.knowledge_root / scenario_name / "coach_history.md",
+            scenario_dir / "coach_history.md",
             coach_md,
             heading=f"generation_{generation_index}",
         )
@@ -758,7 +771,7 @@ class ArtifactStore(ArtifactWriteMethods):
         if coach_playbook:
             self.write_playbook(scenario_name, coach_playbook)
         self.buffered_append_markdown(
-            self.knowledge_root / scenario_name / "architect" / "changelog.md",
+            scenario_dir / "architect" / "changelog.md",
             architect_md,
             heading=f"generation_{generation_index}",
         )
@@ -776,10 +789,10 @@ class ArtifactStore(ArtifactWriteMethods):
         ``playbook.md`` (bundled) or follows references to the ``knowledge/``
         directory for analysis history, tools, and raw coach output.
         """
-        skill_dir = self._skill_dir(scenario_name)
+        scenario = normalize_scenario_name_segment(scenario_name)
+        skill_dir = self._skill_dir(scenario)
         skill_path = skill_dir / "SKILL.md"
 
-        # --- Collect existing lesson bullets ----------------------------------
         existing_bullets: list[str] = []
         if skill_path.exists():
             in_lessons = False
@@ -792,7 +805,6 @@ class ArtifactStore(ArtifactWriteMethods):
                 if in_lessons and line.startswith("- "):
                     existing_bullets.append(line)
 
-        # --- Add new lessons (deduplicated) -----------------------------------
         if lessons and lessons.strip() not in ("", "No new lessons."):
             for line in lessons.strip().splitlines():
                 stripped = line.strip()
@@ -802,14 +814,13 @@ class ArtifactStore(ArtifactWriteMethods):
                 if bullet not in existing_bullets:
                     existing_bullets.append(bullet)
 
-        # --- Build SKILL.md ---------------------------------------------------
-        kebab = scenario_name.replace("_", "-")
-        title = scenario_name.replace("_", " ").title()
+        kebab = scenario.replace("_", "-")
+        title = scenario.replace("_", " ").title()
         desc = (
-            f"Operational knowledge for the {scenario_name} scenario including "
+            f"Operational knowledge for the {scenario} scenario including "
             "strategy playbook, lessons learned, and resource references. "
             f"Use when generating, evaluating, coaching, or debugging "
-            f"{scenario_name} strategies."
+            f"{scenario} strategies."
         )
         lessons_block = "\n".join(existing_bullets) if existing_bullets else "No lessons yet."
 
@@ -824,22 +835,21 @@ class ArtifactStore(ArtifactWriteMethods):
             "- **Strategy playbook**: See [playbook.md](playbook.md) for the "
             "current consolidated strategy guide (Strategy Updates, Prompt "
             "Optimizations, Next Generation Checklist)\n"
-            f"- **Analysis history**: `knowledge/{scenario_name}/analysis/` "
+            f"- **Analysis history**: `knowledge/{scenario}/analysis/` "
             "— per-generation analysis markdown\n"
-            f"- **Generated tools**: `knowledge/{scenario_name}/tools/` "
+            f"- **Generated tools**: `knowledge/{scenario}/tools/` "
             "— architect-created Python tools\n"
-            f"- **Coach history**: `knowledge/{scenario_name}/coach_history.md`"
+            f"- **Coach history**: `knowledge/{scenario}/coach_history.md`"
             " — raw coach output across all generations\n"
             f"- **Architect changelog**: "
-            f"`knowledge/{scenario_name}/architect/changelog.md`"
+            f"`knowledge/{scenario}/architect/changelog.md`"
             " — infrastructure and tooling changes\n"
         )
 
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_path.write_text(skill_content, encoding="utf-8")
 
-        # --- Bundle the current playbook into the skill directory -------------
-        playbook_content = self.read_playbook(scenario_name)
+        playbook_content = self.read_playbook(scenario)
         (skill_dir / "playbook.md").write_text(
             playbook_content.strip() + "\n", encoding="utf-8",
         )
@@ -850,16 +860,17 @@ class ArtifactStore(ArtifactWriteMethods):
         """Copy playbook + skills + hints to snapshots/<run_id>/. Returns playbook hash."""
         import hashlib
 
-        snapshot_dir = self.knowledge_root / scenario_name / "snapshots" / run_id
+        scenario_dir = self._scenario_dir(scenario_name)
+        snapshot_dir = scenario_dir / "snapshots" / run_id
         snapshot_dir.mkdir(parents=True, exist_ok=True)
 
         playbook_content = ""
-        playbook_path = self.knowledge_root / scenario_name / "playbook.md"
+        playbook_path = scenario_dir / "playbook.md"
         if playbook_path.exists():
             playbook_content = playbook_path.read_text(encoding="utf-8")
             (snapshot_dir / "playbook.md").write_text(playbook_content, encoding="utf-8")
 
-        hints_path = self.knowledge_root / scenario_name / "hints.md"
+        hints_path = scenario_dir / "hints.md"
         if hints_path.exists():
             (snapshot_dir / "hints.md").write_text(
                 hints_path.read_text(encoding="utf-8"), encoding="utf-8"
@@ -893,7 +904,8 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def restore_knowledge_snapshot(self, scenario_name: str, source_run_id: str) -> bool:
         """Restore knowledge from a snapshot. Returns True if restored."""
-        snapshot_dir = self.knowledge_root / scenario_name / "snapshots" / source_run_id
+        scenario_dir = self._scenario_dir(scenario_name)
+        snapshot_dir = scenario_dir / "snapshots" / source_run_id
         if not snapshot_dir.exists():
             return False
 
@@ -906,7 +918,7 @@ class ArtifactStore(ArtifactWriteMethods):
         hints_snapshot = snapshot_dir / "hints.md"
         if hints_snapshot.exists():
             self.write_markdown(
-                self.knowledge_root / scenario_name / "hints.md",
+                scenario_dir / "hints.md",
                 hints_snapshot.read_text(encoding="utf-8"),
             )
             restored = True
@@ -1009,27 +1021,27 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def write_session_report(self, scenario_name: str, run_id: str, content: str) -> Path:
         """Write a session report for a completed run."""
-        path = self.knowledge_root / scenario_name / "reports" / f"{run_id}.md"
+        path = self._scenario_dir(scenario_name) / "reports" / f"{run_id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return path
 
     def write_run_writeup_html(self, scenario_name: str, run_id: str, content: str) -> Path:
         """Write a derived HTML run writeup for operator review."""
-        path = resolve_scenario_root(self.knowledge_root, scenario_name) / "reports" / f"{run_id}.html"
+        path = self._scenario_dir(scenario_name) / "reports" / f"{run_id}.html"
         self.write_html(path, content)
         return path
 
     def write_scenario_curation_html(self, scenario_name: str, content: str) -> Path:
         """Write a read-only derived scenario curation artifact."""
-        path = resolve_scenario_root(self.knowledge_root, scenario_name) / "curation.html"
+        path = self._scenario_dir(scenario_name) / "curation.html"
         self.write_html(path, content)
         return path
 
     # --- Normalized progress reports (AC-190) ---------------------------------
 
     def _progress_report_dir(self, scenario_name: str) -> Path:
-        return self.knowledge_root / scenario_name / "progress_reports"
+        return self._scenario_dir(scenario_name) / "progress_reports"
 
     def write_progress_report(self, scenario_name: str, run_id: str, report: DictSerializable) -> None:
         """Persist a RunProgressReport as JSON."""
@@ -1080,7 +1092,7 @@ class ArtifactStore(ArtifactWriteMethods):
     # --- Weakness reports (AC-196) -------------------------------------------
 
     def _weakness_dir(self, scenario_name: str) -> Path:
-        return self.knowledge_root / scenario_name / "weakness_reports"
+        return self._scenario_dir(scenario_name) / "weakness_reports"
 
     def write_weakness_report(self, scenario_name: str, run_id: str, report: DictSerializable) -> None:
         """Persist a WeaknessReport as JSON."""
@@ -1136,7 +1148,7 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def read_latest_session_reports(self, scenario_name: str, max_reports: int = 2) -> str:
         """Read the most recent session reports, concatenated."""
-        reports_dir = self.knowledge_root / scenario_name / "reports"
+        reports_dir = self._scenario_dir(scenario_name) / "reports"
         if not reports_dir.exists():
             return ""
         report_files = sorted(reports_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -1214,12 +1226,12 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def read_tuning(self, scenario_name: str) -> str:
         """Read tuning config JSON, or empty string if none."""
-        path = self.knowledge_root / scenario_name / "tuning.json"
+        path = self._scenario_dir(scenario_name) / "tuning.json"
         return path.read_text(encoding="utf-8") if path.exists() else ""
 
     def write_tuning(self, scenario_name: str, content: str) -> None:
         """Write tuning config JSON."""
-        path = self.knowledge_root / scenario_name / "tuning.json"
+        path = self._scenario_dir(scenario_name) / "tuning.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from autocontext.knowledge.lessons import LessonStore
+from autocontext.storage.scenario_paths import normalize_scenario_name_segment, resolve_scenario_skill_dir
 
 logger = logging.getLogger(__name__)
 
@@ -84,19 +85,20 @@ def _check_lesson_contradictions(lessons: list[str]) -> list[str]:
 
 def _read_lessons(scenario_name: str, knowledge_root: Path, skills_root: Path) -> list[str]:
     """Read operational lessons, preferring structured lessons when present."""
+    scenario = normalize_scenario_name_segment(scenario_name)
     lesson_store = LessonStore(knowledge_root=knowledge_root, skills_root=skills_root)
-    structured = lesson_store.read_lessons(scenario_name)
+    structured = lesson_store.read_lessons(scenario)
     if structured:
-        current_generation = lesson_store.current_generation(scenario_name)
+        current_generation = lesson_store.current_generation(scenario)
         return [
             lesson.text.strip()
             for lesson in lesson_store.get_applicable_lessons(
-                scenario_name,
+                scenario,
                 current_generation=current_generation,
             )
         ]
 
-    skill_dir = skills_root / f"{scenario_name.replace('_', '-')}-ops"
+    skill_dir = resolve_scenario_skill_dir(skills_root, scenario)
     skill_path = skill_dir / "SKILL.md"
     if not skill_path.exists():
         return []

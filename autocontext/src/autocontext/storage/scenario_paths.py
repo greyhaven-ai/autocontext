@@ -32,3 +32,23 @@ def resolve_scenario_root(knowledge_root: Path, scenario_name: str) -> Path:
     except ValueError as exc:
         raise ValueError(f"scenario_name escapes knowledge root: {scenario_name!r}") from exc
     return candidate
+
+
+def scenario_skill_dir_name(scenario_name: str) -> str:
+    """Return the skill directory name for a validated scenario name."""
+    normalized = normalize_scenario_name_segment(scenario_name)
+    return f"{normalized.replace('_', '-')}-ops"
+
+
+def resolve_scenario_skill_dir(skills_root: Path, scenario_name: str) -> Path:
+    """Resolve a scenario skill directory and ensure it stays under skills_root."""
+    skill_dir_name = scenario_skill_dir_name(scenario_name)
+    root = skills_root.resolve(strict=False)
+    candidate = (skills_root / skill_dir_name).resolve(strict=False)
+    if candidate == root:
+        raise ValueError(f"scenario_name must name a scenario skill subdirectory: {scenario_name!r}")
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"scenario_name escapes skills root: {scenario_name!r}") from exc
+    return candidate

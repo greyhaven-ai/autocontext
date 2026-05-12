@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import BaseModel, Field, model_validator
 
 from autocontext.storage.artifacts import EMPTY_PLAYBOOK_SENTINEL
+from autocontext.storage.scenario_paths import resolve_scenario_skill_dir
 from autocontext.util.json_io import read_json
 
 if TYPE_CHECKING:
@@ -350,7 +351,7 @@ def import_strategy_package(
             result.harness_written.append(name)
 
     # ── SKILL.md ──
-    skill_dir = artifacts.skills_root / f"{scenario.replace('_', '-')}-ops"
+    skill_dir = resolve_scenario_skill_dir(artifacts.skills_root, scenario)
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_path = skill_dir / "SKILL.md"
     skill_pkg = package.to_skill_package()
