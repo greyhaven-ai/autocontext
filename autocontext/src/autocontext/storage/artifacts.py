@@ -29,7 +29,11 @@ from autocontext.storage.artifact_write_methods import ArtifactWriteMethods
 from autocontext.storage.blob_integration import BlobAwareWriter, mirror_path_append_bytes, mirror_path_bytes
 from autocontext.storage.buffered_writer import BufferedWriter
 from autocontext.storage.compaction_ledger import CompactionLedgerStore
-from autocontext.storage.scenario_paths import resolve_scenario_root
+from autocontext.storage.scenario_paths import (
+    normalize_scenario_name_segment,
+    resolve_scenario_root,
+    resolve_scenario_skill_dir,
+)
 from autocontext.util.json_io import read_json, write_json
 
 logger = logging.getLogger(__name__)
@@ -211,7 +215,7 @@ class ArtifactStore(ArtifactWriteMethods):
 
     def _skill_dir(self, scenario_name: str) -> Path:
         """Skill directory: skills/<kebab-scenario>-ops/"""
-        return self.skills_root / f"{scenario_name.replace('_', '-')}-ops"
+        return resolve_scenario_skill_dir(self.skills_root, scenario_name)
 
     def read_skills(self, scenario_name: str) -> str:
         """Read operational lessons for injection into autocontext agent prompts.
@@ -221,18 +225,19 @@ class ArtifactStore(ArtifactWriteMethods):
         in the prompt bundle, so we avoid duplication here.  Claude Code
         reads the full SKILL.md (with bundled resources) on its own.
         """
-        structured_lessons = self.lesson_store.read_lessons(scenario_name)
+        scenario = normalize_scenario_name_segment(scenario_name)
+        structured_lessons = self.lesson_store.read_lessons(scenario)
         if structured_lessons:
-            current_generation = self.lesson_store.current_generation(scenario_name)
+            current_generation = self.lesson_store.current_generation(scenario)
             applicable = self.lesson_store.get_applicable_lessons(
-                scenario_name,
+                scenario,
                 current_generation=current_generation,
             )
             if applicable:
                 return "\n".join(lesson.text.strip() for lesson in applicable).strip()
             return ""
 
-        skill_path = self._skill_dir(scenario_name) / "SKILL.md"
+        skill_path = self._skill_dir(scenario) / "SKILL.md"
         if not skill_path.exists():
             return ""
         content = skill_path.read_text(encoding="utf-8")
@@ -784,7 +789,8 @@ class ArtifactStore(ArtifactWriteMethods):
         ``playbook.md`` (bundled) or follows references to the ``knowledge/``
         directory for analysis history, tools, and raw coach output.
         """
-        skill_dir = self._skill_dir(scenario_name)
+        scenario = normalize_scenario_name_segment(scenario_name)
+        skill_dir = self._skill_dir(scenario)
         skill_path = skill_dir / "SKILL.md"
 
         # --- Collect existing lesson bullets ----------------------------------
@@ -811,13 +817,13 @@ class ArtifactStore(ArtifactWriteMethods):
                     existing_bullets.append(bullet)
 
         # --- Build SKILL.md ---------------------------------------------------
-        kebab = scenario_name.replace("_", "-")
-        title = scenario_name.replace("_", " ").title()
+        kebab = scenario.replace("_", "-")
+        title = scenario.replace("_", " ").title()
         desc = (
-            f"Operational knowledge for the {scenario_name} scenario including "
+            f"Operational knowledge for the {scenario} scenario including "
             "strategy playbook, lessons learned, and resource references. "
             f"Use when generating, evaluating, coaching, or debugging "
-            f"{scenario_name} strategies."
+            f"{scenario} strategies."
         )
         lessons_block = "\n".join(existing_bullets) if existing_bullets else "No lessons yet."
 
@@ -832,14 +838,14 @@ class ArtifactStore(ArtifactWriteMethods):
             "- **Strategy playbook**: See [playbook.md](playbook.md) for the "
             "current consolidated strategy guide (Strategy Updates, Prompt "
             "Optimizations, Next Generation Checklist)\n"
-            f"- **Analysis history**: `knowledge/{scenario_name}/analysis/` "
+            f"- **Analysis history**: `knowledge/{scenario}/analysis/` "
             "— per-generation analysis markdown\n"
-            f"- **Generated tools**: `knowledge/{scenario_name}/tools/` "
+            f"- **Generated tools**: `knowledge/{scenario}/tools/` "
             "— architect-created Python tools\n"
-            f"- **Coach history**: `knowledge/{scenario_name}/coach_history.md`"
+            f"- **Coach history**: `knowledge/{scenario}/coach_history.md`"
             " — raw coach output across all generations\n"
             f"- **Architect changelog**: "
-            f"`knowledge/{scenario_name}/architect/changelog.md`"
+            f"`knowledge/{scenario}/architect/changelog.md`"
             " — infrastructure and tooling changes\n"
         )
 
@@ -847,7 +853,7 @@ class ArtifactStore(ArtifactWriteMethods):
         skill_path.write_text(skill_content, encoding="utf-8")
 
         # --- Bundle the current playbook into the skill directory -------------
-        playbook_content = self.read_playbook(scenario_name)
+        playbook_content = self.read_playbook(scenario)
         (skill_dir / "playbook.md").write_text(
             playbook_content.strip() + "\n", encoding="utf-8",
         )
