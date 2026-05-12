@@ -23,12 +23,22 @@ class ImprovementLoopEvent:
     only meaningful for certain event kinds:
 
     - `round_start`: round
+    - `revision_done`: round, output -- carries the output content the loop
+      is about to evaluate. For round 1 this is the seed; for round N>1 it
+      is the result of task.revise_output() at the end of round N-1.
+      Lets consumers salvage near-miss outputs from verifier-vetoed rounds
+      (AC-753).
     - `judge_done`: round, score
     - `verifier_done`: round, verifier_ok, verifier_exit_code
     - `round_summary`: round, effective_score
     - `final`: best_score, best_round, total_rounds, met_threshold
     """
 
+    # NB: field order is part of the public contract for positional construction.
+    # Existing callers may construct events positionally as
+    # `ImprovementLoopEvent("judge_done", 1, 0.95)`; new fields go at the END so
+    # they don't shift the meaning of trailing positional arguments. AC-753 added
+    # `output` and intentionally appends it after the older fields.
     event: str
     round: int | None = None
     score: float | None = None
@@ -39,3 +49,4 @@ class ImprovementLoopEvent:
     best_round: int | None = None
     total_rounds: int | None = None
     met_threshold: bool | None = None
+    output: str | None = None

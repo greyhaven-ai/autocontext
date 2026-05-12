@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- AC-752: `autoctx improve --ndjson` streams per-round events as newline-delimited JSON to stdout for visibility into long-running loops. Event kinds: `round_start`, `judge_done`, `verifier_done` (only when `--verify-cmd` is set), `round_summary`, and a final summary line. Under `--ndjson` the Rich human-readable summary is suppressed so stdout is pure JSON. `--json` and `--ndjson` are mutually exclusive output modes and are rejected up front when both are passed.
+- AC-753: the ndjson stream now also emits a `revision_done(round=N, output=<content>)` event right after `round_start` for every round, carrying the exact output the loop is about to evaluate. For round 1 the payload is the seed; for round N>1 it is the result of `task.revise_output()` from round N-1. Lets consumers salvage near-miss verifier-vetoed rounds. Pass `--no-ndjson-include-output` (default `--ndjson-include-output`) to suppress these events when the bulk output is unwanted; that flag drops the `revision_done` event entirely and never writes the output payload anywhere on stdout.
+- AC-751: `autoctx improve --claude-max-total-seconds FLOAT` exposes `settings.claude_max_total_seconds` (the wall-clock ceiling on total claude-cli runtime in a single run; env: `AUTOCONTEXT_CLAUDE_MAX_TOTAL_SECONDS`). Only applied when the effectively-resolved judge provider is claude-cli; `judge_provider='auto'` paths that inherit `agent_provider='claude-cli'` are honored. `--timeout` help on `improve` now explicitly names the per-provider setting it writes (`claude_timeout`/`codex_timeout`/`pi_timeout`).
 - Python and TypeScript now expose `autoctx worker` to run the existing task queue `TaskRunner` as a daemon or one-shot batch worker, with persistent-host deployment docs for `serve + worker`.
 - Added narrow Python/TypeScript task queue store contracts so future hosted storage adapters can provide Postgres-backed claim/complete/fail/enqueue semantics without changing `TaskRunner`.
 - Gondolin is documented as a reserved optional microVM sandbox backend, fails closed until a real adapter is configured, and now has public request/policy/backend contracts for out-of-tree adapters.
@@ -20,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- AC-750: `ImprovementLoop` no longer fires a misleading `max_score_delta` warning when the previous round was zeroed by the external `--verify-cmd` verifier. The loop now tracks `last_unvetoed_score` separately from `prev_valid_score`; the delta check compares against the last legitimate judge score, while plateau detection still treats consecutive verifier vetoes as a stall.
 - Runtime-session event stores now preserve existing events when saving stale or partial logs, and the TypeScript timeline pairs repeated child-task completions by child session id before falling back to task aliases.
 - Worker commands now clamp concurrency to one for stateful persistent runtimes, and Python runtime-bridge providers close underlying runtimes on shutdown.
 - TypeScript task runners now await queue-store methods so hosted Postgres adapters can implement the queue contract asynchronously.
