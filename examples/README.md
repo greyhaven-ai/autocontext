@@ -9,6 +9,7 @@ These are copy-paste starting points for people evaluating the repo, integrating
 - Want to wire Claude Code or another MCP client? Use the MCP config snippet.
 - Want a typed Python integration? Use the Python SDK example.
 - Want a Node/TypeScript integration? Use the TypeScript library example.
+- Want to prototype a reusable TypeScript agent handler? Use the experimental agent-runtime example.
 - Want always-on queued work? Use the persistent host worker recipe.
 
 ## Python CLI From Source
@@ -169,6 +170,36 @@ Example provider setup:
 ```bash
 export AUTOCONTEXT_PROVIDER=anthropic
 export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+## Experimental TypeScript Agent Handler
+
+The TypeScript package exposes an experimental `autoctx/agent-runtime` subpath
+for local programmable handlers in `.autoctx/agents/*.ts`. It uses the bundled
+`tsx` loader for `.ts`, `.tsx`, and `.mts` files on Node 18+. This is an
+open-source local authoring surface, not the hosted deployment/orchestration
+layer.
+
+See [`examples/agent-runtime/.autoctx/agents/support.ts`](agent-runtime/.autoctx/agents/support.ts)
+for a minimal handler:
+
+```ts
+import type { AutoctxAgentContext } from "autoctx/agent-runtime";
+
+type SupportPayload = {
+  threadId?: string;
+  message: string;
+};
+
+export const triggers = { webhook: true };
+
+export default async function supportAgent(
+  { init, payload }: AutoctxAgentContext<SupportPayload>,
+) {
+  const runtime = await init();
+  const session = await runtime.session(payload.threadId ?? "default");
+  return session.prompt(payload.message, { role: "support-triager" });
+}
 ```
 
 ## Hermes CLI-First Workflow

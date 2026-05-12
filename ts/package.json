@@ -85,6 +85,10 @@
       "types": "./dist/runtimes/mcp-runtime-tools.d.ts",
       "import": "./dist/runtimes/mcp-runtime-tools.js"
     },
+    "./agent-runtime": {
+      "types": "./dist/agent-runtime/index.d.ts",
+      "import": "./dist/agent-runtime/index.js"
+    },
     "./detectors/openai-python": {
       "types": "./dist/control-plane/instrument/detectors/openai-python/index.d.ts",
       "import": "./dist/control-plane/instrument/detectors/openai-python/index.js",
@@ -167,7 +171,6 @@
     "@types/ws": "^8.5.13",
     "fast-check": "^4.7.0",
     "json-schema-to-typescript": "^15.0.4",
-    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
@@ -189,6 +192,7 @@
     "tree-sitter-javascript": "0.21.4",
     "tree-sitter-python": "0.21.0",
     "tree-sitter-typescript": "0.21.2",
+    "tsx": "^4.21.0",
     "ulid": "^3.0.2",
     "ws": "^8.18.0",
     "zod": "^3.24.0"

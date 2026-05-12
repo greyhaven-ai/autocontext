@@ -106,4 +106,15 @@ describe("package root exports", () => {
       types: "./dist/runtimes/mcp-runtime-tools.d.ts",
     });
   });
+
+  it("publishes the experimental agent runtime handler subpath", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8"),
+    ) as { exports?: Record<string, { import?: string; types?: string }> };
+
+    expect(packageJson.exports?.["./agent-runtime"]).toEqual({
+      import: "./dist/agent-runtime/index.js",
+      types: "./dist/agent-runtime/index.d.ts",
+    });
+  });
 });

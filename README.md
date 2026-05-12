@@ -50,7 +50,7 @@ ANTHROPIC_API_KEY=sk-ant-... \
 uv run autoctx solve "..." --iterations 3
 ```
 
-See [`.env.example`](.env.example) for every provider's variables. Prefer to clone and run a starter? [`examples/README.md`](examples/README.md) has copy-paste recipes for Python CLI, Claude Code MCP, Python SDK, and TypeScript library usage.
+See [`.env.example`](.env.example) for every provider's variables. Prefer to clone and run a starter? [`examples/README.md`](examples/README.md) has copy-paste recipes for Python CLI, Claude Code MCP, Python SDK, TypeScript library usage, and the experimental TypeScript agent handler surface.
 
 ## Or Just Talk To Your Agent
 
