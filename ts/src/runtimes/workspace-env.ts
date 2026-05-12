@@ -191,6 +191,12 @@ type MemoryState = {
 const DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES = 4096;
 const DEFAULT_RUNTIME_COMMAND_ARG_LIMIT = 12;
 const DEFAULT_RUNTIME_COMMAND_ARG_BYTES = 160;
+const RUNTIME_TOOL_EVENT_SOURCE = Symbol("runtimeToolEventSource");
+const runtimeToolSecretValues = new WeakMap<RuntimeToolGrant, string[]>();
+
+type RuntimeToolGrantEventWrapper = RuntimeToolGrant & {
+  [RUNTIME_TOOL_EVENT_SOURCE]?: RuntimeToolGrant;
+};
 
 export function createInMemoryWorkspaceEnv(
   options: InMemoryWorkspaceEnvOptions = {},
@@ -221,6 +227,17 @@ export function defineRuntimeCommand(
     scope: options.scope,
     outputLimitBytes: normalizeOutputLimit(options.outputLimitBytes),
   };
+}
+
+export function registerRuntimeToolGrantSecrets(
+  tool: RuntimeToolGrant,
+  secrets: string[],
+): RuntimeToolGrant {
+  const redactionSecrets = uniqueSecretValues(secrets);
+  if (redactionSecrets.length > 0) {
+    runtimeToolSecretValues.set(rawRuntimeToolGrant(tool), redactionSecrets);
+  }
+  return tool;
 }
 
 export function createLocalRuntimeCommandGrant(
@@ -357,7 +374,7 @@ class InMemoryWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   get tools(): readonly RuntimeToolGrant[] {
-    return [...this.#tools.values()];
+    return runtimeToolsForWorkspace([...this.#tools.values()], this.cwd, this.#grantEventSink);
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
@@ -517,7 +534,7 @@ class LocalWorkspaceEnv implements RuntimeWorkspaceEnv {
   }
 
   get tools(): readonly RuntimeToolGrant[] {
-    return [...this.#tools.values()];
+    return runtimeToolsForWorkspace([...this.#tools.values()], this.cwd, this.#grantEventSink);
   }
 
   async exec(command: string, options: RuntimeExecOptions = {}): Promise<RuntimeExecResult> {
@@ -634,7 +651,8 @@ function commandMap(commands: RuntimeCommandGrant[]): Map<string, RuntimeCommand
 function toolMap(tools: RuntimeToolGrant[]): Map<string, RuntimeToolGrant> {
   const result = new Map<string, RuntimeToolGrant>();
   for (const tool of tools) {
-    result.set(tool.name, tool);
+    const rawTool = rawRuntimeToolGrant(tool);
+    result.set(rawTool.name, rawTool);
   }
   return result;
 }
@@ -656,7 +674,8 @@ function mergeToolGrants(
 ): RuntimeToolGrant[] {
   const result = toolMap(base);
   for (const tool of overrides) {
-    result.set(tool.name, tool);
+    const rawTool = rawRuntimeToolGrant(tool);
+    result.set(rawTool.name, rawTool);
   }
   return [...result.values()];
 }
@@ -748,6 +767,96 @@ async function maybeRunGrantedCommand(
     });
     throw error;
   }
+}
+
+function runtimeToolsForWorkspace(
+  tools: RuntimeToolGrant[],
+  cwd: string,
+  grantEventSink: RuntimeGrantEventSink | undefined,
+): RuntimeToolGrant[] {
+  if (!grantEventSink) return tools;
+  return tools.map((tool) => runtimeToolWithGrantEvents(tool, cwd, grantEventSink));
+}
+
+function runtimeToolWithGrantEvents(
+  tool: RuntimeToolGrant,
+  cwd: string,
+  grantEventSink: RuntimeGrantEventSink,
+): RuntimeToolGrant {
+  const rawTool = rawRuntimeToolGrant(tool);
+  if (!rawTool.execute) return rawTool;
+  const wrapped: RuntimeToolGrantEventWrapper = {
+    ...rawTool,
+    execute: (args, context) =>
+      executeRuntimeToolWithGrantEvents(rawTool, args, context, cwd, grantEventSink),
+  };
+  Object.defineProperty(wrapped, RUNTIME_TOOL_EVENT_SOURCE, { value: rawTool });
+  return wrapped;
+}
+
+async function executeRuntimeToolWithGrantEvents(
+  tool: RuntimeToolGrant,
+  args: Record<string, unknown>,
+  context: RuntimeToolCallContext | undefined,
+  cwd: string,
+  grantEventSink: RuntimeGrantEventSink,
+): Promise<RuntimeToolCallResult> {
+  const secrets = runtimeToolRedactionSecrets(tool);
+  const argsSummary = summarizeArgs([safeJsonOrString(args)], secrets);
+  const redaction = baseGrantRedaction({}, argsSummary);
+  emitRuntimeGrantEvent(grantEventSink, {
+    kind: "tool",
+    phase: "start",
+    name: tool.name,
+    cwd,
+    argsSummary: argsSummary.summary,
+    redaction,
+    provenance: tool.provenance,
+  });
+  try {
+    const result = await tool.execute!(args, context);
+    const stdout = previewText(result.text, secrets, DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES);
+    emitRuntimeGrantEvent(grantEventSink, {
+      kind: "tool",
+      phase: "end",
+      name: tool.name,
+      cwd,
+      argsSummary: argsSummary.summary,
+      exitCode: result.isError ? 1 : 0,
+      stdout: stdout.text,
+      redaction: {
+        ...redaction,
+        stdout: stdout.metadata,
+      },
+      provenance: tool.provenance,
+    });
+    return result;
+  } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const message = previewText(rawMessage, secrets, DEFAULT_RUNTIME_COMMAND_OUTPUT_LIMIT_BYTES);
+    emitRuntimeGrantEvent(grantEventSink, {
+      kind: "tool",
+      phase: "error",
+      name: tool.name,
+      cwd,
+      argsSummary: argsSummary.summary,
+      error: message.text,
+      redaction: {
+        ...redaction,
+        error: message.metadata,
+      },
+      provenance: tool.provenance,
+    });
+    throw error;
+  }
+}
+
+function rawRuntimeToolGrant(tool: RuntimeToolGrant): RuntimeToolGrant {
+  return (tool as RuntimeToolGrantEventWrapper)[RUNTIME_TOOL_EVENT_SOURCE] ?? tool;
+}
+
+function runtimeToolRedactionSecrets(tool: RuntimeToolGrant): string[] {
+  return runtimeToolSecretValues.get(rawRuntimeToolGrant(tool)) ?? [];
 }
 
 function parseCommandLine(commandLine: string): { name: string; args: string[] } | null {
@@ -875,7 +984,13 @@ function runtimeCommandOutputLimit(grant: RuntimeCommandGrant): number {
 }
 
 function secretValues(env: Record<string, string>): string[] {
-  return [...new Set(Object.values(env).filter((value) => value.length > 0))];
+  return uniqueSecretValues(Object.values(env));
+}
+
+function uniqueSecretValues(values: readonly string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))].sort(
+    (left, right) => right.length - left.length,
+  );
 }
 
 function baseGrantRedaction(
@@ -955,6 +1070,27 @@ function redactSecrets(value: string, secrets: string[]): { text: string; redact
     redacted = true;
   }
   return { text, redacted };
+}
+
+function safeJsonOrString(value: unknown): string {
+  try {
+    const json = JSON.stringify(value, (_key, candidate) => {
+      if (typeof candidate === "bigint") return candidate.toString();
+      if (typeof candidate === "symbol") return String(candidate);
+      if (typeof candidate === "function") {
+        return `[Function ${candidate.name || "anonymous"}]`;
+      }
+      return candidate;
+    });
+    if (json !== undefined) return json;
+  } catch {
+    // Fall through to string coercion.
+  }
+  try {
+    return String(value);
+  } catch {
+    return "[unserializable]";
+  }
 }
 
 function truncateUtf8(value: string, limitBytes: number): { text: string; truncated: boolean } {

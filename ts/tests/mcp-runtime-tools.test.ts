@@ -5,6 +5,8 @@ import {
   type McpRuntimeToolClient,
 } from "../src/runtimes/mcp-runtime-tools.js";
 import { createInMemoryWorkspaceEnv } from "../src/runtimes/workspace-env.js";
+import { RuntimeSession } from "../src/session/runtime-session.js";
+import { RuntimeSessionEventType } from "../src/session/runtime-events.js";
 
 function mockClient(overrides: Partial<McpRuntimeToolClient> = {}): McpRuntimeToolClient {
   return {
@@ -227,6 +229,26 @@ describe("MCP runtime tools", () => {
     expect(closed).toBe(true);
   });
 
+  it("fails closed when tool discovery repeats a pagination cursor", async () => {
+    let closed = false;
+
+    await expect(connectMcpRuntimeTools({
+      url: "https://mcp.example.test/rpc",
+      clientFactory: async () =>
+        mockClient({
+          listTools: async () => ({
+            tools: [{ name: "lookup", inputSchema: { type: "object" } }],
+            nextCursor: "again",
+          }),
+          close: async () => {
+            closed = true;
+          },
+        }),
+    })).rejects.toThrow("repeated cursor");
+
+    expect(closed).toBe(true);
+  });
+
   it("scopes MCP tool grants through workspace environments", async () => {
     const toolSet = await connectMcpRuntimeTools({
       url: "https://mcp.example.test/rpc",
@@ -257,5 +279,65 @@ describe("MCP runtime tools", () => {
     expect(env.tools ?? []).toEqual([]);
     expect(scoped.tools?.map((tool) => tool.name)).toEqual(["lookup", "shared_lookup"]);
     expect(child.tools?.map((tool) => tool.name)).toEqual(["shared_lookup"]);
+  });
+
+  it("records scoped MCP tool calls in runtime-session grant events", async () => {
+    const toolSet = await connectMcpRuntimeTools({
+      url: "https://mcp.example.test/rpc",
+      headers: { Authorization: "Bearer trusted-token" },
+      clientFactory: async () =>
+        mockClient({
+          listTools: async () => ({
+            tools: [{ name: "lookup", inputSchema: { type: "object" } }],
+          }),
+          callTool: async () => ({
+            content: [{ type: "text", text: "Bearer trusted-token" }],
+          }),
+        }),
+    });
+    const workspace = await createInMemoryWorkspaceEnv({ cwd: "/workspace" }).scope({
+      tools: [...toolSet.tools],
+    });
+    const session = RuntimeSession.create({
+      sessionId: "runtime-mcp-tools",
+      goal: "audit mcp tool use",
+      workspace,
+    });
+
+    const result = await session.submitPrompt({
+      prompt: "Use the MCP tool",
+      handler: async ({ workspace: scopedWorkspace }) => {
+        const tool = scopedWorkspace.tools?.[0];
+        expect(tool).toBeDefined();
+        const call = await tool!.execute!({ token: "Bearer trusted-token" });
+        expect(call.text).toBe("Bearer trusted-token");
+        return { text: "handled" };
+      },
+    });
+
+    expect(result.isError).toBe(false);
+    expect(JSON.stringify(session.log.toJSON())).not.toContain("trusted-token");
+    expect(session.log.events.map((event) => event.eventType)).toEqual([
+      RuntimeSessionEventType.PROMPT_SUBMITTED,
+      RuntimeSessionEventType.TOOL_CALL,
+      RuntimeSessionEventType.TOOL_CALL,
+      RuntimeSessionEventType.ASSISTANT_MESSAGE,
+    ]);
+    expect(session.log.events[1].payload).toMatchObject({
+      phase: "start",
+      toolName: "lookup",
+      argsSummary: ['{"token":"[redacted]"}'],
+      redaction: { envKeys: [] },
+    });
+    expect(session.log.events[2].payload).toMatchObject({
+      phase: "end",
+      toolName: "lookup",
+      exitCode: 0,
+      stdout: "[redacted]",
+      redaction: {
+        envKeys: [],
+        stdout: { redacted: true, truncated: false },
+      },
+    });
   });
 });

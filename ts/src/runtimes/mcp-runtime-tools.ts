@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 
+import { registerRuntimeToolGrantSecrets } from "./workspace-env.js";
 import type {
   RuntimeGrantProvenance,
   RuntimeGrantScopePolicy,
@@ -92,6 +93,9 @@ interface McpSdkClientLike {
   close(): Promise<void>;
 }
 
+const MAX_MCP_TOOL_DISCOVERY_PAGES = 100;
+const MAX_MCP_TOOL_DISCOVERY_TOOLS = 10_000;
+
 export async function connectMcpRuntimeTools(
   options: ConnectMcpRuntimeToolsOptions,
 ): Promise<McpRuntimeToolSet> {
@@ -129,6 +133,7 @@ export async function connectMcpRuntimeTools(
     namePrefix: options.namePrefix,
     provenance: options.provenance,
     scope: options.scope,
+    trustedSecrets: trustedHeaderSecrets(headers),
   });
 }
 
@@ -147,6 +152,7 @@ export class McpRuntimeToolSet {
     namePrefix?: string;
     provenance?: RuntimeGrantProvenance;
     scope?: RuntimeGrantScopePolicy;
+    trustedSecrets?: string[];
   }) {
     this.url = options.url;
     this.#client = options.client;
@@ -188,12 +194,13 @@ export class McpRuntimeToolSet {
     namePrefix?: string;
     provenance?: RuntimeGrantProvenance;
     scope?: RuntimeGrantScopePolicy;
+    trustedSecrets?: string[];
   }): RuntimeToolGrant[] {
     const names = uniqueRuntimeToolNames(options.tools, options.namePrefix);
     return options.tools.map((tool, index) => {
       const name = names[index]!;
       this.#originalByRuntimeName.set(name, tool.name);
-      return {
+      const runtimeTool: RuntimeToolGrant = {
         kind: "tool",
         name,
         description: tool.description,
@@ -206,6 +213,7 @@ export class McpRuntimeToolSet {
         },
         scope: options.scope,
       };
+      return registerRuntimeToolGrantSecrets(runtimeTool, options.trustedSecrets ?? []);
     });
   }
 }
@@ -300,16 +308,32 @@ async function listAllMcpTools(
   context: RuntimeToolCallContext,
 ): Promise<McpToolDescription[]> {
   const tools: McpToolDescription[] = [];
+  const seenCursors = new Set<string>();
   let cursor: string | undefined;
-  do {
+  for (let pageCount = 0; pageCount < MAX_MCP_TOOL_DISCOVERY_PAGES; pageCount += 1) {
     const page = await client.listTools(
       cursor ? { cursor } : undefined,
       requestOptionsFromRuntime(context),
     );
     tools.push(...page.tools);
-    cursor = page.nextCursor;
-  } while (cursor);
-  return tools;
+    if (tools.length > MAX_MCP_TOOL_DISCOVERY_TOOLS) {
+      throw new Error(
+        `MCP tool discovery exceeded ${MAX_MCP_TOOL_DISCOVERY_TOOLS} tools`,
+      );
+    }
+    const nextCursor = page.nextCursor;
+    if (!nextCursor) return tools;
+    if (seenCursors.has(nextCursor)) {
+      throw new Error(`MCP tool discovery returned a repeated cursor: ${nextCursor}`);
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  throw new Error(`MCP tool discovery exceeded ${MAX_MCP_TOOL_DISCOVERY_PAGES} pages`);
+}
+
+function trustedHeaderSecrets(headers: Record<string, string>): string[] {
+  return Object.values(headers);
 }
 
 async function closeQuietly(client: McpRuntimeToolClient): Promise<void> {

@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { RuntimeCommandGrant, RuntimeWorkspaceEnv } from "../runtimes/workspace-env.js";
+import type {
+  RuntimeCommandGrant,
+  RuntimeToolGrant,
+  RuntimeWorkspaceEnv,
+} from "../runtimes/workspace-env.js";
 import { Coordinator } from "./coordinator.js";
 import {
   RuntimeChildTaskRunner,
@@ -58,6 +62,7 @@ export interface RuntimeSessionSubmitPromptOpts {
   role?: string;
   cwd?: string;
   commands?: RuntimeCommandGrant[];
+  tools?: RuntimeToolGrant[];
   handler: RuntimeSessionPromptHandler;
 }
 
@@ -167,6 +172,7 @@ export class RuntimeSession {
     const scopedWorkspace = await this.workspace.scope({
       cwd: opts.cwd,
       commands: opts.commands,
+      tools: opts.tools,
       grantEventSink: createRuntimeSessionGrantEventSink(this.log, () => ({
         requestId,
         promptEventId,
