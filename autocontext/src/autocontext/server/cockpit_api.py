@@ -8,6 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from autocontext.analytics.artifact_rendering import render_scenario_curation_html, scenario_curation_view_from_artifacts
 from autocontext.consultation.runner import ConsultationRunner
 from autocontext.consultation.types import ConsultationRequest as ConsReq
 from autocontext.consultation.types import ConsultationTrigger
@@ -17,7 +18,7 @@ from autocontext.providers.base import LLMProvider
 from autocontext.providers.registry import create_provider
 from autocontext.providers.retry import RetryProvider
 from autocontext.server.changelog import build_changelog
-from autocontext.server.writeup import generate_writeup
+from autocontext.server.writeup import generate_writeup, generate_writeup_html
 from autocontext.session.runtime_events import RuntimeSessionEventStore
 from autocontext.session.runtime_session_ids import runtime_session_id_for_run
 from autocontext.session.runtime_session_read_model import (
@@ -32,6 +33,7 @@ from autocontext.session.runtime_session_timeline import (
     read_runtime_session_timeline_by_run_id,
 )
 from autocontext.storage import ArtifactStore, SQLiteStore, artifact_store_from_settings
+from autocontext.storage.scenario_paths import normalize_scenario_name_segment
 
 logger = logging.getLogger(__name__)
 
@@ -546,11 +548,35 @@ def writeup(run_id: str, request: Request) -> dict[str, Any]:
 
     run_dict = dict(run_row)
     md = generate_writeup(run_id, store, artifacts)
+    html = generate_writeup_html(run_id, store, artifacts)
+    html_path = artifacts.write_run_writeup_html(run_dict["scenario"], run_id, html)
 
     return {
         "run_id": run_id,
         "scenario_name": run_dict["scenario"],
         "writeup_markdown": md,
+        "writeup_html": html,
+        "writeup_html_path": str(html_path),
+    }
+
+
+@cockpit_router.get("/scenarios/{scenario_name}/curation")
+def scenario_curation(scenario_name: str, request: Request) -> dict[str, Any]:
+    """Render and persist a read-only scenario curation HTML artifact."""
+    try:
+        clean_scenario = normalize_scenario_name_segment(scenario_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    artifacts = _get_artifacts(request)
+    view = scenario_curation_view_from_artifacts(artifacts, clean_scenario)
+    html = render_scenario_curation_html(view)
+    html_path = artifacts.write_scenario_curation_html(clean_scenario, html)
+
+    return {
+        "scenario_name": clean_scenario,
+        "curation_html": html,
+        "curation_html_path": str(html_path),
     }
 
 

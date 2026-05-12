@@ -105,51 +105,14 @@ class TraceWriteup(BaseModel):
         return cls.model_validate(data)
 
     def to_markdown(self) -> str:
-        scenario = str(self.metadata.get("scenario", ""))
-        family = str(self.metadata.get("scenario_family", ""))
-        lines = [f"# Run Summary: {self.run_id}", ""]
-        if scenario or family:
-            context = " | ".join(part for part in [scenario, family] if part)
-            lines.append(f"**Context:** {context}")
-            lines.append("")
+        from autocontext.analytics.artifact_rendering import render_trace_writeup_markdown, trace_writeup_view
 
-        lines.append("## Trace Summary")
-        lines.append(self.summary)
-        lines.append("")
+        return render_trace_writeup_markdown(trace_writeup_view(self))
 
-        lines.append("## Findings")
-        if self.findings:
-            for finding in self.findings:
-                evidence = ", ".join(finding.evidence_event_ids) or "none"
-                lines.append(
-                    f"- **{finding.title}** [{finding.finding_type}/{finding.severity}] "
-                    f"{finding.description} (evidence: {evidence})"
-                )
-        else:
-            lines.append("No notable findings.")
-        lines.append("")
+    def to_html(self) -> str:
+        from autocontext.analytics.artifact_rendering import render_trace_writeup_html, trace_writeup_view
 
-        lines.append("## Failure Motifs")
-        if self.failure_motifs:
-            for motif in self.failure_motifs:
-                lines.append(
-                    f"- **{motif.pattern_name}**: {motif.occurrence_count} occurrence(s)"
-                )
-        else:
-            lines.append("No recurring failure motifs.")
-        lines.append("")
-
-        lines.append("## Recovery Paths")
-        if self.recovery_paths:
-            for recovery in self.recovery_paths:
-                lines.append(
-                    f"- {recovery.failure_event_id} -> {recovery.recovery_event_id} "
-                    f"({len(recovery.path_event_ids)} events)"
-                )
-        else:
-            lines.append("No recovery paths observed.")
-
-        return "\n".join(lines)
+        return render_trace_writeup_html(trace_writeup_view(self))
 
 
 class WeaknessReport(BaseModel):
@@ -172,35 +135,14 @@ class WeaknessReport(BaseModel):
         return cls.model_validate(data)
 
     def to_markdown(self) -> str:
-        scenario = str(self.metadata.get("scenario", ""))
-        lines = [
-            f"# Weakness Report: {self.run_id}",
-            f"**Scenario:** {scenario or 'unknown'}",
-            "",
-        ]
-        if not self.weaknesses:
-            lines.append("No weaknesses identified.")
-        else:
-            lines.append(f"**Summary:** {len(self.weaknesses)} weakness(es) detected")
-            lines.append("")
-            for weakness in self.weaknesses:
-                evidence = ", ".join(weakness.evidence_event_ids) or "none"
-                lines.append(f"## [{weakness.severity.upper()}] {weakness.title}")
-                lines.append(weakness.description)
-                lines.append(f"- Category: {weakness.category}")
-                lines.append(f"- Evidence events: {evidence}")
-                lines.append("")
+        from autocontext.analytics.artifact_rendering import render_weakness_report_markdown, weakness_report_view
 
-        lines.append("## Recovery Analysis")
-        lines.append(self.recovery_analysis or "No recovery analysis available.")
-        lines.append("")
-        lines.append("## Recommendations")
-        if self.recommendations:
-            for recommendation in self.recommendations:
-                lines.append(f"- {recommendation}")
-        else:
-            lines.append("- No immediate recommendations.")
-        return "\n".join(lines)
+        return render_weakness_report_markdown(weakness_report_view(self))
+
+    def to_html(self) -> str:
+        from autocontext.analytics.artifact_rendering import render_weakness_report_html, weakness_report_view
+
+        return render_weakness_report_html(weakness_report_view(self))
 
 
 def _uid() -> str:

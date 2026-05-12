@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from autocontext.analytics.artifact_rendering import render_timeline_inspection_html, timeline_inspection_view
 from autocontext.analytics.run_trace import RunTrace
 from autocontext.analytics.timeline_inspector import StateInspector, TimelineBuilder
 
@@ -40,5 +41,9 @@ def persist_run_inspection(trace: RunTrace, analytics_root: Path, trace_path: Pa
     }
     (inspection_dir / f"{trace.trace_id}.json").write_text(
         json.dumps(payload, indent=2),
+        encoding="utf-8",
+    )
+    (inspection_dir / f"{trace.trace_id}.html").write_text(
+        render_timeline_inspection_html(timeline_inspection_view(trace)),
         encoding="utf-8",
     )
