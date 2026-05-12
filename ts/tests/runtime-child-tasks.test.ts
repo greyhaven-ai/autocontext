@@ -57,6 +57,29 @@ describe("RuntimeChildTaskRunner", () => {
     expect(coordinator.events.map((event) => event.eventType)).toContain(
       CoordinatorEventType.WORKER_STARTED,
     );
+    expect(
+      coordinator.events.find((event) => event.eventType === CoordinatorEventType.WORKER_STARTED)
+        ?.payload,
+    ).toMatchObject({
+      workerId: result.workerId,
+      taskId: "task-1",
+      childSessionId: result.childSessionId,
+      parentSessionId: "parent-session",
+      role: "researcher",
+      cwd: "/workspace/project",
+      depth: 1,
+      maxDepth: 4,
+    });
+    expect(
+      coordinator.events.find((event) => event.eventType === CoordinatorEventType.WORKER_COMPLETED)
+        ?.payload,
+    ).toMatchObject({
+      workerId: result.workerId,
+      taskId: "task-1",
+      childSessionId: result.childSessionId,
+      parentSessionId: "parent-session",
+      isError: false,
+    });
 
     expect(parentLog.events.map((event) => event.eventType)).toEqual([
       RuntimeSessionEventType.CHILD_TASK_STARTED,
@@ -167,6 +190,19 @@ describe("RuntimeChildTaskRunner", () => {
       maxDepth: 1,
     });
     expect(coordinator.workers[0].status).toBe(WorkerStatus.FAILED);
+    expect(
+      coordinator.events.find((event) => event.eventType === CoordinatorEventType.WORKER_FAILED)
+        ?.payload,
+    ).toMatchObject({
+      workerId: result.workerId,
+      taskId: "task-too-deep",
+      childSessionId: result.childSessionId,
+      parentSessionId: "parent-session",
+      isError: true,
+      error: "Maximum child task depth (1) exceeded",
+      depth: 2,
+      maxDepth: 1,
+    });
     expect(parentLog.events.map((event) => event.eventType)).toEqual([
       RuntimeSessionEventType.CHILD_TASK_STARTED,
       RuntimeSessionEventType.CHILD_TASK_COMPLETED,

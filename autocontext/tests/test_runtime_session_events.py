@@ -455,6 +455,28 @@ def test_runtime_session_records_child_task_lineage(tmp_path: Path) -> None:
         assert result.error == ""
         assert result.depth == 1
         assert result.max_depth == 4
+        started_event = next(
+            event for event in session.coordinator.events if event.event_type == "worker_started"
+        )
+        completed_event = next(
+            event for event in session.coordinator.events if event.event_type == "worker_completed"
+        )
+        assert started_event.payload == {
+            "coordinator_id": session.coordinator.coordinator_id,
+            "worker_id": result.worker_id,
+            "taskId": "retry",
+            "childSessionId": result.child_session_id,
+            "parentSessionId": "run:abc:runtime",
+            "role": "analyst",
+            "cwd": "/workspace",
+            "depth": 1,
+            "maxDepth": 4,
+        }
+        assert completed_event.payload["worker_id"] == result.worker_id
+        assert completed_event.payload["taskId"] == "retry"
+        assert completed_event.payload["childSessionId"] == result.child_session_id
+        assert completed_event.payload["parentSessionId"] == "run:abc:runtime"
+        assert completed_event.payload["isError"] is False
 
         parent = store.load("run:abc:runtime")
         child = store.load(result.child_session_id)
@@ -659,6 +681,17 @@ def test_runtime_session_child_task_depth_limit_is_recorded(tmp_path: Path) -> N
         assert result.is_error is True
         assert result.text == ""
         assert result.error == "Maximum child task depth (1) exceeded"
+        failed_event = next(
+            event for event in session.coordinator.events if event.event_type == "worker_failed"
+        )
+        assert failed_event.payload["worker_id"] == result.worker_id
+        assert failed_event.payload["taskId"] == "depth"
+        assert failed_event.payload["childSessionId"] == result.child_session_id
+        assert failed_event.payload["parentSessionId"] == "run:abc:runtime"
+        assert failed_event.payload["isError"] is True
+        assert failed_event.payload["error"] == "Maximum child task depth (1) exceeded"
+        assert failed_event.payload["depth"] == 2
+        assert failed_event.payload["maxDepth"] == 1
         child = store.load(result.child_session_id)
         assert child is not None
         assert child.events[1].payload["isError"] is True

@@ -115,7 +115,6 @@ export class RuntimeChildTaskRunner {
   async run(opts: RuntimeChildTaskRunOpts): Promise<RuntimeChildTaskResult> {
     const taskId = opts.taskId ?? randomUUID().slice(0, 12);
     const worker = this.coordinator.delegate(opts.prompt, opts.role);
-    this.coordinator.startWorker(worker.workerId);
     const childDepth = this.depth + 1;
     const childCwd = opts.cwd ? this.workspace.resolvePath(opts.cwd) : this.workspace.cwd;
     const childSessionId = `task:${this.parentLog.sessionId}:${taskId}:${worker.workerId}`;
@@ -142,6 +141,16 @@ export class RuntimeChildTaskRunner {
         workerId: worker.workerId,
       }),
     });
+    const coordinatorLineage = childTaskCoordinatorLineage({
+      taskId,
+      childSessionId,
+      parentSessionId: this.parentLog.sessionId,
+      role: opts.role,
+      cwd: childWorkspace.cwd,
+      depth: childDepth,
+      maxDepth: this.maxDepth,
+    });
+    this.coordinator.startWorker(worker.workerId, coordinatorLineage);
 
     this.parentLog.append(RuntimeSessionEventType.CHILD_TASK_STARTED, {
       taskId,
@@ -194,7 +203,11 @@ export class RuntimeChildTaskRunner {
         depth: childDepth,
         maxDepth: this.maxDepth,
       });
-      this.coordinator.completeWorker(worker.workerId, text);
+      this.coordinator.completeWorker(
+        worker.workerId,
+        text,
+        { ...coordinatorLineage, isError: false },
+      );
       this.parentLog.append(RuntimeSessionEventType.CHILD_TASK_COMPLETED, {
         taskId,
         childSessionId,
@@ -245,7 +258,18 @@ export class RuntimeChildTaskRunner {
     childLog: RuntimeSessionEventLog;
     message: string;
   }): RuntimeChildTaskResult {
-    this.coordinator.failWorker(opts.workerId, opts.message);
+    this.coordinator.failWorker(opts.workerId, opts.message, {
+      ...childTaskCoordinatorLineage({
+        taskId: opts.taskId,
+        childSessionId: opts.childSessionId,
+        parentSessionId: this.parentLog.sessionId,
+        role: opts.role,
+        cwd: opts.cwd,
+        depth: opts.depth,
+        maxDepth: this.maxDepth,
+      }),
+      isError: true,
+    });
     opts.childLog.append(RuntimeSessionEventType.ASSISTANT_MESSAGE, {
       text: "",
       error: opts.message,
@@ -332,6 +356,26 @@ function resolveSystemPrompt(
   input: RuntimeChildTaskHandlerInput,
 ): string | undefined {
   return typeof system === "function" ? system(input) : system;
+}
+
+function childTaskCoordinatorLineage(opts: {
+  taskId: string;
+  childSessionId: string;
+  parentSessionId: string;
+  role: string;
+  cwd: string;
+  depth: number;
+  maxDepth: number;
+}): Record<string, unknown> {
+  return {
+    taskId: opts.taskId,
+    childSessionId: opts.childSessionId,
+    parentSessionId: opts.parentSessionId,
+    role: opts.role,
+    cwd: opts.cwd,
+    depth: opts.depth,
+    maxDepth: opts.maxDepth,
+  };
 }
 
 function normalizeDepth(value: number, name: string): number {

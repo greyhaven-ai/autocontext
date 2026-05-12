@@ -101,6 +101,33 @@ class TestProgressDigest:
         assert len(digest.worker_digests) == 1
         assert digest.worker_digests[0].status == "redirected"
 
+    def test_child_task_failure_recent_change_keeps_error_visible(self) -> None:
+        from autocontext.session.coordinator import Coordinator
+        from autocontext.session.progress_digest import ProgressDigest
+
+        coord = Coordinator.create(session_id="parent-session", goal="test")
+        worker = coord.delegate(task="Too deep", role="analyst")
+        coord.start_worker(worker.worker_id)
+        coord.fail_worker(
+            worker.worker_id,
+            "Maximum child task depth (1) exceeded",
+            {
+                "taskId": "depth",
+                "childSessionId": f"task:parent-session:depth:{worker.worker_id}",
+                "parentSessionId": "parent-session",
+                "role": "analyst",
+                "cwd": "/workspace",
+                "depth": 2,
+                "maxDepth": 1,
+                "isError": True,
+            },
+        )
+
+        digest = ProgressDigest.from_coordinator(coord)
+        failure_change = next(change for change in digest.recent_changes if change.startswith("worker failed"))
+        assert f"worker_id={worker.worker_id}" in failure_change
+        assert "error=Maximum child task depth (1) exceeded" in failure_change
+
 
 class TestDigestDegradation:
     """Digests degrade gracefully with insufficient signal."""
