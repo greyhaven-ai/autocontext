@@ -8,6 +8,39 @@ from autocontext.knowledge.context_selection import ContextSelectionDecision
 
 
 @dataclass(frozen=True)
+class ContextSelectionDiagnosticPolicy:
+    duplicate_content_rate_threshold: float = 0.25
+    useful_artifact_recall_floor: float = 0.70
+    selected_token_estimate_threshold: int = 8000
+
+
+@dataclass(frozen=True)
+class ContextSelectionDiagnostic:
+    code: str
+    severity: str
+    metric_name: str
+    value: float
+    threshold: float
+    message: str
+    recommendation: str
+    generation: int
+    stage: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "metric_name": self.metric_name,
+            "value": self.value,
+            "threshold": self.threshold,
+            "message": self.message,
+            "recommendation": self.recommendation,
+            "generation": self.generation,
+            "stage": self.stage,
+        }
+
+
+@dataclass(frozen=True)
 class ContextSelectionStageSummary:
     run_id: str
     scenario_name: str
@@ -93,8 +126,74 @@ class ContextSelectionReport:
             ),
         }
 
+    def diagnostics(
+        self,
+        policy: ContextSelectionDiagnosticPolicy | None = None,
+    ) -> tuple[ContextSelectionDiagnostic, ...]:
+        policy = policy or ContextSelectionDiagnosticPolicy()
+        if not self.stages:
+            return ()
+
+        diagnostics: list[ContextSelectionDiagnostic] = []
+        duplicate_stage = max(self.stages, key=lambda stage: stage.duplicate_content_rate)
+        if duplicate_stage.duplicate_content_rate >= policy.duplicate_content_rate_threshold:
+            diagnostics.append(
+                ContextSelectionDiagnostic(
+                    code="HIGH_DUPLICATE_CONTENT_RATE",
+                    severity="warning",
+                    metric_name="duplicate_content_rate",
+                    value=duplicate_stage.duplicate_content_rate,
+                    threshold=policy.duplicate_content_rate_threshold,
+                    message="Selected context contains repeated content in a single prompt assembly stage.",
+                    recommendation=(
+                        "Deduplicate equivalent prompt components before selection and keep one canonical source."
+                    ),
+                    generation=duplicate_stage.generation,
+                    stage=duplicate_stage.stage,
+                )
+            )
+
+        useful_stages = [stage for stage in self.stages if stage.useful_artifact_recall is not None]
+        if useful_stages:
+            recall_stage = min(useful_stages, key=lambda stage: stage.useful_artifact_recall or 0.0)
+            recall = recall_stage.useful_artifact_recall
+            if recall is not None and recall < policy.useful_artifact_recall_floor:
+                diagnostics.append(
+                    ContextSelectionDiagnostic(
+                        code="LOW_USEFUL_ARTIFACT_RECALL",
+                        severity="warning",
+                        metric_name="useful_artifact_recall",
+                        value=recall,
+                        threshold=policy.useful_artifact_recall_floor,
+                        message="Useful artifacts were available but omitted from selected context.",
+                        recommendation=(
+                            "Promote useful artifacts earlier in context ranking or lower-priority noisy components."
+                        ),
+                        generation=recall_stage.generation,
+                        stage=recall_stage.stage,
+                    )
+                )
+
+        token_stage = max(self.stages, key=lambda stage: stage.selected_token_estimate)
+        if token_stage.selected_token_estimate > policy.selected_token_estimate_threshold:
+            diagnostics.append(
+                ContextSelectionDiagnostic(
+                    code="SELECTED_TOKEN_BLOAT",
+                    severity="warning",
+                    metric_name="selected_token_estimate",
+                    value=float(token_stage.selected_token_estimate),
+                    threshold=float(policy.selected_token_estimate_threshold),
+                    message="One prompt assembly stage selected an unusually large context payload.",
+                    recommendation="Reduce selected context by tightening budget filters and summarizing bulky artifacts.",
+                    generation=token_stage.generation,
+                    stage=token_stage.stage,
+                )
+            )
+        return tuple(diagnostics)
+
     def to_dict(self) -> dict[str, Any]:
         generations = {stage.generation for stage in self.stages}
+        diagnostics = self.diagnostics()
         return {
             "status": "completed",
             "run_id": self.run_id,
@@ -102,6 +201,8 @@ class ContextSelectionReport:
             "decision_count": len(self.stages),
             "generation_count": len(generations),
             "summary": self.summary(),
+            "diagnostic_count": len(diagnostics),
+            "diagnostics": [diagnostic.to_dict() for diagnostic in diagnostics],
             "stages": [stage.to_dict() for stage in self.stages],
         }
 
@@ -119,6 +220,11 @@ class ContextSelectionReport:
         freshness = summary["mean_selected_freshness_generation_delta"]
         if freshness is not None:
             lines.append(f"- Mean selected freshness delta: {freshness:.2f} generation(s)")
+        diagnostics = self.diagnostics()
+        if diagnostics:
+            lines.extend(["", "## Diagnostics"])
+            for diagnostic in diagnostics:
+                lines.append(f"- {diagnostic.code}: {diagnostic.recommendation}")
         return "\n".join(lines)
 
 

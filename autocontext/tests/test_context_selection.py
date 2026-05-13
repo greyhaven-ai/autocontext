@@ -334,6 +334,80 @@ def test_context_selection_report_aggregates_decision_metrics() -> None:
     assert [stage["generation"] for stage in payload["stages"]] == [1, 2]
 
 
+def test_context_selection_report_emits_actionable_diagnostics() -> None:
+    from autocontext.knowledge.context_selection import (
+        ContextSelectionCandidate,
+        ContextSelectionDecision,
+    )
+    from autocontext.knowledge.context_selection_report import build_context_selection_report
+
+    report = build_context_selection_report(
+        (
+            ContextSelectionDecision(
+                run_id="run-1",
+                scenario_name="grid_ctf",
+                generation=3,
+                stage="generation_prompt_context",
+                candidates=(
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="playbook",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="duplicate content",
+                        selected_content="duplicate content",
+                        selection_reason="retained",
+                    ),
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="lessons",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="duplicate content",
+                        selected_content="duplicate content",
+                        selection_reason="retained",
+                    ),
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="useful_analysis",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="useful analysis",
+                        selected_content="",
+                        selection_reason="removed",
+                        useful=True,
+                    ),
+                    ContextSelectionCandidate.from_contents(
+                        artifact_id="session_report",
+                        artifact_type="prompt_component",
+                        source="prompt_assembly",
+                        candidate_content="x" * 40000,
+                        selected_content="x" * 40000,
+                        selection_reason="retained",
+                    ),
+                ),
+            ),
+        )
+    )
+
+    payload = report.to_dict()
+    codes = {diagnostic["code"] for diagnostic in payload["diagnostics"]}
+
+    assert payload["diagnostic_count"] == 3
+    assert codes == {
+        "HIGH_DUPLICATE_CONTENT_RATE",
+        "LOW_USEFUL_ARTIFACT_RECALL",
+        "SELECTED_TOKEN_BLOAT",
+    }
+    assert all(diagnostic["generation"] == 3 for diagnostic in payload["diagnostics"])
+    assert all(diagnostic["stage"] == "generation_prompt_context" for diagnostic in payload["diagnostics"])
+    assert "Deduplicate" in _diagnostic_by_code(payload, "HIGH_DUPLICATE_CONTENT_RATE")["recommendation"]
+    assert "Promote" in _diagnostic_by_code(payload, "LOW_USEFUL_ARTIFACT_RECALL")["recommendation"]
+    assert "tighten" in _diagnostic_by_code(payload, "SELECTED_TOKEN_BLOAT")["recommendation"]
+    assert "Diagnostics" in report.to_markdown()
+
+
+def _diagnostic_by_code(payload: dict[str, Any], code: str) -> dict[str, Any]:
+    return next(diagnostic for diagnostic in payload["diagnostics"] if diagnostic["code"] == code)
+
+
 def test_context_selection_store_loads_decisions_in_generation_order(tmp_path: Path) -> None:
     from autocontext.knowledge.context_selection import (
         ContextSelectionCandidate,
