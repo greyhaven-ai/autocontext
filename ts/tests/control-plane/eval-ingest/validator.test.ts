@@ -92,6 +92,13 @@ describe("validateEvalRunForIngestion", () => {
     expect(r.valid).toBe(true);
   });
 
+  test("accepts explicit verified and experimental tracks before promotion filtering", () => {
+    const reg = openRegistry(registryRoot);
+
+    expect(validateEvalRunForIngestion(makeEvalRun(artifact.id, { track: "verified" }), { registry: reg }).valid).toBe(true);
+    expect(validateEvalRunForIngestion(makeEvalRun(artifact.id, { track: "experimental" }), { registry: reg }).valid).toBe(true);
+  });
+
   test("rejects when artifactId does not resolve to a registered artifact", () => {
     const reg = openRegistry(registryRoot);
     const run = makeEvalRun("01KPEYB3BRQWK2WSHK9E93N6NP" as ArtifactId);

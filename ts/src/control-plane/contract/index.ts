@@ -49,10 +49,22 @@ export type {
   EvalReconciliationView,
   EvalReconciliationCounts,
   EvalRunReconciliation,
+  RunTrack,
+  StrategyComponentFingerprint,
+  StrategyLineage,
+  StrategyDuplicateAssessment,
+  StrategyIdentity,
+  StrategyQuarantineReason,
+  StrategyQuarantine,
   WebPolicy,
   IntegrityMode,
   AdapterProvenance,
   EvalRunIntegrity,
+  AblationTarget,
+  AblationVerificationStatus,
+  AblationVerification,
+  AblationRequirement,
+  AblationVerificationAssessment,
   MemoryPackRef,
   EvalRun,
   PromotionEvent,
@@ -72,6 +84,37 @@ export {
   validatePromotionDecision,
   validatePatch,
 } from "./validators.js";
+
+export {
+  RUN_TRACKS,
+  isRunTrack,
+  effectiveEvalRunTrack,
+  assessEvalRunTrack,
+  describeExperimentalEvalRunTrack,
+} from "./run-track.js";
+export type { EvalRunTrackAssessment } from "./run-track.js";
+
+export {
+  ABLATION_TARGETS,
+  DEFAULT_ABLATION_REQUIREMENT,
+  isAblationTarget,
+  normalizeAblationRequirement,
+  assessAblationVerification,
+  describeAblationVerificationIssue,
+} from "./ablation-verification.js";
+
+export {
+  buildStrategyIdentity,
+  buildStrategyComponentsFromTree,
+  detectStrategyDuplicate,
+  strategyFingerprintForArtifact,
+} from "./strategy-identity.js";
+export type { BuildStrategyIdentityInputs } from "./strategy-identity.js";
+
+export {
+  assessStrategyQuarantine,
+  describeStrategyQuarantine,
+} from "./strategy-quarantine.js";
 
 export {
   createArtifact,

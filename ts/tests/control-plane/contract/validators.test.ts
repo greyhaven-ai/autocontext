@@ -161,6 +161,54 @@ describe("validateEvalRun", () => {
     expect(validateEvalRun(validEvalRun).valid).toBe(true);
   });
 
+  test("accepts ablation verification evidence", () => {
+    const withAblation: EvalRun = {
+      ...validEvalRun,
+      ablationVerification: {
+        status: "passed",
+        targets: ["strategy", "harness"],
+        verifiedAt: "2026-05-13T12:00:00.000Z",
+        evidenceRefs: ["runs/ablation/run_1.json"],
+      },
+    };
+
+    expect(validateEvalRun(withAblation).valid).toBe(true);
+  });
+
+  test("rejects invalid ablation verification evidence", () => {
+    const badTarget = {
+      ...validEvalRun,
+      ablationVerification: {
+        status: "passed",
+        targets: ["strategy", "leaderboard"],
+        verifiedAt: "2026-05-13T12:00:00.000Z",
+        evidenceRefs: ["runs/ablation/run_1.json"],
+      },
+    };
+    const noEvidenceRefs = {
+      ...validEvalRun,
+      ablationVerification: {
+        status: "passed",
+        targets: ["strategy"],
+        verifiedAt: "2026-05-13T12:00:00.000Z",
+        evidenceRefs: [],
+      },
+    };
+
+    expect(validateEvalRun(badTarget).valid).toBe(false);
+    expect(validateEvalRun(noEvidenceRefs).valid).toBe(false);
+  });
+
+  test("accepts explicit verified and experimental tracks", () => {
+    expect(validateEvalRun({ ...validEvalRun, track: "verified" }).valid).toBe(true);
+    expect(validateEvalRun({ ...validEvalRun, track: "experimental" }).valid).toBe(true);
+  });
+
+  test("rejects invalid track", () => {
+    const bad = { ...validEvalRun, track: "record" } as unknown as EvalRun;
+    expect(validateEvalRun(bad).valid).toBe(false);
+  });
+
   test("rejects invalid artifactId format", () => {
     const bad = { ...validEvalRun, artifactId: "not-a-ulid" } as unknown as EvalRun;
     expect(validateEvalRun(bad).valid).toBe(false);
@@ -198,6 +246,78 @@ describe("validateArtifact", () => {
     expect(validateArtifact(validArtifact).valid).toBe(true);
   });
 
+  test("accepts strategy fingerprint, lineage, and duplicate assessment metadata", () => {
+    const withStrategy = {
+      ...validArtifact,
+      strategyIdentity: {
+        fingerprint: "sha256:" + "d".repeat(64),
+        payloadHash: "sha256:" + "c".repeat(64),
+        components: [
+          { name: "prompt.txt", fingerprint: "sha256:" + "e".repeat(64) },
+        ],
+        lineage: {
+          parentFingerprints: ["sha256:" + "f".repeat(64)],
+        },
+        duplicateOf: {
+          kind: "near",
+          artifactId: "01KPEYB3BQNFDEYRS8KH538PF5",
+          fingerprint: "sha256:" + "a".repeat(64),
+          similarity: 0.75,
+        },
+      },
+    };
+
+    expect(validateArtifact(withStrategy).valid).toBe(true);
+  });
+
+  test("rejects invalid strategy duplicate kind", () => {
+    const bad = {
+      ...validArtifact,
+      strategyIdentity: {
+        fingerprint: "sha256:" + "d".repeat(64),
+        components: [],
+        lineage: { parentFingerprints: [] },
+        duplicateOf: {
+          kind: "copy",
+          artifactId: "01KPEYB3BQNFDEYRS8KH538PF5",
+          fingerprint: "sha256:" + "a".repeat(64),
+          similarity: 1,
+        },
+      },
+    };
+
+    expect(validateArtifact(bad).valid).toBe(false);
+  });
+
+  test("accepts strategy quarantine metadata", () => {
+    const withQuarantine = {
+      ...validArtifact,
+      strategyQuarantine: {
+        status: "quarantined",
+        reason: "repeated-invalid-strategy",
+        sourceArtifactIds: ["01KPEYB3BQNFDEYRS8KH538PF5"],
+        sourceFingerprints: ["sha256:" + "a".repeat(64)],
+        detail: "exact duplicate of disabled strategy",
+      },
+    };
+
+    expect(validateArtifact(withQuarantine).valid).toBe(true);
+  });
+
+  test("rejects invalid strategy quarantine reason", () => {
+    const bad = {
+      ...validArtifact,
+      strategyQuarantine: {
+        status: "quarantined",
+        reason: "spooky-action",
+        sourceArtifactIds: [],
+        sourceFingerprints: [],
+      },
+    };
+
+    expect(validateArtifact(bad).valid).toBe(false);
+  });
+
   test("rejects invalid actuatorType", () => {
     const bad = { ...validArtifact, actuatorType: "teleport" } as unknown as Artifact;
     expect(validateArtifact(bad).valid).toBe(false);
@@ -212,6 +332,36 @@ describe("validateArtifact", () => {
 describe("validatePromotionDecision", () => {
   test("accepts valid", () => {
     expect(validatePromotionDecision(validPromotionDecision).valid).toBe(true);
+  });
+
+  test("accepts ablation verification assessment", () => {
+    const withAblation: PromotionDecision = {
+      ...validPromotionDecision,
+      ablationVerification: {
+        required: true,
+        status: "passed",
+        requiredTargets: ["strategy", "harness"],
+        coveredTargets: ["strategy", "harness"],
+        missingTargets: [],
+      },
+    };
+
+    expect(validatePromotionDecision(withAblation).valid).toBe(true);
+  });
+
+  test("rejects invalid ablation verification assessment", () => {
+    const bad = {
+      ...validPromotionDecision,
+      ablationVerification: {
+        required: true,
+        status: "unknown",
+        requiredTargets: ["strategy"],
+        coveredTargets: ["strategy"],
+        missingTargets: [],
+      },
+    };
+
+    expect(validatePromotionDecision(bad).valid).toBe(false);
   });
 
   test("rejects invalid recommendedTargetState", () => {

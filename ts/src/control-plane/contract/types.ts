@@ -76,6 +76,44 @@ export type Provenance = {
   readonly createdAt: string;
 };
 
+// ---- Strategy identity ----
+
+export type StrategyComponentFingerprint = {
+  readonly name: string;
+  readonly fingerprint: ContentHash;
+};
+
+export type StrategyLineage = {
+  readonly parentFingerprints: readonly ContentHash[];
+};
+
+export type StrategyDuplicateAssessment = {
+  readonly kind: "exact" | "near";
+  readonly artifactId: ArtifactId;
+  readonly fingerprint: ContentHash;
+  readonly similarity: number;
+};
+
+export type StrategyIdentity = {
+  readonly fingerprint: ContentHash;
+  readonly payloadHash?: ContentHash;
+  readonly components: readonly StrategyComponentFingerprint[];
+  readonly lineage: StrategyLineage;
+  readonly duplicateOf?: StrategyDuplicateAssessment;
+};
+
+export type StrategyQuarantineReason =
+  | "repeated-invalid-strategy"
+  | "contaminated-finding";
+
+export type StrategyQuarantine = {
+  readonly status: "quarantined";
+  readonly reason: StrategyQuarantineReason;
+  readonly sourceArtifactIds: readonly ArtifactId[];
+  readonly sourceFingerprints: readonly ContentHash[];
+  readonly detail?: string;
+};
+
 // ---- EvalRun ----
 
 export type EvalRunRef = {
@@ -129,6 +167,10 @@ export type EvalRunReconciliation = {
   readonly counts: EvalReconciliationCounts;
 };
 
+export type RunTrack =
+  | "verified"
+  | "experimental";
+
 export type WebPolicy =
   | "disabled"
   | "docs-and-downloads-only"
@@ -156,6 +198,37 @@ export type EvalRunIntegrity = {
   readonly notes?: readonly string[];
 };
 
+export type AblationTarget =
+  | "strategy"
+  | "harness";
+
+export type AblationVerificationStatus =
+  | "passed"
+  | "failed"
+  | "incomplete";
+
+export type AblationVerification = {
+  readonly status: AblationVerificationStatus;
+  readonly targets: readonly AblationTarget[];
+  readonly verifiedAt: string;
+  readonly evidenceRefs: readonly string[];
+  readonly notes?: readonly string[];
+};
+
+export type AblationRequirement = {
+  readonly required: boolean;
+  readonly targets: readonly AblationTarget[];
+};
+
+export type AblationVerificationAssessment = {
+  readonly required: boolean;
+  readonly status: "not-required" | "missing" | "incomplete" | "failed" | "passed";
+  readonly requiredTargets: readonly AblationTarget[];
+  readonly coveredTargets: readonly AblationTarget[];
+  readonly missingTargets: readonly AblationTarget[];
+  readonly reason?: string;
+};
+
 export type MemoryPackRef = {
   readonly packId: string;
   readonly version: string;
@@ -167,6 +240,7 @@ export type EvalRun = {
   readonly runId: string;
   readonly artifactId: ArtifactId;
   readonly suiteId: SuiteId;
+  readonly track?: RunTrack;
   readonly metrics: MetricBundle;
   readonly datasetProvenance: {
     readonly datasetId: string;
@@ -176,6 +250,7 @@ export type EvalRun = {
   readonly ingestedAt: string;
   readonly adapterProvenance?: AdapterProvenance;
   readonly integrity?: EvalRunIntegrity;
+  readonly ablationVerification?: AblationVerification;
   readonly trials?: readonly EvalTrial[];
   readonly reconciliation?: EvalRunReconciliation;
   readonly memoryPacks?: readonly MemoryPackRef[];
@@ -210,6 +285,8 @@ export type Artifact = {
   readonly activationState: ActivationState;
   readonly payloadHash: ContentHash;
   readonly provenance: Provenance;
+  readonly strategyIdentity?: StrategyIdentity;
+  readonly strategyQuarantine?: StrategyQuarantine;
   readonly promotionHistory: readonly PromotionEvent[];
   readonly evalRuns: readonly EvalRunRef[];
 };
@@ -260,6 +337,7 @@ export type PromotionDecision = {
   };
   readonly confidence: number;
   readonly thresholds: PromotionThresholds;
+  readonly ablationVerification?: AblationVerificationAssessment;
   readonly reasoning: string;
   readonly evaluatedAt: string;
 };

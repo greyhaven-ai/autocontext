@@ -465,6 +465,90 @@ Credential resolution order is:
 
 Saved custom scenarios under `knowledge/_custom_scenarios/` can be reused directly from the TS CLI. Saved parametric scenarios can now be targeted by name in `run` and `benchmark`, while saved agent-task scenarios remain directly usable in `judge`, `improve`, `repl`, and `queue` without retyping their prompt and rubric.
 
+## Control-Plane Strategy Identity
+
+`autoctx candidate register` records deterministic strategy identity metadata for
+each candidate artifact. The identity includes a canonical strategy fingerprint,
+per-file component fingerprints, parent strategy fingerprints, and an exact or
+near duplicate assessment when the candidate matches an existing strategy surface
+for the same scenario and actuator. Environments do not split this identity
+surface: a repeated strategy in staging is still a duplicate of the same
+scenario/actuator strategy from production.
+
+```bash
+autoctx candidate register \
+  --scenario grid_ctf \
+  --actuator prompt-patch \
+  --payload ./payload \
+  --output json
+```
+
+`autoctx candidate show <artifact-id> --output json` returns the full
+`strategyIdentity` block. `autoctx candidate list --output json` includes compact
+`strategyFingerprint` and `duplicateKind` fields for automation.
+
+If a newly registered candidate is an exact or near duplicate of a disabled or
+already-quarantined strategy, the artifact also records `strategyQuarantine`.
+Promotion decisions reject quarantined strategies as non-promotion evidence, and
+`autoctx candidate list --output json` includes `quarantineReason` for quick
+triage. Operational memory can also skip findings tied to quarantined strategy
+fingerprints before they are rendered back into agent context. Older artifacts
+without `strategyIdentity` can still seed exact duplicate/quarantine checks via
+their content-addressed `payloadHash`.
+
+## Control-Plane Eval Tracks
+
+`autoctx eval attach` accepts `--track verified|experimental` for attached
+EvalRuns. Verified runs are promotion-grade evidence; experimental runs remain
+inspectable but are rejected by promotion decisions by default.
+
+```bash
+autoctx eval attach <artifact-id> \
+  --suite prod-eval \
+  --metrics metrics.json \
+  --dataset-provenance dataset.json \
+  --track experimental \
+  --output json
+```
+
+`autoctx eval list <artifact-id> --output json` includes the effective track for
+each EvalRun. Legacy clean EvalRuns without an explicit track are reported as
+`verified`; non-clean integrity still blocks ingestion and promotion evidence.
+
+For accepted strategy or harness changes, promotion can also require explicit
+ablation evidence. Attach an ablation verification object to the EvalRun:
+
+```json
+{
+  "status": "passed",
+  "targets": ["strategy", "harness"],
+  "verifiedAt": "2026-05-13T12:00:00.000Z",
+  "evidenceRefs": ["runs/ablation/run_1.json"]
+}
+```
+
+```bash
+autoctx eval attach <artifact-id> \
+  --suite prod-eval \
+  --metrics metrics.json \
+  --dataset-provenance dataset.json \
+  --ablation-verification ablation.json
+```
+
+Ablation checks are opt in at decision time:
+
+```bash
+autoctx promotion decide <artifact-id> \
+  --baseline auto \
+  --require-ablation \
+  --ablation-targets strategy,harness \
+  --output json
+```
+
+When enabled, the PromotionDecision includes an `ablationVerification`
+assessment and fails if the latest candidate EvalRun is missing evidence, has a
+`failed` or `incomplete` status, or does not cover every required target.
+
 ## MCP Tools (40+)
 
 `mcp-serve` starts the MCP server on stdio with tools across these families:

@@ -7,8 +7,16 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ActivationState, Artifact, EvalRun, PromotionThresholds } from "../contract/types.js";
+import type {
+  AblationRequirement,
+  AblationTarget,
+  ActivationState,
+  Artifact,
+  EvalRun,
+  PromotionThresholds,
+} from "../contract/types.js";
 import { parseArtifactId } from "../contract/branded-ids.js";
+import { isAblationTarget } from "../contract/ablation-verification.js";
 import { createPromotionEvent } from "../contract/factories.js";
 import { openRegistry } from "../registry/index.js";
 import { artifactDirectory } from "../registry/artifact-store.js";
@@ -27,7 +35,8 @@ Subcommands:
 
 Examples:
   autoctx promotion decide <candidateId> [--baseline <id>|auto] \\
-      [--thresholds ./thresholds.json] [--output json]
+      [--thresholds ./thresholds.json] [--require-ablation] \\
+      [--ablation-targets strategy,harness] [--output json]
   autoctx promotion apply <candidateId> --to <shadow|canary|active|disabled> \\
       --reason "..." [--dry-run]
   autoctx promotion history <artifactId>
@@ -64,7 +73,14 @@ async function runDecide(args: readonly string[], ctx: CliContext): Promise<CliR
   if (candidateId === null) {
     return { stdout: "", stderr: `Invalid candidate id: ${id}`, exitCode: EXIT.INVALID_ARTIFACT };
   }
-  const flags = parseSimpleFlags(args.slice(1), ["baseline", "thresholds", "layout", "output"]);
+  const flags = parseSimpleFlags(args.slice(1), [
+    "baseline",
+    "thresholds",
+    "layout",
+    "output",
+    "require-ablation",
+    "ablation-targets",
+  ]);
   if ("error" in flags) return { stdout: "", stderr: flags.error, exitCode: EXIT.HARD_FAIL };
 
   const registry = openRegistry(ctx.cwd);
@@ -125,11 +141,23 @@ async function runDecide(args: readonly string[], ctx: CliContext): Promise<CliR
       return { stdout: "", stderr: `thresholds JSON: ${err instanceof Error ? err.message : String(err)}`, exitCode: EXIT.HARD_FAIL };
     }
   }
+  const requireAblation = flags.value["require-ablation"] === "true";
+  if (!requireAblation && flags.value["ablation-targets"] !== undefined) {
+    return { stdout: "", stderr: "--ablation-targets requires --require-ablation", exitCode: EXIT.HARD_FAIL };
+  }
+  const ablationTargets = parseAblationTargets(flags.value["ablation-targets"] ?? "strategy,harness");
+  if ("error" in ablationTargets) {
+    return { stdout: "", stderr: ablationTargets.error, exitCode: EXIT.HARD_FAIL };
+  }
+  const ablationRequirement: AblationRequirement | undefined = requireAblation
+    ? { required: true, targets: ablationTargets.value }
+    : undefined;
 
   const decision = decidePromotion({
     candidate: { artifact: candidateArt, evalRun: candidateEvalRun },
     baseline,
     thresholds,
+    ...(ablationRequirement !== undefined ? { ablationRequirement } : {}),
     evaluatedAt: ctx.now(),
   });
 
@@ -249,12 +277,13 @@ function parseSimpleFlags(
   known: readonly string[],
 ): { value: Record<string, string | undefined> } | { error: string } {
   const result: Record<string, string | undefined> = {};
+  const booleanFlags = new Set(["dry-run", "require-ablation"]);
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (!a.startsWith("--")) continue;
     const name = a.slice(2);
     if (!known.includes(name)) return { error: `Unknown flag: --${name}` };
-    if (name === "dry-run") {
+    if (booleanFlags.has(name)) {
       result[name] = "true";
       continue;
     }
@@ -267,4 +296,18 @@ function parseSimpleFlags(
     if (!(k in result)) result[k] = undefined;
   }
   return { value: result };
+}
+
+function parseAblationTargets(raw: string): { value: readonly AblationTarget[] } | { error: string } {
+  const parts = raw.split(",").map((part) => part.trim()).filter((part) => part.length > 0);
+  if (parts.length === 0) return { error: "--ablation-targets must include at least one target" };
+
+  const targets: AblationTarget[] = [];
+  for (const part of parts) {
+    if (!isAblationTarget(part)) {
+      return { error: `Invalid ablation target: ${part}` };
+    }
+    if (!targets.includes(part)) targets.push(part);
+  }
+  return { value: targets };
 }

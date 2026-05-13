@@ -1,3 +1,4 @@
+import { parseContentHash, type ContentHash } from "../contract/branded-ids.js";
 import type { EvalRunIntegrity, ValidationResult } from "../contract/types.js";
 
 export type OperationalMemoryPackStatus = "draft" | "sanitized" | "active" | "deprecated";
@@ -7,6 +8,7 @@ export type OperationalMemoryContextSkipReason =
   | "pack-integrity-not-clean"
   | "leakage-risk"
   | "duplicate-finding"
+  | "strategy-quarantined"
   | "target-family-mismatch"
   | "risk-too-high"
   | "capacity-limit";
@@ -20,6 +22,7 @@ export interface OperationalMemoryFinding {
   readonly risk: OperationalMemoryRisk;
   readonly containsTaskAnswer?: boolean;
   readonly containsSecret?: boolean;
+  readonly strategyFingerprint?: ContentHash;
 }
 
 export interface OperationalMemoryPack {
@@ -37,6 +40,7 @@ export interface CompileOperationalMemoryContextInputs {
   readonly packs: readonly OperationalMemoryPack[];
   readonly targetFamilies: readonly string[];
   readonly taskId?: string;
+  readonly quarantinedStrategyFingerprints?: readonly ContentHash[];
   readonly maxFindings?: number;
   readonly riskTolerance?: OperationalMemoryRisk;
 }
@@ -87,6 +91,7 @@ export function compileOperationalMemoryContext(
   const skippedFindings: OperationalMemorySkippedFinding[] = [];
   const candidates: CandidateFinding[] = [];
   const candidateIds = new Set<string>();
+  const quarantinedStrategyFingerprints = new Set(inputs.quarantinedStrategyFingerprints ?? []);
   let originalIndex = 0;
 
   for (const pack of inputs.packs) {
@@ -121,6 +126,19 @@ export function compileOperationalMemoryContext(
           findingId: finding.id,
           reason: "leakage-risk",
           detail: leakageDetail,
+        });
+        continue;
+      }
+      const strategyQuarantineDetail = findingStrategyQuarantineDetail(
+        finding,
+        quarantinedStrategyFingerprints,
+      );
+      if (strategyQuarantineDetail !== undefined) {
+        skippedFindings.push({
+          packId: pack.packId,
+          findingId: finding.id,
+          reason: "strategy-quarantined",
+          detail: strategyQuarantineDetail,
         });
         continue;
       }
@@ -243,6 +261,7 @@ function validateFinding(input: unknown, errors: string[]): void {
   requireEnum(input, "risk", ["low", "medium", "high"], errors);
   requireOptionalBoolean(input, "containsTaskAnswer", id, errors);
   requireOptionalBoolean(input, "containsSecret", id, errors);
+  requireOptionalContentHash(input, "strategyFingerprint", id, errors);
 
   if (input.containsTaskAnswer === true) {
     errors.push(`finding ${id} contains task-specific answer material`);
@@ -270,6 +289,20 @@ function leakageFlagRiskDetail(
   return input[field] === true ? `${field}=true` : undefined;
 }
 
+function findingStrategyQuarantineDetail(
+  finding: OperationalMemoryFinding,
+  quarantinedStrategyFingerprints: ReadonlySet<ContentHash>,
+): string | undefined {
+  const record = finding as unknown as Readonly<Record<string, unknown>>;
+  const raw = record.strategyFingerprint;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string") return "strategyFingerprint must be ContentHash when present";
+  const fingerprint = parseContentHash(raw);
+  if (fingerprint === null) return "strategyFingerprint must be ContentHash when present";
+  if (!quarantinedStrategyFingerprints.has(fingerprint)) return undefined;
+  return `strategyFingerprint=${fingerprint}`;
+}
+
 function requireOptionalBoolean(
   input: Readonly<Record<string, unknown>>,
   field: "containsTaskAnswer" | "containsSecret",
@@ -278,6 +311,19 @@ function requireOptionalBoolean(
 ): void {
   if (Object.prototype.hasOwnProperty.call(input, field) && typeof input[field] !== "boolean") {
     errors.push(`finding ${findingId} ${field} must be a boolean when present`);
+  }
+}
+
+function requireOptionalContentHash(
+  input: Readonly<Record<string, unknown>>,
+  field: string,
+  findingId: string,
+  errors: string[],
+): void {
+  const value = input[field];
+  if (value === undefined) return;
+  if (typeof value !== "string" || parseContentHash(value) === null) {
+    errors.push(`finding ${findingId} ${field} must be a ContentHash when present`);
   }
 }
 

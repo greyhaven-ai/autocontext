@@ -26,6 +26,13 @@ const dp = {
   sampleCount: 1000,
 };
 
+const passedAblation = {
+  status: "passed",
+  targets: ["strategy", "harness"],
+  verifiedAt: "2026-05-13T12:00:00.000Z",
+  evidenceRefs: ["runs/ablation/run_1.json"],
+};
+
 async function registerPayload(content: string): Promise<string> {
   const d = join(tmp, "payload-" + Math.random().toString(36).slice(2));
   mkdirSync(d, { recursive: true });
@@ -38,13 +45,38 @@ async function registerPayload(content: string): Promise<string> {
   return JSON.parse(r.stdout).id;
 }
 
-async function attachMetrics(artifactId: string, runId: string, metrics: object): Promise<void> {
+async function attachMetrics(
+  artifactId: string,
+  runId: string,
+  metrics: object,
+  ablationVerification?: object,
+): Promise<void> {
   const mPath = join(tmp, `metrics-${runId}.json`);
   const dpPath = join(tmp, `dp-${runId}.json`);
+  const ablationPath = join(tmp, `ablation-${runId}.json`);
   writeFileSync(mPath, JSON.stringify(metrics));
   writeFileSync(dpPath, JSON.stringify(dp));
+  if (ablationVerification !== undefined) {
+    writeFileSync(ablationPath, JSON.stringify(ablationVerification));
+  }
+  const ablationArgs = ablationVerification === undefined
+    ? []
+    : ["--ablation-verification", ablationPath];
   const r = await runControlPlaneCommand(
-    ["eval", "attach", artifactId, "--suite", "prod-eval", "--metrics", mPath, "--dataset-provenance", dpPath, "--run-id", runId],
+    [
+      "eval",
+      "attach",
+      artifactId,
+      "--suite",
+      "prod-eval",
+      "--metrics",
+      mPath,
+      "--dataset-provenance",
+      dpPath,
+      "--run-id",
+      runId,
+      ...ablationArgs,
+    ],
     { cwd: tmp },
   );
   if (r.exitCode !== 0) throw new Error(`attach failed: ${r.stderr}`);
@@ -144,6 +176,63 @@ describe("promotion decide — exit codes per spec §6.5", () => {
     const decision = JSON.parse(r.stdout);
     expect(decision.pass).toBe(false);
     expect(r.exitCode).toBe(EXIT.HARD_FAIL);
+  });
+
+  test("--require-ablation fails when the latest candidate EvalRun lacks evidence", async () => {
+    const id = await registerPayload("v1");
+    await attachMetrics(id, "run_1", baseMetrics);
+    const r = await runControlPlaneCommand(
+      ["promotion", "decide", id, "--baseline", "none", "--require-ablation", "--output", "json"],
+      { cwd: tmp },
+    );
+
+    const decision = JSON.parse(r.stdout);
+    expect(decision.pass).toBe(false);
+    expect(decision.ablationVerification.status).toBe("missing");
+    expect(decision.reasoning).toContain("missing required ablation verification");
+    expect(r.exitCode).toBe(EXIT.HARD_FAIL);
+  });
+
+  test("--require-ablation passes through when ablation evidence covers strategy and harness", async () => {
+    const id = await registerPayload("v1");
+    await attachMetrics(id, "run_ablation", baseMetrics, passedAblation);
+    const r = await runControlPlaneCommand(
+      ["promotion", "decide", id, "--baseline", "none", "--require-ablation", "--output", "json"],
+      { cwd: tmp },
+    );
+
+    const decision = JSON.parse(r.stdout);
+    expect(decision.pass).toBe(true);
+    expect(decision.ablationVerification.status).toBe("passed");
+    expect(decision.ablationVerification.requiredTargets).toEqual(["strategy", "harness"]);
+    expect(r.exitCode).toBe(EXIT.MARGINAL);
+  });
+
+  test("--ablation-targets narrows the opt-in requirement", async () => {
+    const id = await registerPayload("v1");
+    await attachMetrics(id, "run_ablation", baseMetrics, {
+      ...passedAblation,
+      targets: ["strategy"],
+    });
+    const r = await runControlPlaneCommand(
+      [
+        "promotion",
+        "decide",
+        id,
+        "--baseline",
+        "none",
+        "--require-ablation",
+        "--ablation-targets",
+        "strategy",
+        "--output",
+        "json",
+      ],
+      { cwd: tmp },
+    );
+
+    const decision = JSON.parse(r.stdout);
+    expect(decision.pass).toBe(true);
+    expect(decision.ablationVerification.requiredTargets).toEqual(["strategy"]);
   });
 
   test("missing eval runs → exit MISSING_BASELINE", async () => {

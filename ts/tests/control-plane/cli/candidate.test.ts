@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runControlPlaneCommand } from "../../../src/control-plane/cli/index.js";
@@ -165,6 +165,174 @@ describe("candidate list / show / lineage", () => {
     const shown = JSON.parse(rShow.stdout);
     expect(shown.id).toBe(registered.id);
     expect(shown.payloadHash).toBe(registered.payloadHash);
+  });
+
+  test("register stores strategy identity and flags exact duplicates", async () => {
+    const first = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const original = JSON.parse(first.stdout);
+
+    const second = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const duplicate = JSON.parse(second.stdout);
+
+    expect(duplicate.strategyIdentity.fingerprint).toBe(original.strategyIdentity.fingerprint);
+    expect(duplicate.strategyIdentity.duplicateOf).toEqual({
+      kind: "exact",
+      artifactId: original.id,
+      fingerprint: original.strategyIdentity.fingerprint,
+      similarity: 1,
+    });
+  });
+
+  test("register flags near duplicates that keep the same strategy surface", async () => {
+    writeFileSync(join(payload, "notes.md"), "same supporting note\n");
+    const first = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const original = JSON.parse(first.stdout);
+
+    const nearPayload = join(tmp, "near-payload");
+    mkdirSync(nearPayload, { recursive: true });
+    writeFileSync(join(nearPayload, "prompt.txt"), "You are a helpful agent with a small refinement.\n");
+    writeFileSync(join(nearPayload, "notes.md"), "same supporting note\n");
+
+    const second = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", nearPayload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const near = JSON.parse(second.stdout);
+
+    expect(near.strategyIdentity.fingerprint).not.toBe(original.strategyIdentity.fingerprint);
+    expect(near.strategyIdentity.duplicateOf).toMatchObject({
+      kind: "near",
+      artifactId: original.id,
+      fingerprint: original.strategyIdentity.fingerprint,
+    });
+  });
+
+  test("register quarantines repeated duplicates of disabled strategies", async () => {
+    const first = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const original = JSON.parse(first.stdout);
+    const disabled = await runControlPlaneCommand(
+      ["promotion", "apply", original.id, "--to", "disabled", "--reason", "invalid strategy pattern"],
+      { cwd: tmp },
+    );
+    expect(disabled.exitCode).toBe(0);
+
+    const repeated = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const quarantined = JSON.parse(repeated.stdout);
+
+    expect(quarantined.strategyQuarantine).toMatchObject({
+      status: "quarantined",
+      reason: "repeated-invalid-strategy",
+      sourceArtifactIds: [original.id],
+      sourceFingerprints: [original.strategyIdentity.fingerprint],
+    });
+
+    const listed = await runControlPlaneCommand(
+      ["candidate", "list", "--output", "json"],
+      { cwd: tmp },
+    );
+    const rows = JSON.parse(listed.stdout);
+    expect(rows.find((row) => row.id === quarantined.id)).toMatchObject({
+      id: quarantined.id,
+      duplicateKind: "exact",
+      quarantineReason: "repeated-invalid-strategy",
+    });
+  });
+
+  test("register detects repeated invalid strategies across environments", async () => {
+    const first = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const original = JSON.parse(first.stdout);
+    const disabled = await runControlPlaneCommand(
+      ["promotion", "apply", original.id, "--to", "disabled", "--reason", "invalid strategy pattern"],
+      { cwd: tmp },
+    );
+    expect(disabled.exitCode).toBe(0);
+
+    const repeated = await runControlPlaneCommand(
+      [
+        "candidate",
+        "register",
+        "--scenario",
+        "grid_ctf",
+        "--actuator",
+        "prompt-patch",
+        "--payload",
+        payload,
+        "--env",
+        "staging",
+        "--output",
+        "json",
+      ],
+      { cwd: tmp },
+    );
+    const quarantined = JSON.parse(repeated.stdout);
+
+    expect(quarantined.environmentTag).toBe("staging");
+    expect(quarantined.strategyIdentity.duplicateOf).toEqual({
+      kind: "exact",
+      artifactId: original.id,
+      fingerprint: original.strategyIdentity.fingerprint,
+      similarity: 1,
+    });
+    expect(quarantined.strategyQuarantine).toMatchObject({
+      status: "quarantined",
+      reason: "repeated-invalid-strategy",
+      sourceArtifactIds: [original.id],
+    });
+  });
+
+  test("register quarantines legacy disabled duplicates that lack strategy identity metadata", async () => {
+    const first = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const original = JSON.parse(first.stdout);
+    const disabled = await runControlPlaneCommand(
+      ["promotion", "apply", original.id, "--to", "disabled", "--reason", "invalid strategy pattern"],
+      { cwd: tmp },
+    );
+    expect(disabled.exitCode).toBe(0);
+
+    const metadataPath = join(tmp, ".autocontext", "candidates", original.id, "metadata.json");
+    const metadata = JSON.parse(readFileSync(metadataPath, "utf-8"));
+    delete metadata.strategyIdentity;
+    writeFileSync(metadataPath, JSON.stringify(metadata), "utf-8");
+
+    const repeated = await runControlPlaneCommand(
+      ["candidate", "register", "--scenario", "grid_ctf", "--actuator", "prompt-patch", "--payload", payload, "--output", "json"],
+      { cwd: tmp },
+    );
+    const quarantined = JSON.parse(repeated.stdout);
+
+    expect(quarantined.strategyIdentity.duplicateOf).toEqual({
+      kind: "exact",
+      artifactId: original.id,
+      fingerprint: original.payloadHash,
+      similarity: 1,
+    });
+    expect(quarantined.strategyQuarantine).toMatchObject({
+      status: "quarantined",
+      reason: "repeated-invalid-strategy",
+      sourceArtifactIds: [original.id],
+      sourceFingerprints: [original.payloadHash],
+    });
   });
 
   test("lineage renders a tree for an artifact with no parents", async () => {

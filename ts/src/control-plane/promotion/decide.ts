@@ -1,6 +1,10 @@
 import { CURRENT_SCHEMA_VERSION } from "../contract/schema-version.js";
+import { assessAblationVerification } from "../contract/ablation-verification.js";
 import { describeNonCleanEvalRunIntegrity } from "../contract/eval-run-integrity.js";
+import { describeExperimentalEvalRunTrack } from "../contract/run-track.js";
+import { describeStrategyQuarantine } from "../contract/strategy-quarantine.js";
 import type {
+  AblationRequirement,
   Artifact,
   CostMetric,
   EvalRun,
@@ -15,6 +19,7 @@ export interface DecidePromotionInputs {
   readonly candidate: { artifact: Artifact; evalRun: EvalRun };
   readonly baseline: { artifact: Artifact; evalRun: EvalRun } | null;
   readonly thresholds: PromotionThresholds;
+  readonly ablationRequirement?: AblationRequirement;
   readonly evaluatedAt: string;
 }
 
@@ -33,6 +38,21 @@ export function decidePromotion(inputs: DecidePromotionInputs): PromotionDecisio
   const integrityIssue =
     describeNonCleanEvalRunIntegrity(candidate.evalRun, "candidate") ??
     (baseline === null ? null : describeNonCleanEvalRunIntegrity(baseline.evalRun, "baseline"));
+  const trackIssue =
+    describeExperimentalEvalRunTrack(candidate.evalRun, "candidate") ??
+    (baseline === null ? null : describeExperimentalEvalRunTrack(baseline.evalRun, "baseline"));
+  const quarantineIssue =
+    describeStrategyQuarantine(candidate.artifact, "candidate") ??
+    (baseline === null ? null : describeStrategyQuarantine(baseline.artifact, "baseline"));
+  const ablationAssessment = assessAblationVerification(
+    candidate.evalRun,
+    "candidate",
+    inputs.ablationRequirement,
+  );
+  const ablationIssue =
+    ablationAssessment.status === "passed" || ablationAssessment.status === "not-required"
+      ? null
+      : (ablationAssessment.reason ?? "candidate ablation verification did not pass");
 
   // --- Quality delta ---
   const qualityBaseline = bm?.quality.score ?? 0;
@@ -71,7 +91,16 @@ export function decidePromotion(inputs: DecidePromotionInputs): PromotionDecisio
 
   // --- Aggregate pass ---
   const hfOk = humanFeedback?.passed ?? true;
-  const pass = integrityIssue === null && safetyPassed && qualityPassed && costPassed && latencyPassed && hfOk;
+  const pass =
+    integrityIssue === null &&
+    trackIssue === null &&
+    quarantineIssue === null &&
+    ablationIssue === null &&
+    safetyPassed &&
+    qualityPassed &&
+    costPassed &&
+    latencyPassed &&
+    hfOk;
 
   // --- Confidence ---
   const minSamples = Math.min(
@@ -96,6 +125,9 @@ export function decidePromotion(inputs: DecidePromotionInputs): PromotionDecisio
   const reasoning = buildReasoning({
     pass,
     integrityIssue,
+    trackIssue,
+    quarantineIssue,
+    ablationIssue,
     safetyPassed,
     qualityPassed,
     costPassed,
@@ -118,6 +150,7 @@ export function decidePromotion(inputs: DecidePromotionInputs): PromotionDecisio
     },
     confidence,
     thresholds,
+    ...(ablationAssessment.required ? { ablationVerification: ablationAssessment } : {}),
     reasoning,
     evaluatedAt,
   };
@@ -184,6 +217,9 @@ function recommendState(i: RecommendInputs): "shadow" | "canary" | "active" | "d
 function buildReasoning(i: {
   pass: boolean;
   integrityIssue: string | null;
+  trackIssue: string | null;
+  quarantineIssue: string | null;
+  ablationIssue: string | null;
   safetyPassed: boolean;
   qualityPassed: boolean;
   costPassed: boolean;
@@ -193,6 +229,9 @@ function buildReasoning(i: {
   hasBaseline: boolean;
 }): string {
   if (i.integrityIssue !== null) return `${i.integrityIssue}; rejected as promotion evidence.`;
+  if (i.trackIssue !== null) return `${i.trackIssue}; rejected as promotion evidence.`;
+  if (i.quarantineIssue !== null) return `${i.quarantineIssue}; rejected as promotion evidence.`;
+  if (i.ablationIssue !== null) return `${i.ablationIssue}; rejected as promotion evidence.`;
   if (!i.safetyPassed) return "Safety regressions present — rejected regardless of other dimensions.";
   if (!i.hasBaseline) return `No incumbent baseline; candidate gets shadow to enable future comparison.`;
   const parts: string[] = [];
