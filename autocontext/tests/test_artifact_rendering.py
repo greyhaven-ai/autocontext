@@ -306,6 +306,96 @@ def test_analytics_render_timeline_writes_html_from_stored_trace(tmp_path: Path)
     assert 'data-generation-index="1"' in html
 
 
+def test_analytics_render_timeline_rejects_trace_id_path_traversal(tmp_path: Path) -> None:
+    """AC-749 review (PR #943 P2): user-supplied --trace-id must not let an
+    attacker escape the analytics/traces directory. The previous version
+    path-joined ``trace_id`` directly, so ``trace_id='../external'`` would
+    load ``analytics/external.json`` and, because the default output path
+    was derived from the loaded ``trace.trace_id``, write
+    ``analytics/external.html`` outside the documented inspections dir.
+    We plant a fully-valid RunTrace whose own ``trace_id`` field also
+    contains the traversal so both halves of the exploit can fire, then
+    assert the CLI rejects the input before touching the filesystem."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.cli import app
+    from autocontext.config.settings import AppSettings
+
+    settings = AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
+
+    # Plant a fully-valid RunTrace at the would-be traversal target so a
+    # successful exploit would actually load + render it. analytics/
+    # external.json sits one level above the traces dir at analytics/traces/.
+    analytics_root = settings.knowledge_root / "analytics"
+    (analytics_root / "traces").mkdir(parents=True, exist_ok=True)
+    poisoned = _trace_for_timeline().model_copy(update={"trace_id": "../external"})
+    external = analytics_root / "external.json"
+    external.write_text(json.dumps(poisoned.to_dict()), encoding="utf-8")
+
+    runner = CliRunner()
+    bad_html = analytics_root / "external.html"
+
+    for bad_id in ("../external", "foo/bar", "..", "."):
+        with patch("autocontext.cli.load_settings", return_value=settings):
+            result = runner.invoke(
+                app,
+                ["analytics", "render-timeline", "--trace-id", bad_id],
+            )
+        assert result.exit_code != 0, f"expected non-zero exit for trace id {bad_id!r}, got: {result.output}"
+        assert not bad_html.exists(), f"HTML written outside inspections dir for trace id {bad_id!r}"
+        # Also pin that the error message mentions the trace id, so we
+        # know the validator fired rather than some downstream accident.
+        assert "trace id" in result.output.lower() or "trace-id" in result.output.lower(), (
+            f"expected a trace-id validation error for {bad_id!r}, got: {result.output}"
+        )
+
+
+def test_analytics_render_timeline_default_output_uses_validated_trace_id(tmp_path: Path) -> None:
+    """AC-749 review (PR #943 P2): the default output path must be derived
+    from the validated requested id, not from any field reflected back by
+    the loaded trace. We persist a trace whose ``trace_id`` happens to be a
+    valid leaf (so it round-trips through ``TraceStore``) and verify the
+    default HTML path lands under the inspections dir as documented."""
+    from unittest.mock import patch
+
+    from typer.testing import CliRunner
+
+    from autocontext.analytics.run_trace import TraceStore
+    from autocontext.cli import app
+    from autocontext.config.settings import AppSettings
+
+    settings = AppSettings(
+        db_path=tmp_path / "runs" / "autocontext.sqlite3",
+        runs_root=tmp_path / "runs",
+        knowledge_root=tmp_path / "knowledge",
+        skills_root=tmp_path / "skills",
+        claude_skills_path=tmp_path / ".claude" / "skills",
+    )
+
+    trace = _trace_for_timeline()
+    analytics_root = settings.knowledge_root / "analytics"
+    TraceStore(analytics_root).persist(trace)
+
+    runner = CliRunner()
+    with patch("autocontext.cli.load_settings", return_value=settings):
+        result = runner.invoke(
+            app,
+            ["analytics", "render-timeline", "--trace-id", trace.trace_id],
+        )
+
+    assert result.exit_code == 0, result.output
+    expected = analytics_root / "inspections" / f"{trace.trace_id}.html"
+    assert expected.exists(), f"expected default HTML at {expected}, output: {result.output}"
+
+
 def test_scenario_curation_html_is_read_only_and_exportable() -> None:
     from autocontext.analytics.artifact_rendering import (
         CurationItemView,

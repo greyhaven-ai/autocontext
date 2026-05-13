@@ -25,6 +25,35 @@ def _cli_attr(dependency_module: str, name: str) -> Any:
     return getattr(importlib.import_module(dependency_module), name)
 
 
+def _validated_trace_id(trace_id: str) -> str:
+    """Reject path traversal in user-supplied trace ids (AC-749 review).
+
+    The render-timeline CLI joins ``trace_id`` into a filename under
+    ``analytics/traces/`` and derives the default output path from it.
+    Allowing separators or dot segments lets an attacker read JSON outside
+    the traces dir and write HTML outside the inspections dir, so we
+    require a single safe filename component here.
+    """
+    if not trace_id:
+        raise typer.BadParameter("trace id must not be empty", param_hint="--trace-id")
+    if trace_id in {".", ".."}:
+        raise typer.BadParameter(
+            f"trace id must not be a dot segment: {trace_id!r}",
+            param_hint="--trace-id",
+        )
+    if "/" in trace_id or "\\" in trace_id:
+        raise typer.BadParameter(
+            f"trace id must not contain path separators: {trace_id!r}",
+            param_hint="--trace-id",
+        )
+    if Path(trace_id).is_absolute():
+        raise typer.BadParameter(
+            f"trace id must not be an absolute path: {trace_id!r}",
+            param_hint="--trace-id",
+        )
+    return trace_id
+
+
 def run_render_timeline_command(
     *,
     trace_id: str,
@@ -48,6 +77,7 @@ def run_render_timeline_command(
         timeline_inspection_view,
     )
 
+    trace_id = _validated_trace_id(trace_id)
     settings = load_settings_fn()
     analytics_root = settings.knowledge_root / "analytics"
     store = TraceStore(analytics_root)
@@ -56,11 +86,14 @@ def run_render_timeline_command(
         console.print(f"[red]No trace found with id {trace_id!r} under {analytics_root}/traces[/red]")
         raise typer.Exit(code=1)
 
-    target_path = output_path or (analytics_root / "inspections" / f"{trace.trace_id}.html")
+    # Derive the default output from the validated *requested* id rather
+    # than ``trace.trace_id``, so a trace whose stored id contains traversal
+    # cannot relocate the HTML output outside the inspections dir.
+    target_path = output_path or (analytics_root / "inspections" / f"{trace_id}.html")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     html = render_timeline_inspection_html(timeline_inspection_view(trace))
     target_path.write_text(html, encoding="utf-8")
-    console.print(f"[green]Rendered[/green] {trace.trace_id} -> {target_path}")
+    console.print(f"[green]Rendered[/green] {trace_id} -> {target_path}")
 
 
 def run_rebuild_traces_command(
