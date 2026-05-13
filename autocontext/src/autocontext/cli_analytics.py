@@ -11,7 +11,9 @@ from autocontext.analytics.events_to_trace import collect_run_ids, events_to_tra
 from autocontext.analytics.rubric_drift import DriftStore, RubricDriftMonitor
 from autocontext.analytics.run_trace import TraceStore
 from autocontext.config.settings import AppSettings
+from autocontext.knowledge.context_selection_report import build_context_selection_report
 from autocontext.storage import artifact_store_from_settings
+from autocontext.storage.context_selection_store import load_context_selection_decisions
 from autocontext.storage.run_paths import resolve_run_root
 from autocontext.storage.sqlite_store import SQLiteStore
 
@@ -141,6 +143,46 @@ def run_drift_command(
         console.print(f"[yellow]{warning.warning_type}[/yellow] {warning.description}")
 
 
+def run_context_selection_command(
+    *,
+    run_id: str,
+    json_output: bool,
+    console: Console,
+    load_settings_fn: Callable[[], AppSettings],
+    write_json_stdout: Callable[[object], None],
+) -> None:
+    """Summarize persisted context-selection artifacts for one run."""
+    settings = load_settings_fn()
+    try:
+        decisions = load_context_selection_decisions(settings.runs_root, run_id)
+    except ValueError as exc:
+        result = {"status": "failed", "error": str(exc), "run_id": run_id}
+        if json_output:
+            write_json_stdout(result)
+        else:
+            console.print(f"[red]{result['error']}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if not decisions:
+        result = {
+            "status": "failed",
+            "error": f"No context selection artifacts found for {run_id!r}",
+            "run_id": run_id,
+        }
+        if json_output:
+            write_json_stdout(result)
+        else:
+            console.print(f"[red]{result['error']}[/red]")
+        raise typer.Exit(code=1)
+
+    report = build_context_selection_report(decisions)
+    payload = report.to_dict()
+    if json_output:
+        write_json_stdout(payload)
+        return
+    console.print(report.to_markdown())
+
+
 def register_analytics_command(
     app: typer.Typer,
     *,
@@ -173,6 +215,19 @@ def register_analytics_command(
         json_output: Annotated[bool, typer.Option("--json", help="Output as JSON")] = False,
     ) -> None:
         run_drift_command(
+            run_id=run_id,
+            json_output=json_output,
+            console=console,
+            load_settings_fn=_cli_attr(dependency_module, "load_settings"),
+            write_json_stdout=_cli_attr(dependency_module, "_write_json_stdout"),
+        )
+
+    @analytics_app.command("context-selection")
+    def context_selection(
+        run_id: Annotated[str, typer.Option("--run-id", help="Run id to inspect")],
+        json_output: Annotated[bool, typer.Option("--json", help="Output as JSON")] = False,
+    ) -> None:
+        run_context_selection_command(
             run_id=run_id,
             json_output=json_output,
             console=console,

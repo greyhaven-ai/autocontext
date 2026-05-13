@@ -189,6 +189,7 @@ uv run autoctx export-training-data --scenario support_triage --all-runs --outpu
 uv run autoctx train --scenario support_triage --data training/support_triage.jsonl --time-budget 300
 uv run autoctx hermes inspect --json
 uv run autoctx hermes export-skill --output ~/.hermes/skills/autocontext/SKILL.md --json
+uv run autoctx analytics context-selection --run-id <run_id> --json
 uv run autoctx serve --host 127.0.0.1 --port 8000
 uv run autoctx mcp-serve
 uv run autoctx wait <condition_id> --json
