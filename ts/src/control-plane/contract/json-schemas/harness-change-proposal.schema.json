@@ -15,6 +15,59 @@
     "rollbackCriteria",
     "provenance"
   ],
+  "oneOf": [
+    {
+      "properties": {
+        "status": { "const": "proposed" }
+      },
+      "required": ["status"],
+      "not": {
+        "properties": {
+          "decision": {}
+        },
+        "required": ["decision"]
+      }
+    },
+    {
+      "properties": {
+        "status": { "const": "accepted" },
+        "decision": {
+          "type": "object",
+          "properties": {
+            "status": { "const": "accepted" }
+          },
+          "required": ["status"]
+        }
+      },
+      "required": ["status", "decision"]
+    },
+    {
+      "properties": {
+        "status": { "const": "rejected" },
+        "decision": {
+          "type": "object",
+          "properties": {
+            "status": { "const": "rejected" }
+          },
+          "required": ["status"]
+        }
+      },
+      "required": ["status", "decision"]
+    },
+    {
+      "properties": {
+        "status": { "const": "inconclusive" },
+        "decision": {
+          "type": "object",
+          "properties": {
+            "status": { "const": "inconclusive" }
+          },
+          "required": ["status"]
+        }
+      },
+      "required": ["status", "decision"]
+    }
+  ],
   "properties": {
     "schemaVersion": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SchemaVersion" },
     "id": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },

@@ -10,6 +10,7 @@ import type {
   Artifact,
   EvalRun,
   HarnessChangeProposal,
+  HarnessChangeDecision,
   MetricBundle,
   Patch,
   PromotionThresholds,
@@ -84,6 +85,29 @@ function evalRun(artifactId: Artifact["id"], runId: string, score: number): Eval
   };
 }
 
+function acceptedDecision(): HarnessChangeDecision {
+  const candidateArtifact = artifact("01HX0000000000000000000001" as Artifact["id"]);
+  const baselineArtifact = artifact("01HX0000000000000000000002" as Artifact["id"]);
+  return decideHarnessChangeProposal({
+    proposal: proposal(),
+    candidate: {
+      artifact: candidateArtifact,
+      evalRun: evalRun(candidateArtifact.id, "candidate-heldout", 0.88),
+    },
+    baseline: {
+      artifact: baselineArtifact,
+      evalRun: evalRun(baselineArtifact.id, "baseline-heldout", 0.70),
+    },
+    thresholds,
+    validation: {
+      mode: "heldout",
+      suiteId: "heldout-suite",
+      evidenceRefs: ["runs/heldout/candidate-heldout.json"],
+    },
+    decidedAt: "2026-05-13T12:10:00.000Z",
+  });
+}
+
 function proposal(overrides: Partial<HarnessChangeProposal> = {}): HarnessChangeProposal {
   return createHarnessChangeProposal({
     id: "01HX0000000000000000000680" as HarnessChangeProposal["id"],
@@ -128,27 +152,17 @@ describe("harness change proposal contract", () => {
     expect(result.errors.some((error) => error.includes("findingIds"))).toBe(true);
   });
 
+  test("validation enforces status and decision lifecycle invariants", () => {
+    const decision = acceptedDecision();
+
+    expect(validateHarnessChangeProposal(proposal({ status: "accepted" })).valid).toBe(false);
+    expect(validateHarnessChangeProposal(proposal({ status: "proposed", decision })).valid).toBe(false);
+    expect(validateHarnessChangeProposal(proposal({ status: "rejected", decision })).valid).toBe(false);
+    expect(validateHarnessChangeProposal(proposal({ decision })).valid).toBe(true);
+  });
+
   test("accepts only when candidate beats baseline on heldout or fresh validation", () => {
-    const candidateArtifact = artifact("01HX0000000000000000000001" as Artifact["id"]);
-    const baselineArtifact = artifact("01HX0000000000000000000002" as Artifact["id"]);
-    const decision = decideHarnessChangeProposal({
-      proposal: proposal(),
-      candidate: {
-        artifact: candidateArtifact,
-        evalRun: evalRun(candidateArtifact.id, "candidate-heldout", 0.88),
-      },
-      baseline: {
-        artifact: baselineArtifact,
-        evalRun: evalRun(baselineArtifact.id, "baseline-heldout", 0.70),
-      },
-      thresholds,
-      validation: {
-        mode: "heldout",
-        suiteId: "heldout-suite",
-        evidenceRefs: ["runs/heldout/candidate-heldout.json"],
-      },
-      decidedAt: "2026-05-13T12:10:00.000Z",
-    });
+    const decision = acceptedDecision();
 
     expect(decision.status).toBe("accepted");
     expect(decision.promotionDecision.pass).toBe(true);
