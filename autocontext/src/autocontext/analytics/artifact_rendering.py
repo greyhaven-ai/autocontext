@@ -86,6 +86,21 @@ class TimelineEventView:
 
 
 @dataclass(frozen=True, slots=True)
+class GenerationSummaryView:
+    """Per-generation failure/recovery rollup for the HTML timeline (AC-749).
+
+    Surfaces the `inspect_generation` data the JSON payload already carries,
+    so operators can scan generation-level counts without re-deriving them.
+    """
+
+    generation_index: int
+    summary: str
+    total_events: int
+    failure_count: int
+    recovery_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class TimelineInspectionView:
     trace_id: str
     run_id: str
@@ -97,6 +112,9 @@ class TimelineInspectionView:
     events: tuple[TimelineEventView, ...] = ()
     failure_paths: tuple[tuple[str, ...], ...] = ()
     recovery_paths: tuple[tuple[str, ...], ...] = ()
+    # AC-749: new field is appended so existing positional construction
+    # in tests / call sites stays valid.
+    generation_summaries: tuple[GenerationSummaryView, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +188,21 @@ def timeline_inspection_view(trace: Any) -> TimelineInspectionView:
         )
         for entry in entries
     )
+    # AC-749: surface per-generation failure/recovery counts so the HTML
+    # renderer can show a "Generations" section without re-deriving them
+    # from the flat event list. Same `inspect_generation` data the JSON
+    # payload alongside the HTML already carries.
+    generation_indices = sorted({e.generation_index for e in trace.events if e.generation_index is not None})
+    generation_summaries = tuple(
+        GenerationSummaryView(
+            generation_index=idx,
+            summary=str(inspection.summary),
+            total_events=int(inspection.total_events),
+            failure_count=int(inspection.failure_count),
+            recovery_count=int(inspection.recovery_count),
+        )
+        for idx, inspection in ((idx, inspector.inspect_generation(trace, idx)) for idx in generation_indices)
+    )
     return TimelineInspectionView(
         trace_id=str(trace.trace_id),
         run_id=str(trace.run_id),
@@ -181,6 +214,7 @@ def timeline_inspection_view(trace: Any) -> TimelineInspectionView:
         events=event_views,
         failure_paths=tuple(tuple(event.event_id for event in path) for path in inspector.find_failure_paths(trace)),
         recovery_paths=tuple(tuple(event.event_id for event in path) for path in inspector.find_recovery_paths(trace)),
+        generation_summaries=generation_summaries,
     )
 
 
@@ -246,8 +280,7 @@ def render_trace_writeup_markdown(view: TraceWriteupView) -> str:
         for finding in view.findings:
             evidence = ", ".join(finding.evidence_event_ids) or "none"
             lines.append(
-                f"- **{finding.title}** [{finding.finding_type}/{finding.severity}] "
-                f"{finding.description} (evidence: {evidence})"
+                f"- **{finding.title}** [{finding.finding_type}/{finding.severity}] {finding.description} (evidence: {evidence})"
             )
     else:
         lines.append("No notable findings.")
@@ -264,10 +297,7 @@ def render_trace_writeup_markdown(view: TraceWriteupView) -> str:
     lines.append("## Recovery Paths")
     if view.recovery_paths:
         for recovery in view.recovery_paths:
-            lines.append(
-                f"- {recovery.failure_event_id} -> {recovery.recovery_event_id} "
-                f"({len(recovery.path_event_ids)} events)"
-            )
+            lines.append(f"- {recovery.failure_event_id} -> {recovery.recovery_event_id} ({len(recovery.path_event_ids)} events)")
     else:
         lines.append("No recovery paths observed.")
 
@@ -344,7 +374,7 @@ def render_weakness_report_html(view: WeaknessReportView) -> str:
 <header>
   <p class="eyebrow">Weakness report</p>
   <h1>Weakness Report: {_h(view.run_id)}</h1>
-  <p class="muted">Scenario: {_h(view.scenario or 'unknown')}</p>
+  <p class="muted">Scenario: {_h(view.scenario or "unknown")}</p>
 </header>
 <section>
   <h2>Weaknesses</h2>
@@ -356,7 +386,7 @@ def render_weakness_report_html(view: WeaknessReportView) -> str:
 </section>
 <section>
   <h2>Recovery Analysis</h2>
-  <p>{_h(view.recovery_analysis or 'No recovery analysis available.')}</p>
+  <p>{_h(view.recovery_analysis or "No recovery analysis available.")}</p>
 </section>
 <section>
   <h2>Recommendations</h2>
@@ -379,12 +409,38 @@ def render_markdown_document_html(title: str, markdown: str) -> str:
     return html_document(title, body)
 
 
+def _render_generation_summaries_html(summaries: tuple[GenerationSummaryView, ...]) -> str:
+    """Render the per-generation failure/recovery rollup (AC-749).
+
+    Data attributes (`data-generation-index`, `data-generation-failure-count`,
+    `data-generation-recovery-count`) are stable for consumers that want to
+    hook in client-side filtering or programmatic inspection.
+    """
+    if not summaries:
+        return '<p class="empty">No generation summaries.</p>'
+    rows = "\n".join(
+        f'<li class="generation"'
+        f' data-generation-index="{_h(summary.generation_index)}"'
+        f' data-generation-failure-count="{_h(summary.failure_count)}"'
+        f' data-generation-recovery-count="{_h(summary.recovery_count)}">'
+        f"<strong>Generation {_h(summary.generation_index)}</strong>"
+        f" <span>{_h(summary.total_events)} events,"
+        f" {_h(summary.failure_count)} failures,"
+        f" {_h(summary.recovery_count)} recoveries</span>"
+        f'<p class="muted">{_h(summary.summary)}</p>'
+        "</li>"
+        for summary in summaries
+    )
+    return f'<ul class="generations">{rows}</ul>'
+
+
 def render_timeline_inspection_html(view: TimelineInspectionView) -> str:
     events = "\n".join(_render_timeline_event_html(event) for event in view.events)
     if not events:
         events = '<p class="empty">No timeline events.</p>'
     failure_paths = _render_path_list(view.failure_paths, "No failure paths.")
     recovery_paths = _render_path_list(view.recovery_paths, "No recovery paths.")
+    generations = _render_generation_summaries_html(view.generation_summaries)
     body = f"""
 <header>
   <p class="eyebrow">Timeline inspection</p>
@@ -399,6 +455,10 @@ def render_timeline_inspection_html(view: TimelineInspectionView) -> str:
 <section>
   <h2>Summary</h2>
   <p>{_h(view.summary)}</p>
+</section>
+<section>
+  <h2>Generations</h2>
+  {generations}
 </section>
 <section>
   <h2>Filters</h2>
@@ -588,10 +648,11 @@ def _render_artifact_links(links: tuple[str, ...]) -> str:
 def _render_path_list(paths: tuple[tuple[str, ...], ...], empty: str) -> str:
     if not paths:
         return f'<p class="empty">{_h(empty)}</p>'
-    return "<ul>" + "".join(
-        "<li>" + " -> ".join(f"<code>{_h(event_id)}</code>" for event_id in path) + "</li>"
-        for path in paths
-    ) + "</ul>"
+    return (
+        "<ul>"
+        + "".join("<li>" + " -> ".join(f"<code>{_h(event_id)}</code>" for event_id in path) + "</li>" for path in paths)
+        + "</ul>"
+    )
 
 
 def _render_curation_section(title: str, items: list[CurationItemView]) -> str:
