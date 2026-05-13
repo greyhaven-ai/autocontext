@@ -20,9 +20,12 @@ type Topology = {
   status: string;
   guardrails: Record<string, string>;
   agentApps?: {
-    runtimeContractsPackage: string;
+    runtimeContractsStatus: string;
+    currentRuntimeContractsPackage: string;
+    plannedRuntimeContractsPackage: string;
     buildDeployPackage: string;
     hostedFleetOrchestration: string;
+    unextractedCoreContracts: string[];
     targets: Record<string, {
       phase: string;
       owner: string;
@@ -115,7 +118,9 @@ describe("package topology", () => {
     const topology = loadTopology();
 
     expect(topology.agentApps).toMatchObject({
-      runtimeContractsPackage: "@autocontext/core",
+      runtimeContractsStatus: "umbrella-owned-until-core-extraction",
+      currentRuntimeContractsPackage: "autoctx/agent-runtime",
+      plannedRuntimeContractsPackage: "@autocontext/core",
       buildDeployPackage: "@autocontext/control-plane",
       hostedFleetOrchestration: "out-of-scope-proprietary-product",
       targets: {
@@ -131,10 +136,32 @@ describe("package topology", () => {
     });
   });
 
+  it("does not advertise unextracted agent runtime contracts as core-owned", () => {
+    const topology = loadTopology();
+    const coreConfig = loadTsConfig(topology.typescript.core.path);
+    const coreIncludes = new Set(coreConfig.include ?? []);
+
+    expect(topology.agentApps?.runtimeContractsStatus).toBe("umbrella-owned-until-core-extraction");
+    expect(topology.agentApps?.currentRuntimeContractsPackage).toBe("autoctx/agent-runtime");
+    expect(topology.agentApps?.plannedRuntimeContractsPackage).toBe(topology.typescript.core.name);
+    expect(topology.agentApps?.unextractedCoreContracts).toEqual([
+      "ts/src/agent-runtime/index.ts",
+      "ts/src/session/runtime-session.ts",
+      "ts/src/session/runtime-session-notifications.ts",
+      "tsx dependency for TypeScript handler loading",
+    ]);
+    expect(coreIncludes.has("../../../ts/src/agent-runtime/index.ts")).toBe(false);
+    expect(coreIncludes.has("../../../ts/src/session/runtime-session.ts")).toBe(false);
+    expect(coreIncludes.has("../../../ts/src/session/runtime-session-notifications.ts")).toBe(false);
+  });
+
   it("documents the agent app deployment boundary and risks", () => {
     const doc = readFileSync(packageSplitDocPath, "utf-8");
 
     expect(doc).toContain("## Agent App Build Targets");
+    expect(doc).toContain("Runtime contracts are still umbrella-owned");
+    expect(doc).toContain("autoctx/agent-runtime");
+    expect(doc).toContain("importing missing core package");
     expect(doc).toContain("Node Target MVP");
     expect(doc).toContain("Cloudflare Target Spike");
     expect(doc).toContain("Hosted fleet orchestration");
