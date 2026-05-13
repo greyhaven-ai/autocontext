@@ -226,3 +226,35 @@ def make_verifier(
         timeout_s=timeout_s,
     )
     return verifier if verifier.enabled else None
+
+
+def make_checkpointer(
+    command: str | Sequence[str] | None,
+    *,
+    file_suffix: str = ".txt",
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+) -> OutputVerifier | None:
+    """Convenience constructor for the per-round checkpoint command (AC-727).
+
+    Structurally identical to :func:`make_verifier` -- both build an
+    `OutputVerifier` runner around a user-supplied command -- but the
+    *semantic* role is different: a checkpoint is a non-vetoing side
+    effect that preserves partial progress (e.g.
+    ``git commit -am 'round N checkpoint'`` or
+    ``cp {file} /tmp/round-N.lean``). The improvement loop runs it after
+    each round and logs failures rather than zeroing the round's score.
+
+    Returns ``None`` for falsy commands so callers can write::
+
+        checkpointer = make_checkpointer(settings.checkpoint_command)
+        if checkpointer and checkpointer.enabled:
+            ...
+    """
+    if not command:
+        return None
+    checkpointer = OutputVerifier(
+        command=command,
+        file_suffix=file_suffix,
+        timeout_s=timeout_s,
+    )
+    return checkpointer if checkpointer.enabled else None

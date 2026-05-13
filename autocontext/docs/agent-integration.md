@@ -935,19 +935,20 @@ package = ac.export_package("grid_ctf")
 
 The two modes are mutually exclusive; passing both exits non-zero.
 
-Under `--ndjson`, the per-round event sequence (with a configured `--verify-cmd`) is:
+Under `--ndjson`, the per-round event sequence (with both a configured `--verify-cmd` and `--checkpoint-cmd`) is:
 
 ```
-round_start  -> revision_done -> judge_done -> verifier_done -> round_summary
+round_start  -> revision_done -> judge_done -> verifier_done -> round_summary -> checkpoint_done
 ```
 
-repeated per round, followed by a single `final` event. Without a verifier the `verifier_done` event is omitted. Field semantics:
+repeated per round, followed by a single `final` event. Without a verifier the `verifier_done` event is omitted; without a checkpointer the `checkpoint_done` event is omitted. Field semantics:
 
 - `round_start` carries `round`.
 - `revision_done` carries `round` and `output` (the exact content the round is about to evaluate; for round 1 this is the seed, for round N>1 it is the result of `task.revise_output()` from round N-1). Lets consumers salvage near-miss verifier-vetoed rounds.
 - `judge_done` carries `round` and `score` (the judge's evaluation before any post-processing or veto).
 - `verifier_done` carries `round`, `verifier_ok`, and `verifier_exit_code`.
 - `round_summary` carries `round` and `effective_score` (post-veto, after fact-check penalty).
+- `checkpoint_done` carries `round`, `checkpoint_ok`, and `checkpoint_exit_code`. Unlike `verifier_done`, a failed checkpoint does NOT veto the round -- it is a side effect that preserves partial progress (e.g. a `git commit` or `cp` of the per-round output) before later rounds might overshoot or time out (AC-727).
 - `final` carries `best_score`, `best_round`, `total_rounds`, and `met_threshold`.
 
 Provider errors during a streaming run emit a single `{"event":"error","message":"..."}` line on stdout so the stream stays parseable.
