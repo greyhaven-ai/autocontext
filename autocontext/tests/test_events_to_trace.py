@@ -190,6 +190,7 @@ def test_analytics_context_selection_cli_reports_run_summary(tmp_path: Path) -> 
     payload = json.loads(result.stdout)
     assert payload["status"] == "completed"
     assert payload["run_id"] == "run-1"
+    assert payload["diagnostics"] == []
     assert payload["summary"]["selected_token_estimate"] == 1
 
 

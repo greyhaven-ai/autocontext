@@ -9,7 +9,7 @@ Use this guide to answer a few common maintainer questions:
 
 ## Run Artifact Analytics
 
-For completed autocontext runs with persisted context-selection artifacts, summarize candidate versus selected context, selected token estimates, duplicate-content rate, useful-artifact recall, and freshness by generation:
+For completed autocontext runs with persisted context-selection artifacts, summarize candidate versus selected context, selected token estimates, duplicate-content rate, useful-artifact recall, and freshness by generation. The report also emits diagnostics for duplicate selected content, low useful-artifact recall, and selected-token bloat.
 
 ```bash
 cd autocontext
