@@ -27,10 +27,22 @@ export function decideHarnessChangeProposal(
     evaluatedAt: inputs.decidedAt,
   });
 
-  const status = classifyHarnessDecision(inputs.validation.mode, promotionDecision.pass, inputs.baseline !== null);
+  const hasEvidenceRefs = inputs.validation.evidenceRefs.length > 0;
+  const status = classifyHarnessDecision(
+    inputs.validation.mode,
+    promotionDecision.pass,
+    inputs.baseline !== null,
+    hasEvidenceRefs,
+  );
   return {
     status,
-    reason: reasonForHarnessDecision(status, inputs.validation.mode, promotionDecision.reasoning),
+    reason: reasonForHarnessDecision(
+      status,
+      inputs.validation.mode,
+      promotionDecision.reasoning,
+      inputs.baseline !== null,
+      hasEvidenceRefs,
+    ),
     validation: inputs.validation,
     promotionDecision,
     candidateArtifactId: inputs.candidate.artifact.id,
@@ -49,8 +61,9 @@ function classifyHarnessDecision(
   mode: HarnessValidationEvidence["mode"],
   promotionPassed: boolean,
   hasBaseline: boolean,
+  hasEvidenceRefs: boolean,
 ): HarnessChangeDecision["status"] {
-  if (mode === "dev" || !hasBaseline) return "inconclusive";
+  if (mode === "dev" || !hasBaseline || !hasEvidenceRefs) return "inconclusive";
   return promotionPassed ? "accepted" : "rejected";
 }
 
@@ -58,11 +71,20 @@ function reasonForHarnessDecision(
   status: HarnessChangeDecision["status"],
   mode: HarnessValidationEvidence["mode"],
   promotionReasoning: string,
+  hasBaseline: boolean,
+  hasEvidenceRefs: boolean,
 ): string {
   if (status === "inconclusive") {
-    return mode === "dev"
-      ? `Dev-only validation is not enough for promotion; rerun on heldout or fresh traces. ${promotionReasoning}`
-      : `Baseline comparison is required for evidence-gated harness promotion. ${promotionReasoning}`;
+    if (mode === "dev") {
+      return `Dev-only validation is not enough for promotion; rerun on heldout or fresh traces. ${promotionReasoning}`;
+    }
+    if (!hasBaseline) {
+      return `Baseline comparison is required for evidence-gated harness promotion. ${promotionReasoning}`;
+    }
+    if (!hasEvidenceRefs) {
+      return `At least one evidence reference is required for ${mode} harness promotion. ${promotionReasoning}`;
+    }
+    return `Harness proposal validation is inconclusive. ${promotionReasoning}`;
   }
   if (status === "accepted") {
     return `Accepted on ${mode} validation. ${promotionReasoning}`;

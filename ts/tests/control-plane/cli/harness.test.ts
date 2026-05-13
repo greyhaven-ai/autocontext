@@ -231,6 +231,67 @@ describe("harness proposal CLI", () => {
     expect(JSON.parse(decide.stdout).decision.status).toBe("inconclusive");
   });
 
+  test("heldout decisions without explicit evidence refs stay inconclusive", async () => {
+    const patchPath = join(tmp, "patches.json");
+    writeFileSync(patchPath, JSON.stringify([
+      {
+        filePath: "agents/grid_ctf/prompts/competitor.txt",
+        operation: "modify",
+        unifiedDiff: "--- a/competitor.txt\n+++ b/competitor.txt\n@@ -1 +1 @@\n-old\n+new\n",
+      },
+    ]));
+    const create = await runControlPlaneCommand(
+      [
+        "harness",
+        "proposal",
+        "create",
+        "--finding",
+        "finding-1",
+        "--surface",
+        "prompt",
+        "--summary",
+        "Tighten prompt.",
+        "--patches",
+        patchPath,
+        "--rollback",
+        "Revert if heldout evidence is missing.",
+        "--output",
+        "json",
+      ],
+      { cwd: tmp, now: () => "2026-05-13T12:00:00.000Z" },
+    );
+    const created = JSON.parse(create.stdout);
+    const candidateId = await registerPayload("candidate");
+    const baselineId = await registerPayload("baseline");
+    await attachMetrics(candidateId, "candidate-heldout", 0.88);
+    await attachMetrics(baselineId, "baseline-heldout", 0.70);
+
+    const decide = await runControlPlaneCommand(
+      [
+        "harness",
+        "proposal",
+        "decide",
+        created.id,
+        "--candidate",
+        candidateId,
+        "--baseline",
+        baselineId,
+        "--validation",
+        "heldout",
+        "--suite",
+        "heldout-suite",
+        "--output",
+        "json",
+      ],
+      { cwd: tmp, now: () => "2026-05-13T12:10:00.000Z" },
+    );
+
+    expect(decide.exitCode).toBe(EXIT.MARGINAL);
+    const decided = JSON.parse(decide.stdout);
+    expect(decided.decision.status).toBe("inconclusive");
+    expect(decided.decision.reason).toContain("evidence reference");
+  });
+
   test("requires EvalRun evidence for the requested validation suite", async () => {
     const patchPath = join(tmp, "patches.json");
     writeFileSync(patchPath, JSON.stringify([

@@ -571,6 +571,8 @@ autoctx harness proposal create \
 artifact's EvalRun evidence for the requested suite. `heldout` and `fresh`
 validation can accept or reject the proposal when compared with matching-suite
 baseline evidence; `dev` or missing-baseline validation stays `inconclusive`.
+Promotion-grade decisions must also include at least one `--evidence-ref`;
+omitting evidence refs keeps the durable proposal decision `inconclusive`.
 
 ```bash
 autoctx harness proposal decide <proposal-id> \
