@@ -117,6 +117,128 @@ describe("decidePromotion — example cases", () => {
     expect(d.reasoning).toContain("candidate EvalRun integrity status is contaminated");
   });
 
+  test("candidate with experimental track cannot drive promotion", () => {
+    const baseline = mkArtifact();
+    const candidate = mkArtifact();
+    const d = decidePromotion({
+      candidate: {
+        artifact: candidate,
+        evalRun: {
+          ...mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+          track: "experimental",
+        },
+      },
+      baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) },
+      thresholds: defaultThresholds(),
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    });
+
+    expect(d.pass).toBe(false);
+    expect(d.recommendedTargetState).toBe("disabled");
+    expect(d.reasoning).toContain("candidate EvalRun track is experimental");
+  });
+
+  test("candidate with strategy quarantine cannot drive promotion", () => {
+    const baseline = mkArtifact();
+    const baseCandidate = mkArtifact();
+    const candidate: Artifact = {
+      ...baseCandidate,
+      strategyQuarantine: {
+        status: "quarantined",
+        reason: "repeated-invalid-strategy",
+        sourceArtifactIds: [],
+        sourceFingerprints: [],
+      },
+    };
+    const d = decidePromotion({
+      candidate: {
+        artifact: candidate,
+        evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+      },
+      baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) },
+      thresholds: defaultThresholds(),
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    });
+
+    expect(d.pass).toBe(false);
+    expect(d.recommendedTargetState).toBe("disabled");
+    expect(d.reasoning).toContain("candidate strategy is quarantined");
+  });
+
+  test("candidate missing required ablation verification cannot drive promotion", () => {
+    const baseline = mkArtifact();
+    const candidate = mkArtifact();
+    const d = decidePromotion({
+      candidate: {
+        artifact: candidate,
+        evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+      },
+      baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) },
+      thresholds: defaultThresholds(),
+      ablationRequirement: {
+        required: true,
+        targets: ["strategy", "harness"],
+      },
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    });
+
+    expect(d.pass).toBe(false);
+    expect(d.recommendedTargetState).toBe("disabled");
+    expect(d.ablationVerification?.status).toBe("missing");
+    expect(d.reasoning).toContain("candidate EvalRun is missing required ablation verification");
+  });
+
+  test("candidate with passed ablation verification can drive promotion when required", () => {
+    const baseline = mkArtifact();
+    const candidate = mkArtifact();
+    const d = decidePromotion({
+      candidate: {
+        artifact: candidate,
+        evalRun: {
+          ...mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })),
+          ablationVerification: {
+            status: "passed",
+            targets: ["strategy", "harness"],
+            verifiedAt: "2026-05-13T12:00:00.000Z",
+            evidenceRefs: ["runs/ablation/run_1.json"],
+          },
+        },
+      },
+      baseline: { artifact: baseline, evalRun: mkEvalRun(baseline, mkMetrics()) },
+      thresholds: defaultThresholds(),
+      ablationRequirement: {
+        required: true,
+        targets: ["strategy", "harness"],
+      },
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    });
+
+    expect(d.pass).toBe(true);
+    expect(d.ablationVerification?.status).toBe("passed");
+    expect(d.reasoning).toContain("Pass");
+  });
+
+  test("baseline with experimental track blocks comparison evidence", () => {
+    const baseline = mkArtifact();
+    const candidate = mkArtifact();
+    const d = decidePromotion({
+      candidate: { artifact: candidate, evalRun: mkEvalRun(candidate, mkMetrics({ quality: { score: 0.99, sampleSize: 1000 } })) },
+      baseline: {
+        artifact: baseline,
+        evalRun: {
+          ...mkEvalRun(baseline, mkMetrics()),
+          track: "experimental",
+        },
+      },
+      thresholds: defaultThresholds(),
+      evaluatedAt: "2026-04-17T12:20:00.000Z",
+    });
+
+    expect(d.pass).toBe(false);
+    expect(d.recommendedTargetState).toBe("disabled");
+    expect(d.reasoning).toContain("baseline EvalRun track is experimental");
+  });
+
   test("baseline with non-clean EvalRun integrity blocks comparison evidence", () => {
     const baseline = mkArtifact();
     const candidate = mkArtifact();

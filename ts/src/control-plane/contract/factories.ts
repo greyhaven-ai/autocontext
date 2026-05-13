@@ -14,6 +14,7 @@ import type {
   ActuatorType,
   Artifact,
   EvalRun,
+  AblationVerification,
   AdapterProvenance,
   EvalRunIntegrity,
   EvalRunReconciliation,
@@ -22,6 +23,9 @@ import type {
   MetricBundle,
   PromotionEvent,
   Provenance,
+  RunTrack,
+  StrategyIdentity,
+  StrategyQuarantine,
 } from "./types.js";
 
 export interface CreateArtifactInputs {
@@ -31,6 +35,8 @@ export interface CreateArtifactInputs {
   readonly changeSetId?: ChangeSetId;
   readonly payloadHash: ContentHash;
   readonly provenance: Provenance;
+  readonly strategyIdentity?: StrategyIdentity;
+  readonly strategyQuarantine?: StrategyQuarantine;
   readonly id?: ArtifactId;
 }
 
@@ -45,6 +51,8 @@ export function createArtifact(inputs: CreateArtifactInputs): Artifact {
     activationState: "candidate",
     payloadHash: inputs.payloadHash,
     provenance: inputs.provenance,
+    ...(inputs.strategyIdentity !== undefined ? { strategyIdentity: inputs.strategyIdentity } : {}),
+    ...(inputs.strategyQuarantine !== undefined ? { strategyQuarantine: inputs.strategyQuarantine } : {}),
     promotionHistory: [],
     evalRuns: [],
   };
@@ -76,11 +84,13 @@ export interface CreateEvalRunInputs {
   readonly runId: string;
   readonly artifactId: ArtifactId;
   readonly suiteId: SuiteId;
+  readonly track?: RunTrack;
   readonly metrics: MetricBundle;
   readonly datasetProvenance: EvalRun["datasetProvenance"];
   readonly ingestedAt: string;
   readonly adapterProvenance?: AdapterProvenance;
   readonly integrity?: EvalRunIntegrity;
+  readonly ablationVerification?: AblationVerification;
   readonly trials?: readonly EvalTrial[];
   readonly reconciliation?: EvalRunReconciliation;
   readonly memoryPacks?: readonly MemoryPackRef[];
@@ -92,11 +102,13 @@ export function createEvalRun(inputs: CreateEvalRunInputs): EvalRun {
     runId: inputs.runId,
     artifactId: inputs.artifactId,
     suiteId: inputs.suiteId,
+    ...(inputs.track !== undefined ? { track: inputs.track } : {}),
     metrics: inputs.metrics,
     datasetProvenance: inputs.datasetProvenance,
     ingestedAt: inputs.ingestedAt,
     ...(inputs.adapterProvenance !== undefined ? { adapterProvenance: inputs.adapterProvenance } : {}),
     ...(inputs.integrity !== undefined ? { integrity: inputs.integrity } : {}),
+    ...(inputs.ablationVerification !== undefined ? { ablationVerification: inputs.ablationVerification } : {}),
     ...(inputs.trials !== undefined ? { trials: inputs.trials } : {}),
     ...(inputs.reconciliation !== undefined ? { reconciliation: inputs.reconciliation } : {}),
     ...(inputs.memoryPacks !== undefined ? { memoryPacks: inputs.memoryPacks } : {}),

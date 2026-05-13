@@ -26,6 +26,67 @@
     "activationState": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ActivationState" },
     "payloadHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" },
     "provenance": { "$ref": "https://autocontext.dev/schema/provenance.json" },
+    "strategyIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "components", "lineage"],
+      "properties": {
+        "fingerprint": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" },
+        "payloadHash": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "fingerprint"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "fingerprint": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" }
+            }
+          }
+        },
+        "lineage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parentFingerprints"],
+          "properties": {
+            "parentFingerprints": {
+              "type": "array",
+              "items": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" }
+            }
+          }
+        },
+        "duplicateOf": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "artifactId", "fingerprint", "similarity"],
+          "properties": {
+            "kind": { "enum": ["exact", "near"] },
+            "artifactId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
+            "fingerprint": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" },
+            "similarity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "strategyQuarantine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "sourceArtifactIds", "sourceFingerprints"],
+      "properties": {
+        "status": { "const": "quarantined" },
+        "reason": { "enum": ["repeated-invalid-strategy", "contaminated-finding"] },
+        "sourceArtifactIds": {
+          "type": "array",
+          "items": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" }
+        },
+        "sourceFingerprints": {
+          "type": "array",
+          "items": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/ContentHash" }
+        },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
     "promotionHistory": {
       "type": "array",
       "items": { "$ref": "https://autocontext.dev/schema/promotion-event.json" }

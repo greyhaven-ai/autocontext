@@ -10,7 +10,11 @@ import {
   validatePromotionEvent,
   validateEvalRun,
 } from "../../../src/control-plane/contract/validators.js";
-import type { Provenance, MetricBundle } from "../../../src/control-plane/contract/types.js";
+import type {
+  AblationVerification,
+  Provenance,
+  MetricBundle,
+} from "../../../src/control-plane/contract/types.js";
 
 const aProvenance: Provenance = {
   authorType: "human",
@@ -47,6 +51,48 @@ describe("createArtifact", () => {
     expect(artifact.evalRuns).toEqual([]);
     expect(artifact.id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(artifact.schemaVersion).toBe("1.0");
+    expect(validateArtifact(artifact).valid).toBe(true);
+  });
+
+  test("preserves optional strategy identity metadata", () => {
+    const strategyIdentity = {
+      fingerprint: "sha256:" + "9".repeat(64),
+      components: [
+        { name: "prompt.txt", fingerprint: "sha256:" + "8".repeat(64) },
+      ],
+      lineage: {
+        parentFingerprints: ["sha256:" + "7".repeat(64)],
+      },
+    };
+    const artifact = createArtifact({
+      actuatorType: "prompt-patch",
+      scenario: "grid_ctf",
+      payloadHash: "sha256:" + "b".repeat(64),
+      provenance: aProvenance,
+      strategyIdentity,
+    });
+
+    expect(artifact.strategyIdentity).toEqual(strategyIdentity);
+    expect(validateArtifact(artifact).valid).toBe(true);
+  });
+
+  test("preserves optional strategy quarantine metadata", () => {
+    const strategyQuarantine = {
+      status: "quarantined",
+      reason: "repeated-invalid-strategy",
+      sourceArtifactIds: ["01KPEYB3BQNFDEYRS8KH538PF5"],
+      sourceFingerprints: ["sha256:" + "7".repeat(64)],
+      detail: "exact duplicate of disabled strategy",
+    };
+    const artifact = createArtifact({
+      actuatorType: "prompt-patch",
+      scenario: "grid_ctf",
+      payloadHash: "sha256:" + "b".repeat(64),
+      provenance: aProvenance,
+      strategyQuarantine,
+    });
+
+    expect(artifact.strategyQuarantine).toEqual(strategyQuarantine);
     expect(validateArtifact(artifact).valid).toBe(true);
   });
 
@@ -126,6 +172,31 @@ describe("createEvalRun", () => {
       ingestedAt: "2026-04-17T12:05:00.000Z",
     });
     expect(run.schemaVersion).toBe("1.0");
+    expect(validateEvalRun(run).valid).toBe(true);
+  });
+
+  test("preserves optional ablation verification evidence", () => {
+    const ablationVerification: AblationVerification = {
+      status: "passed",
+      targets: ["strategy", "harness"],
+      verifiedAt: "2026-05-13T12:00:00.000Z",
+      evidenceRefs: ["runs/ablation/run_1.json"],
+    };
+    const run = createEvalRun({
+      runId: "eval_ablation",
+      artifactId: "01KPEYB3BRQWK2WSHK9E93N6NP",
+      suiteId: "prod-eval-v3",
+      metrics: aMetricBundle,
+      datasetProvenance: {
+        datasetId: "prod-traces-2026-04-15",
+        sliceHash: "sha256:" + "e".repeat(64),
+        sampleCount: 300,
+      },
+      ingestedAt: "2026-04-17T12:05:00.000Z",
+      ablationVerification,
+    });
+
+    expect(run.ablationVerification).toEqual(ablationVerification);
     expect(validateEvalRun(run).valid).toBe(true);
   });
 });

@@ -10,6 +10,7 @@
     "runId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
     "artifactId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/Ulid" },
     "suiteId": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/SuiteId" },
+    "track": { "enum": ["verified", "experimental"] },
     "metrics": { "$ref": "https://autocontext.dev/schema/metric-bundle.json" },
     "datasetProvenance": {
       "type": "object",
@@ -44,6 +45,30 @@
       "properties": {
         "status": { "enum": ["clean", "discarded", "contaminated"] },
         "discardedReason": { "type": "string", "minLength": 1 },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "ablationVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "targets", "verifiedAt", "evidenceRefs"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "incomplete"] },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["strategy", "harness"] }
+        },
+        "verifiedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "notes": {
           "type": "array",
           "items": { "type": "string" }

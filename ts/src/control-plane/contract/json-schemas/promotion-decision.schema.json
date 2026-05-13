@@ -101,6 +101,31 @@
         "strongQualityMultiplier": { "type": "number" }
       }
     },
+    "ablationVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "status", "requiredTargets", "coveredTargets", "missingTargets"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "status": { "enum": ["not-required", "missing", "incomplete", "failed", "passed"] },
+        "requiredTargets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["strategy", "harness"] }
+        },
+        "coveredTargets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["strategy", "harness"] }
+        },
+        "missingTargets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["strategy", "harness"] }
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
     "reasoning": { "type": "string" },
     "evaluatedAt": { "$ref": "https://autocontext.dev/schema/shared-defs.json#/$defs/IsoTimestamp" }
   }

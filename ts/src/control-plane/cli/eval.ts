@@ -3,13 +3,14 @@
 // Responsibilities: attach / list for EvalRuns on existing Artifacts.
 
 import { readFileSync, existsSync } from "node:fs";
-import type { EvalRun, MetricBundle } from "../contract/types.js";
+import type { AblationVerification, EvalRun, MetricBundle } from "../contract/types.js";
 import {
   parseArtifactId,
   parseSuiteId,
   type SuiteId,
 } from "../contract/branded-ids.js";
 import { createEvalRun } from "../contract/factories.js";
+import { effectiveEvalRunTrack, isRunTrack } from "../contract/run-track.js";
 import { openRegistry } from "../registry/index.js";
 import { attachEvalRun, EvalRunAlreadyAttachedError } from "../eval-ingest/index.js";
 import { EXIT } from "./_shared/exit-codes.js";
@@ -25,7 +26,8 @@ Subcommands:
 Examples:
   autoctx eval attach <artifactId> --suite prod-eval \\
       --metrics ./metrics.json --dataset-provenance ./dataset.json \\
-      [--run-id run_1]
+      [--run-id run_1] [--track verified|experimental] \\
+      [--ablation-verification ./ablation.json]
   autoctx eval list <artifactId> --output json
 `;
 
@@ -66,12 +68,22 @@ async function runAttach(args: readonly string[], ctx: CliContext): Promise<CliR
     "metrics",
     "dataset-provenance",
     "run-id",
+    "track",
+    "ablation-verification",
     "output",
   ]);
   if ("error" in flags) {
     return { stdout: "", stderr: flags.error, exitCode: EXIT.HARD_FAIL };
   }
-  const { suite, metrics, "dataset-provenance": dpPath, "run-id": explicitRunId, output } = flags.value;
+  const {
+    suite,
+    metrics,
+    "dataset-provenance": dpPath,
+    "run-id": explicitRunId,
+    track,
+    "ablation-verification": ablationPath,
+    output,
+  } = flags.value;
 
   if (!suite || !metrics || !dpPath) {
     return {
@@ -85,6 +97,9 @@ async function runAttach(args: readonly string[], ctx: CliContext): Promise<CliR
   if (suiteId === null) {
     return { stdout: "", stderr: `Invalid suiteId: ${suite}`, exitCode: EXIT.HARD_FAIL };
   }
+  if (track !== undefined && !isRunTrack(track)) {
+    return { stdout: "", stderr: `Invalid track: ${track}`, exitCode: EXIT.HARD_FAIL };
+  }
 
   const metricsPath = ctx.resolve(metrics);
   const dpAbs = ctx.resolve(dpPath);
@@ -94,12 +109,20 @@ async function runAttach(args: readonly string[], ctx: CliContext): Promise<CliR
   if (!existsSync(dpAbs)) {
     return { stdout: "", stderr: `dataset-provenance file not found: ${dpAbs}`, exitCode: EXIT.IO_ERROR };
   }
+  const ablationAbs = ablationPath === undefined ? undefined : ctx.resolve(ablationPath);
+  if (ablationAbs !== undefined && !existsSync(ablationAbs)) {
+    return { stdout: "", stderr: `ablation-verification file not found: ${ablationAbs}`, exitCode: EXIT.IO_ERROR };
+  }
 
   let parsedMetrics: MetricBundle;
   let parsedDp: EvalRun["datasetProvenance"];
+  let parsedAblationVerification: AblationVerification | undefined;
   try {
     parsedMetrics = JSON.parse(readFileSync(metricsPath, "utf-8")) as MetricBundle;
     parsedDp = JSON.parse(readFileSync(dpAbs, "utf-8")) as EvalRun["datasetProvenance"];
+    parsedAblationVerification = ablationAbs === undefined
+      ? undefined
+      : JSON.parse(readFileSync(ablationAbs, "utf-8"));
   } catch (err) {
     return { stdout: "", stderr: `JSON parse error: ${err instanceof Error ? err.message : String(err)}`, exitCode: EXIT.HARD_FAIL };
   }
@@ -109,9 +132,11 @@ async function runAttach(args: readonly string[], ctx: CliContext): Promise<CliR
     runId,
     artifactId,
     suiteId: suiteId as SuiteId,
+    ...(track !== undefined ? { track } : {}),
     metrics: parsedMetrics,
     datasetProvenance: parsedDp,
     ingestedAt: ctx.now(),
+    ...(parsedAblationVerification !== undefined ? { ablationVerification: parsedAblationVerification } : {}),
   });
 
   const registry = openRegistry(ctx.cwd);
@@ -121,7 +146,14 @@ async function runAttach(args: readonly string[], ctx: CliContext): Promise<CliR
     const mode = (output ?? "pretty") as OutputMode;
     return {
       stdout: formatOutput(
-        { artifactId: result.artifact.id, runId: result.evalRun.runId, suiteId: result.evalRun.suiteId, evalRunCount: result.artifact.evalRuns.length },
+        {
+          artifactId: result.artifact.id,
+          runId: result.evalRun.runId,
+          suiteId: result.evalRun.suiteId,
+          track: effectiveEvalRunTrack(result.evalRun),
+          ablationStatus: result.evalRun.ablationVerification?.status ?? "none",
+          evalRunCount: result.artifact.evalRuns.length,
+        },
         mode,
       ),
       stderr: "",
@@ -160,8 +192,16 @@ async function runList(args: readonly string[], ctx: CliContext): Promise<CliRes
   const registry = openRegistry(ctx.cwd);
   try {
     const artifact = registry.loadArtifact(artifactId);
+    const refs = artifact.evalRuns.map((ref) => {
+      const evalRun = registry.loadEvalRun(artifact.id, ref.evalRunId);
+      return {
+        ...ref,
+        track: effectiveEvalRunTrack(evalRun),
+        ablationStatus: evalRun.ablationVerification?.status ?? "none",
+      };
+    });
     return {
-      stdout: formatOutput(artifact.evalRuns, mode),
+      stdout: formatOutput(refs, mode),
       stderr: "",
       exitCode: EXIT.PASS_STRONG_OR_MODERATE,
     };

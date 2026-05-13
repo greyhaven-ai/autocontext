@@ -8,6 +8,7 @@ let tmp: string;
 let payload: string;
 let metricsPath: string;
 let dpPath: string;
+let ablationPath: string;
 
 const goodMetrics = {
   quality: { score: 0.9, sampleSize: 100 },
@@ -54,8 +55,15 @@ beforeEach(() => {
   writeFileSync(join(payload, "prompt.txt"), "v1");
   metricsPath = join(tmp, "metrics.json");
   dpPath = join(tmp, "dp.json");
+  ablationPath = join(tmp, "ablation.json");
   writeFileSync(metricsPath, JSON.stringify(goodMetrics));
   writeFileSync(dpPath, JSON.stringify(goodDp));
+  writeFileSync(ablationPath, JSON.stringify({
+    status: "passed",
+    targets: ["strategy", "harness"],
+    verifiedAt: "2026-05-13T12:00:00.000Z",
+    evidenceRefs: ["runs/ablation/run_1.json"],
+  }));
 });
 
 afterEach(() => {
@@ -97,6 +105,96 @@ describe("eval attach", () => {
     expect(parsed.artifactId).toBe(id);
     expect(parsed.runId).toBe("run_1");
     expect(parsed.evalRunCount).toBe(1);
+    expect(parsed.track).toBe("verified");
+  });
+
+  test("attaches an experimental EvalRun when --track experimental is passed", async () => {
+    const id = await registerArtifact();
+    const r = await runControlPlaneCommand(
+      [
+        "eval",
+        "attach",
+        id,
+        "--suite",
+        "prod-eval",
+        "--metrics",
+        metricsPath,
+        "--dataset-provenance",
+        dpPath,
+        "--run-id",
+        "run_exp",
+        "--track",
+        "experimental",
+        "--output",
+        "json",
+      ],
+      { cwd: tmp },
+    );
+
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout).track).toBe("experimental");
+
+    const rList = await runControlPlaneCommand(
+      ["eval", "list", id, "--output", "json"],
+      { cwd: tmp },
+    );
+    expect(JSON.parse(rList.stdout)[0].track).toBe("experimental");
+  });
+
+  test("attaches ablation verification evidence when provided", async () => {
+    const id = await registerArtifact();
+    const r = await runControlPlaneCommand(
+      [
+        "eval",
+        "attach",
+        id,
+        "--suite",
+        "prod-eval",
+        "--metrics",
+        metricsPath,
+        "--dataset-provenance",
+        dpPath,
+        "--ablation-verification",
+        ablationPath,
+        "--run-id",
+        "run_ablation",
+        "--output",
+        "json",
+      ],
+      { cwd: tmp },
+    );
+
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout).ablationStatus).toBe("passed");
+
+    const rList = await runControlPlaneCommand(
+      ["eval", "list", id, "--output", "json"],
+      { cwd: tmp },
+    );
+    expect(JSON.parse(rList.stdout)[0].ablationStatus).toBe("passed");
+  });
+
+  test("rejects unknown track", async () => {
+    const id = await registerArtifact();
+    const r = await runControlPlaneCommand(
+      [
+        "eval",
+        "attach",
+        id,
+        "--suite",
+        "prod-eval",
+        "--metrics",
+        metricsPath,
+        "--dataset-provenance",
+        dpPath,
+        "--track",
+        "record",
+      ],
+      { cwd: tmp },
+    );
+
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain("Invalid track");
   });
 
   test("rejects invalid artifact id", async () => {
@@ -147,5 +245,6 @@ describe("eval list", () => {
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].evalRunId).toBe("run_1");
+    expect(parsed[0].track).toBe("verified");
   });
 });

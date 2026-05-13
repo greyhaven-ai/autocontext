@@ -83,6 +83,31 @@ describe("validateOperationalMemoryPack", () => {
       expect(result.errors).toContain("finding leaky containsSecret must be a boolean when present");
     }
   });
+
+  test("rejects malformed strategy fingerprints on findings", () => {
+    const result = validateOperationalMemoryPack({
+      packId: "bad-pack",
+      version: "1.0.0",
+      createdAt: "2026-05-06T19:00:00.000Z",
+      status: "sanitized",
+      findings: [
+        {
+          id: "bad-fingerprint",
+          summary: "Malformed strategy fingerprint.",
+          evidenceRefs: ["trace"],
+          reusableBehavior: "Use sanitized behavior.",
+          targetFamilies: ["terminal"],
+          risk: "low",
+          strategyFingerprint: "md5:bad",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({ valid: false });
+    if (!result.valid) {
+      expect(result.errors).toContain("finding bad-fingerprint strategyFingerprint must be a ContentHash when present");
+    }
+  });
 });
 
 describe("compileOperationalMemoryContext", () => {
@@ -262,6 +287,49 @@ describe("compileOperationalMemoryContext", () => {
       },
     ]);
     expect(context.prompt).not.toContain("FLAG{secret}");
+    expect(context.prompt).toBe("");
+  });
+
+  test("quarantines findings tied to quarantined strategy fingerprints", () => {
+    const strategyFingerprint = "sha256:" + "7".repeat(64);
+    const context = compileOperationalMemoryContext({
+      contextId: "strategy-quarantine-context",
+      createdAt: "2026-05-11T15:15:00.000Z",
+      targetFamilies: ["terminal"],
+      quarantinedStrategyFingerprints: [strategyFingerprint],
+      packs: [
+        {
+          packId: "strategy-pack",
+          version: "1.0.0",
+          createdAt: "2026-05-11T14:00:00.000Z",
+          status: "sanitized",
+          integrity: { status: "clean" },
+          findings: [
+            {
+              id: "quarantined-finding",
+              summary: "Finding derived from a quarantined strategy.",
+              evidenceRefs: ["runs/dev10/invalid/tests.log"],
+              reusableBehavior: "Repeat the invalid strategy.",
+              targetFamilies: ["terminal"],
+              risk: "low",
+              containsTaskAnswer: false,
+              containsSecret: false,
+              strategyFingerprint,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(context.selectedFindings).toEqual([]);
+    expect(context.skippedFindings).toEqual([
+      {
+        packId: "strategy-pack",
+        findingId: "quarantined-finding",
+        reason: "strategy-quarantined",
+        detail: `strategyFingerprint=${strategyFingerprint}`,
+      },
+    ]);
     expect(context.prompt).toBe("");
   });
 });

@@ -19,6 +19,13 @@ import {
 } from "../contract/branded-ids.js";
 import { createArtifact, createPromotionEvent } from "../contract/factories.js";
 import { computeTreeHash, type TreeFile } from "../contract/invariants.js";
+import {
+  buildStrategyComponentsFromTree,
+  buildStrategyIdentity,
+  detectStrategyDuplicate,
+  strategyFingerprintForArtifact,
+} from "../contract/strategy-identity.js";
+import { assessStrategyQuarantine } from "../contract/strategy-quarantine.js";
 import { openRegistry, type ListCandidatesFilter, type Registry } from "../registry/index.js";
 import { validateLineageNoCycles } from "../contract/invariants.js";
 import { CascadeRollbackRequired } from "../actuators/errors.js";
@@ -120,10 +127,11 @@ async function runRegister(args: readonly string[], ctx: CliContext): Promise<Cl
     };
   }
 
-  if (!ACTUATOR_TYPES.includes(flags.actuator as ActuatorType)) {
+  const actuatorType = parseActuatorType(flags.actuator);
+  if (actuatorType === null) {
     return {
       stdout: "",
-      stderr: `Unknown actuator type: '${flags.actuator as string}'. Valid: ${ACTUATOR_TYPES.join(", ")}`,
+      stderr: `Unknown actuator type: '${String(flags.actuator)}'. Valid: ${ACTUATOR_TYPES.join(", ")}`,
       exitCode: EXIT.UNKNOWN_ACTUATOR,
     };
   }
@@ -137,7 +145,7 @@ async function runRegister(args: readonly string[], ctx: CliContext): Promise<Cl
     };
   }
 
-  const payloadError = validateActuatorPayload(flags.actuator as ActuatorType, payloadAbs);
+  const payloadError = validateActuatorPayload(actuatorType, payloadAbs);
   if (payloadError !== null) {
     return {
       stdout: "",
@@ -172,6 +180,40 @@ async function runRegister(args: readonly string[], ctx: CliContext): Promise<Cl
   // Compute payload hash.
   const files = collectTree(payloadAbs);
   const payloadHash = computeTreeHash(files);
+  const registry = openRegistry(ctx.cwd);
+  const parentFingerprints = parents.flatMap((id) => {
+    try {
+      return [strategyFingerprintForArtifact(registry.loadArtifact(id))];
+    } catch {
+      return [];
+    }
+  });
+  const baseStrategyIdentity = buildStrategyIdentity({
+    actuatorType,
+    scenario,
+    payloadHash,
+    components: buildStrategyComponentsFromTree(files),
+    parentFingerprints,
+  });
+  const existingArtifacts = registry.listCandidates({
+    scenario,
+    actuatorType,
+  });
+  const duplicateOf = detectStrategyDuplicate(
+    baseStrategyIdentity,
+    actuatorType,
+    scenario,
+    existingArtifacts,
+  );
+  const strategyIdentity = duplicateOf === null
+    ? baseStrategyIdentity
+    : { ...baseStrategyIdentity, duplicateOf };
+  const strategyQuarantine = assessStrategyQuarantine(
+    baseStrategyIdentity,
+    actuatorType,
+    scenario,
+    existingArtifacts,
+  );
 
   const provenance: Provenance = {
     authorType: flags.author !== undefined ? "human" : "autocontext-run",
@@ -181,15 +223,16 @@ async function runRegister(args: readonly string[], ctx: CliContext): Promise<Cl
   };
 
   const artifact = createArtifact({
-    actuatorType: flags.actuator as ActuatorType,
+    actuatorType,
     scenario,
     environmentTag: env,
     payloadHash,
     provenance,
+    strategyIdentity,
+    ...(strategyQuarantine !== null ? { strategyQuarantine } : {}),
   });
 
   // Lineage cycle check using the registry as the lookup source.
-  const registry = openRegistry(ctx.cwd);
   const cycle = validateLineageNoCycles(artifact.id, parents, (id) => {
     try {
       return registry.loadArtifact(id).provenance.parentArtifactIds;
@@ -271,6 +314,9 @@ async function runList(args: readonly string[], ctx: CliContext): Promise<CliRes
     scenario: a.scenario,
     environmentTag: a.environmentTag,
     activationState: a.activationState,
+    strategyFingerprint: a.strategyIdentity?.fingerprint,
+    duplicateKind: a.strategyIdentity?.duplicateOf?.kind,
+    quarantineReason: a.strategyQuarantine?.reason,
     parents: a.provenance.parentArtifactIds.length,
     evalRuns: a.evalRuns.length,
   }));
@@ -522,6 +568,11 @@ function parseFlags(args: readonly string[], spec: Record<string, FlagSpec>): Fl
     }
   }
   return { value: parsed };
+}
+
+function parseActuatorType(value: unknown): ActuatorType | null {
+  if (typeof value !== "string") return null;
+  return ACTUATOR_TYPES.find((candidate) => candidate === value) ?? null;
 }
 
 function collectTree(root: string): TreeFile[] {
