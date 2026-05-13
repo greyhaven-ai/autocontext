@@ -139,3 +139,30 @@ def test_compact_prompt_components_with_entries_emits_pi_shaped_ledger() -> None
     assert entry.tokens_before > entry.details["tokensAfter"]
     assert "## Critical Context" in entry.summary
     assert "stale hints amplified retries" in entry.summary
+
+
+def test_compact_prompt_components_caches_by_component_hash() -> None:
+    from autocontext.knowledge.compaction import (
+        clear_prompt_compaction_cache,
+        compact_prompt_components,
+        prompt_compaction_cache_stats,
+    )
+
+    clear_prompt_compaction_cache()
+    components = {
+        "lessons": "## Lessons\n" + "\n".join(
+            [f"- old lesson {i} " + ("x" * 120) for i in range(1, 120)]
+            + ["- newest lesson keep me"]
+        ),
+    }
+
+    first = compact_prompt_components(components)
+    after_first = prompt_compaction_cache_stats()
+    second = compact_prompt_components(components)
+    after_second = prompt_compaction_cache_stats()
+
+    assert second == first
+    assert after_first["misses"] == 1
+    assert after_first["hits"] == 0
+    assert after_second["misses"] == 1
+    assert after_second["hits"] == 1

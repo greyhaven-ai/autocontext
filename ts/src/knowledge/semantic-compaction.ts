@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { estimateTokens } from "../prompts/context-budget.js";
 import type { CompactionEntry } from "./compaction-ledger.js";
@@ -70,6 +70,12 @@ const IMPORTANT_KEYWORDS = [
   "mitigation",
 ] as const;
 
+const COMPACTION_POLICY_VERSION = "semantic-compaction-v1";
+const COMPACTION_CACHE_MAX_SIZE = 512;
+const compactionCache = new Map<string, { original: string; compacted: string }>();
+let compactionCacheHits = 0;
+let compactionCacheMisses = 0;
+
 export function compactPromptComponents(components: Record<string, string>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(components)) {
@@ -125,7 +131,21 @@ export function compactPromptComponent(key: string, value: string): string {
   if (!value) return value;
   const limit = DEFAULT_COMPONENT_TOKEN_LIMITS[key];
   if (limit === undefined) return value;
-  return compactComponent(key, value, limit);
+  return cachedCompactComponent(key, value, limit);
+}
+
+export function clearPromptCompactionCache(): void {
+  compactionCache.clear();
+  compactionCacheHits = 0;
+  compactionCacheMisses = 0;
+}
+
+export function promptCompactionCacheStats(): { entries: number; hits: number; misses: number } {
+  return {
+    entries: compactionCache.size,
+    hits: compactionCacheHits,
+    misses: compactionCacheMisses,
+  };
 }
 
 export function extractPromotableLines(text: string, maxItems = 3): string[] {
@@ -261,6 +281,36 @@ function compactComponent(key: string, text: string, maxTokens: number): string 
     compacted = truncateText(compacted, maxTokens);
   }
   return compacted;
+}
+
+function cachedCompactComponent(key: string, text: string, maxTokens: number): string {
+  const cacheKey = [
+    COMPACTION_POLICY_VERSION,
+    key,
+    componentHash(text),
+    String(maxTokens),
+  ].join(":");
+  const cached = compactionCache.get(cacheKey);
+  if (cached !== undefined && cached.original === text) {
+    compactionCacheHits += 1;
+    compactionCache.delete(cacheKey);
+    compactionCache.set(cacheKey, cached);
+    return cached.compacted;
+  }
+
+  compactionCacheMisses += 1;
+  const compacted = compactComponent(key, text, maxTokens);
+  compactionCache.set(cacheKey, { original: text, compacted });
+  while (compactionCache.size > COMPACTION_CACHE_MAX_SIZE) {
+    const oldestKey = compactionCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    compactionCache.delete(oldestKey);
+  }
+  return compacted;
+}
+
+function componentHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function compactHistory(text: string, maxTokens: number): string {

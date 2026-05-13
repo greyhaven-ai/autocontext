@@ -36,8 +36,8 @@ def test_python_core_reexports_elo_primitives() -> None:
 def test_python_core_reexports_prompt_budget_helpers() -> None:
     assert estimate_tokens("abcdabcd") == 2
 
-    budget = ContextBudget(max_tokens=5)
-    result = budget.apply({"playbook": "12345678901234567890", "hints": "keep-me"})
+    budget = ContextBudget(max_tokens=20)
+    result = budget.apply({"playbook": "12345678901234567890" * 20, "hints": "keep-me"})
 
     assert result["hints"] == "keep-me"
     assert "truncated for context budget" in result["playbook"]

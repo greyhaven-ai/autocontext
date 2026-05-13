@@ -22,7 +22,9 @@ export {
   compactPromptComponents,
   compactPromptComponentsWithEntries,
   compactionEntriesForComponents,
+  clearPromptCompactionCache,
   extractPromotableLines,
+  promptCompactionCacheStats,
 } from "./semantic-compaction.js";
 export type { PromptCompactionOptions, PromptCompactionResult } from "./semantic-compaction.js";
 export { ScoreTrajectoryBuilder } from "./trajectory.js";
