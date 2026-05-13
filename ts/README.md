@@ -549,6 +549,43 @@ When enabled, the PromotionDecision includes an `ablationVerification`
 assessment and fails if the latest candidate EvalRun is missing evidence, has a
 `failed` or `incomplete` status, or does not cover every required target.
 
+## Control-Plane Harness Proposals
+
+`autoctx harness proposal create` records evidence-backed harness/context change
+proposals before they can affect the loop. A proposal carries finding lineage,
+the target surface, concrete patches, expected impact, rollback criteria, and
+provenance.
+
+```bash
+autoctx harness proposal create \
+  --finding finding-1 \
+  --surface prompt \
+  --summary "tighten verifier-facing prompt" \
+  --patches patches.json \
+  --expected-impact impact.json \
+  --rollback "revert if heldout quality drops" \
+  --output json
+```
+
+`autoctx harness proposal decide` gates a proposal against the candidate
+artifact's EvalRun evidence for the requested suite. `heldout` and `fresh`
+validation can accept or reject the proposal when compared with matching-suite
+baseline evidence; `dev` or missing-baseline validation stays `inconclusive`.
+
+```bash
+autoctx harness proposal decide <proposal-id> \
+  --candidate <artifact-id> \
+  --baseline <artifact-id>|auto|none \
+  --validation heldout \
+  --suite prod-heldout \
+  --evidence-ref runs/heldout/candidate.json \
+  --output json
+```
+
+Use `autoctx harness proposal list --output json` for a compact review queue and
+`autoctx harness proposal show <proposal-id> --output json` for the full durable
+record under `.autocontext/harness-proposals/`.
+
 ## MCP Tools (40+)
 
 `mcp-serve` starts the MCP server on stdio with tools across these families:

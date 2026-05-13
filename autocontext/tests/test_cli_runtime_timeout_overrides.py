@@ -171,6 +171,39 @@ class TestImproveRuntimeTimeoutOverrides:
         assert captured["settings"].claude_timeout == 300.0
         assert provider.calls[0]["user_prompt"] == "Draft a trial design"
 
+    def test_improve_accepts_checkpoint_command_options(self, tmp_path: Path) -> None:
+        settings = _settings(tmp_path)
+
+        with (
+            patch("autocontext.cli.load_settings", return_value=settings),
+            patch("autocontext.providers.registry.get_provider", return_value=_RecordingProvider()),
+            patch("autocontext.execution.improvement_loop.ImprovementLoop") as mock_loop,
+        ):
+            mock_loop.return_value.run.return_value = _FakeLoopResult()
+            result = runner.invoke(
+                app,
+                [
+                    "improve",
+                    "-p",
+                    "Draft a trial design",
+                    "-r",
+                    "Score rigor 0-1.",
+                    "--checkpoint-cmd",
+                    "true",
+                    "--checkpoint-suffix",
+                    ".txt",
+                    "--checkpoint-timeout",
+                    "2",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        checkpointer = mock_loop.call_args.kwargs["output_checkpointer"]
+        assert checkpointer is not None
+        assert checkpointer.enabled is True
+        assert checkpointer.run("partial output").ok is True
+
     def test_improve_timeout_error_mentions_timeout_override(self, tmp_path: Path) -> None:
         settings = _settings(tmp_path)
 

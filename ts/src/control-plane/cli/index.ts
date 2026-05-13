@@ -5,6 +5,7 @@ import { resolve as pathResolve } from "node:path";
 import { runCandidate, CANDIDATE_HELP_TEXT } from "./candidate.js";
 import { runEval, EVAL_HELP_TEXT } from "./eval.js";
 import { runPromotion, PROMOTION_HELP_TEXT } from "./promotion.js";
+import { runHarness, HARNESS_HELP_TEXT } from "./harness.js";
 import { runRegistryOps, REGISTRY_HELP_TEXT } from "./registry-ops.js";
 import { runEmitPr, EMIT_PR_HELP_TEXT } from "./emit-pr.js";
 import { EXIT } from "./_shared/exit-codes.js";
@@ -19,6 +20,7 @@ export {
   CANDIDATE_HELP_TEXT,
   EVAL_HELP_TEXT,
   PROMOTION_HELP_TEXT,
+  HARNESS_HELP_TEXT,
   REGISTRY_HELP_TEXT,
   EMIT_PR_HELP_TEXT,
 };
@@ -35,6 +37,7 @@ Namespaces:
   candidate    Register, list, inspect, rollback Artifacts
   eval         Attach + list EvalRuns
   promotion    Decide, apply, inspect promotion transitions
+  harness      Evidence-gated harness/context proposals
   registry     Repair / validate / migrate
 
 Top-level:
@@ -83,6 +86,8 @@ export async function runControlPlaneCommand(
       return runEval(argv.slice(1), ctx);
     case "promotion":
       return runPromotion(argv.slice(1), ctx);
+    case "harness":
+      return runHarness(argv.slice(1), ctx);
     case "registry":
       return runRegistryOps(argv.slice(1), ctx);
     case "emit-pr":

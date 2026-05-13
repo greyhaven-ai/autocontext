@@ -9,6 +9,7 @@ import promotionEventSchema from "./json-schemas/promotion-event.schema.json" wi
 import artifactSchema from "./json-schemas/artifact.schema.json" with { type: "json" };
 import promotionDecisionSchema from "./json-schemas/promotion-decision.schema.json" with { type: "json" };
 import patchSchema from "./json-schemas/patch.schema.json" with { type: "json" };
+import harnessChangeProposalSchema from "./json-schemas/harness-change-proposal.schema.json" with { type: "json" };
 import type {
   MetricBundle,
   Provenance,
@@ -17,6 +18,7 @@ import type {
   Artifact,
   PromotionDecision,
   Patch,
+  HarnessChangeProposal,
   ValidationResult,
 } from "./types.js";
 
@@ -38,6 +40,7 @@ ajv.addSchema(promotionEventSchema as object);
 ajv.addSchema(artifactSchema as object);
 ajv.addSchema(promotionDecisionSchema as object);
 ajv.addSchema(patchSchema as object);
+ajv.addSchema(harnessChangeProposalSchema);
 
 const metricBundleValidator      = ajv.getSchema("https://autocontext.dev/schema/metric-bundle.json")!;
 const provenanceValidator        = ajv.getSchema("https://autocontext.dev/schema/provenance.json")!;
@@ -46,6 +49,7 @@ const promotionEventValidator    = ajv.getSchema("https://autocontext.dev/schema
 const artifactValidator          = ajv.getSchema("https://autocontext.dev/schema/artifact.json")!;
 const promotionDecisionValidator = ajv.getSchema("https://autocontext.dev/schema/promotion-decision.json")!;
 const patchValidator             = ajv.getSchema("https://autocontext.dev/schema/patch.json")!;
+const harnessChangeProposalValidator = ajv.getSchema("https://autocontext.dev/schema/harness-change-proposal.json")!;
 
 function toResult(validate: ValidateFunction, input: unknown): ValidationResult {
   const ok = validate(input);
@@ -80,6 +84,17 @@ export function validatePromotionDecision(input: unknown): ValidationResult {
 export function validatePatch(input: unknown): ValidationResult {
   return toResult(patchValidator, input);
 }
+export function validateHarnessChangeProposal(input: unknown): ValidationResult {
+  return toResult(harnessChangeProposalValidator, input);
+}
 
 // Type-level assertions — if types drift from schemas, this won't compile.
-export type _TypeCheck = MetricBundle | Provenance | EvalRun | PromotionEvent | Artifact | PromotionDecision | Patch;
+export type _TypeCheck =
+  | MetricBundle
+  | Provenance
+  | EvalRun
+  | PromotionEvent
+  | Artifact
+  | PromotionDecision
+  | Patch
+  | HarnessChangeProposal;
