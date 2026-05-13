@@ -70,17 +70,24 @@ level while remaining Apache-2.0 in this repo.
 
 The Flue-style `build --target node|cloudflare` idea is useful, but
 AutoContext should treat deployment targets as control-plane packaging around
-stable core contracts, not as new runtime contracts themselves. The
+stable runtime contracts, not as new runtime contracts themselves. The
 machine-readable target boundary lives in
 [`packages/package-topology.json`](../packages/package-topology.json) under
 `agentApps`.
 
 Ownership:
 
-- Runtime contracts belong in the Apache core artifact. This includes handler
-  loading contracts, runtime workspace/session environment contracts, scoped
-  command/tool grants, child-task contracts, context-layer discovery contracts,
-  provider/runtime interfaces, and runtime-session event contracts.
+- Runtime contracts are still umbrella-owned until the extraction work adds
+  those exports to `@autocontext/core`. Today, the Node build target must use
+  the public `autoctx/agent-runtime` surface, plus the runtime-session exports
+  already available from `autoctx`, instead of importing missing core package
+  contracts.
+- The planned home for reusable runtime contracts remains the Apache core
+  artifact once the boundary explicitly exports handler loading contracts,
+  runtime workspace/session environment contracts, scoped command/tool grants,
+  child-task contracts, context-layer discovery contracts, provider/runtime
+  interfaces, runtime-session event contracts, and the dependencies needed by
+  those contracts.
 - Build and deploy workflows belong in the Apache control-plane artifact. This
   includes target selection, bundle planning, generated server/worker templates,
   target-specific adapters, packaging checks, and operator-facing CLI/API
@@ -95,12 +102,12 @@ Ownership:
 ### Node Target MVP
 
 The first target should be a local or self-hosted Node server generator. It
-should load handlers through the public `agent-runtime` surface already used by
-`.autoctx/agents`, expose a small manifest/invoke HTTP shape, and wire
-runtime-session recording through the same event contracts used by local
-execution. It may generate a minimal server entrypoint and package manifest, but
-should not invent a second handler API or bypass the runtime workspace/session
-contracts.
+should load handlers through the public `autoctx/agent-runtime` surface already
+used by `.autoctx/agents`, expose a small manifest/invoke HTTP shape, and wire
+runtime-session recording through the same umbrella-owned event contracts used
+by local execution until those contracts are extracted into `@autocontext/core`.
+It may generate a minimal server entrypoint and package manifest, but should not
+invent a second handler API or bypass the runtime workspace/session contracts.
 
 The MVP is approved only as a packaging/control-plane layer around existing
 contracts:
@@ -109,6 +116,9 @@ contracts:
 - bind request ids, payload, explicit env, runtime, workspace, commands, and
   tools through the existing invocation context;
 - persist local sessions with the current runtime-session store contract;
+- keep `ts/src/agent-runtime/index.ts`, runtime-session storage/notification
+  contracts, and TypeScript handler-loading support umbrella-owned until the
+  core package boundary grows matching exports and dependencies;
 - treat shell command grants as host-created capabilities, not app-provided
   ambient authority;
 - keep deployment, service hosting, process supervision, and remote secret

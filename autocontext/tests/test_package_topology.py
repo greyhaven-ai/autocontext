@@ -78,6 +78,22 @@ def test_package_topology_declares_apache_boundary_wrap_up_guardrails() -> None:
     )
 
 
+def test_agent_app_runtime_contracts_remain_umbrella_owned_until_extracted() -> None:
+    topology = _load_topology()
+    agent_apps = topology["agentApps"]
+    assert isinstance(agent_apps, dict)
+
+    assert agent_apps["runtimeContractsStatus"] == "umbrella-owned-until-core-extraction"
+    assert agent_apps["currentRuntimeContractsPackage"] == "autoctx/agent-runtime"
+    assert agent_apps["plannedRuntimeContractsPackage"] == "@autocontext/core"
+    assert agent_apps["unextractedCoreContracts"] == [
+        "ts/src/agent-runtime/index.ts",
+        "ts/src/session/runtime-session.ts",
+        "ts/src/session/runtime-session-notifications.ts",
+        "tsx dependency for TypeScript handler loading",
+    ]
+
+
 def test_python_package_shells_exist() -> None:
     for shell in _python_shells():
         assert shell.path.exists(), shell.path
