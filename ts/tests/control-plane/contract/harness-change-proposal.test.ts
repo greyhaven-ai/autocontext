@@ -85,7 +85,7 @@ function evalRun(artifactId: Artifact["id"], runId: string, score: number): Eval
   };
 }
 
-function acceptedDecision(): HarnessChangeDecision {
+function acceptedDecision(evidenceRefs: readonly string[] = ["runs/heldout/candidate-heldout.json"]): HarnessChangeDecision {
   const candidateArtifact = artifact("01HX0000000000000000000001" as Artifact["id"]);
   const baselineArtifact = artifact("01HX0000000000000000000002" as Artifact["id"]);
   return decideHarnessChangeProposal({
@@ -102,7 +102,7 @@ function acceptedDecision(): HarnessChangeDecision {
     validation: {
       mode: "heldout",
       suiteId: "heldout-suite",
-      evidenceRefs: ["runs/heldout/candidate-heldout.json"],
+      evidenceRefs,
     },
     decidedAt: "2026-05-13T12:10:00.000Z",
   });
@@ -161,12 +161,110 @@ describe("harness change proposal contract", () => {
     expect(validateHarnessChangeProposal(proposal({ decision })).valid).toBe(true);
   });
 
+  test("validation rejects accepted or rejected decisions without evidence refs", () => {
+    const acceptedWithoutRefs: HarnessChangeDecision = {
+      ...acceptedDecision(),
+      validation: {
+        mode: "heldout",
+        suiteId: "heldout-suite",
+        evidenceRefs: [],
+      },
+    };
+    const acceptedResult = validateHarnessChangeProposal(proposal({ decision: acceptedWithoutRefs }));
+    expect(acceptedResult.valid).toBe(false);
+    expect(acceptedResult.errors.some((error) => error.includes("evidenceRefs"))).toBe(true);
+
+    const rejectedWithoutRefs: HarnessChangeDecision = {
+      ...acceptedWithoutRefs,
+      status: "rejected",
+      reason: "Rejected on heldout validation.",
+    };
+    const rejectedResult = validateHarnessChangeProposal(proposal({ decision: rejectedWithoutRefs }));
+    expect(rejectedResult.valid).toBe(false);
+    expect(rejectedResult.errors.some((error) => error.includes("evidenceRefs"))).toBe(true);
+  });
+
+  test("validation rejects accepted or rejected decisions from dev-only evidence", () => {
+    const acceptedFromDev: HarnessChangeDecision = {
+      ...acceptedDecision(),
+      validation: {
+        mode: "dev",
+        suiteId: "dev-suite",
+        evidenceRefs: ["runs/dev/candidate-dev.json"],
+      },
+    };
+    const acceptedResult = validateHarnessChangeProposal(proposal({ decision: acceptedFromDev }));
+    expect(acceptedResult.valid).toBe(false);
+    expect(acceptedResult.errors.some((error) => error.includes("mode"))).toBe(true);
+
+    const rejectedFromDev: HarnessChangeDecision = {
+      ...acceptedFromDev,
+      status: "rejected",
+      reason: "Rejected on dev validation.",
+    };
+    const rejectedResult = validateHarnessChangeProposal(proposal({ decision: rejectedFromDev }));
+    expect(rejectedResult.valid).toBe(false);
+    expect(rejectedResult.errors.some((error) => error.includes("mode"))).toBe(true);
+  });
+
+  test("validation rejects accepted or rejected decisions without baseline evidence", () => {
+    const {
+      baselineArtifactId: _acceptedBaselineArtifactId,
+      baselineEvalRunId: _acceptedBaselineEvalRunId,
+      ...acceptedWithoutBaseline
+    } = acceptedDecision();
+    const acceptedResult = validateHarnessChangeProposal(proposal({ decision: acceptedWithoutBaseline }));
+    expect(acceptedResult.valid).toBe(false);
+    expect(acceptedResult.errors.some((error) => error.includes("baselineArtifactId"))).toBe(true);
+    expect(acceptedResult.errors.some((error) => error.includes("baselineEvalRunId"))).toBe(true);
+
+    const {
+      baselineArtifactId: _rejectedBaselineArtifactId,
+      baselineEvalRunId: _rejectedBaselineEvalRunId,
+      ...rejectedWithoutBaseline
+    }: HarnessChangeDecision = {
+      ...acceptedDecision(),
+      status: "rejected",
+      reason: "Rejected on heldout validation.",
+    };
+    const rejectedResult = validateHarnessChangeProposal(proposal({ decision: rejectedWithoutBaseline }));
+    expect(rejectedResult.valid).toBe(false);
+    expect(rejectedResult.errors.some((error) => error.includes("baselineArtifactId"))).toBe(true);
+    expect(rejectedResult.errors.some((error) => error.includes("baselineEvalRunId"))).toBe(true);
+  });
+
   test("accepts only when candidate beats baseline on heldout or fresh validation", () => {
     const decision = acceptedDecision();
 
     expect(decision.status).toBe("accepted");
     expect(decision.promotionDecision.pass).toBe(true);
     expect(decision.reason).toContain("heldout");
+  });
+
+  test("marks promotion-grade validation without evidence refs inconclusive", () => {
+    const candidateArtifact = artifact("01HX0000000000000000000001" as Artifact["id"]);
+    const baselineArtifact = artifact("01HX0000000000000000000002" as Artifact["id"]);
+    const decision = decideHarnessChangeProposal({
+      proposal: proposal(),
+      candidate: {
+        artifact: candidateArtifact,
+        evalRun: evalRun(candidateArtifact.id, "candidate-heldout", 0.88),
+      },
+      baseline: {
+        artifact: baselineArtifact,
+        evalRun: evalRun(baselineArtifact.id, "baseline-heldout", 0.70),
+      },
+      thresholds,
+      validation: {
+        mode: "heldout",
+        suiteId: "heldout-suite",
+        evidenceRefs: [],
+      },
+      decidedAt: "2026-05-13T12:10:00.000Z",
+    });
+
+    expect(decision.status).toBe("inconclusive");
+    expect(decision.reason).toContain("evidence reference");
   });
 
   test("marks dev-only validation inconclusive even when candidate improves", () => {
