@@ -66,6 +66,91 @@ The umbrella packages preserve the default install and CLI experience. The new
 core/control artifacts make the dependency boundary explicit at the artifact
 level while remaining Apache-2.0 in this repo.
 
+## Agent App Build Targets
+
+The Flue-style `build --target node|cloudflare` idea is useful, but
+AutoContext should treat deployment targets as control-plane packaging around
+stable core contracts, not as new runtime contracts themselves. The
+machine-readable target boundary lives in
+[`packages/package-topology.json`](../packages/package-topology.json) under
+`agentApps`.
+
+Ownership:
+
+- Runtime contracts belong in the Apache core artifact. This includes handler
+  loading contracts, runtime workspace/session environment contracts, scoped
+  command/tool grants, child-task contracts, context-layer discovery contracts,
+  provider/runtime interfaces, and runtime-session event contracts.
+- Build and deploy workflows belong in the Apache control-plane artifact. This
+  includes target selection, bundle planning, generated server/worker templates,
+  target-specific adapters, packaging checks, and operator-facing CLI/API
+  commands.
+- The umbrella `autoctx` CLI may dispatch build commands while package splitting
+  is in progress, but it should delegate to the control-plane implementation.
+- Hosted fleet orchestration is out of scope for this Apache repo. Multi-tenant
+  worker scheduling, hosted secret brokering, billing, organization policy
+  rollout, remote execution fleets, and production deployment control rooms are
+  separate proprietary product work.
+
+### Node Target MVP
+
+The first target should be a local or self-hosted Node server generator. It
+should load handlers through the public `agent-runtime` surface already used by
+`.autoctx/agents`, expose a small manifest/invoke HTTP shape, and wire
+runtime-session recording through the same event contracts used by local
+execution. It may generate a minimal server entrypoint and package manifest, but
+should not invent a second handler API or bypass the runtime workspace/session
+contracts.
+
+The MVP is approved only as a packaging/control-plane layer around existing
+contracts:
+
+- discover handlers from `.autoctx/agents` using the public loader;
+- bind request ids, payload, explicit env, runtime, workspace, commands, and
+  tools through the existing invocation context;
+- persist local sessions with the current runtime-session store contract;
+- treat shell command grants as host-created capabilities, not app-provided
+  ambient authority;
+- keep deployment, service hosting, process supervision, and remote secret
+  management out of scope.
+
+### Cloudflare Target Spike
+
+The Cloudflare target should stay a spike until the Node target proves the
+handler/server boundary. The spike can explore Workers for request routing and
+Durable Objects for session/event persistence, but it should report contract
+gaps before adding a production build path.
+
+The spike should answer:
+
+- how a Worker bundle loads or embeds agent handlers without depending on
+  Node-only dynamic import behavior;
+- how Durable Objects map onto runtime-session ids, append/replay semantics, and
+  child-session links;
+- how tool grants are represented when local process execution and filesystem
+  access are unavailable;
+- which runtime workspace adapters are valid in an edge environment;
+- which pieces must remain target adapters in the control-plane package instead
+  of leaking into core.
+
+### Risks
+
+- Bundling: TypeScript handler loading, ESM/CJS interop, native dependencies,
+  optional provider SDKs, source maps, and dynamic imports can diverge between
+  Node and edge runtimes.
+- Environment variables: build targets must preserve explicit env loading and
+  redaction semantics. They must not capture the full host environment or bake
+  secrets into generated artifacts.
+- Session persistence: Node can start with local SQLite/file stores, while
+  Cloudflare needs a Durable Object or other edge-native event store. Replay
+  semantics must stay compatible before sessions move between targets.
+- Sandbox providers: local shell grants, filesystem adapters, and subprocess
+  runtimes do not automatically exist in Workers. Target adapters must degrade
+  explicitly or require remote tools rather than silently broadening authority.
+- Product boundary: hosted scheduling, policy rollout, tenant isolation,
+  observability cockpit features, and managed deployment are not open-source
+  build-target responsibilities.
+
 ## Path Map
 
 This map is the starting point for implementation. It should be updated if code
